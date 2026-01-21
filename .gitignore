@@ -1,0 +1,12 @@
+# Logs
+*.log
+*.tmp
+tmp/
+
+# System
+Thumbs.db
+.DS_Store
+
+# Secrets
+.env
+secrets.json
