@@ -11,9 +11,7 @@
 | :---: | :--- | :--- | :--- |
 | ☁ | **Y2Helper** | [Note](https://colab.research.google.com/drive/1OgQ4hrbNe3d7D9xCp1dLSjJiGNIJ4PtK#scrollTo=fc1a7611) | Active |
 | 🖥️ | **Local Report Plugin** | [📂 Open Folder](./projects/QA_Report) | 🚧 In Progress |
-| ☁️ | **Stock Prediction** | [📓 Google Colab](https://colab.research.google.com/drive/xxxx) | 🛑 Blocked (API) |
-| 💬 | **Marketing Brainstorm** | [🤖 ChatGPT Thread](https://chat.openai.com/c/xxxx) | ✅ Completed |
-| 📡 | **Competitor Monitor** | [🌐 Agent Tool (Web)](https://www.google.com) | 🟢 Active |
+
 
 ## 📝 Scratchpad
 - Quick notes here...
