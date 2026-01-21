@@ -1,4 +1,4 @@
-# ✈️ AI Command Center - Flight Deck
+﻿# ✈️ AI Command Center - Flight Deck
 
 ## 🚀 Navigation
 - [ChatGPT](https://chat.openai.com)
@@ -6,12 +6,14 @@
 - [Projects Folder](./projects)
 - [Journals](./journals)
 
-## 🔥 Active Projects Status
-| Project | Status | Next Action |
-| :--- | :--- | :--- |
-| QA_Report | 🚧 In Progress | Check database |
-| Stock_Analysis | 🛑 Blocked | API Limit |
-| ... | ... | ... |
+## 🔥 Active Projects & Resources
+| Type | Project / Resource Name | Link / Path | Status |
+| :---: | :--- | :--- | :--- |
+| ☁ | **Y2Helper** | [Note](https://colab.research.google.com/drive/1OgQ4hrbNe3d7D9xCp1dLSjJiGNIJ4PtK#scrollTo=fc1a7611) | Active |
+| 🖥️ | **Local Report Plugin** | [📂 Open Folder](./projects/QA_Report) | 🚧 In Progress |
+| ☁️ | **Stock Prediction** | [📓 Google Colab](https://colab.research.google.com/drive/xxxx) | 🛑 Blocked (API) |
+| 💬 | **Marketing Brainstorm** | [🤖 ChatGPT Thread](https://chat.openai.com/c/xxxx) | ✅ Completed |
+| 📡 | **Competitor Monitor** | [🌐 Agent Tool (Web)](https://www.google.com) | 🟢 Active |
 
 ## 📝 Scratchpad
 - Quick notes here...
