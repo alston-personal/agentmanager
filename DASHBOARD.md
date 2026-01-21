@@ -17,3 +17,5 @@
 
 ## 📝 Scratchpad
 - Quick notes here...
+
+| ☁️ | **YouTube API 認證與授權** | https://colab.research.google.com/drive/1OgQ4hrbNe3d7D9xCp1dLSjJiGNIJ4PtK#scrollTo=fc1a7611 | 失敗 (client_secret.json 未找到或配置錯誤) |
