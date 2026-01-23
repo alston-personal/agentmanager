@@ -10,3 +10,4 @@ Thumbs.db
 # Secrets
 .env
 secrets.json
+.gh_token
