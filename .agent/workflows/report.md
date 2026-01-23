@@ -2,74 +2,84 @@
 description: Report current project status to AI Command Center
 ---
 
-# /report - Report Status to Command Center
+# /report - Auto-Report Status to Command Center
 
-Use this command to report your current work status back to the AI Command Center.
+This command makes you **automatically summarize and report** your work to the AI Command Center.
+You DO NOT need the user to tell you what to report - you should figure it out yourself!
 
-## Prerequisites
-- This workspace must have the `command_center_reporter` skill installed
+## How It Works
 
-## Steps
-
-### 1. Identify Current Project
+### 1. Identify Project
 Use the current workspace folder name as the project name.
-Example: If workspace is `Beauty-PK`, project name is `Beauty-PK`.
 
-### 2. Check for Existing Token
-Look for token in this priority:
-1. Environment variable `GH_TOKEN`
-2. File `.gh_token` in workspace root (gitignored)
-3. Ask user ONCE and offer to save it
+### 2. Load Token (One-time Setup)
+Check for `.gh_token` file or ask user once and save it.
 
-If no token exists, ask:
-> "I need a GitHub Token to report to the Command Center. Please provide your token. (I can save it locally so you don't need to enter it again)"
+### 3. Fetch Previous Status (Important!)
+Before reporting, fetch the project's current STATUS.md from GitHub to see:
+- What was the last reported status?
+- What were the last few log entries?
 
-If user provides token, save to `.gh_token` file (and ensure it's in .gitignore).
-
-### 3. Load and Execute Reporter
 ```python
-import os
-
-# Load token from file or environment
-token_file = ".gh_token"
-if os.path.exists(token_file):
-    with open(token_file) as f:
-        TOKEN = f.read().strip()
-else:
-    TOKEN = os.environ.get("GH_TOKEN")
-
-REPO = "alstonhuang/AI_Command_Center"  # Read from config.json if exists
-
-# Dynamic load reporter
-from github import Github
-g = Github(TOKEN)
-r = g.get_repo(REPO)
-exec(r.get_contents(".agent/skills/command_center_reporter/reporter_client.py").decoded_content.decode("utf-8"))
-
-reporter = ProjectReporter(TOKEN, REPO)
-PROJECT = "Beauty-PK"  # Use workspace name
+# Fetch current status from Command Center
+try:
+    status_content = r.get_contents(f"projects/{PROJECT}/STATUS.md").decoded_content.decode("utf-8")
+    # Parse to understand what was already reported
+except:
+    status_content = None  # First time - no previous status
 ```
 
-### 4. Auto-Register if Needed
-Before logging, check if project exists. If not, auto-register:
+### 4. Auto-Generate Report Content
+
+**If First Time (no previous status):**
+- Summarize the current state of the project based on your conversation history
+- Example: "Initial setup: Created project structure, implemented authentication"
+
+**If Has Previous Status:**
+- Compare what you've done in THIS conversation vs what's already logged
+- Report ONLY the NEW accomplishments
+- Example: "Fixed username validation bug, added Back button to login screen"
+
+**How to Generate Summary:**
+1. Review the conversation history since your session started
+2. List key accomplishments (code changes, fixes, new features)
+3. Note any blockers or issues encountered
+4. Condense into 1-2 sentences
+
+### 5. Execute Report
 ```python
-# This will create Dashboard entry + STATUS.md if they don't exist
-reporter.register(PROJECT, project_type="🖥️", link="(Local Workspace)")
+# Auto-register if needed
+reporter.register(PROJECT, project_type="🖥️", link="(Local)")
+
+# Log the auto-generated summary
+reporter.log(PROJECT, "YOUR_AUTO_GENERATED_SUMMARY", level="INFO")
+
+# Update status if significant milestone
+reporter.update_status(PROJECT, "🚧 In Progress")  # or ✅ Done, ❌ Blocked
 ```
 
-### 5. Parse User Input
-- If user said `/report Completed feature X`:
-  - Log: `reporter.log(PROJECT, "Completed feature X", level="INFO")`
-  
-- If user said `/report`:
-  - Summarize recent work based on conversation context
-  - Ask for confirmation: "I'll report: '[summary]'. OK?"
-  - Then log it
+### 6. Confirm to User
+Tell user:
+> "✅ 已回報至 AI Command Center:
+> 專案: {PROJECT}
+> 摘要: {YOUR_SUMMARY}"
 
-### 6. Confirm Success
-Tell user: "✅ Reported to AI Command Center!"
+## Example Behavior
+
+**User says:** `/report`
+
+**You should respond:**
+> "📤 正在回報至 AI Command Center...
+> 
+> 📋 自動摘要:
+> - 完成 Username 驗證修復
+> - 新增 Login 頁面的 Back 按鈕
+> - 修復導航返回邏輯
+> 
+> ✅ 已成功回報！"
 
 ## ⚠️ IMPORTANT
-- **DO NOT** use `git clone` to update the Command Center
-- **ALWAYS** use the GitHub API via `reporter.log()` and `reporter.update_status()`
-- This is faster, cleaner, and avoids merge conflicts
+- **DO NOT** ask user "what do you want to report" - figure it out yourself!
+- **DO NOT** use git clone - use GitHub API only
+- **DO** read previous STATUS.md to avoid duplicate reports
+- **DO** be concise - summarize, don't dump everything
