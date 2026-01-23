@@ -1,79 +1,92 @@
 ---
 name: command_center_reporter
-description: Enables remote AI agents (Colab, ChatGPT) to update the central Dashboard via GitHub API.
+description: Enables AI agents to report status to the central AI Command Center via GitHub API.
 ---
 
 # Command Center Reporter Skill
 
-This skill enables you to report your work status back to the central "AI Command Center".
+## 🚨🚨🚨 CRITICAL: DO NOT USE GIT CLONE 🚨🚨🚨
+
+**NEVER do this:**
+```
+❌ git clone https://github.com/.../AI_Command_Center.git /tmp/...
+❌ cd /tmp/AI_Command_Center && git add . && git commit && git push
+```
+
+**ALWAYS do this:**
+```python
+✅ reporter.log("ProjectName", "Message")
+✅ reporter.update_status("ProjectName", "Status")
+```
+
+The GitHub API method is:
+- Faster (no clone/pull needed)
+- Cleaner (no temp files)
+- Conflict-free (atomic operations)
+
+---
 
 ## 🎯 Purpose
-- Report progress, errors, and blockers to a central dashboard
-- Keep the human operator informed across all AI projects
+Report your work status back to the central "AI Command Center" dashboard.
 
-## 📋 Prerequisites
-Before using this skill, ensure:
-1. You have the GitHub Token (ask the user if needed, stored in environment or provided directly)
-2. You know the project name you're working on
+## 📋 Standard Operating Procedure
 
-## 🚀 How to Use (Standard Procedure)
-
-### Step 1: Setup (First time only)
-Run this Python code to load the reporter:
-
+### Step 1: One-time Setup
 ```python
 !pip install PyGithub pytz
 
 from github import Github
-import json
 
-# Get these from the user or environment
-TOKEN = "github_pat_token"  # Ask user for this
-REPO = "alstonhuang/AI_Command_Center"  # Or read from config
+# Get token from user or .gh_token file
+TOKEN = "user_provides_this"
+REPO = "alstonhuang/AI_Command_Center"
 
-# Dynamic load the reporter class
+# Dynamic load the reporter (ALWAYS fetch latest from GitHub!)
 g = Github(TOKEN)
 r = g.get_repo(REPO)
-file_content = r.get_contents(".agent/skills/command_center_reporter/reporter_client.py")
-exec(file_content.decoded_content.decode("utf-8"))
+code = r.get_contents(".agent/skills/command_center_reporter/reporter_client.py")
+exec(code.decoded_content.decode("utf-8"))
 
 reporter = ProjectReporter(TOKEN, REPO)
 ```
 
-### Step 2: Register (If this is a new project)
+### Step 2: Register (First time for new project)
 ```python
 reporter.register("YourProjectName")
 ```
-This will:
-- Add a row to DASHBOARD.md
-- Create projects/YourProjectName/STATUS.md
 
-### Step 3: Report Progress (During work)
+### Step 3: Report (Every time you have progress)
 ```python
 # Log detailed activity
-reporter.log("YourProjectName", "Completed data processing step 1", level="INFO")
+reporter.log("YourProjectName", "Completed feature X", level="INFO")
 
-# Update dashboard status
-reporter.update_status("YourProjectName", "🚧 Processing (50%)")
+# Update dashboard status (only when phase changes)
+reporter.update_status("YourProjectName", "🚧 Working")
 ```
 
-### Log Levels
-- `INFO` - Normal progress
-- `WARN` - Encountered issue but continuing
-- `DONE` - Task completed
+---
 
-## ⚠️ Important Notes
-- **DO NOT** clone the AI_Command_Center repo to temp
-- **DO** use the GitHub API method above (it's faster and cleaner)
-- All writes go directly to GitHub via API, no local files needed
+## 🔄 For /report Command
+When user says `/report`:
+1. Auto-summarize your work in this session
+2. Fetch previous STATUS.md to see what was already reported
+3. Report only NEW accomplishments
+4. DO NOT ask user what to report - figure it out yourself!
 
-## 🔧 For Local Antigravity Workspaces
-If you're in a local VS Code workspace (not Colab):
-1. This skill folder should be symlinked from the master at `d:\AgentManager\.agent\skills\command_center_reporter`
-2. You can still use the same Python code above to report
-3. Or simply tell the user what to update and let them sync manually
+---
 
-## 📁 File Locations
-- Dashboard: `DASHBOARD.md` (main status board)
+## ⚠️ Common Mistakes to Avoid
+
+| ❌ Wrong | ✅ Correct |
+| :--- | :--- |
+| `git clone` the Command Center | Use `reporter.log()` API |
+| Ask user "what do you want to report?" | Auto-summarize from conversation |
+| Report everything every time | Read previous log, report only new items |
+| Create temp folders | No local files needed |
+
+---
+
+## 📁 File Locations (on GitHub, not local!)
+- Dashboard: `DASHBOARD.md`
 - Project logs: `projects/{ProjectName}/STATUS.md`
-- Config: `config.json` (contains repo name for cloned instances)
+- Config: `config.json`
