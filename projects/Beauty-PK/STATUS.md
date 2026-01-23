@@ -8,6 +8,7 @@
 
 ## 📝 Activity Log (Latest on Top)
 <!-- LOG_START -->
+- `2026-01-23 10:04:54` ℹ️ **INFO**: Switched to API-based reporting and cleaned up temp files.
 - `2026-01-23 10:04:51` ✅ **INFO**: Project registered in AI Command Center
 <!-- LOG_END -->
 
