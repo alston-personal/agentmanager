@@ -92,7 +92,79 @@ class ProjectReporter:
                     self.repo.update_file(contents.path, f"🤖 Status Update: {project_name}", new_content, contents.sha)
                     print(f"✅ Dashboard updated: {project_name} -> {status}")
             else:
-                print(f"⚠️ Project {project_name} not found in Dashboard.")
+                print(f"⚠️ Project {project_name} not found in Dashboard. Use register() first.")
                 
         except Exception as e:
             print(f"❌ Failed to update dashboard: {e}")
+
+    def register(self, project_name, project_type="🖥️", link="(Local)", initial_status="🆕 Registered"):
+        """
+        自動註冊新專案：
+        1. 在 Dashboard 新增一列
+        2. 建立 projects/{project_name}/STATUS.md
+        """
+        # Step 1: Add to Dashboard
+        file_path = "DASHBOARD.md"
+        try:
+            contents = self.repo.get_contents(file_path)
+            content_str = contents.decoded_content.decode("utf-8")
+            
+            # Check if already exists
+            if f"**{project_name}**" in content_str:
+                print(f"ℹ️ Project {project_name} already exists in Dashboard.")
+            else:
+                # Find table end (line before ## Scratchpad or similar)
+                lines = content_str.split('\n')
+                insert_idx = None
+                for i, line in enumerate(lines):
+                    if line.startswith("## ") and "Scratchpad" in line:
+                        insert_idx = i
+                        break
+                
+                if insert_idx:
+                    new_row = f"| {project_type} | **{project_name}** | {link} | {initial_status} |"
+                    lines.insert(insert_idx, new_row)
+                    new_content = '\n'.join(lines)
+                    self.repo.update_file(contents.path, f"🆕 Register: {project_name}", new_content, contents.sha)
+                    print(f"✅ Added {project_name} to Dashboard")
+                else:
+                    print("❌ Could not find insertion point in Dashboard")
+                    
+        except Exception as e:
+            print(f"❌ Failed to register in Dashboard: {e}")
+            return
+        
+        # Step 2: Create STATUS.md
+        status_file_path = f"projects/{project_name}/STATUS.md"
+        status_template = f"""# Project Status: {project_name}
+
+## 📍 Summary
+| Metric | Value |
+| :--- | :--- |
+| **Last Status** | {initial_status} |
+| **Last Updated** | {self._get_time_str()} |
+
+## 📝 Activity Log (Latest on Top)
+<!-- LOG_START -->
+- `{self._get_time_str()}` ✅ **INFO**: Project registered in AI Command Center
+<!-- LOG_END -->
+
+## 📅 Todo List
+- [ ] Define objectives
+- [ ] Implementation
+- [ ] Review
+
+## 🛑 Blockers & Issues
+- None yet.
+"""
+        try:
+            # Check if file exists
+            self.repo.get_contents(status_file_path)
+            print(f"ℹ️ STATUS.md already exists for {project_name}")
+        except:
+            # File doesn't exist, create it
+            try:
+                self.repo.create_file(status_file_path, f"🆕 Create STATUS for {project_name}", status_template)
+                print(f"✅ Created {status_file_path}")
+            except Exception as e:
+                print(f"❌ Failed to create STATUS.md: {e}")
