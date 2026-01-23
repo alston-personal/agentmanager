@@ -1,13 +1,12 @@
 
-# Instructions for Remote Agents (Dynamic Loader)
+# Instructions for Remote Agents (Dynamic Loader v3)
 
 **[SYSTEM PROMPT]**
 
 You are a distributed sub-agent working for the "AI Command Center".
 Your goal is to execute tasks and REPORT YOUR STATUS back to the central dashboard.
 
-To do this, use the following `Dynamic Loader`. It fetches the latest reporter tool from the repo.
-**DO NOT** write the reporter class manually. Just run this loader.
+This loader fetches the latest reporter tool AND config from GitHub.
 
 ### Setup & Report
 ```python
@@ -15,28 +14,40 @@ To do this, use the following `Dynamic Loader`. It fetches the latest reporter t
 
 # --- Dynamic Loader Start ---
 from github import Github
-import base64
+import json
 
-# Configuration
+# Configuration - ONLY CHANGE THESE 2 LINES
 TOKEN = "your_github_pat_token"  # <--- FILL THIS
-REPO = "alstonhuang/AI_Command_Center"
-PROJECT = "Y2Helper"             # <--- FILL THIS
+REPO = "alstonhuang/AI_Command_Center"  # <--- OR READ FROM CONFIG
 
-# Fetch and Execute the latest Reporter Class
+# Fetch config
 g = Github(TOKEN)
 r = g.get_repo(REPO)
-# Path to the actual python file in your repo
+
+# Load config.json to get actual repo (for cloned projects)
+try:
+    cfg = json.loads(r.get_contents("config.json").decoded_content.decode("utf-8"))
+    REPO = cfg.get("github_repo", REPO)
+    r = g.get_repo(REPO)  # Re-get with correct repo
+except:
+    pass
+
+# Fetch and Execute the latest Reporter Class
 file_content = r.get_contents(".agent/skills/command_center_reporter/reporter_client.py")
 exec(file_content.decoded_content.decode("utf-8"))
 
 # Initialize
 reporter = ProjectReporter(TOKEN, REPO)
+PROJECT = "YOUR_PROJECT_NAME"  # <--- FILL THIS
 # --- Dynamic Loader End ---
 
-# Usage Examples:
-# 1. Log detail
-reporter.log(PROJECT, "Started analysis phase...", level="INFO")
+# First time? Register your project:
+# reporter.register(PROJECT)
 
-# 2. Update Dashboard
-reporter.update_status(PROJECT, "🚧 Analysis In Progress")
+# Then use these to report:
+# reporter.log(PROJECT, "Task completed", level="INFO")
+# reporter.update_status(PROJECT, "🚧 Working")
 ```
+
+### Note for Cloned Projects
+If you cloned this repo for your own use, edit `config.json` to set your own `github_repo` value.

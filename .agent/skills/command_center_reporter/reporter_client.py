@@ -1,13 +1,27 @@
 
 """
-AI Command Center - Advanced Reporter Client (v2)
+AI Command Center - Advanced Reporter Client (v3)
 支援寫入個別專案的 STATUS.md 日誌檔。
+支援從 config.json 讀取設定。
 """
 
 import os
+import json
 from github import Github
 from datetime import datetime
 import pytz # 需要 pip install pytz
+
+def load_config_from_repo(github_token, repo_name):
+    """
+    從 GitHub repo 讀取 config.json
+    """
+    g = Github(github_token)
+    repo = g.get_repo(repo_name)
+    try:
+        config_content = repo.get_contents("config.json")
+        return json.loads(config_content.decoded_content.decode("utf-8"))
+    except:
+        return {"github_repo": repo_name, "timezone": "Asia/Taipei"}
 
 class ProjectReporter:
     def __init__(self, github_token, repo_name):
