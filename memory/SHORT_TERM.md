@@ -13,6 +13,7 @@
 - [x] Leaderboard UI: Rank 1-3 Badges with Glow.
 - [x] PK Page: Fix side-by-side layout.
 - [x] PK Page: Premium Victory Animation (Particles + Text).
+- [x] PK Page: 3D Victory Trophy (Replaced SVG).
 - [ ] Task 5: Auth Cleanup (Remove non-Google providers).
 
 ## 🧠 Short-term Notes
