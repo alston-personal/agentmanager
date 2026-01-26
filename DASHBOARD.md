@@ -15,6 +15,6 @@
 | 🏠 | **AI_Command_Center** | [STATUS](./projects/AI_Command_Center/STATUS.md) | 🟢 Active |
 
 | 🎨 | **Beauty-PK** | https://github.com/alstonhuang/bauty-pk | ✅ Active - UX Polish |
-| 🖥️ | **AssetMaster** | (Local) | 🆕 Registered |
+| ☁️ | **AssetMaster** | (Local) |  Development |
 ## 📝 Scratchpad
 - Quick notes here...
