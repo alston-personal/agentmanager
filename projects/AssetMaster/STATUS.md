@@ -8,6 +8,7 @@
 
 ## 📝 Activity Log (Latest on Top)
 <!-- LOG_START -->
+- `2026-01-26 17:13:35` ℹ️ **INFO**: Designed expanded Ledger Schema to include Split, Merge, Dividends (Cash/Stock), and Deposits/Withdrawals.
 - `2026-01-26 17:10:55` ℹ️ **INFO**: Next.js project structure initialized with TailwindCSS and TypeScript.
 - `2026-01-26 17:10:52` ✅ **INFO**: Project registered in AI Command Center
 <!-- LOG_END -->
