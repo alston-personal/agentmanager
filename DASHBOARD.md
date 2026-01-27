@@ -16,6 +16,6 @@
 
 | 🎨 | **Beauty-PK** | https://github.com/alstonhuang/bauty-pk | ✅ Active - UX Polish |
 | ☁️ | **AssetMaster** | (Local) |  Development (Phase 5) |
-| 📺 | **IfTVStation** | (Local) | 📝 Planning (5%) |
+| ☁️ | **IfTVStation** | (Local) | 🚧 Development (25%) |
 ## 📝 Scratchpad
 - Quick notes here...
