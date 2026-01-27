@@ -8,6 +8,7 @@
 
 ## 📝 Activity Log (Latest on Top)
 <!-- LOG_START -->
+- `2026-01-27 08:23:09` ℹ️ **INFO**: Integrated yahoo-finance2 and created API routes for fetching real-time/delayed stock quotes.
 - `2026-01-26 17:13:35` ℹ️ **INFO**: Designed expanded Ledger Schema to include Split, Merge, Dividends (Cash/Stock), and Deposits/Withdrawals.
 - `2026-01-26 17:10:55` ℹ️ **INFO**: Next.js project structure initialized with TailwindCSS and TypeScript.
 - `2026-01-26 17:10:52` ✅ **INFO**: Project registered in AI Command Center
