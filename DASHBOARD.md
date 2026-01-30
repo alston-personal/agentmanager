@@ -17,5 +17,6 @@
 | 🎨 | **Beauty-PK** | https://github.com/alstonhuang/bauty-pk | ✅ Active - UX Polish |
 | ☁️ | **AssetMaster** | (Local) |  Development (Phase 5) |
 | ☁️ | **IfTVStation** | (Local) | 🚧 Development (25%) |
+| 🖥️ | **Moltbot-Setup-and-Docs** | (Local) | 🆕 Registered |
 ## 📝 Scratchpad
 - Quick notes here...
