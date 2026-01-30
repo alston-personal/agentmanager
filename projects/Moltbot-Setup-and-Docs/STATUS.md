@@ -8,6 +8,7 @@
 
 ## 📝 Activity Log (Latest on Top)
 <!-- LOG_START -->
+- `2026-01-30 14:10:29` ℹ️ **INFO**: 已安裝 shared-agent-skills (Reporter, Memory, Architect)
 - `2026-01-30 14:10:27` ℹ️ **INFO**: 已配置 Gateway systemd 服務並成功啟動
 - `2026-01-30 14:10:26` ℹ️ **INFO**: 已編寫繁體中文說明文件 SETUP_GUIDE_ZH.md
 - `2026-01-30 14:10:24` ℹ️ **INFO**: 已完成 Moltbot 核心架構安裝與編譯 (Node 22, pnpm 10)
