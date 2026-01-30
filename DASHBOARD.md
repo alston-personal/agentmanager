@@ -14,9 +14,7 @@
 | 🖥️ | **Local Report Plugin** | (Local PHP Project) | 🚧 In Progress |
 | 🏠 | **AI_Command_Center** | [STATUS](./projects/AI_Command_Center/STATUS.md) | 🟢 Active |
 
-| 🎨 | **Beauty-PK** | https://github.com/alstonhuang/bauty-pk | ✅ Active - UX Polish |
-| ☁️ | **AssetMaster** | (Local) |  Development (Phase 5) |
-| ☁️ | **IfTVStation** | (Local) | 🚧 Development (25%) |
-| ☁️ | **Moltbot-Setup-and-Docs** | (Local) | ✅ Ready / 🏃 Testing |
-## 📝 Scratchpad
-- Quick notes here...
+| 🌸 | **Beauty-PK** | [GitHub](https://github.com/alstonhuang/bauty-pk) | ✅ Active - UX Polish |
+| 💎 | **AssetMaster** | (Local) | 🚧 Development (Phase 5) |
+| 📺 | **IfTVStation** | (Local) | 🚧 Development (25%) |
+| 🤖 | **Moltbot-Setup-and-Docs** | (Local) | ✅ Ready / ⚡ Testing |
