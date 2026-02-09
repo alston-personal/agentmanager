@@ -8,10 +8,8 @@ Execute these steps to show the current project status:
 
 ## Steps
 
-1. **Ensure Git Identity & Pull latest changes**
-   ```bash
-   git config --global user.email "alston.huang@vivotek.com"
-   git config --global user.name "Alston"
+1. **Pull latest changes from GitHub**
+   ```powershell
    git pull origin main
    ```
 

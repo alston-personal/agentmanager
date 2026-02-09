@@ -1,13 +1,23 @@
-# Logs
-*.log
-*.tmp
-tmp/
+# AI Command Center Git Ignore
 
-# System
-Thumbs.db
-.DS_Store
+# Ignore actual development code
+workspace/
+dev/
 
-# Secrets
+# System files
 .env
-secrets.json
 .gh_token
+*.token
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+temp_cc/
+*.tmp
+*.backup
