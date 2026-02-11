@@ -14,7 +14,7 @@
 | ☁️ | **YouTube API 認證與授權** | [Colab](https://colab.research.google.com/drive/1OgQ4hrbNe3d7D9xCp1dLSjJiGNIJ4PtK) | ❌ 失敗 (client_secret.json) |
 | 🖥️ | **Local Report Plugin** | (Local PHP Project) | 🚧 In Progress |
 | 🏠 | **AI_Command_Center** | [STATUS](./projects/AI_Command_Center/STATUS.md) | 🟢 Active |
-| ☁️ | **Beauty-PK** | [GitHub](https://github.com/alstonhuang/bauty-pk) | ✅ 已完成全站 UX 與性能優化 |
+| ☁️ | **Beauty-PK** | [GitHub](https://github.com/alstonhuang/bauty-pk) | ✅ UX 優化完成，待現有數據分類處理 |
 | 💎 | **AssetMaster** | (Local) | 🚧 Development (Phase 5) |
 | 📺 | **IfTVStation** | (Local) | 🚧 Development (25%) |
 | 🤖 | **Moltbot-Setup-and-Docs** | (Local) | ✅ Ready / ⚡ Testing |
