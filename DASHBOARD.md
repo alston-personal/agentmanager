@@ -3,7 +3,8 @@
 ## 🚀 Navigation
 - [ChatGPT](https://chat.openai.com)
 - [Gemini](https://gemini.google.com)
-- [Projects Folder](./projects)
+- [Metadata Logs](./projects) (Status Tracking)
+- [Code Workspace](./workspace) (Active Development)
 - [Journals](./journals)
 
 ## 🔥 Active Projects & Resources
@@ -23,7 +24,7 @@
 
 | 服務名稱 | 角色定位 | 目前路徑 | 狀態 |
 | :--- | :--- | :--- | :--- |
-| ☁️ | **n8n-live** | [/home/ubuntu/n8n-automation](./projects/n8n-live) | 🟢 Running |
+| ☁️ | **n8n-live** | [/home/ubuntu/n8n-automation](./projects/n8n-live/STATUS.md) | 🟢 Running |
 | **Moltbot Internal** | 系統安全與自律代理 (The Guard) | [/home/ubuntu/moltbot](./projects/moltbot-live) | 🟢 Running |
 
 ## � 專案孵化器 (Project Incubator)
