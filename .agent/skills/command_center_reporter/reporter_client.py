@@ -11,27 +11,59 @@ from github import Github
 from datetime import datetime
 import pytz # 需要 pip install pytz
 
-def load_config_from_repo(github_token, repo_name):
+def resolve_config(github_token, config_repo_name=None):
     """
-    從 GitHub repo 讀取 config.json
+    決策設定檔來源：
+    1. 如有提供 config_repo_name，則從該 Repo 讀取 config.json (Cloud Data Mode)。
+    2. 如果沒有，則嘗試從環境變數讀取 'PRIVATE_DATA_REPO'。
+    3. 如果都沒有，回傳預設空字典。
     """
-    g = Github(github_token)
-    repo = g.get_repo(repo_name)
-    try:
-        config_content = repo.get_contents("config.json")
-        return json.loads(config_content.decoded_content.decode("utf-8"))
-    except:
-        return {"github_repo": repo_name, "timezone": "Asia/Taipei"}
+    repo_to_check = config_repo_name
+    if not repo_to_check:
+        repo_to_check = os.environ.get("PRIVATE_DATA_REPO")
+    
+    # Defaults
+    config = {
+        "timezone": "Asia/Taipei",
+        "private_data_repo": repo_to_check
+    }
+
+    if repo_to_check:
+        try:
+            g = Github(github_token)
+            repo = g.get_repo(repo_to_check)
+            config_content = repo.get_contents("config.json")
+            remote_config = json.loads(config_content.decoded_content.decode("utf-8"))
+            config.update(remote_config)
+            print(f"✅ Loaded config from {repo_to_check}")
+        except Exception as e:
+            print(f"⚠️ Failed to load remote config from {repo_to_check}: {e}. Using defaults.")
+    
+    return config
 
 class ProjectReporter:
-    def __init__(self, github_token, repo_name):
+    def __init__(self, github_token, target_repo_name=None):
+        """
+        初始化 Reporter Client.
+        target_repo_name: 明確指定要寫入數據的 Repo。如果為 None，則嘗試從 Config 或 Envs 自動偵測。
+        """
         self.g = Github(github_token)
-        # Handle "user/repo" or just "repo"
-        if "/" not in repo_name:
-            user = self.g.get_user()
-            self.repo_name = f"{user.login}/{repo_name}"
+        
+        # 1. Resolve Configuration first
+        repo_from_env = os.environ.get("PRIVATE_DATA_REPO") or target_repo_name
+        
+        # 2. Determine target Data Repo
+        if not repo_from_env:
+            raise ValueError("❌ No Data Repository specified! Please set 'PRIVATE_DATA_REPO' environment variable or pass repo name.")
+            
+        if "/" not in repo_from_env:
+             # Handle incomplete names like "my-data-repo" -> "user/my-data-repo"
+             user = self.g.get_user()
+             self.repo_name = f"{user.login}/{repo_from_env}"
         else:
-            self.repo_name = repo_name
+            self.repo_name = repo_from_env
+            
+        print(f"📡 Connecting to Data Repository: {self.repo_name}...")
         self.repo = self.g.get_repo(self.repo_name)
         
         # 設定時區 (Taipei)

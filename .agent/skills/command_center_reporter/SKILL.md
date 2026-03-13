@@ -66,8 +66,8 @@ reporter.update_status("YourProjectName", "🚧 Working")
 
 ---
 
-## 🔄 For /report Command
-When user says `/report`:
+## 🔄 For /cc-report Command (Namespaced)
+When user says `/cc-report` or `/report` (legacy alias):
 1. Auto-summarize your work in this session
 2. Fetch previous STATUS.md to see what was already reported
 3. Report only NEW accomplishments
