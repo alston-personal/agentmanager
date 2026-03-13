@@ -10,13 +10,13 @@
 
 | Type | Project / Resource Name | Link / Path | Status |
 | :---: | :--- | :--- | :--- |
-| ☁ | **Y2Helper** | [Colab](https://colab.research.google.com/drive/1OgQ4hrbNe3d7D9xCp1dLSjJiGNIJ4PtK) | Active |
-| ☁️ | **YouTube API 認證與授權** | [Colab](https://colab.research.google.com/drive/1OgQ4hrbNe3d7D9xCp1dLSjJiGNIJ4PtK) | ❌ 失敗 (client_secret.json) |
-| 🖥️ | **Local Report Plugin** | (Local PHP Project) | 🚧 In Progress |
-| 🏠 | **AI_Command_Center** | [STATUS](./projects/AI_Command_Center/STATUS.md) | 🟢 Active |
-| 🌸 | **Beauty-PK** | [GitHub](https://github.com/alstonhuang/bauty-pk) | ✅ Active - UX Polish |
-| 💎 | **AssetMaster** | (Local) | 🚧 Development (Phase 5) |
-| 📺 | **IfTVStation** | (Local) | 🚧 Development (25%) |
-| 🤖 | **Moltbot-Setup-and-Docs** | (Local) | ✅ Ready / ⚡ Testing |
+| 🏠 | **AI_Command_Center** | [Repo](https://github.com/alstonhuang/AI_Command_Center) | 🟢 Active |
+| 🌸 | **Beauty-PK** | [Repo](https://github.com/alstonhuang/beauty-pk) | ✅ Active - UX Polish |
+| 💎 | **AssetMaster** | [Repo](https://github.com/alstonhuang/AssetMaster) | 🚧 Development (Phase 5) |
+| 📺 | **if-tv-station** | [Repo](https://github.com/alstonhuang/if-tv-station) | 🚧 Development (25%) |
+| 🧰 | **Shared_Agent_Skills** | [Repo](https://github.com/alstonhuang/shared-agent-skills) | 🟢 Pushed |
+| ✍️ | **宙斯寫手 (Zeus Writer)** | [Status](./projects/zeus-writer/STATUS.md) | 🚀 Automation Ready |
+| ☁ | **Y2Helper** | (Moving to Command_Center) | 📦 Pending Sync |
+| 🤖 | **Moltbot-Setup-and-Docs** | (Moving to Command_Center) | 📦 Pending Sync |
 
 ## 📝 Scratchbad
