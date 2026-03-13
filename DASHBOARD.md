@@ -23,7 +23,7 @@
 
 | 服務名稱 | 角色定位 | 目前路徑 | 狀態 |
 | :--- | :--- | :--- | :--- |
-| **n8n-live** | 核心自動化調度器 (The Hands) | [/home/ubuntu/n8n-automation](./projects/n8n-live) | 🟢 Running |
+| ☁️ | **n8n-live** | [/home/ubuntu/n8n-automation](./projects/n8n-live) | 🟢 Running |
 | **Moltbot Internal** | 系統安全與自律代理 (The Guard) | [/home/ubuntu/moltbot](./projects/moltbot-live) | 🟢 Running |
 
 ## � 專案孵化器 (Project Incubator)
