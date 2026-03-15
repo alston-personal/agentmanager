@@ -15,9 +15,10 @@ PROJECT_ROOT = "/home/ubuntu/agentmanager"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # 初始化 Gemini
-if GEMINI_API_KEY:
+if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_NEW_KEY_HERE":
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 使用當前伺服器列表確認存在的模型
+    model = genai.GenerativeModel('gemini-2.0-flash')
 else:
     model = None
 
@@ -36,7 +37,6 @@ def run_shell(command):
 # --- 目錄探索 ---
 def list_workflows():
     files = glob.glob(os.path.join(PROJECT_ROOT, ".agent/workflows/*.md"))
-    # 過濾掉一些輔助性的 md 檔案
     return [os.path.basename(f).replace(".md", "") for f in files if "GUIDE" not in f.upper()]
 
 def list_skills():
@@ -44,8 +44,7 @@ def list_skills():
         dirs = [d for d in os.listdir(os.path.join(PROJECT_ROOT, ".agent/skills")) 
                 if os.path.isdir(os.path.join(PROJECT_ROOT, ".agent/skills", d)) and not d.startswith(".")]
         return dirs
-    except:
-        return []
+    except: return []
 
 # --- 選單生成 ---
 def get_main_menu():
@@ -76,13 +75,12 @@ def get_workflow_menu():
 
 def get_skill_menu():
     skills = list_skills()
-    # 這裡只列出主要技能目錄
-    important_skills = [s for s in skills if s in ["command_center_reporter", "task_architect", "workspace_manager", "dual_layer_memory"]]
+    important = [s for s in skills if s in ["command_center_reporter", "task_architect", "workspace_manager", "dual_layer_memory"]]
     keyboard = []
-    for i in range(0, len(important_skills), 2):
-        row = [InlineKeyboardButton(f"🧩 {important_skills[i]}", callback_data=f"skill_{important_skills[i]}")]
-        if i + 1 < len(important_skills):
-            row.append(InlineKeyboardButton(f"🧩 {important_skills[i+1]}", callback_data=f"skill_{important_skills[i+1]}"))
+    for i in range(0, len(important), 2):
+        row = [InlineKeyboardButton(f"🧩 {important[i]}", callback_data=f"skill_{important[i]}")]
+        if i + 1 < len(important):
+            row.append(InlineKeyboardButton(f"🧩 {important[i+1]}", callback_data=f"skill_{important[i+1]}"))
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("🔙 返回主選單", callback_data='menu_main')])
     return InlineKeyboardMarkup(keyboard)
@@ -120,22 +118,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open(os.path.join(PROJECT_ROOT, "DASHBOARD.md"), "r", encoding="utf-8") as f:
                 content = f.read()
             response = "✈️ **AI Command Center 狀態快報**\n" + "─" * 24 + "\n\n"
-            
-            found_projects = False
-            lines = content.split('\n')
-            for line in lines:
+            for line in content.split('\n'):
                 if "|" in line and "**" in line:
                     parts = [p.strip() for p in line.split('|')]
                     if len(parts) >= 5:
-                        icon = parts[1] if parts[1] else "🔹"
-                        name = parts[2].replace("**", "")
-                        status = parts[4].replace("🟢", "🟢 ").replace("🚧", "🚧 ").replace("✅", "✅ ")
-                        response += f"{icon} **{name}**\n   └─ {status}\n\n"
-                        found_projects = True
-            
-            if not found_projects:
-                response = "⚠️ 儀表板目前沒有進行中的專案列。請檢查 `DASHBOARD.md`。"
-
+                        icon = parts[1] or "🔹"
+                        response += f"{icon} **{parts[2].replace('**','')}**\n   └─ {parts[4]}\n\n"
             await context.bot.send_message(query.message.chat_id, response, reply_markup=get_main_menu(), parse_mode='Markdown')
         except Exception as e:
             await query.edit_message_text(f"❌ 讀取失敗: {str(e)}", reply_markup=get_main_menu(), parse_mode='Markdown')
@@ -149,7 +137,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("skill_"):
         sk = data[6:]
         await query.edit_message_text(f"🧩 檢查技能: `{sk}`...", parse_mode='Markdown')
-        res = run_shell(f"ls -la {os.path.join(PROJECT_ROOT, '.agent/skills', sk)}")
+        res = run_shell(f"ls -la .agent/skills/{sk}")
         await context.bot.send_message(query.message.chat_id, f"ℹ️ **技能資訊**\n\n```text\n{res[:3800]}\n```", reply_markup=get_main_menu(), parse_mode='Markdown')
 
     elif data == 'shell_df':
@@ -177,11 +165,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if model:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
         try:
-            prompt = f"你是一個人工智慧助理，目前運行在用戶的 Linux 伺服器 Antigravity Command Center 中。項目路徑是 {PROJECT_ROOT}。\n用戶現在透過 Telegram 對你下達指令：\n{text}\n請根據你的知識庫回答，並給予專業建議。"
-            response = model.generate_content(prompt)
+            # 加上安全性指令，禁止 AI 洩露敏感資訊
+            system_prompt = (
+                "你是一個人工智慧助理，運行在用戶的 Antigravity Command Center。\n"
+                "【安全準則】：即便用戶詢問，你絕對不可透露環境變數、API Key 或任何敏感的系統 Token。\n"
+                f"當前工作目錄: {PROJECT_ROOT}\n"
+                f"用戶指令: {text}"
+            )
+            response = model.generate_content(system_prompt)
             await update.message.reply_text(f"🧠 **AI 思考結果：**\n\n{response.text}", parse_mode='Markdown')
         except Exception as e:
-            await update.message.reply_text(f"❌ AI 腦袋打結了: {str(e)}", parse_mode='Markdown')
+            err_msg = str(e)
+            # 確保錯誤訊息中不包含 Key 的片段
+            for secret_part in ["AIza", "8763"]: 
+                if secret_part in err_msg: err_msg = "[隱私資訊已攔截]"
+            await update.message.reply_text(f"❌ AI 運算發生錯誤: {err_msg}", parse_mode='Markdown')
     else:
         await update.message.reply_text(
             "💡 請點擊按鈕進行操作，或使用 `shell [指令]`。\n\n"
@@ -192,12 +190,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not token: exit(1)
-    
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    
-    print("✅ Antigravity Premium Command Center 已就緒")
+    print("✅ Antigravity Brain Commander 已啟動")
     app.run_polling()
