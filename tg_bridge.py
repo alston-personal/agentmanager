@@ -2,6 +2,7 @@ import os
 import subprocess
 import logging
 import glob
+import google.generativeai as genai
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CallbackQueryHandler, CommandHandler, filters
 from dotenv import load_dotenv
@@ -11,6 +12,14 @@ load_dotenv()
 # 設定
 AUTHORIZED_USER_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 PROJECT_ROOT = "/home/ubuntu/agentmanager"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# 初始化 Gemini
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    model = None
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -19,10 +28,10 @@ def run_shell(command):
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120, cwd=PROJECT_ROOT)
         output = result.stdout
         if result.stderr:
-            output += f"\nError:\n{result.stderr}"
+            output += f"\nError Output:\n{result.stderr}"
         return output if output.strip() else "(無輸出內容)"
     except Exception as e:
-        return f"執行發生例外: {str(e)}"
+        return f"執行例外: {str(e)}"
 
 # --- 目錄探索 ---
 def list_workflows():
@@ -41,15 +50,16 @@ def list_skills():
 # --- 選單生成 ---
 def get_main_menu():
     keyboard = [
-        [InlineKeyboardButton("📂 專案總覽 (DASHBOARD)", callback_data='menu_projects')],
+        [InlineKeyboardButton("📊 專案總覽 (DASHBOARD)", callback_data='menu_projects')],
         [
             InlineKeyboardButton("⚙️ 工作流 (Workflows)", callback_data='menu_workflows'),
             InlineKeyboardButton("🧰 技能庫 (Skills)", callback_data='menu_skills'),
         ],
         [
-            InlineKeyboardButton("💻 系統資源 (df -h)", callback_data='shell_df'),
-            InlineKeyboardButton("🔄 重啟服務", callback_data='reboot_self'),
-        ]
+            InlineKeyboardButton("🧠 AI 諮詢 (Ask AI)", callback_data='menu_ai'),
+            InlineKeyboardButton("💻 系統資源", callback_data='shell_df'),
+        ],
+        [InlineKeyboardButton("🔄 重啟指揮官", callback_data='reboot_self')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -66,9 +76,9 @@ def get_workflow_menu():
 
 def get_skill_menu():
     skills = list_skills()
-    keyboard = []
     # 這裡只列出主要技能目錄
     important_skills = [s for s in skills if s in ["command_center_reporter", "task_architect", "workspace_manager", "dual_layer_memory"]]
+    keyboard = []
     for i in range(0, len(important_skills), 2):
         row = [InlineKeyboardButton(f"🧩 {important_skills[i]}", callback_data=f"skill_{important_skills[i]}")]
         if i + 1 < len(important_skills):
@@ -81,9 +91,8 @@ def get_skill_menu():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != AUTHORIZED_USER_ID: return
     await update.message.reply_text(
-        "👋 **歡迎來到 Antigravity 遠端指揮中心**\n\n"
-        "這套系統已與您的 **AI Command Center** 深度整合。您可以即時監控所有 Agent 的進度，或從手機遠端調度工作流。\n\n"
-        "請選擇操作類別：",
+        "👋 **Antigravity 遠端指揮中心 (AI-Powered)**\n\n"
+        "系統已連線，您可以輸入文字與 AI 直接對話，或使用下方按鈕執行指令。",
         reply_markup=get_main_menu(),
         parse_mode='Markdown'
     )
@@ -94,38 +103,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == 'menu_main':
-        await query.edit_message_text(
-            "👋 **Antigravity 遠端指揮中心**\n\n請選擇操作類別：",
-            reply_markup=get_main_menu(),
-            parse_mode='Markdown'
-        )
-        return
+        await query.edit_message_text("請選擇操作類別：", reply_markup=get_main_menu(), parse_mode='Markdown')
+    
+    elif data == 'menu_workflows':
+        await query.edit_message_text("⚙️ **可用工作流 (Workflows)**", reply_markup=get_workflow_menu(), parse_mode='Markdown')
+    
+    elif data == 'menu_skills':
+        await query.edit_message_text("🧰 **核心技能庫 (Skills)**", reply_markup=get_skill_menu(), parse_mode='Markdown')
 
-    if data == 'menu_workflows':
-        await query.edit_message_text(
-            "⚙️ **可用工作流 (Workflows)**\n\n這些是您在 `.agent/workflows` 中定義的自動化流程：",
-            reply_markup=get_workflow_menu(),
-            parse_mode='Markdown'
-        )
-        return
+    elif data == 'menu_ai':
+        await query.edit_message_text("🧠 **AI 對話模式已開啟**\n\n您可以直接在此輸入任何需求，例如：\n「幫我彙整目前的磁碟使用狀況」或\n「解釋 OpenClaw 專案是什麼」", parse_mode='Markdown')
 
-    if data == 'menu_skills':
-        await query.edit_message_text(
-            "🧰 **整合技能庫 (Skills)**\n\n以下是目前 AI Center 裝備的核心技能：",
-            reply_markup=get_skill_menu(),
-            parse_mode='Markdown'
-        )
-        return
-
-    if data == 'menu_projects':
-        await query.edit_message_text("📊 **正在掃描儀表板...**")
+    elif data == 'menu_projects':
+        await query.edit_message_text("📊 **讀取儀表板中...**", parse_mode='Markdown')
         try:
             with open(os.path.join(PROJECT_ROOT, "DASHBOARD.md"), "r", encoding="utf-8") as f:
                 content = f.read()
+            response = "✈️ **AI Command Center 狀態快報**\n" + "─" * 24 + "\n\n"
             
-            response = "✈️ **AI Command Center 飛行甲板**\n" + "─" * 24 + "\n\n"
-            
-            # 專門解析表格
             found_projects = False
             lines = content.split('\n')
             for line in lines:
@@ -140,67 +135,57 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if not found_projects:
                 response = "⚠️ 儀表板目前沒有進行中的專案列。請檢查 `DASHBOARD.md`。"
-                
-        except Exception as e:
-            response = f"❌ 儀表板連線失敗: {str(e)}"
-        
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=response,
-            reply_markup=get_main_menu(),
-            parse_mode='Markdown'
-        )
-        return
 
-    # --- 執行行為 ---
-    cmd_to_run = ""
-    action_name = ""
-    
-    if data.startswith("wf_"):
-        wf_name = data[3:]
-        action_name = f"工作流: {wf_name}"
-        await query.edit_message_text(f"⏳ **執行中:** `{wf_name}`...", parse_mode='Markdown')
-        cmd_to_run = f"antigravity run-workflow {wf_name}"
-    
+            await context.bot.send_message(query.message.chat_id, response, reply_markup=get_main_menu(), parse_mode='Markdown')
+        except Exception as e:
+            await query.edit_message_text(f"❌ 讀取失敗: {str(e)}", reply_markup=get_main_menu(), parse_mode='Markdown')
+
+    elif data.startswith("wf_"):
+        wf = data[3:]
+        await query.edit_message_text(f"⏳ 執行: `{wf}`...", parse_mode='Markdown')
+        res = run_shell(f"antigravity run-workflow {wf}")
+        await context.bot.send_message(query.message.chat_id, f"✅ **{wf} 完工**\n\n```text\n{res[:3800]}\n```", reply_markup=get_main_menu(), parse_mode='Markdown')
+
     elif data.startswith("skill_"):
-        skill_name = data[6:]
-        action_name = f"技能檢查: {skill_name}"
-        await query.edit_message_text(f"🔍 **檢索技能資訊:** `{skill_name}`...", parse_mode='Markdown')
-        cmd_to_run = f"ls -la {os.path.join(PROJECT_ROOT, '.agent/skills', skill_name)}"
-    
+        sk = data[6:]
+        await query.edit_message_text(f"🧩 檢查技能: `{sk}`...", parse_mode='Markdown')
+        res = run_shell(f"ls -la {os.path.join(PROJECT_ROOT, '.agent/skills', sk)}")
+        await context.bot.send_message(query.message.chat_id, f"ℹ️ **技能資訊**\n\n```text\n{res[:3800]}\n```", reply_markup=get_main_menu(), parse_mode='Markdown')
+
     elif data == 'shell_df':
-        action_name = "系統資源狀態"
-        cmd_to_run = "df -h"
-        
+        res = run_shell("df -h")
+        await context.bot.send_message(query.message.chat_id, f"💻 **系統資源**\n\n```text\n{res}\n```", reply_markup=get_main_menu(), parse_mode='Markdown')
+
     elif data == 'reboot_self':
-        await query.edit_message_text("🔄 **Bot 指揮官重啟中...**", parse_mode='Markdown')
+        await query.edit_message_text("🔄 指揮官重啟中...", parse_mode='Markdown')
         subprocess.Popen(f"nohup python3 {os.path.join(PROJECT_ROOT, 'tg_bridge.py')} &", shell=True)
         os._exit(0)
 
-    if cmd_to_run:
-        res = run_shell(cmd_to_run)
-        if len(res) > 3800: res = res[:3800] + "\n... (過長截斷)"
-        
-        # 美化輸出排版
-        formatted_res = f"✅ **{action_name} 執行完成**\n" + "─" * 24 + f"\n\n```text\n{res}\n```"
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=formatted_res,
-            reply_markup=get_main_menu(),
-            parse_mode='Markdown'
-        )
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != AUTHORIZED_USER_ID: return
     text = update.message.text
+    
+    # 判斷是否為 Shell 指令
     if text.lower().startswith("shell "):
         cmd = text[6:]
-        await update.message.reply_text(f"💻 **手動執行指令**\n`{cmd}`", parse_mode='Markdown')
+        await update.message.reply_text(f"💻 執行: `{cmd}`", parse_mode='Markdown')
         res = run_shell(cmd)
         await update.message.reply_text(f"```text\n{res[:4000]}\n```", parse_mode='Markdown')
+        return
+
+    # 進入 AI 對話模式
+    if model:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        try:
+            prompt = f"你是一個人工智慧助理，目前運行在用戶的 Linux 伺服器 Antigravity Command Center 中。項目路徑是 {PROJECT_ROOT}。\n用戶現在透過 Telegram 對你下達指令：\n{text}\n請根據你的知識庫回答，並給予專業建議。"
+            response = model.generate_content(prompt)
+            await update.message.reply_text(f"🧠 **AI 思考結果：**\n\n{response.text}", parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ AI 腦袋打結了: {str(e)}", parse_mode='Markdown')
     else:
         await update.message.reply_text(
-            "💡 **提示**\n請點擊下方的圖形化按鈕進行操作。\n您可以輸入 `shell [指令]` 執行任意指令。",
+            "💡 請點擊按鈕進行操作，或使用 `shell [指令]`。\n\n"
+            "若要啟用 AI 諮詢功能，請設定 `GEMINI_API_KEY` 環境變數。",
             reply_markup=get_main_menu(),
             parse_mode='Markdown'
         )
@@ -212,7 +197,7 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     
     print("✅ Antigravity Premium Command Center 已就緒")
     app.run_polling()
