@@ -9,7 +9,6 @@
 
 ## 需要的 secrets
 
-- `N8N_DEPLOY_HOST`
 - `N8N_DEPLOY_USER`
 - `N8N_DEPLOY_SSH_KEY`
 - `N8N_DEPLOY_SSH_PORT`
@@ -18,6 +17,12 @@
 - `TG_BOT_SUNLAKE_CC_TOKEN`
 - `TELEGRAM_CHANNEL_ID`
 - `GEMINI_API_KEY`
+
+`N8N_BASE_URL` 目前也會用來推導 SSH 連線的 host，例如：
+
+- `https://n8n.milkcat.org` -> `n8n.milkcat.org`
+
+所以不需要另外設定 `N8N_DEPLOY_HOST`。
 
 ## 目前行為
 

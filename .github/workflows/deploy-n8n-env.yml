@@ -10,6 +10,7 @@ jobs:
       REMOTE_ENV_PATH: /home/ubuntu/n8n-automation/.env
       REMOTE_RUN_SCRIPT: /home/ubuntu/n8n-automation/run_n8n.sh
       SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,7 +23,17 @@ jobs:
       - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          DEPLOY_HOST="$(python3 - <<'PY'
+from urllib.parse import urlparse
+import os
+print(urlparse(os.environ["N8N_BASE_URL"]).hostname or "")
+PY
+)"
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Failed to derive deploy host from N8N_BASE_URL"
+            exit 1
+          fi
+          ssh-keyscan -p "${SSH_PORT:-22}" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
       - name: Build env file
         env:
@@ -60,11 +71,23 @@ jobs:
 
       - name: Upload env file
         run: |
-          scp -P "${SSH_PORT:-22}" .n8n.env "${{ secrets.N8N_DEPLOY_USER }}@${{ secrets.N8N_DEPLOY_HOST }}:${REMOTE_ENV_PATH}"
+          DEPLOY_HOST="$(python3 - <<'PY'
+from urllib.parse import urlparse
+import os
+print(urlparse(os.environ["N8N_BASE_URL"]).hostname or "")
+PY
+)"
+          scp -P "${SSH_PORT:-22}" .n8n.env "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}:${REMOTE_ENV_PATH}"
 
       - name: Restart n8n
         run: |
-          ssh -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_USER }}@${{ secrets.N8N_DEPLOY_HOST }}" "
+          DEPLOY_HOST="$(python3 - <<'PY'
+from urllib.parse import urlparse
+import os
+print(urlparse(os.environ["N8N_BASE_URL"]).hostname or "")
+PY
+)"
+          ssh -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}" "
             if docker ps -a --format '{{.Names}}' | grep -qx n8n; then
               docker rm -f n8n
             fi
