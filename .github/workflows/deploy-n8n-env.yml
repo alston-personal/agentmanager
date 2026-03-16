@@ -22,7 +22,9 @@ jobs:
 
       - name: Derive deploy host
         run: |
-          DEPLOY_HOST="$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ[\"N8N_BASE_URL\"]).hostname or \"\")')"
+          DEPLOY_HOST="${N8N_BASE_URL#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
           if [ -z "$DEPLOY_HOST" ]; then
             echo "Failed to derive deploy host from N8N_BASE_URL"
             exit 1
