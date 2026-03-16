@@ -1,0 +1,48 @@
+name: Deploy n8n env
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-n8n-env:
+    runs-on: ubuntu-latest
+    env:
+      REMOTE_ENV_PATH: /home/ubuntu/n8n-automation/.env
+      REMOTE_RUN_SCRIPT: /home/ubuntu/n8n-automation/run_n8n.sh
+      SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Build env file
+        run: |
+          cat > .n8n.env <<'EOF'
+          ${{ secrets.N8N_RUNTIME_ENV }}
+          EOF
+
+      - name: Upload env file
+        run: |
+          scp -P "${SSH_PORT:-22}" .n8n.env "${{ secrets.N8N_DEPLOY_USER }}@${{ secrets.N8N_DEPLOY_HOST }}:${REMOTE_ENV_PATH}"
+
+      - name: Restart n8n
+        run: |
+          ssh -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_USER }}@${{ secrets.N8N_DEPLOY_HOST }}" "
+            if docker ps -a --format '{{.Names}}' | grep -qx n8n; then
+              docker rm -f n8n
+            fi
+            bash ${REMOTE_RUN_SCRIPT}
+          "
+
+      - name: Cleanup local temp file
+        if: always()
+        run: rm -f .n8n.env
