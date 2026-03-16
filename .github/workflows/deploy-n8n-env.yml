@@ -25,9 +25,37 @@ jobs:
           ssh-keyscan -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Build env file
+        env:
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+          N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+          TG_BOT_SUNLAKE_CC_TOKEN: ${{ secrets.TG_BOT_SUNLAKE_CC_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          cat > .n8n.env <<'EOF'
-          ${{ secrets.N8N_RUNTIME_ENV }}
+          missing=0
+
+          for key in \
+            N8N_API_KEY \
+            N8N_BASE_URL \
+            TG_BOT_SUNLAKE_CC_TOKEN \
+            TELEGRAM_CHANNEL_ID
+          do
+            if [ -z "${!key}" ]; then
+              echo "Missing secret: $key"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          cat > .n8n.env <<EOF
+          N8N_API_KEY=${N8N_API_KEY}
+          N8N_BASE_URL=${N8N_BASE_URL}
+          TG_BOT_SUNLAKE_CC_TOKEN=${TG_BOT_SUNLAKE_CC_TOKEN}
+          TELEGRAM_CHANNEL_ID=${TELEGRAM_CHANNEL_ID}
+          GEMINI_API_KEY=${GEMINI_API_KEY}
           EOF
 
       - name: Upload env file
