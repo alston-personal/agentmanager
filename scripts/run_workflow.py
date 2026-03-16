@@ -78,6 +78,15 @@ def run_status() -> str:
 
 
 def run_generic(workflow_name: str) -> str:
+    if workflow_name == "snapshot":
+        snapshot_script = os.path.join(PROJECT_ROOT, "scripts", "create_snapshot.py")
+        stream = os.popen(f"AGENT_DATA_ROOT='{AGENT_DATA_ROOT}' python3 '{snapshot_script}'")
+        output = stream.read().strip()
+        code = stream.close()
+        if code is None:
+            return f"Snapshot created: {output}"
+        return f"Snapshot failed: {output or 'unknown error'}"
+
     workflow_paths = [
         os.path.join(WORKFLOWS_DIR, f"{workflow_name}.md"),
         os.path.join(SKILL_WORKFLOWS_DIR, f"{workflow_name}.md"),
