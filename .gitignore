@@ -13,6 +13,13 @@ dev/
 __pycache__/
 *.pyc
 
+# Data-layer mounts and local state
+memory
+STATUS.md
+projects/*
+!projects/.gitignore
+!projects/README.md
+
 # OS
 .DS_Store
 Thumbs.db
