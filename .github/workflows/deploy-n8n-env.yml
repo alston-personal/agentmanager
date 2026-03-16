@@ -20,15 +20,14 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Add server to known_hosts
+      - name: Derive deploy host
         run: |
-          mkdir -p ~/.ssh
           DEPLOY_HOST="$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ[\"N8N_BASE_URL\"]).hostname or \"\")')"
           if [ -z "$DEPLOY_HOST" ]; then
             echo "Failed to derive deploy host from N8N_BASE_URL"
             exit 1
           fi
-          ssh-keyscan -p "${SSH_PORT:-22}" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
 
       - name: Build env file
         env:
@@ -66,13 +65,11 @@ jobs:
 
       - name: Upload env file
         run: |
-          DEPLOY_HOST="$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ[\"N8N_BASE_URL\"]).hostname or \"\")')"
-          scp -P "${SSH_PORT:-22}" .n8n.env "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}:${REMOTE_ENV_PATH}"
+          scp -o StrictHostKeyChecking=accept-new -P "${SSH_PORT:-22}" .n8n.env "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}:${REMOTE_ENV_PATH}"
 
       - name: Restart n8n
         run: |
-          DEPLOY_HOST="$(python3 -c 'from urllib.parse import urlparse; import os; print(urlparse(os.environ[\"N8N_BASE_URL\"]).hostname or \"\")')"
-          ssh -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}" "
+          ssh -o StrictHostKeyChecking=accept-new -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}" "
             if docker ps -a --format '{{.Names}}' | grep -qx n8n; then
               docker rm -f n8n
             fi
