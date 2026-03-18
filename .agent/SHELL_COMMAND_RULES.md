@@ -239,3 +239,8 @@ cp *.md ../backup/
 ---
 
 **⚠️ 此規則對 Antigravity AI 是強制性的。所有 shell 指令都必須使用 Git Bash 語法。**
+
+---
+
+## 🔗 其他重要規則
+請務必同時閱讀並遵守 [Agent Rules](AGENT_RULES.md) 中的執行規範。

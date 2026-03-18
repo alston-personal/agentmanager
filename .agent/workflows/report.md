@@ -7,26 +7,40 @@ description: Report current project status to AI Command Center
 This command makes you **automatically summarize and report** your work to the AI Command Center.
 You DO NOT need the user to tell you what to report - you should figure it out yourself!
 
+## Architecture Guardrail
+
+`/report` belongs to the logic layer, but it must write project state only to the data layer:
+
+- Logic repo: `/home/ubuntu/agentmanager`
+- Data repo: `/home/ubuntu/agent-data`
+
+If the project is missing, call the local registration script first:
+
+```bash
+python3 scripts/register_project.py <project-name> --display-name "Project Name"
+```
+
 ## How It Works
 
 ### 1. Identify Project
 Use the current workspace folder name as the project name.
 
-### 2. Load Token (One-time Setup)
-Check for `.gh_token` file or ask user once and save it.
+### 2. Verify Local Data-Layer Registration
+Check whether the project already exists in:
+
+```bash
+/home/ubuntu/agent-data/projects/<project-name>/STATUS.md
+```
+
+If not, register it through the local script before reporting.
 
 ### 3. Fetch Previous Status (Important!)
-Before reporting, fetch the project's current STATUS.md from GitHub to see:
+Before reporting, read the local data-layer `STATUS.md` to see:
 - What was the last reported status?
 - What were the last few log entries?
 
-```python
-# Fetch current status from Command Center
-try:
-    status_content = r.get_contents(f"projects/{PROJECT}/STATUS.md").decoded_content.decode("utf-8")
-    # Parse to understand what was already reported
-except:
-    status_content = None  # First time - no previous status
+```bash
+cat /home/ubuntu/agent-data/projects/<project-name>/STATUS.md
 ```
 
 ### 4. Auto-Generate Report Content
@@ -47,15 +61,11 @@ except:
 4. Condense into 1-2 sentences
 
 ### 5. Execute Report
-```python
+```bash
 # Auto-register if needed
-reporter.register(PROJECT, project_type="🖥️", link="(Local)")
+python3 scripts/register_project.py <project-name> --display-name "Project Name"
 
-# Log the auto-generated summary
-reporter.log(PROJECT, "YOUR_AUTO_GENERATED_SUMMARY", level="INFO")
-
-# Update status if significant milestone
-reporter.update_status(PROJECT, "🚧 In Progress")  # or ✅ Done, ❌ Blocked
+# Then update data-layer status/logs using the project status file
 ```
 
 ### 6. Confirm to User
@@ -80,6 +90,6 @@ Tell user:
 
 ## ⚠️ IMPORTANT
 - **DO NOT** ask user "what do you want to report" - figure it out yourself!
-- **DO NOT** use git clone - use GitHub API only
-- **DO** read previous STATUS.md to avoid duplicate reports
+- **DO** keep logic in `agentmanager` and status in `agent-data`
+- **DO** read previous `STATUS.md` to avoid duplicate reports
 - **DO** be concise - summarize, don't dump everything
