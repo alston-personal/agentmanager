@@ -30,3 +30,4 @@ temp_cc/
 *.backup
 *.log
 .env
+.secrets/
