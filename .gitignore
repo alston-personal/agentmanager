@@ -20,14 +20,17 @@ projects/*
 !projects/.gitignore
 !projects/README.md
 
-# OS
+# OS & Temp
 .DS_Store
 Thumbs.db
-
-# Temp
 temp_cc/
 *.tmp
-*.backup
 *.log
-.env
 .secrets/
+
+# Backups and Local State
+.agent/backups/
+memory.local-backup-*/
+*.backup
+*.old
+*.swp

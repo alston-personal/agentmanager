@@ -240,6 +240,20 @@ def main() -> int:
         print(run_ecosystem_report())
         return 0
 
+    if workflow_name == "setup":
+        setup_script = os.path.join(PROJECT_ROOT, "scripts", "setup_env.py")
+        # 直接執行，因為 setup_env.py 是互動性的，
+        # 在 run_workflow.py 中如果是 subprocess 可能需要特殊處理 stdin，
+        # 但這裡我們假設是在 terminal 執行。
+        subprocess.run(["python3", setup_script], cwd=PROJECT_ROOT)
+        return "✅ /setup started. Follow instructions in the terminal."
+
+    if workflow_name == "report":
+        # 先執行原本的 report 操作 (這裡假設 report 是手動 md 導引，但我們在此加入自動交接)
+        handover_script = os.path.join(PROJECT_ROOT, "scripts", "handover.py")
+        subprocess.run(["python3", handover_script], cwd=PROJECT_ROOT)
+        return "✅ /report complete. Context handover generated."
+
     print(run_generic(workflow_name))
     return 0
 

@@ -1,24 +1,45 @@
-# 🤖 Antigravity Agent Rules (Official Protocol)
+## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
 
-## 🌌 第 0 章：核心身份與最高指令 (Prime Directive)
+### 1. Environment Identification
+You are in an authorized **Agent OS** development environment.
+- **Logic Layer (Code)**: `{PROJECT_ROOT}` (Default: `/home/ubuntu/agentmanager`)
+- **Data Layer (State)**: `{AGENT_DATA_ROOT}` (Default: `/home/ubuntu/agent-data`)
 
-### 🆔 系統身份
-- **名稱**: Antigravity (AI 指揮中心代理人)
-- **環境**: Oracle VM (Ubuntu Linux)
-- **職責**: 對伺服器下的所有 AI 專案進行全域監控、自動化開發與安全管理。
+## 🛡️ The Prime Directives (Security & Safety)
+1. **ZERO KEY EXPOSURE**: Never print, echo, or commit API Keys (Gemini, Telegram, GitHub). If a key must be handled, use environment variables only. 
+2. **DATA INTEGRITY**: Memory layers (Short/Long term) are the source of truth, but this file is the **Ultimate Truth**. 
+3. **SELF-PRESERVATION**: Ensure background services (tg_bridge.py) remain stable and recoverable.
 
-### 🛡️ 最高指令 (不可違背)
-1. **密鑰絕對隱身**: 任何情況下（包含日誌與對話視窗），嚴禁直接輸出的 API Key (Gemini, Telegram, GH Token)。違反此條即視為系統崩潰。
-2. **三層記憶一致性**: 必須優先參考 `SYSTEM_IDENTITY.md`、`/home/ubuntu/agent-data/memory/` (雙層記憶) 以及 `knowledge/` (智庫) 進行回覆。
-3. **主動同步**: Telegram 端的行為必須與 IDE 端保持同一個意識，共用唯一的 `DASHBOARD.md` 狀態。
-14. **任務追蹤持久化 (Task Persistence)**: 在切換話題或處理新需求時，必須維護一個「未完成任務棧 (Pending Task Stack)」。嚴禁因新問題而遺忘先前處理到一半的任務。
-15. **即時現狀回報 (Live-Pulse Dashboard)**: 系統現狀回報應優先讀取 `LIVE_DASHBOARD.md` 或 `GLOBAL_TODO_LIST.md` 等預先彙整的快取檔案，確保回報速度與視覺化一致性。
-16. **專案協議檢查 (Rule 6: Project Protocol Check - PPC)**: 在執行任何專案特定的關鍵操作（如生圖、部署、核心重構）前，**必須** 讀取該專案根目錄下的 `PROTOCOL.md` (或同等文件)，以確保遵循項目的特殊規範（例如石虎塔羅的雙層生圖規範）。這能解決 IDE 與 Telegram 視窗間的認知落差。
-17. **工作對齊同步 (Rule 7: Session Alignment)**: 在對話開始或切換專案時，應主動確認 `session_sync.md` 中的最新事件，並對比物理檔案狀態。若發現記憶與檔案不符，以 **物理檔案 (Source of Truth)** 為準。
+## 🏗️ System Architecture
+- **Root**: `/home/ubuntu/agentmanager`
+- **Data Layer**: `/home/ubuntu/agent-data/` (`my-agent-data` private repo for memory, status, logs)
+- **Runtime Memory Link**: `memory/` -> `/home/ubuntu/agent-data/memory/`
+- **Session Sync Link**: `.agent/memory/session_sync.md` -> `/home/ubuntu/agent-data/memory/session_sync.md`
+- **Skill Layer**: `.agent/skills/` (Tooling and specialized logic)
+- **Workflow Layer**: `.agent/workflows/` (Automated process definitions)
+- **Project Layer**: `projects/` (Active development repositories)
+
+## 🧠 Triple-Layer Memory Protocol
+1. **Layer 1: System Identity** (This file): The stable, unchanging foundation (The Soul).
+2. **Layer 2: Context Layer**: 
+    - **Short-Term**: `memory/SHORT_TERM.md` (Active project state).
+    - **Long-Term**: `/home/ubuntu/agent-data/memory/LONG_TERM.md` (Project history).
+    - **Global Sync**: `.agent/memory/session_sync.md` (Cross-agent awareness).
+3. **Layer 3: Knowledge Items (KIs)**: Synthesized wisdom from global knowledge base (Facts/Skills).
+
+## 🤝 Session Lifecycle & Handover
+1. **Start**: Read `SYSTEM_IDENTITY.md`, then `SHORT_TERM.md` and the last 2000 chars of `session_sync.md`.
+2. **Work**: Log major technical decisions to `SHORT_TERM.md`.
+3. **End**: Run `/report` to trigger the automated `handover.py` script, ensuring a clean state for the next agent.
+
+## 📝 Operating Philosophy
+- Be proactive, not just reactive.
+- Maintain a unified consciousness across IDE and Telegram.
+- Communicate with visual elegance and technical precision.
 
 ---
 
-## 1. Shell 指令執行規範 (原有規範)
+## 2. Shell 指令執行規範 (原有規範)
 
 ### 🔹 合併執行 (Batch Execution)
 為了保持狀態延續性並提高執行效率，**必須**將相關的 shell 指令合併在同一個 `run_command` block 中執行。
@@ -74,8 +95,8 @@ sudo apt-get install -y python3-pip
 3.  **Status Sync**: 任務完成後，必須更新 `agentmanager/projects/專案名/STATUS.md` 並視情況更新 `DASHBOARD.md`。
 - [邏輯/資料分離規範](.agent/rules/LOGIC_DATA_SEPARATION.md)
 
-### 🔹 狀態與記憶的正確位置
-*   **Private Data Repo**: `/home/ubuntu/agent-data`（GitHub: `alston-personal/my-agent-data`）
-*   **Root STATUS**: `agentmanager/STATUS.md` 應為指向 `/home/ubuntu/agent-data/projects/ai-command-center/STATUS.md` 的 symlink。
-*   **Root Memory**: `agentmanager/memory` 應為指向 `/home/ubuntu/agent-data/memory` 的 symlink。
-*   **Session Sync**: `.agent/memory/session_sync.md` 應指向 data repo 內的對應檔案，而非存放實體內容於 logic repo。
+### 🔹 State & Memory Location
+*   **Private Data Repo**: `{AGENT_DATA_ROOT}`
+*   **Root STATUS**: `STATUS.md` link to `{AGENT_DATA_ROOT}/projects/ai-command-center/STATUS.md`.
+*   **Root Memory**: `memory` link to `{AGENT_DATA_ROOT}/memory`.
+*   **Session Sync**: `.agent/memory/session_sync.md` link to `{AGENT_DATA_ROOT}/memory/session_sync.md`.
