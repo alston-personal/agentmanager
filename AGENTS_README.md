@@ -2,15 +2,23 @@
 
 This is the **Antigravity Agent OS**, a structured environment for human-AI collaboration. To ensure continuity and effectiveness, you **MUST** follow this bootstrap protocol.
 
+## 🎭 Role-Based Sector Entry
+
+As an Agent, you must adapt your mindset based on the directory you are entering. **Check the local sector rules** before beginning work:
+
+| Sector | Path | Role Persona | Governing Rules |
+| :--- | :--- | :--- | :--- |
+| **Ideation** | `ideas/` | Creative Brainstormer | [.agent/rules/CORE_CREATIVE.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_CREATIVE.md) |
+| **Analysis** | `specs/` | Systems Analyst | [.agent/rules/CORE_ANALYTIC.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_ANALYTIC.md) |
+| **Execution** | `projects/` | Software Engineer | [.agent/rules/CORE_ENGINEER.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_ENGINEER.md) |
+
 ## 🚀 Bootstrap Protocol (First Session Entry)
 
-If this is your first time in this environment, or you are switching projects, follow these steps in order:
-
 1.  **IDENTITY**: Read [.agent/AGENT_RULES.md](file:///home/ubuntu/agentmanager/.agent/AGENT_RULES.md).
-2.  **ENTER PROJECT**: 
-    - `cd projects/[project-name]`
-    - Run `python3 ../../scripts/project_overview.py` to get an instant **Mission Brief**.
-    - This aggregates `STATUS.md` and `memory/SHORT_TERM.md` into one page.
+2.  **SECTOR PROTOCOL**: 
+    - Identify current path.
+    - Read corresponding **Sector Rule** from the table above.
+    - If in a project, run `python3 ../../scripts/project_overview.py`.
 3.  **CONTEXT (Global)**: Read the last 2000 chars of [.agent/memory/session_sync.md](file:///home/ubuntu/agentmanager/.agent/memory/session_sync.md).
 4.  **KNOWLEDGE**: If your task requires specialized skills (e.g., tarot generation, deployment), check the Knowledge Base for relevant Knowledge Items (KIs).
 
