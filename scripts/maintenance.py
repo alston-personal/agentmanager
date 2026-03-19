@@ -23,11 +23,8 @@ def main():
     # 1. Reliability Check (Watchdog)
     run_script("watchdog.py")
     
-    # 2. Status Aggregation (Global TODO)
-    run_script("aggregate_tasks.py")
-    
-    # 3. Context Handover (Optional: during active sessions usually handled by /report)
-    # But here we ensure some level of global sync
+    # 3. Memory Compaction (AI GC)
+    run_script("compactor.py")
     
     logger.info("--- Maintenance Complete ---")
 

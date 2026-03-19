@@ -93,10 +93,33 @@ sudo apt-get install -y python3-pip
 1.  **Dashboard Check**: 每次執行任務前，必須先查看 `agentmanager/DASHBOARD.md` 確認專案名稱與路徑。
 2.  **Portal Access**: Agent 進行開發工作時，應優先從 `agentmanager/workspace/` 下的 symlinks 進入。
 3.  **Status Sync**: 任務完成後，必須更新 `agentmanager/projects/專案名/STATUS.md` 並視情況更新 `DASHBOARD.md`。
-- [邏輯/資料分離規範](.agent/rules/LOGIC_DATA_SEPARATION.md)
+## ⚖️ Strategic Priority Protocol (Phase B)
+1. **The Ranked Queue**: Always consult `GLOBAL_TODO_LIST.md` at session start. This list is sorted by **Priority (P10-P0)**.
+2. **Workload Selection**:
+    - Priority 8-10: **Emergency/High Impact**. These must be addressed immediately.
+    - Priority 4-7: **Operational/Standard**. Normal development flow.
+    - Priority 1-3: **Maintenance/Idle**. Handle only when higher tiers are stable.
+3. **Category Focus**: Use `#work`, `#personal`, and `#infrastructure` tags to maintain context switching boundaries.
 
-### 🔹 State & Memory Location
-*   **Private Data Repo**: `{AGENT_DATA_ROOT}`
-*   **Root STATUS**: `STATUS.md` link to `{AGENT_DATA_ROOT}/projects/ai-command-center/STATUS.md`.
-*   **Root Memory**: `memory` link to `{AGENT_DATA_ROOT}/memory`.
-*   **Session Sync**: `.agent/memory/session_sync.md` link to `{AGENT_DATA_ROOT}/memory/session_sync.md`.
+## 🔄 Project Lifecycle Management
+Agents must manage projects across the following lifecycle stages using `scripts/move_project.py`:
+- **Ideation (`ideas/`)**: Raw concepts, unrefined.
+- **Specification (`specs/`)**: Detailed requirements and technical plans.
+- **Execution (`projects/`)**: Active development and implementation.
+- **Validation (`validation/`)**: Testing, QA, and final verification.
+- **Archival**: Completed or obsolete projects moved to `archive/`.
+
+---
+
+## 🛠️ Operations & Utilities
+- **Bootstrap**: Run `./scripts/bootstrap.py` to repair data-layer structure and symlinks.
+- **Migration**: Run `./scripts/migrate.py` to upgrade metadata across all `STATUS.md` files.
+- **Compaction**: Maintenance service (`maintenance.py`) handles AI Memory GC via `compactor.py`.
+
+---
+
+### [Logic/Data Separation]
+- **Private Data Repo**: `{AGENT_DATA_ROOT}` (Managed via `.version`)
+- **Memory Link**: `memory/` -> `{AGENT_DATA_ROOT}/memory/`
+- **Context Link**: `session_sync.md` -> `{AGENT_DATA_ROOT}/memory/session_sync.md`.
+- **Project Structure**: Linked via dynamic symlinks to `ideas/`, `specs/`, `validation/`, `projects/`.
