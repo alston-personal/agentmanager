@@ -1,3 +1,10 @@
+## 👑 0. 最高元規則：工作流優先指令 (Workflow Primacy Directive)
+> [!IMPORTANT]
+> **在執行任何非平凡動作前，Agent 必須先檢查是否有現成的 SOP。**
+> 1. **檢索引導**：檢查 `.agent/workflows/` 或 `.agent/skills/` 中是否存在對應之規範。
+> 2. **合規執行**：若有制定做法，必須嚴格遵循。非必要不得跳過任何既定步驟。
+> 3. **自由發揮**：唯有在確認「完全無現成規範」時，方可啟動自主設計模式，並需在 `SHORT_TERM.md` 紀錄該例外。
+
 ## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
 
 ### 1. Environment Identification

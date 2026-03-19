@@ -20,10 +20,16 @@ def run_script(script_name):
 def main():
     logger.info("--- Starting Periodic Maintenance ---")
     
-    # 1. Reliability Check (Watchdog)
+    # 1. Health & Structure (Bootstrap)
+    run_script("bootstrap.py")
+
+    # 2. Reliability Check (Watchdog)
     run_script("watchdog.py")
     
-    # 3. Memory Compaction (AI GC)
+    # 3. Task Aggregation (Global Todo Hub)
+    run_script("aggregate_tasks.py")
+    
+    # 4. Memory Compaction (AI GC)
     run_script("compactor.py")
     
     logger.info("--- Maintenance Complete ---")
