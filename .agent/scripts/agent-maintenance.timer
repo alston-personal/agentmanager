@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Agent OS Maintenance every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Unit=agent-maintenance.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Agent OS Periodic Maintenance & Watchdog
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/agentmanager
+ExecStart=/usr/bin/python3 /home/ubuntu/agentmanager/scripts/maintenance.py
+StandardOutput=append:/home/ubuntu/agentmanager/maintenance.log
+StandardError=append:/home/ubuntu/agentmanager/maintenance.log
+
+[Install]
+WantedBy=default.target
