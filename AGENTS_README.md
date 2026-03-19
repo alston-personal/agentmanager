@@ -11,6 +11,7 @@ As an Agent, you must adapt your mindset based on the directory you are entering
 | **Ideation** | `ideas/` | Creative Brainstormer | [.agent/rules/CORE_CREATIVE.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_CREATIVE.md) |
 | **Analysis** | `specs/` | Systems Analyst | [.agent/rules/CORE_ANALYTIC.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_ANALYTIC.md) |
 | **Execution** | `projects/` | Software Engineer | [.agent/rules/CORE_ENGINEER.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_ENGINEER.md) |
+| **Validation** | `validation/` | QA Specialist | [.agent/rules/CORE_QA.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_QA.md) |
 
 ## 🚀 Bootstrap Protocol (First Session Entry)
 
