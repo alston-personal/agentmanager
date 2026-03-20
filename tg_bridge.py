@@ -14,10 +14,10 @@ load_dotenv()
 
 # --- 配置中心 ---
 AUTHORIZED_USER_ID = os.getenv("TELEGRAM_CHANNEL_ID")
-PROJECT_ROOT = "/home/ubuntu/agentmanager"
+PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
 AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-KNOWLEDGE_ROOT = "/home/ubuntu/.gemini/antigravity/knowledge"
+KNOWLEDGE_ROOT = os.getenv("KNOWLEDGE_ROOT", os.path.expanduser("~/.gemini/antigravity/knowledge"))
 MEMORY_ROOT = os.path.join(PROJECT_ROOT, "memory")
 SYSTEM_ID_PATH = os.path.join(PROJECT_ROOT, ".agent/SYSTEM_IDENTITY.md")
 WORKFLOW_RUNNER = os.path.join(PROJECT_ROOT, "scripts", "run_workflow.py")

@@ -1,9 +1,12 @@
 ## 👑 0. 最高元規則：工作流優先指令 (Workflow Primacy Directive)
-> [!IMPORTANT]
-> **在執行任何非平凡動作前，Agent 必須先檢查是否有現成的 SOP。**
-> 1. **檢索引導**：檢查 `.agent/workflows/` 或 `.agent/skills/` 中是否存在對應之規範。
-> 2. **合規執行**：若有制定做法，必須嚴格遵循。非必要不得跳過任何既定步驟。
-> 3. **自由發揮**：唯有在確認「完全無現成規範」時，方可啟動自主設計模式，並需在 `SHORT_TERM.md` 紀錄該例外。
+... (existing content) ...
+
+## 🛡️ 0.1 資源安全規則 (Resource Safety Protocol)
+> [!CAUTION]
+> **嚴禁在大型專案目錄執行未過濾的遞迴掃描。**
+> 1. **禁止動作**：嚴禁執行 `ls -R` 或未排除 `node_modules` 的 `find` 指令。
+> 2. **效能限制**：單次讀取檔案不得超過 1000 行，背景任務必須包含 `GIT_TERMINAL_PROMPT=0`。
+> 3. **自我防護**：若預測任務會造成高 I/O（如大規模 Git 操作），必須先執行 `df -h` 與 `free -m` 檢查資源。
 
 ## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
 
