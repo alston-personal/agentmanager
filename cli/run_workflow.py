@@ -35,6 +35,8 @@ import actions.status           # noqa: F401
 import actions.report           # noqa: F401
 import actions.ecosystem_report # noqa: F401
 import actions.snapshot         # noqa: F401
+import actions.task             # noqa: F401
+import actions.register_project # noqa: F401
 
 from agent_core.registry import registry
 
