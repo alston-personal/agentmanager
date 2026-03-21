@@ -3,7 +3,9 @@ import os
 import re
 import sys
 import subprocess
+import requests
 from glob import glob
+from datetime import datetime
 
 
 PROJECT_ROOT = "/home/ubuntu/agentmanager"
@@ -11,6 +13,89 @@ AGENT_DATA_ROOT = os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
 CENTRAL_PROJECTS_DIR = os.path.join(AGENT_DATA_ROOT, "projects")
 WORKFLOWS_DIR = os.path.join(PROJECT_ROOT, ".agent", "workflows")
 SKILL_WORKFLOWS_DIR = os.path.join(PROJECT_ROOT, ".agent", "skills", "workflows")
+ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
+
+
+def load_env():
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE, "r") as f:
+            for line in f:
+                if "=" in line and not line.startswith("#"):
+                    key, val = line.strip().split("=", 1)
+                    os.environ[key] = val.strip('"').strip("'")
+
+
+load_env()
+
+
+def send_telegram_notification(text: str):
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHANNEL_ID")
+    if not token or not chat_id:
+        return
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code != 200:
+            print(f"Telegram API Error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Failed to send Telegram notification: {e}")
+
+
+def parse_memory_brief():
+    try:
+        res = os.popen("free -g | grep Mem").read().strip().split()
+        if len(res) >= 3:
+            total = res[1]
+            used = res[2]
+            return f"{used}G / {total}G"
+    except: pass
+    return "N/A"
+
+
+def format_telegram_report(uptime, memory, synced_count, expected_count, needs_update, project_rows):
+    timestamp = datetime.now().strftime("%H:%M")
+    lines = [
+        f"🌐 *Agent OS: Ecosystem Pulse* ({timestamp})",
+        "──────────────────────────",
+        "🖥️ *System Health*",
+        f" ├─ Uptime: {uptime}",
+        f" ├─ Memory: {memory}",
+        f" └─ Sync: `{synced_count}/{expected_count}` Projects",
+        ""
+    ]
+    
+    if needs_update:
+        lines.append("⚠️ *Needs Attention (Stale)*")
+        for p in needs_update[:5]: # Cap it to avoid long messages
+            lines.append(f" └─ 🔴 *{p}* (Run `/report`)")
+        if len(needs_update) > 5:
+            lines.append(f" └─ ... and {len(needs_update)-5} more")
+        lines.append("")
+        
+    lines.append("📂 *Project Matrix Status*")
+    for row in project_rows:
+        p_name = row['name']
+        p_tag = row['tag']
+        p_updated = row['updated']
+        
+        icon = "🟢" if "Verified" in p_tag else "🔴"
+        # Extract MM/DD or just the end of the string
+        date_part = "N/A"
+        if p_updated and " " in p_updated:
+            date_part = p_updated.split()[0][-5:].replace("-", "/")
+        elif p_updated:
+            date_part = p_updated.strip()[-5:]
+            
+        lines.append(f" {icon} {p_name} ({date_part})")
+        
+    return "\n".join(lines)
 
 
 def normalize_workflow_name(raw_name: str) -> str:
@@ -52,6 +137,44 @@ def extract_latest_log(content: str) -> str:
 
 
 def run_status() -> str:
+    """
+    Generate project status table.
+    Primary source: project.yaml (structured)
+    Fallback: STATUS.md regex (legacy)
+    """
+    import sys
+    import importlib.util
+
+    # Try to use structured yaml source
+    yaml_available = importlib.util.find_spec("yaml") is not None
+    agent_core_path = os.path.join(PROJECT_ROOT, "agent_core")
+
+    if yaml_available and os.path.isdir(agent_core_path):
+        sys.path.insert(0, PROJECT_ROOT)
+        try:
+            from agent_core.project_store import list_projects
+            projects = list_projects()
+            if projects:
+                # Sort by priority desc, then name
+                projects.sort(key=lambda p: (-p.priority, p.name if hasattr(p, 'name') else p.project_id))
+                lines = [
+                    "| Project | Sector | Priority | Phase | Status | Health |",
+                    "| :--- | :---: | :---: | :---: | :--- | :---: |",
+                ]
+                HEALTH_ICON = {"fresh": "🟢", "stale": "🟡", "unknown": "⚪"}
+                for p in projects:
+                    health_icon = HEALTH_ICON.get(p.health.freshness, "⚪")
+                    lines.append(
+                        f"| **{p.project_id}** | {p.sector} | P{p.priority} | {p.phase} | {p.status} | {health_icon} {p.health.freshness} |"
+                    )
+                lines.append("")
+                lines.append(f"_Source: `project.yaml` — {len(projects)} projects_")
+                return "\n".join(lines)
+        except Exception as e:
+            # Fall through to legacy method
+            pass
+
+    # Legacy fallback: regex parse STATUS.md
     status_paths = sorted(glob(os.path.join(CENTRAL_PROJECTS_DIR, "*", "STATUS.md")))
     if not status_paths:
         return f"No project status files found in {CENTRAL_PROJECTS_DIR}."
@@ -75,6 +198,8 @@ def run_status() -> str:
         lines.append(
             f"| {row['project']} | {row['status']} | {row['updated']} | {row['activity']} |"
         )
+    lines.append("")
+    lines.append("_Source: `STATUS.md` (legacy regex — upgrade to project.yaml for structured output)_")
     return "\n".join(lines)
 
 
@@ -176,12 +301,14 @@ def run_ecosystem_report() -> str:
             needs_update.append(project_name)
 
     # 3. 系統指標彙整
-    uptime = os.popen("uptime -p").read().strip()
-    mem = os.popen("free -h | grep Mem").read().strip()
+    uptime_p = os.popen("uptime -p").read().strip().replace("up ", "")
+    mem_full = os.popen("free -h | grep Mem").read().strip()
+    mem_brief = parse_memory_brief()
+    
     report.extend([
         "## 🖥️ System Health & Sync Status",
-        f"- **OS Uptime**: {uptime}",
-        f"- **Memory**: {mem}",
+        f"- **OS Uptime**: {uptime_p}",
+        f"- **Memory**: {mem_full}",
         f"- **Barrier Sync**: `{synced_count}/{expected_count}` Projects Verified",
         ""
     ])
@@ -193,11 +320,12 @@ def run_ecosystem_report() -> str:
             report.append(f"- `[x]` {p} (Run `/report` in this project)")
         report.append("")
 
-    # 4. 專案矩陣彙整 (讀取簽到的鏈結)
+    # 4. 專案矩陣彙整
     report.append("## 📂 Current Project Matrix")
     report.append("| Project | Ver. Status | Last Updated | Latest Activity |")
     report.append("| :--- | :--- | :--- | :--- |")
     
+    tg_rows = []
     for status_path in status_paths:
         p_name = os.path.basename(os.path.dirname(status_path))
         p_content = read_file(status_path)
@@ -207,6 +335,7 @@ def run_ecosystem_report() -> str:
         
         v_tag = "🟢 Verified" if p_name not in needs_update else "🔴 Stale"
         report.append(f"| **{p_name}** | {v_tag} | {p_updated} | {p_activity} |")
+        tg_rows.append({'name': p_name, 'tag': v_tag, 'updated': p_updated})
 
     output = "\n".join(report)
     
@@ -217,6 +346,12 @@ def run_ecosystem_report() -> str:
     file_path = os.path.join(history_dir, f"report_{datetime.now().strftime('%Y%m%d_%H%M')}.md")
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(output)
+    
+    # Send formatted report to Telegram
+    tg_message = format_telegram_report(
+        uptime_p, mem_brief, synced_count, expected_count, needs_update, tg_rows
+    )
+    send_telegram_notification(tg_message)
         
     return output
 

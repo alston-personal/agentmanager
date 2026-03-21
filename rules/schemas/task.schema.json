@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "agentmanager/task.schema.json",
+  "title": "AgentManager Task",
+  "description": "A formal task record with state machine",
+  "type": "object",
+  "required": ["task_id", "project_id", "title", "status", "created_at"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Unique ID, e.g. 'leopardcat-tarot-001'"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "Project this task belongs to"
+    },
+    "title": {
+      "type": "string",
+      "description": "Short task title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Full task description and context"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["todo", "in_progress", "waiting_human", "blocked", "done", "failed", "handed_over", "cancelled"],
+      "description": "Task state machine status"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "sector": {
+      "type": "string",
+      "enum": ["Infrastructure", "Product", "Creative", "Research", "Unknown"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["feature", "bugfix", "refactor", "research", "content", "ops", "review"],
+      "description": "Task type classification"
+    },
+    "assigned_to": {
+      "type": ["string", "null"],
+      "description": "Agent ID currently responsible for this task"
+    },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "task_ids that must be done before this one"
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "reported_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "Active blockers preventing progress"
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Checklist of conditions that define 'done'"
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "description": "Session that last worked on this task"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  }
+}

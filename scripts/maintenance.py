@@ -3,7 +3,7 @@ import os
 import subprocess
 import logging
 
-PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
+PROJECT_ROOT = "/home/ubuntu/agentmanager"
 SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "scripts")
 
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +31,10 @@ def main():
     
     # 4. Memory Compaction (AI GC)
     run_script("compactor.py")
+
+    # 5. Ecosystem Autonomous Reporting
+    logger.info("Running ecosystem-report...")
+    subprocess.run(["python3", "scripts/run_workflow.py", "ecosystem-report"], cwd=PROJECT_ROOT)
     
     logger.info("--- Maintenance Complete ---")
 
