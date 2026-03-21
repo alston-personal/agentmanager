@@ -1,0 +1,89 @@
+---
+# workflows/status.yaml
+name: status
+description: "Show structured status of all projects"
+version: "2.0"
+entrypoint:
+  action: "status"
+  module: "actions.status"
+
+parameters:
+  - name: sector
+    type: string
+    required: false
+    description: "Filter by sector: Infrastructure | Product | Creative | Research"
+
+steps:
+  - id: load_project_yamls
+    description: "Read all agent-data/projects/*/project.yaml"
+    reads: ["agent-data/projects/*/project.yaml"]
+    writes: []
+    failure_policy: fallback   # falls back to STATUS.md regex
+
+  - id: render_table
+    description: "Sort by priority and render markdown table"
+    reads: []
+    writes: []
+    failure_policy: abort
+
+outputs:
+  - table: "Markdown table of all projects"
+
+---
+# workflows/register-project.yaml
+name: register-project
+description: "Register a new project in the agent-data layer and create symlink bridge"
+version: "2.0"
+entrypoint:
+  action: "register_project"
+  module: "actions.register_project"
+
+parameters:
+  - name: project_name
+    type: string
+    required: true
+    description: "Slug identifier for the project (e.g. my-new-project)"
+  - name: display-name
+    type: string
+    required: false
+  - name: sector
+    type: string
+    required: false
+    enum: [Infrastructure, Product, Creative, Research]
+
+steps:
+  - id: validate_slug
+    description: "Ensure project_name is a valid slug (lowercase, hyphens only)"
+    reads: []
+    writes: []
+    failure_policy: abort
+
+  - id: create_project_dir
+    description: "mkdir -p agent-data/projects/{project_name}/"
+    reads: []
+    writes: ["agent-data/projects/{project_name}/"]
+    failure_policy: abort
+
+  - id: write_status_md
+    description: "Generate STATUS.md from template"
+    reads: ["agentmanager/templates/status_template.md"]
+    writes: ["agent-data/projects/{project_name}/STATUS.md"]
+    failure_policy: abort
+
+  - id: write_project_yaml
+    description: "Generate initial project.yaml"
+    reads: []
+    writes: ["agent-data/projects/{project_name}/project.yaml"]
+    failure_policy: abort
+
+  - id: create_symlinks
+    description: "Create STATUS.md → agent-data symlink in logic repo (if applicable)"
+    reads: []
+    writes: ["<project_code_path>/STATUS.md (symlink)"]
+    failure_policy: continue
+
+  - id: emit_event
+    description: "Emit project_registered event"
+    reads: []
+    writes: ["agent-data/projects/{project_name}/events.jsonl"]
+    failure_policy: continue
