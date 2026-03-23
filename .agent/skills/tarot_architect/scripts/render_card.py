@@ -1,0 +1,1 @@
+/home/ubuntu/leopardcat-tarot/generator/render_card.py
