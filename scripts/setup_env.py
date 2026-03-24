@@ -25,7 +25,7 @@ def main():
     tg_token = get_input("Telegram Bot Token")
     tg_id = get_input("Telegram Authorized ID (User/Channel)")
     gemini_key = get_input("Gemini API Key")
-    cc_repo = get_input("Command Center Repo", "alstonhuang/AI_Command_Center")
+    cc_repo = get_input("Data Repository (GitHub Name, e.g., user/my-agent-data)", "alston-personal/my-agent-data")
 
     # Generate content
     content = f"""# 📂 Data Layer Configuration
