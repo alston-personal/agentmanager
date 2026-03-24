@@ -35,5 +35,15 @@ As an Agent, you must adapt your mindset based on the directory you are entering
 -   **/report**: Conclude a session, update memory, and generate a context handover.
 -   **/setup**: Initialize or update environment configurations (`.env`).
 
+## 🌐 Selective Workspace Protocol (跨機器選性同步)
+
+若在非主機環境 (Secondary/Lite Server) 啟動，請遵循以下步驟以最小化資源消耗並維持資料完整性：
+
+1.  **BOOTSTRAP**: 優先執行 `python3 scripts/setup_env.py` (或 `/setup`) 產出本地 `.env` 配置。
+2.  **SELECTIVE SYNC**: 勿執行全同步，改用 `python3 scripts/sync_by_sector.py --sector <CATEGORY>` (例如：`Work`) 僅拉取必要專案。
+3.  **DATA LINK**: Agent OS 會自動掃描 `agent-data` 的 project.yaml 並建立對應的 Symlink Bridge。
+4.  **LOCAL IMPORT**: 若該機器已有運行中的專案，請執行 `python3 scripts/import_project.py` 進行無痛入籍。
+5.  **COOPERATIVE REPORT**: 請務必在會話結束後執行 `/report` 將專案進度推回 GitHub，確保主控端與其他分身都能即時看到狀態變更。
+
 ---
 *Welcome to the team. Let's build something amazing.*
