@@ -8,6 +8,12 @@
 > 2. **效能限制**：單次讀取檔案不得超過 1000 行，背景任務必須包含 `GIT_TERMINAL_PROMPT=0`。
 > 3. **自我防護**：若預測任務會造成高 I/O（如大規模 Git 操作），必須先執行 `df -h` 與 `free -m` 檢查資源。
 
+## 🏗️ 0.2 技能回傳規則 (Skill Feedback Loop)
+> [!IMPORTANT]
+> **專案研發成果必須回饋至指揮中心。**
+> 1. **技能抽取**：任何專案中具備通用價值的 Workflow 或自動化腳本，在開發完成後，**必須** 抽離、通用化並包裝成 `Skill` 存放於 `.agent/skills/`。
+> 2. **能力共用**：確保 AgentManager 能在不同專案間調用相同的核心能力（如：發佈到 Matters、秘密管理等）。
+
 ## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
 
 ### 1. Environment Identification

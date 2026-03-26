@@ -32,6 +32,9 @@ def import_project(source_path, sector="Work"):
     (data_dir / "memory").mkdir(exist_ok=True)
     
     now = datetime.now(timezone.utc).isoformat()
+    # If the user is importing locally, assume this workspace is a target
+    workspace_name = os.environ.get("WORKSPACE_NAME", "oracle-vm")
+
     project_metadata = {
         "project_id": project_id,
         "display_name": project_id.replace("-", " ").title(),
@@ -41,6 +44,7 @@ def import_project(source_path, sector="Work"):
         "repo_url": repo_url,
         "actual_code_path": str(source_path),
         "data_path": str(data_dir),
+        "target_workspaces": [workspace_name],
         "created_at": now,
         "updated_at": now,
         "health": {"freshness": "fresh", "sync_state": "synced"}

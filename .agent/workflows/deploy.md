@@ -16,80 +16,38 @@ description: 一鍵部署專案到生產環境 (支援有/無資料庫)
 - `/deploy dashboard dashboard.milkcat.org` - 部署 Dashboard (無資料庫)
 - `/deploy Beauty-PK beauty.milkcat.org` - 部署 Beauty-PK (有 Supabase)
 
-## 📋 部署步驟
+## 📋 部署流程 (Skill-ified)
 
 // turbo-all
 
-1. **確認專案路徑**
-   - 檢查專案是否存在於 workspace 或 dashboard 目錄
-   - 驗證專案結構 (package.json, next.config.js)
+由 `deployment_manager` 技巧自動化處理所有底層細節。
 
-2. **環境檢查**
-   - 檢查 Node.js 版本 (需要 18+)
-   - 檢查 npm/pnpm 是否安裝
-   - 檢查 Nginx 是否已安裝
-   - 檢查 PM2 是否已安裝 (若無則自動安裝)
-
-3. **專案類型偵測**
-   - 檢查是否有 `prisma/schema.prisma` (Prisma 資料庫)
-   - 檢查是否有 `supabase` 相關設定 (Supabase)
-   - 檢查 `.env.example` 中的資料庫變數
-
-4. **環境變數配置**
-   - 複製 `.env.example` 到 `.env.production`
-   - 提示用戶填寫必要的環境變數
-   - 驗證資料庫連線 (如果有使用資料庫)
-
-5. **安裝依賴**
+1. **啟動自動化部署**
+   執行以下指令：
    ```bash
-   cd /path/to/project
-   npm install --production
+   python3 /home/ubuntu/agentmanager/.agent/skills/deployment_manager/scripts/deploy_core.py \
+     --project [project-name] \
+     --domain [domain]
    ```
 
-6. **資料庫遷移** (僅當偵測到資料庫時)
-   - Prisma: `npx prisma migrate deploy`
-   - Supabase: 檢查連線並顯示遷移指引
-   - 其他: 執行專案特定的遷移腳本
+2. **腳本會自動完成：**
+   - 🔍 **偵測項目類型** (Next.js / Node.js)
+   - 🏗️ **安裝依賴與編譯** (`npm run build`)
+   - ⚙️ **PM2 配置與啟動** (自動生成 ecosystem.config.js)
+   - 🌐 **Nginx 反向代理配置** (自動生成站點配置並 reload)
 
-7. **建置生產版本**
+3. **SSL 證書申請 (手動確認)**
+   若為首次部署，腳本執行完後請確認 SSL：
    ```bash
-   npm run build
+   sudo certbot --nginx -d [domain]
    ```
 
-8. **PM2 配置與啟動**
-   - 建立 PM2 ecosystem 配置檔
-   - 啟動或重啟應用
-   ```bash
-   pm2 start ecosystem.config.js
-   pm2 save
-   ```
+## 🔧 故障排除
 
-9. **Nginx 反向代理配置**
-   - 建立 Nginx 站點配置檔
-   - 配置反向代理到 localhost:3000 (或指定端口)
-   - 啟用站點並重載 Nginx
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/[domain] /etc/nginx/sites-enabled/
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
-
-10. **SSL 證書申請** (Let's Encrypt)
-    ```bash
-    sudo certbot --nginx -d [domain]
-    ```
-
-11. **健康檢查**
-    - 等待 10 秒讓服務啟動
-    - 檢查 PM2 狀態
-    - 測試 HTTP/HTTPS 連線
-    - 驗證 API 端點回應
-
-12. **部署報告**
-    - 顯示部署摘要
-    - 列出訪問 URL
-    - 提供 PM2 管理指令
-    - 記錄到 AI Command Center
+如果部署失敗，檢查：
+1. PM2 日誌: `pm2 logs [project-name]`
+2. Nginx 錯誤: `sudo tail -f /var/log/nginx/error.log`
+3. 腳本輸出訊息。
 
 ## 🔧 配置檔案範本
 
@@ -140,14 +98,6 @@ server {
 - **資料庫**: Supabase 專案不需要自架資料庫，只需要連線資訊
 - **端口衝突**: 如果 3000 已被佔用，會自動使用下一個可用端口
 - **防火牆**: 確保 80 和 443 端口已開放
-
-## 🛠️ 故障排除
-
-如果部署失敗，檢查：
-1. PM2 日誌: `pm2 logs [project-name]`
-2. Nginx 錯誤: `sudo tail -f /var/log/nginx/error.log`
-3. 環境變數: 確認 `.env.production` 配置正確
-4. 端口佔用: `sudo lsof -i :3000`
 
 ## 🔄 更新部署
 

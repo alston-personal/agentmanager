@@ -21,7 +21,15 @@ def main():
 
     # Gather inputs
     agent_data_root = get_input("Data Root Path (e.g., /home/ubuntu/agent-data)", "/home/ubuntu/agent-data")
-    github_token = get_input("GitHub Token")
+    workspace_name = get_input("Workspace Name (e.g., oracle-vm, lite-server)", "oracle-vm")
+
+    print("\n🔐 Secret Management Configuration")
+    secret_backend = get_input("Secret Backend (bitwarden or local)", "local")
+    bw_url = ""
+    if secret_backend == "bitwarden":
+        bw_url = get_input("Bitwarden Server URL (e.g., https://vault.milkcat.org)", "https://vault.milkcat.org")
+
+    github_token = get_input("GitHub Token (PAT)")
     tg_token = get_input("Telegram Bot Token")
     tg_id = get_input("Telegram Authorized ID (User/Channel)")
     gemini_key = get_input("Gemini API Key")
@@ -30,6 +38,11 @@ def main():
     # Generate content
     content = f"""# 📂 Data Layer Configuration
 AGENT_DATA_ROOT={agent_data_root}
+WORKSPACE_NAME={workspace_name}
+
+# 🔐 Secret Management
+SECRET_BACKEND={secret_backend}
+BW_SERVER_URL={bw_url}
 
 # 🔑 Secrets & Tokens
 GITHUB_TOKEN={github_token}
