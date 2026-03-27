@@ -1,1 +1,1 @@
-../Gemini.md
+/home/ubuntu/agent-data/memory/LONG_TERM.md
