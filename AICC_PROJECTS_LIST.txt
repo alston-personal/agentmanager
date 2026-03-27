@@ -1,0 +1,272 @@
+/tmp/AICC_LEGACY/projects/:
+total 48
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 10 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 AI_Command_Center
+drwxrwxr-x  8 ubuntu ubuntu 4096 Mar 27 04:18 AssetMaster
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 Beauty-PK
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 Shared_Agent_Skills
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 Support-Me-Block
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 history-synthesizer
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 history_synthesizer
+lrwxrwxrwx  1 ubuntu ubuntu   20 Mar 27 04:18 moltbot-live -> /home/ubuntu/moltbot
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 n8n-live
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 y2help-web
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 zeus-writer
+
+/tmp/AICC_LEGACY/projects/AI_Command_Center:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu 1435 Mar 27 04:18 STATUS.md
+
+/tmp/AICC_LEGACY/projects/AssetMaster:
+total 368
+drwxrwxr-x  8 ubuntu ubuntu   4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu   4096 Mar 27 04:18 ..
+drwxrwxr-x  3 ubuntu ubuntu   4096 Mar 27 04:18 .agent
+-rw-rw-r--  1 ubuntu ubuntu    480 Mar 27 04:18 .gitignore
+-rw-rw-r--  1 ubuntu ubuntu   1450 Mar 27 04:18 README.md
+-rw-rw-r--  1 ubuntu ubuntu   1259 Mar 27 04:18 SPEC.md
+-rw-rw-r--  1 ubuntu ubuntu   1437 Mar 27 04:18 STATUS.md
+-rw-rw-r--  1 ubuntu ubuntu   1903 Mar 27 04:18 STATUS.md.bak
+-rw-rw-r--  1 ubuntu ubuntu    786 Mar 27 04:18 TASKS.md
+drwxrwxr-x  2 ubuntu ubuntu   4096 Mar 27 04:18 docs
+-rw-rw-r--  1 ubuntu ubuntu    465 Mar 27 04:18 eslint.config.mjs
+-rw-rw-r--  1 ubuntu ubuntu    133 Mar 27 04:18 next.config.ts
+-rw-rw-r--  1 ubuntu ubuntu 294653 Mar 27 04:18 package-lock.json
+-rw-rw-r--  1 ubuntu ubuntu    986 Mar 27 04:18 package.json
+-rw-rw-r--  1 ubuntu ubuntu     94 Mar 27 04:18 postcss.config.mjs
+drwxrwxr-x  2 ubuntu ubuntu   4096 Mar 27 04:18 prisma
+-rw-rw-r--  1 ubuntu ubuntu    137 Mar 27 04:18 prisma.config.ts
+drwxrwxr-x  2 ubuntu ubuntu   4096 Mar 27 04:18 public
+drwxrwxr-x  2 ubuntu ubuntu   4096 Mar 27 04:18 scripts
+drwxrwxr-x  7 ubuntu ubuntu   4096 Mar 27 04:18 src
+-rw-rw-r--  1 ubuntu ubuntu    670 Mar 27 04:18 tsconfig.json
+
+/tmp/AICC_LEGACY/projects/AssetMaster/.agent:
+total 12
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 8 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 skills
+
+/tmp/AICC_LEGACY/projects/AssetMaster/.agent/skills:
+total 12
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 command_center_reporter
+
+/tmp/AICC_LEGACY/projects/AssetMaster/.agent/skills/command_center_reporter:
+total 28
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 1609 Mar 27 04:18 INSTRUCTION_PROMPT.md
+-rw-rw-r-- 1 ubuntu ubuntu 2483 Mar 27 04:18 SKILL.md
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 __pycache__
+-rw-rw-r-- 1 ubuntu ubuntu 7474 Mar 27 04:18 reporter_client.py
+
+/tmp/AICC_LEGACY/projects/AssetMaster/.agent/skills/command_center_reporter/__pycache__:
+total 20
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 8927 Mar 27 04:18 reporter_client.cpython-313.pyc
+
+/tmp/AICC_LEGACY/projects/AssetMaster/docs:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 8 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 4003 Mar 27 04:18 BANK_BALANCE_FEATURE.md
+
+/tmp/AICC_LEGACY/projects/AssetMaster/prisma:
+total 52
+drwxrwxr-x 2 ubuntu ubuntu  4096 Mar 27 04:18 .
+drwxrwxr-x 8 ubuntu ubuntu  4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 40960 Mar 27 04:18 dev.db
+-rw-rw-r-- 1 ubuntu ubuntu  1831 Mar 27 04:18 schema.prisma
+
+/tmp/AICC_LEGACY/projects/AssetMaster/public:
+total 28
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 8 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu  391 Mar 27 04:18 file.svg
+-rw-rw-r-- 1 ubuntu ubuntu 1035 Mar 27 04:18 globe.svg
+-rw-rw-r-- 1 ubuntu ubuntu 1375 Mar 27 04:18 next.svg
+-rw-rw-r-- 1 ubuntu ubuntu  128 Mar 27 04:18 vercel.svg
+-rw-rw-r-- 1 ubuntu ubuntu  385 Mar 27 04:18 window.svg
+
+/tmp/AICC_LEGACY/projects/AssetMaster/scripts:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 8 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu  277 Mar 27 04:18 debug-yahoo.js
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src:
+total 28
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 8 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x 5 ubuntu ubuntu 4096 Mar 27 04:18 app
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 components
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 context
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 lib
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 types
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app:
+total 68
+drwxrwxr-x 5 ubuntu ubuntu  4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu  4096 Mar 27 04:18 ..
+drwxrwxr-x 7 ubuntu ubuntu  4096 Mar 27 04:18 api
+-rw-rw-r-- 1 ubuntu ubuntu 25931 Mar 27 04:18 favicon.ico
+-rw-rw-r-- 1 ubuntu ubuntu  1699 Mar 27 04:18 globals.css
+-rw-rw-r-- 1 ubuntu ubuntu   809 Mar 27 04:18 layout.tsx
+drwxrwxr-x 2 ubuntu ubuntu  4096 Mar 27 04:18 ledger
+-rw-rw-r-- 1 ubuntu ubuntu 11744 Mar 27 04:18 page.tsx
+drwxrwxr-x 2 ubuntu ubuntu  4096 Mar 27 04:18 settings
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api:
+total 28
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 5 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 bank-accounts
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 ledger
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 portfolio
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 prices
+drwxrwxr-x 4 ubuntu ubuntu 4096 Mar 27 04:18 settings
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/bank-accounts:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 3258 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/ledger:
+total 16
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 [id]
+-rw-rw-r-- 1 ubuntu ubuntu 1581 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/ledger/[id]:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 3 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 1557 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/portfolio:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 3427 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/prices:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 1200 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/settings:
+total 20
+drwxrwxr-x 4 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 fee-rules
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 init
+-rw-rw-r-- 1 ubuntu ubuntu 1035 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/settings/fee-rules:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 4 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 2232 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/api/settings/init:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 4 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 1930 Mar 27 04:18 route.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/ledger:
+total 20
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 5 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 8406 Mar 27 04:18 page.tsx
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/app/settings:
+total 24
+drwxrwxr-x 2 ubuntu ubuntu  4096 Mar 27 04:18 .
+drwxrwxr-x 5 ubuntu ubuntu  4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 13591 Mar 27 04:18 page.tsx
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/components:
+total 52
+drwxrwxr-x 2 ubuntu ubuntu  4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu  4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu  9440 Mar 27 04:18 AddTransactionModal.tsx
+-rw-rw-r-- 1 ubuntu ubuntu 12205 Mar 27 04:18 BankAccounts.tsx
+-rw-rw-r-- 1 ubuntu ubuntu 10753 Mar 27 04:18 EditTransactionModal.tsx
+-rw-rw-r-- 1 ubuntu ubuntu  1775 Mar 27 04:18 PortfolioPieChart.tsx
+-rw-rw-r-- 1 ubuntu ubuntu  2589 Mar 27 04:18 PriceCard.tsx
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/context:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 1841 Mar 27 04:18 SettingsContext.tsx
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/lib:
+total 20
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu  598 Mar 27 04:18 db.ts
+-rw-rw-r-- 1 ubuntu ubuntu 3584 Mar 27 04:18 finance.ts
+-rw-rw-r-- 1 ubuntu ubuntu 2236 Mar 27 04:18 utils.ts
+
+/tmp/AICC_LEGACY/projects/AssetMaster/src/types:
+total 12
+drwxrwxr-x 2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 7 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu 1583 Mar 27 04:18 ledger.ts
+
+/tmp/AICC_LEGACY/projects/Beauty-PK:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu 2083 Mar 27 04:18 STATUS.md
+
+/tmp/AICC_LEGACY/projects/Shared_Agent_Skills:
+total 8
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+
+/tmp/AICC_LEGACY/projects/Support-Me-Block:
+total 8
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+
+/tmp/AICC_LEGACY/projects/history-synthesizer:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu  799 Mar 27 04:18 STATUS.md
+
+/tmp/AICC_LEGACY/projects/history_synthesizer:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu  771 Mar 27 04:18 STATUS.md
+
+/tmp/AICC_LEGACY/projects/n8n-live:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu  675 Mar 27 04:18 STATUS.md
+
+/tmp/AICC_LEGACY/projects/y2help-web:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu  732 Mar 27 04:18 STATUS.md
+
+/tmp/AICC_LEGACY/projects/zeus-writer:
+total 12
+drwxrwxr-x  2 ubuntu ubuntu 4096 Mar 27 04:18 .
+drwxrwxr-x 12 ubuntu ubuntu 4096 Mar 27 04:18 ..
+-rw-rw-r--  1 ubuntu ubuntu  978 Mar 27 04:18 STATUS.md

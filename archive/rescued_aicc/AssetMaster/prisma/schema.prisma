@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Transaction {
+  id            String   @id @default(uuid())
+  date          DateTime @default(now())
+  assetType     String   // STOCK, CRYPTO, CASH
+  symbol        String   // e.g., AAPL
+  type          String   // BUY, SELL, DIVIDEND_CASH, DIVIDEND_STOCK, SPLIT, MERGE, DEPOSIT, WITHDRAW
+  quantity      Float
+  price         Float
+  currency      String
+  exchangeRate  Float    @default(1.0)
+  commission    Float    @default(0.0)
+  tax           Float    @default(0.0)
+  totalAmount   Float
+  notes         String?
+  ratio         Float?   // For Splits/Merges
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SystemSetting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+}
+
+model FeeRule {
+  id          String   @id @default(uuid())
+  market      String   // e.g., TW, US, JP, CRYPTO
+  assetType   String   // STOCK, CRYPTO
+  actionType  String   // BUY, SELL, ANY
+  feeRate     Float    @default(0.0)
+  taxRate     Float    @default(0.0)
+  minFee      Float    @default(0.0)
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BankAccount {
+  id          String   @id @default(uuid())
+  accountName String   // e.g., "台幣帳戶", "美元帳戶", "Binance USDT"
+  accountType String   // FIAT, CRYPTO
+  currency    String   // TWD, USD, JPY, USDT, BTC, ETH, etc.
+  balance     Float    @default(0.0)
+  institution String?  // e.g., "台新銀行", "Binance", "Coinbase"
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
