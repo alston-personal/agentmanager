@@ -30,6 +30,7 @@ class ProjectRecord:
     sector: str = "Unknown"           # Infrastructure | Product | Creative | Research
     priority: int = 5                 # 0-10
     tags: list[str] = field(default_factory=list)
+    target_workspaces: list[str] = field(default_factory=list)
     assigned_agents: list[str] = field(default_factory=list)
     repo_url: Optional[str] = None
     health: ProjectHealth = field(default_factory=ProjectHealth)
@@ -57,6 +58,7 @@ class ProjectRecord:
             sector=data.get("sector", "Unknown"),
             priority=int(data.get("priority", 5)),
             tags=data.get("tags") or [],
+            target_workspaces=data.get("target_workspaces") or [],
             assigned_agents=data.get("assigned_agents") or [],
             repo_url=data.get("repo_url"),
             health=health,

@@ -11,13 +11,14 @@ from pathlib import Path
 
 from agent_core.context import RuntimeContext
 from agent_core.registry import registry, ActionResult
-from agent_core.config import CENTRAL_PROJECTS_DIR, TEMPLATES_DIR
-from agent_core.project_store import ProjectRecord, ProjectHealth, save_project
+from agent_core.config import CENTRAL_PROJECTS_DIR
+from agent_core.models import ProjectRecord, ProjectHealth
+from agent_core.project_store import save_project
 from agent_memory.event_store import emit as emit_event
 
 
 @registry.register(
-    "register_project",
+    "register-project",
     description="Register a new project in the agent-data layer",
     aliases=["register", "add-project"],
     requires_project=False,
@@ -45,6 +46,7 @@ def handle_register(ctx: RuntimeContext) -> ActionResult:
     now = datetime.now(timezone.utc).isoformat()
     project = ProjectRecord(
         project_id=slug,
+        display_name=slug,
         phase="idea",
         status="🆕 Registered",
         health=ProjectHealth(freshness="unknown", sync_state="pending_report", last_verified_at=now),

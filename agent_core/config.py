@@ -8,6 +8,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(os.environ.get("AGENTMANAGER_ROOT", "/home/ubuntu/agentmanager"))
 AGENT_DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+WORKSPACE_NAME = os.environ.get("WORKSPACE_NAME", "default-workspace")
 
 # Data layer paths
 CENTRAL_PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
