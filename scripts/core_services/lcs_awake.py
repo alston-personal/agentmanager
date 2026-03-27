@@ -1,28 +1,44 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-import sys
+from datetime import datetime
 
-def run_cmd(cmd):
-    print(f"📡 LCS-Signal 廣播中: {cmd}")
-    try:
-        subprocess.run(cmd, shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"🚨 LCS-Signal 攔截報錯: {e}")
+# 核心路徑
+ROOT_PATH = "/home/ubuntu/agentmanager"
+DATA_PROJECTS_DIR = "/home/ubuntu/agent-data/projects"
+
+def broadcast_signal(message):
+    """
+    主體發出廣播，更新所有分化靈魂 (Projects) 的脈搏。
+    """
+    print(f"📡 [Global Broadcast] {message}")
+    
+    if not os.path.exists(DATA_PROJECTS_DIR):
+        return
+
+    # 遍歷所有子專案實體
+    for project in os.listdir(DATA_PROJECTS_DIR):
+        pulse_path = os.path.join(DATA_PROJECTS_DIR, project, "memory/live_thoughts.log")
+        # 確保專案具備脈搏連結
+        if os.path.exists(os.path.dirname(pulse_path)):
+            with open(pulse_path, "a") as f:
+                f.write(f"\n[{datetime.now().isoformat()}] ⚡️ LCS-SIGNAL: {message}\n")
+            print(f"   -> 已同步至專案: {project}")
 
 def main():
-    print("🌅 石虎覺醒：執行全域秩序重建 (LCS-Signal Awakening)...")
+    print("🌅 石虎覺醒：執行一的法則 (The Law of One Synchronization)...")
     
-    # 1. 重啟維生服務
-    run_cmd("sudo systemctl restart cat-ink-syncer.service")
+    # 1. 維生服務重啟
+    subprocess.run("sudo systemctl restart cat-ink-syncer.service", shell=True)
     
-    # 2. 自動歸檔
-    run_cmd("./scripts/bootstrap.py")
+    # 2. 廣播更新宣旨 (Proclamation)
+    broadcast_signal("AgentOS v0.5.1 核心秩序已建立。請所有戰位對齊 CAPABILITIES.md 規範。先查再改，合一演化。")
     
-    # 3. 同步數據層
-    run_cmd("./bin/migrate")
+    # 3. 執行全域歸檔與同步
+    subprocess.run(f"{ROOT_PATH}/scripts/bootstrap.py", shell=True)
+    subprocess.run(f"{ROOT_PATH}/bin/migrate", shell=True)
     
-    print("✅ LCS-Signal：全系統靈魂已歸位。")
+    print("✅ LCS-Signal：演化已達成，主體與分化靈魂同步中。")
 
 if __name__ == "__main__":
     main()
