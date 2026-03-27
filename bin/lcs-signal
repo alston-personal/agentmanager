@@ -1,0 +1,1 @@
+#!/bin/bash\npython3 /home/ubuntu/agentmanager/scripts/core_services/lcs_awake.py "$@"

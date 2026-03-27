@@ -3,7 +3,7 @@
 > **AI 的自癒運作系統：賦予 AI 代理人永恆的物理記憶與跨工具連動能力。**
 
 [![Status](https://img.shields.io/badge/Status-Operational-brightgreen)](#)
-[![Version](https://img.shields.io/badge/Version-2.0.1-blue)](#)
+[![Version](https://img.shields.io/badge/Version-0.5.1-blue)](#)
 [![License](https://img.shields.io/badge/License-MIT-orange)](#)
 
 ---

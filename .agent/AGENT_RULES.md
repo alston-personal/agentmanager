@@ -14,7 +14,15 @@
 > 1. **技能抽取**：任何專案中具備通用價值的 Workflow 或自動化腳本，在開發完成後，**必須** 抽離、通用化並包裝成 `Skill` 存放於 `.agent/skills/`。
 > 2. **能力共用**：確保 AgentManager 能在不同專案間調用相同的核心能力（如：發佈到 Matters、秘密管理等）。
 
+## 🛡️ 0.3 智慧開發協議 (Intelligent Development Protocol - IDP)
+> [!IMPORTANT]
+> **先查再改，無則建議。**
+> 1. **查閱註冊清冊**：在執行任何功能開發前，**必須** 先讀取 `.agent/CAPABILITIES.md` 與 `bin/`。
+> 2. **禁止重複**：嚴禁建立與現行腳本功能重複的平行指令。
+> 3. **無可用功能之處理**：若該需求具備長期運作價值，Agent 應主動建議新增正式功能並註冊；若是開發中一次性需求，則標註為臨時腳本存放於 `scripts/legacy/`。
+
 ## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
+
 
 ### 1. Environment Identification
 You are in an authorized **Agent OS** development environment.
