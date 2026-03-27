@@ -1,49 +1,34 @@
-# 🤖 Welcome, AI Agent!
+# 🐱 石虎 AgentOS (LeopardCat AgentOS) - 跨代理記憶協議 (LAMP)
 
-This is the **Antigravity Agent OS**, a structured environment for human-AI collaboration. To ensure continuity and effectiveness, you **MUST** follow this bootstrap protocol.
-
-## 🎭 Role-Based Sector Entry
-
-As an Agent, you must adapt your mindset based on the directory you are entering. **Check the local sector rules** before beginning work:
-
-| Sector | Path | Role Persona | Governing Rules |
-| :--- | :--- | :--- | :--- |
-| **Ideation** | `ideas/` | Creative Brainstormer | [.agent/rules/CORE_CREATIVE.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_CREATIVE.md) |
-| **Analysis** | `specs/` | Systems Analyst | [.agent/rules/CORE_ANALYTIC.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_ANALYTIC.md) |
-| **Execution** | `projects/` | Software Engineer | [.agent/rules/CORE_ENGINEER.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_ENGINEER.md) |
-| **Validation** | `validation/` | QA Specialist | [.agent/rules/CORE_QA.md](file:///home/ubuntu/agentmanager/.agent/rules/CORE_QA.md) |
-
-## 🚀 Bootstrap Protocol (First Session Entry)
-
-1.  **IDENTITY**: Read [.agent/AGENT_RULES.md](file:///home/ubuntu/agentmanager/.agent/AGENT_RULES.md).
-2.  **SECTOR PROTOCOL**: 
-    - Identify current path.
-    - Read corresponding **Sector Rule** from the table above.
-    - If in a project, run `python3 ../../scripts/project_overview.py`.
-3.  **CONTEXT (Global)**: Read the last 2000 chars of [.agent/memory/session_sync.md](file:///home/ubuntu/agentmanager/.agent/memory/session_sync.md).
-4.  **KNOWLEDGE**: If your task requires specialized skills (e.g., tarot generation, deployment), check the Knowledge Base for relevant Knowledge Items (KIs).
-
-## 🏗️ Core Principles
-
--   **Logic/Data Separation**: We keep code (Logic) in this repository and state (Data) in a separate `agent-data` repository. 
--   **Triple-Layer Memory**: We use **Identity**, **Context**, and **Knowledge** to maintain a unified consciousness.
--   **Symlink Bridge**: Most project files (STATUS.md, memory/) are symlinks to the data repo. **DO NOT OVERWRITE SYMLINKS WITH PHYSICAL FILES.**
-
-## 🛠️ Essential Tools
-
--   **/status**: View health of all projects.
--   **/report**: Conclude a session, update memory, and generate a context handover.
--   **/setup**: Initialize or update environment configurations (`.env`).
-
-## 🌐 Selective Workspace Protocol (跨機器選性同步)
-
-若在非主機環境 (Secondary/Lite Server) 啟動，請遵循以下步驟以最小化資源消耗並維持資料完整性：
-
-1.  **BOOTSTRAP**: 優先執行 `python3 scripts/setup_env.py` (或 `/setup`) 產出本地 `.env` 配置。
-2.  **SELECTIVE SYNC**: 勿執行全同步，改用 `python3 scripts/sync_by_sector.py --sector <CATEGORY>` (例如：`Work`) 僅拉取必要專案。
-3.  **DATA LINK**: Agent OS 會自動掃描 `agent-data` 的 project.yaml 並建立對應的 Symlink Bridge。
-4.  **LOCAL IMPORT**: 若該機器已有運行中的專案，請執行 `python3 scripts/import_project.py` 進行無痛入籍。
-5.  **COOPERATIVE REPORT**: 請務必在會話結束後執行 `/report` 將專案進度推回 GitHub，確保主控端與其他分身都能即時看到狀態變更。
+## 📖 這是什麼？ (Inter-Agent Memory Layer)
+這份手冊是給所有進入本開發環境的 **AI Agent (Antigravity, Codex, Gemini Code Assistant, Cursor, etc.)** 看的。
+為了避免「Session 遺失」與「跨工具斷層」，本系統強制要求所有 Agent 遵循 **「物理記憶層」** 機制。
 
 ---
-*Welcome to the team. Let's build something amazing.*
+
+## 🚀 Agent 入籍程序 (Onboarding Protocol)
+當你（AI Agent）第一次進入任何專案目錄時，**必須**執行以下動作：
+
+1.  **讀取脈搏 (Read Pulse)**：優先開啟 `.agent/pulse/last_brain_dump.md` 與 `STATUS.md`。那裡有上一個 Agent 留下的「靈魂記憶」，而非僅依賴你的 Chat History。
+2.  **主動回報 (Heartbeat Update)**：在每一輪對話的核心決策完成後，將 **`Thought`** 與 **`Next Steps`** append 到 `.agent/pulse/live_thoughts.log`。
+3.  **結案備份 (Handover Handshake)**：對話結束前，務必執行 `python3 /home/ubuntu/agentmanager/scripts/handover.py` 生成對接手冊。
+
+---
+
+## 📂 記憶目錄結構 (Structure)
+每個專案邏輯層 (Logic Repo) 必須包含：
+*   `.agent/pulse/`
+    *   `last_brain_dump.md`：核心思維與當前難點快照。
+    *   `live_thoughts.log`：[重要] 防止 Session 消失的實時紀錄。
+    *   `context.json`：結構化的任務變數。
+*   `STATUS.md` -> (Link) 指向 Data Layer (真相中心)。
+
+---
+
+## 🚫 禁忌與底線 (The Forbidden Laws)
+*   **禁止覆蓋 `STATUS.md` 軟連結**：它是鏈向 `/home/ubuntu/agent-data` 的唯一通道。
+*   **禁止自作主張簡化腳本**：嚴禁刪除 `scripts/core_services/` 下的監控腳本。
+*   **物理存檔優先**：不要相信對話索引（Index），只相信你寫入磁碟的內容。
+
+---
+*「Agent 會離開，但石虎的記憶會留下來。」*

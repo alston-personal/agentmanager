@@ -1,0 +1,12 @@
+[Unit]
+Description=LeopardCat AgentOS Session Syncer (Operation Cat-Ink)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/ubuntu/agentmanager/scripts/core_services/session_syncer.py
+Restart=always
+User=ubuntu
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
