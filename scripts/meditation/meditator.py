@@ -14,15 +14,25 @@ SESSION_SYNC_FILE = f"{AGENT_DATA_ROOT}/memory/session_sync.md"
 MAINTENANCE_LOG = f"{AGENT_REPO_ROOT}/maintenance.log"
 TG_BRIDGE_LOG = f"{AGENT_REPO_ROOT}/tg_bridge.log"
 
-# Load API Key from .env
+# Load API Key from Data Layer (Secret Manager Integration)
 def get_gemini_api_key():
+    # Attempt to load from the central secret repository as defined in system architecture
+    global_env = Path("/home/ubuntu/agent-data/secrets/global.env")
+    if global_env.exists():
+        with open(global_env, "r") as f:
+            for line in f:
+                if line.startswith("GEMINI_API_KEY="):
+                    return line.split("=")[1].strip()
+    
+    # Fallback to current .env (but check if it's a placeholder)
     env_file = Path(f"{AGENT_REPO_ROOT}/.env")
-    if not env_file.exists():
-        return None
-    with open(env_file, "r") as f:
-        for line in f:
-            if line.startswith("GEMINI_API_KEY="):
-                return line.split("=")[1].strip()
+    if env_file.exists():
+        with open(env_file, "r") as f:
+            for line in f:
+                if line.startswith("GEMINI_API_KEY="):
+                    key = line.split("=")[1].strip()
+                    if "[REDACTED" not in key:
+                        return key
     return None
 
 def run_grep_count(file, pattern):
@@ -45,16 +55,25 @@ def get_last_n_lines(file, n=100):
         return ""
 
 def call_gemini(api_key, system_prompt, user_prompt):
-    # Using the discovery: gemini-2.5-flash is available!
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
-    data = {"contents": [{"parts": [{"text": f"System: {system_prompt}\n\nUser: {user_prompt}"}]}]}
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        return f"Error calling Gemini: {e}\nResponse: {response.text if 'response' in locals() else 'No response'}"
+    # Try models in order of preference based on observed availability
+    # Lite models often have higher free-tier quotas.
+    models = ["gemini-2.0-flash", "gemini-flash-lite-latest", "gemini-3.1-flash-lite-preview"]
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        data = {"contents": [{"role": "user", "parts": [{"text": f"System Instruction: {system_prompt}\n\nTask: {user_prompt}"}]}]}
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            if response.status_code == 429:
+                print(f"⚠️ {model} quota exceeded, trying next...")
+                continue
+            response.raise_for_status()
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            if model == models[-1]: # Last model failed
+                error_msg = f"Error calling Gemini: {e}\nResponse: {response.text if 'response' in locals() else 'No response'}"
+                print(error_msg)
+                return f"⚠️ **SELF-REFLECTION FAILED**: {error_msg}"
 
 def meditate():
     print(f"[{datetime.datetime.now()}] meditation started...")
@@ -68,7 +87,7 @@ def meditate():
         "warning_count": run_grep_count(MAINTENANCE_LOG, "WARNING"),
     }
     
-    # Get last events snippet for context
+    # Get last events snippet for context (Reading global session records)
     events_context = get_last_n_lines(SESSION_SYNC_FILE, 100)
     logs_context = get_last_n_lines(MAINTENANCE_LOG, 50)
     
@@ -80,30 +99,32 @@ def meditate():
     # Gemini Self-Reflection
     api_key = get_gemini_api_key()
     if not api_key:
-        stats["reflection"] = "Missing API Key for self-reflection."
+        stats["reflection"] = "❌ **IDENTITY CRISIS**: Missing real API Key for self-reflection."
         stats["upgrade_proposals"] = []
     else:
         system_prompt = (
-            "You are the AgentManager Meditation Brain. Your role is self-evaluation and system-level introspection. "
+            "You are the AgentManager Meditation Brain. Your role is system-level introspection. "
             "Analyze the provided log statistics and context to find bottlenecks, report stability, and propose logical upgrades to the system architecture."
+            "CRITICAL: Be honest about system degradation or ignored warnings."
         )
         user_prompt = f"""
-Current System Stats:
-- Events Today: {stats['total_session_events']}
+Current System Stats ({stats['date']}):
+- Events Recorded: {stats['total_session_events']}
 - Success Rate: {stats['success_count']} / {stats['success_count'] + stats['failure_count']}
-- Warnings: {stats['warning_count']}
+- Total Warnings: {stats['warning_count']}
 - Top Active Projects: {', '.join(active_projects)}
 
 Recent Log Context:
 {logs_context}
 
 Please provide:
-1. A summary of today's achievements and health.
-2. At least 3 specific observations on system bottlenecks or repeated errors.
-3. 2 architectural evolution proposals (e.g., refactoring suggestions, new prompt rules, or automation improvements).
-Format the response in Markdown suitable for a journal entry.
+1. Achievement/Stability Summary.
+2. 3 Specific Observations of 'Shabby Architecture' or repeated failures.
+3. 2 'AgentOS Reboot' architectural suggestions.
+Format as Markdown journal.
         """
         stats["reflection"] = call_gemini(api_key, system_prompt, user_prompt)
+
 
     # Compile the Report
     report_md = f"""# 🧘‍♂️ AgentManager Daily Meditation - {stats['date']}

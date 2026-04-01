@@ -34,3 +34,4 @@ memory.local-backup-*/
 *.backup
 *.old
 *.swp
+.env.backup_*

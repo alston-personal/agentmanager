@@ -13,10 +13,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- 配置中心 ---
-AUTHORIZED_USER_ID = os.getenv("TELEGRAM_CHANNEL_ID")
+def get_env_secret(key, default=None):
+    val = os.getenv(key, default)
+    if val and "[REDACTED" in val:
+        # Try to find in data layer
+        data_env = Path("/home/ubuntu/agent-data/secrets/global.env")
+        if data_env.exists():
+            with open(data_env, "r") as f:
+                for line in f:
+                    if line.startswith(f"{key}="):
+                        return line.split("=")[1].strip()
+    return val
+
+AUTHORIZED_USER_ID = get_env_secret("TELEGRAM_CHANNEL_ID")
 PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
 AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = get_env_secret("GEMINI_API_KEY")
 KNOWLEDGE_ROOT = os.getenv("KNOWLEDGE_ROOT", os.path.expanduser("~/.gemini/antigravity/knowledge"))
 MEMORY_ROOT = os.path.join(PROJECT_ROOT, "memory")
 SYSTEM_ID_PATH = os.path.join(PROJECT_ROOT, ".agent/SYSTEM_IDENTITY.md")
@@ -478,11 +490,14 @@ async def handle_workflow_command(update: Update, context: ContextTypes.DEFAULT_
     )
 
 if __name__ == '__main__':
-    token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_SUNLAKE_CC_TOKEN")
-    app = ApplicationBuilder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.COMMAND, handle_workflow_command))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    logger.info("Universal Agent with Triple-Layer Memory is online.")
-    app.run_polling()
+    token = get_env_secret("TELEGRAM_BOT_TOKEN") or get_env_secret("TG_BOT_SUNLAKE_CC_TOKEN")
+    if not token or "[REDACTED" in token:
+        logger.error("❌ CRITICAL: No valid Telegram Token found. Bot cannot start.")
+    else:
+        app = ApplicationBuilder().token(token).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CallbackQueryHandler(button_handler))
+        app.add_handler(MessageHandler(filters.COMMAND, handle_workflow_command))
+        app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+        logger.info("Universal Agent with Triple-Layer Memory is online.")
+        app.run_polling()
