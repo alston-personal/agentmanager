@@ -1,37 +1,52 @@
 #!/bin/bash
-# 🛰️ AgentOS Global Reboot Protocol (v0.6.3-ConfigDriven)
+# 🛰️ AgentOS Global Reboot Protocol (v0.6.4-AutoSelfHealing)
 
-# Locate Self
+# 📍 1. Locate Environment
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGIC_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Load Persistence Layer Path from .env
-if [ -f "$LOGIC_ROOT/.env" ]; then
-    export $(grep -v '^#' "$LOGIC_ROOT/.env" | grep "AGENT_DATA_DIR" | xargs)
+# 🧪 2. Config Auditor (Auto-Heal .env)
+if [ ! -f "$LOGIC_ROOT/.env" ]; then
+    echo "⚠️ .env NOT FOUND. Creating from example..."
+    cp "$LOGIC_ROOT/.env.example" "$LOGIC_ROOT/.env"
+else
+    # Audit for missing keys from example
+    while read -r line || [[ -n "$line" ]]; do
+        key=$(echo "$line" | cut -d'=' -f1)
+        if [[ ! -z "$key" && "$key" != \#* ]]; then
+            if ! grep -q "^$key=" "$LOGIC_ROOT/.env"; then
+                echo "🪄 Added missing config key: $key"
+                echo "$line" >> "$LOGIC_ROOT/.env"
+            fi
+        fi
+    done < "$LOGIC_ROOT/.env.example"
 fi
 
-# Final Fallback Resolution
+# 📍 3. Load Persistence Layer Path
+export $(grep -v '^#' "$LOGIC_ROOT/.env" | grep "AGENT_DATA_DIR" | xargs)
 DATA_ROOT="${AGENT_DATA_DIR:-$HOME/agent-data}"
 
 echo "🌅 [Resurrection] Initializing AgentOS..."
-echo "📍 Data Center Defined at: $DATA_ROOT"
+echo "📍 Data Center: $DATA_ROOT"
 
 # Check if data exists
 if [ ! -d "$DATA_ROOT" ]; then
     echo "❌ FATAL: Data Center NOT FOUND at $DATA_ROOT"
+    echo "💡 Please edit .env and set AGENT_DATA_DIR to your real path."
     exit 1
 fi
 
-# Re-link for the current environment
+# 🔗 4. Re-link Bridges (Relative to logic root)
 ln -nfs "$DATA_ROOT/memory" "$LOGIC_ROOT/memory"
 ln -nfs "$DATA_ROOT/logs" "$LOGIC_ROOT/logs"
 ln -nfs "$DATA_ROOT/projects" "$LOGIC_ROOT/projects"
+ln -nfs "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
 
-# Restart core services
+# ⚡ 5. Restart Services
 systemctl --user daemon-reload
 systemctl --user restart tg-commander.service 2>/dev/null || echo "⚠️ Service ignored (Non-server mode)."
 
-echo "🔍 Memory Recall..."
+# 🔍 6. Memory Recall
 $LOGIC_ROOT/scripts/recall_chronicle.py
 
 echo "✅ AgentOS Stable."
