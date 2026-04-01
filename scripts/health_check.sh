@@ -1,38 +1,26 @@
 #!/bin/bash
+# 🏥 AgentOS Global Health Check (v0.6.1-Portable)
 
-# 🧟 AgentOS Health Check & Zombie Prevention Script
-# Version: 1.0.0
-# Description: Checks for logic/data mismatches, broken symlinks, and oversized files.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOGIC_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DATA_ROOT="$(cd "$LOGIC_ROOT/../agent-data" 2>/dev/null && pwd || echo "$HOME/agent-data")"
 
-LOG_FILE="/home/ubuntu/agentmanager/maintenance.log"
-TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+echo "🌡️ [Diagnostic] Checking AgentOS Integrity..."
+echo "📍 Working from: $LOGIC_ROOT"
 
-echo "[$TIMESTAMP] 🔍 Starting Health Check..." >> $LOG_FILE
+# Check Core Symlinks
+items=("memory" "logs" "projects" "ARCHITECTURE.md")
+for item in "\${items[@]}"; do
+    if [ -L "$LOGIC_ROOT/\$item" ]; then
+        echo "✅ Symlink OK: \$item -> $(readlink "$LOGIC_ROOT/\$item")"
+    else
+        echo "❌ Symlink BROKEN: \$item"
+    fi
+done
 
-# 1. Check for real directories in workspace/ (should be symlinks)
-echo "Checking for misplaced logic repos in workspace/..."
-MISPLACED=$(ls -F /home/ubuntu/agentmanager/workspace/ | grep -v "/$" | grep -v "@$")
-REAL_DIRS=$(ls -F /home/ubuntu/agentmanager/workspace/ | grep "/$")
+# Check Services
+echo "⚙️ Checking Services..."
+systemctl --user is-active tg-commander.service || echo "⚠️ tg-commander is NOT running."
+systemctl --user is-active os-pulse.service || echo "⚠️ os-pulse is NOT running."
 
-if [ ! -z "$REAL_DIRS" ]; then
-    echo "⚠️ WARNING: Found real directories in workspace/ which should be symlinks:" >> $LOG_FILE
-    echo "$REAL_DIRS" >> $LOG_FILE
-fi
-
-# 2. Check for broken symlinks
-BROKEN=$(find /home/ubuntu/agentmanager -xtype l)
-if [ ! -z "$BROKEN" ]; then
-    echo "🚨 ERROR: Found broken symlinks:" >> $LOG_FILE
-    echo "$BROKEN" >> $LOG_FILE
-fi
-
-# 3. Check for oversized folders (Watcher Protection)
-# Check node_modules outside of dashboard/ (if any)
-LARGE_REPOS=$(du -sh /home/ubuntu/agentmanager/* | grep 'G' | grep -v 'dashboard')
-if [ ! -z "$LARGE_REPOS" ]; then
-    echo "📊 INFO: Large repositories detected (possible VSCode lag risk):" >> $LOG_FILE
-    echo "$LARGE_REPOS" >> $LOG_FILE
-fi
-
-echo "[$TIMESTAMP] ✅ Health Check Complete." >> $LOG_FILE
-echo "Maintenance complete."
+echo "🏆 Diagnostic Complete."
