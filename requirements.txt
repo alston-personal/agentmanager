@@ -1,0 +1,20 @@
+# 🐍 AgentManager Python Requirements
+# Version: 0.6.2 (Stable Environment)
+
+# --- Core Infrastructure ---
+google-generativeai>=0.8.6
+requests>=2.32.0
+PyYAML>=6.0.0
+python-dotenv>=1.0.0
+watchdog>=6.0.0
+
+# --- Creative & Image Generation (Tarot) ---
+Pillow>=11.0.0
+
+# --- Advanced & Tools ---
+pyyaml_env_tag>=1.1
+google-auth>=2.48.0
+psutil>=6.0.0
+
+# --- Development & Testing ---
+# (Add testing tools here if needed)

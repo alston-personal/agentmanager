@@ -151,7 +151,7 @@ Format as Markdown journal.
         f.write(report_md)
     
     # Update AI Command Center STATUS.md (Self-Reporting)
-    cc_status_file = f"{AGENT_DATA_ROOT}/projects/ai-command-center/STATUS.md"
+    cc_status_file = f"{AGENT_DATA_ROOT}/projects/agentmanager/STATUS.md"
     if os.path.exists(cc_status_file):
         with open(cc_status_file, "r") as f:
             content = f.read()

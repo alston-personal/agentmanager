@@ -76,9 +76,9 @@ function parseActivityLog(content: string): ActivityLogEntry[] {
       const [, timestamp, emoji, levelText, message] = match;
 
       let level: ActivityLogEntry['level'] = 'INFO';
-      if (levelText === 'DONE') level = 'DONE';
+      if (levelText === 'DONE' || levelText === 'SUCCESS') level = 'DONE';
       else if (levelText === 'WARNING') level = 'WARNING';
-      else if (levelText === 'ERROR') level = 'ERROR';
+      else if (levelText === 'ERROR' || levelText === 'FAILURE') level = 'ERROR';
 
       entries.push({
         timestamp,
