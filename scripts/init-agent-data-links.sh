@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="/home/ubuntu/agentmanager"
-AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
+PROJECT_ROOT="${AGENT_PROJECT_ROOT:-$(pwd)}"
+AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-$HOME/agent-data}"
 
 echo "Using AGENT_DATA_ROOT=$AGENT_DATA_ROOT"
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 PROJECT_PATH=$(realpath "$1")
 PROJECT_NAME=$(basename "$PROJECT_PATH")
-CENTER_PATH="/home/ubuntu/agentmanager"
+CENTER_PATH="${AGENT_PROJECT_ROOT:-$(dirname "$(realpath "$0")")/..}"
 
 echo "注入 AI DNA 到專案: $PROJECT_NAME..."
 

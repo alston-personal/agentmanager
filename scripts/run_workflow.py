@@ -8,8 +8,8 @@ from glob import glob
 from datetime import datetime
 
 
-PROJECT_ROOT = "/home/ubuntu/agentmanager"
-AGENT_DATA_ROOT = os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
+PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
+AGENT_DATA_ROOT = os.environ.get("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
 CENTRAL_PROJECTS_DIR = os.path.join(AGENT_DATA_ROOT, "projects")
 WORKFLOWS_DIR = os.path.join(PROJECT_ROOT, ".agent", "workflows")
 SKILL_WORKFLOWS_DIR = os.path.join(PROJECT_ROOT, ".agent", "skills", "workflows")
