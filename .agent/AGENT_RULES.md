@@ -26,8 +26,8 @@
 
 ### 1. Environment Identification
 You are in an authorized **Agent OS** development environment.
-- **Logic Layer (Code)**: `{PROJECT_ROOT}` (Default: `/home/ubuntu/agentmanager`)
-- **Data Layer (State)**: `{AGENT_DATA_ROOT}` (Default: `/home/ubuntu/agent-data`)
+- **Logic Layer (Code)**: `{PROJECT_ROOT}` (Default: `~/agentmanager`)
+- **Data Layer (State)**: `{AGENT_DATA_ROOT}` (Default: `~/agent-data`)
 
 ## 🛡️ The Prime Directives (Security & Safety)
 1. **ZERO KEY EXPOSURE**: Never print, echo, or commit API Keys (Gemini, Telegram, GitHub). If a key must be handled, use environment variables only. 
@@ -35,13 +35,13 @@ You are in an authorized **Agent OS** development environment.
 3. **SELF-PRESERVATION**: Ensure background services (tg_bridge.py) remain stable and recoverable.
 
 ## 🏗️ System Architecture
-- **Root**: `/home/ubuntu/agentmanager`
-- **Data Layer**: `/home/ubuntu/agent-data/` (`my-agent-data` private repo for memory, status, logs)
-- **Runtime Memory Link**: `memory/` -> `/home/ubuntu/agent-data/memory/`
-- **Session Sync Link**: `.agent/memory/session_sync.md` -> `/home/ubuntu/agent-data/memory/session_sync.md`
-- **Skill Layer**: `.agent/skills/` (Tooling and specialized logic)
+- **Root**: `~/agentmanager`
+- **Data Layer**: `~/agent-data/` (`my-agent-data` private repo for memory, status, logs)
+- **Runtime Memory Link**: `memory/` -> `~/agent-data/memory/`
+- **Session Sync Link**: `.agent/memory/session_sync.md` -> `~/agent-data/memory/session_sync.md`
+...
 - **Workflow Layer**: `.agent/workflows/` (Automated process definitions)
-- **Project Layer**: `projects/` (Active development repositories)
+- **Project Status Layer**: `projects_status/` (Active status tracking for projects)
 
 ## 🧠 Triple-Layer Memory Protocol
 1. **Layer 1: System Identity** (This file): The stable, unchanging foundation (The Soul).
@@ -104,9 +104,9 @@ sudo apt-get install -y python3-pip
 為了防止檔案系統混亂與重複路徑，Agent 必須遵守以下架構定義：
 
 ### 🔹 路徑職責分離
-*   **/home/ubuntu/ (實體代碼區)**: 所有專案的真實原始碼夾必須存放在此目錄下。
-*   **agentmanager/workspace/ (工作捷徑區)**: 此目錄僅允許存放指向 `/home/ubuntu/` 實體專案夾的 **Symlinks**。禁止在此建立實體資料夾。
-*   **agentmanager/projects/ (狀態紀錄區)**: 此目錄僅存放專案的 Metadata (如 `STATUS.md`, `TODO.md`)。禁止在此建立指向代碼的 Symlinks。
+*   **~/ (實體代碼區)**: 所有專案的真實原始碼夾必須存放在使用者 Home 目錄下。
+*   **agentmanager/workspace/ (工作捷徑區)**: 此目錄僅允許存放指向實體專案夾的 **Symlinks**。禁止在此建立實體資料夾。
+*   **agentmanager/projects_status/ (狀態紀錄區)**: 此目錄僅存放專案的 Metadata (如 `STATUS.md`, `TODO.md`)，這是指向 `agent-data` 的 Symlinks。
 
 ### 🔹 命名與連結規範
 *   **統一小寫**: 所有專案名稱、資料夾、Symlink 一律使用 **kebab-case (全小寫並用連接號)**。例如：`beauty-pk` 而非 `Beauty-PK`。

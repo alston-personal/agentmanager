@@ -12,6 +12,8 @@ dev/
 # Python
 __pycache__/
 *.pyc
+venv/
+.venv/
 
 # Data-layer mounts and local state
 memory
@@ -19,6 +21,10 @@ STATUS.md
 projects/*
 !projects/.gitignore
 !projects/README.md
+projects_status/
+data/
+bin/
+ollama*
 
 # OS & Temp
 .DS_Store
@@ -35,4 +41,3 @@ memory.local-backup-*/
 *.old
 *.swp
 .env.backup_*
-venv/

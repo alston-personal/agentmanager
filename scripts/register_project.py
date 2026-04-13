@@ -6,11 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
-AGENT_DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+HOME = Path.home()
+PROJECT_ROOT = Path(os.environ.get("AGENTMANAGER_ROOT", HOME / "agentmanager"))
+AGENT_DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", HOME / "agent-data"))
 DATA_PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 DASHBOARD_PATH = AGENT_DATA_ROOT / "DASHBOARD.md"
-LOCAL_PROJECTS_DIR = PROJECT_ROOT / "projects"
+WORKSPACE_ROOT = PROJECT_ROOT / "workspace"
+LOCAL_STATUS_DIR = PROJECT_ROOT / "projects_status"
+PHYSICAL_PROJECTS_ROOT = HOME
 
 
 def utc_now() -> datetime:
@@ -107,10 +110,22 @@ def ensure_dashboard_entry(project_slug: str, display_name: str, status: str, ty
 
 
 def ensure_local_mounts(project_slug: str, status_path: Path):
-    local_project_dir = LOCAL_PROJECTS_DIR / project_slug
-    local_project_dir.mkdir(parents=True, exist_ok=True)
-    local_status = local_project_dir / "STATUS.md"
-    local_memory = local_project_dir / "memory"
+    # 1. Physical Source (The actual code repo)
+    physical_dir = PHYSICAL_PROJECTS_ROOT / project_slug
+    if project_slug != "agentmanager":
+        physical_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 2. Workspace Link (The symlink for developers to access code)
+    workspace_link = WORKSPACE_ROOT / project_slug
+    if not workspace_link.exists() and not workspace_link.is_symlink() and project_slug != "agentmanager":
+        workspace_link.symlink_to(physical_dir)
+
+    # 3. Status Dir (The symlink for status tracking)
+    local_status_dir = LOCAL_STATUS_DIR / project_slug
+    local_status_dir.mkdir(parents=True, exist_ok=True)
+    
+    local_status = local_status_dir / "STATUS.md"
+    local_memory = local_status_dir / "memory"
     data_memory = status_path.parent / "memory"
 
     if local_status.exists() or local_status.is_symlink():
@@ -134,6 +149,7 @@ def register_project(project_name: str, display_name: str | None, status: str, t
         f"Registered project: {pretty_name}",
         f"Slug: {project_slug}",
         f"STATUS: {status_path}",
+        f"Workspace: {WORKSPACE_ROOT / project_slug}",
         f"Dashboard: {DASHBOARD_PATH}",
     ])
 

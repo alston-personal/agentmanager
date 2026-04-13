@@ -50,22 +50,24 @@ cat /home/ubuntu/<project-name>/README.md 2>/dev/null | head -n 30
 ---
 
 ## 📋 可用專案清單
-以下是目前已註冊的所有專案 (位於 /home/ubuntu/agent-data/projects/)：
+以下是目前已註冊的所有專案 (位於 ~/agent-data/projects/)：
 
 | 專案名稱 | 代碼路徑 |
 | :--- | :--- |
-| ai-command-center | /home/ubuntu/agentmanager |
-| asset-master | /home/ubuntu/asset-master |
-| beauty-pk | /home/ubuntu/beauty-pk |
+| ai-command-center | ~/agentmanager |
+| asset-master | ~/asset-master |
+| beauty-pk | ~/beauty-pk |
+| gemma-lab | ~/gemma-lab |
 | groupbuy | (Remote Only) |
-| history-synthesizer | /home/ubuntu/history-synthesizer |
-| if-tv-station | /home/ubuntu/if-tv-station |
-| moltbot | /home/ubuntu/moltbot |
-| n8n-automation | /home/ubuntu/n8n-automation |
-| openclaw | /home/ubuntu/openclaw |
-| privacy-guard | /home/ubuntu/privacy-guard |
-| redmine-issue-helper | /home/ubuntu/redmine-issue-helper |
-| telegram-commander | /home/ubuntu/agentmanager/projects/telegram-commander |
-| y2help-web | /home/ubuntu/y2help-web |
-| y2helper | /home/ubuntu/y2helper |
-| zeus-writer | /home/ubuntu/zeus-writer |
+| history-synthesizer | ~/history-synthesizer |
+| if-tv-station | ~/if-tv-station |
+| leopardcat-tarot | ~/leopardcat-tarot |
+| moltbot | ~/moltbot |
+| n8n-automation | ~/n8n-automation |
+| openclaw | ~/openclaw |
+| privacy-guard | ~/privacy-guard |
+| redmine-issue-helper | ~/redmine-issue-helper |
+| telegram-commander | ~/workspace/telegram-commander |
+| y2help-web | ~/y2help-web |
+| y2helper | ~/y2helper |
+| zeus-writer | ~/zeus-writer |

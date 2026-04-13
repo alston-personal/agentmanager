@@ -7,7 +7,7 @@ description: Show current status of all AI projects in the Command Center
 
 ## 重要：資料來源
 所有狀態數據必須從 **中央資料庫** (`/home/ubuntu/agent-data/projects/`) 讀取。
-**不是** 從 `agentmanager/projects/` 讀取。
+**不是** 從 `agentmanager/projects_status/` 讀取。
 
 ## Steps
 
