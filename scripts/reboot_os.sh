@@ -23,7 +23,9 @@ else
 fi
 
 # 📍 3. Load Persistence Layer Path
-export $(grep -v '^#' "$LOGIC_ROOT/.env" | grep "AGENT_DATA_DIR" | xargs)
+set -a
+source "$LOGIC_ROOT/.env"
+set +a
 DATA_ROOT="${AGENT_DATA_DIR:-$HOME/agent-data}"
 
 echo "🌅 [Resurrection] Initializing AgentOS..."
