@@ -72,14 +72,31 @@ export default function Home() {
     <main style={{ minHeight: '100vh', padding: 'var(--spacing-2xl) 0' }}>
       <div className="container">
         {/* Header */}
-        <header style={{ marginBottom: 'var(--spacing-2xl)', textAlign: 'center' }}>
-          <h1 className="gradient-text animate-fade-in" style={{ fontSize: '3rem', fontWeight: 800, marginBottom: 'var(--spacing-md)' }}>
-            ✈️ AI Command Center
-          </h1>
-          <p style={{ fontSize: '1.125rem', color: 'var(--color-text-secondary)' }}>
-            Flight Deck - Mission Control Dashboard
-          </p>
-        </header>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-2xl)' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)', justifyContent: 'center', marginBottom: 'var(--spacing-xs)' }}>
+              <span style={{ fontSize: '2.5rem' }}>✈️</span>
+              <h1 className="gradient-text" style={{ fontSize: '3rem', fontWeight: 900, textAlign: 'center' }}>
+                AI Command Center
+              </h1>
+            </div>
+            <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '1rem' }}>
+              Flight Deck - Mission Control Dashboard
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => router.push('/knowledge')}
+              style={{ padding: '0.75rem 1.5rem', borderRadius: '2rem', display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', border: 'none', boxShadow: '0 4px 15px rgba(168, 85, 247, 0.4)' }}
+            >
+              🧠 Knowledge Vault
+            </button>
+            <button className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', borderRadius: '2rem', display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }}>
+              🚀 Start Session
+            </button>
+          </div>
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-4 animate-fade-in" style={{ marginBottom: 'var(--spacing-2xl)' }}>
@@ -129,9 +146,6 @@ export default function Home() {
               <option value="Complete">✅ Complete</option>
               <option value="Testing">⚡ Testing</option>
             </select>
-            <button className="btn btn-primary" onClick={() => router.push('/workflows')}>
-              ⚡ Workflows
-            </button>
           </div>
         </div>
 

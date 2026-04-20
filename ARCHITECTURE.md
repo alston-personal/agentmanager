@@ -1,1 +1,1 @@
-../agent-data/ARCHITECTURE.md
+/home/ubuntu/agent-data/ARCHITECTURE.md
