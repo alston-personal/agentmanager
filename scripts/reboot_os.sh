@@ -44,6 +44,17 @@ ln -nfs "$DATA_ROOT/logs" "$LOGIC_ROOT/logs"
 ln -nfs "$DATA_ROOT/projects" "$LOGIC_ROOT/projects"
 ln -nfs "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
 
+# 🧠 4b. Re-link Knowledge Bridge (Two-layer chain)
+# Layer 1: agent-data/knowledge → antigravity/knowledge (IDE Knowledge Base)
+ANTIGRAVITY_DIR="$HOME/.gemini/antigravity"
+if [ -d "$ANTIGRAVITY_DIR" ]; then
+    ln -nfs "$DATA_ROOT/knowledge" "$ANTIGRAVITY_DIR/knowledge"
+    echo "🔗 Knowledge bridge restored: $ANTIGRAVITY_DIR/knowledge → $DATA_ROOT/knowledge"
+fi
+# Layer 2: agentmanager/knowledge → antigravity/knowledge
+ln -nfs "$ANTIGRAVITY_DIR/knowledge" "$LOGIC_ROOT/knowledge"
+echo "🔗 Knowledge bridge restored: $LOGIC_ROOT/knowledge → $ANTIGRAVITY_DIR/knowledge"
+
 # ⚡ 5. Restart Services
 systemctl --user daemon-reload
 if [ "$AGENT_MODE" == "CORE" ]; then
