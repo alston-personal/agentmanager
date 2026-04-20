@@ -7,11 +7,31 @@ from datetime import datetime, timezone
 
 # Load environment variables
 AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
+AGENT_MODE = os.getenv("AGENT_MODE", "CLIENT")
 SYNC_LOG_PATH = os.path.join(AGENT_DATA_ROOT, "memory", "session_sync.md")
 N8N_URL = os.getenv("N8N_URL")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Watchdog")
+
+if AGENT_MODE != "CORE":
+    # On non-core machines, watchdog should be silent or limited
+    # But for now, we just exit to prevent fighting over services
+    print(f"Watchdog: AGENT_MODE is {AGENT_MODE}. Skipping core service management.")
+    import sys
+    sys.exit(0)
+
+def auto_pull_logic():
+    """CORE 機器自動同步邏輯層 (agentmanager) 代碼"""
+    try:
+        project_root = os.getenv("AGENT_PROJECT_ROOT", "/home/ubuntu/agentmanager")
+        os.chdir(project_root)
+        # 只有在 Git 目錄下才執行
+        if os.path.exists(".git"):
+            logger.info("📡 [Sync] Core Pulling latest logic...")
+            subprocess.run(["git", "pull", "--rebase"], capture_output=True)
+    except Exception as e:
+        logger.error(f"Auto-pull failed: {e}")
 
 def log_to_sync(message: str):
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -37,30 +57,72 @@ def restart_systemd_user(service_name: str):
 def check_http(url: str) -> bool:
     if not url: return True # Skip if no URL
     try:
+        import requests
         response = requests.get(url, timeout=5)
         return response.status_code == 200
     except Exception as e:
         logger.error(f"HTTP check failed for {url}: {e}")
         return False
 
+def check_docker_container(container_name: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["sudo", "docker", "inspect", "-f", "{{.State.Running}}", container_name],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip() == "true"
+    except Exception as e:
+        logger.error(f"Failed to check docker container {container_name}: {e}")
+        return False
+
+def restart_docker_container(container_name: str):
+    logger.warning(f"Attempting to restart docker container {container_name}...")
+    subprocess.run(["sudo", "docker", "start", container_name])
+    log_to_sync(f"Docker container `{container_name}` was down. Attempted start.")
+
+def verify_python_deps():
+    # Simple check for critical telegram lib
+    try:
+        import telegram
+        return True
+    except ImportError:
+        logger.error("❌ Critical dependency 'telegram' missing!")
+        return False
+
 def main():
-    # 這裡未來應從 SERVICES.md 解析，但目前先硬編碼核心邏輯
+    # 📡 自動同步代碼 (只在 CORE 模式)
+    auto_pull_logic()
+
+    # 核心 Systemd 服務
     core_services = ["tg-commander.service", "moltbot-gateway.service"]
     
     for svc in core_services:
-        if not check_systemd_user(svc):
+        is_active = check_systemd_user(svc)
+        if not is_active:
+            # Special case: check if it's missing dependencies
+            if svc == "tg-commander.service" and not verify_python_deps():
+                logger.warning("Attempting to repair dependencies for tg-commander...")
+                subprocess.run(["/home/ubuntu/agentmanager/.venv/bin/pip", "install", "-r", "/home/ubuntu/agentmanager/requirements.txt"])
+            
             restart_systemd_user(svc)
         else:
             logger.info(f"✅ Core service {svc} is active.")
 
-    # Optional n8n check
+    # Docker 容器狀態
+    if not check_docker_container("n8n"):
+        logger.error("❌ n8n container is NOT running.")
+        restart_docker_container("n8n")
+    else:
+        logger.info("✅ n8n container is running.")
+
+    # HTTP 健康檢查
     if N8N_URL:
         health_url = f"{N8N_URL.rstrip('/')}/healthz"
         if not check_http(health_url):
-            logger.error(f"❌ n8n is unreachable @ {health_url}")
-            log_to_sync(f"Optional plugin `n8n` is down or unreachable at `{health_url}`.")
+            logger.error(f"❌ n8n API is unreachable @ {health_url}")
+            log_to_sync(f"n8n API is unreachable at `{health_url}`. Service might be starting or misconfigured.")
         else:
-            logger.info("✅ n8n plugin is healthy.")
+            logger.info("✅ n8n API is healthy.")
 
 if __name__ == "__main__":
     main()

@@ -44,7 +44,12 @@ ln -nfs "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
 
 # ⚡ 5. Restart Services
 systemctl --user daemon-reload
-systemctl --user restart tg-commander.service 2>/dev/null || echo "⚠️ Service ignored (Non-server mode)."
+if [ "$AGENT_MODE" == "CORE" ]; then
+    echo "⚡ [Core Mode] Restarting command bridge..."
+    systemctl --user restart tg-commander.service 2>/dev/null || echo "⚠️ Service ignored (Non-server mode)."
+else
+    echo "🕶️ [Client Mode] Skipping service restart."
+fi
 
 # 🔍 6. Memory Recall
 $LOGIC_ROOT/scripts/recall_chronicle.py
