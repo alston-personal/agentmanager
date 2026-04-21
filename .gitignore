@@ -8,6 +8,7 @@ dev/
 .env
 .gh_token
 *.token
+.codex
 
 # Python
 __pycache__/
