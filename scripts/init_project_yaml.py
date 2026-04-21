@@ -29,6 +29,9 @@ CATEGORY_TO_SECTOR = {
     "product": "Product",
     "infrastructure": "Infrastructure",
     "research": "Research",
+    "management": "Management",
+    "general": "General",
+    "work": "Work",
 }
 
 
@@ -90,7 +93,7 @@ def build_project_yaml(project_slug: str, status_path: Path) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     priority = fm.get("priority", 5)
     category = fm.get("category", "unknown")
-    sector = CATEGORY_TO_SECTOR.get(str(category).lower(), "Unknown")
+    sector = CATEGORY_TO_SECTOR.get(str(category).lower(), "General")
 
     last_status = extract_field(content, "Last Status") or "🆕 Registered"
     summary = extract_summary(content)
@@ -113,8 +116,8 @@ def build_project_yaml(project_slug: str, status_path: Path) -> dict:
         "assigned_agents": [],
         "repo_url": None,
         "health": {
-            "freshness": "unknown",
-            "sync_state": "pending_report",
+            "freshness": "fresh",
+            "sync_state": "status_md_import",
             "last_verified_at": now,
         },
         "created_at": now,
