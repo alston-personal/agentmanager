@@ -4,9 +4,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
-AGENT_DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
-MEMORY_ROOT = AGENT_DATA_ROOT / "memory"
+# Add project root to sys.path to import agent_core
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
+import sys
+if str(PROJECT_ROOT_DETECTED) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT_DETECTED))
+
+from agent_core import config
+PROJECT_ROOT = config.PROJECT_ROOT
+AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
+MEMORY_ROOT = config.MEMORY_DIR
 SNAPSHOT_DIR = MEMORY_ROOT / "snapshots"
 
 

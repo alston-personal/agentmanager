@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 
 # Add project root to sys.path to import agent_core
-sys.path.append("/home/ubuntu/agentmanager")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 from agent_core import project_store
 
 def sync_sector(sector_name):
@@ -22,7 +23,8 @@ def sync_sector(sector_name):
             print(f"⏩ Skipping {p.project_id} (No repo_url defined)")
             continue
             
-        target_path = Path("/home/ubuntu") / p.project_id
+        # Determine target path relative to user home
+        target_path = Path.home() / p.project_id
         if target_path.exists():
             print(f"📦 {p.project_id} already exists, skipping clone.")
         else:
@@ -32,7 +34,7 @@ def sync_sector(sector_name):
         # Ensure it's registered locally (symlinks)
         print(f"🔗 Linking {p.project_id} to Agent OS...")
         subprocess.run([
-            "python3", "/home/ubuntu/agentmanager/scripts/import_project.py",
+            "python3", str(PROJECT_ROOT / "scripts" / "import_project.py"),
             str(target_path), "--sector", p.sector
         ])
 

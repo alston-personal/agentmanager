@@ -28,9 +28,14 @@ SHM_ROOT.mkdir(parents=True, exist_ok=True)
 PULSE_FILE = SHM_ROOT / "pulse.json"
 EVENTS_LOG = SHM_ROOT / "events.log"
 
-# Persistent peers (survive reboot)
-_AGENT_DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
-_RUNTIME_DIR = _AGENT_DATA_ROOT / "runtime"
+# Add project root to sys.path to import agent_core
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT_DETECTED) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT_DETECTED))
+
+from agent_core import config
+_AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
+_RUNTIME_DIR = config.RUNTIME_DIR
 PERSISTENT_PULSE = _RUNTIME_DIR / "pulse_snapshot.json"
 PERSISTENT_EVENTS_ARCHIVE_DIR = _RUNTIME_DIR / "events_archive"
 

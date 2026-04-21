@@ -20,7 +20,8 @@ def main():
             return
 
     # Gather inputs
-    agent_data_root = get_input("Data Root Path (e.g., /home/ubuntu/agent-data)", "/home/ubuntu/agent-data")
+    home = os.path.expanduser("~")
+    agent_data_root = get_input(f"Data Root Path (e.g., {home}/agent-data)", f"{home}/agent-data")
     workspace_name = get_input("Workspace Name (e.g., oracle-vm, lite-server)", "oracle-vm")
 
     print("\n🔐 Secret Management Configuration")
@@ -54,7 +55,7 @@ GEMINI_API_KEY={gemini_key}
 COMMAND_CENTER_REPO={cc_repo}
 
 # 🧠 Advanced
-KNOWLEDGE_ROOT=/home/ubuntu/.gemini/antigravity/knowledge
+KNOWLEDGE_ROOT={home}/.gemini/antigravity/knowledge
 """
 
     with open(".env", "w", encoding="utf-8") as f:

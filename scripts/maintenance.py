@@ -3,7 +3,8 @@ import os
 import subprocess
 import logging
 
-PROJECT_ROOT = "/home/ubuntu/agentmanager"
+from pathlib import Path
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "scripts")
 
 logging.basicConfig(level=logging.INFO)

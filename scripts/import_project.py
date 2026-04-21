@@ -6,9 +6,15 @@ from pathlib import Path
 from datetime import datetime, timezone
 import yaml
 
-# Path resolution
-AGENTMANAGER_ROOT = Path("/home/ubuntu/agentmanager")
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
+# Add project root to sys.path to import agent_core
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+import sys
+sys.path.append(str(PROJECT_ROOT))
+
+from agent_core import config
+# Use central config
+AGENTMANAGER_ROOT = config.PROJECT_ROOT
+AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
 
 def get_git_remote(path):
     try:
