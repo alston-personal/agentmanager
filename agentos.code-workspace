@@ -1,0 +1,56 @@
+{
+  "folders": [
+    {
+      "name": "🚀 AgentOS Core [Logic]",
+      "path": "."
+    },
+    {
+      "name": "🧠 Agent Data [Truth]",
+      "path": "../agent-data"
+    },
+    {
+      "name": "🃏 LeopardCat Tarot",
+      "path": "../leopardcat-tarot"
+    },
+    {
+      "name": "✍️ Zeus Writer",
+      "path": "../zeus-writer"
+    },
+    {
+      "name": "🕵️ Scriptless QA Agent",
+      "path": "../scriptless-qa-agent"
+    },
+    {
+      "name": "🛡️ Privacy Guard",
+      "path": "../privacy-guard"
+    },
+    {
+      "name": "🌐 Y2Help Web",
+      "path": "../y2help-web"
+    },
+    {
+      "name": "🛰️ Moltbot Gateway",
+      "path": "../moltbot"
+    },
+    {
+      "name": "⚙️ n8n Automation",
+      "path": "../n8n-automation"
+    },
+    {
+      "name": "🛠️ Shared Agent Skills",
+      "path": "../shared-agent-skills"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/.DS_Store": true,
+      "**/node_modules": false
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true
+    },
+    "editor.formatOnSave": true
+  }
+}
