@@ -39,6 +39,50 @@
     {
       "name": "🛠️ Shared Agent Skills",
       "path": "../shared-agent-skills"
+    },
+    {
+      "name": "🔬 Gemma Lab",
+      "path": "../gemma-lab"
+    },
+    {
+      "name": "🎨 Beauty PK",
+      "path": "../beauty-pk"
+    },
+    {
+      "name": "📦 Asset Master",
+      "path": "../asset-master"
+    },
+    {
+      "name": "📜 History Synthesizer",
+      "path": "../history-synthesizer"
+    },
+    {
+      "name": "📺 IF TV Station",
+      "path": "../if-tv-station"
+    },
+    {
+      "name": "🦞 OpenClaw",
+      "path": "../openclaw"
+    },
+    {
+      "name": "🐞 Redmine Issue Helper",
+      "path": "../redmine-issue-helper"
+    },
+    {
+      "name": "🧱 Support Me Block",
+      "path": "../support-me-block"
+    },
+    {
+      "name": "🃏 Tarot AI Master",
+      "path": "../tarot-ai-master"
+    },
+    {
+      "name": "🤖 Y2Helper",
+      "path": "../y2helper"
+    },
+    {
+      "name": "👋 Hello AgentOS",
+      "path": "../hello-agentos"
     }
   ],
   "settings": {
