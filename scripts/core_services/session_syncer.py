@@ -3,10 +3,14 @@ import os
 import shutil
 import time
 import logging
-from pathlib import Path
 import json
+import sys
+from pathlib import Path
 
+# Add logic root to path to import service_utils
 LOGIC_ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(LOGIC_ROOT))
+from scripts.service_utils import setup_locking, handle_signals, init_service_logging
 
 def load_env_file(path):
     if not path.exists():
@@ -49,14 +53,7 @@ CHECK_INTERVAL = int(os.environ.get("SESSION_SYNC_INTERVAL", "60"))
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
-)
+logger = init_service_logging(LOG_FILE, "SessionSyncer")
 
 def sync_conversations():
     """ 掃描 .brain 目錄並將有內容的 JSON 資料備份到數據層 """
@@ -89,12 +86,16 @@ def sync_conversations():
                             logging.info(f"✅ Synced: {entry.name}/{relative_path}")
 
 def main():
-    logging.info("🐾 LeopardCat Session Syncer - Started")
+    # 確保只有一個實例在運行 (Lock & Replace)
+    _lock = setup_locking("session_syncer", replace=True)
+    handle_signals()
+    
+    logger.info("🐾 LeopardCat Session Syncer - Started (PID: %d)", os.getpid())
     while True:
         try:
             sync_conversations()
         except Exception as e:
-            logging.error(f"❌ Syncer Error: {str(e)}")
+            logger.error(f"❌ Syncer Error: {str(e)}")
         time.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":

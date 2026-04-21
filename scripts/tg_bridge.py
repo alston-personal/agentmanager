@@ -8,7 +8,14 @@ from pathlib import Path
 import google.generativeai as genai
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CallbackQueryHandler, CommandHandler, filters
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
+
+# Add logic root to path to import service_utils
+LOGIC_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(LOGIC_ROOT))
+from scripts.service_utils import setup_locking, handle_signals, init_service_logging
 
 load_dotenv()
 
@@ -45,8 +52,7 @@ MODEL_PREFERENCES = [
     "models/gemini-1.5-flash"
 ]
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = init_service_logging(Path(AGENT_DATA_ROOT) / "logs" / "tg_bridge.log", "TGBridge")
 
 # --- 核心工具 (Antigravity Agent 的感官與手腳) ---
 
@@ -490,6 +496,10 @@ async def handle_workflow_command(update: Update, context: ContextTypes.DEFAULT_
     )
 
 if __name__ == '__main__':
+    # 確保只有一個實例在運行 (Lock & Replace)
+    _lock = setup_locking("tg_bridge", replace=True)
+    handle_signals()
+    
     token = get_env_secret("TELEGRAM_BOT_TOKEN") or get_env_secret("TG_BOT_SUNLAKE_CC_TOKEN")
     if not token or "[REDACTED" in token:
         logger.error("❌ CRITICAL: No valid Telegram Token found. Bot cannot start.")

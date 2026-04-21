@@ -20,6 +20,11 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Add project root to path to import service_utils
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT_DETECTED))
+from scripts.service_utils import setup_locking, handle_signals
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -166,6 +171,12 @@ if __name__ == "__main__":
 
     if args.task:
         should_watch = args.watch or bool(os.environ.get("INVOCATION_ID"))
+        if should_watch:
+            # 確保只有一個實例在運行 (Lock & Replace)
+            # 使用 agent name 做為 lock 的一部分，允許多個 agent 同時 pulse
+            _lock = setup_locking(f"pulse_{args.agent}", replace=True)
+            handle_signals()
+
         while True:
             update_pulse(args.agent, args.task, args.status)
             print(f"✅ Pulsed: {args.agent} → {args.task} ({args.status})")
