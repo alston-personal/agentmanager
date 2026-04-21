@@ -19,10 +19,15 @@ venv/
 # Data-layer mounts and local state
 memory
 STATUS.md
-projects/*
-!projects/.gitignore
-!projects/README.md
-projects_status/
+projects
+projects_status
+ideas
+journals
+knowledge
+logs
+specs
+validation
+ARCHITECTURE.md
 data/
 bin/
 ollama*
