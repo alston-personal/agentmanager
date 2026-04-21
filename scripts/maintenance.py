@@ -14,7 +14,9 @@ def run_script(script_name):
     script_path = os.path.join(SCRIPTS_DIR, script_name)
     if os.path.exists(script_path):
         logger.info(f"Running {script_name}...")
-        subprocess.run(["python3", script_path], cwd=PROJECT_ROOT)
+        result = subprocess.run(["python3", script_path], cwd=PROJECT_ROOT)
+        if result.returncode != 0:
+            raise RuntimeError(f"{script_name} failed with exit code {result.returncode}")
     else:
         logger.error(f"Script not found: {script_path}")
 
@@ -35,7 +37,9 @@ def main():
 
     # 5. Ecosystem Autonomous Reporting
     logger.info("Running ecosystem-report...")
-    subprocess.run(["python3", "scripts/run_workflow.py", "ecosystem-report"], cwd=PROJECT_ROOT)
+    result = subprocess.run(["python3", "scripts/run_workflow.py", "ecosystem-report"], cwd=PROJECT_ROOT)
+    if result.returncode != 0:
+        raise RuntimeError(f"ecosystem-report failed with exit code {result.returncode}")
     
     logger.info("--- Maintenance Complete ---")
 

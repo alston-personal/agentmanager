@@ -22,6 +22,17 @@ SEED_DIR = os.path.join(PROJECT_ROOT, "templates/data-layer-seed")
 
 MANDATORY_FOLDERS = ["ideas", "specs", "projects", "validation", "memory", "journals", "logs"]
 MANDATORY_FILES = [".version", "README.md", "STATUS_TEMPLATE.md"]
+LINK_BRIDGES = {
+    "ideas": "ideas",
+    "specs": "specs",
+    "projects": "projects",
+    "projects_status": "projects",
+    "validation": "validation",
+    "memory": "memory",
+    "journals": "journals",
+    "logs": "logs",
+    "knowledge": "knowledge",
+}
 
 def bootstrap():
     print("🚀 Starting Agent OS Data Layer Bootstrap...")
@@ -33,7 +44,7 @@ def bootstrap():
     print(f"📂 Target Data Root: {DATA_ROOT}")
     
     # 1. Ensure Folders
-    for folder in MANDATORY_FOLDERS:
+    for folder in sorted(set(MANDATORY_FOLDERS + list(LINK_BRIDGES.values()))):
         target = os.path.join(DATA_ROOT, folder)
         if not os.path.exists(target):
             print(f"✨ Creating missing folder: {folder}")
@@ -59,20 +70,20 @@ def bootstrap():
                 f.write(f"# {mf}\n*Initialized @ {os.popen('date').read().strip()}*\n")
 
     # 4. Symlink Bridge Audit
-    for folder in MANDATORY_FOLDERS:
-        link_path = os.path.join(PROJECT_ROOT, folder)
-        target_path = os.path.join(DATA_ROOT, folder)
+    for link_name, target_name in LINK_BRIDGES.items():
+        link_path = os.path.join(PROJECT_ROOT, link_name)
+        target_path = os.path.join(DATA_ROOT, target_name)
         
         if os.path.islink(link_path):
             existing_target = os.readlink(link_path)
             if existing_target != target_path:
-                print(f"🔗 Updating symlink: {folder} -> {target_path}")
+                print(f"🔗 Updating symlink: {link_name} -> {target_path}")
                 os.remove(link_path)
                 os.symlink(target_path, link_path)
         elif os.path.exists(link_path):
-            print(f"⚠️ Warning: {folder} exists as a real directory in logic repo. Skipping symlink.")
+            print(f"⚠️ Warning: {link_name} exists as a real directory in logic repo. Skipping symlink.")
         else:
-            print(f"🔗 Creating symlink: {folder} -> {target_path}")
+            print(f"🔗 Creating symlink: {link_name} -> {target_path}")
             os.symlink(target_path, link_path)
 
     print("\n✅ Bootstrap Complete. Data layer is healthy and linked.")

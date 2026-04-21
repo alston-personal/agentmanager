@@ -44,8 +44,12 @@ def aggregate_tasks():
     
     for status_file in status_files:
         project_name = os.path.basename(os.path.dirname(status_file))
-        with open(status_file, 'r', encoding='utf-8') as f:
-            content = f.read()
+        try:
+            with open(status_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except OSError as e:
+            print(f"⚠️ Skipping unreadable status file: {status_file} ({e})")
+            continue
             
         meta = parse_metadata(content)
         priority_label = f"P{meta['priority']}"

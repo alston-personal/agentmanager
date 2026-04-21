@@ -13,6 +13,8 @@
 | **天啟訊號 (LCS-Signal)** | `bin/lcs-signal` | 虎掌/織圖 | 🔄 重造中 | 喚醒全體 Agent 服務，執行秩序重建與全域同步。 |
 | **貓墨同步 (Cat-Ink)** | `scripts/core_services/session_syncer.py` | 虎掌/銳爪 | ✅ 現行 | 每 60 秒將對話備份至數據層。 |
 | **蜂群狀態 (Swarm Status)** | `bin/status` | 鳴風/織圖 | ✅ 現行 | 視覺化監控 20+ 專案健康度。 |
+| **核心狀態庫 (Agent Core)** | `agent_core/` | 虎掌/織圖 | ✅ 現行 | 提供設定載入、專案模型與 `project.yaml`/legacy `STATUS.md` 讀取。 |
+| **知識內化器 (Internalizer)** | `scripts/internalize.py` | 織圖/書庫 | ✅ 現行 | 將記憶宮殿、Meditation、Ecosystem Report 與 Chronicle 蒸餾進 LLM Wiki。 |
 
 ### 2. 環境與發佈 (Env & Publish)
 | 功能名稱 | 入口檔案 | 負責角色 | 狀態 | 說明 |

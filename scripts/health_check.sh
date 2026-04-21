@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGIC_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "🌡️ [Diagnostic] Checking AgentOS Integrity..."
-items=("memory" "logs" "projects" "ARCHITECTURE.md")
+items=("memory" "logs" "projects" "projects_status" "knowledge" "ARCHITECTURE.md")
 
 for item in "${items[@]}"; do
     if [ -L "$LOGIC_ROOT/$item" ]; then

@@ -16,6 +16,7 @@ Usage (CLI):
 import os
 import json
 import sys
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -153,6 +154,8 @@ if __name__ == "__main__":
     parser.add_argument("--event", help="Event type to broadcast")
     parser.add_argument("--message", help="Message to broadcast")
     parser.add_argument("--restore", action="store_true", help="Restore pulse from persistent store")
+    parser.add_argument("--watch", action="store_true", help="Keep pulsing until the process is stopped")
+    parser.add_argument("--interval", type=int, default=30, help="Watch interval in seconds")
 
     args = parser.parse_args()
 
@@ -162,9 +165,14 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.task:
-        update_pulse(args.agent, args.task, args.status)
-        print(f"✅ Pulsed: {args.agent} → {args.task} ({args.status})")
-        print(f"   Persistent backup: {PERSISTENT_PULSE}")
+        should_watch = args.watch or bool(os.environ.get("INVOCATION_ID"))
+        while True:
+            update_pulse(args.agent, args.task, args.status)
+            print(f"✅ Pulsed: {args.agent} → {args.task} ({args.status})")
+            print(f"   Persistent backup: {PERSISTENT_PULSE}")
+            if not should_watch:
+                break
+            time.sleep(max(args.interval, 5))
 
     if args.event and args.message:
         log_event(args.agent, args.event, args.message)

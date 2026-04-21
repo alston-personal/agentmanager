@@ -14,6 +14,22 @@ SESSION_SYNC_FILE = f"{AGENT_DATA_ROOT}/memory/session_sync.md"
 MAINTENANCE_LOG = f"{AGENT_REPO_ROOT}/maintenance.log"
 TG_BRIDGE_LOG = f"{AGENT_REPO_ROOT}/tg_bridge.log"
 
+SECRET_PATTERNS = [
+    re.compile(r"(key=)[A-Za-z0-9_\-]{20,}", re.I),
+    re.compile(r"AIza[0-9A-Za-z_\-]{20,}"),
+    re.compile(r"(api[_-]?key\s*[:=]\s*)[A-Za-z0-9_\-]{12,}", re.I),
+    re.compile(r"(token\s*[:=]\s*)[A-Za-z0-9_\-:.]{12,}", re.I),
+]
+
+
+def sanitize_secret_text(text):
+    if not text:
+        return ""
+    result = text
+    for pattern in SECRET_PATTERNS:
+        result = pattern.sub(lambda m: f"{m.group(1)}[REDACTED]" if m.groups() else "[REDACTED]", result)
+    return result
+
 # Load API Key from Data Layer (Secret Manager Integration)
 def get_gemini_api_key():
     # Attempt to load from the central secret repository as defined in system architecture
@@ -71,7 +87,9 @@ def call_gemini(api_key, system_prompt, user_prompt):
             return response.json()["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:
             if model == models[-1]: # Last model failed
-                error_msg = f"Error calling Gemini: {e}\nResponse: {response.text if 'response' in locals() else 'No response'}"
+                safe_error = sanitize_secret_text(str(e))
+                safe_response = sanitize_secret_text(response.text if 'response' in locals() else 'No response')
+                error_msg = f"Error calling Gemini: {safe_error}\nResponse: {safe_response}"
                 print(error_msg)
                 return f"⚠️ **SELF-REFLECTION FAILED**: {error_msg}"
 

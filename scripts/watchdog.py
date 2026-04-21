@@ -4,6 +4,24 @@ import subprocess
 import requests
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_env_file(path: Path):
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), os.path.expandvars(value.strip().strip('"').strip("'")))
+
+
+load_env_file(PROJECT_ROOT / ".env")
 
 # Load environment variables
 AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
@@ -35,6 +53,7 @@ def auto_pull_logic():
 
 def log_to_sync(message: str):
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    os.makedirs(os.path.dirname(SYNC_LOG_PATH), exist_ok=True)
     with open(SYNC_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(f"\n> [!WARNING]\n> **Watchdog @ {timestamp}**: {message}\n")
 

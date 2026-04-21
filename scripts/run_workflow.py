@@ -29,6 +29,8 @@ load_env()
 
 
 def send_telegram_notification(text: str):
+    if os.environ.get("AGENT_SUPPRESS_NOTIFICATIONS"):
+        return
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHANNEL_ID")
     if not token or not chat_id:
@@ -123,6 +125,14 @@ def read_file(path: str) -> str:
         return handle.read()
 
 
+def safe_read_file(path: str) -> str | None:
+    try:
+        return read_file(path)
+    except OSError as e:
+        print(f"Skipping unreadable status file: {path} ({e})", file=sys.stderr)
+        return None
+
+
 def extract_summary_field(content: str, label: str) -> str:
     pattern = rf"\|\s*\*\*{re.escape(label)}\*\*\s*\|\s*([^|]+?)\s*\|"
     match = re.search(pattern, content)
@@ -161,14 +171,14 @@ def run_status() -> str:
                     "| Project | Sector | Priority | Phase | Status | Health |",
                     "| :--- | :---: | :---: | :---: | :--- | :---: |",
                 ]
-                HEALTH_ICON = {"fresh": "🟢", "stale": "🟡", "unknown": "⚪"}
+                HEALTH_ICON = {"fresh": "🟢", "stale": "🟡", "legacy": "🟡", "unknown": "⚪"}
                 for p in projects:
                     health_icon = HEALTH_ICON.get(p.health.freshness, "⚪")
                     lines.append(
                         f"| **{p.project_id}** | {p.sector} | P{p.priority} | {p.phase} | {p.status} | {health_icon} {p.health.freshness} |"
                     )
                 lines.append("")
-                lines.append(f"_Source: `project.yaml` — {len(projects)} projects_")
+                lines.append(f"_Source: `agent_core.project_store` — {len(projects)} projects_")
                 return "\n".join(lines)
         except Exception as e:
             # Fall through to legacy method
@@ -182,7 +192,9 @@ def run_status() -> str:
     rows = []
     for status_path in status_paths:
         project_name = os.path.basename(os.path.dirname(status_path))
-        content = read_file(status_path)
+        content = safe_read_file(status_path)
+        if content is None:
+            continue
         rows.append({
             "project": project_name,
             "status": extract_summary_field(content, "Last Status") or "N/A",
@@ -278,7 +290,10 @@ def run_ecosystem_report() -> str:
         project_name = os.path.basename(os.path.dirname(status_path))
         
         # 讀取 STATUS.md 查看實際代碼路徑
-        content = read_file(status_path)
+        content = safe_read_file(status_path)
+        if content is None:
+            needs_update.append(project_name)
+            continue
         actual_path = extract_summary_field(content, "Actual Code Path")
         reported_date_str = extract_summary_field(content, "Last Updated")
         
@@ -328,7 +343,11 @@ def run_ecosystem_report() -> str:
     tg_rows = []
     for status_path in status_paths:
         p_name = os.path.basename(os.path.dirname(status_path))
-        p_content = read_file(status_path)
+        p_content = safe_read_file(status_path)
+        if p_content is None:
+            report.append(f"| **{p_name}** | 🔴 Unreadable | N/A | STATUS.md cannot be read |")
+            tg_rows.append({'name': p_name, 'tag': "🔴 Unreadable", 'updated': "N/A"})
+            continue
         p_status = extract_summary_field(p_content, "Last Status") or "N/A"
         p_updated = extract_summary_field(p_content, "Last Updated") or "N/A"
         p_activity = extract_latest_log(p_content) or "N/A"
@@ -373,6 +392,22 @@ def main() -> int:
         
     if workflow_name == "ecosystem-report":
         print(run_ecosystem_report())
+        return 0
+
+    if workflow_name == "internalize":
+        internalize_script = os.path.join(PROJECT_ROOT, "scripts", "internalize.py")
+        result = subprocess.run(
+            ["python3", internalize_script],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.returncode != 0:
+            if result.stderr:
+                print(result.stderr.strip(), file=sys.stderr)
+            return result.returncode
         return 0
 
     if workflow_name == "setup":

@@ -124,6 +124,13 @@ def ensure_local_mounts(project_slug: str, status_path: Path):
         workspace_link.symlink_to(physical_dir)
 
     # 3. Status Dir (The symlink for status tracking)
+    if LOCAL_STATUS_DIR.is_symlink():
+        try:
+            if LOCAL_STATUS_DIR.resolve() == DATA_PROJECTS_DIR.resolve():
+                return
+        except OSError:
+            pass
+
     local_status_dir = LOCAL_STATUS_DIR / project_slug
     local_status_dir.mkdir(parents=True, exist_ok=True)
     
