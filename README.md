@@ -37,11 +37,11 @@ If you are setting up this system on a new machine:
     ```
     *This creates the necessary folder structure in your data root and establishes symlink bridges.*
 
-4.  **Install core user services** (Core machines only):
+4.  **Install user services** (mandatory on Core, optional on Client):
     ```bash
     bash scripts/install_systemd_user.sh
     ```
-    *Set `AGENT_MODE=CORE` in `.env` before this step if this machine should run Telegram, Cat-Ink memory sync, and watchdog services.*
+    *Set `AGENT_MODE=CORE` in `.env` before this step if this machine should run Telegram, Cat-Ink memory sync, and watchdog services. Client machines may skip this unless they want a local `os-pulse` heartbeat.*
 
 5.  **Verify Integrity**:
     ```bash

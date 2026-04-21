@@ -41,7 +41,7 @@ Expected result:
 - `python3 scripts/run_workflow.py status` lists projects from `agent_core.project_store`.
 - Projects should show `fresh` unless the data layer is intentionally old.
 
-## 4. Install Services on a Core Machine
+## 4. Install Services
 
 ```bash
 bash scripts/install_systemd_user.sh
@@ -52,6 +52,8 @@ systemctl --user status cat-ink-syncer.service
 ```
 
 The installer writes portable units into `~/.config/systemd/user` using the current clone path and `AGENT_DATA_ROOT`. It starts `tg-commander.service` and `cat-ink-syncer.service` only when `AGENT_MODE=CORE`.
+
+On a client machine this step is optional. If you skip it, `health_check.sh` should report `os-pulse` as informational rather than a failure.
 
 ## 5. Sync and Resume
 
