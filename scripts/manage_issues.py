@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # --- Configuration ---
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data/projects")
+data_root = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
+AGENT_DATA_ROOT = Path(data_root) / "projects"
 
 def get_issue_dir(project_name):
     issue_dir = AGENT_DATA_ROOT / project_name / "issues"

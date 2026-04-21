@@ -24,7 +24,8 @@ def get_env_secret(key, default=None):
     val = os.getenv(key, default)
     if val and "[REDACTED" in val:
         # Try to find in data layer
-        data_env = Path("/home/ubuntu/agent-data/secrets/global.env")
+        data_root = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
+        data_env = Path(data_root) / "secrets/global.env"
         if data_env.exists():
             with open(data_env, "r") as f:
                 for line in f:
@@ -34,7 +35,7 @@ def get_env_secret(key, default=None):
 
 AUTHORIZED_USER_ID = get_env_secret("TELEGRAM_CHANNEL_ID")
 PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
-AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
+AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
 GEMINI_API_KEY = get_env_secret("GEMINI_API_KEY")
 KNOWLEDGE_ROOT = os.getenv("KNOWLEDGE_ROOT", os.path.expanduser("~/.gemini/antigravity/knowledge"))
 MEMORY_ROOT = os.path.join(PROJECT_ROOT, "memory")

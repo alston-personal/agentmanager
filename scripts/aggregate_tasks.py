@@ -17,7 +17,7 @@ def load_env():
 
 load_env()
 
-DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
+DATA_ROOT = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
 PROJECTS_DIR = os.path.join(DATA_ROOT, "projects")
 OUTPUT_FILE = os.path.join(DATA_ROOT, "GLOBAL_TODO_LIST.md")
 
