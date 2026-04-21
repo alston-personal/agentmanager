@@ -9,6 +9,10 @@
       "path": "../agent-data"
     },
     {
+      "name": "🧪 TestRail 0303",
+      "path": "../testrail_0303"
+    },
+    {
       "name": "🃏 LeopardCat Tarot",
       "path": "../leopardcat-tarot"
     },

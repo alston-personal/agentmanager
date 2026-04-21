@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import argparse
 import os
 import re
@@ -7,7 +8,7 @@ from pathlib import Path
 
 
 HOME = Path.home()
-PROJECT_ROOT = Path(os.environ.get("AGENTMANAGER_ROOT", HOME / "agentmanager"))
+PROJECT_ROOT = Path(os.environ.get("AGENTMANAGER_ROOT", os.getcwd() if (Path(os.getcwd()) / ".agent").exists() else HOME / "agentmanager"))
 AGENT_DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", HOME / "agent-data"))
 DATA_PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 DASHBOARD_PATH = AGENT_DATA_ROOT / "DASHBOARD.md"
@@ -27,7 +28,8 @@ def format_timestamp(ts: datetime | None = None) -> str:
 
 def slugify(value: str) -> str:
     lowered = value.strip().lower()
-    slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    # Allow underscores for compatibility with existing folders
+    slug = re.sub(r"[^a-z0-9_]+", "-", lowered).strip("-")
     return slug or "untitled-project"
 
 
@@ -116,6 +118,7 @@ def ensure_local_mounts(project_slug: str, status_path: Path):
         physical_dir.mkdir(parents=True, exist_ok=True)
     
     # 2. Workspace Link (The symlink for developers to access code)
+    WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
     workspace_link = WORKSPACE_ROOT / project_slug
     if not workspace_link.exists() and not workspace_link.is_symlink() and project_slug != "agentmanager":
         workspace_link.symlink_to(physical_dir)
