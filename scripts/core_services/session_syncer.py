@@ -6,16 +6,54 @@ import logging
 from pathlib import Path
 import json
 
+LOGIC_ROOT = Path(__file__).resolve().parents[2]
+
+def load_env_file(path):
+    if not path.exists():
+        return
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), os.path.expandvars(value.strip().strip('"').strip("'")))
+
+load_env_file(LOGIC_ROOT / ".env")
+
 # --- 配置 ---
-BRAIN_DIR = Path("/home/ubuntu/.gemini/antigravity/brain")
-DATA_DIR = Path("/home/ubuntu/agent-data/projects/agentmanager/logs/conversations")
-CHECK_INTERVAL = 60  # 每 60 秒同步一次
+HOME = Path.home()
+AGENT_DATA_ROOT = Path(
+    os.environ.get("AGENT_DATA_ROOT")
+    or os.environ.get("AGENT_DATA_DIR")
+    or HOME / "agent-data"
+).expanduser()
+ANTIGRAVITY_DIR = Path(
+    os.environ.get("ANTIGRAVITY_DIR")
+    or HOME / ".gemini" / "antigravity"
+).expanduser()
+BRAIN_DIR = Path(os.environ.get("BRAIN_DIR", ANTIGRAVITY_DIR / "brain")).expanduser()
+DATA_DIR = Path(
+    os.environ.get(
+        "SESSION_SYNC_DIR",
+        AGENT_DATA_ROOT / "projects" / "agentmanager" / "logs" / "conversations",
+    )
+).expanduser()
+LOG_FILE = Path(
+    os.environ.get(
+        "SESSION_SYNC_LOG",
+        AGENT_DATA_ROOT / "projects" / "agentmanager" / "logs" / "syncer.log",
+    )
+).expanduser()
+CHECK_INTERVAL = int(os.environ.get("SESSION_SYNC_INTERVAL", "60"))
+
+LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler("/home/ubuntu/agent-data/projects/agentmanager/logs/syncer.log"),
+        logging.FileHandler(LOG_FILE),
         logging.StreamHandler()
     ]
 )

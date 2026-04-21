@@ -26,34 +26,66 @@ fi
 set -a
 source "$LOGIC_ROOT/.env"
 set +a
-DATA_ROOT="${AGENT_DATA_DIR:-$HOME/agent-data}"
+DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+AGENT_DATA_ROOT="$DATA_ROOT"
+AGENT_DATA_DIR="$DATA_ROOT"
+ANTIGRAVITY_DIR="${ANTIGRAVITY_DIR:-$HOME/.gemini/antigravity}"
+KNOWLEDGE_ROOT="${KNOWLEDGE_ROOT:-$ANTIGRAVITY_DIR/knowledge}"
 
 echo "🌅 [Resurrection] Initializing AgentOS..."
 echo "📍 Data Center: $DATA_ROOT"
 
+link_bridge() {
+    local source_path="$1"
+    local target_path="$2"
+
+    if [ -L "$target_path" ] || [ ! -e "$target_path" ]; then
+        ln -nfs "$source_path" "$target_path"
+        return
+    fi
+
+    if [ -d "$target_path" ]; then
+        mkdir -p "$source_path"
+        cp -an "$target_path/." "$source_path/" 2>/dev/null || true
+    fi
+
+    local backup_path="${target_path}.pre-agentos-link.$(date +%Y%m%d%H%M%S)"
+    mv "$target_path" "$backup_path"
+    ln -s "$source_path" "$target_path"
+    echo "📦 Backed up existing bridge target: $backup_path"
+}
+
 # Check if data exists
 if [ ! -d "$DATA_ROOT" ]; then
     echo "❌ FATAL: Data Center NOT FOUND at $DATA_ROOT"
-    echo "💡 Please edit .env and set AGENT_DATA_DIR to your real path."
+    echo "💡 Please edit .env and set AGENT_DATA_ROOT to your real path."
     exit 1
 fi
 
 # 🔗 4. Re-link Bridges (Relative to logic root)
-ln -nfs "$DATA_ROOT/memory" "$LOGIC_ROOT/memory"
-ln -nfs "$DATA_ROOT/logs" "$LOGIC_ROOT/logs"
-ln -nfs "$DATA_ROOT/projects" "$LOGIC_ROOT/projects"
+mkdir -p "$DATA_ROOT/memory" "$DATA_ROOT/logs" "$DATA_ROOT/projects"
+mkdir -p "$DATA_ROOT/knowledge"
+if [ -L "$DATA_ROOT/knowledge/knowledge" ] && [ "$(readlink "$DATA_ROOT/knowledge/knowledge")" = "$DATA_ROOT/knowledge" ]; then
+    unlink "$DATA_ROOT/knowledge/knowledge"
+fi
+link_bridge "$DATA_ROOT/memory" "$LOGIC_ROOT/memory"
+link_bridge "$DATA_ROOT/logs" "$LOGIC_ROOT/logs"
+link_bridge "$DATA_ROOT/projects" "$LOGIC_ROOT/projects"
 ln -nfs "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
 
 # 🧠 4b. Re-link Knowledge Bridge (Two-layer chain)
 # Layer 1: agent-data/knowledge → antigravity/knowledge (IDE Knowledge Base)
-ANTIGRAVITY_DIR="$HOME/.gemini/antigravity"
 if [ -d "$ANTIGRAVITY_DIR" ]; then
-    ln -nfs "$DATA_ROOT/knowledge" "$ANTIGRAVITY_DIR/knowledge"
-    echo "🔗 Knowledge bridge restored: $ANTIGRAVITY_DIR/knowledge → $DATA_ROOT/knowledge"
+    mkdir -p "$KNOWLEDGE_ROOT" "$DATA_ROOT/knowledge"
+    if [ "$KNOWLEDGE_ROOT" != "$DATA_ROOT/knowledge" ] && [ -d "$KNOWLEDGE_ROOT" ] && [ ! -L "$KNOWLEDGE_ROOT" ]; then
+        cp -an "$KNOWLEDGE_ROOT/." "$DATA_ROOT/knowledge/" 2>/dev/null || true
+    fi
+    link_bridge "$DATA_ROOT/knowledge" "$ANTIGRAVITY_DIR/knowledge"
+    echo "🔗 Knowledge bridge restored: $ANTIGRAVITY_DIR/knowledge -> $DATA_ROOT/knowledge"
 fi
 # Layer 2: agentmanager/knowledge → antigravity/knowledge
-ln -nfs "$ANTIGRAVITY_DIR/knowledge" "$LOGIC_ROOT/knowledge"
-echo "🔗 Knowledge bridge restored: $LOGIC_ROOT/knowledge → $ANTIGRAVITY_DIR/knowledge"
+link_bridge "$DATA_ROOT/knowledge" "$LOGIC_ROOT/knowledge"
+echo "🔗 Knowledge bridge restored: $LOGIC_ROOT/knowledge -> $DATA_ROOT/knowledge"
 
 # ⚡ 5. Restart Services
 systemctl --user daemon-reload
