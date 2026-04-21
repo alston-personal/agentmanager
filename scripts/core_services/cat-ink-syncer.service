@@ -3,8 +3,9 @@ Description=LeopardCat AgentOS Session Syncer (Operation Cat-Ink)
 After=network.target
 
 [Service]
-EnvironmentFile=-%h/agentos/.env
-ExecStart=/usr/bin/python3 %h/agentos/scripts/core_services/session_syncer.py
+EnvironmentFile=-%h/agentmanager/.env
+WorkingDirectory=%h/agentmanager
+ExecStart=/usr/bin/python3 %h/agentmanager/scripts/core_services/session_syncer.py
 Restart=always
 Environment=PYTHONUNBUFFERED=1
 

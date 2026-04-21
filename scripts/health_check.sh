@@ -16,7 +16,20 @@ for item in "${items[@]}"; do
 done
 
 echo "⚙️ Checking Services..."
-systemctl --user is-active tg-commander.service || echo "⚠️ tg-commander is NOT running."
+if [ -f "$LOGIC_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$LOGIC_ROOT/.env"
+    set +a
+fi
+
 systemctl --user is-active os-pulse.service || echo "⚠️ os-pulse is NOT running."
+
+if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
+    systemctl --user is-active tg-commander.service || echo "⚠️ tg-commander is NOT running."
+    systemctl --user is-active cat-ink-syncer.service || echo "⚠️ cat-ink-syncer is NOT running."
+else
+    echo "🕶️ Client mode: core-only services are optional."
+fi
 
 echo "🏆 Diagnostic Complete."

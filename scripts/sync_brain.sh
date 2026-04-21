@@ -6,13 +6,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGIC_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load Environment to find DATA_ROOT
-export $(grep -v '^#' "$LOGIC_ROOT/.env" | grep "AGENT_DATA_DIR" | xargs 2>/dev/null)
-DATA_ROOT="${AGENT_DATA_DIR:-$HOME/agent-data}"
+if [ -f "$LOGIC_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$LOGIC_ROOT/.env"
+    set +a
+fi
+DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 
 echo "🔄 [Sync] Starting Global Synchronization..."
 
 # 1. Sync Logic Layer (agentmanager)
-echo "📍 Sector: Logic (/home/ubuntu/agentmanager)"
+echo "📍 Sector: Logic ($LOGIC_ROOT)"
 cd "$LOGIC_ROOT"
 if [ -d ".git" ]; then
     git pull --rebase
