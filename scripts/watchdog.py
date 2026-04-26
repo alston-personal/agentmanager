@@ -59,9 +59,12 @@ def log_to_sync(message: str):
 
 def check_systemd_user(service_name: str) -> bool:
     try:
+        env = os.environ.copy()
+        if "XDG_RUNTIME_DIR" not in env:
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
         result = subprocess.run(
             ["systemctl", "--user", "is-active", service_name],
-            capture_output=True, text=True
+            capture_output=True, text=True, env=env
         )
         return result.stdout.strip() == "active"
     except Exception as e:
@@ -70,7 +73,10 @@ def check_systemd_user(service_name: str) -> bool:
 
 def restart_systemd_user(service_name: str):
     logger.warning(f"Attempting to restart {service_name}...")
-    subprocess.run(["systemctl", "--user", "restart", service_name])
+    env = os.environ.copy()
+    if "XDG_RUNTIME_DIR" not in env:
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+    subprocess.run(["systemctl", "--user", "restart", service_name], env=env)
     log_to_sync(f"Service `{service_name}` was down. Attempted restart.")
 
 def check_http(url: str) -> bool:
