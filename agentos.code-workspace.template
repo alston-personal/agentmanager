@@ -1,6 +1,10 @@
 {
   "folders": [
     {
+      "name": "🎬 YouTube AI Manager",
+      "path": "../youtube-ai-manager"
+    },
+    {
       "name": "🚀 AgentOS Core [Logic]",
       "path": "."
     },

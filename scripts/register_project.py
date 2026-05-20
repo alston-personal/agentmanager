@@ -149,12 +149,47 @@ def ensure_local_mounts(project_slug: str, status_path: Path):
         local_memory.symlink_to(data_memory)
 
 
+def ensure_workspace_entry(project_slug: str, pretty_name: str, type_icon: str):
+    template_path = PROJECT_ROOT / "agentos.code-workspace.template"
+    if not template_path.exists():
+        return
+        
+    try:
+        import json
+        with open(template_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            
+        folders = config.get("folders", [])
+        target_path = f"../{project_slug}"
+        
+        # Check if already exists
+        exists = any(folder.get("path") == target_path for folder in folders)
+        if not exists:
+            # Add after core tools (index 2)
+            folders.insert(2, {
+                "name": f"{type_icon} {pretty_name}",
+                "path": target_path
+            })
+            config["folders"] = folders
+            with open(template_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+                
+            # Regenerate active code-workspace
+            workspace_script = PROJECT_ROOT / "scripts" / "gen_workspace.py"
+            if workspace_script.exists():
+                import subprocess
+                subprocess.run(["python3", str(workspace_script)], cwd=str(PROJECT_ROOT), capture_output=True)
+    except Exception as e:
+        print(f"⚠️ Warning: Failed to update workspace files: {e}")
+
+
 def register_project(project_name: str, display_name: str | None, status: str, type_icon: str, summary: str | None) -> str:
     project_slug = slugify(project_name)
     pretty_name = display_name.strip() if display_name else titleize(project_slug)
     status_path = ensure_status_file(project_slug, pretty_name, status, summary)
     ensure_dashboard_entry(project_slug, pretty_name, status, type_icon)
     ensure_local_mounts(project_slug, status_path)
+    ensure_workspace_entry(project_slug, pretty_name, type_icon)
     return "\n".join([
         f"Registered project: {pretty_name}",
         f"Slug: {project_slug}",
