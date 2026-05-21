@@ -1,0 +1,17 @@
+# Central Chronos Scheduler Configurations
+schedules:
+  - name: os-pulse
+    interval_seconds: 60
+    command: "python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active"
+
+  - name: os-watchdog
+    interval_seconds: 300  # Scan and trigger self-healing every 5 minutes
+    command: "python3 scripts/watchdog.py"
+
+  - name: zeus-autonomous-step
+    interval_seconds: 3600  # Evaluate chapter stats and auto-publish every hour
+    command: "python3 /home/ubuntu/zeus-writer/scripts/zeus_autonomous_manager.py --step"
+
+  - name: project-self-pushing
+    interval_seconds: 43200  # Evaluate and push stagnant projects every 12 hours
+    command: "python3 scripts/chronos.py --self-pushing"

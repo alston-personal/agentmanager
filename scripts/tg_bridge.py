@@ -482,6 +482,98 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # --- 專案自治推進之「核准/捨棄」分支審查實作 ---
+    if data.startswith("approve_merge:"):
+        project_name = data.split(":", 1)[1]
+        PROJECT_MAP = {
+            "moltbot": "/home/ubuntu/moltbot",
+            "openclaw": "/home/ubuntu/openclaw",
+            "agentmanager": "/home/ubuntu/agentmanager",
+            "leopardcat-tarot": "/home/ubuntu/leopardcat-tarot",
+            "zeus-writer": "/home/ubuntu/zeus-writer",
+            "youtube-ai-manager": "/home/ubuntu/youtube-ai-manager",
+            "y2helper": "/home/ubuntu/y2helper",
+            "beauty-pk": "/home/ubuntu/beauty-pk"
+        }
+        logic_dir = PROJECT_MAP.get(project_name)
+        if not logic_dir:
+            logic_dir = f"/home/ubuntu/{project_name}"
+            
+        logger.info(f"🟢 [Approval] Operator 核准合併專案 '{project_name}'，路徑為 '{logic_dir}'...")
+        await query.edit_message_text(text=f"⏳ **正在合併並推送專案 `{project_name}`...**")
+        
+        # 執行 git 合併與 push 流程
+        try:
+            # 1. 切換至 main，merge 主題分支，Push 並且刪除該主題分支
+            cmd = "git checkout main && git merge agent/auto-pushing --no-edit && git push origin main && git branch -d agent/auto-pushing"
+            res = subprocess.run(cmd, shell=True, cwd=logic_dir, capture_output=True, text=True, timeout=60)
+            
+            if res.returncode == 0:
+                logger.info(f"✅ 專案 '{project_name}' 成功合併並 Push 至遠端 GitHub 倉庫！")
+                await query.edit_message_text(
+                    text=f"🎉 **專案自主變更核准成功！**\n\n"
+                         f"🔹 **專案**: `{project_name}`\n"
+                         f"🔹 **動作**: 已成功將 `agent/auto-pushing` 合併至 `main` 並推送至遠端倉庫！\n"
+                         f"🔹 **狀態**: 🟢 已上線\n"
+                         f"🔹 **時間**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
+                    parse_mode='Markdown'
+                )
+            else:
+                err_msg = res.stderr or res.stdout
+                logger.error(f"❌ 專案 '{project_name}' 合併失敗: {err_msg}")
+                # 萬一衝突或出錯，嘗試安全退回 main 分支
+                subprocess.run("git checkout main -f", shell=True, cwd=logic_dir, capture_output=True)
+                await query.edit_message_text(
+                    text=f"⚠️ **專案合併發生異常 (未完成推送)**\n\n"
+                         f"🔹 **專案**: `{project_name}`\n"
+                         f"🔹 **錯誤細節**:\n```text\n{err_msg}\n```\n"
+                         f"🔹 **說明**: 本地工作區已重設回安全狀態。請登入系統手動處理 Git 衝突。\n"
+                         f"🔹 **時間**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
+                    parse_mode='Markdown'
+                )
+        except Exception as e:
+            logger.error(f"❌ 執行合併程序時拋出異常: {e}")
+            await query.edit_message_text(text=f"💥 **系統執行異常**: `{e}`")
+        return
+
+    if data.startswith("reject_merge:"):
+        project_name = data.split(":", 1)[1]
+        PROJECT_MAP = {
+            "moltbot": "/home/ubuntu/moltbot",
+            "openclaw": "/home/ubuntu/openclaw",
+            "agentmanager": "/home/ubuntu/agentmanager",
+            "leopardcat-tarot": "/home/ubuntu/leopardcat-tarot",
+            "zeus-writer": "/home/ubuntu/zeus-writer",
+            "youtube-ai-manager": "/home/ubuntu/youtube-ai-manager",
+            "y2helper": "/home/ubuntu/y2helper",
+            "beauty-pk": "/home/ubuntu/beauty-pk"
+        }
+        logic_dir = PROJECT_MAP.get(project_name)
+        if not logic_dir:
+            logic_dir = f"/home/ubuntu/{project_name}"
+            
+        logger.info(f"🔴 [Rejection] Operator 拒絕合併專案 '{project_name}'，正強制還原工作區...")
+        await query.edit_message_text(text=f"⏳ **正在捨棄變更並還原 `{project_name}` 工作區...**")
+        
+        try:
+            # 強制切回 main 分支，並刪除本地的隔離變更分支
+            cmd = "git checkout main -f && git branch -D agent/auto-pushing"
+            res = subprocess.run(cmd, shell=True, cwd=logic_dir, capture_output=True, text=True, timeout=30)
+            
+            logger.info(f"❌ 專案 '{project_name}' 自主推進變更已被拒絕，且本地分支已被強制刪除並還原。")
+            await query.edit_message_text(
+                text=f"❌ **專案自主變更已被捨棄！**\n\n"
+                     f"🔹 **專案**: `{project_name}`\n"
+                     f"🔹 **動作**: 已強制捨棄 `agent/auto-pushing` 中的所有變更，並還原至 `main` 分支。\n"
+                     f"🔹 **狀態**: 🔴 已重設\n"
+                     f"🔹 **時間**: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"❌ 執行捨棄程序時拋出異常: {e}")
+            await query.edit_message_text(text=f"💥 **系統還原異常**: `{e}`")
+        return
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != AUTHORIZED_USER_ID: return
     text = update.message.text
@@ -548,6 +640,69 @@ async def handle_workflow_command(update: Update, context: ContextTypes.DEFAULT_
         parse_mode='Markdown'
     )
 
+def start_alert_server(bot, loop):
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    
+    class AlertHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass # Suppress standard log messages to keep stdout clean
+            
+        def do_POST(self):
+            if self.path == '/alert':
+                try:
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    post_data = self.rfile.read(content_length)
+                    data = json.loads(post_data.decode('utf-8'))
+                    message = data.get('message', '')
+                    project_name = data.get('project_name')
+                    interactive = data.get('interactive', False)
+                    
+                    if message:
+                        logger.info(f"🔔 Received alert request for {project_name} (interactive={interactive}): {message[:100]}...")
+                        
+                        # 建立回覆標籤 (核准/捨棄)
+                        reply_markup = None
+                        if interactive and project_name:
+                            keyboard = [
+                                [
+                                    InlineKeyboardButton("🟢 核准合併 (Approve)", callback_data=f"approve_merge:{project_name}"),
+                                    InlineKeyboardButton("🔴 捨棄還原 (Reject)", callback_data=f"reject_merge:{project_name}")
+                                ]
+                            ]
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                            
+                        # Run the async coroutine thread-safely in the main asyncio event loop
+                        asyncio.run_coroutine_threadsafe(
+                            bot.send_message(
+                                chat_id=AUTHORIZED_USER_ID,
+                                text=f"⚠️ **[AgentOS Alert]**\n\n{message}",
+                                parse_mode='Markdown',
+                                reply_markup=reply_markup
+                            ),
+                            loop
+                        )
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"status": "sent"}).encode('utf-8'))
+                        return
+                except Exception as e:
+                    logger.error(f"Error in AlertHandler do_POST: {e}")
+            self.send_response(400)
+            self.end_headers()
+            
+    def run_server():
+        try:
+            server = HTTPServer(('127.0.0.1', 8085), AlertHandler)
+            logger.info("📡 Local HTTP Alert Server listening on http://127.0.0.1:8085")
+            server.serve_forever()
+        except Exception as e:
+            logger.error(f"Failed to start local alert server: {e}")
+
+    t = threading.Thread(target=run_server, daemon=True)
+    t.start()
+
 if __name__ == '__main__':
     # 確保只有一個實例在運行 (Lock & Replace)
     _lock = setup_locking("tg_bridge", replace=True)
@@ -563,4 +718,8 @@ if __name__ == '__main__':
         app.add_handler(MessageHandler(filters.COMMAND, handle_workflow_command))
         app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
         logger.info("Universal Agent with Triple-Layer Memory is online.")
+        
+        # Start our local alert listening server
+        start_alert_server(app.bot, asyncio.get_event_loop())
+        
         app.run_polling()
