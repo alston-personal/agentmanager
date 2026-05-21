@@ -48,3 +48,5 @@ memory.local-backup-*/
 *.swp
 .env.backup_*
 *.code-workspace
+scratch/
+

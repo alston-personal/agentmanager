@@ -167,11 +167,13 @@ class MattersBot:
         try:
             latest_article = data["viewer"]["articles"]["edges"][0]["node"]
             article_id = latest_article["id"]
-            print(f"✅ Found Actual Article ID: {article_id} (Title: {latest_article['title']})")
-            return article_id
+            slug = latest_article["slug"]
+            article_url = f"https://matters.town/a/{slug}"
+            print(f"✅ Found Actual Article: {article_url} (ID: {article_id})")
+            return article_id, article_url
         except (IndexError, KeyError):
             print("⚠️ Warning: Could not auto-detect the new Article ID. Returning input draft_id as fallback.")
-            return draft_id
+            return draft_id, f"https://matters.town/a/{draft_id}"
 
     def get_collections(self, first=20):
         query = """

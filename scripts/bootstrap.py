@@ -53,12 +53,48 @@ def ensure_symlink(link_path, target_path, label):
         print(f"🔗 Creating symlink: {label} -> {target_path}")
         os.symlink(target_path, link_path)
 
+def heal_recursive_symlinks(root_dir):
+    """
+    Scans root_dir recursively for symbolic links that point to themselves or
+    an ancestor path, creating infinite loops (cycles) that crash file explorers
+    and search scripts. Automatically unlinks any detected cycle.
+    """
+    cleaned_count = 0
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        for entry in dirnames + filenames:
+            entry_path = os.path.join(dirpath, entry)
+            if os.path.islink(entry_path):
+                try:
+                    target = os.readlink(entry_path)
+                    abs_target = os.path.abspath(os.path.join(os.path.dirname(entry_path), target))
+                    abs_entry = os.path.abspath(entry_path)
+                    
+                    if abs_entry == abs_target or abs_entry.startswith(abs_target + os.sep):
+                        print(f"🚨 Cycle Detected: {abs_entry} -> {target} (resolved: {abs_target})")
+                        os.remove(abs_entry)
+                        print(f"🗑️ Cleaned up recursive symlink cycle.")
+                        cleaned_count += 1
+                except Exception:
+                    pass
+    return cleaned_count
+
 def bootstrap():
     print("🚀 Starting Agent OS Data Layer Bootstrap...")
     
     if not DATA_ROOT:
         print("❌ Error: AGENT_DATA_ROOT not set in environment.")
         sys.exit(1)
+        
+    # Auto-heal any symlink cycles to prevent freeze/lockup
+    print("🔍 Auditing for recursive symlink cycles to prevent infinite loops...")
+    cleaned = heal_recursive_symlinks(PROJECT_ROOT)
+    if os.path.exists(DATA_ROOT):
+        cleaned += heal_recursive_symlinks(DATA_ROOT)
+    if cleaned > 0:
+        print(f"✅ Self-healed {cleaned} symbolic link cycles.")
+    else:
+        print("☀️ No symbolic link cycles detected. System is clean.")
+
 
     print(f"📂 Target Data Root: {DATA_ROOT}")
     

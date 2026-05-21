@@ -322,12 +322,56 @@ class UnifiedAntigravityAgent:
 
 agent = UnifiedAntigravityAgent(GEMINI_API_KEY)
 
+async def safe_reply_text(message_or_query, text, **kwargs):
+    """
+    Sends or edits a telegram message safely, avoiding Markdown parse errors 
+    and splitting long messages (> 4000 chars) into multiple chunks.
+    """
+    MAX_LENGTH = 4000
+    text_str = str(text)
+    chunks = [text_str[i:i+MAX_LENGTH] for i in range(0, len(text_str), MAX_LENGTH)]
+    
+    is_query = hasattr(message_or_query, "edit_message_text")
+    last_response = None
+    
+    for idx, chunk in enumerate(chunks):
+        current_kwargs = kwargs.copy()
+        
+        # Only attach reply_markup to the final chunk
+        if idx < len(chunks) - 1 and "reply_markup" in current_kwargs:
+            del current_kwargs["reply_markup"]
+            
+        try:
+            if is_query and idx == 0:
+                last_response = await message_or_query.edit_message_text(chunk, **current_kwargs)
+            else:
+                target = message_or_query.message if is_query else message_or_query
+                last_response = await target.reply_text(chunk, **current_kwargs)
+        except Exception as e:
+            if "can't parse entities" in str(e).lower() and current_kwargs.get("parse_mode") == "Markdown":
+                logger.warning(f"Markdown parsing failed, falling back to plain text. Error: {e}")
+                current_kwargs["parse_mode"] = None
+                clean_chunk = chunk.replace("**", "").replace("`", "").replace("🔹", "-")
+                try:
+                    if is_query and idx == 0:
+                        last_response = await message_or_query.edit_message_text(clean_chunk, **current_kwargs)
+                    else:
+                        target = message_or_query.message if is_query else message_or_query
+                        last_response = await target.reply_text(clean_chunk, **current_kwargs)
+                except Exception as ex:
+                    logger.error(f"Fallback plain text sending failed: {ex}")
+            else:
+                logger.error(f"Failed to send telegram message chunk: {e}")
+                
+    return last_response
+
 # --- 處理器 ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != AUTHORIZED_USER_ID:
         return
-    await update.message.reply_text(
+    await safe_reply_text(
+        update.message,
         "👋 **Antigravity 遠端指揮中心**\n\n"
         "可以直接輸入訊息與我對話，或使用下方按鈕快速操作。",
         reply_markup=get_main_menu(),
@@ -344,7 +388,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == 'menu_main':
-        await query.edit_message_text(
+        await safe_reply_text(
+            query,
             "請選擇操作類別：",
             reply_markup=get_main_menu(),
             parse_mode='Markdown'
@@ -352,7 +397,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == 'menu_workflows':
-        await query.edit_message_text(
+        await safe_reply_text(
+            query,
             "⚙️ **可用工作流**",
             reply_markup=get_workflow_menu(),
             parse_mode='Markdown'
@@ -360,7 +406,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == 'menu_skills':
-        await query.edit_message_text(
+        await safe_reply_text(
+            query,
             "🧰 **技能庫**",
             reply_markup=get_skill_menu(),
             parse_mode='Markdown'
@@ -368,7 +415,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == 'menu_ai':
-        await query.edit_message_text(
+        await safe_reply_text(
+            query,
             "🧠 **AI 對話模式已開啟**\n\n直接輸入需求即可，例如：\n`/status` 或 `幫我整理目前專案狀態`",
             reply_markup=get_main_menu(),
             parse_mode='Markdown'
@@ -386,13 +434,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if len(parts) >= 5:
                         lines.append(f"{parts[1] or '🔹'} **{parts[2].replace('**','')}**")
                         lines.append(f"   {parts[4]}")
-            await query.edit_message_text(
-                "\n".join(lines)[:3800],
+            await safe_reply_text(
+                query,
+                "\n".join(lines),
                 reply_markup=get_main_menu(),
                 parse_mode='Markdown'
             )
         except Exception as exc:
-            await query.edit_message_text(
+            await safe_reply_text(
+                query,
                 f"❌ 讀取失敗: {exc}",
                 reply_markup=get_main_menu(),
                 parse_mode='Markdown'
@@ -401,8 +451,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'shell_df':
         res = subprocess.run("df -h", shell=True, capture_output=True, text=True, timeout=30, cwd=PROJECT_ROOT)
-        output = (res.stdout or res.stderr)[:3500]
-        await query.edit_message_text(
+        output = (res.stdout or res.stderr)
+        await safe_reply_text(
+            query,
             f"💻 **系統資源**\n\n```text\n{output}\n```",
             reply_markup=get_main_menu(),
             parse_mode='Markdown'
@@ -411,8 +462,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("wf_"):
         workflow_name = data[3:]
-        result = run_system_workflow(workflow_name)[:3500]
-        await query.edit_message_text(
+        result = run_system_workflow(workflow_name)
+        await safe_reply_text(
+            query,
             f"✅ **/{workflow_name}**\n\n```markdown\n{result}\n```",
             reply_markup=get_main_menu(),
             parse_mode='Markdown'
@@ -421,8 +473,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("skill_"):
         skill_name = data[6:]
-        output = read_skill_guide(skill_name)[:3500]
-        await query.edit_message_text(
+        output = read_skill_guide(skill_name)
+        await safe_reply_text(
+            query,
             f"🧩 **技能資訊: {skill_name}**\n\n```text\n{output}\n```",
             reply_markup=get_main_menu(),
             parse_mode='Markdown'
@@ -438,10 +491,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Shell 下放
     if text.lower().startswith("shell "):
         res = subprocess.run(text[6:], shell=True, capture_output=True, text=True, timeout=30, cwd=PROJECT_ROOT)
-        output = (res.stdout or res.stderr)[:3500]
+        output = (res.stdout or res.stderr)
         sync_session_event("telegram-shell", text, output, {"chat_id": chat_id})
         persist_telegram_transcript(chat_id, text, output)
-        await update.message.reply_text(f"```text\n{output}\n```", parse_mode='Markdown')
+        await safe_reply_text(update.message, f"```text\n{output}\n```", parse_mode='Markdown')
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -459,10 +512,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 加入視覺化的狀態標籤
     status_footer = f"\n\n---\n📡 **系統鏈結：** `Core` | `Memory` | `Board` | `{agent.current_model.split('/')[-1]}`"
 
-    try:
-        await update.message.reply_text(f"🧠 **Antigravity Proxy**\n\n{response}{status_footer}", parse_mode='Markdown')
-    except:
-        await update.message.reply_text(f"🧠 Antigravity Proxy [Text Only]\n\n{response}{status_footer}")
+    await safe_reply_text(update.message, f"🧠 **Antigravity Proxy**\n\n{response}{status_footer}", parse_mode='Markdown')
 
 
 async def handle_workflow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -481,7 +531,8 @@ async def handle_workflow_command(update: Update, context: ContextTypes.DEFAULT_
         reply = f"未知指令 `/{command}`。\n\n可用 workflows:\n{available}"
         sync_session_event("telegram-workflow", text, reply, {"chat_id": chat_id})
         persist_telegram_transcript(chat_id, text, reply)
-        await update.message.reply_text(
+        await safe_reply_text(
+            update.message,
             reply,
             parse_mode='Markdown'
         )
@@ -489,10 +540,11 @@ async def handle_workflow_command(update: Update, context: ContextTypes.DEFAULT_
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     result = run_system_workflow(command)
-    sync_session_event("telegram-workflow", text, result[:3500], {"chat_id": chat_id, "workflow": command})
-    persist_telegram_transcript(chat_id, text, result[:3500])
-    await update.message.reply_text(
-        f"```markdown\n{result[:3500]}\n```",
+    sync_session_event("telegram-workflow", text, result, {"chat_id": chat_id, "workflow": command})
+    persist_telegram_transcript(chat_id, text, result)
+    await safe_reply_text(
+        update.message,
+        f"```markdown\n{result}\n```",
         parse_mode='Markdown'
     )
 
