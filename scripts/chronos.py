@@ -246,8 +246,8 @@ def scan_stagnant_projects(dry_run=False):
         
         logger.info(f"Project '{proj_name}': {len(undone_tasks)} undone tasks, last updated {stagnant_days:.2f} days ago.")
         
-        # 停滯標準：只要有未完成待辦，且超過 3 天沒有修改（乾跑或測試時放寬）
-        is_stagnant = (stagnant_days >= 3.0) or (len(undone_tasks) > 0 and dry_run)
+        # 停滯標準：只要有未完成待辦，且超過 1.0 天沒有修改（乾跑或測試時放寬）
+        is_stagnant = (stagnant_days >= 1.0) or (len(undone_tasks) > 0 and dry_run)
         
         if len(undone_tasks) > 0 and is_stagnant:
             if proj_name in PROJECT_MAP:
@@ -291,7 +291,7 @@ def run_self_pushing(dry_run=False):
         
         if dry_run:
             logger.info(f"[Dry-Run] 模擬執行自治推進指令：")
-            logger.info(f"  Command: pnpm openclaw agent --agent moltbot --workspace-dir {logic_dir} --model ollama/gemma2:2b --thinking low")
+            logger.info(f"  Command: pnpm --dir /home/ubuntu/openclaw openclaw agent --agent main --model ollama/gemma2:2b --thinking off (cwd={logic_dir})")
             logger.info(f"  Message length: {len(custom_message)} chars")
             continue
             
@@ -305,9 +305,10 @@ def run_self_pushing(dry_run=False):
             logger.info(f"🔥 啟動 OpenClaw 自主代理 (指定本機 Gemma2 路由)，執行專案 '{name}' 自治推進循環...")
             
             # 使用本機 Gemma2 路由，完全免費免 Token 額度
+            # 將 cwd 設為 logic_dir 以自動判定 Workspace，並使用 pnpm --dir 來定位 openclaw 執行檔，移除不合法的 --workspace-dir，並將 --thinking 設為 off (Gemma 不支援 reasoning)
             process = subprocess.run(
-                ["pnpm", "openclaw", "agent", "--agent", "moltbot", "--workspace-dir", logic_dir, "--message", custom_message, "--model", "ollama/gemma2:2b", "--thinking", "low"],
-                cwd="/home/ubuntu/openclaw",
+                ["pnpm", "--dir", "/home/ubuntu/openclaw", "openclaw", "agent", "--agent", "main", "--message", custom_message, "--model", "ollama/gemma2:2b", "--thinking", "off"],
+                cwd=logic_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

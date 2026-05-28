@@ -15,3 +15,8 @@ schedules:
   - name: project-self-pushing
     interval_seconds: 43200  # Evaluate and push stagnant projects every 12 hours
     command: "python3 scripts/chronos.py --self-pushing"
+
+  - name: swarm-board-refresh
+    interval_seconds: 60  # Dynmically compile and refresh the flight deck board every minute
+    command: "python3 scripts/update_scheduler_board.py"
+
