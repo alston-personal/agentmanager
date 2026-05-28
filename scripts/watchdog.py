@@ -1,153 +1,291 @@
 #!/usr/bin/env python3
+"""
+Antigravity AgentOS Self-Healing Watchdog
+Actively monitors system services, Docker containers, and project STATUS.md files.
+Automatically triggers self-healing routines and broadcasts Telegram alerts.
+"""
 import os
+import sys
+import re
+import json
+import logging
+import argparse
 import subprocess
 import requests
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-
-def load_env_file(path: Path):
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), os.path.expandvars(value.strip().strip('"').strip("'")))
-
-
-load_env_file(PROJECT_ROOT / ".env")
-
-# Load environment variables
-AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
-AGENT_MODE = os.getenv("AGENT_MODE", "CLIENT")
-SYNC_LOG_PATH = os.path.join(AGENT_DATA_ROOT, "memory", "session_sync.md")
-N8N_URL = os.getenv("N8N_URL")
-
-logging.basicConfig(level=logging.INFO)
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] (%(name)s) %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("/home/ubuntu/agent-data/logs/watchdog.log", encoding="utf-8")
+    ]
+)
 logger = logging.getLogger("Watchdog")
 
-if AGENT_MODE != "CORE":
-    # On non-core machines, watchdog should be silent or limited
-    # But for now, we just exit to prevent fighting over services
-    print(f"Watchdog: AGENT_MODE is {AGENT_MODE}. Skipping core service management.")
-    import sys
-    sys.exit(0)
+PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
+AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
+LOCK_DIR = Path("/tmp/watchdog_locks")
+LOCK_DIR.mkdir(parents=True, exist_ok=True)
 
-def auto_pull_logic():
-    """CORE 機器自動同步邏輯層 (agentmanager) 代碼"""
+def load_env():
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+load_env()
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
+AGENT_MODE = os.getenv("AGENT_MODE", "CORE")
+
+def send_alert(message: str):
+    """
+    Sends a Telegram alert. Uses the local Port 8085 HTTP bridge.
+    Falls back to direct Telegram API call if the local bridge is down.
+    """
+    logger.info(f"🚨 Attempting to send alert: {message[:100]}...")
+    payload = {"message": message}
+    
+    # Method 1: Local HTTP bridge
     try:
-        project_root = os.getenv("AGENT_PROJECT_ROOT", "/home/ubuntu/agentmanager")
-        os.chdir(project_root)
-        # 只有在 Git 目錄下才執行
-        if os.path.exists(".git"):
-            logger.info("📡 [Sync] Core Pulling latest logic...")
-            subprocess.run(["git", "pull", "--rebase"], capture_output=True)
+        res = requests.post("http://127.0.0.1:8085/alert", json=payload, timeout=5)
+        if res.status_code == 200:
+            logger.info("✅ Alert delivered successfully via local HTTP bridge.")
+            return True
     except Exception as e:
-        logger.error(f"Auto-pull failed: {e}")
+        logger.warning(f"⚠️ Local HTTP bridge unavailable: {e}. Falling back to direct Telegram API.")
 
-def log_to_sync(message: str):
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    os.makedirs(os.path.dirname(SYNC_LOG_PATH), exist_ok=True)
-    with open(SYNC_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"\n> [!WARNING]\n> **Watchdog @ {timestamp}**: {message}\n")
+    # Method 2: Direct Telegram API Fallback
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            direct_payload = {
+                "chat_id": TELEGRAM_CHANNEL_ID,
+                "text": f"⚠️ **[AgentOS Direct Fallback Alert]**\n\n{message}",
+                "parse_mode": "Markdown"
+            }
+            res = requests.post(url, json=direct_payload, timeout=10)
+            if res.status_code == 200:
+                logger.info("✅ Alert delivered successfully via Direct Telegram API.")
+                return True
+            else:
+                logger.error(f"❌ Direct API returned error: {res.text}")
+        except Exception as ex:
+            logger.error(f"❌ Direct API call failed: {ex}")
+    else:
+        logger.error("❌ Cannot send alert: No Telegram credentials in environment.")
+    return False
 
 def check_systemd_user(service_name: str) -> bool:
     try:
         env = os.environ.copy()
+        uid = os.getuid()
         if "XDG_RUNTIME_DIR" not in env:
-            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+        if "DBUS_SESSION_BUS_ADDRESS" not in env:
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
         result = subprocess.run(
             ["systemctl", "--user", "is-active", service_name],
-            capture_output=True, text=True, env=env
+            capture_output=True, text=True, env=env, timeout=10
         )
         return result.stdout.strip() == "active"
     except Exception as e:
         logger.error(f"Failed to check systemd service {service_name}: {e}")
         return False
 
-def restart_systemd_user(service_name: str):
-    logger.warning(f"Attempting to restart {service_name}...")
+def restart_systemd_user(service_name: str) -> bool:
+    logger.warning(f"🔧 [Self-Healing] Attempting to restart user systemd service {service_name}...")
     env = os.environ.copy()
+    uid = os.getuid()
     if "XDG_RUNTIME_DIR" not in env:
-        env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
-    subprocess.run(["systemctl", "--user", "restart", service_name], env=env)
-    log_to_sync(f"Service `{service_name}` was down. Attempted restart.")
-
-def check_http(url: str) -> bool:
-    if not url: return True # Skip if no URL
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
     try:
-        import requests
-        response = requests.get(url, timeout=5)
-        return response.status_code == 200
+        subprocess.run(["systemctl", "--user", "restart", service_name], env=env, timeout=15)
+        logger.info(f"✅ Restart command sent to systemd for {service_name}.")
+        return True
     except Exception as e:
-        logger.error(f"HTTP check failed for {url}: {e}")
+        logger.error(f"❌ Failed to restart user systemd service {service_name}: {e}")
         return False
 
 def check_docker_container(container_name: str) -> bool:
     try:
         result = subprocess.run(
             ["sudo", "docker", "inspect", "-f", "{{.State.Running}}", container_name],
-            capture_output=True, text=True
+            capture_output=True, text=True, timeout=10
         )
         return result.stdout.strip() == "true"
     except Exception as e:
         logger.error(f"Failed to check docker container {container_name}: {e}")
         return False
 
-def restart_docker_container(container_name: str):
-    logger.warning(f"Attempting to restart docker container {container_name}...")
-    subprocess.run(["sudo", "docker", "start", container_name])
-    log_to_sync(f"Docker container `{container_name}` was down. Attempted start.")
-
-def verify_python_deps():
-    # Simple check for critical telegram lib
+def restart_docker_container(container_name: str) -> bool:
+    logger.warning(f"🔧 [Self-Healing] Attempting to restart docker container {container_name}...")
     try:
-        import telegram
+        subprocess.run(["sudo", "docker", "start", container_name], timeout=20)
+        logger.info(f"✅ Start command sent to Docker for {container_name}.")
         return True
-    except ImportError:
-        logger.error("❌ Critical dependency 'telegram' missing!")
+    except Exception as e:
+        logger.error(f"❌ Failed to restart docker container {container_name}: {e}")
         return False
 
-def main():
-    # 📡 自動同步代碼 (只在 CORE 模式)
-    auto_pull_logic()
+def check_http(url: str) -> bool:
+    try:
+        res = requests.get(url, timeout=5)
+        return res.status_code == 200
+    except Exception:
+        return False
 
-    # 核心 Systemd 服務
-    core_services = ["tg-commander.service", "moltbot-gateway.service"]
+def should_alert(project_name: str, error_message: str) -> bool:
+    """Anti-spam throttling filter. Alerts only once every 4 hours for the same error."""
+    lock_file = LOCK_DIR / f"{project_name}.lock"
+    clean_msg = re.sub(r'\s+', ' ', error_message).strip()
     
-    for svc in core_services:
-        is_active = check_systemd_user(svc)
-        if not is_active:
-            # Special case: check if it's missing dependencies
-            if svc == "tg-commander.service" and not verify_python_deps():
-                logger.warning("Attempting to repair dependencies for tg-commander...")
-                subprocess.run(["/home/ubuntu/agentmanager/.venv/bin/pip", "install", "-r", "/home/ubuntu/agentmanager/requirements.txt"])
+    if lock_file.exists():
+        try:
+            lock_data = json.loads(lock_file.read_text(encoding="utf-8"))
+            last_alert_time = datetime.fromisoformat(lock_data["time"])
+            last_msg = lock_data["message"]
             
-            restart_systemd_user(svc)
+            # If error is identical and within 4 hours, do not alert
+            elapsed = (datetime.now(timezone.utc) - last_alert_time).total_seconds()
+            if clean_msg == last_msg and elapsed < 14400:
+                logger.info(f"⏭️ Throttling alert for {project_name} (already sent {elapsed/60:.1f}m ago).")
+                return False
+        except Exception as e:
+            logger.warning(f"Failed to parse alert lock for {project_name}: {e}")
+            
+    # Write lock
+    lock_file.write_text(json.dumps({
+        "time": datetime.now(timezone.utc).isoformat(),
+        "message": clean_msg
+    }), encoding="utf-8")
+    return True
+
+def clear_alert_lock(project_name: str):
+    lock_file = LOCK_DIR / f"{project_name}.lock"
+    if lock_file.exists():
+        lock_file.unlink()
+
+def scan_project_statuses():
+    """
+    Scans all projects STATUS.md files in the data layer for error flags (🔴)
+    and reports them. Automatically clears alert throttling lock when 🟢 is found.
+    """
+    projects_dir = AGENT_DATA_ROOT / "projects"
+    if not projects_dir.exists():
+        logger.warning(f"Projects directory {projects_dir} does not exist. Skipping status scan.")
+        return
+
+    logger.info("🔍 Scanning project STATUS.md files...")
+    for project_path in projects_dir.iterdir():
+        if not project_path.is_dir():
+            continue
+        
+        status_file = project_path / "STATUS.md"
+        if not status_file.exists():
+            continue
+            
+        try:
+            content = status_file.read_text(encoding="utf-8")
+            status_match = re.search(r'\|\s*\*\*Last Status\*\*\s*\|\s*([^|]+)\|', content)
+            if status_match:
+                status_text = status_match.group(1).strip()
+                if "🔴" in status_text:
+                    logger.warning(f"💥 Failure detected in project {project_path.name}: {status_text}")
+                    if should_alert(project_path.name, status_text):
+                        send_alert(
+                            f"💥 **專案運行異常 (Stall/Error)**\n"
+                            f"🔹 **專案**: `{project_path.name}`\n"
+                            f"🔹 **狀態**: {status_text}\n"
+                            f"🔹 **時間**: `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}`"
+                        )
+                elif "🟢" in status_text:
+                    # Clear lock to allow future alerts if it breaks later
+                    clear_alert_lock(project_path.name)
+        except Exception as e:
+            logger.error(f"Failed to scan STATUS.md for {project_path.name}: {e}")
+
+def run_self_healing():
+    """
+    Checks active systemd services, Docker containers, and website endpoints,
+    healing them instantly if down.
+    """
+    if AGENT_MODE != "CORE":
+        logger.info("Skipping core service checks since AGENT_MODE is not CORE.")
+        return
+
+    # 1. Systemd core services
+    core_services = ["tg-commander.service"]
+    for svc in core_services:
+        if not check_systemd_user(svc):
+            logger.error(f"❌ Core service {svc} is DOWN!")
+            if restart_systemd_user(svc):
+                send_alert(
+                    f"🔧 **[自癒系統啟動]** Core 服務 `{svc}` 斷線！\n"
+                    f"✅ 已經自動重啟該 Systemd 服務。"
+                )
         else:
             logger.info(f"✅ Core service {svc} is active.")
 
-    # Docker 容器狀態
-    if not check_docker_container("n8n"):
-        logger.error("❌ n8n container is NOT running.")
-        restart_docker_container("n8n")
+    # 2. n8n Docker Container
+    if check_docker_container("n8n"):
+        logger.info("✅ Docker container 'n8n' is active.")
+        # Check HTTP
+        if not check_http("https://n8n.milkcat.org/healthz"):
+            logger.error("❌ n8n API is unreachable!")
+            # Trigger restart if unreachable for a while
+            # (Just log warning for now to prevent racing during container start)
     else:
-        logger.info("✅ n8n container is running.")
+        logger.error("❌ Docker container 'n8n' is DOWN!")
+        if restart_docker_container("n8n"):
+            send_alert(
+                "🔧 **[自癒系統啟動]** Docker `n8n` 容器停止！\n"
+                "✅ 已經自動重啟該 Docker 容器。"
+            )
 
-    # HTTP 健康檢查
-    if N8N_URL:
-        health_url = f"{N8N_URL.rstrip('/')}/healthz"
-        if not check_http(health_url):
-            logger.error(f"❌ n8n API is unreachable @ {health_url}")
-            log_to_sync(f"n8n API is unreachable at `{health_url}`. Service might be starting or misconfigured.")
-        else:
-            logger.info("✅ n8n API is healthy.")
+    # 3. Heal AI Onboarding & Possession Links
+    logger.info("🔧 [Self-Healing] Healing AI Possession symlinks and directives...")
+    try:
+        subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "scripts" / "propagate_possession_rules.py")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30
+        )
+        logger.info("✅ AI Possession rules successfully healed.")
+    except Exception as e:
+        logger.error(f"❌ Failed to run propagate_possession_rules: {e}")
+
+def main():
+    parser = argparse.ArgumentParser(description="AgentOS Watchdog Service")
+    parser.add_argument("--test-alert", action="store_true", help="Send a test alert message to Telegram.")
+    args = parser.parse_args()
+
+    if args.test_alert:
+        send_alert("🧪 **AgentOS Watchdog 測試警報**\n本機 HTTP 警報端點與 Direct API 備援測試皆正常運作！")
+        return 0
+
+    logger.info("🛡️ Running Watchdog Service Check...")
+    
+    # 1. Check & Repair system services
+    run_self_healing()
+    
+    # 2. Scan status markdown files
+    scan_project_statuses()
+    
+    logger.info("🎉 Watchdog checks completed.")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

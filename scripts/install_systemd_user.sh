@@ -27,20 +27,20 @@ fi
 
 mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
 
-cat > "$USER_SYSTEMD_DIR/os-pulse.service" <<EOF
+cat > "$USER_SYSTEMD_DIR/os-chronos.service" <<EOF
 [Unit]
-Description=AgentOS Heartbeat Pulse Monitor
+Description=AgentOS Central Chronos Scheduler
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=$LOGIC_ROOT
 EnvironmentFile=$ENV_FILE
-ExecStart=$PYTHON_BIN scripts/pulse.py --agent Architect --task "Heartbeat Monitor" --status active --watch
+ExecStart=$PYTHON_BIN scripts/chronos.py
 Restart=always
 RestartSec=30
-StandardOutput=append:$DATA_ROOT/logs/pulse.log
-StandardError=append:$DATA_ROOT/logs/pulse.log
+StandardOutput=append:$DATA_ROOT/logs/chronos.log
+StandardError=append:$DATA_ROOT/logs/chronos.log
 
 [Install]
 WantedBy=default.target
@@ -115,7 +115,18 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable os-pulse.service agent-maintenance.timer >/dev/null
+
+# Stop and disable legacy pulse service if it exists
+systemctl --user stop os-pulse.service 2>/dev/null || true
+systemctl --user disable os-pulse.service 2>/dev/null || true
+
+# Stop legacy PM2 zeus-autonomous-manager if running
+if command -v pm2 &>/dev/null; then
+  pm2 delete zeus-autonomous-manager 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+fi
+
+systemctl --user enable os-chronos.service agent-maintenance.timer >/dev/null
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user enable tg-commander.service cat-ink-syncer.service >/dev/null
@@ -125,7 +136,7 @@ else
   echo "AGENT_MODE is not CORE; tg-commander.service and cat-ink-syncer.service installed but not started."
 fi
 
-systemctl --user restart os-pulse.service
+systemctl --user restart os-chronos.service
 systemctl --user start agent-maintenance.timer
 
 echo "Installed AgentOS user services from $LOGIC_ROOT"

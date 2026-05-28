@@ -1,0 +1,18 @@
+[Unit]
+Description=🦞 AgentOS Lobster Engine - Autonomous Task Loop
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agentmanager
+ExecStart=/usr/bin/python3 /home/ubuntu/agentmanager/scripts/lobster.py --loop --cool-down 60
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -190,6 +190,14 @@ def register_project(project_name: str, display_name: str | None, status: str, t
     ensure_dashboard_entry(project_slug, pretty_name, status, type_icon)
     ensure_local_mounts(project_slug, status_path)
     ensure_workspace_entry(project_slug, pretty_name, type_icon)
+    
+    # Dynamically trigger AI possession propagation
+    try:
+        import subprocess
+        subprocess.run(["python3", str(PROJECT_ROOT / "scripts" / "propagate_possession_rules.py")], capture_output=True, timeout=15)
+    except Exception as e:
+        print(f"⚠️ Warning: Failed to propagate AI rules: {e}")
+        
     return "\n".join([
         f"Registered project: {pretty_name}",
         f"Slug: {project_slug}",
