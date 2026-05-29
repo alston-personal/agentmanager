@@ -1,1 +1,1 @@
-/home/ubuntu/agent-data/memory/LONG_TERM.md
+/home/ubuntu/agent-data/memory/SYSTEM_IDENTITY.md

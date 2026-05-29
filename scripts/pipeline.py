@@ -29,7 +29,6 @@ import signal
 import logging
 import argparse
 import requests
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -146,65 +145,10 @@ def update_board_task(task_text: str, new_status: str):
 # ── Lobster 執行（單一任務）─────────────────────────────────────────────────
 
 def run_task(project: str, task_text: str, dry_run: bool = False) -> tuple[bool, str]:
-    """呼叫 Claude --print 執行一個任務"""
-    proj_dir = HOME / project
-
-    status_md = PROJECTS_DIR / project / "STATUS.md"
-    status_content = ""
-    if status_md.exists():
-        status_content = status_md.read_text(encoding="utf-8")[:2000]
-
-    prompt = f"""你是 AgentOS 自律執行器。你正在執行 **{project}** 專案的一個任務。
-
-## 專案目錄
-/home/ubuntu/{project}/
-
-## 專案現況（STATUS.md 摘要）
-{status_content}
-
-## 你現在的任務
-**{task_text}**
-
-執行要求：
-1. 仔細分析任務需要做什麼
-2. 實際執行（修改代碼/建立文件/測試等）
-3. 驗證結果是否符合預期
-4. 最後**必須**輸出以下其一：
-   - `✅ 任務完成：[任務名稱]` — 表示成功
-   - `⚠️ 需要人工介入：[具體原因]` — 表示需要人工決策
-不要只說"好的"就停下，要真正執行。
-"""
-
-    if dry_run:
-        logger.info(f"[DRY RUN] 模擬執行: {task_text[:60]}")
-        return True, "✅ 任務完成：[DRY RUN]"
-
-    if not proj_dir.exists():
-        return False, f"PROJECT_DIR_NOT_FOUND: {proj_dir}"
-
-    cmd = [
-        str(CLAUDE_BIN), "--print", "--output-format", "text",
-        "--max-tokens", str(MAX_TOKENS),
-        "--no-session-persistence", prompt,
-    ]
-
-    try:
-        result = subprocess.run(
-            cmd, cwd=str(proj_dir), capture_output=True, text=True,
-            timeout=TASK_TIMEOUT,
-            env={**os.environ, "CLAUDE_PROJECT_DIR": str(proj_dir)},
-        )
-        output = result.stdout.strip()
-        if result.returncode == 0:
-            return True, output
-        return False, f"EXIT_{result.returncode}: {result.stderr[:200]}"
-    except subprocess.TimeoutExpired:
-        return False, "TIMEOUT"
-    except Exception as e:
-        return False, str(e)
+     """呼叫 Claude --print 執行一個任務（delegate 給 lobster）"""
+     return lobster.run_claude_task(project, {"text": task_text}, dry_run)
 
 
-# ── 主流水線 ──────────────────────────────────────────────────────────────
 
 def run_pipeline_for_project(project: str, wish_text: str = "", dry_run: bool = False) -> bool:
     """
@@ -299,16 +243,10 @@ def run_pipeline_for_project(project: str, wish_text: str = "", dry_run: bool = 
 
 
 def run_with_architect(dry_run: bool = False) -> bool:
-    """先執行 Architect 展開許願，再執行流水線"""
-    import subprocess as sp
-    architect_script = Path(__file__).parent / "architect.py"
-
-    cmd = [sys.executable, str(architect_script)]
-    if dry_run:
-        cmd.append("--dry-run")
-
-    result = sp.run(cmd, capture_output=False, text=True)
-    return result.returncode == 0
+      """先執行 Architect 展開許願，再執行流水線"""
+       import architect
+       import architect
+       return architect.main(dry_run=dry_run) == 0
 
 
 def main():

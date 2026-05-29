@@ -1,0 +1,217 @@
+model_list:
+# 1. 旗艦主力大腦（當 Claude Code 要用 Sonnet 處理核心代碼時，其實是跑你的最強 Qwen）
+  - model_name: claude-3-7-sonnet
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-7-sonnet-20250219
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-5-sonnet-20241022
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-5-sonnet-20240620
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  # 2. 備用旗艦大腦（處理超複雜邏輯時，對接你的高精度 31B Gemma）
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-4.7
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: "claude-opus-4-6[1m]"
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-4-6
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-7-opus
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-5-opus
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-5-opus-20240229
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-3-5
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-opus-20240229
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  # 3. 速度型背景助理（當 Claude Code 偷偷呼叫 Haiku 來做背景摘要時，給它跑極限輕量化的 Gemma）
+  - model_name: claude-3-5-haiku
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+  
+  - model_name: gemma4-26b-q4
+    litellm_params:
+      model: openai/gemma4:26b-a4b-it-q4_K_M
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 / 🖼️ 多模態 (支援視覺) | 儲存 ~17 GB / 🧠 運行記憶體 ~22 GB
+
+  - model_name: gemma4-26b-q8
+    litellm_params:
+      model: openai/gemma4:26b-a4b-it-q8_0
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 / 🖼️ 多模態 (支援視覺) | 儲存 ~27 GB / 🧠 運行記憶體 ~34 GB
+
+  - model_name: gemma4-26b-mxfp8
+    litellm_params:
+      model: openai/gemma4:26b-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 / 🔤 僅限文字 | 儲存 ~27 GB / 🧠 運行記憶體 ~32 GB
+
+  - model_name: gemma4-26b-nvfp4
+    litellm_params:
+      model: openai/gemma4:26b-nvfp4
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 / 🔤 僅限文字 | 儲存 ~16.5 GB / 🧠 運行記憶體 ~20 GB
+
+  - model_name: gemma4-31b
+    litellm_params:
+      model: openai/gemma4:31b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：Dense 架構 / 🖼️ 多模態 (支援視覺) | 儲存 ~20 GB / 🧠 運行記憶體 ~26 GB
+
+  - model_name: gemma4-31b-bf16
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：Dense 架構 / 🖼️ 多模態 (支援視覺) | 儲存 ~62 GB / 🧠 運行記憶體 ~78 GB+
+
+  - model_name: gemma4-31b-mxfp8
+    litellm_params:
+      model: openai/gemma4:31b-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：Dense 架構 / 🔤 僅限文字 | 儲存 ~32 GB / 🧠 運行記憶體 ~42 GB
+
+  - model_name: gemma4-31b-nvfp4
+    litellm_params:
+      model: openai/gemma4:31b-nvfp4
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：Dense 架構 / �� 僅限文字 | 儲存 ~17 GB / 🧠 運行記憶體 ~26 GB
+
+  - model_name: gemma4-e4b
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 (4B) / 🖼️ 多模態 (支援視覺) | 儲存 ~9.6 GB / 🧠 運行記憶體 ~13 GB
+
+  - model_name: qwen3.6-27b-coding-mxfp8
+    litellm_params:
+      model: openai/qwen3.6:27b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：Dense 架構 / 🔤 純文字 | 儲存 ~28 GB / 🧠 運行記憶體 ~36 GB
+
+  - model_name: qwen3.6-27b-coding-nvfp4
+    litellm_params:
+      model: openai/openai/qwen3.6:27b-coding-nvfp4
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：Dense 架構 / 🔤 純文字 | 儲存 ~15 GB / 🧠 運行記憶體 ~21 GB
+
+  - model_name: qwen3.6-35b
+    litellm_params:
+      model: openai/qwen3.6:35b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 (A3B) / 🖼️ 多模態 (支援視覺) | 儲存 ~24 GB / 🧠 運行記憶體 ~30 GB
+
+  - model_name: qwen3.6-35b-coding-bf16
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 (A3B) / 🔤 純文字 | 儲存 ~70 GB / 🧠 運行記憶體 ~88 GB+
+
+  - model_name: qwen3.6-35b-coding-mxfp8
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 (A3B) / 🔤 純文字 | 儲存 ~38 GB / 🧠 運行記憶體 ~44 GB
+
+  - model_name: qwen3.6-35b-coding-nvfp4
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-nvfp4
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 (A3B) / 🔤 僅限文字 | 儲存 ~22 GB / 🧠 運行記憶體 ~23 GB
+
+  - model_name: qwen3.6-35b-q8
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-q8_0
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+      # 說明：MoE 架構 (A3B) / 🖼️ 多模態 (支援視覺) | 儲存 ~39 GB / 🧠 運行記憶體 ~46 GB

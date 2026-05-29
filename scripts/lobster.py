@@ -96,7 +96,7 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
     """呼叫 Claude --print 執行任務（封装版）"""
     cmd = [
         str(CLAUDE_BIN), "--print", "--output-format", "text",
-        "--max-tokens", str(MAX_TOKENS_PER_TASK),
+        "--effort", "low",
         "--no-session-persistence",
         f"你是 AgentOS Lobster Engine。執行任務：**{task_text}**\n\n"
         f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`",
