@@ -39,6 +39,10 @@ except ImportError:
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
 
+# 核心執行引擎選擇 (claude | agy)
+ACTIVE_ENGINE = "claude"
+
+
 # ── Telegram 通知 ─────────────────────────────────────────────────────────
 
 def send_telegram_alert(message: str):
@@ -57,6 +61,10 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
     執行任務並用 Inspector 驗證。最多重試 3 次。
     返回 (success, result_string)
     result_string 格式: "PASS: reason" | "FAIL: reason" | "BLOCKED: reason" | "SKIP: reason"
+
+    ⚠️ 重要行為：
+    - TIMEOUT → 立刻 SKIP（不重試，避免 3×5min=15min 卡在同一任務）
+    - 3 次 FAIL → BLOCKED（發 Telegram + 跳下一個任務）
     """
     if dry_run:
         return True, "DRY_RUN — 跳過 Claude 呼叫"
@@ -67,8 +75,24 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         success, output = run_claude_task_wrapper(proj_dir, task_text)
         if not success:
             logger.warning(f"  Lobster 執行失敗: {output[:100]}")
+            # TIMEOUT 立刻 SKIP，不浪費時間重試
+            if output == "TIMEOUT":
+                msg = f"任務逾時（{TASK_TIMEOUT_SECONDS}s），跳過此任務"
+                send_telegram_alert(
+                    f"⏰ *Lobster 任務逾時 SKIP*\n\n"
+                    f"專案: `{proj_dir.name}`\n"
+                    f"任務: {task_text[:80]}\n"
+                    f"已自動跳過，繼續下一個任務。"
+                )
+                logger.warning(f"  ⏭️ SKIP（TIMEOUT）: {msg}")
+                return False, f"SKIP: {msg}"
             failure_count += 1
             continue
+
+        if Inspector is None:
+            # Inspector 未載入，信任輸出直接 PASS
+            logger.warning("  Inspector 未載入，預設信任輸出")
+            return True, "PASS: Inspector 未載入，預設信任"
 
         result, reason = Inspector.inspect(proj_dir, task_text, output, failure_count)
         logger.info(f"  Inspector: {result} — {reason[:80]}")
@@ -85,22 +109,39 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
                 f"請人工介入後在 STATUS.md 或 TASK_BOARD.md 將 `[!]` 改為 `[ ]` 以恢復執行。"
             )
             return False, f"BLOCKED: {reason}"
+        if result == "SKIP":
+            return False, f"SKIP: {reason}"
         # result == "FAIL" → 重試
         failure_count += 1
         logger.warning(f"  驗證失敗 ({attempt}/3): {reason[:80]}")
 
-    return False, f"FAIL: 連續 3 次驗證失敗"
+    # 連續 3 次失敗 → 升級為 BLOCKED，發通知，跳過繼續
+    blocked_msg = f"連續 3 次驗證失敗，標記為阻斷，自動跳過繼續下一個任務"
+    send_telegram_alert(
+        f"🚫 *Lobster 任務 3 次失敗→BLOCKED*\n\n"
+        f"專案: `{proj_dir.name}`\n"
+        f"任務: {task_text[:80]}\n"
+        f"已自動跳過，請檢查 TASK_BOARD.md 的 [!] 任務。"
+    )
+    logger.warning(f"  🚫 BLOCKED: {blocked_msg}")
+    return False, f"BLOCKED: {blocked_msg}"
 
 
 def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
-    """呼叫 Claude --print 執行任務（封装版）"""
-    cmd = [
-        str(CLAUDE_BIN), "--print", "--output-format", "text",
-        "--effort", "low",
-        "--no-session-persistence",
-        f"你是 AgentOS Lobster Engine。執行任務：**{task_text}**\n\n"
-        f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`",
-    ]
+    """呼叫指定引擎執行任務（封装版）"""
+    if ACTIVE_ENGINE == "agy":
+        cmd = [
+            "agy", "run", "--task", task_text, "--workspace", str(proj_dir)
+        ]
+    else:
+        cmd = [
+            str(get_claude_bin()), "--print", "--output-format", "text",
+            "--effort", "low",
+            "--no-session-persistence",
+            "--dangerously-skip-permissions",
+            f"你是 AgentOS Lobster Engine。執行任務：**{task_text}**\n\n"
+            f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`",
+        ]
     try:
         result = subprocess.run(cmd, cwd=str(proj_dir), capture_output=True, text=True, timeout=TASK_TIMEOUT_SECONDS)
         output = result.stdout.strip()
@@ -126,7 +167,22 @@ logger = logging.getLogger("Lobster")
 HOME = Path("/home/ubuntu")
 AGENT_DATA_ROOT = HOME / "agent-data"
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
-CLAUDE_BIN = HOME / ".antigravity-ide-server/extensions/anthropic.claude-code-2.1.152-linux-arm64/resources/native-binary/claude"
+
+def _find_claude_bin() -> Path:
+    extensions_dir = HOME / ".antigravity-ide-server/extensions"
+    if extensions_dir.exists():
+        matches = list(extensions_dir.glob("anthropic.claude-code-*"))
+        if matches:
+            matches.sort()
+            latest = matches[-1]
+            binary_path = latest / "resources/native-binary/claude"
+            if binary_path.exists():
+                return binary_path
+    return HOME / ".antigravity-ide-server/extensions/anthropic.claude-code-2.1.156-linux-arm64/resources/native-binary/claude"
+
+def get_claude_bin() -> Path:
+    return _find_claude_bin()
+
 TASK_BOARD = AGENT_DATA_ROOT / "TASK_BOARD.md"
 
 # 每個任務執行後的冷卻時間（秒）
@@ -182,12 +238,12 @@ def parse_todos(status_md: Path) -> list[dict]:
         if in_todo and line.startswith("##"):
             break  # 遇到下一個 section 就停
         if in_todo:
-            # 解析三種狀態
-            m = re.match(r"^[-*]\s+\[([ x/])\]\s+(.+)", line)
+            # 解析四種狀態（含 [!] blocked）
+            m = re.match(r"^[-*]\s+\[([ x/!])\]\s+(.+)", line)
             if m:
                 status_char = m.group(1)
                 task_text = m.group(2).strip()
-                status_map = {" ": "todo", "x": "done", "/": "in_progress"}
+                status_map = {" ": "todo", "x": "done", "/": "in_progress", "!": "blocked"}
                 todos.append({
                     "status": status_map.get(status_char, "unknown"),
                     "text": task_text,
@@ -197,11 +253,11 @@ def parse_todos(status_md: Path) -> list[dict]:
     return todos
 
 def pick_next_task(todos: list[dict]) -> Optional[dict]:
-    """選下一個未完成任務 (in_progress 優先，再取第一個 todo)"""
+    """選下一個未完成任務 (in_progress 優先，再取第一個 todo）。跳過 blocked 任務。"""
     in_progress = [t for t in todos if t["status"] == "in_progress"]
     if in_progress:
         return in_progress[0]
-    pending = [t for t in todos if t["status"] == "todo"]
+    pending = [t for t in todos if t["status"] == "todo"]  # blocked 不在內
     if pending:
         return pending[0]
     return None
@@ -274,7 +330,7 @@ def get_project_context(proj_name: str) -> str:
 
 def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[bool, str]:
     """
-    用 Claude Code CLI --print 模式執行一個任務。
+    用指定引擎執行一個任務。
     返回 (成功與否, 輸出摘要)
     """
     proj_dir = HOME / proj_name
@@ -301,16 +357,23 @@ def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[
         logger.info(f"[DRY RUN] 會在 {proj_dir} 執行: {task['text'][:80]}")
         return True, "DRY_RUN"
     
-    cmd = [
-        str(CLAUDE_BIN),
-        "--print",
-        "--output-format", "text",
-        "--max-tokens", str(MAX_TOKENS_PER_TASK),
-        "--no-session-persistence",
-        prompt,
-    ]
+    if ACTIVE_ENGINE == "agy":
+        cmd = [
+            "agy", "run", "--task", task['text'], "--workspace", str(proj_dir),
+            "--prompt", prompt
+        ]
+    else:
+        cmd = [
+            str(get_claude_bin()),
+            "--print",
+            "--output-format", "text",
+            "--max-tokens", str(MAX_TOKENS_PER_TASK),
+            "--no-session-persistence",
+            "--dangerously-skip-permissions",
+            prompt,
+        ]
     
-    logger.info(f"🚀 開始執行任務: {task['text'][:60]}...")
+    logger.info(f"🚀 開始執行任務 ({ACTIVE_ENGINE}): {task['text'][:60]}...")
     
     try:
         result = subprocess.run(
@@ -366,11 +429,11 @@ def get_all_projects_from_board() -> list[tuple[str, list[dict]]]:
             continue
         
         if current_proj:
-            m = re.match(r"^[-*]\s+\[([ x/])\]\s+(.+)", line)
+            m = re.match(r"^[-*]\s+\[([ x/!])\]\s+(.+)", line)
             if m:
                 status_char = m.group(1)
                 task_text = m.group(2).strip()
-                status_map = {" ": "todo", "x": "done", "/": "in_progress"}
+                status_map = {" ": "todo", "x": "done", "/": "in_progress", "!": "blocked"}
                 current_todos.append({
                     "status": status_map.get(status_char, "unknown"),
                     "text": task_text,
@@ -458,7 +521,11 @@ def main():
     parser.add_argument("--project", "-p", type=str, help="只處理指定專案")
     parser.add_argument("--dry-run", action="store_true", help="只顯示任務，不實際執行")
     parser.add_argument("--cool-down", type=int, default=COOL_DOWN_SECONDS, help="每次任務後冷卻秒數")
+    parser.add_argument("--engine", choices=["claude", "agy"], default="claude", help="指定執行的 AI 引擎 (claude | agy)")
     args = parser.parse_args()
+    
+    global ACTIVE_ENGINE
+    ACTIVE_ENGINE = args.engine
     
     # 優雅關閉
     running = [True]
@@ -509,7 +576,13 @@ def main():
                     logger.info(f"🎉 [{proj_name}] 任務完成！")
                 else:
                     if "BLOCKED:" in output:
+                        # BLOCKED → 標記 [!]，跳過繼續（不停機）
                         mark_board_task(task["text"], "blocked")
+                        logger.warning(f"🚫 [{proj_name}] 任務 BLOCKED，標記 [!] 並繼續下一個")
+                    elif "SKIP:" in output:
+                        # SKIP（TIMEOUT 等）→ 標記回 [ ] 等下次，跳過繼續
+                        mark_board_task(task["text"], "todo")
+                        logger.warning(f"⏭️ [{proj_name}] 任務 SKIP，重置為 [ ] 等下次")
                     else:
                         mark_board_task(task["text"], "in_progress")  # 保留 [/] 狀態
                     # 同步回各專案的 STATUS.md

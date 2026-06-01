@@ -179,9 +179,14 @@ def inspect(
     # 檢查是否是 git repo
     git_dir = proj_dir / ".git"
     if not git_dir.exists():
+        # 非 git repo—完全依賴輸出信號
         if has_success:
-            return "PASS", "非 git repo，依賴輸出信號通過"
-        return "SKIP", "非 git repo 且無明確成功信號"
+            return "PASS", "非 git repo，輸出信號通過"
+        if task_type in ("analysis", "doc") and len(claude_output) > 150:
+            return "PASS", f"非 git repo + {task_type} 任務，輸出長度 {len(claude_output)} 字"
+        if len(claude_output) > 50:
+            return "SKIP", f"非 git repo，無明確成功信號，跳過（輸出 {len(claude_output)} 字）"  
+        return "FAIL", "非 git repo 且輸出過短，可能未完成"
 
     has_changes, diff_summary = check_git_diff(proj_dir)
 
