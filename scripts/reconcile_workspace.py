@@ -6,11 +6,13 @@ import argparse
 from pathlib import Path
 
 # Setup path for agent_core imports
-sys.path.append(str(Path(__file__).parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 from agent_core import project_store, config
 
 def reconcile():
     current_ws = config.WORKSPACE_NAME
+    home_dir = Path.home()
     print(f"🚀 Reconciling Workspace: {current_ws}")
     print(f"----------------------------------------")
     
@@ -27,7 +29,7 @@ def reconcile():
         # Also check sector for backward compatibility if needed, 
         # but let's stick to explicit target_workspaces for this new tool.
         
-        local_path = Path("/home/ubuntu") / p.project_id
+        local_path = home_dir / p.project_id
         
         if is_target:
             to_ensure.append(p)
@@ -39,7 +41,7 @@ def reconcile():
     # 2. Execute Action: Ensure
     print(f"\n📥 Ensuring {len(to_ensure)} targeted projects...")
     for p in to_ensure:
-        target_path = Path("/home/ubuntu") / p.project_id
+        target_path = home_dir / p.project_id
         if not target_path.exists():
             if not p.repo_url:
                 print(f"⚠️  {p.project_id}: Cannot clone, no repo_url found in project.yaml")
@@ -51,7 +53,7 @@ def reconcile():
         # Registration (Symlinks)
         print(f"🔗 {p.project_id}: Syncing registration via import_project script...")
         subprocess.run([
-            "python3", "/home/ubuntu/agentmanager/scripts/import_project.py",
+            "python3", str(PROJECT_ROOT / "scripts" / "import_project.py"),
             str(target_path), "--sector", p.sector
         ])
 

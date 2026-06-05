@@ -9,6 +9,14 @@
       "path": "."
     },
     {
+      "name": "🖥️ DQA System",
+      "path": "../system"
+    },
+    {
+      "name": "🖥️ Teams Service Administrator",
+      "path": "../teams-service-admin"
+    },
+    {
       "name": "🧠 Agent Data [Truth]",
       "path": "../agent-data"
     },

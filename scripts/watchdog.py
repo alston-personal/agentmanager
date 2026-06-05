@@ -15,21 +15,29 @@ import requests
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Setup logging
+# Resolve dynamic paths (with fallback for legacy environments)
+PROJECT_ROOT = Path(os.environ.get("AGENT_PROJECT_ROOT", Path(__file__).resolve().parents[1])).resolve()
+AGENT_DATA_ROOT = Path(
+    os.environ.get("AGENT_DATA_ROOT")
+    or os.environ.get("AGENT_DATA_DIR")
+    or Path.home() / "agent-data"
+).expanduser()
+
+LOCK_DIR = Path("/tmp/watchdog_locks")
+LOCK_DIR.mkdir(parents=True, exist_ok=True)
+
+# Setup logging dynamically
+log_dir = AGENT_DATA_ROOT / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (%(name)s) %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/home/ubuntu/agent-data/logs/watchdog.log", encoding="utf-8")
+        logging.FileHandler(str(log_dir / "watchdog.log"), encoding="utf-8")
     ]
 )
 logger = logging.getLogger("Watchdog")
-
-PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
-LOCK_DIR = Path("/tmp/watchdog_locks")
-LOCK_DIR.mkdir(parents=True, exist_ok=True)
 
 def load_env():
     env_path = PROJECT_ROOT / ".env"
@@ -46,6 +54,64 @@ load_env()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 AGENT_MODE = os.getenv("AGENT_MODE", "CORE")
+
+def heal_stale_git_locks():
+    """
+    Checks if there are any .git/index.lock files in active repos when no active git process is running.
+    """
+    logger.info("🔧 [Self-Healing] Checking for stale git locks...")
+    try:
+        git_running = subprocess.run(["pgrep", "-x", "git"], capture_output=True).returncode == 0
+    except Exception:
+        git_running = False
+
+    if git_running:
+        logger.info("Git process is currently active. Skipping lock file check.")
+        return
+
+    for repo_dir in [PROJECT_ROOT, AGENT_DATA_ROOT]:
+        lock_file = repo_dir / ".git" / "index.lock"
+        if lock_file.exists():
+            logger.warning(f"💥 Stale Git lock file found at {lock_file} (no active git process). Deleting...")
+            try:
+                lock_file.unlink()
+                logger.info(f"✅ Stale lock file {lock_file} removed.")
+                send_alert(
+                    f"🔧 **[自癒系統啟動]** 偵測到殘留的 Git 鎖定檔！\n"
+                    f"✅ 已自動刪除 `{lock_file}` 以防止 Git 卡死。"
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to delete lock file {lock_file}: {e}")
+
+def check_mount_points():
+    """
+    Checks if network mount points are responsive.
+    """
+    logger.info("🔧 [Self-Healing] Checking network mount points...")
+    mounts = ["/mnt/QMD", "/mnt/NasBackup"]
+    for mnt in mounts:
+        mnt_path = Path(mnt)
+        if not mnt_path.exists():
+            continue
+        try:
+            res = subprocess.run(
+                ["timeout", "5", "ls", mnt],
+                capture_output=True, text=True
+            )
+            if res.returncode == 124:
+                logger.error(f"❌ Mount point {mnt} is HUNG (timeout)!")
+                if should_alert(f"mount_hang_{mnt}", f"Mount {mnt} hanging"):
+                    send_alert(
+                        f"💥 **掛載點卡死異常 (Mount Hanging)**\n"
+                        f"🔹 **路徑**: `{mnt}`\n"
+                        f"⚠️ 偵測到掛載點回應超時，系統可能已僵死 (Stale Mount)。"
+                    )
+            elif res.returncode != 0:
+                logger.error(f"❌ Mount point {mnt} returned error: {res.stderr.strip()}")
+            else:
+                logger.info(f"✅ Mount point {mnt} is active and responsive.")
+        except Exception as e:
+            logger.error(f"Failed to check mount point {mnt}: {e}")
 
 def send_alert(message: str):
     """
@@ -278,10 +344,16 @@ def main():
 
     logger.info("🛡️ Running Watchdog Service Check...")
     
-    # 1. Check & Repair system services
+    # 1. Check & Repair stale git locks
+    heal_stale_git_locks()
+    
+    # 2. Check network mount responsiveness
+    check_mount_points()
+    
+    # 3. Check & Repair system services
     run_self_healing()
     
-    # 2. Scan status markdown files
+    # 4. Scan status markdown files
     scan_project_statuses()
     
     logger.info("🎉 Watchdog checks completed.")
