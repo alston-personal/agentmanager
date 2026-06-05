@@ -13,8 +13,16 @@
       "path": "../system"
     },
     {
-      "name": "🖥️ Teams Service Administrator",
-      "path": "../teams-service-admin"
+      "name": "🖥️ 社區圖書館管理系統",
+      "path": "../community-library"
+    },
+    {
+      "name": "🖥️ LINE LIFF Group Buying",
+      "path": "../liff-group-buying"
+    },
+    {
+      "name": "🖥️ Security Audit",
+      "path": "../security-audit"
     },
     {
       "name": "🧠 Agent Data [Truth]",

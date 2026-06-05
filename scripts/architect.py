@@ -40,7 +40,20 @@ AGENT_DATA = HOME / "agent-data"
 WISHES_FILE = AGENT_DATA / "WISHES.md"
 TASK_BOARD = AGENT_DATA / "TASK_BOARD.md"
 PROJECTS_DIR = AGENT_DATA / "projects"
-CLAUDE_BIN = HOME / ".antigravity-ide-server/extensions/anthropic.claude-code-2.1.152-linux-arm64/resources/native-binary/claude"
+
+def _find_claude_bin() -> Path:
+    extensions_dir = HOME / ".antigravity-ide-server/extensions"
+    if extensions_dir.exists():
+        matches = list(extensions_dir.glob("anthropic.claude-code-*"))
+        if matches:
+            matches.sort()
+            latest = matches[-1]
+            binary_path = latest / "resources/native-binary/claude"
+            if binary_path.exists():
+                return binary_path
+    return HOME / ".antigravity-ide-server/extensions/anthropic.claude-code-2.1.156-linux-arm64/resources/native-binary/claude"
+
+CLAUDE_BIN = _find_claude_bin()
 
 MAX_TASKS_PER_WISH = 7  # 超過這個數量要求再拆分
 

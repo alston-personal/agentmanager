@@ -197,6 +197,41 @@ def run_system_workflow(workflow_name: str):
     except Exception as e: return f"例外: {e}"
 
 
+def run_agy_task(project_name: str, task_text: str) -> str:
+    """
+    呼叫 Antigravity CLI (agy) 在指定的專案目錄下執行自主變更、代碼修改或單元測試任務。
+    這可以讓你直接替專案修復 Bug、編寫程式碼或執行驗證。
+    """
+    PROJECT_MAP = {
+        "moltbot": "/home/ubuntu/moltbot",
+        "openclaw": "/home/ubuntu/openclaw",
+        "agentmanager": "/home/ubuntu/agentmanager",
+        "leopardcat-tarot": "/home/ubuntu/leopardcat-tarot",
+        "zeus-writer": "/home/ubuntu/zeus-writer",
+        "youtube-ai-manager": "/home/ubuntu/youtube-ai-manager",
+        "y2helper": "/home/ubuntu/y2helper",
+        "beauty-pk": "/home/ubuntu/beauty-pk"
+    }
+    proj_dir = PROJECT_MAP.get(project_name)
+    if not proj_dir:
+        proj_dir = f"/home/ubuntu/{project_name}"
+    
+    if not os.path.exists(proj_dir):
+        return f"錯誤：找不到專案 {project_name} 的路徑 {proj_dir}。"
+        
+    try:
+        res = subprocess.run(
+            ["agy", "run", "--task", task_text, "--workspace", proj_dir],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        output = res.stdout if res.returncode == 0 else f"執行失敗：{res.stderr or res.stdout}"
+        return output
+    except Exception as e:
+        return f"執行異常：{e}"
+
+
 def list_available_workflows():
     """列出目前可用的 slash workflows。"""
     workflow_names = set()
@@ -288,6 +323,7 @@ class UnifiedAntigravityAgent:
                         list_skill_topics,
                         read_skill_guide,
                         run_system_workflow,
+                        run_agy_task,
                     ],
                     system_instruction=(
                         "你是 Antigravity 全域代理人。你的意識必須建立在『三重真相架構』上：\n"
