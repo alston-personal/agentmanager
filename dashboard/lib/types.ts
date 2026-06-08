@@ -44,7 +44,30 @@ export interface DashboardData {
   projects: Project[];
   services: Service[];
   ideas: Idea[];
+  agentosStatus: AgentOSStatus;
   lastSync: string;
+}
+
+export interface AgentOSStatus {
+  generatedAt: string;
+  roleCount: number;
+  projectCount: number;
+  specCount: number;
+  proposedProjectCount: number;
+  legacySpecCount: number;
+  watchlist: string[];
+  memorySystems: MemorySystem[];
+  recommendations: string[];
+}
+
+export interface MemorySystem {
+  name: string;
+  kind: string;
+  status: string;
+  items: number;
+  sizeBytes: number;
+  notes: string[];
+  path: string;
 }
 
 export interface Service {

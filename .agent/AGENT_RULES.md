@@ -21,6 +21,24 @@
 > 2. **禁止重複**：嚴禁建立與現行腳本功能重複的平行指令。
 > 3. **無可用功能之處理**：若該需求具備長期運作價值，Agent 應主動建議新增正式功能並註冊；若是開發中一次性需求，則標註為臨時腳本存放於 `scripts/legacy/`。
 
+## 🧭 0.4 Capability Boundary Rule (AgentOS Gene)
+> [!IMPORTANT]
+> **Project 之間不直接互相溝通。**
+> 1. 若需求跨越兩個以上 project，先將需求轉換成 AgentOS capability request。
+> 2. AgentOS 先查 `scripts/capability_registry.py` 與 `agent-data/projects/*/project.yaml`，找出既有 capability provider。
+> 3. 若已有可用能力，優先復用或升級成 AgentOS 共用能力，再提供給其他 project。
+> 4. 若無可用能力，才允許新增 capability project，並將其註冊為 AgentOS 基礎設施。
+> 5. 只有同一 project 內部建立的子模組，才可在封裝邊界內直接引用。
+> 6. 對於任何讀取或處理影片的功能，`video.index.visual` 與 `video.index.transcript_grounding` 預設視為必須能力，除非明確聲明不需要。
+
+## 🧭 0.5 Spec Stewardship Rule (AgentOS Gene)
+> [!IMPORTANT]
+> **規格不是一次性文件，而是需要持續關閉的治理單位。**
+> 1. 每份正式 spec 必須有 owner、target project(s)、與明確的 closure path。
+> 2. 一旦 spec 進入 implementation，所有新增的實作進度都必須能回寫到 project task / STATUS / capability declaration 之一，不能只停在敘述。
+> 3. 若規格因為其他 project 的工作而延後，必須在 spec 或 project status 中留下可追蹤的 blocker，而不是默默擱置。
+> 4. Spec Steward 負責定期比對 spec、project.yaml、STATUS.md 與 capability registry，主動揭露 drift、缺口與 stale items。
+
 ## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
 
 
@@ -107,6 +125,7 @@ sudo apt-get install -y python3-pip
 *   **~/ (實體代碼區)**: 所有專案的真實原始碼夾必須存放在使用者 Home 目錄下。
 *   **agentmanager/workspace/ (工作捷徑區)**: 此目錄僅允許存放指向實體專案夾的 **Symlinks**。禁止在此建立實體資料夾。
 *   **agentmanager/projects_status/ (狀態紀錄區)**: 此目錄僅存放專案的 Metadata (如 `STATUS.md`, `TODO.md`)，這是指向 `agent-data` 的 Symlinks。
+*   **跨專案邊界**: 不得以硬編碼路徑或 `subprocess` 直接調用其他 project 的內部腳本；請改以 AgentOS capability request 或 shared service 介面處理。
 
 ### 🔹 命名與連結規範
 *   **統一小寫**: 所有專案名稱、資料夾、Symlink 一律使用 **kebab-case (全小寫並用連接號)**。例如：`beauty-pk` 而非 `Beauty-PK`。

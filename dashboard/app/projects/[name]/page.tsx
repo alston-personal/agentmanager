@@ -20,14 +20,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ name: 
 
   const fetchProject = async (name: string) => {
     try {
-      const response = await fetch(`/api/projects/${name}`);
+      const response = await fetch(`/dashboard/api/projects/${name}`);
       if (!response.ok) {
         throw new Error('Project not found');
       }
       const data = await response.json();
 
       // Fetch full project data from projects list
-      const projectsResponse = await fetch('/api/projects');
+      const projectsResponse = await fetch('/dashboard/api/projects');
       const projectsData = await projectsResponse.json();
       const fullProject = projectsData.projects.find((p: Project) => p.name === name);
 

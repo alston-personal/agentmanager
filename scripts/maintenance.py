@@ -40,6 +40,11 @@ def main():
     result = subprocess.run(["python3", "scripts/run_workflow.py", "ecosystem-report"], cwd=PROJECT_ROOT)
     if result.returncode != 0:
         raise RuntimeError(f"ecosystem-report failed with exit code {result.returncode}")
+
+    logger.info("Running agentos-status...")
+    result = subprocess.run(["python3", "scripts/run_workflow.py", "agentos-status"], cwd=PROJECT_ROOT)
+    if result.returncode != 0:
+        raise RuntimeError(f"agentos-status failed with exit code {result.returncode}")
     
     logger.info("--- Maintenance Complete ---")
 

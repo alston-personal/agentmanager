@@ -2,13 +2,14 @@
 import os
 import re
 import sys
+import json
 import subprocess
 import requests
 from glob import glob
 from datetime import datetime
 
 
-PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.getenv("AGENT_PROJECT_ROOT") or os.path.dirname(os.path.dirname(__file__)))
 AGENT_DATA_ROOT = os.environ.get("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
 CENTRAL_PROJECTS_DIR = os.path.join(AGENT_DATA_ROOT, "projects")
 WORKFLOWS_DIR = os.path.join(PROJECT_ROOT, ".agent", "workflows")
@@ -76,7 +77,8 @@ def format_telegram_report(uptime, memory, synced_count, expected_count, needs_u
     if needs_update:
         lines.append("⚠️ *Needs Attention (Stale)*")
         for p in needs_update[:5]: # Cap it to avoid long messages
-            lines.append(f" └─ 🔴 *{p}* (Run `/report`)")
+            p_escaped = p.replace("_", "\\_").replace("*", "\\*")
+            lines.append(f" └─ 🔴 *{p_escaped}* (Run `/report`)")
         if len(needs_update) > 5:
             lines.append(f" └─ ... and {len(needs_update)-5} more")
         lines.append("")
@@ -87,6 +89,7 @@ def format_telegram_report(uptime, memory, synced_count, expected_count, needs_u
         p_tag = row['tag']
         p_updated = row['updated']
         
+        p_name_escaped = p_name.replace("_", "\\_").replace("*", "\\*")
         icon = "🟢" if "Verified" in p_tag else "🔴"
         # Extract MM/DD or just the end of the string
         date_part = "N/A"
@@ -95,7 +98,7 @@ def format_telegram_report(uptime, memory, synced_count, expected_count, needs_u
         elif p_updated:
             date_part = p_updated.strip()[-5:]
             
-        lines.append(f" {icon} {p_name} ({date_part})")
+        lines.append(f" {icon} {p_name_escaped} ({date_part})")
         
     return "\n".join(lines)
 
@@ -356,6 +359,31 @@ def run_ecosystem_report() -> str:
         report.append(f"| **{p_name}** | {v_tag} | {p_updated} | {p_activity} |")
         tg_rows.append({'name': p_name, 'tag': v_tag, 'updated': p_updated})
 
+    # 5. Spec governance overview
+    spec_steward_script = os.path.join(PROJECT_ROOT, "scripts", "spec_steward.py")
+    try:
+        spec_result = subprocess.run(
+            ["python3", spec_steward_script, "--json"],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            timeout=30,
+        )
+        if spec_result.returncode == 0 and spec_result.stdout.strip():
+            spec_findings = json.loads(spec_result.stdout)
+            spec_needs_attention = [item for item in spec_findings if item.get("notes")]
+            report.extend([
+                "",
+                "## 📐 Spec Stewardship",
+                f"- **Specs Scanned**: {len(spec_findings)}",
+                f"- **Needs Attention**: {len(spec_needs_attention)}",
+            ])
+            for item in spec_needs_attention[:5]:
+                notes = "; ".join(item.get("notes", [])) or "aligned"
+                report.append(f"- **{item.get('spec', 'unknown')}**: {notes}")
+    except Exception as e:
+        report.extend(["", "## 📐 Spec Stewardship", f"- **Status**: unavailable ({e})"])
+
     output = "\n".join(report)
     
     # 存檔至日誌
@@ -392,6 +420,38 @@ def main() -> int:
         
     if workflow_name == "ecosystem-report":
         print(run_ecosystem_report())
+        return 0
+
+    if workflow_name == "agentos-status":
+        status_script = os.path.join(PROJECT_ROOT, "scripts", "agentos_status.py")
+        result = subprocess.run(
+            ["python3", status_script, *sys.argv[2:]],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.returncode != 0:
+            if result.stderr:
+                print(result.stderr.strip(), file=sys.stderr)
+            return result.returncode
+        return 0
+
+    if workflow_name == "spec-steward":
+        spec_steward_script = os.path.join(PROJECT_ROOT, "scripts", "spec_steward.py")
+        result = subprocess.run(
+            ["python3", spec_steward_script, *sys.argv[2:]],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.returncode != 0:
+            if result.stderr:
+                print(result.stderr.strip(), file=sys.stderr)
+            return result.returncode
         return 0
 
     if workflow_name == "internalize":

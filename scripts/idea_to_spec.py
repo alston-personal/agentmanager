@@ -27,7 +27,16 @@ def main():
         content = f.read()
 
     # 轉化為 Spec 模板
-    spec_content = f"""# 🔍 System Analysis: {slug}
+    spec_content = f"""---
+title: {slug}
+status: draft
+owner: unassigned
+target_projects: []
+required_capabilities: []
+review_cadence_days: 7
+---
+
+# 🔍 System Analysis: {slug}
 
 ## 📍 Original Idea Context
 > [!NOTE]
@@ -51,6 +60,13 @@ def main():
 ### 3. Edge Cases & Risks
 - Risk A
 - Mitigation B
+
+## 📌 Stewardship Contract
+- [ ] Owner assigned
+- [ ] Target project(s) declared
+- [ ] Required capabilities declared
+- [ ] Acceptance criteria converted into executable tasks
+- [ ] Closure path defined in project status / capability registry
 
 ## ✅ User Confirmation
 - [ ] User has approved this specification.

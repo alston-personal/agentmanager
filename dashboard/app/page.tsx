@@ -19,7 +19,7 @@ export default function Home() {
 
   const fetchData = async () => {
     try {
-      const response = await fetch('/api/projects');
+      const response = await fetch('/dashboard/api/projects');
       const result = await response.json();
       setData(result);
     } catch (error) {
@@ -67,6 +67,8 @@ export default function Home() {
     inProgress: data.projects.filter(p => p.status.includes('Progress') || p.status.includes('🚧')).length,
     complete: data.projects.filter(p => p.status.includes('Complete') || p.status.includes('✅')).length,
   };
+
+  const status = data.agentosStatus;
 
   return (
     <main style={{ minHeight: '100vh', padding: 'var(--spacing-2xl) 0' }}>
@@ -117,6 +119,105 @@ export default function Home() {
             <div style={{ fontSize: '0.875rem', color: 'var(--color-text-tertiary)' }}>Complete</div>
           </div>
         </div>
+
+        {/* AgentOS Status Center */}
+        <section className="glass animate-fade-in" style={{ padding: 'var(--spacing-xl)', borderRadius: 'var(--radius-xl)', marginBottom: 'var(--spacing-2xl)', background: 'linear-gradient(180deg, rgba(26, 31, 58, 0.82) 0%, rgba(10, 14, 39, 0.9) 100%)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--spacing-lg)', flexWrap: 'wrap', marginBottom: 'var(--spacing-lg)' }}>
+            <div>
+              <p style={{ fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 'var(--spacing-xs)' }}>
+                System Overview
+              </p>
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: 'var(--spacing-xs)' }}>
+                AgentOS Status Center
+              </h2>
+              <p style={{ color: 'var(--color-text-secondary)' }}>
+                Roles, projects, specs, memory systems, and improvement watchlist in one glance.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <span className="badge badge-info">🧠 {status.roleCount} Roles</span>
+              <span className="badge badge-success">📦 {status.projectCount} Projects</span>
+              <span className="badge badge-warning">📐 {status.specCount} Specs</span>
+              <span className="badge badge-info">🗂️ {status.memorySystems.length} Memory Systems</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4" style={{ marginBottom: 'var(--spacing-lg)' }}>
+            <div className="card">
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--color-accent-primary)' }}>{status.roleCount}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Roles</div>
+            </div>
+            <div className="card">
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--color-success)' }}>{status.projectCount}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Projects</div>
+            </div>
+            <div className="card">
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--color-warning)' }}>{status.specCount}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Specs</div>
+            </div>
+            <div className="card">
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--color-info)' }}>{status.memorySystems.length}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Memory Systems</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2" style={{ gap: 'var(--spacing-lg)' }}>
+            <div className="card">
+              <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: 'var(--spacing-md)' }}>
+                🧭 Watchlist
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+                {status.watchlist.length > 0 ? status.watchlist.map((item, index) => (
+                  <div
+                    key={index}
+                      style={{
+                      padding: 'var(--spacing-sm) var(--spacing-md)',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-secondary)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {item}
+                  </div>
+                )) : (
+                  <div style={{ color: 'var(--color-text-muted)' }}>No watchlist items.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: 'var(--spacing-md)' }}>
+                🧠 Memory Systems
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', maxHeight: '280px', overflowY: 'auto', paddingRight: 'var(--spacing-xs)' }}>
+                {status.memorySystems.slice(0, 8).map((system) => (
+                  <div key={system.path} style={{ padding: 'var(--spacing-sm)', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{system.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{system.kind}</div>
+                      </div>
+                      <span className={`badge ${system.status === 'present' ? 'badge-success' : 'badge-warning'}`}>
+                        {system.status}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 'var(--spacing-xs)', fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                      {system.items} items {system.sizeBytes > 0 ? `• ${system.sizeBytes} B` : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {status.legacySpecCount > 0 && (
+            <div style={{ marginTop: 'var(--spacing-lg)', color: 'var(--color-warning)', fontSize: '0.875rem' }}>
+              Legacy / unstructured specs detected: {status.legacySpecCount}
+            </div>
+          )}
+        </section>
 
         {/* Chart */}
         <div style={{ marginBottom: 'var(--spacing-2xl)' }}>
