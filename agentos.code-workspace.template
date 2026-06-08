@@ -13,6 +13,10 @@
       "path": "../video-indexing"
     },
     {
+      "name": "🖥️ DQA System",
+      "path": "../system"
+    },
+    {
       "name": "🖥️ 社區圖書館管理系統",
       "path": "../community-library"
     },

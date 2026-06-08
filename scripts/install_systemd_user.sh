@@ -20,7 +20,10 @@ source "$ENV_FILE"
 set +a
 
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"
+PYTHON_BIN="$LOGIC_ROOT/venv/bin/python3"
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"
+fi
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="$(command -v python3)"
 fi
@@ -95,6 +98,25 @@ StandardError=append:$DATA_ROOT/logs/tg_bridge.log
 WantedBy=default.target
 EOF
 
+cat > "$USER_SYSTEMD_DIR/teams-commander.service" <<EOF
+[Unit]
+Description=AgentOS Teams Command Bridge
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+ExecStart=$PYTHON_BIN scripts/teams_bridge.py
+Restart=always
+RestartSec=10
+StandardOutput=append:$DATA_ROOT/logs/teams_bridge.log
+StandardError=append:$DATA_ROOT/logs/teams_bridge.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 cat > "$USER_SYSTEMD_DIR/cat-ink-syncer.service" <<EOF
 [Unit]
 Description=AgentOS Cat-Ink Session Syncer
@@ -126,7 +148,8 @@ if command -v pm2 &>/dev/null; then
   pm2 save 2>/dev/null || true
 fi
 
-systemctl --user enable os-chronos.service agent-maintenance.timer >/dev/null
+systemctl --user enable os-chronos.service agent-maintenance.timer teams-commander.service >/dev/null
+systemctl --user restart teams-commander.service
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user enable tg-commander.service cat-ink-syncer.service >/dev/null

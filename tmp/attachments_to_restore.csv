@@ -1,0 +1,3 @@
+disk_filename,zip_path,expected_destination
+140922192129_UPNP.png,redmine_backup_20250715_142603/redmine/files/140922192129_UPNP.png,/home/dqa03/system/redmine_app/files/140922192129_UPNP.png
+150804165114_10lux_gain70.png,redmine_backup_20250715_142603/redmine/files/150804165114_10lux_gain70.png,/home/dqa03/system/redmine_app/files/150804165114_10lux_gain70.png

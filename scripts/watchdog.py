@@ -15,21 +15,85 @@ import requests
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Setup logging
+# Resolve dynamic paths (with fallback for legacy environments)
+PROJECT_ROOT = Path(os.environ.get("AGENT_PROJECT_ROOT", Path(__file__).resolve().parents[1])).resolve()
+AGENT_DATA_ROOT = Path(
+    os.environ.get("AGENT_DATA_ROOT")
+    or os.environ.get("AGENT_DATA_DIR")
+    or Path.home() / "agent-data"
+).expanduser()
+
+LOCK_DIR = Path("/tmp/watchdog_locks")
+LOCK_DIR.mkdir(parents=True, exist_ok=True)
+
+# Setup logging dynamically
+log_dir = AGENT_DATA_ROOT / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (%(name)s) %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/home/ubuntu/agent-data/logs/watchdog.log", encoding="utf-8")
+        logging.FileHandler(str(log_dir / "watchdog.log"), encoding="utf-8")
     ]
 )
 logger = logging.getLogger("Watchdog")
 
-PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
-LOCK_DIR = Path("/tmp/watchdog_locks")
-LOCK_DIR.mkdir(parents=True, exist_ok=True)
+class BackoffManager:
+    def __init__(self, state_file=LOCK_DIR / "watchdog_backoff.json"):
+        self.state_file = state_file
+        self.state = self._load()
+
+    def _load(self):
+        if self.state_file.exists():
+            try:
+                return json.loads(self.state_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.error(f"Failed to load backoff state: {e}")
+        return {}
+
+    def _save(self):
+        try:
+            self.state_file.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.error(f"Failed to save backoff state: {e}")
+
+    def can_retry(self, entity_id: str) -> bool:
+        if entity_id not in self.state:
+            return True
+        record = self.state[entity_id]
+        failures = record.get("failures", 0)
+        last_attempt = datetime.fromisoformat(record["last_attempt"])
+        
+        if failures == 1:
+            delay = 15
+        elif failures == 2:
+            delay = 30
+        else:
+            delay = 60
+            
+        elapsed = (datetime.now(timezone.utc) - last_attempt).total_seconds() / 60.0
+        if elapsed >= delay:
+            return True
+        else:
+            logger.info(f"⏳ [Backoff] {entity_id} is in cooldown. {elapsed:.1f}/{delay} mins elapsed. Skipping heal.")
+            return False
+
+    def record_failure(self, entity_id: str):
+        record = self.state.get(entity_id, {"failures": 0})
+        record["failures"] += 1
+        record["last_attempt"] = datetime.now(timezone.utc).isoformat()
+        self.state[entity_id] = record
+        self._save()
+        logger.warning(f"📈 [Backoff] Recorded failure for {entity_id}. Total failures: {record['failures']}")
+
+    def reset(self, entity_id: str):
+        if entity_id in self.state:
+            del self.state[entity_id]
+            self._save()
+            logger.info(f"🔄 [Backoff] Reset failure count for {entity_id}")
+
+backoff_mgr = BackoffManager()
 
 def load_env():
     env_path = PROJECT_ROOT / ".env"
@@ -46,6 +110,69 @@ load_env()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 AGENT_MODE = os.getenv("AGENT_MODE", "CORE")
+
+def heal_stale_git_locks():
+    """
+    Checks if there are any .git/index.lock files in active repos when no active git process is running.
+    """
+    logger.info("🔧 [Self-Healing] Checking for stale git locks...")
+    try:
+        git_running = subprocess.run(["pgrep", "-x", "git"], capture_output=True).returncode == 0
+    except Exception:
+        git_running = False
+
+    if git_running:
+        logger.info("Git process is currently active. Skipping lock file check.")
+        return
+
+    for repo_dir in [PROJECT_ROOT, AGENT_DATA_ROOT]:
+        lock_file = repo_dir / ".git" / "index.lock"
+        entity_id = f"git_lock_{repo_dir.name}"
+        if lock_file.exists():
+            logger.warning(f"💥 Stale Git lock file found at {lock_file} (no active git process).")
+            if backoff_mgr.can_retry(entity_id):
+                backoff_mgr.record_failure(entity_id)
+                try:
+                    lock_file.unlink()
+                    logger.info(f"✅ Stale lock file {lock_file} removed.")
+                    send_alert(
+                        f"🔧 **[自癒系統啟動]** 偵測到殘留的 Git 鎖定檔！\n"
+                        f"✅ 已自動刪除 `{lock_file}` 以防止 Git 卡死。"
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Failed to delete lock file {lock_file}: {e}")
+        else:
+            backoff_mgr.reset(entity_id)
+
+def check_mount_points():
+    """
+    Checks if network mount points are responsive.
+    """
+    logger.info("🔧 [Self-Healing] Checking network mount points...")
+    mounts = ["/mnt/QMD", "/mnt/NasBackup"]
+    for mnt in mounts:
+        mnt_path = Path(mnt)
+        if not mnt_path.exists():
+            continue
+        try:
+            res = subprocess.run(
+                ["timeout", "5", "ls", mnt],
+                capture_output=True, text=True
+            )
+            if res.returncode == 124:
+                logger.error(f"❌ Mount point {mnt} is HUNG (timeout)!")
+                if should_alert(f"mount_hang_{mnt}", f"Mount {mnt} hanging"):
+                    send_alert(
+                        f"💥 **掛載點卡死異常 (Mount Hanging)**\n"
+                        f"🔹 **路徑**: `{mnt}`\n"
+                        f"⚠️ 偵測到掛載點回應超時，系統可能已僵死 (Stale Mount)。"
+                    )
+            elif res.returncode != 0:
+                logger.error(f"❌ Mount point {mnt} returned error: {res.stderr.strip()}")
+            else:
+                logger.info(f"✅ Mount point {mnt} is active and responsive.")
+        except Exception as e:
+            logger.error(f"Failed to check mount point {mnt}: {e}")
 
 def send_alert(message: str):
     """
@@ -228,18 +355,24 @@ def run_self_healing():
     # 1. Systemd core services
     core_services = ["tg-commander.service"]
     for svc in core_services:
+        entity_id = f"systemd_{svc}"
         if not check_systemd_user(svc):
             logger.error(f"❌ Core service {svc} is DOWN!")
-            if restart_systemd_user(svc):
-                send_alert(
-                    f"🔧 **[自癒系統啟動]** Core 服務 `{svc}` 斷線！\n"
-                    f"✅ 已經自動重啟該 Systemd 服務。"
-                )
+            if backoff_mgr.can_retry(entity_id):
+                backoff_mgr.record_failure(entity_id)
+                if restart_systemd_user(svc):
+                    send_alert(
+                        f"🔧 **[自癒系統啟動]** Core 服務 `{svc}` 斷線！\n"
+                        f"✅ 已經自動重啟該 Systemd 服務。"
+                    )
         else:
+            backoff_mgr.reset(entity_id)
             logger.info(f"✅ Core service {svc} is active.")
 
     # 2. n8n Docker Container
+    entity_id = "docker_n8n"
     if check_docker_container("n8n"):
+        backoff_mgr.reset(entity_id)
         logger.info("✅ Docker container 'n8n' is active.")
         # Check HTTP
         if not check_http("https://n8n.milkcat.org/healthz"):
@@ -248,11 +381,13 @@ def run_self_healing():
             # (Just log warning for now to prevent racing during container start)
     else:
         logger.error("❌ Docker container 'n8n' is DOWN!")
-        if restart_docker_container("n8n"):
-            send_alert(
-                "🔧 **[自癒系統啟動]** Docker `n8n` 容器停止！\n"
-                "✅ 已經自動重啟該 Docker 容器。"
-            )
+        if backoff_mgr.can_retry(entity_id):
+            backoff_mgr.record_failure(entity_id)
+            if restart_docker_container("n8n"):
+                send_alert(
+                    "🔧 **[自癒系統啟動]** Docker `n8n` 容器停止！\n"
+                    "✅ 已經自動重啟該 Docker 容器。"
+                )
 
     # 3. Heal AI Onboarding & Possession Links
     logger.info("🔧 [Self-Healing] Healing AI Possession symlinks and directives...")
@@ -330,13 +465,17 @@ def main():
 
     logger.info("🛡️ Running Watchdog Service Check...")
     
-    # 1. Check & Repair system services
-    run_self_healing()
+    # 1. Check & Repair stale git locks
+    heal_stale_git_locks()
     
+    # 2. Check network mount responsiveness
+    check_mount_points()
+    
+    # 3. Check & Repair system services
+    run_self_healing()
+
     # 2. Check disk space & inodes
     check_disk_space()
-    
-    # 3. Scan status markdown files
     scan_project_statuses()
     
     logger.info("🎉 Watchdog checks completed.")

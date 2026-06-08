@@ -3,6 +3,8 @@
 import subprocess
 import os
 import sys
+import json
+from pathlib import Path
 
 def run_cmd(cmd, shell=False):
     try:
@@ -12,8 +14,8 @@ def run_cmd(cmd, shell=False):
         return f"Error: {str(e)}", -1
 
 def get_docker_status():
-    # 透過 sudo 安全取得容器狀態
-    cmd = "echo 'dqa03' | sudo -S docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'"
+    # 透過 docker 取得容器狀態 (dqa03 已在 docker 群組中，免 sudo)
+    cmd = "docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'"
     out, code = run_cmd(cmd, shell=True)
     if code != 0:
         return f"❌ 無法取得 Docker 狀態: {out}", False
@@ -21,7 +23,7 @@ def get_docker_status():
     lines = out.split('\n')
     containers = {}
     for line in lines:
-        if not line.strip() or "sudo" in line:
+        if not line.strip():
             continue
         parts = line.split('|')
         if len(parts) == 3:
@@ -110,12 +112,58 @@ def main():
     print(get_mount_status())
     print("```")
     
-    # 4. 備份狀態
+    # 4. 一致性稽核狀態
+    print("\n## 🔍 Redmine 數據一致性稽核")
+    print(get_redmine_asset_audit_status())
+    
+    # 5. 備份狀態
     print("\n## 🔄 每日備份執行日誌 (最後狀態)")
     backup = get_backup_status()
     print("```")
     print(backup)
     print("```")
+
+def get_redmine_asset_audit_status():
+    report_path = Path("/tmp/redmine_asset_audit_report.json")
+    if not report_path.exists():
+        # Generate it
+        cmd = "/usr/bin/python3 /home/dqa03/system/scripts/audit_redmine_assets.py --report-json /tmp/redmine_asset_audit_report.json --report-csv /tmp/redmine_asset_missing.csv"
+        subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    
+    if not report_path.exists():
+        return "❌ 找不到且無法產生稽核報表 `/tmp/redmine_asset_audit_report.json`"
+    
+    try:
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+        summary = data.get("summary", {})
+        
+        rich_missing = summary.get("rich_rich_files", {}).get("missing", 0)
+        attach_missing = summary.get("attachments", {}).get("missing", 0)
+        
+        # Baselines
+        rich_baseline = 178
+        attach_baseline = 427
+        
+        rich_status = "🟢" if rich_missing <= rich_baseline else "🔴"
+        attach_status = "🟢" if attach_missing <= attach_baseline else "🔴"
+        
+        lines = []
+        if rich_status == "🔴" or attach_status == "🔴":
+            lines.append("### 🚨 [警告] 偵測到新增數據遺失！")
+        else:
+            lines.append("### 🟢 資料一致性稽核正常")
+            
+        lines.append(f"- **CKEditor 富文本圖片 (rich_files)**: {rich_status} 缺失 {rich_missing} 筆 (基準: {rich_baseline} 筆歷史遺失)")
+        lines.append(f"- **標準附件 (attachments)**: {attach_status} 缺失 {attach_missing} 筆 (基準: {attach_baseline} 筆歷史遺失)")
+        
+        if rich_missing > rich_baseline:
+            lines.append(f"  ⚠️ *警告：富文本圖片比預期多出 {rich_missing - rich_baseline} 筆遺失！*")
+        if attach_missing > attach_baseline:
+            lines.append(f"  ⚠️ *警告：標準附件比預期多出 {attach_missing - attach_baseline} 筆遺失！*")
+            
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ 解析稽核報表失敗: {str(e)}"
 
 if __name__ == "__main__":
     main()
