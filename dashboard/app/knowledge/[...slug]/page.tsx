@@ -11,7 +11,7 @@ export default function KnowledgeDetailPage({ params }: { params: Promise<{ slug
 
   useEffect(() => {
     const slug = resolvedParams.slug.join('/');
-    fetch(`/api/knowledge/${slug}`)
+    fetch(`/dashboard/api/knowledge/${slug}`)
       .then(res => res.json())
       .then(data => {
         setItem(data.item);

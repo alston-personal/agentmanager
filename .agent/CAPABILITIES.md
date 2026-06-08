@@ -30,4 +30,40 @@
 2. **優先複用**：若已有功能，不可重複撰寫。
 3. **無則註冊**：若新增具備長期價值的功能，**必須** 更新本清冊。
 
+---
+
+## 🧩 AgentOS Capability Registry
+
+AgentOS now treats reusable work as a capability, not a project-specific side effect.
+
+### Registry Source of Truth
+- `scripts/capability_registry.py`
+- `agent_core/project_store.py`
+- `agent-data/projects/*/project.yaml`
+
+### Core Policy
+- Projects may declare `capabilities_provided` and `capabilities_required`.
+- The registry must be consulted before any cross-project orchestration.
+- If a capability already exists in the registry, reuse or promote it instead of creating a parallel implementation.
+
+### Registered Shared Capability
+| Capability | Provider | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Video Indexing Hub** | `video-indexing` | 🧠 Proposed | Central visual indexing, transcript grounding, and scene-map artifact producer for all video-aware projects. |
+
+### Governance Capability
+| Capability | Provider | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Spec Stewardship** | `scripts/spec_steward.py` | ✅ 現行 | Scans specs, project declarations, and STATUS files to surface drift, stale specs, and missing ownership. |
+| **AgentOS Status Center** | `scripts/agentos_status.py` | ✅ 現行 | Consolidated snapshot of roles, capabilities, projects, specs, and memory health for fast operational review. |
+
+### Usage Pattern
+```bash
+python3 scripts/capability_registry.py
+python3 scripts/capability_registry.py --provides video.index.visual
+python3 scripts/capability_registry.py --requires video.index.visual
+python3 scripts/spec_steward.py
+python3 scripts/agentos_status.py
+```
+
 *「石虎 Agent 的能力不僅是寫出的代碼，更是已知的律法。」*

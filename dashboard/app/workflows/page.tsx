@@ -24,7 +24,7 @@ export default function WorkflowsPage() {
 
   const fetchWorkflows = async () => {
     try {
-      const response = await fetch('/api/workflows');
+      const response = await fetch('/dashboard/api/workflows');
       const data = await response.json();
       setWorkflows(data.workflows);
     } catch (error) {
@@ -37,7 +37,7 @@ export default function WorkflowsPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch('/dashboard/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -71,7 +71,7 @@ export default function WorkflowsPage() {
 
     setExecuting(workflowId);
     try {
-      const response = await fetch('/api/workflows/execute', {
+      const response = await fetch('/dashboard/api/workflows/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

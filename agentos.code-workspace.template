@@ -9,6 +9,10 @@
       "path": "."
     },
     {
+      "name": "🎞️ Video Indexing Hub",
+      "path": "../video-indexing"
+    },
+    {
       "name": "🖥️ DQA System",
       "path": "../system"
     },

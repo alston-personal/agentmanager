@@ -18,7 +18,7 @@ export default function KnowledgePage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch('/api/knowledge')
+    fetch('/dashboard/api/knowledge')
       .then(res => res.json())
       .then(data => {
         setItems(data.items || []);

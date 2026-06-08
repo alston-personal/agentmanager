@@ -1,15 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { execFileSync } from 'child_process';
+import path from 'path';
 import { getAllProjects, parseDashboard } from '@/lib/markdown-parser';
 
-export async function GET(request: NextRequest) {
+type ParsedMemorySystem = {
+  name?: string;
+  kind?: string;
+  status?: string;
+  item_count?: number;
+  size_bytes?: number;
+  notes?: string[];
+  path?: string;
+};
+
+type ParsedAgentOSStatus = {
+  roles?: unknown[];
+  projects?: { status?: string }[];
+  specs?: { notes?: string[] }[];
+  recommendations?: string[];
+  memory_systems?: ParsedMemorySystem[];
+};
+
+export async function GET() {
   try {
     const projects = getAllProjects();
     const { services, ideas } = parseDashboard();
+    const agentosStatus = getAgentOSStatus();
 
     return NextResponse.json({
       projects,
       services,
       ideas,
+      agentosStatus,
       lastSync: new Date().toISOString(),
     });
   } catch (error) {
@@ -18,5 +40,56 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to fetch projects' },
       { status: 500 }
     );
+  }
+}
+
+function getAgentOSStatus() {
+  try {
+    const projectRoot = path.join(process.cwd(), '..');
+    const scriptPath = path.join(projectRoot, 'scripts', 'agentos_status.py');
+    const output = execFileSync('python3', [scriptPath, '--json'], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    const parsed = JSON.parse(output) as ParsedAgentOSStatus;
+    return {
+      generatedAt: new Date().toISOString(),
+      roleCount: parsed?.roles?.length || 0,
+      projectCount: parsed?.projects?.length || 0,
+      specCount: parsed?.specs?.length || 0,
+      proposedProjectCount: Array.isArray(parsed?.projects)
+        ? parsed.projects.filter((p: { status?: string }) => String(p.status || '').includes('Proposed')).length
+        : 0,
+      legacySpecCount: Array.isArray(parsed?.specs)
+        ? parsed.specs.filter((s: { notes?: string[] }) => Array.isArray(s.notes) && s.notes.some((note) => note.includes('owner missing') || note.includes('targets missing'))).length
+        : 0,
+      watchlist: Array.isArray(parsed?.recommendations) ? parsed.recommendations.slice(0, 4) : [],
+      memorySystems: Array.isArray(parsed?.memory_systems)
+        ? parsed.memory_systems.map((system) => ({
+            name: system.name,
+            kind: system.kind,
+            status: system.status,
+            items: system.item_count || 0,
+            sizeBytes: system.size_bytes || 0,
+            notes: Array.isArray(system.notes) ? system.notes : [],
+            path: system.path,
+          }))
+        : [],
+      recommendations: Array.isArray(parsed?.recommendations) ? parsed.recommendations : [],
+    };
+  } catch (error) {
+    console.error('Error loading AgentOS status:', error);
+    return {
+      generatedAt: new Date().toISOString(),
+      roleCount: 0,
+      projectCount: 0,
+      specCount: 0,
+      proposedProjectCount: 0,
+      legacySpecCount: 0,
+      watchlist: ['AgentOS status unavailable'],
+      memorySystems: [],
+      recommendations: [],
+    };
   }
 }

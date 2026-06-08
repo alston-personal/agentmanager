@@ -402,6 +402,58 @@ def run_self_healing():
     except Exception as e:
         logger.error(f"❌ Failed to run propagate_possession_rules: {e}")
 
+def check_disk_space():
+    """
+    Checks the free disk space on the root mount and sends a Telegram alert
+    if it falls below critical thresholds.
+    """
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage("/")
+        free_gb = free / (1024**3)
+        total_gb = total / (1024**3)
+        used_percent = (used / total) * 100
+        
+        logger.info(f"📊 Disk space check: {free_gb:.2f} GB free of {total_gb:.2f} GB ({used_percent:.1f}% used)")
+        
+        # Threshold: Less than 5.0 GB free or more than 95% used
+        if free_gb < 5.0 or used_percent > 95.0:
+            msg = (
+                f"🚨 **[系統磁碟空間不足警告]**\n"
+                f"🔹 **剩餘可用空間**: `{free_gb:.2f} GB` (總共 {total_gb:.2f} GB)\n"
+                f"🔹 **使用率**: `{used_percent:.1f}%`\n"
+                f"🔹 **建議**: 請儘速清理不必要的快取或重置舊日誌，以避免系統發生 `ENOSPC` 崩潰並造成 IDE 重載循環。"
+            )
+            logger.error(msg)
+            if should_alert("system_disk_space", f"Low space: {free_gb:.2f}GB"):
+                send_alert(message=msg)
+        else:
+            # Clear lock if resolved
+            clear_alert_lock("system_disk_space")
+            
+        # Check inodes
+        try:
+            stat = os.statvfs('/')
+            if stat.f_files > 0:
+                inode_used_percent = (1.0 - (stat.f_ffree / stat.f_files)) * 100
+                logger.info(f"📊 Inode check: {inode_used_percent:.1f}% used")
+                if inode_used_percent > 95.0:
+                    inode_msg = (
+                        f"🚨 **[系統 Inodes 耗盡警告]**\n"
+                        f"🔹 **Inodes 使用率**: `{inode_used_percent:.1f}%`\n"
+                        f"🔹 **建議**: 系統內可能存在大量碎檔案，請儘速清理以免無法建立新檔案。"
+                    )
+                    logger.error(inode_msg)
+                    if should_alert("system_inodes", f"Low inodes: {inode_used_percent:.1f}%"):
+                        send_alert(message=inode_msg)
+                else:
+                    clear_alert_lock("system_inodes")
+        except Exception as ie:
+            logger.error(f"Failed to check inodes: {ie}")
+            
+    except Exception as e:
+        logger.error(f"Failed to check disk space: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="AgentOS Watchdog Service")
     parser.add_argument("--test-alert", action="store_true", help="Send a test alert message to Telegram.")
@@ -421,8 +473,9 @@ def main():
     
     # 3. Check & Repair system services
     run_self_healing()
-    
-    # 4. Scan status markdown files
+
+    # 2. Check disk space & inodes
+    check_disk_space()
     scan_project_statuses()
     
     logger.info("🎉 Watchdog checks completed.")

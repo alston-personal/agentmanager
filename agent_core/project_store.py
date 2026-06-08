@@ -38,6 +38,8 @@ def load_project(project_dir: Path) -> Project | None:
         return None
     if not isinstance(data, dict):
         return None
+    data.setdefault("project_id", project_dir.name)
+    data.setdefault("display_name", " ".join(part.capitalize() for part in project_dir.name.split("-")))
     return project_from_dict(project_dir.name, data)
 
 

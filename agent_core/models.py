@@ -23,6 +23,8 @@ class Project:
     actual_code_path: str = ""
     data_path: str = ""
     target_workspaces: list[str] = field(default_factory=list)
+    capabilities_provided: list[str] = field(default_factory=list)
+    capabilities_required: list[str] = field(default_factory=list)
     health: Health = field(default_factory=Health)
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -36,6 +38,14 @@ def project_from_dict(project_id: str, data: dict[str, Any]) -> Project:
     target_workspaces = data.get("target_workspaces") or []
     if isinstance(target_workspaces, str):
         target_workspaces = [target_workspaces]
+
+    capabilities_provided = data.get("capabilities_provided") or []
+    if isinstance(capabilities_provided, str):
+        capabilities_provided = [capabilities_provided]
+
+    capabilities_required = data.get("capabilities_required") or []
+    if isinstance(capabilities_required, str):
+        capabilities_required = [capabilities_required]
 
     try:
         priority = int(data.get("priority", 5))
@@ -53,6 +63,8 @@ def project_from_dict(project_id: str, data: dict[str, Any]) -> Project:
         actual_code_path=str(data.get("actual_code_path") or ""),
         data_path=str(data.get("data_path") or ""),
         target_workspaces=[str(item) for item in target_workspaces],
+        capabilities_provided=[str(item) for item in capabilities_provided],
+        capabilities_required=[str(item) for item in capabilities_required],
         health=Health(
             freshness=str(health_data.get("freshness") or "unknown"),
             sync_state=str(health_data.get("sync_state") or "unknown"),
@@ -60,4 +72,3 @@ def project_from_dict(project_id: str, data: dict[str, Any]) -> Project:
         ),
         raw=data,
     )
-
