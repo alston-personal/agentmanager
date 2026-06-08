@@ -1,0 +1,181 @@
+{
+  "system_root": "/home/dqa03/system",
+  "rich_root": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files",
+  "attachments_root": "/home/dqa03/system/redmine_app/files",
+  "summary": {
+    "rich_rich_files": {
+      "missing": 178,
+      "restorable_from_backup": 0,
+      "restorable_from_sibling": 0,
+      "restored": 0
+    },
+    "attachments": {
+      "missing": 427,
+      "restorable_from_backup": 0,
+      "restorable_from_sibling": 0,
+      "restored": 0
+    }
+  },
+  "missing_samples": [
+    {
+      "table": "rich_rich_files",
+      "record_id": 228,
+      "filename": "2017-10-03_143856.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/000/228/original/2017-10-03_143856.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4694,
+      "filename": "20260326 1340.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/694/original/20260326 1340.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4695,
+      "filename": "150971_DQA_ISSUE_2.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/695/original/150971_DQA_ISSUE_2.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4696,
+      "filename": "150971_DQA_ISSUE.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/696/original/150971_DQA_ISSUE.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4697,
+      "filename": "未命名.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/697/original/未命名.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4698,
+      "filename": "螢幕擷取畫面 2026-04-01 103456.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/698/original/螢幕擷取畫面 2026-04-01 103456.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4700,
+      "filename": "PTZ_disable.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/700/original/PTZ_disable.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4701,
+      "filename": "PTZ_disable_SPEC.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/701/original/PTZ_disable_SPEC.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4702,
+      "filename": "16ch.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/702/original/16ch.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4703,
+      "filename": "normal.PNG",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/703/original/normal.PNG",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4704,
+      "filename": "Deep search.PNG",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/704/original/Deep search.PNG",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4705,
+      "filename": "2026-04-02 140807.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/705/original/2026-04-02 140807.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4706,
+      "filename": "20260402 1445.PNG",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/706/original/20260402 1445.PNG",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4707,
+      "filename": "20260402 memory.PNG",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/707/original/20260402 memory.PNG",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4708,
+      "filename": "20260407 1417.PNG",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/708/original/20260407 1417.PNG",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4709,
+      "filename": "20260407 memory.PNG",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/709/original/20260407 memory.PNG",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4710,
+      "filename": "4QpKE1hwpw.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/710/original/4QpKE1hwpw.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4711,
+      "filename": "1234.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/711/original/1234.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4712,
+      "filename": "2026-04-08_083912.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/712/original/2026-04-08_083912.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    },
+    {
+      "table": "rich_rich_files",
+      "record_id": 4713,
+      "filename": "camera network.png",
+      "expected_path": "/home/dqa03/system/redmine_app/redmine_system/rich/rich_files/rich_files/000/004/713/original/camera network.png",
+      "backup_path": null,
+      "sibling_source_path": null
+    }
+  ]
+}

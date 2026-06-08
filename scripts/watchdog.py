@@ -39,6 +39,62 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Watchdog")
 
+class BackoffManager:
+    def __init__(self, state_file=LOCK_DIR / "watchdog_backoff.json"):
+        self.state_file = state_file
+        self.state = self._load()
+
+    def _load(self):
+        if self.state_file.exists():
+            try:
+                return json.loads(self.state_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.error(f"Failed to load backoff state: {e}")
+        return {}
+
+    def _save(self):
+        try:
+            self.state_file.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.error(f"Failed to save backoff state: {e}")
+
+    def can_retry(self, entity_id: str) -> bool:
+        if entity_id not in self.state:
+            return True
+        record = self.state[entity_id]
+        failures = record.get("failures", 0)
+        last_attempt = datetime.fromisoformat(record["last_attempt"])
+        
+        if failures == 1:
+            delay = 15
+        elif failures == 2:
+            delay = 30
+        else:
+            delay = 60
+            
+        elapsed = (datetime.now(timezone.utc) - last_attempt).total_seconds() / 60.0
+        if elapsed >= delay:
+            return True
+        else:
+            logger.info(f"⏳ [Backoff] {entity_id} is in cooldown. {elapsed:.1f}/{delay} mins elapsed. Skipping heal.")
+            return False
+
+    def record_failure(self, entity_id: str):
+        record = self.state.get(entity_id, {"failures": 0})
+        record["failures"] += 1
+        record["last_attempt"] = datetime.now(timezone.utc).isoformat()
+        self.state[entity_id] = record
+        self._save()
+        logger.warning(f"📈 [Backoff] Recorded failure for {entity_id}. Total failures: {record['failures']}")
+
+    def reset(self, entity_id: str):
+        if entity_id in self.state:
+            del self.state[entity_id]
+            self._save()
+            logger.info(f"🔄 [Backoff] Reset failure count for {entity_id}")
+
+backoff_mgr = BackoffManager()
+
 def load_env():
     env_path = PROJECT_ROOT / ".env"
     if env_path.exists():
@@ -71,17 +127,22 @@ def heal_stale_git_locks():
 
     for repo_dir in [PROJECT_ROOT, AGENT_DATA_ROOT]:
         lock_file = repo_dir / ".git" / "index.lock"
+        entity_id = f"git_lock_{repo_dir.name}"
         if lock_file.exists():
-            logger.warning(f"💥 Stale Git lock file found at {lock_file} (no active git process). Deleting...")
-            try:
-                lock_file.unlink()
-                logger.info(f"✅ Stale lock file {lock_file} removed.")
-                send_alert(
-                    f"🔧 **[自癒系統啟動]** 偵測到殘留的 Git 鎖定檔！\n"
-                    f"✅ 已自動刪除 `{lock_file}` 以防止 Git 卡死。"
-                )
-            except Exception as e:
-                logger.error(f"❌ Failed to delete lock file {lock_file}: {e}")
+            logger.warning(f"💥 Stale Git lock file found at {lock_file} (no active git process).")
+            if backoff_mgr.can_retry(entity_id):
+                backoff_mgr.record_failure(entity_id)
+                try:
+                    lock_file.unlink()
+                    logger.info(f"✅ Stale lock file {lock_file} removed.")
+                    send_alert(
+                        f"🔧 **[自癒系統啟動]** 偵測到殘留的 Git 鎖定檔！\n"
+                        f"✅ 已自動刪除 `{lock_file}` 以防止 Git 卡死。"
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Failed to delete lock file {lock_file}: {e}")
+        else:
+            backoff_mgr.reset(entity_id)
 
 def check_mount_points():
     """
@@ -294,18 +355,24 @@ def run_self_healing():
     # 1. Systemd core services
     core_services = ["tg-commander.service"]
     for svc in core_services:
+        entity_id = f"systemd_{svc}"
         if not check_systemd_user(svc):
             logger.error(f"❌ Core service {svc} is DOWN!")
-            if restart_systemd_user(svc):
-                send_alert(
-                    f"🔧 **[自癒系統啟動]** Core 服務 `{svc}` 斷線！\n"
-                    f"✅ 已經自動重啟該 Systemd 服務。"
-                )
+            if backoff_mgr.can_retry(entity_id):
+                backoff_mgr.record_failure(entity_id)
+                if restart_systemd_user(svc):
+                    send_alert(
+                        f"🔧 **[自癒系統啟動]** Core 服務 `{svc}` 斷線！\n"
+                        f"✅ 已經自動重啟該 Systemd 服務。"
+                    )
         else:
+            backoff_mgr.reset(entity_id)
             logger.info(f"✅ Core service {svc} is active.")
 
     # 2. n8n Docker Container
+    entity_id = "docker_n8n"
     if check_docker_container("n8n"):
+        backoff_mgr.reset(entity_id)
         logger.info("✅ Docker container 'n8n' is active.")
         # Check HTTP
         if not check_http("https://n8n.milkcat.org/healthz"):
@@ -314,11 +381,13 @@ def run_self_healing():
             # (Just log warning for now to prevent racing during container start)
     else:
         logger.error("❌ Docker container 'n8n' is DOWN!")
-        if restart_docker_container("n8n"):
-            send_alert(
-                "🔧 **[自癒系統啟動]** Docker `n8n` 容器停止！\n"
-                "✅ 已經自動重啟該 Docker 容器。"
-            )
+        if backoff_mgr.can_retry(entity_id):
+            backoff_mgr.record_failure(entity_id)
+            if restart_docker_container("n8n"):
+                send_alert(
+                    "🔧 **[自癒系統啟動]** Docker `n8n` 容器停止！\n"
+                    "✅ 已經自動重啟該 Docker 容器。"
+                )
 
     # 3. Heal AI Onboarding & Possession Links
     logger.info("🔧 [Self-Healing] Healing AI Possession symlinks and directives...")
