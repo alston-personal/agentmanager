@@ -226,3 +226,21 @@ class MattersBot:
             }
         }
         return self._execute(mutation, variables)
+
+    def get_latest_articles(self, count=3):
+        query = """
+        {
+          viewer {
+            articles(input: { first: %d }) {
+              edges {
+                node {
+                  id
+                  title
+                }
+              }
+            }
+          }
+        }
+        """ % count
+        data = self._execute(query, {})
+        return [edge["node"] for edge in data["viewer"]["articles"]["edges"]]
