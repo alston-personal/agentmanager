@@ -1,2 +1,4 @@
 #!/bin/bash
-/usr/bin/python3 /home/ubuntu/agentmanager/scripts/migrate.py "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+python3 "$PROJECT_ROOT/scripts/migrate.py" "$@"

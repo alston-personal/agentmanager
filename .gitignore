@@ -49,4 +49,5 @@ memory.local-backup-*/
 .env.backup_*
 *.code-workspace
 scratch/
-
+# IDE / Claude local settings
+.claude/

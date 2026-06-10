@@ -9,9 +9,20 @@
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 
+# --- Resolve Data Layer Path ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$PROJECT_ROOT/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+fi
+AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+
 # --- Read Pulse State ---
 PULSE_FILE="/dev/shm/leopardcat-swarm/pulse.json"
-PULSE_FALLBACK="/home/ubuntu/agent-data/runtime/pulse_snapshot.json"
+PULSE_FALLBACK="$AGENT_DATA_ROOT/runtime/pulse_snapshot.json"
 
 if [ -f "$PULSE_FILE" ]; then
     PULSE=$(cat "$PULSE_FILE" 2>/dev/null)
@@ -23,7 +34,7 @@ fi
 
 # --- Read Project STATUS.md ---
 STATUS_FILE="$PROJECT_DIR/STATUS.md"
-STATUS_DATA_FILE="/home/ubuntu/agent-data/projects/$PROJECT_NAME/STATUS.md"
+STATUS_DATA_FILE="$AGENT_DATA_ROOT/projects/$PROJECT_NAME/STATUS.md"
 
 if [ -f "$STATUS_FILE" ]; then
     STATUS=$(head -60 "$STATUS_FILE" 2>/dev/null)

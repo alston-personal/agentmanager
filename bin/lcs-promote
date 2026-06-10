@@ -1,1 +1,4 @@
-#!/bin/bash\npython3 /home/ubuntu/agentmanager/scripts/core_services/lcs_synthesis.py "$@"
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+python3 "$PROJECT_ROOT/scripts/core_services/lcs_synthesis.py" "$@"

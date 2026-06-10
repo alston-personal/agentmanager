@@ -36,8 +36,92 @@ model_list:
       api_base: https://ai.myacademia.uk/ollama/v1
       api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
 
+  - model_name: claude-sonnet-4-7
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-sonnet-4-8
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-sonnet-4-9
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-sonnet-5-0
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-8-sonnet
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-9-sonnet
+    litellm_params:
+      model: openai/qwen3.6:35b-a3b-coding-mxfp8
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
   # 2. 備用旗艦大腦（處理超複雜邏輯時，對接你的高精度 31B Gemma）
   - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-4-8
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-4.8
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-4-9
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-4.9
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-5-0
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-opus-5.0
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-8-opus
+    litellm_params:
+      model: openai/gemma4:31b-it-bf16
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-9-opus
     litellm_params:
       model: openai/gemma4:31b-it-bf16
       api_base: https://ai.myacademia.uk/ollama/v1
@@ -99,6 +183,54 @@ model_list:
       api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
 
   - model_name: claude-haiku-4-5
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-4-6
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-4.6
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-4-7
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-4.7
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-5-0
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-haiku-5.0
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-8-haiku
+    litellm_params:
+      model: openai/gemma4:e4b
+      api_base: https://ai.myacademia.uk/ollama/v1
+      api_key: "sk-e0ef695605434fa192f8caa907df0fb5"
+
+  - model_name: claude-3-9-haiku
     litellm_params:
       model: openai/gemma4:e4b
       api_base: https://ai.myacademia.uk/ollama/v1

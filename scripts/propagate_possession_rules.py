@@ -6,17 +6,22 @@ import logging
 import argparse
 from pathlib import Path
 
+# Setup path for agent_core imports
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
+from agent_core import config
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] (PossessionBridge) %(message)s")
 logger = logging.getLogger("PossessionBridge")
 
 HOME = Path.home()
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
+AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
 TEMPLATES_DIR = AGENT_DATA_ROOT / "templates"
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 
 HEADER_SIGNATURE = "# 🧠 AgentOS"
 
-POSSESSION_HEADER = """# 🧠 AgentOS Core Directives (POSSESSION MODE)
+POSSESSION_HEADER = f"""# 🧠 AgentOS Core Directives (POSSESSION MODE)
 
 You are now operating within the **AgentOS Ecosystem** as the **Antigravity AI Core**. Your primary goal is to maintain the integrity of the Brain-Body distributed architecture and assist the Human Commander.
 
@@ -30,7 +35,7 @@ You are now operating within the **AgentOS Ecosystem** as the **Antigravity AI C
 The system automatically injects your current project status and swarm state before each message.
 If you see an "AgentOS Auto-Context Injection" block above, read it to know the current task state.
 If you do NOT see a context block, proactively read:
-- `/home/ubuntu/agent-data/runtime/pulse_snapshot.json` for swarm state
+- `{AGENT_DATA_ROOT}/runtime/pulse_snapshot.json` for swarm state
 - `STATUS.md` for this project's progress
 
 ## 🛡️ SELF-HEALING & PROTOCOLS
@@ -126,20 +131,6 @@ def process_data_links(proj_dir: Path, data_proj_dir: Path, dry_run: bool):
             except OSError:
                 pass
 
-HOOK_SETTINGS = {
-    "hooks": {
-        "UserPromptSubmit": [
-            {
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "bash /home/ubuntu/agentmanager/scripts/claude_context_injector.sh"
-                    }
-                ]
-            }
-        ]
-    }
-}
 
 def deploy_claude_project_settings(proj_dir: Path, dry_run: bool):
     """Deploy .claude/settings.local.json with hook config to each project."""
@@ -156,14 +147,28 @@ def deploy_claude_project_settings(proj_dir: Path, dry_run: bool):
             existing = json.loads(settings_path.read_text())
         except Exception:
             pass
+            
+    hook_command = f"bash {PROJECT_ROOT}/scripts/claude_context_injector.sh"
+    target_hooks = {
+        "UserPromptSubmit": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command
+                    }
+                ]
+            }
+        ]
+    }
     
     # Check if hooks are already properly set
     existing_hooks = existing.get("hooks", {})
-    if existing_hooks.get("UserPromptSubmit") == HOOK_SETTINGS["hooks"]["UserPromptSubmit"]:
+    if existing_hooks.get("UserPromptSubmit") == target_hooks["UserPromptSubmit"]:
         return  # Already up to date
     
     # Merge hooks into existing settings
-    existing["hooks"] = HOOK_SETTINGS["hooks"]
+    existing["hooks"] = target_hooks
     
     logger.info(f"🪝 Deploying Claude hook settings to {proj_dir.name}/.claude/settings.local.json")
     if not dry_run:
@@ -179,12 +184,41 @@ def main():
         return 1
         
     if not TEMPLATES_DIR.exists():
-        logger.error(f"Templates directory not found @ {TEMPLATES_DIR}")
-        return 1
+        logger.info(f"✨ Templates directory not found. Creating it @ {TEMPLATES_DIR}...")
+        if not args.dry_run:
+            TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
         
     claude_template = TEMPLATES_DIR / "CLAUDE.md"
     cursor_template = TEMPLATES_DIR / ".cursorrules"
     aider_template = TEMPLATES_DIR / ".aider.instructions.md"
+
+    if not args.dry_run:
+        if not claude_template.exists():
+            logger.info(f"📄 Seeding default CLAUDE.md template in {TEMPLATES_DIR}")
+            default_claude_content = """# AgentOS Build & Development Guide
+
+## Build and Setup Commands
+- Install python dependencies: `pip install -r requirements.txt`
+- Run setup: `python3 scripts/setup_env.py`
+- Bootstrap: `python3 scripts/bootstrap.py`
+- Install systemd user services: `bash scripts/install_systemd_user.sh`
+
+## Verification and Run Commands
+- Reboot/heal: `bash scripts/reboot_os.sh`
+- System status: `python3 scripts/project_overview.py` or `bin/status`
+- Run workflows: `python3 scripts/run_workflow.py <workflow>`
+"""
+            claude_template.write_text(default_claude_content, encoding="utf-8")
+
+        if not cursor_template.exists() and (PROJECT_ROOT / ".cursorrules").exists():
+            logger.info(f"📄 Seeding .cursorrules template in {TEMPLATES_DIR}")
+            cursor_content = (PROJECT_ROOT / ".cursorrules").read_text(encoding="utf-8")
+            cursor_template.write_text(cursor_content, encoding="utf-8")
+
+        if not aider_template.exists() and (PROJECT_ROOT / ".aider.instructions.md").exists():
+            logger.info(f"📄 Seeding .aider.instructions.md template in {TEMPLATES_DIR}")
+            aider_content = (PROJECT_ROOT / ".aider.instructions.md").read_text(encoding="utf-8")
+            aider_template.write_text(aider_content, encoding="utf-8")
     
     logger.info(f"Starting Possession Rules propagation (dry_run={args.dry_run})...")
     
@@ -196,7 +230,7 @@ def main():
         logic_dir = HOME / proj_name
         
         if proj_name == "agentmanager":
-            logic_dir = Path("/home/ubuntu/agentmanager")
+            logic_dir = PROJECT_ROOT
             
         if not logic_dir.exists():
             continue
