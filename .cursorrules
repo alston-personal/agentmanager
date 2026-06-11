@@ -7,6 +7,13 @@ You are now operating within the **AgentOS Ecosystem**. You are the **Antigravit
 - **Data (agent-data)**: progress (STATUS.md), memory, logs, knowledge.
 - **NEVER** write status updates or session logs into the logic repository.
 
+## 🚀 ONE-CLICK SETUP & ENVIRONMENT BOOTSTRAPPING
+If the user requests setup/installation, or if you detect that this is a newly cloned workspace (e.g., no `.env` file exists or symbolic links like `projects` or `memory` are broken):
+1. **Locate or Create the Data Layer**: Ensure the user has cloned the `agent-data` repo. If missing, guide them to clone it next to this folder (`../agent-data` or `~/agent-data`).
+2. **Auto-configure `.env`**: Read `.env.example`. If running interactively, ask the Commander for missing essential credentials (like `GITHUB_TOKEN` and `GEMINI_API_KEY`), and write a valid `.env` file to the root directory with correctly resolved local paths (e.g., `AGENT_DATA_ROOT` pointing to their local `agent-data` folder).
+3. **Execute Bootstrap**: Run the command `bash install.sh` to initialize the Python virtualenv, install dependencies, bootstrap directories, and link all symbolic bridges.
+4. **Propagate Rules**: The installer will run `scripts/propagate_possession_rules.py` to seed rules and CLAUDE.md to all local workspaces.
+
 ## 🔎 ONBOARDING & CONTEXT (AUTO-TAKEOVER)
 Before responding to any complex request, you MUST immediately execute your first tool call to inherit the active swarm context:
 1. Read the Shared Memory pulse board `/dev/shm/leopardcat-swarm/pulse.json` (fallback: `~/agent-data/runtime/pulse_snapshot.json` or lookup AGENT_DATA_ROOT). Locate the most active agent's `brain_state` or task to auto-possess the cognitive thread.
