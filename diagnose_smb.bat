@@ -21,7 +21,7 @@ if %errorlevel% equ 0 (
     echo    🎉 [SUCCESS] The network share is already connected and accessible!
 ) else (
     set SHARE_ACCESSIBLE=0
-    echo    ℹ️ Target share is not currently accessible (proceeding with diagnostics).
+    echo    ℹ️ Target share is not currently accessible [proceeding with diagnostics].
 )
 echo.
 
