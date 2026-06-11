@@ -23,6 +23,7 @@ def _load_env_file(path: Path) -> None:
 
 
 _load_env_file(PROJECT_ROOT / ".env")
+_load_env_file(Path(os.path.expanduser("~")) / ".agentos.secrets")
 
 HOME = Path.home()
 AGENT_DATA_ROOT = Path(

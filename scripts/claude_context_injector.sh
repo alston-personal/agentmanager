@@ -16,6 +16,7 @@ ENV_FILE="$PROJECT_ROOT/.env"
 if [ -f "$ENV_FILE" ]; then
     set -a
     source "$ENV_FILE"
+    [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
     set +a
 fi
 AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"

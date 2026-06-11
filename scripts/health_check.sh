@@ -7,6 +7,7 @@ if [ -f "$LOGIC_ROOT/.env" ]; then
     set -a
     # shellcheck disable=SC1090
     source "$LOGIC_ROOT/.env"
+    [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
     set +a
 fi
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"

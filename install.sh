@@ -47,6 +47,7 @@ fi
 set -a
 # shellcheck disable=SC1090
 source .env
+[ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
 set +a
 AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 

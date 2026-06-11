@@ -25,6 +25,7 @@ fi
 # 📍 3. Load Persistence Layer Path
 set -a
 source "$LOGIC_ROOT/.env"
+[ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
 set +a
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 AGENT_DATA_ROOT="$DATA_ROOT"
