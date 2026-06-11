@@ -119,7 +119,7 @@ if %FAILURES% equ 0 (
         echo    Ready to connect. Please run your mount script to connect.
     )
 ) else (
-    echo    ⚠️ Diagnostic found %FAILURES% critical connection issue(s) that need attention!
+    echo    ⚠️ Diagnostic found %FAILURES% critical connection issues that need attention!
     echo.
     echo    Recommended Fix Actions:
     echo    1. Check your network ping or port status above.
