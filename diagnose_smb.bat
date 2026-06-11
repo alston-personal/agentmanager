@@ -13,6 +13,18 @@ echo.
 
 set FAILURES=0
 
+:: 0. Pre-Check: Is the share already mounted and accessible?
+echo 🔍 [Pre-Check] Testing if share is already accessible...
+dir %TARGET_SHARE% >nul 2>&1
+if %errorlevel% equ 0 (
+    set SHARE_ACCESSIBLE=1
+    echo    🎉 [SUCCESS] The network share is already connected and accessible!
+) else (
+    set SHARE_ACCESSIBLE=0
+    echo    ℹ️ Target share is not currently accessible (proceeding with diagnostics).
+)
+echo.
+
 :: 1. Ping test (Network Layer)
 echo 🔍 [Test 1] Testing ICMP ping to %TARGET_IP%...
 ping -n 2 -w 1000 %TARGET_IP% >nul
@@ -64,10 +76,14 @@ del temp_netuse.txt >nul 2>&1
 if !CONFLICT_FOUND! equ 0 (
     echo    ✅ No existing sessions found to %TARGET_IP% [No session conflicts].
 ) else (
-    echo    ❌ Session conflict detected!
-    echo       Windows only allows one user account per server at a time.
-    echo       Run: net use \\%TARGET_IP% /delete /y
-    set /a FAILURES+=1
+    if %SHARE_ACCESSIBLE% equ 1 (
+        echo    ℹ️ Active session is currently connected and working.
+    ) else (
+        echo    ❌ Session conflict detected!
+        echo       Windows only allows one user account per server at a time.
+        echo       Run: net use \\%TARGET_IP% /delete /y
+        set /a FAILURES+=1
+    )
 )
 echo.
 
@@ -84,10 +100,14 @@ del temp_cmdkey.txt >nul 2>&1
 if !CACHE_FOUND! equ 0 (
     echo    ✅ No cached credentials found for %TARGET_IP% in Windows Credential Manager.
 ) else (
-    echo    ❌ Cached credentials found!
-    echo       Windows might be using an old or incorrect cached password automatically.
-    echo       Run: cmdkey /delete:Domain:target=%TARGET_IP%
-    set /a FAILURES+=1
+    if %SHARE_ACCESSIBLE% equ 1 (
+        echo    ℹ️ Cached credentials exist [Currently working].
+    ) else (
+        echo    ❌ Cached credentials found!
+        echo       Windows might be using an old or incorrect cached password automatically.
+        echo       Run: cmdkey /delete:Domain:target=%TARGET_IP%
+        set /a FAILURES+=1
+    )
 )
 echo.
 
@@ -97,8 +117,11 @@ echo 📊 DIAGNOSTIC SUMMARY:
 echo =============================================================
 if %FAILURES% equ 0 (
     echo    ✨ [HEALTHY] All checks passed!
-    echo    If you still cannot connect, verify that your username 'qmd' 
-    echo    and password are correct on the Samba server.
+    if %SHARE_ACCESSIBLE% equ 1 (
+        echo    The share is already successfully mounted and accessible.
+    ) else (
+        echo    The connection environment is healthy. Please run your mount script.
+    )
 ) else (
     echo    ⚠️ Diagnostic found %FAILURES% issues that need attention!
     echo.
