@@ -1,1 +1,1 @@
-/home/dqa03/agent-data/templates/CLAUDE.md
+/home/ubuntu/agent-data/templates/CLAUDE.md
