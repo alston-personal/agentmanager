@@ -77,15 +77,16 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             logger.warning(f"  Lobster 執行失敗: {output[:100]}")
             # TIMEOUT 立刻 SKIP，不浪費時間重試
             if output == "TIMEOUT":
-                msg = f"任務逾時（{TASK_TIMEOUT_SECONDS}s），跳過此任務"
+                msg = f"任務逾時（{TASK_TIMEOUT_SECONDS}s），跳過此任務並標記為阻斷"
                 send_telegram_alert(
-                    f"⏰ *Lobster 任務逾時 SKIP*\n\n"
+                    f"⏰ *Lobster 任務逾時 BLOCKED*\n\n"
                     f"專案: `{proj_dir.name}`\n"
                     f"任務: {task_text[:80]}\n"
-                    f"已自動跳過，繼續下一個任務。"
+                    f"原因: 執行時間超過 {TASK_TIMEOUT_SECONDS} 秒。\n\n"
+                    f"已自動標記為阻斷，請人工介入排除問題後，將 TASK_BOARD.md 或 STATUS.md 中的 `[!]` 改回 `[ ]` 以恢復執行。"
                 )
-                logger.warning(f"  ⏭️ SKIP（TIMEOUT）: {msg}")
-                return False, f"SKIP: {msg}"
+                logger.warning(f"  🚫 BLOCKED（TIMEOUT）: {msg}")
+                return False, f"BLOCKED: {msg}"
             failure_count += 1
             continue
 
