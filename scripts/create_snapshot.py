@@ -11,6 +11,7 @@ if str(PROJECT_ROOT_DETECTED) not in sys.path:
     sys.path.append(str(PROJECT_ROOT_DETECTED))
 
 from agent_core import config
+from agent_core.session_lifecycle import latest_session_records, read_compact_session_sync
 PROJECT_ROOT = config.PROJECT_ROOT
 AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
 MEMORY_ROOT = config.MEMORY_DIR
@@ -33,7 +34,15 @@ def main() -> int:
 
     short_term = read_text(MEMORY_ROOT / "SHORT_TERM.md").strip()
     long_term = read_text(MEMORY_ROOT / "LONG_TERM.md").strip()
-    session_sync = read_text(MEMORY_ROOT / "session_sync.md").strip()
+    session_sync = read_compact_session_sync(AGENT_DATA_ROOT, max_chars=6000).strip()
+    latest_sessions = latest_session_records(PROJECT_ROOT, AGENT_DATA_ROOT, limit=3)
+
+    session_records_block = []
+    for record in latest_sessions:
+        session_records_block.append(
+            f"- `{record.get('session_id', 'unknown')}` {record.get('ended_at', 'unknown')} | {record.get('summary', 'unknown')}"
+        )
+    latest_sessions_text = "\n".join(session_records_block) or "(none)"
 
     content = [
         f"# Snapshot Summary - {date_stamp}",
@@ -46,6 +55,9 @@ def main() -> int:
         "",
         "## Session Sync",
         session_sync or "(empty)",
+        "",
+        "## Latest Session Records",
+        latest_sessions_text,
         "",
         "## Long Term Memory",
         long_term or "(empty)",

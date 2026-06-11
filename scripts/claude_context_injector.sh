@@ -22,7 +22,20 @@ fi
 AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 
 # --- Read Pulse State ---
-PULSE_FILE="/dev/shm/leopardcat-swarm/pulse.json"
+PULSE_FILE="${AGENT_PULSE_FILE:-}"
+if [ -z "$PULSE_FILE" ] && command -v python3 >/dev/null 2>&1; then
+    PULSE_FILE="$(python3 - <<'PY'
+from pathlib import Path
+import os, sys
+project_root = Path(os.environ.get("AGENT_PROJECT_ROOT", Path.cwd())).resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+from agent_core.platform import get_platform_driver
+driver = get_platform_driver(project_root=project_root, data_root=Path(os.environ.get("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))))
+print(driver.volatile_state_dir() / "pulse.json")
+PY
+)"
+fi
 PULSE_FALLBACK="$AGENT_DATA_ROOT/runtime/pulse_snapshot.json"
 
 if [ -f "$PULSE_FILE" ]; then

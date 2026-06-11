@@ -7,6 +7,7 @@ import subprocess
 import requests
 from glob import glob
 from datetime import datetime
+from pathlib import Path
 
 
 PROJECT_ROOT = os.path.abspath(os.getenv("AGENT_PROJECT_ROOT") or os.path.dirname(os.path.dirname(__file__)))
@@ -27,6 +28,11 @@ def load_env():
 
 
 load_env()
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from agent_core.session_lifecycle import close_session
 
 
 def send_telegram_notification(text: str):
@@ -476,13 +482,18 @@ def main() -> int:
         # 在 run_workflow.py 中如果是 subprocess 可能需要特殊處理 stdin，
         # 但這裡我們假設是在 terminal 執行。
         subprocess.run(["python3", setup_script], cwd=PROJECT_ROOT)
-        return "✅ /setup started. Follow instructions in the terminal."
+        print("✅ /setup started. Follow instructions in the terminal.")
+        return 0
 
     if workflow_name == "report":
-        # 先執行原本的 report 操作 (這裡假設 report 是手動 md 導引，但我們在此加入自動交接)
-        handover_script = os.path.join(PROJECT_ROOT, "scripts", "handover.py")
-        subprocess.run(["python3", handover_script], cwd=PROJECT_ROOT)
-        return "✅ /report complete. Context handover generated."
+        result = close_session(
+            project_root=Path(PROJECT_ROOT),
+            data_root=Path(AGENT_DATA_ROOT),
+            agent_name=os.environ.get("AGENT_NAME") or os.environ.get("USER"),
+        )
+        print(result.compact_entry)
+        print(f"✅ /report complete. Session record written to {result.record_path}")
+        return 0
 
     print(run_generic(workflow_name))
     return 0

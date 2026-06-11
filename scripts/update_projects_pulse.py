@@ -7,15 +7,24 @@ Writes to volatile RAM disk and persistent fallback.
 import os
 import json
 import re
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
-AGENT_DATA_ROOT = Path(os.getenv("AGENT_DATA_ROOT", "/home/dqa03/agent-data"))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agent_core import config
+from agent_core.platform import get_platform_driver
+
+AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 
-SHM_ROOT = Path("/dev/shm/leopardcat-swarm")
+PLATFORM_DRIVER = get_platform_driver(project_root=PROJECT_ROOT, data_root=AGENT_DATA_ROOT)
+SHM_ROOT = PLATFORM_DRIVER.volatile_state_dir()
 SHM_PULSE = SHM_ROOT / "projects_pulse.json"
-PERSISTENT_PULSE = AGENT_DATA_ROOT / "runtime" / "projects_pulse_snapshot.json"
+PERSISTENT_PULSE = PLATFORM_DRIVER.persistent_state_dir() / "projects_pulse_snapshot.json"
 
 def parse_status_md(status_path: Path) -> dict:
     data = {

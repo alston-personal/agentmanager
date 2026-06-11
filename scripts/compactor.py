@@ -7,9 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
-SYNC_FILE = os.path.join(PROJECT_ROOT, "memory/session_sync.md")
-ARCHIVE_DIR = os.path.join(PROJECT_ROOT, "memory/archive")
 AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
+SYNC_FILE = os.path.join(AGENT_DATA_ROOT, "memory/session_sync.md")
+ARCHIVE_DIR = os.path.join(AGENT_DATA_ROOT, "memory/archive")
 
 SECRET_PATTERNS = [
     re.compile(r"(key=)[A-Za-z0-9_\-]{20,}", re.I),

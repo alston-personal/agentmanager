@@ -39,9 +39,9 @@ If you are setting up this system on a new machine:
 
 4.  **Install user services** (mandatory on Core, optional on Client):
     ```bash
-    bash scripts/install_systemd_user.sh
+    python3 scripts/install_services.py
     ```
-    *Set `AGENT_MODE=CORE` in `.env` before this step if this machine should run Telegram, Cat-Ink memory sync, and watchdog services. Client machines may skip this unless they want a local `os-pulse` heartbeat.*
+    *This now routes through the platform driver layer. Linux can still use systemd, while Windows and macOS fall back to local runtime/service registries. Set `AGENT_MODE=CORE` in `.env` before this step if this machine should run Telegram, Cat-Ink memory sync, and watchdog services.*
 
 5.  **Verify Integrity**:
     ```bash
@@ -54,8 +54,32 @@ If you are setting up this system on a new machine:
 ## 🛠️ Essential Scripts
 - `scripts/reboot_os.sh`: Re-initializes system services and background watchers.
 - `scripts/install_systemd_user.sh`: Installs portable user-level systemd units for a cloned machine.
+- `scripts/install_services.py`: Platform-aware service installer entrypoint.
+- `scripts/platform_runtime.py`: Platform-aware runtime selector and diagnostics.
 - `scripts/recall_chronicle.py`: Pulls the latest project history from the data layer.
 - `scripts/reconcile_workspace.py`: Synchronizes remote project status with the local workspace.
+
+---
+
+## 🧩 Platform Driver Architecture
+AgentOS now separates:
+
+- **Core logic**: `agent_core/session_lifecycle.py`, workflows, status parsing, and session close protocol
+- **Platform drivers**: `agent_core/platform/{base,linux,windows,macos}.py`
+- **Runtime entrypoints**: `scripts/pulse.py`, `scripts/install_services.py`, `scripts/platform_runtime.py`
+
+The drivers expose a single capability surface for:
+
+- runtime / volatile / persistent state paths
+- pulse and event writes
+- service install / start / stop / restart
+- recurring job registration
+- transcript syncing
+- project link repair
+
+Linux can still lean on `systemd` and `/dev/shm`; Windows and macOS use local runtime directories plus subprocess-backed service state.
+
+See [docs/PLATFORM_DRIVERS.md](docs/PLATFORM_DRIVERS.md) for the compact architecture note.
 
 ---
 

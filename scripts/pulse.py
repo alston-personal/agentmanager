@@ -1,191 +1,96 @@
 #!/usr/bin/env python3
 """
-scripts/pulse.py — LCS Pulse Utility (upgraded)
+scripts/pulse.py — platform-aware heartbeat and event bus.
 
-Dual-write architecture:
-  VOLATILE  : /dev/shm/leopardcat-swarm/pulse.json   (fast, for swarm_top.py live monitor)
-  PERSISTENT: agent-data/runtime/pulse_snapshot.json (survives reboot, for cold-start recovery)
-
-Both are always updated together. On startup, if volatile is empty but persistent exists,
-agents can restore from persistent.
-
-Usage (CLI):
-    python3 scripts/pulse.py --agent Gemini-IDE --task "Working on X" --status active
-    python3 scripts/pulse.py --agent Gemini-IDE --event workflow_started --message "/report started"
+This is now a thin entrypoint over `agent_core.platform` so the caller does not
+need to know whether the host is Linux, Windows, or macOS.
 """
-import os
+from __future__ import annotations
+
+import argparse
 import json
+import os
 import sys
 import time
-from pathlib import Path
-from datetime import datetime, timezone
+from typing import Any
 
-# Add project root to path to import service_utils
-PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
-sys.path.append(str(PROJECT_ROOT_DETECTED))
-from scripts.service_utils import setup_locking, handle_signals
+PROJECT_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-SHM_ROOT = Path("/dev/shm/leopardcat-swarm")
-SHM_ROOT.mkdir(parents=True, exist_ok=True)
-
-PULSE_FILE = SHM_ROOT / "pulse.json"
-EVENTS_LOG = SHM_ROOT / "events.log"
-
-# Add project root to sys.path to import agent_core
-PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT_DETECTED) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT_DETECTED))
-
-from agent_core import config
-_AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
-_RUNTIME_DIR = config.RUNTIME_DIR
-PERSISTENT_PULSE = _RUNTIME_DIR / "pulse_snapshot.json"
-PERSISTENT_EVENTS_ARCHIVE_DIR = _RUNTIME_DIR / "events_archive"
+from agent_core.platform import get_platform_driver
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def update_pulse(agent_name: str, task: str, status: str = "active") -> None:
-    """
-    Update this agent's heartbeat entry in both volatile and persistent stores.
-    """
-    pulse_data = _read_volatile_pulse()
-    pulse_data[agent_name] = {
-        "task": task,
-        "status": status,
-        "pid": os.getpid(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    _write_volatile_pulse(pulse_data)
-    _write_persistent_pulse(pulse_data)  # NEW: persist to agent-data
+def _driver(platform_name: str | None = None):
+    return get_platform_driver(platform_name=platform_name)
 
 
-def log_event(agent_name: str, event_type: str, message: str, metadata: dict = None) -> None:
-    """
-    Broadcast a real-time event through the LCS Bus (append-only JSONL).
-    Also writes to agent-data/runtime/events_archive/YYYY-MM-DD.jsonl for durability.
-    """
-    event = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "agent": agent_name,
-        "type": event_type,
-        "message": message,
-        "metadata": metadata or {},
-    }
-    line = json.dumps(event) + "\n"
-
-    # Volatile write
-    with open(EVENTS_LOG, "a") as f:
-        f.write(line)
-
-    # Persistent write (NEW)
-    _write_persistent_event(line)
+def update_pulse(agent_name: str, task: str, status: str = "active", metadata: dict[str, Any] | None = None, platform_name: str | None = None) -> dict[str, Any]:
+    return _driver(platform_name).write_pulse(agent_name, task, status, metadata=metadata or {})
 
 
-def restore_from_persistent() -> dict:
-    """
-    Cold-start recovery: load last known pulse state from persistent store.
-    Call this at agent startup if /dev/shm is empty.
-    """
-    if not PERSISTENT_PULSE.exists():
-        return {}
-    try:
-        data = json.loads(PERSISTENT_PULSE.read_text())
-        # Mark all restored entries as idle (they were from a previous process)
-        for entry in data.values():
-            entry["status"] = "idle (restored)"
-        _write_volatile_pulse(data)
-        return data
-    except Exception:
-        return {}
+def log_event(agent_name: str, event_type: str, message: str, metadata: dict[str, Any] | None = None, platform_name: str | None = None) -> dict[str, Any]:
+    metadata = metadata or {}
+    metadata.setdefault("agent", agent_name)
+    return _driver(platform_name).append_event(event_type, message, metadata=metadata)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _read_volatile_pulse() -> dict:
-    if PULSE_FILE.exists():
-        try:
-            return json.loads(PULSE_FILE.read_text())
-        except Exception:
-            pass
-    # Cold-start: try to restore from persistent
-    if not PULSE_FILE.exists() and PERSISTENT_PULSE.exists():
-        return restore_from_persistent()
-    return {}
+def restore_from_persistent(platform_name: str | None = None) -> dict[str, Any]:
+    return _driver(platform_name).restore_pulse_board()
 
 
-def _write_volatile_pulse(data: dict) -> None:
-    with open(PULSE_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-def _write_persistent_pulse(data: dict) -> None:
-    try:
-        _RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-        PERSISTENT_PULSE.write_text(json.dumps(data, indent=2))
-    except Exception:
-        pass  # Never crash the caller over persistence failure
-
-
-def _write_persistent_event(line: str) -> None:
-    try:
-        PERSISTENT_EVENTS_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        archive_file = PERSISTENT_EVENTS_ARCHIVE_DIR / f"{today}.jsonl"
-        with open(archive_file, "a") as f:
-            f.write(line)
-    except Exception:
-        pass
-
-
-# ---------------------------------------------------------------------------
-# CLI entrypoint
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="LCS Pulse Utility")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="AgentOS pulse utility")
     parser.add_argument("--agent", default="Gemini-IDE", help="Name of the agent")
     parser.add_argument("--task", help="Current task description")
     parser.add_argument("--status", default="active", help="Status (active/idle/error)")
     parser.add_argument("--event", help="Event type to broadcast")
     parser.add_argument("--message", help="Message to broadcast")
+    parser.add_argument("--metadata", default="{}", help="Optional JSON metadata for pulse/event writes")
+    parser.add_argument("--platform", default=None, help="Override platform selection")
     parser.add_argument("--restore", action="store_true", help="Restore pulse from persistent store")
     parser.add_argument("--watch", action="store_true", help="Keep pulsing until the process is stopped")
     parser.add_argument("--interval", type=int, default=30, help="Watch interval in seconds")
-
     args = parser.parse_args()
 
+    platform_driver = _driver(args.platform)
+
+    try:
+        metadata = json.loads(args.metadata) if args.metadata else {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+    except Exception:
+        metadata = {}
+
     if args.restore:
-        restored = restore_from_persistent()
+        restored = platform_driver.restore_pulse_board()
         print(f"♻️  Restored {len(restored)} agents from persistent store")
-        sys.exit(0)
+        return 0
 
     if args.task:
         should_watch = args.watch or bool(os.environ.get("INVOCATION_ID"))
+        lock = platform_driver.acquire_lock(f"pulse_{args.agent}")
         if should_watch:
-            # 確保只有一個實例在運行 (Lock & Replace)
-            # 使用 agent name 做為 lock 的一部分，允許多個 agent 同時 pulse
-            _lock = setup_locking(f"pulse_{args.agent}", replace=True)
-            handle_signals()
-
-        while True:
-            update_pulse(args.agent, args.task, args.status)
-            print(f"✅ Pulsed: {args.agent} → {args.task} ({args.status})")
-            print(f"   Persistent backup: {PERSISTENT_PULSE}")
-            if not should_watch:
-                break
-            time.sleep(max(args.interval, 5))
+            lock.acquire()
+        try:
+            while True:
+                entry = platform_driver.write_pulse(args.agent, args.task, args.status, metadata=metadata)
+                print(f"✅ Pulsed: {entry['agent']} → {entry['task']} ({entry['status']})")
+                print(f"   Persistent backup: {platform_driver.persistent_state_dir() / 'pulse_snapshot.json'}")
+                if not should_watch:
+                    break
+                time.sleep(max(args.interval, 5))
+        finally:
+            if should_watch:
+                lock.release()
 
     if args.event and args.message:
-        log_event(args.agent, args.event, args.message)
-        print(f"📣 Broadcasted Event: {args.event}: {args.message}")
-        print(f"   Archive: {PERSISTENT_EVENTS_ARCHIVE_DIR}")
+        event = platform_driver.append_event(args.event, args.message, metadata={"agent": args.agent, **metadata})
+        print(f"📣 Broadcasted Event: {event['event_type']}: {event['message']}")
+        print(f"   Archive: {platform_driver.persistent_state_dir() / 'events_archive'}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

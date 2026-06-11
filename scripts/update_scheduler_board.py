@@ -12,10 +12,16 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
 # Paths
-PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
-PULSE_FILE = Path("/dev/shm/leopardcat-swarm/pulse.json")
-PERSISTENT_PULSE = AGENT_DATA_ROOT / "runtime/pulse_snapshot.json"
+PROJECT_ROOT = Path(os.environ.get("AGENT_PROJECT_ROOT", Path(__file__).resolve().parents[1])).resolve()
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from agent_core import config
+from agent_core.platform import get_platform_driver
+
+AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
+PLATFORM_DRIVER = get_platform_driver(project_root=PROJECT_ROOT, data_root=AGENT_DATA_ROOT)
+PULSE_FILE = PLATFORM_DRIVER.volatile_state_dir() / "pulse.json"
+PERSISTENT_PULSE = PLATFORM_DRIVER.persistent_state_dir() / "pulse_snapshot.json"
 SCHEDULE_YAML = PROJECT_ROOT / "schedule.yaml"
 CHRONOS_LOG = AGENT_DATA_ROOT / "logs/chronos.log"
 BOARD_MD = AGENT_DATA_ROOT / "SCHEDULER_BOARD.md"
@@ -92,7 +98,7 @@ def generate_markdown():
     
     # 1. Swarm Heartbeats
     md.append("### 📊 1. 實時守護心跳 (Swarm Heartbeats)")
-    md.append("Below are the active agents tracked inside memory `/dev/shm`:")
+    md.append(f"Below are the active agents tracked in `{PULSE_FILE.parent}`:")
     md.append("\n| 助理名稱 (Agent) | 當前任務 (Active Task) | 狀態 (Status) | PID | 最後更新時間 |")
     md.append("| :--- | :--- | :---: | :---: | :--- |")
     

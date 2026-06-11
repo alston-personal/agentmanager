@@ -211,10 +211,21 @@ load_env()
 
 def get_pulse() -> dict:
     """讀取 swarm pulse 狀態"""
-    for path in [
-        Path("/dev/shm/leopardcat-swarm/pulse.json"),
-        AGENT_DATA_ROOT / "runtime/pulse_snapshot.json",
-    ]:
+    try:
+        import sys as _sys
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in _sys.path:
+            _sys.path.insert(0, root)
+        from agent_core.platform import get_platform_driver
+        driver = get_platform_driver(project_root=Path(__file__).resolve().parents[1], data_root=AGENT_DATA_ROOT)
+        paths = [
+            driver.volatile_state_dir() / "pulse.json",
+            driver.persistent_state_dir() / "pulse_snapshot.json",
+        ]
+    except Exception:
+        paths = [AGENT_DATA_ROOT / "runtime" / "pulse_snapshot.json"]
+
+    for path in paths:
         if path.exists():
             try:
                 return json.loads(path.read_text())

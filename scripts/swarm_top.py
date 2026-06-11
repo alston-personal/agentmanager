@@ -2,11 +2,18 @@
 import json
 import os
 import time
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agent_core.platform import get_platform_driver
+
 # --- Configuration ---
-PULSE_FILE = Path("/dev/shm/leopardcat-swarm/pulse.json")
+PULSE_FILE = get_platform_driver().volatile_state_dir() / "pulse.json"
 REFRESH_INTERVAL = 2 # Seconds
 
 # --- UI Assets (Colors & Icons) ---

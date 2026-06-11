@@ -4,9 +4,16 @@ import time
 import sys
 import json
 from pathlib import Path
+from datetime import datetime, timezone
+import os
+ 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from agent_core.platform import get_platform_driver
 
 # --- Configuration ---
-PULSE_FILE = Path("/dev/shm/leopardcat-swarm/pulse.json")
+PULSE_FILE = get_platform_driver(project_root=PROJECT_ROOT).volatile_state_dir() / "pulse.json"
 INBOX_FILE = Path("/home/ubuntu/agent-data/memory/INBOX_LCS_WORKER.md")
 MY_AGENT_NAME = "LCS-Worker-POC"
 

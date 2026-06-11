@@ -38,11 +38,11 @@ PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
 AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
 GEMINI_API_KEY = get_env_secret("GEMINI_API_KEY")
 KNOWLEDGE_ROOT = os.getenv("KNOWLEDGE_ROOT", os.path.expanduser("~/.gemini/antigravity/knowledge"))
-MEMORY_ROOT = os.path.join(PROJECT_ROOT, "memory")
+MEMORY_ROOT = os.path.join(AGENT_DATA_ROOT, "memory")
 SYSTEM_ID_PATH = os.path.join(PROJECT_ROOT, ".agent/SYSTEM_IDENTITY.md")
 WORKFLOW_RUNNER = os.path.join(PROJECT_ROOT, "scripts", "run_workflow.py")
 DATA_DASHBOARD_PATH = os.path.join(AGENT_DATA_ROOT, "DASHBOARD.md")
-SESSION_SYNC_PATH = os.path.join(PROJECT_ROOT, ".agent", "memory", "session_sync.md")
+SESSION_SYNC_PATH = os.path.join(AGENT_DATA_ROOT, "memory", "session_sync.md")
 TELEGRAM_SESSION_DIR = os.path.join(AGENT_DATA_ROOT, "memory", "telegram_sessions")
 SKILLS_ROOT = os.path.join(PROJECT_ROOT, ".agent", "skills")
 
@@ -94,9 +94,9 @@ def sync_session_event(source: str, user_text: str, agent_text: str = "", metada
     body = (
         f"- **time**: {timestamp}\n"
         f"- **source**: {source}\n"
+        f"- **user_chars**: {len(user_text or '')}\n"
+        f"- **agent_chars**: {len(agent_text or '')}\n"
         f"{meta_lines}\n"
-        f"- **user**:\n\n{sanitize_text(user_text)}\n\n"
-        f"- **agent**:\n\n{sanitize_text(agent_text) or '(pending)'}\n"
     )
     append_markdown_log(SESSION_SYNC_PATH, f"Session Event @ {timestamp}", body)
 
@@ -122,8 +122,8 @@ def read_dual_layer_memory():
     """讀取雙層記憶 (SHORT_TERM.md, LONG_TERM.md)，了解當前任務與歷史進度。"""
     try:
         st, lt = "", ""
-        st_p = os.path.join(MEMORY_ROOT, "SHORT_TERM.md")
-        lt_p = os.path.join(MEMORY_ROOT, "LONG_TERM.md")
+        st_p = os.path.join(AGENT_DATA_ROOT, "memory", "SHORT_TERM.md")
+        lt_p = os.path.join(AGENT_DATA_ROOT, "memory", "LONG_TERM.md")
         if os.path.exists(st_p):
             with open(st_p, "r") as f: st = f.read()
         if os.path.exists(lt_p):
@@ -131,7 +131,7 @@ def read_dual_layer_memory():
         session_sync = ""
         if os.path.exists(SESSION_SYNC_PATH):
             with open(SESSION_SYNC_PATH, "r", encoding="utf-8") as f:
-                session_sync = f.read()[-6000:]
+                session_sync = f.read()[-4000:]
         return f"【短期記憶】:\n{st}\n\n【長期記憶】:\n{lt}\n\n【Session Sync】:\n{session_sync}"
     except Exception as e: return f"記憶讀取失敗: {e}"
 
