@@ -32,7 +32,7 @@ AGENT_DATA_ROOT = Path(
     or HOME / "agent-data"
 ).expanduser()
 AGENT_DATA_DIR = AGENT_DATA_ROOT
-WORKSPACE_NAME = os.environ.get("WORKSPACE_NAME", os.uname().nodename)
+WORKSPACE_NAME = os.environ.get("WORKSPACE_NAME") or __import__("platform").node()
 AGENT_MODE = os.environ.get("AGENT_MODE", "CLIENT")
 
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"

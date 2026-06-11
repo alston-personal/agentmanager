@@ -9,7 +9,7 @@ ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 
 def load_env():
     if os.path.exists(ENV_FILE):
-        with open(ENV_FILE, "r") as f:
+        with open(ENV_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 if "=" in line and not line.startswith("#"):
                     key, val = line.strip().split("=", 1)
@@ -41,17 +41,43 @@ FILE_BRIDGES = {
 }
 
 def ensure_symlink(link_path, target_path, label):
+    import subprocess
+    link_path = os.path.normpath(link_path)
+    target_path = os.path.normpath(target_path)
+    
     if os.path.islink(link_path):
-        existing_target = os.readlink(link_path)
-        if existing_target != target_path:
-            print(f"🔗 Updating symlink: {label} -> {target_path}")
-            os.remove(link_path)
-            os.symlink(target_path, link_path)
+        try:
+            existing_target = os.readlink(link_path)
+        except Exception:
+            existing_target = ""
+        if os.path.normpath(existing_target) != target_path:
+            print(f"🔗 Updating link: {label} -> {target_path}")
+            try:
+                if os.name == 'nt' and os.path.isdir(link_path):
+                    os.rmdir(link_path)
+                else:
+                    os.unlink(link_path)
+            except Exception:
+                os.remove(link_path)
+            create_link(target_path, link_path)
     elif os.path.exists(link_path):
         print(f"⚠️ Warning: {label} exists as a real path in logic repo. Skipping symlink.")
     else:
-        print(f"🔗 Creating symlink: {label} -> {target_path}")
-        os.symlink(target_path, link_path)
+        print(f"🔗 Creating link: {label} -> {target_path}")
+        create_link(target_path, link_path)
+
+def create_link(target, link):
+    import subprocess
+    if os.name == 'nt':
+        if os.path.isdir(target):
+            subprocess.run(['cmd', '/c', 'mklink', '/j', link, target], check=True, shell=True)
+        else:
+            try:
+                os.link(target, link)
+            except OSError:
+                shutil.copy2(target, link)
+    else:
+        os.symlink(target, link)
 
 def heal_recursive_symlinks(root_dir):
     """
@@ -128,7 +154,7 @@ def bootstrap():
         target = os.path.join(DATA_ROOT, "memory", mf)
         if not os.path.exists(target):
             print(f"🧠 Initializing core memory: {mf}")
-            with open(target, "w") as f:
+            with open(target, "w", encoding="utf-8") as f:
                 f.write(f"# {mf}\n*Initialized @ {os.popen('date').read().strip()}*\n")
 
     # 4. Symlink Bridge Audit

@@ -14,7 +14,40 @@ DATA_PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 DASHBOARD_PATH = AGENT_DATA_ROOT / "DASHBOARD.md"
 WORKSPACE_ROOT = PROJECT_ROOT / "workspace"
 LOCAL_STATUS_DIR = PROJECT_ROOT / "projects_status"
-PHYSICAL_PROJECTS_ROOT = HOME
+PHYSICAL_PROJECTS_ROOT = PROJECT_ROOT.parent
+
+import sys
+
+def safe_symlink_to(link_path: Path, target_path: Path):
+    import shutil
+    import subprocess
+    link_path = Path(os.path.normpath(link_path))
+    target_path = Path(os.path.normpath(target_path))
+    if os.name == 'nt':
+        if target_path.is_dir():
+            subprocess.run(['cmd', '/c', 'mklink', '/j', str(link_path), str(target_path)], check=True, shell=True)
+        else:
+            try:
+                os.link(str(target_path), str(link_path))
+            except OSError:
+                shutil.copy2(str(target_path), str(link_path))
+    else:
+        link_path.symlink_to(target_path)
+
+def safe_unlink(link_path: Path):
+    try:
+        if os.name == 'nt' and link_path.is_dir():
+            os.rmdir(link_path)
+        else:
+            link_path.unlink()
+    except Exception:
+        try:
+            link_path.unlink()
+        except Exception:
+            if os.name == 'nt' and link_path.is_dir():
+                os.rmdir(link_path)
+            else:
+                os.remove(link_path)
 
 
 def utc_now() -> datetime:
@@ -121,7 +154,7 @@ def ensure_local_mounts(project_slug: str, status_path: Path):
     WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
     workspace_link = WORKSPACE_ROOT / project_slug
     if not workspace_link.exists() and not workspace_link.is_symlink() and project_slug != "agentmanager":
-        workspace_link.symlink_to(physical_dir)
+        safe_symlink_to(workspace_link, physical_dir)
 
     # 3. Status Dir (The symlink for status tracking)
     if LOCAL_STATUS_DIR.is_symlink():
@@ -138,15 +171,20 @@ def ensure_local_mounts(project_slug: str, status_path: Path):
     local_memory = local_status_dir / "memory"
     data_memory = status_path.parent / "memory"
 
-    if local_status.exists() or local_status.is_symlink():
-        local_status.unlink()
-    local_status.symlink_to(status_path)
+    if local_status.exists() and local_status.resolve() == status_path.resolve():
+        pass
+    else:
+        if local_status.exists() or local_status.is_symlink() or (os.name == 'nt' and local_status.exists()):
+            safe_unlink(local_status)
+        safe_symlink_to(local_status, status_path)
 
-    if local_memory.exists() or local_memory.is_symlink():
-        if local_memory.is_symlink() or local_memory.is_file():
-            local_memory.unlink()
-    if not local_memory.exists():
-        local_memory.symlink_to(data_memory)
+    if local_memory.exists() and local_memory.resolve() == data_memory.resolve():
+        pass
+    else:
+        if local_memory.exists() or local_memory.is_symlink() or (os.name == 'nt' and local_memory.exists()):
+            safe_unlink(local_memory)
+        if not local_memory.exists():
+            safe_symlink_to(local_memory, data_memory)
 
 
 def ensure_workspace_entry(project_slug: str, pretty_name: str, type_icon: str):
@@ -178,7 +216,7 @@ def ensure_workspace_entry(project_slug: str, pretty_name: str, type_icon: str):
             workspace_script = PROJECT_ROOT / "scripts" / "gen_workspace.py"
             if workspace_script.exists():
                 import subprocess
-                subprocess.run(["python3", str(workspace_script)], cwd=str(PROJECT_ROOT), capture_output=True)
+                subprocess.run([sys.executable, str(workspace_script)], cwd=str(PROJECT_ROOT), capture_output=True)
     except Exception as e:
         print(f"⚠️ Warning: Failed to update workspace files: {e}")
 
@@ -194,7 +232,7 @@ def register_project(project_name: str, display_name: str | None, status: str, t
     # Dynamically trigger AI possession propagation
     try:
         import subprocess
-        subprocess.run(["python3", str(PROJECT_ROOT / "scripts" / "propagate_possession_rules.py")], capture_output=True, timeout=15)
+        subprocess.run([sys.executable, str(PROJECT_ROOT / "scripts" / "propagate_possession_rules.py")], capture_output=True, timeout=15)
     except Exception as e:
         print(f"⚠️ Warning: Failed to propagate AI rules: {e}")
         

@@ -61,7 +61,7 @@ def import_project(source_path, sector="Work"):
 
     # Register via existing script (handles STATUS.md and Dashboard)
     subprocess.run([
-        "python3", str(AGENTMANAGER_ROOT / "scripts" / "register_project.py"),
+        sys.executable, str(AGENTMANAGER_ROOT / "scripts" / "register_project.py"),
         project_id, "--display-name", project_metadata["display_name"]
     ])
 

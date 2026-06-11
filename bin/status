@@ -1,4 +1,17 @@
 #!/bin/bash
+export PYTHONUTF8=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-python3 "$PROJECT_ROOT/scripts/project_overview.py" "$@"
+
+PYTHON_BIN="python3"
+if [ -f "$PROJECT_ROOT/venv/Scripts/python" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/venv/Scripts/python"
+elif [ -f "$PROJECT_ROOT/venv/bin/python3" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/venv/bin/python3"
+elif [ -f "$PROJECT_ROOT/.venv/Scripts/python" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/Scripts/python"
+elif [ -f "$PROJECT_ROOT/.venv/bin/python3" ]; then
+    PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
+fi
+
+"$PYTHON_BIN" "$PROJECT_ROOT/scripts/project_overview.py" "$@"

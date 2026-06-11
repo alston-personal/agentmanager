@@ -1,5 +1,6 @@
 #!/bin/bash
 # 🛰️ AgentOS Global Reboot Protocol (v0.6.4-AutoSelfHealing)
+export PYTHONUTF8=1
 
 # 📍 1. Locate Environment
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +42,14 @@ link_bridge() {
     local target_path="$2"
 
     if [ -L "$target_path" ] || [ ! -e "$target_path" ]; then
-        ln -nfs "$source_path" "$target_path"
+        if [[ "$OSTYPE" == "msys" ]]; then
+            rm -f "$target_path" 2>/dev/null || rmdir "$target_path" 2>/dev/null
+            local win_source=$(cygpath -w "$source_path")
+            local win_target=$(cygpath -w "$target_path")
+            cmd //c mklink //j "$win_target" "$win_source"
+        else
+            ln -nfs "$source_path" "$target_path"
+        fi
         return
     fi
 
@@ -52,7 +60,14 @@ link_bridge() {
 
     local backup_path="${target_path}.pre-agentos-link.$(date +%Y%m%d%H%M%S)"
     mv "$target_path" "$backup_path"
-    ln -s "$source_path" "$target_path"
+    
+    if [[ "$OSTYPE" == "msys" ]]; then
+        local win_source=$(cygpath -w "$source_path")
+        local win_target=$(cygpath -w "$target_path")
+        cmd //c mklink //j "$win_target" "$win_source"
+    else
+        ln -s "$source_path" "$target_path"
+    fi
     echo "📦 Backed up existing bridge target: $backup_path"
 }
 
@@ -72,7 +87,15 @@ fi
 link_bridge "$DATA_ROOT/memory" "$LOGIC_ROOT/memory"
 link_bridge "$DATA_ROOT/logs" "$LOGIC_ROOT/logs"
 link_bridge "$DATA_ROOT/projects" "$LOGIC_ROOT/projects"
-ln -nfs "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
+
+if [[ "$OSTYPE" == "msys" ]]; then
+    rm -f "$LOGIC_ROOT/ARCHITECTURE.md" 2>/dev/null
+    win_source=$(cygpath -w "$DATA_ROOT/ARCHITECTURE.md")
+    win_target=$(cygpath -w "$LOGIC_ROOT/ARCHITECTURE.md")
+    cmd //c mklink //h "$win_target" "$win_source" 2>/dev/null || cp "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
+else
+    ln -nfs "$DATA_ROOT/ARCHITECTURE.md" "$LOGIC_ROOT/ARCHITECTURE.md"
+fi
 
 # 🧠 4b. Re-link Knowledge Bridge (Two-layer chain)
 # Layer 1: agent-data/knowledge → antigravity/knowledge (IDE Knowledge Base)
@@ -89,15 +112,29 @@ link_bridge "$DATA_ROOT/knowledge" "$LOGIC_ROOT/knowledge"
 echo "🔗 Knowledge bridge restored: $LOGIC_ROOT/knowledge -> $DATA_ROOT/knowledge"
 
 # ⚡ 5. Restart Services
-systemctl --user daemon-reload
-if [ "$AGENT_MODE" == "CORE" ]; then
-    echo "⚡ [Core Mode] Restarting command bridge..."
-    systemctl --user restart tg-commander.service 2>/dev/null || echo "⚠️ Service ignored (Non-server mode)."
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload
+    if [ "$AGENT_MODE" == "CORE" ]; then
+        echo "⚡ [Core Mode] Restarting command bridge..."
+        systemctl --user restart tg-commander.service 2>/dev/null || echo "⚠️ Service ignored (Non-server mode)."
+    else
+        echo "🕶️ [Client Mode] Skipping service restart."
+    fi
 else
-    echo "🕶️ [Client Mode] Skipping service restart."
+    echo "🕶️ [Non-Systemd Environment] Skipping systemctl services reload."
 fi
 
 # 🔍 6. Memory Recall
-$LOGIC_ROOT/scripts/recall_chronicle.py
+if [ -f "$LOGIC_ROOT/venv/Scripts/python" ]; then
+    "$LOGIC_ROOT/venv/Scripts/python" "$LOGIC_ROOT/scripts/recall_chronicle.py"
+elif [ -f "$LOGIC_ROOT/venv/bin/python3" ]; then
+    "$LOGIC_ROOT/venv/bin/python3" "$LOGIC_ROOT/scripts/recall_chronicle.py"
+elif [ -f "$LOGIC_ROOT/.venv/Scripts/python" ]; then
+    "$LOGIC_ROOT/.venv/Scripts/python" "$LOGIC_ROOT/scripts/recall_chronicle.py"
+elif [ -f "$LOGIC_ROOT/.venv/bin/python3" ]; then
+    "$LOGIC_ROOT/.venv/bin/python3" "$LOGIC_ROOT/scripts/recall_chronicle.py"
+else
+    python3 "$LOGIC_ROOT/scripts/recall_chronicle.py" || python "$LOGIC_ROOT/scripts/recall_chronicle.py" || "$LOGIC_ROOT/scripts/recall_chronicle.py"
+fi
 
 echo "✅ AgentOS Stable."

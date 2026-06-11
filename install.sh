@@ -4,6 +4,7 @@
 # Compatible with Linux and Windows WSL.
 # ============================================================
 set -euo pipefail
+export PYTHONUTF8=1
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
@@ -25,10 +26,16 @@ fi
 # Resolve venv python path
 PYTHON_BIN="./venv/bin/python3"
 if [ ! -x "$PYTHON_BIN" ]; then
+    PYTHON_BIN="./venv/Scripts/python"
+fi
+if [ ! -x "$PYTHON_BIN" ]; then
     PYTHON_BIN="./.venv/bin/python3"
 fi
 if [ ! -x "$PYTHON_BIN" ]; then
-    PYTHON_BIN="$(command -v python3)"
+    PYTHON_BIN="./.venv/Scripts/python"
+fi
+if [ ! -x "$PYTHON_BIN" ]; then
+    PYTHON_BIN="$(command -v python3 || command -v python)"
 fi
 
 # 2. Install dependencies

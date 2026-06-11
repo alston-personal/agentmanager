@@ -14,7 +14,7 @@ from agent_core import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] (PossessionBridge) %(message)s")
 logger = logging.getLogger("PossessionBridge")
 
-HOME = Path.home()
+HOME = PROJECT_ROOT.parent
 AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
 TEMPLATES_DIR = AGENT_DATA_ROOT / "templates"
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
@@ -47,37 +47,67 @@ If you do NOT see a context block, proactively read:
 
 """
 
+def safe_symlink_to(link_path: Path, target_path: Path):
+    import shutil
+    import subprocess
+    link_path = Path(os.path.normpath(link_path))
+    target_path = Path(os.path.normpath(target_path))
+    if os.name == 'nt':
+        if target_path.is_dir():
+            subprocess.run(['cmd', '/c', 'mklink', '/j', str(link_path), str(target_path)], check=True, shell=True)
+        else:
+            try:
+                os.link(str(target_path), str(link_path))
+            except OSError:
+                shutil.copy2(str(target_path), str(link_path))
+    else:
+        link_path.symlink_to(target_path)
+
+def safe_unlink(link_path: Path):
+    try:
+        if os.name == 'nt' and link_path.is_dir():
+            os.rmdir(link_path)
+        else:
+            link_path.unlink()
+    except Exception:
+        try:
+            link_path.unlink()
+        except Exception:
+            if os.name == 'nt' and link_path.is_dir():
+                os.rmdir(link_path)
+            else:
+                os.remove(link_path)
+
 def process_file_symlink(proj_dir: Path, filename: str, template_file: Path, dry_run: bool):
     target_path = proj_dir / filename
     
     if target_path.exists() or target_path.is_symlink():
-        if target_path.is_symlink():
+        if target_path.is_symlink() or (os.name == 'nt' and target_path.exists() and not target_path.is_symlink() and not target_path.is_dir()):
             try:
                 dest = os.readlink(target_path)
                 dest_path = (target_path.parent / dest).resolve()
+            except Exception:
+                dest_path = Path()
                 
-                # If pointing to a sibling file within the same workspace (like AGENTS.md)
-                if dest_path.exists() and proj_dir in dest_path.parents:
-                    try:
-                        content = dest_path.read_text(encoding="utf-8")
-                        if HEADER_SIGNATURE not in content:
-                            logger.info(f"💉 Injecting AgentOS directives into symlink target: {dest_path}")
-                            if not dry_run:
-                                new_content = POSSESSION_HEADER + "\n" + content
-                                dest_path.write_text(new_content, encoding="utf-8")
-                    except Exception as e:
-                        logger.error(f"Error processing symlink target {dest_path}: {e}")
-                    return
-                
-                if dest_path == template_file.resolve():
-                    return
-            except OSError:
-                pass
+            if dest_path.exists() and proj_dir in dest_path.parents:
+                try:
+                    content = dest_path.read_text(encoding="utf-8")
+                    if HEADER_SIGNATURE not in content:
+                        logger.info(f"💉 Injecting AgentOS directives into symlink target: {dest_path}")
+                        if not dry_run:
+                            new_content = POSSESSION_HEADER + "\n" + content
+                            dest_path.write_text(new_content, encoding="utf-8")
+                except Exception as e:
+                    logger.error(f"Error processing symlink target {dest_path}: {e}")
+                return
             
-            logger.info(f"🔄 Relinking wrong symlink {target_path} -> {template_file}")
+            if dest_path == template_file.resolve():
+                return
+            
+            logger.info(f"🔄 Relinking/updating wrong file bridge {target_path} -> {template_file}")
             if not dry_run:
-                target_path.unlink()
-                target_path.symlink_to(template_file)
+                safe_unlink(target_path)
+                safe_symlink_to(target_path, template_file)
         else:
             try:
                 content = target_path.read_text(encoding="utf-8")
@@ -89,9 +119,9 @@ def process_file_symlink(proj_dir: Path, filename: str, template_file: Path, dry
             except Exception as e:
                 logger.error(f"Error processing physical file {target_path}: {e}")
     else:
-        logger.info(f"🔗 Creating symlink for {filename} in {proj_dir.name} -> {template_file}")
+        logger.info(f"🔗 Creating link/bridge for {filename} in {proj_dir.name} -> {template_file}")
         if not dry_run:
-            target_path.symlink_to(template_file)
+            safe_symlink_to(target_path, template_file)
 
 def process_data_links(proj_dir: Path, data_proj_dir: Path, dry_run: bool):
     status_src = data_proj_dir / "STATUS.md"
@@ -103,15 +133,15 @@ def process_data_links(proj_dir: Path, data_proj_dir: Path, dry_run: bool):
         if not status_dst.exists() and not status_dst.is_symlink():
             logger.info(f"🔗 Link STATUS.md for {proj_dir.name} -> {status_src}")
             if not dry_run:
-                status_dst.symlink_to(status_src)
-        elif status_dst.is_symlink():
+                safe_symlink_to(status_dst, status_src)
+        elif status_dst.is_symlink() or (os.name == 'nt' and status_dst.exists()):
             try:
                 dest = os.readlink(status_dst)
                 if Path(dest).resolve() != status_src.resolve():
-                    logger.info(f"🔄 Correcting STATUS.md symlink for {proj_dir.name}")
+                    logger.info(f"🔄 Correcting STATUS.md link for {proj_dir.name}")
                     if not dry_run:
-                        status_dst.unlink()
-                        status_dst.symlink_to(status_src)
+                        safe_unlink(status_dst)
+                        safe_symlink_to(status_dst, status_src)
             except OSError:
                 pass
                 
@@ -119,15 +149,15 @@ def process_data_links(proj_dir: Path, data_proj_dir: Path, dry_run: bool):
         if not memory_dst.exists() and not memory_dst.is_symlink():
             logger.info(f"🔗 Link memory/ for {proj_dir.name} -> {memory_src}")
             if not dry_run:
-                memory_dst.symlink_to(memory_src)
-        elif memory_dst.is_symlink():
+                safe_symlink_to(memory_dst, memory_src)
+        elif memory_dst.is_symlink() or (os.name == 'nt' and memory_dst.exists()):
             try:
                 dest = os.readlink(memory_dst)
                 if Path(dest).resolve() != memory_src.resolve():
-                    logger.info(f"🔄 Correcting memory/ symlink for {proj_dir.name}")
+                    logger.info(f"🔄 Correcting memory/ link for {proj_dir.name}")
                     if not dry_run:
-                        memory_dst.unlink()
-                        memory_dst.symlink_to(memory_src)
+                        safe_unlink(memory_dst)
+                        safe_symlink_to(memory_dst, memory_src)
             except OSError:
                 pass
 

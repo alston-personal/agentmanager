@@ -83,7 +83,7 @@ def remove_project_from_workspace(project_id, workspace_name):
 
 def reconcile():
     current_ws = config.WORKSPACE_NAME
-    home_dir = Path.home()
+    home_dir = PROJECT_ROOT.parent
     print(f"🚀 Reconciling Workspace: {current_ws}")
     print(f"----------------------------------------")
     
@@ -124,7 +124,7 @@ def reconcile():
         # Registration (Symlinks)
         print(f"🔗 {p.project_id}: Syncing registration via import_project script...")
         subprocess.run([
-            "python3", str(PROJECT_ROOT / "scripts" / "import_project.py"),
+            sys.executable, str(PROJECT_ROOT / "scripts" / "import_project.py"),
             str(target_path), "--sector", p.sector
         ])
 
@@ -156,4 +156,4 @@ if __name__ == "__main__":
     workspace_script = PROJECT_ROOT / "scripts" / "gen_workspace.py"
     if workspace_script.exists():
         print(f"\n🔄 Regenerating VS Code workspace file...")
-        subprocess.run(["python3", str(workspace_script)])
+        subprocess.run([sys.executable, str(workspace_script)])
