@@ -64,7 +64,7 @@ if %errorlevel% equ 0 (
 echo.
 
 :: 4. Active Connections / Session Conflict Check
-echo 🔍 [Test 4] Scanning for conflicting active SMB sessions...
+echo 🔍 [Test 4] Scanning for active SMB sessions...
 net use | findstr /i "%TARGET_IP%" >temp_netuse.txt 2>nul
 set CONFLICT_FOUND=0
 for /f "delims=" %%a in (temp_netuse.txt) do (
@@ -74,15 +74,13 @@ for /f "delims=" %%a in (temp_netuse.txt) do (
 del temp_netuse.txt >nul 2>&1
 
 if !CONFLICT_FOUND! equ 0 (
-    echo    ✅ No existing sessions found to %TARGET_IP% [No session conflicts].
+    echo    ✅ No existing sessions found to %TARGET_IP%.
 ) else (
     if %SHARE_ACCESSIBLE% equ 1 (
-        echo    ℹ️ Active session is currently connected and working.
+        echo    ✅ Active session is currently connected and working.
     ) else (
-        echo    ❌ Session conflict detected!
-        echo       Windows only allows one user account per server at a time.
-        echo       Run: net use \\%TARGET_IP% /delete /y
-        set /a FAILURES+=1
+        echo    ⚠️ Session detected. If you face access denied errors, this might be a conflict.
+        echo       To clear: net use \\%TARGET_IP% /delete /y
     )
 )
 echo.
@@ -98,15 +96,13 @@ for /f "delims=" %%a in (temp_cmdkey.txt) do (
 del temp_cmdkey.txt >nul 2>&1
 
 if !CACHE_FOUND! equ 0 (
-    echo    ✅ No cached credentials found for %TARGET_IP% in Windows Credential Manager.
+    echo    ✅ No cached credentials found for %TARGET_IP%.
 ) else (
     if %SHARE_ACCESSIBLE% equ 1 (
-        echo    ℹ️ Cached credentials exist [Currently working].
+        echo    ✅ Cached credentials exist [Currently working].
     ) else (
-        echo    ❌ Cached credentials found!
-        echo       Windows might be using an old or incorrect cached password automatically.
-        echo       Run: cmdkey /delete:Domain:target=%TARGET_IP%
-        set /a FAILURES+=1
+        echo    ⚠️ Cached credentials found. If you recently changed your password, Windows might use this old password automatically.
+        echo       To clear: cmdkey /delete:Domain:target=%TARGET_IP%
     )
 )
 echo.
@@ -116,19 +112,20 @@ echo =============================================================
 echo 📊 DIAGNOSTIC SUMMARY:
 echo =============================================================
 if %FAILURES% equ 0 (
-    echo    ✨ [HEALTHY] All checks passed!
+    echo    ✨ [HEALTHY] Connection environment is healthy!
     if %SHARE_ACCESSIBLE% equ 1 (
         echo    The share is already successfully mounted and accessible.
     ) else (
-        echo    The connection environment is healthy. Please run your mount script.
+        echo    Ready to connect. Please run your mount script to connect.
     )
 ) else (
-    echo    ⚠️ Diagnostic found %FAILURES% issues that need attention!
+    echo    ⚠️ Diagnostic found %FAILURES% critical connection issue(s) that need attention!
     echo.
     echo    Recommended Fix Actions:
-    echo    1. Run: cmdkey /delete:Domain:target=%TARGET_IP%
-    echo    2. Run: net use \\%TARGET_IP% /delete /y
-    echo    3. Retry your mount script.
+    echo    1. Check your network ping or port status above.
+    echo    2. If you have credential errors, try:
+    echo       - cmdkey /delete:Domain:target=%TARGET_IP%
+    echo       - net use \\%TARGET_IP% /delete /y
 )
 echo =============================================================
 echo.
