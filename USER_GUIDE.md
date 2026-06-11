@@ -53,6 +53,58 @@ graph TD
 
 ---
 
+## 🖥️ 專案管理指南：將外部專案添加至本地 workspace
+當你需要下載一個本來不在這台電腦的專案來開發時，現在已經**完全自動化**，您只需在 `agentmanager` 目錄下執行**一條指令**即可：
+
+```bash
+python3 scripts/reconcile_workspace.py --add <專案名稱>
+# 範例：python3 scripts/reconcile_workspace.py --add youtube-ai-manager
+```
+
+### 💡 背後運作的自動化流程：
+1. **追加工作區設定**：自動在該專案於 Data Layer 的 `project.yaml` 中，將這台電腦的 `target_workspaces` 追加進去。
+2. **自動 Git 下載**：自動拉取（git clone）該專案的程式碼至您的家目錄。
+3. **建立 Symlink 記憶橋接**：自動建立專案的 `STATUS.md` 與 `memory/` 軟連結。
+4. **重新生成 Workspace 檔**：自動觸發 `gen_workspace.py` 重新更新您的 VS Code 工作區檔案（如 `agentos.<workspace_name>.code-workspace`）。您只需重新載入 VS Code 即可開始開發！
+
+> [!TIP]
+> 如果您事後想把該專案從這台電腦的工作區中移除，只需執行：
+> `python3 scripts/reconcile_workspace.py --remove <專案名稱>`
+
+### 🤖 如何讓 AI 代理人自動處理專案管理（對 Agent 對話指南）
+現在您完全不需要在終端機手動輸入任何指令！
+由於 AgentOS 在 `.cursorrules` 與 `.aider.instructions.md` 中已經寫入了動態工作區管理的運作規則，因此當您想加入或移除專案時，**可以直接用語音或打字直接對著 AI Agent (如 Cursor / Aider / Antigravity) 下達指令**：
+
+*   **新增專案 Prompt 範本**：
+    > 「AI，請幫我把 `moltbot` 專案下載並加到這台電腦」
+    > 「請把 `leopardcat-tarot` 加到這台電腦的工作區中」
+    > 「幫我新增 `beauty-pk` 專案」
+*   **移除專案 Prompt 範本**：
+    > 「請幫我把 `moltbot` 從這台電腦的 workspace 移除」
+
+**AI 代理人收到上述指令後，會自動在背景執行 `python3 scripts/reconcile_workspace.py --add <slug>`（或 `--remove`），並在完成後回報結果。**
+
+---
+
+## 👥 人口與角色管理指南
+為了確保 AI 代理人在進入專案時能完美「附身」並具備該專案的特化人格（例如塔羅牌專案的「山靈大師」），AgentOS 設計了以下角色機制：
+
+### 1. 角色分類
+*   **系統級角色 (System Roles)**：定義在 `.agent/roles/` 下（如 `lcs_the_claw` 爪、`lcs_the_paw` 掌等），負責底層開發、監控與協調工作。
+*   **專案級角色 (Project Roles)**：散落在各專案目錄下的 `AGENTS.md`（如 `Hill Spirit Master`、`Zeus Writer`），定義了該專案的特有專家背景、寫作風格或專業提示詞。
+
+### 2. 如何為專案分配角色
+編輯專案在 Data Layer 的 `project.yaml` 檔案，在 `assigned_agents` 欄位填入指定角色的名稱（區分大小寫）：
+```yaml
+assigned_agents:
+  - Hill Spirit Master
+```
+未來，當 AI 代理人透過 `/work-on [專案名]` 工作流進入開發時，控制端會自動讀取此設定，並將對應專案的人格與背景提示詞動態注入至當前 Context 中，防止角色背景遺失。
+
+---
+
 ### 🚀 啟動指令：
-`bash install.sh`
+*   **初次安裝與配置**：`bash install.sh`
+*   **全局同步與更新**：`/sync` 或 `bash scripts/sync_brain.sh`
+*   **重啟所有常駐服務**：`/reboot`
 （這會自動幫你建立所有分區跳板，並配置好 VSCode 排除清單！）

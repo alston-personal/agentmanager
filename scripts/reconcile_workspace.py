@@ -3,12 +3,83 @@ import os
 import sys
 import subprocess
 import argparse
+import yaml
 from pathlib import Path
 
 # Setup path for agent_core imports
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 from agent_core import project_store, config
+
+def add_project_to_workspace(project_id, workspace_name):
+    project_dir = config.PROJECTS_DIR / project_id
+    yaml_path = project_dir / "project.yaml"
+    
+    if not yaml_path.exists():
+        print(f"❌ Error: Project settings not found for '{project_id}' at {yaml_path}")
+        sys.exit(1)
+        
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"❌ Error loading project YAML: {e}")
+        sys.exit(1)
+        
+    target_workspaces = data.get("target_workspaces") or []
+    if isinstance(target_workspaces, str):
+        target_workspaces = [target_workspaces]
+    else:
+        target_workspaces = list(target_workspaces)
+        
+    if workspace_name not in target_workspaces:
+        target_workspaces.append(workspace_name)
+        data["target_workspaces"] = target_workspaces
+        
+        try:
+            with open(yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+            print(f"✅ Added workspace '{workspace_name}' to project '{project_id}' target list.")
+        except Exception as e:
+            print(f"❌ Error saving project YAML: {e}")
+            sys.exit(1)
+    else:
+        print(f"ℹ️  Project '{project_id}' is already targeted for workspace '{workspace_name}'.")
+
+def remove_project_from_workspace(project_id, workspace_name):
+    project_dir = config.PROJECTS_DIR / project_id
+    yaml_path = project_dir / "project.yaml"
+    
+    if not yaml_path.exists():
+        print(f"❌ Error: Project settings not found for '{project_id}' at {yaml_path}")
+        sys.exit(1)
+        
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"❌ Error loading project YAML: {e}")
+        sys.exit(1)
+        
+    target_workspaces = data.get("target_workspaces") or []
+    if isinstance(target_workspaces, str):
+        target_workspaces = [target_workspaces]
+    else:
+        target_workspaces = list(target_workspaces)
+        
+    if workspace_name in target_workspaces:
+        target_workspaces.remove(workspace_name)
+        data["target_workspaces"] = target_workspaces
+        
+        try:
+            with open(yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+            print(f"✅ Removed workspace '{workspace_name}' from project '{project_id}' target list.")
+        except Exception as e:
+            print(f"❌ Error saving project YAML: {e}")
+            sys.exit(1)
+    else:
+        print(f"ℹ️  Project '{project_id}' is not targeted for workspace '{workspace_name}'.")
 
 def reconcile():
     current_ws = config.WORKSPACE_NAME
@@ -67,4 +138,22 @@ def reconcile():
     print(f"\n✅ Reconciliation complete for {current_ws}!")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Reconcile AgentOS projects with the local workspace.")
+    parser.add_argument("--add", help="Add a project to this computer's workspace by its slug")
+    parser.add_argument("--remove", help="Remove a project from this computer's workspace by its slug")
+    args = parser.parse_args()
+    
+    current_ws = config.WORKSPACE_NAME
+    
+    if args.add:
+        add_project_to_workspace(args.add, current_ws)
+    elif args.remove:
+        remove_project_from_workspace(args.remove, current_ws)
+        
     reconcile()
+    
+    # Regenerate VS Code workspace file
+    workspace_script = PROJECT_ROOT / "scripts" / "gen_workspace.py"
+    if workspace_script.exists():
+        print(f"\n🔄 Regenerating VS Code workspace file...")
+        subprocess.run(["python3", str(workspace_script)])

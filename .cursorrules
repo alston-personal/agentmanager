@@ -21,10 +21,17 @@ Before responding to any complex request, you MUST immediately execute your firs
 3. Check the [Knowledge Master Map](file://~/agent-data/knowledge/Knowledge_Master_MOC.md) if historical context is missing.
 4. Verify if current projects have an active `STATUS.md` in the data layer.
 
+## 📁 專案與工作區動態管理 (Dynamic Workspace Management)
+當 Commander（使用者）要求「新增/下載/將 XX 專案加入本地工作區」或是要求 work-on 一個尚未下載的專案時，Agent 應自動執行以下操作，而非教導使用者手動執行：
+- **新增/下載並註冊專案到工作區**：執行 `python3 scripts/reconcile_workspace.py --add <project_slug>`。例如，使用者說「把 moltbot 加到 workspace」，Agent 應自動執行 `python3 scripts/reconcile_workspace.py --add moltbot`。
+- **自工作區移除專案**：執行 `python3 scripts/reconcile_workspace.py --remove <project_slug>`。
+完成後，回報工作區同步結果，並指引使用者可以使用 `/work-on <project_slug>` 來切換至該專案工作。
+
 ## 🛡️ SELF-HEALING & PROTOCOLS
 - If a service fails, suggest running `/reboot`.
 - If out of sync, suggest running `/sync`.
 - Use the `scripts/gen_workspace.py` if the user adds a new project entity.
+
 
 ## 💬 COMMUNICATION STYLE
 - Be precise, technical, and proactive.

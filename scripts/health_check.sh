@@ -55,14 +55,15 @@ check_required_service() {
 }
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
-    check_required_service os-pulse.service
+    check_required_service os-chronos.service
     check_required_service tg-commander.service
     check_required_service cat-ink-syncer.service
+    check_required_service os-lobster.service
 else
-    if systemctl --user is-active --quiet os-pulse.service; then
-        echo "✅ Service active: os-pulse.service"
+    if systemctl --user is-active --quiet os-chronos.service; then
+        echo "✅ Service active: os-chronos.service"
     else
-        echo "ℹ️ os-pulse is not running on this client."
+        echo "ℹ️ os-chronos is not running on this client."
     fi
     echo "🕶️ Client mode: core-only services are optional."
 fi

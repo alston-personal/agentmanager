@@ -137,6 +137,25 @@ StandardError=append:$DATA_ROOT/logs/cat_ink_syncer.log
 WantedBy=default.target
 EOF
 
+cat > "$USER_SYSTEMD_DIR/os-lobster.service" <<EOF
+[Unit]
+Description=AgentOS Lobster Autonomous Task Loop
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+ExecStart=$PYTHON_BIN scripts/lobster.py --loop
+Restart=always
+RestartSec=30
+StandardOutput=append:$DATA_ROOT/logs/lobster.log
+StandardError=append:$DATA_ROOT/logs/lobster.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 systemctl --user daemon-reload
 
 # Stop and disable legacy pulse service if it exists
@@ -153,11 +172,12 @@ systemctl --user enable os-chronos.service agent-maintenance.timer teams-command
 systemctl --user restart teams-commander.service
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
-  systemctl --user enable tg-commander.service cat-ink-syncer.service >/dev/null
+  systemctl --user enable tg-commander.service cat-ink-syncer.service os-lobster.service >/dev/null
   systemctl --user restart tg-commander.service
   systemctl --user restart cat-ink-syncer.service
+  systemctl --user restart os-lobster.service
 else
-  echo "AGENT_MODE is not CORE; tg-commander.service and cat-ink-syncer.service installed but not started."
+  echo "AGENT_MODE is not CORE; tg-commander.service, cat-ink-syncer.service, and os-lobster.service installed but not started."
 fi
 
 systemctl --user restart os-chronos.service

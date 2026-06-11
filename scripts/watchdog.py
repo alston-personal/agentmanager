@@ -111,10 +111,46 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 AGENT_MODE = os.getenv("AGENT_MODE", "CORE")
 
+def kill_stale_git_processes():
+    """
+    Kills any git processes that have been running for more than 15 minutes (900 seconds).
+    """
+    logger.info("🔧 [Self-Healing] Checking for hung git processes (>15 mins)...")
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid,etimes,comm"],
+            capture_output=True, text=True, check=True
+        )
+        for line in result.stdout.strip().splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) < 3:
+                continue
+            pid_str, etimes_str, comm = parts[0], parts[1], parts[2]
+            if comm.strip() in ["git", "git-remote-http", "git-remote-https"]:
+                try:
+                    etimes = int(etimes_str)
+                    pid = int(pid_str)
+                    if etimes > 900:  # More than 15 minutes
+                        logger.warning(f"💥 Found hung git process (PID {pid}, running for {etimes}s). Terminating...")
+                        subprocess.run(["kill", "-9", str(pid)])
+                        send_alert(
+                            f"🔧 **[自癒系統啟動]** 偵測到超時卡死的 Git 程序！\n"
+                            f"🔹 **PID**: `{pid}`\n"
+                            f"🔹 **執行時間**: `{etimes} 秒` (>15分鐘)\n"
+                            f"✅ 已自動強制終止 (kill -9) 該程序以解除鎖定。"
+                        )
+                except (ValueError, OSError):
+                    pass
+    except Exception as e:
+        logger.error(f"Failed to check/kill hung git processes: {e}")
+
 def heal_stale_git_locks():
     """
     Checks if there are any .git/index.lock files in active repos when no active git process is running.
     """
+    # First, terminate any stale git process to prevent permanent locks
+    kill_stale_git_processes()
+
     logger.info("🔧 [Self-Healing] Checking for stale git locks...")
     try:
         git_running = subprocess.run(["pgrep", "-x", "git"], capture_output=True).returncode == 0
@@ -353,7 +389,7 @@ def run_self_healing():
         return
 
     # 1. Systemd core services
-    core_services = ["tg-commander.service"]
+    core_services = ["tg-commander.service", "os-lobster.service"]
     for svc in core_services:
         entity_id = f"systemd_{svc}"
         if not check_systemd_user(svc):
