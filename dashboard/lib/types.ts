@@ -111,3 +111,11 @@ export interface AuthToken {
   username: string;
   exp: number;
 }
+
+export interface Capability {
+  name: string;
+  path: string;
+  role: string;
+  status: string;
+  description: string;
+}

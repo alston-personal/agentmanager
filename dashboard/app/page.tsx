@@ -94,6 +94,13 @@ export default function Home() {
             >
               🧠 Knowledge Vault
             </button>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => router.push('/skills')}
+              style={{ padding: '0.75rem 1.5rem', borderRadius: '2rem', display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', background: 'linear-gradient(135deg, #10b981 0%, #3b82f6 100%)', border: 'none', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)' }}
+            >
+              🧬 Skill Promotion
+            </button>
             <button className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', borderRadius: '2rem', display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }}>
               🚀 Start Session
             </button>
