@@ -28,3 +28,7 @@ schedules:
   - name: update-projects-pulse
     interval_seconds: 60  # Update the global projects pulse.json cache every minute
     command: "python3 scripts/update_projects_pulse.py"
+
+  - name: ecosystem-report
+    interval_seconds: 86400  # Generate and send daily ecosystem report via Gemini
+    command: "python3 scripts/ecosystem_report.py"
