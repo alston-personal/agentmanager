@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List
 
-from runtime_core.interfaces import ContextProviderInterface, SessionManagerInterface
+from runtime_core.interfaces import ContextProviderInterface
 from runtime_core.models import SessionContext
 
 from agent_core.platform import get_platform_driver
@@ -196,9 +196,29 @@ class AgentOSContextAdapter(ContextProviderInterface):
             raw_short_term=short_term_content,
         )
 
-    def persist_session_close(self, payload: Dict[str, Any]) -> None:
+    def persist_session_close(self, payload: Dict[str, Any]) -> tuple[str, str]:
         self._update_short_term_context(payload)
         self._update_status_context(payload)
+        
+        # Save session YAML record
+        session_record_dir = self.project_data_root / "sessions"
+        session_record_dir.mkdir(parents=True, exist_ok=True)
+        session_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        record_path = session_record_dir / f"{session_date}_{payload['session_id']}.yaml"
+        record_path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        
+        self._append_session_sync(payload, record_path)
+        
+        compact_entry = "\n".join(
+            [
+                f"Session `{payload['session_id']}` closed for `{payload['project']}`",
+                f"Summary: {payload['summary']}",
+                f"Branch: `{payload['branch']}`",
+                f"Pending: {len(payload.get('pending_tasks', []))}, Blockers: {len(payload.get('blockers', []))}, Next: {len(payload.get('next_steps', []))}",
+                f"Record: `{record_path}`",
+            ]
+        )
+        return str(record_path), compact_entry
         
     def _update_short_term_context(self, payload: Dict[str, Any]) -> None:
         self.short_term_path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,24 +302,60 @@ class AgentOSContextAdapter(ContextProviderInterface):
             content = content.rstrip() + session_block + "\n"
         self.status_path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
-
-class AgentOSSessionAdapter(SessionManagerInterface):
-    """
-    Bridges the SessionManagerInterface to AgentOS's existing session_lifecycle.
-    """
-    def __init__(self, project_root: Path, data_root: Path):
-        self.project_root = project_root
-        self.data_root = data_root
-
-    def start_session(self) -> str:
-        # TODO: Link to actual startup logic
-        return "session_id_placeholder"
-
-    def close_session(self, session_id: str, summary: str) -> None:
-        from agentos_host.adapter import AgentOSContextAdapter
-        from agent_core.session_lifecycle import close_session
-        adapter = AgentOSContextAdapter(self.project_root, self.data_root)
-        close_session(
-            context_provider=adapter,
-            summary=summary
+    def _archive_session_sync_if_needed(self) -> None:
+        if not self.session_sync_path.exists() or self.session_sync_path.stat().st_size <= 50_000:
+            return
+        archive_dir = self.session_sync_path.parent / "archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        archive_path = archive_dir / f"session_sync_{stamp}.md"
+        archive_path.write_text(self.session_sync_path.read_text(encoding="utf-8"), encoding="utf-8")
+        self.session_sync_path.write_text(
+            "# 🧠 AgentOS Session Sync - Compressed Working Memory\n"
+            "> Auto-rotated because the buffer exceeded 50KB.\n",
+            encoding="utf-8",
         )
+
+    def _append_session_sync(self, payload: dict[str, Any], record_path: Path) -> None:
+        self.session_sync_path.parent.mkdir(parents=True, exist_ok=True)
+        self._archive_session_sync_if_needed()
+        compact = "\n".join(
+            [
+                f"## Session Handoff @ {payload['ended_at']}",
+                f"- **Project**: `{payload['project']}`",
+                f"- **Session ID**: `{payload['session_id']}`",
+                f"- **Summary**: {payload['summary']}",
+                f"- **Branch**: `{payload['branch']}`",
+                f"- **Pending Tasks**: {len(payload.get('pending_tasks', []))}",
+                f"- **Blockers**: {len(payload.get('blockers', []))}",
+                f"- **Next Steps**: {len(payload.get('next_steps', []))}",
+                f"- **Uncommitted Files**: {', '.join(payload.get('uncommitted_files', [])[:5]) or 'none'}",
+                f"- **Session Record**: `{record_path}`",
+                "",
+            ]
+        )
+        existing = _read_text(self.session_sync_path).rstrip()
+        if existing:
+            content = existing + "\n\n" + compact
+        else:
+            content = "# 🧠 AgentOS Session Sync - Compressed Working Memory\n\n" + compact
+        self.session_sync_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+    def read_compact_session_sync(self, max_chars: int = 6000) -> str:
+        from agent_core.platform.base import tail_text
+        return tail_text(self.session_sync_path, max_chars=max_chars)
+
+    def latest_session_records(self, limit: int = 3) -> list[dict[str, Any]]:
+        session_dir = self.project_data_root / "sessions"
+        if not session_dir.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        for path in sorted(session_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]:
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                if isinstance(data, dict):
+                    data["record_path"] = str(path)
+                    records.append(data)
+            except Exception:
+                continue
+        return records

@@ -11,7 +11,7 @@ if str(PROJECT_ROOT_DETECTED) not in sys.path:
     sys.path.append(str(PROJECT_ROOT_DETECTED))
 
 from agent_core.memory_router import resolve_memory_route
-from agent_core.session_lifecycle import latest_session_records, read_compact_session_sync
+from agentos_host.adapter import AgentOSContextAdapter
 
 route = resolve_memory_route()
 PROJECT_ROOT = route.project_root
@@ -36,8 +36,9 @@ def main() -> int:
 
     short_term = read_text(route.short_term_path).strip()
     long_term = read_text(route.long_term_path).strip()
-    session_sync = read_compact_session_sync(AGENT_DATA_ROOT, max_chars=6000).strip()
-    latest_sessions = latest_session_records(PROJECT_ROOT, AGENT_DATA_ROOT, limit=3)
+    adapter = AgentOSContextAdapter(PROJECT_ROOT, AGENT_DATA_ROOT)
+    session_sync = adapter.read_compact_session_sync(max_chars=6000).strip()
+    latest_sessions = adapter.latest_session_records(limit=3)
 
     session_records_block = []
     for record in latest_sessions:
