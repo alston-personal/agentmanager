@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from runtime_core.interfaces import ContextProviderInterface
+from runtime_core.models import SessionClosePayload, GitMetadata
 
 
 @dataclass(slots=True)
 class SessionCloseResult:
     session_id: str
-    record_path: Path
+    record_uri: str
     record: dict[str, Any]
     compact_entry: str
 
@@ -44,30 +45,31 @@ def close_session(
     ended_at = iso_now()
     session_id = uuid.uuid4().hex[:12]
 
-    record = {
-        "session_id": session_id,
-        "started_at": context.started_at,
-        "ended_at": ended_at,
-        "project": context.project_id,
-        "summary": summary_value,
-        "files_touched": context.uncommitted_files,
-        "pending_tasks": context.pending_tasks,
-        "blockers": context.blockers,
-        "next_steps": context.next_steps or (context.pending_tasks[:3] if context.pending_tasks else ["Review the updated status and continue from the next highest priority task."]),
-        "branch": context.branch,
-        "uncommitted_files": context.uncommitted_files,
-        "agent": agent_name or os.environ.get("AGENT_NAME") or os.environ.get("USER") or "agent",
-        "git": {
-            "diff_stat": context.diff_stat,
-        },
-    }
+    payload = SessionClosePayload(
+        session_id=session_id,
+        started_at=context.started_at,
+        ended_at=ended_at,
+        project=context.project_id,
+        summary=summary_value,
+        files_touched=context.uncommitted_files,
+        pending_tasks=context.pending_tasks,
+        blockers=context.blockers,
+        next_steps=context.next_steps or (context.pending_tasks[:3] if context.pending_tasks else ["Review the updated status and continue from the next highest priority task."]),
+        branch=context.branch,
+        uncommitted_files=context.uncommitted_files,
+        agent=agent_name or os.environ.get("AGENT_NAME") or os.environ.get("USER") or "agent",
+        git=GitMetadata(
+            diff_stat=context.diff_stat,
+        ),
+    )
 
     # The host adapter decides where and how to persist this, and returns the URI and compact string
-    record_uri, compact_entry = context_provider.persist_session_close(record)
+    record_uri, compact_entry = context_provider.persist_session_close(payload)
 
     return SessionCloseResult(
-        session_id=record["session_id"],
-        record_path=Path(record_uri),
-        record=record,
+        session_id=payload.session_id,
+        record_uri=record_uri,
+        record=payload.to_dict(),
         compact_entry=compact_entry
     )
+

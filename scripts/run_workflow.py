@@ -498,7 +498,7 @@ def main() -> int:
             data_root=Path(AGENT_DATA_ROOT),
         )
         print(result.compact_entry)
-        print(f"✅ /report complete. Session record written to {result.record_path}")
+        print(f"✅ /report complete. Session record written to {result.record_uri}")
         return 0
 
     print(run_generic(workflow_name))

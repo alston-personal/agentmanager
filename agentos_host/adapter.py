@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 from runtime_core.interfaces import ContextProviderInterface
-from runtime_core.models import SessionContext
+from runtime_core.models import SessionContext, SessionClosePayload
 
 from agent_core.platform import get_platform_driver
 
@@ -18,6 +18,26 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+def _tail_text(path: Path, max_chars: int = 6000) -> str:
+    if not path.exists():
+        return ""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            if size <= max_chars:
+                handle.seek(0)
+            else:
+                handle.seek(-max_chars, os.SEEK_END)
+            raw = handle.read()
+        return raw.decode("utf-8", errors="ignore")
+    except Exception:
+        try:
+            content = path.read_text(encoding="utf-8")
+            return content[-max_chars:]
+        except Exception:
+            return ""
 
 def _parse_yaml_frontmatter(content: str) -> dict[str, Any]:
     if not content.startswith("---"):
@@ -192,29 +212,32 @@ class AgentOSContextAdapter(ContextProviderInterface):
             branch=git_state["branch"],
             uncommitted_files=git_state["uncommitted_files"],
             diff_stat=git_state["diff_stat"],
-            raw_status=status_content,
-            raw_short_term=short_term_content,
+            host_metadata={
+                "raw_status": status_content,
+                "raw_short_term": short_term_content,
+            },
         )
 
-    def persist_session_close(self, payload: Dict[str, Any]) -> tuple[str, str]:
-        self._update_short_term_context(payload)
-        self._update_status_context(payload)
+    def persist_session_close(self, payload: SessionClosePayload) -> tuple[str, str]:
+        payload_dict = payload.to_dict()
+        self._update_short_term_context(payload_dict)
+        self._update_status_context(payload_dict)
         
         # Save session YAML record
         session_record_dir = self.project_data_root / "sessions"
         session_record_dir.mkdir(parents=True, exist_ok=True)
         session_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        record_path = session_record_dir / f"{session_date}_{payload['session_id']}.yaml"
-        record_path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        record_path = session_record_dir / f"{session_date}_{payload.session_id}.yaml"
+        record_path.write_text(yaml.safe_dump(payload_dict, sort_keys=False, allow_unicode=True), encoding="utf-8")
         
-        self._append_session_sync(payload, record_path)
+        self._append_session_sync(payload_dict, record_path)
         
         compact_entry = "\n".join(
             [
-                f"Session `{payload['session_id']}` closed for `{payload['project']}`",
-                f"Summary: {payload['summary']}",
-                f"Branch: `{payload['branch']}`",
-                f"Pending: {len(payload.get('pending_tasks', []))}, Blockers: {len(payload.get('blockers', []))}, Next: {len(payload.get('next_steps', []))}",
+                f"Session `{payload.session_id}` closed for `{payload.project}`",
+                f"Summary: {payload.summary}",
+                f"Branch: `{payload.branch}`",
+                f"Pending: {len(payload.pending_tasks)}, Blockers: {len(payload.blockers)}, Next: {len(payload.next_steps)}",
                 f"Record: `{record_path}`",
             ]
         )
@@ -342,8 +365,7 @@ class AgentOSContextAdapter(ContextProviderInterface):
         self.session_sync_path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
     def read_compact_session_sync(self, max_chars: int = 6000) -> str:
-        from agent_core.platform.base import tail_text
-        return tail_text(self.session_sync_path, max_chars=max_chars)
+        return _tail_text(self.session_sync_path, max_chars=max_chars)
 
     def latest_session_records(self, limit: int = 3) -> list[dict[str, Any]]:
         session_dir = self.project_data_root / "sessions"

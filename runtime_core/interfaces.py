@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
-from .models import SessionContext
+from .models import SessionContext, SessionClosePayload
 
 class ContextProviderInterface(ABC):
     """Provides memory, identity, and environmental context to the runtime."""
@@ -10,7 +10,7 @@ class ContextProviderInterface(ABC):
         pass
         
     @abstractmethod
-    def persist_session_close(self, payload: Dict[str, Any]) -> tuple[str, str]:
+    def persist_session_close(self, payload: SessionClosePayload) -> tuple[str, str]:
         """
         Persists the session close event to host storage.
         Returns:

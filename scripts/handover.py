@@ -34,7 +34,7 @@ def main() -> int:
         data_root=Path(args.data_root) if args.data_root else None,
     )
     print(result.compact_entry)
-    print(f"Record: {result.record_path}")
+    print(f"Record: {result.record_uri}")
     return 0
 
 

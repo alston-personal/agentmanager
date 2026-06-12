@@ -30,7 +30,7 @@ class SessionCloseTests(unittest.TestCase):
             adapter = AgentOSContextAdapter(project_root=project_root, data_root=data_root)
             result = close_session(context_provider=adapter, project_root=project_root, data_root=data_root, agent_name="TestAgent")
 
-            self.assertTrue(result.record_path.exists())
+            self.assertTrue(Path(result.record_uri).exists())
             self.assertEqual(result.record["project"], "project")
             self.assertIn("session_id", result.record)
             self.assertIn("started_at", result.record)
@@ -46,6 +46,41 @@ class SessionCloseTests(unittest.TestCase):
             self.assertTrue((data_root / "memory" / "session_sync.md").exists())
             self.assertIn("Session Handoff", (data_root / "memory" / "session_sync.md").read_text(encoding="utf-8"))
             self.assertIn("Session Close", (data_root / "projects" / "project" / "memory" / "SHORT_TERM.md").read_text(encoding="utf-8"))
+
+    def test_in_memory_context_provider(self) -> None:
+        from runtime_core.memory_provider import InMemoryContextProvider
+        
+        provider = InMemoryContextProvider(
+            project_id="mem-project",
+            summary="In-memory test summary",
+            pending_tasks=["Task 1", "Task 2"],
+            blockers=["Blocker A"],
+            next_steps=["Step Z"]
+        )
+        
+        result = close_session(context_provider=provider, agent_name="MemoryAgent")
+        
+        self.assertEqual(result.record["project"], "mem-project")
+        self.assertEqual(result.record["summary"], "In-memory test summary")
+        self.assertEqual(result.record["pending_tasks"], ["Task 1", "Task 2"])
+        self.assertEqual(result.record["blockers"], ["Blocker A"])
+        self.assertEqual(result.record["next_steps"], ["Step Z"])
+        self.assertEqual(result.record["agent"], "MemoryAgent")
+        self.assertTrue(result.record_uri.startswith("memory://"))
+        self.assertEqual(len(provider.closed_sessions), 1)
+        self.assertEqual(provider.closed_sessions[0].session_id, result.session_id)
+
+    def test_import_boundaries(self) -> None:
+        # Import core modules
+        import runtime_core.models as models
+        import runtime_core.interfaces as interfaces
+        import agent_core.session_lifecycle as lifecycle
+        import agentos_host.adapter as adapter
+        
+        self.assertIsNotNone(models)
+        self.assertIsNotNone(interfaces)
+        self.assertIsNotNone(lifecycle)
+        self.assertIsNotNone(adapter)
 
 
 if __name__ == "__main__":
