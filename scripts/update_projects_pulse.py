@@ -15,10 +15,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from agent_core import config
+from agent_core.memory_router import resolve_memory_route
 from agent_core.platform import get_platform_driver
 
-AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
+route = resolve_memory_route()
+AGENT_DATA_ROOT = route.data_root
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 
 PLATFORM_DRIVER = get_platform_driver(project_root=PROJECT_ROOT, data_root=AGENT_DATA_ROOT)

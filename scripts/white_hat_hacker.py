@@ -319,6 +319,17 @@ def main():
     total_threats = len(facts["file_permissions"]) + len(facts["open_ports"]) + len(facts["exposed_secrets"])
     logger.info(f"📊 掃描完成：共發現 {total_threats} 個潛在安全疑慮項目。")
     
+    # 1.5. 執行 detect_secrets_scanner
+    try:
+        scripts_dir = HOME / "agentmanager" / "scripts"
+        logger.info("🛡️ 啟動 detect-secrets 預檢防漏掃描...")
+        subprocess.run(
+            [sys.executable, str(scripts_dir / "detect_secrets_scanner.py")],
+            check=False, capture_output=False
+        )
+    except Exception as e:
+        logger.error(f"❌ detect-secrets 掃描失敗: {e}")
+    
     # 2. 呼叫 Gemini 進行漏洞分析與 TODO 產生
     report, todos = run_security_analysis(facts)
     

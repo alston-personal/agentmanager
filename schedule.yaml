@@ -4,9 +4,6 @@ schedules:
     interval_seconds: 60
     command: "python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active"
 
-  - name: os-watchdog
-    interval_seconds: 300  # Scan and trigger self-healing every 5 minutes
-    command: "python3 scripts/watchdog.py"
 
   - name: zeus-autonomous-step
     interval_seconds: 3600  # Evaluate chapter stats and auto-publish every hour
@@ -24,4 +21,10 @@ schedules:
     interval_seconds: 86400  # Scan system, generate report and inject security todo tasks once a day
     command: "python3 /home/ubuntu/agentmanager/scripts/white_hat_hacker.py"
 
+  - name: status-archiver
+    interval_seconds: 86400  # Roll over old STATUS.md logs into archive once a day
+    command: "python3 scripts/status_archiver.py"
 
+  - name: update-projects-pulse
+    interval_seconds: 60  # Update the global projects pulse.json cache every minute
+    command: "python3 scripts/update_projects_pulse.py"

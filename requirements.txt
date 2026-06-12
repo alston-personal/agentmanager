@@ -19,3 +19,5 @@ psutil>=6.0.0
 
 # --- Development & Testing ---
 # (Add testing tools here if needed)
+detect-secrets
+aiohttp

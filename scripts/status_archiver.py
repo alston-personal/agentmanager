@@ -5,11 +5,19 @@ Retains only the top N entries in the active STATUS.md.
 """
 
 import os
+import sys
 import re
 from pathlib import Path
 from datetime import datetime
 
-AGENT_DATA_ROOT = Path(os.getenv("AGENT_DATA_ROOT", "/home/dqa03/agent-data"))
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT_DETECTED) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT_DETECTED))
+
+from agent_core.memory_router import resolve_memory_route
+route = resolve_memory_route()
+
+AGENT_DATA_ROOT = route.data_root
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 KEEP_LATEST = 20
 
