@@ -232,88 +232,6 @@ def _archive_session_sync_if_needed(session_sync_path: Path) -> None:
     )
 
 
-def _update_short_term(short_term_path: Path, payload: dict[str, Any]) -> None:
-    short_term_path.parent.mkdir(parents=True, exist_ok=True)
-    content = _read_text(short_term_path).rstrip()
-    close_section = "\n".join(
-        [
-            "## Session Close",
-            f"- Session ID: `{payload['session_id']}`",
-            f"- Closed At: {payload['ended_at']}",
-            f"- Summary: {payload['summary']}",
-            f"- Branch: `{payload['branch']}`",
-            f"- Pending Tasks: {len(payload['pending_tasks'])}",
-            f"- Blockers: {len(payload['blockers'])}",
-            f"- Next Steps: {len(payload['next_steps'])}",
-        ]
-    )
-    if content:
-        if "## Session Close" in content:
-            prefix, _, remainder = content.partition("## Session Close")
-            tail = remainder
-            for marker in ("\n## ", "\n# "):
-                idx = tail.find(marker, 1)
-                if idx != -1:
-                    tail = tail[idx:]
-                    break
-                tail = ""
-            new_content = prefix.rstrip() + "\n\n" + close_section
-            if tail:
-                new_content += "\n" + tail.lstrip()
-        else:
-            new_content = content + "\n\n" + close_section + "\n"
-    else:
-        new_content = "# SHORT_TERM.md\n\n" + close_section + "\n"
-    short_term_path.write_text(new_content.rstrip() + "\n", encoding="utf-8")
-
-
-def _update_status(status_path: Path, payload: dict[str, Any]) -> None:
-    status_path.parent.mkdir(parents=True, exist_ok=True)
-    content = _read_text(status_path)
-    if not content.strip():
-        content = "---\n---\n\n# Project Status\n\n## 📍 Summary\n| Metric | Value |\n| :--- | :--- |\n| **Last Status** | N/A |\n| **Last Updated** | N/A |\n\n## 🪵 Activity Log (Latest on Top)\n<!-- LOG_START -->\n"
-
-    summary_value = payload["summary"]
-    updated_value = payload["ended_at"].replace(" UTC", "")
-    content = re.sub(
-        r"(\|\s*\*\*Last Status\*\*\s*\|\s*)([^|]+?)(\s*\|)",
-        lambda match: f"{match.group(1)}{summary_value}{match.group(3)}",
-        content,
-        count=1,
-    )
-    content = re.sub(
-        r"(\|\s*\*\*Last Updated\*\*\s*\|\s*)([^|]+?)(\s*\|)",
-        lambda match: f"{match.group(1)}{updated_value}{match.group(3)}",
-        content,
-        count=1,
-    )
-    activity_entry = (
-        f"- `{updated_value}` 🤝 **SESSION CLOSE**: {summary_value} "
-        f"(Session `{payload['session_id']}`, branch `{payload['branch']}`, "
-        f"pending {len(payload['pending_tasks'])}, blockers {len(payload['blockers'])}, next {len(payload['next_steps'])})"
-    )
-    if "<!-- LOG_START -->" in content:
-        content = content.replace("<!-- LOG_START -->", "<!-- LOG_START -->\n" + activity_entry, 1)
-    else:
-        content = content.rstrip() + "\n\n## 🪵 Activity Log (Latest on Top)\n<!-- LOG_START -->\n" + activity_entry + "\n"
-
-    session_block = "\n".join(
-        [
-            "",
-            "## 🤝 Recent Session Close",
-            f"- Session ID: `{payload['session_id']}`",
-            f"- Summary: {summary_value}",
-            f"- Pending Tasks: {len(payload['pending_tasks'])}",
-            f"- Blockers: {len(payload['blockers'])}",
-            f"- Next Steps: {len(payload['next_steps'])}",
-            f"- Branch: `{payload['branch']}`",
-        ]
-    )
-    if "## 🤝 Recent Session Close" in content:
-        content = re.sub(r"\n## 🤝 Recent Session Close.*", session_block + "\n", content, flags=re.S)
-    else:
-        content = content.rstrip() + session_block + "\n"
-    status_path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
 
 def _append_session_sync(session_sync_path: Path, payload: dict[str, Any], record_path: Path) -> None:
@@ -416,8 +334,13 @@ def close_session(
     record_path = session_record_dir / f"{session_date}_{record['session_id']}.yaml"
     record_path.write_text(yaml.safe_dump(record, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    _update_short_term(payload["short_term_path"], record)
-    _update_status(payload["status_path"], record)
+    from agentos_host.adapter import AgentOSContextAdapter
+    context_adapter = AgentOSContextAdapter(
+        project_root=payload["project_root"],
+        data_root=payload["data_root"]
+    )
+    context_adapter.update_short_term_context(record)
+    context_adapter.update_status_context(record)
     _append_session_sync(payload["session_sync_path"], record, record_path)
 
     compact_entry = "\n".join(
