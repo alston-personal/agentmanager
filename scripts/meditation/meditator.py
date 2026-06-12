@@ -4,15 +4,24 @@ import re
 import subprocess
 import json
 import requests
+import sys
 from pathlib import Path
 
+# Add project root to sys.path to import agent_core
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT_DETECTED) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT_DETECTED))
+
+from agent_core.memory_router import resolve_memory_route
+route = resolve_memory_route()
+
 # --- Configuration ---
-AGENT_DATA_ROOT = "/home/ubuntu/agent-data"
-AGENT_REPO_ROOT = "/home/ubuntu/agentmanager"
-JOURNAL_PATH = f"{AGENT_DATA_ROOT}/journals/meditation"
-SESSION_SYNC_FILE = f"{AGENT_DATA_ROOT}/memory/session_sync.md"
-MAINTENANCE_LOG = f"{AGENT_REPO_ROOT}/maintenance.log"
-TG_BRIDGE_LOG = f"{AGENT_REPO_ROOT}/tg_bridge.log"
+AGENT_DATA_ROOT = str(route.data_root)
+AGENT_REPO_ROOT = str(route.project_root)
+JOURNAL_PATH = str(route.data_root / "journals/meditation")
+SESSION_SYNC_FILE = str(route.session_sync_path)
+MAINTENANCE_LOG = str(route.project_root / "maintenance.log")
+TG_BRIDGE_LOG = str(route.project_root / "tg_bridge.log")
 
 SECRET_PATTERNS = [
     re.compile(r"(key=)[A-Za-z0-9_\-]{20,}", re.I),
@@ -33,7 +42,7 @@ def sanitize_secret_text(text):
 # Load API Key from Data Layer (Secret Manager Integration)
 def get_gemini_api_key():
     # Attempt to load from the central secret repository as defined in system architecture
-    global_env = Path("/home/ubuntu/agent-data/secrets/global.env")
+    global_env = route.data_root / "secrets" / "global.env"
     if global_env.exists():
         with open(global_env, "r") as f:
             for line in f:

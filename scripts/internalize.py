@@ -23,11 +23,14 @@ def load_env_file(path: Path) -> None:
 
 load_env_file(PROJECT_ROOT / ".env")
 
-AGENT_DATA_ROOT = Path(
-    os.environ.get("AGENT_DATA_ROOT")
-    or os.environ.get("AGENT_DATA_DIR")
-    or Path.home() / "agent-data"
-).expanduser()
+import sys
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from agent_core.memory_router import resolve_memory_route
+route = resolve_memory_route(project_root=PROJECT_ROOT)
+
+AGENT_DATA_ROOT = route.data_root
 KNOWLEDGE_ROOT = AGENT_DATA_ROOT / "knowledge"
 SYSTEM_KNOWLEDGE_DIR = KNOWLEDGE_ROOT / "system"
 
@@ -84,7 +87,7 @@ def build_operational_item() -> tuple[Path, str]:
     latest_meditation = latest_file(AGENT_DATA_ROOT / "journals" / "meditation", "*.md")
     latest_report = latest_file(AGENT_DATA_ROOT / "journals" / "ecosystem_reports", "*.md")
     chronicle_path = AGENT_DATA_ROOT / "CHRONICLE.md"
-    sync_path = AGENT_DATA_ROOT / "memory" / "session_sync.md"
+    sync_path = route.session_sync_path
 
     meditation = read_text(latest_meditation, 8000) if latest_meditation else ""
     report = read_text(latest_report, 8000) if latest_report else ""

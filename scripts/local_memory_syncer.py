@@ -16,21 +16,30 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timezone
 
+PROJECT_ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT_DIR))
+
+LITELLM_URL = "http://127.0.0.1:4000/v1/chat/completions"
+IDE_BRAIN_ROOT = Path("/home/ubuntu/.gemini/antigravity-ide/brain")
+from agent_core.memory_router import resolve_memory_route
+
+MEMORY_ROUTE = resolve_memory_route(cwd=Path.cwd())
+AGENT_DATA_ROOT = MEMORY_ROUTE.data_root
+PROJECT_ROOT = MEMORY_ROUTE.project_root
+PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
+STATUS_JSON_PATH = MEMORY_ROUTE.runtime_dir / "memory_palace_status.json"
+LOG_FILE = AGENT_DATA_ROOT / "logs" / "memory_syncer.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (MemorySyncer) %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/home/ubuntu/agent-data/logs/memory_syncer.log", encoding="utf-8")
+        logging.FileHandler(LOG_FILE, encoding="utf-8")
     ]
 )
 logger = logging.getLogger("MemorySyncer")
-
-LITELLM_URL = "http://127.0.0.1:4000/v1/chat/completions"
-IDE_BRAIN_ROOT = Path("/home/ubuntu/.gemini/antigravity-ide/brain")
-AGENT_DATA_ROOT = Path("/home/ubuntu/agent-data")
-PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
-STATUS_JSON_PATH = AGENT_DATA_ROOT / "runtime" / "memory_palace_status.json"
 
 def update_progress(stage: str, progress: str, current_file: str = "N/A", details: str = ""):
     """Writes structured execution status to a JSON file for live CLI monitoring."""
@@ -75,7 +84,7 @@ def show_live_status():
         print(f"{c_cyan}======================================================{c_reset}")
         
         # Read last 5 lines of the syncer log for live streaming logs
-        log_file = Path("/home/ubuntu/agent-data/logs/memory_syncer.log")
+        log_file = AGENT_DATA_ROOT / "logs" / "memory_syncer.log"
         if log_file.exists():
             print(f" {c_bold}📂 最新 5 筆系統遙測日誌：{c_reset}")
             lines = log_file.read_text(encoding="utf-8").splitlines()[-5:]
@@ -89,8 +98,8 @@ def repair_identity_symlink():
     """Corrects the wrong SYSTEM_IDENTITY.md symlink in agentmanager if misdirected."""
     logger.info("🔧 Checking SYSTEM_IDENTITY.md symlink...")
     update_progress("repairing_symlinks", "0/32", "SYSTEM_IDENTITY.md", "正在檢查靈魂軟連結...")
-    identity_symlink = Path("/home/ubuntu/agentmanager/.agent/SYSTEM_IDENTITY.md")
-    correct_target = Path("/home/ubuntu/agent-data/memory/SYSTEM_IDENTITY.md")
+    identity_symlink = PROJECT_ROOT / ".agent" / "SYSTEM_IDENTITY.md"
+    correct_target = AGENT_DATA_ROOT / "memory" / "SYSTEM_IDENTITY.md"
     
     if not correct_target.parent.exists():
         correct_target.parent.mkdir(parents=True, exist_ok=True)
@@ -212,9 +221,11 @@ def process_memory_self_healing():
             if synthesis:
                 logger.info("✅ Received successful synthesis from Local Brain.")
                 update_progress("writing", progress_str, path.name, "已完成本機大腦語意提煉，正在寫入專案物理 Context 記憶層。")
-                # Parse and write to central memory directories
-                # (In production, this splits and writes to the correct project's memory path)
-                logger.info(f"Crystallized consciousness saved to central agent-data core.")
+                # Parse and write to the resolved project memory route.
+                logger.info(
+                    "Crystallized consciousness routed to %s",
+                    MEMORY_ROUTE.project_data_root,
+                )
                 update_progress("syncing", progress_str, path.name, f"專案記憶順利焊接。進度：{idx} 已成功。")
             else:
                 logger.warning("⚠️ Local brain returned empty synthesis. Skipping write.")

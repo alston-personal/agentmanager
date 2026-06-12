@@ -81,6 +81,15 @@ Linux can still lean on `systemd` and `/dev/shm`; Windows and macOS use local ru
 
 See [docs/PLATFORM_DRIVERS.md](docs/PLATFORM_DRIVERS.md) for the compact architecture note.
 
+## 🧠 Memory Routing
+Memory writes now resolve through `agent_core/memory_router.py` before anything touches disk.
+
+- explicit context env wins first: `AGENT_CONTEXT_PROJECT_ROOT`, `CLAUDE_PROJECT_DIR`, `AGENT_ACTIVE_PROJECT_ROOT`
+- otherwise the router inspects the current workspace for `STATUS.md` and `memory/` bridges
+- if nothing matches, it falls back to the logic repo defaults
+
+This keeps `SHORT_TERM.md`, `LONG_TERM.md`, transcripts, and session records pointed at the intended project instead of whichever workspace happened to be opened first.
+
 ---
 
 ## 🛰️ Mission Control (For Agents)

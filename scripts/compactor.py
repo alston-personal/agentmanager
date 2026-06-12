@@ -6,10 +6,17 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
-AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
-SYNC_FILE = os.path.join(AGENT_DATA_ROOT, "memory/session_sync.md")
-ARCHIVE_DIR = os.path.join(AGENT_DATA_ROOT, "memory/archive")
+import sys
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT_DETECTED) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT_DETECTED))
+from agent_core.memory_router import resolve_memory_route
+route = resolve_memory_route()
+
+PROJECT_ROOT = str(route.project_root)
+AGENT_DATA_ROOT = str(route.data_root)
+SYNC_FILE = str(route.session_sync_path)
+ARCHIVE_DIR = str(route.data_root / "memory/archive")
 
 SECRET_PATTERNS = [
     re.compile(r"(key=)[A-Za-z0-9_\-]{20,}", re.I),

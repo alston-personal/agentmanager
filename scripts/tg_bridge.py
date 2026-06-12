@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 # Add logic root to path to import service_utils
 LOGIC_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(LOGIC_ROOT))
+from agent_core.memory_router import resolve_memory_route
 from scripts.service_utils import setup_locking, handle_signals, init_service_logging
 
 load_dotenv()
@@ -34,17 +35,18 @@ def get_env_secret(key, default=None):
     return val
 
 AUTHORIZED_USER_ID = get_env_secret("TELEGRAM_CHANNEL_ID")
-PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
-AGENT_DATA_ROOT = os.getenv("AGENT_DATA_ROOT", os.path.expanduser("~/agent-data"))
+MEMORY_ROUTE = resolve_memory_route(cwd=Path.cwd())
+ACTIVE_PROJECT_ROOT = str(MEMORY_ROUTE.project_root)
+AGENT_DATA_ROOT = str(MEMORY_ROUTE.data_root)
 GEMINI_API_KEY = get_env_secret("GEMINI_API_KEY")
 KNOWLEDGE_ROOT = os.getenv("KNOWLEDGE_ROOT", os.path.expanduser("~/.gemini/antigravity/knowledge"))
 MEMORY_ROOT = os.path.join(AGENT_DATA_ROOT, "memory")
-SYSTEM_ID_PATH = os.path.join(PROJECT_ROOT, ".agent/SYSTEM_IDENTITY.md")
-WORKFLOW_RUNNER = os.path.join(PROJECT_ROOT, "scripts", "run_workflow.py")
+SYSTEM_ID_PATH = os.path.join(ACTIVE_PROJECT_ROOT, ".agent/SYSTEM_IDENTITY.md")
+WORKFLOW_RUNNER = os.path.join(str(LOGIC_ROOT), "scripts", "run_workflow.py")
 DATA_DASHBOARD_PATH = os.path.join(AGENT_DATA_ROOT, "DASHBOARD.md")
-SESSION_SYNC_PATH = os.path.join(AGENT_DATA_ROOT, "memory", "session_sync.md")
-TELEGRAM_SESSION_DIR = os.path.join(AGENT_DATA_ROOT, "memory", "telegram_sessions")
-SKILLS_ROOT = os.path.join(PROJECT_ROOT, ".agent", "skills")
+SESSION_SYNC_PATH = str(MEMORY_ROUTE.session_sync_path)
+TELEGRAM_SESSION_DIR = str(MEMORY_ROUTE.telegram_sessions_dir)
+SKILLS_ROOT = os.path.join(ACTIVE_PROJECT_ROOT, ".agent", "skills")
 
 MODEL_PREFERENCES = [
     "models/gemini-3.1-flash-lite-preview",
@@ -122,17 +124,17 @@ def read_dual_layer_memory():
     """讀取雙層記憶 (SHORT_TERM.md, LONG_TERM.md)，了解當前任務與歷史進度。"""
     try:
         st, lt = "", ""
-        st_p = os.path.join(AGENT_DATA_ROOT, "memory", "SHORT_TERM.md")
-        lt_p = os.path.join(AGENT_DATA_ROOT, "memory", "LONG_TERM.md")
+        st_p = str(MEMORY_ROUTE.short_term_path)
+        lt_p = str(MEMORY_ROUTE.long_term_path)
         if os.path.exists(st_p):
-            with open(st_p, "r") as f: st = f.read()
+            with open(st_p, "r", encoding="utf-8") as f: st = f.read()
         if os.path.exists(lt_p):
-            with open(lt_p, "r") as f: lt = f.read()
+            with open(lt_p, "r", encoding="utf-8") as f: lt = f.read()
         session_sync = ""
         if os.path.exists(SESSION_SYNC_PATH):
             with open(SESSION_SYNC_PATH, "r", encoding="utf-8") as f:
                 session_sync = f.read()[-4000:]
-        return f"【短期記憶】:\n{st}\n\n【長期記憶】:\n{lt}\n\n【Session Sync】:\n{session_sync}"
+        return f"【專案】:\n{ACTIVE_PROJECT_ROOT}\n\n【短期記憶】:\n{st}\n\n【長期記憶】:\n{lt}\n\n【Session Sync】:\n{session_sync}"
     except Exception as e: return f"記憶讀取失敗: {e}"
 
 def list_knowledge_topics():
@@ -190,7 +192,7 @@ def run_system_workflow(workflow_name: str):
             ["python3", WORKFLOW_RUNNER, workflow_name],
             capture_output=True,
             text=True,
-            cwd=PROJECT_ROOT,
+            cwd=str(LOGIC_ROOT),
             timeout=30,
         )
         return res.stdout if res.returncode == 0 else f"錯誤: {res.stderr}"
@@ -236,8 +238,8 @@ def list_available_workflows():
     """列出目前可用的 slash workflows。"""
     workflow_names = set()
     workflow_dirs = [
-        Path(PROJECT_ROOT) / ".agent" / "workflows",
-        Path(PROJECT_ROOT) / ".agent" / "skills" / "workflows",
+        LOGIC_ROOT / ".agent" / "workflows",
+        LOGIC_ROOT / ".agent" / "skills" / "workflows",
     ]
     for workflow_dir in workflow_dirs:
         if not workflow_dir.exists():
@@ -275,7 +277,7 @@ def get_workflow_menu():
 
 
 def get_skill_menu():
-    skills_dir = Path(PROJECT_ROOT) / ".agent" / "skills"
+    skills_dir = Path(SKILLS_ROOT)
     important = []
     if skills_dir.exists():
         important = sorted(
@@ -486,7 +488,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == 'shell_df':
-        res = subprocess.run("df -h", shell=True, capture_output=True, text=True, timeout=30, cwd=PROJECT_ROOT)
+        res = subprocess.run("df -h", shell=True, capture_output=True, text=True, timeout=30, cwd=str(LOGIC_ROOT))
         output = (res.stdout or res.stderr)
         await safe_reply_text(
             query,
@@ -618,7 +620,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Shell 下放
     if text.lower().startswith("shell "):
-        res = subprocess.run(text[6:], shell=True, capture_output=True, text=True, timeout=30, cwd=PROJECT_ROOT)
+        res = subprocess.run(text[6:], shell=True, capture_output=True, text=True, timeout=30, cwd=str(LOGIC_ROOT))
         output = (res.stdout or res.stderr)
         sync_session_event("telegram-shell", text, output, {"chat_id": chat_id})
         persist_telegram_transcript(chat_id, text, output)

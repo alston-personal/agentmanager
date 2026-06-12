@@ -46,3 +46,5 @@ Session close now writes:
 - compact `session_sync.md` handoff entries
 
 Raw Telegram transcripts stay in the Telegram transcript store and no longer share the same logical buffer as the handoff stream.
+
+For project-local memory writes, `agent_core/memory_router.py` resolves the destination first, so `SHORT_TERM.md`, `LONG_TERM.md`, and transcripts follow the active project context instead of whichever workspace opened first.

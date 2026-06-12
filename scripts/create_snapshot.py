@@ -10,11 +10,13 @@ import sys
 if str(PROJECT_ROOT_DETECTED) not in sys.path:
     sys.path.append(str(PROJECT_ROOT_DETECTED))
 
-from agent_core import config
+from agent_core.memory_router import resolve_memory_route
 from agent_core.session_lifecycle import latest_session_records, read_compact_session_sync
-PROJECT_ROOT = config.PROJECT_ROOT
-AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
-MEMORY_ROOT = config.MEMORY_DIR
+
+route = resolve_memory_route()
+PROJECT_ROOT = route.project_root
+AGENT_DATA_ROOT = route.data_root
+MEMORY_ROOT = route.memory_dir
 SNAPSHOT_DIR = MEMORY_ROOT / "snapshots"
 
 
@@ -32,8 +34,8 @@ def main() -> int:
     time_stamp = now.strftime("%Y-%m-%d %H:%M UTC")
     snapshot_path = SNAPSHOT_DIR / f"{date_stamp}_SUMMARY.md"
 
-    short_term = read_text(MEMORY_ROOT / "SHORT_TERM.md").strip()
-    long_term = read_text(MEMORY_ROOT / "LONG_TERM.md").strip()
+    short_term = read_text(route.short_term_path).strip()
+    long_term = read_text(route.long_term_path).strip()
     session_sync = read_compact_session_sync(AGENT_DATA_ROOT, max_chars=6000).strip()
     latest_sessions = latest_session_records(PROJECT_ROOT, AGENT_DATA_ROOT, limit=3)
 

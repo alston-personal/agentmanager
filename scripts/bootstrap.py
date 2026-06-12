@@ -4,7 +4,16 @@ import sys
 import shutil
 
 # ⚙️ Configuration
-PROJECT_ROOT = os.getenv("AGENT_PROJECT_ROOT", os.getcwd())
+import sys
+from pathlib import Path
+
+PROJECT_ROOT_DETECTED = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT_DETECTED) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT_DETECTED))
+
+from agent_core.memory_router import resolve_project_root, resolve_memory_route
+
+PROJECT_ROOT = str(resolve_project_root())
 ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 
 def load_env():
@@ -17,7 +26,8 @@ def load_env():
 
 load_env()
 
-DATA_ROOT = os.getenv("AGENT_DATA_ROOT") or os.getenv("AGENT_DATA_DIR")
+route = resolve_memory_route()
+DATA_ROOT = str(route.data_root)
 SEED_DIR = os.path.join(PROJECT_ROOT, "templates/data-layer-seed")
 
 MANDATORY_FOLDERS = ["ideas", "specs", "projects", "validation", "memory", "journals", "logs"]
