@@ -1,15 +1,16 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
+from .models import SessionContext
 
 class ContextProviderInterface(ABC):
     """Provides memory, identity, and environmental context to the runtime."""
     
     @abstractmethod
-    def get_short_term_context(self) -> str:
+    def load_context(self) -> SessionContext:
         pass
         
     @abstractmethod
-    def update_short_term_context(self, update_payload: Dict[str, Any]) -> None:
+    def persist_session_close(self, payload: Dict[str, Any]) -> None:
         pass
 
 class ExecutorInterface(ABC):

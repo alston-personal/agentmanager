@@ -5,6 +5,7 @@ from pathlib import Path
 import unittest
 
 from agent_core.session_lifecycle import close_session
+from agentos_host.adapter import AgentOSContextAdapter
 
 
 class SessionCloseTests(unittest.TestCase):
@@ -26,7 +27,8 @@ class SessionCloseTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = close_session(project_root=project_root, data_root=data_root, agent_name="TestAgent")
+            adapter = AgentOSContextAdapter(project_root=project_root, data_root=data_root)
+            result = close_session(context_provider=adapter, project_root=project_root, data_root=data_root, agent_name="TestAgent")
 
             self.assertTrue(result.record_path.exists())
             self.assertEqual(result.record["project"], "project")

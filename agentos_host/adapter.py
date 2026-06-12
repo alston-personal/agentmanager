@@ -1,8 +1,16 @@
+import os
 import re
+import yaml
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from runtime_core.interfaces import ContextProviderInterface, SessionManagerInterface
+from runtime_core.models import SessionContext
+
+from agent_core.platform import get_platform_driver
+
 def _read_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -11,27 +19,188 @@ def _read_text(path: Path) -> str:
     except Exception:
         return ""
 
+def _parse_yaml_frontmatter(content: str) -> dict[str, Any]:
+    if not content.startswith("---"):
+        return {}
+    lines = content.splitlines()
+    end_idx = None
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            end_idx = idx
+            break
+    if end_idx is None:
+        return {}
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end_idx])) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+def _extract_table_value(content: str, label: str) -> str:
+    pattern = rf"\|\s*\*\*{re.escape(label)}\*\*\s*\|\s*([^|]+?)\s*\|"
+    match = re.search(pattern, content)
+    return match.group(1).strip() if match else ""
+
+def _collect_checklist_items(content: str) -> list[str]:
+    items: list[str] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- [ ]") or stripped.startswith("* [ ]"):
+            items.append(stripped[5:].strip())
+    return items
+
+def _collect_blockers(content: str) -> list[str]:
+    blockers: list[str] = []
+    in_blockers = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## ") and any(token in stripped.lower() for token in ["blocker", "blocked", "阻擋", "阻斷", "障礙"]):
+            in_blockers = True
+            continue
+        if in_blockers and stripped.startswith("## "):
+            break
+        if in_blockers and stripped.startswith(("- ", "* ")):
+            blockers.append(stripped[2:].strip())
+    return blockers
+
+def _collect_next_steps(content: str) -> list[str]:
+    next_steps: list[str] = []
+    in_next = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## ") and any(token in stripped.lower() for token in ["next", "next step", "下一步", "後續"]):
+            in_next = True
+            continue
+        if in_next and stripped.startswith("## "):
+            break
+        if in_next and stripped.startswith(("- ", "* ")):
+            next_steps.append(stripped[2:].strip())
+    return next_steps
+
+def _derive_summary(short_term: str, status_content: str) -> str:
+    summary = _extract_table_value(status_content, "Last Status")
+    if summary:
+        return summary
+    for line in short_term.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if stripped.startswith("-"):
+            return stripped.lstrip("- ").strip()
+    return "Session closed"
+
+def _derive_started_at(short_term_path: Path, short_term_content: str) -> str:
+    metadata = _parse_yaml_frontmatter(short_term_content)
+    for key in ("started_at", "session_started_at", "session_start_at"):
+        if metadata.get(key):
+            return str(metadata[key])
+    env_hint = os.environ.get("AGENT_SESSION_STARTED_AT")
+    if env_hint:
+        return env_hint
+    if short_term_path.exists():
+        try:
+            return datetime.fromtimestamp(short_term_path.stat().st_mtime, tz=timezone.utc).isoformat()
+        except Exception:
+            pass
+    return datetime.now(timezone.utc).isoformat()
+
+def _git_state(project_root: Path) -> dict[str, Any]:
+    branch = "unknown"
+    uncommitted_files: list[str] = []
+    diff_stat = ""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            branch = result.stdout.strip()
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.splitlines():
+                if len(line) > 3:
+                    uncommitted_files.append(line[3:].strip())
+    except Exception:
+        pass
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--stat"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            diff_stat = result.stdout.strip()
+    except Exception:
+        pass
+    return {"branch": branch, "uncommitted_files": uncommitted_files, "diff_stat": diff_stat}
+
+def _compact_list(values: list[str], limit: int = 5) -> list[str]:
+    items = [value.strip() for value in values if value and value.strip()]
+    return items[:limit]
+
+
 class AgentOSContextAdapter(ContextProviderInterface):
     """
     Bridges the ContextProviderInterface to AgentOS's symlink-based memory system.
-    Reads and writes SHORT_TERM.md and STATUS.md.
     """
     def __init__(self, project_root: Path, data_root: Path):
         self.project_root = project_root.expanduser().resolve()
         self.data_root = data_root.expanduser().resolve()
         
-        project_name = self.project_root.name
-        self.project_data_root = self.data_root / "projects" / project_name
+        # Ensure driver checks symlinks
+        driver = get_platform_driver(project_root=self.project_root, data_root=self.data_root)
+        driver.ensure_project_links(self.project_root, self.data_root)
+
+        self.project_name = self.project_root.name
+        self.project_data_root = self.data_root / "projects" / self.project_name
         self.short_term_path = self.project_data_root / "memory" / "SHORT_TERM.md"
         self.status_path = self.project_data_root / "STATUS.md"
+        self.session_sync_path = self.data_root / "memory" / "session_sync.md"
 
-    def get_short_term_context(self) -> str:
-        return _read_text(self.short_term_path)
+    def load_context(self) -> SessionContext:
+        short_term_content = _read_text(self.short_term_path)
+        status_content = _read_text(self.status_path)
+        git_state = _git_state(self.project_root)
 
-    def get_status_context(self) -> str:
-        return _read_text(self.status_path)
+        pending_tasks = _compact_list(_collect_checklist_items(short_term_content))
+        blockers = _compact_list(_collect_blockers(short_term_content))
+        next_steps = _compact_list(_collect_next_steps(short_term_content))
+        summary_value = _derive_summary(short_term_content, status_content)
+        started_at = _derive_started_at(self.short_term_path, short_term_content)
 
-    def update_short_term_context(self, payload: Dict[str, Any]) -> None:
+        return SessionContext(
+            project_id=self.project_name,
+            started_at=started_at,
+            summary=summary_value,
+            pending_tasks=pending_tasks,
+            blockers=blockers,
+            next_steps=next_steps,
+            branch=git_state["branch"],
+            uncommitted_files=git_state["uncommitted_files"],
+            diff_stat=git_state["diff_stat"],
+            raw_status=status_content,
+            raw_short_term=short_term_content,
+        )
+
+    def persist_session_close(self, payload: Dict[str, Any]) -> None:
+        self._update_short_term_context(payload)
+        self._update_status_context(payload)
+        
+    def _update_short_term_context(self, payload: Dict[str, Any]) -> None:
         self.short_term_path.parent.mkdir(parents=True, exist_ok=True)
         content = _read_text(self.short_term_path).rstrip()
         close_section = "\n".join(
@@ -65,7 +234,7 @@ class AgentOSContextAdapter(ContextProviderInterface):
             new_content = "# SHORT_TERM.md\n\n" + close_section + "\n"
         self.short_term_path.write_text(new_content.rstrip() + "\n", encoding="utf-8")
 
-    def update_status_context(self, payload: Dict[str, Any]) -> None:
+    def _update_status_context(self, payload: Dict[str, Any]) -> None:
         self.status_path.parent.mkdir(parents=True, exist_ok=True)
         content = _read_text(self.status_path)
         if not content.strip():
@@ -127,9 +296,10 @@ class AgentOSSessionAdapter(SessionManagerInterface):
         return "session_id_placeholder"
 
     def close_session(self, session_id: str, summary: str) -> None:
+        from agentos_host.adapter import AgentOSContextAdapter
         from agent_core.session_lifecycle import close_session
+        adapter = AgentOSContextAdapter(self.project_root, self.data_root)
         close_session(
-            project_root=self.project_root,
-            data_root=self.data_root,
+            context_provider=adapter,
             summary=summary
         )

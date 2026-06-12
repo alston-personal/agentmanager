@@ -11,6 +11,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from agent_core.session_lifecycle import close_session
+from agentos_host.adapter import AgentOSContextAdapter
 
 
 def main() -> int:
@@ -21,11 +22,16 @@ def main() -> int:
     parser.add_argument("--agent", default=None)
     args = parser.parse_args()
 
+    adapter = AgentOSContextAdapter(
+        project_root=Path(args.project_root) if args.project_root else Path(PROJECT_ROOT).expanduser().resolve(),
+        data_root=Path(args.data_root) if args.data_root else Path(os.environ.get("AGENT_DATA_ROOT", "~/agent-data")).expanduser().resolve()
+    )
     result = close_session(
-        project_root=Path(args.project_root) if args.project_root else None,
-        data_root=Path(args.data_root) if args.data_root else None,
+        context_provider=adapter,
         agent_name=args.agent,
         summary=args.summary,
+        project_root=Path(args.project_root) if args.project_root else None,
+        data_root=Path(args.data_root) if args.data_root else None,
     )
     print(result.compact_entry)
     print(f"Record: {result.record_path}")

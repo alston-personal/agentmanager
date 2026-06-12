@@ -33,6 +33,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from agent_core.session_lifecycle import close_session
+from agentos_host.adapter import AgentOSContextAdapter
 
 
 def send_telegram_notification(text: str):
@@ -486,10 +487,15 @@ def main() -> int:
         return 0
 
     if workflow_name == "report":
-        result = close_session(
+        adapter = AgentOSContextAdapter(
             project_root=Path(PROJECT_ROOT),
             data_root=Path(AGENT_DATA_ROOT),
+        )
+        result = close_session(
+            context_provider=adapter,
             agent_name=os.environ.get("AGENT_NAME") or os.environ.get("USER"),
+            project_root=Path(PROJECT_ROOT),
+            data_root=Path(AGENT_DATA_ROOT),
         )
         print(result.compact_entry)
         print(f"✅ /report complete. Session record written to {result.record_path}")
