@@ -56,6 +56,7 @@ AgentOS now treats reusable work as a capability, not a project-specific side ef
 | :--- | :--- | :--- | :--- |
 | **Spec Stewardship** | `scripts/spec_steward.py` | ✅ 現行 | Scans specs, project declarations, and STATUS files to surface drift, stale specs, and missing ownership. |
 | **AgentOS Status Center** | `scripts/agentos_status.py` | ✅ 現行 | Consolidated snapshot of roles, capabilities, projects, specs, and memory health for fast operational review. |
+| **端口巡護者 (Port Manager)** | `scripts/core_services/port_manager.py` | ✅ 現行 | 負責自動分配與追蹤 22 個專案的連接埠配置，防止端口衝突 |
 
 ### Usage Pattern
 ```bash

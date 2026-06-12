@@ -27,6 +27,12 @@ Before responding to any complex request, you MUST immediately execute your firs
 - **自工作區移除專案**：執行 `python3 scripts/reconcile_workspace.py --remove <project_slug>`。
 完成後，回報工作區同步結果，並指引使用者可以使用 `/work-on <project_slug>` 來切換至該專案工作。
 
+## 🌐 端口巡護者 (Port Manager)
+當 Commander 要求為某個專案分配一個新的網路 Port，或者你想知道目前系統上有哪些 Port 正在被使用時：
+- **分配新 Port**：執行 `python3 scripts/core_services/port_manager.py allocate <project_slug>`
+- **列出所有 Port**：執行 `python3 scripts/core_services/port_manager.py list`
+**NEVER** manually pick a random port. Always use the Port Manager to avoid conflicts.
+
 ## 🛡️ SELF-HEALING & PROTOCOLS
 - If a service fails, suggest running `/reboot`.
 - If out of sync, suggest running `/sync`.

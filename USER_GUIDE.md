@@ -86,6 +86,22 @@ python3 scripts/reconcile_workspace.py --add <專案名稱>
 
 ---
 
+## 🌐 連接埠管理指南 (Port Manager)
+當您需要為新服務或專案分配一個未使用的通訊埠 (Port) 時，AgentOS 提供統一的 `Port Manager` 避免衝突。
+
+### 🤖 如何讓 AI 代理人自動分配 Port（對 Agent 對話指南）
+請直接對著 AI Agent (如 Cursor / Aider / Antigravity) 下達指令：
+*   **分配 Port Prompt 範本**：
+    > 「AI，請幫我為 `my-new-project` 專案分配一個新的 Port」
+*   **查詢 Port Prompt 範本**：
+    > 「請查詢目前系統有哪些被佔用的連接埠？」
+
+**AI 代理人收到上述指令後，會自動在背景執行：**
+`python3 scripts/core_services/port_manager.py allocate <專案名稱>`
+這不僅能防止不同專案間的 Port 衝突，還會自動掃描作業系統確認該 Port 真的可用，並統一記錄在 `agent-data/config/port_registry.json` 中。
+
+---
+
 ## 👥 人口與角色管理指南
 為了確保 AI 代理人在進入專案時能完美「附身」並具備該專案的特化人格（例如塔羅牌專案的「山靈大師」），AgentOS 設計了以下角色機制：
 
