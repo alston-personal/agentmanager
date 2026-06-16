@@ -16,3 +16,7 @@ This is the **Logic Layer Root** of the AgentOS ecosystem.
 ## Critical Constraint
 Never create real files named `STATUS.md` or `memory/` here.
 They MUST be symlinks to `~/agent-data/projects/agentmanager/`.
+
+## Git Push Reporting
+After pushing changes, report the pushed remote/branch and the latest commit hash.
+Example: `origin/main @ 4639f87`.
