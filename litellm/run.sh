@@ -9,6 +9,12 @@ REPO_ROOT=$(cd "$LITELLM_DIR/.." && pwd)
 VENV_LITELLM="$REPO_ROOT/venv/bin/litellm"
 LITELLM_BIN=""
 
+# Load environment variables from repo root .env if it exists
+if [ -f "$REPO_ROOT/.env" ]; then
+    echo "🔑 [AgentOS LiteLLM] Loading environment variables from .env..."
+    export $(grep -v '^#' "$REPO_ROOT/.env" | xargs)
+fi
+
 echo "🕸️  [AgentOS LiteLLM] Starting service initialization..."
 
 # 1. Resolve LiteLLM executable
