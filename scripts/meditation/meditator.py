@@ -197,5 +197,28 @@ Format as Markdown journal.
 
     print(f"[{datetime.datetime.now()}] meditation complete. Journal: {report_file}")
 
+    # Auto Git Sync for Data Layer after meditation
+    print(f"[{datetime.datetime.now()}] starting post-meditation Git push for Data Layer...")
+    try:
+        import subprocess
+        # Check if there are changes
+        status_proc = subprocess.run(["git", "status", "--porcelain"], cwd=AGENT_DATA_ROOT, capture_output=True, text=True)
+        if status_proc.returncode == 0 and status_proc.stdout.strip():
+            print("📝 Committing local changes in Data Layer...")
+            subprocess.run(["git", "add", "-A"], cwd=AGENT_DATA_ROOT, check=True)
+            commit_msg = f"chore(meditation): sync logs and journal for {stats['date']}"
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=AGENT_DATA_ROOT, check=True)
+        
+        # Pull
+        print("⬇️ Pulling remote updates...")
+        subprocess.run(["git", "pull", "--rebase"], cwd=AGENT_DATA_ROOT, check=True)
+        
+        # Push
+        print("⬆️ Pushing to remote...")
+        subprocess.run(["git", "push", "origin", "main"], cwd=AGENT_DATA_ROOT, check=True)
+        print("✅ Data Layer successfully pushed to remote.")
+    except Exception as e:
+        print(f"⚠️ Failed to push Data Layer to remote: {e}")
+
 if __name__ == "__main__":
     meditate()
