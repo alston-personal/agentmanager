@@ -20,14 +20,39 @@ def run_script(script_name):
     else:
         logger.error(f"Script not found: {script_path}")
 
+def check_os_watchdog():
+    logger.info("Checking os-watchdog.service health...")
+    env = os.environ.copy()
+    uid = os.getuid()
+    if "XDG_RUNTIME_DIR" not in env:
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
+        
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "os-watchdog.service"],
+            capture_output=True,
+            text=True,
+            env=env
+        )
+        status = result.stdout.strip()
+        if status == "active":
+            logger.info("✅ os-watchdog.service is active and running.")
+        else:
+            logger.warning(f"⚠️ os-watchdog.service status is: {status}. Attempting to restart...")
+            subprocess.run(["systemctl", "--user", "restart", "os-watchdog.service"], env=env)
+    except Exception as e:
+        logger.error(f"Failed to check os-watchdog status: {e}")
+
 def main():
     logger.info("--- Starting Periodic Maintenance ---")
     
     # 1. Health & Structure (Bootstrap)
     run_script("bootstrap.py")
 
-    # 2. Reliability Check (Watchdog)
-    run_script("watchdog.py")
+    # 2. Reliability Check (Watchdog Service)
+    check_os_watchdog()
     
     # 3. Task Aggregation (Global Todo Hub)
     run_script("aggregate_tasks.py")
