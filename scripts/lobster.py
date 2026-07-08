@@ -155,18 +155,28 @@ def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
         return False, str(e)
 
 # ── 設定 ─────────────────────────────────────────────────────────────────
+# Determine home and data root dynamically
+HOME = Path.home()
+DATA_ROOT_ENV = os.getenv("AGENT_DATA_ROOT") or os.getenv("AGENT_DATA_DIR")
+if DATA_ROOT_ENV:
+    AGENT_DATA_ROOT = Path(DATA_ROOT_ENV).expanduser()
+else:
+    AGENT_DATA_ROOT = HOME / "agent-data"
+
+log_dir = AGENT_DATA_ROOT / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / "lobster.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (🦞 Lobster) %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/home/ubuntu/agent-data/logs/lobster.log", encoding="utf-8"),
+        logging.FileHandler(log_file, encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("Lobster")
 
-HOME = Path("/home/ubuntu")
-AGENT_DATA_ROOT = HOME / "agent-data"
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
 
 def _find_claude_bin() -> Path:
@@ -198,7 +208,8 @@ TASK_TIMEOUT_SECONDS = 300
 # ── 工具函數 ──────────────────────────────────────────────────────────────
 
 def load_env():
-    env_path = HOME / "agentmanager/.env"
+    # Load .env relative to scripts folder (parent of scripts is the project root)
+    env_path = Path(__file__).resolve().parent.parent / ".env"
     if env_path.exists():
         for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -332,8 +343,8 @@ def get_project_context(proj_name: str) -> str:
 ```
 
 ## 核心規則
-- 邏輯（代碼）留在 /home/ubuntu/{proj_name}/
-- 資料（STATUS.md, memory/）留在 /home/ubuntu/agent-data/projects/{proj_name}/
+- 邏輯（代碼）留在 {HOME}/{proj_name}/
+- 資料（STATUS.md, memory/）留在 {AGENT_DATA_ROOT}/projects/{proj_name}/
 - 完成任務後，在 STATUS.md 的 Activity Log 寫入一條記錄
 - 不要詢問用戶，盡可能自主判斷並執行
 - 如遇到需要人工確認的關鍵決策，在 STATUS.md 的 Blockers 區段留下說明後停止
