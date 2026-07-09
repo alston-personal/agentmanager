@@ -29,6 +29,14 @@
       "path": "../system"
     },
     {
+      "name": "🧪 DQA System Test",
+      "path": "../system_test"
+    },
+    {
+      "name": "🧪 TestRail System",
+      "path": "../testrail_system"
+    },
+    {
       "name": "🖥️ 社區圖書館管理系統",
       "path": "../community-library"
     },

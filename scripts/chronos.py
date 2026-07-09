@@ -13,18 +13,30 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Get the script's root directory dynamically (scripts/chronos.py -> root is scripts/..)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = PROJECT_ROOT / "schedule.yaml"
+
+# Determine data root dynamically from environment or fallback to home directory
+DATA_ROOT_ENV = os.getenv("AGENT_DATA_ROOT") or os.getenv("AGENT_DATA_DIR")
+if DATA_ROOT_ENV:
+    DATA_ROOT = Path(DATA_ROOT_ENV).expanduser()
+else:
+    DATA_ROOT = Path.home() / "agent-data"
+
+log_dir = DATA_ROOT / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+log_file = log_dir / "chronos.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (Chronos) %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/home/ubuntu/agent-data/logs/chronos.log", encoding="utf-8")
+        logging.FileHandler(log_file, encoding="utf-8")
     ]
 )
 logger = logging.getLogger("Chronos")
-
-PROJECT_ROOT = Path("/home/ubuntu/agentmanager")
-CONFIG_PATH = PROJECT_ROOT / "schedule.yaml"
 
 def load_schedule():
     if not CONFIG_PATH.exists():
@@ -84,14 +96,14 @@ import re
 
 # 專案名稱與實際邏輯路徑對照表
 PROJECT_MAP = {
-    "moltbot": "/home/ubuntu/moltbot",
-    "openclaw": "/home/ubuntu/openclaw",
-    "agentmanager": "/home/ubuntu/agentmanager",
-    "leopardcat-tarot": "/home/ubuntu/leopardcat-tarot",
-    "zeus-writer": "/home/ubuntu/zeus-writer",
-    "youtube-ai-manager": "/home/ubuntu/youtube-ai-manager",
-    "y2helper": "/home/ubuntu/y2helper",
-    "beauty-pk": "/home/ubuntu/beauty-pk"
+    "moltbot": str(Path.home() / "moltbot"),
+    "openclaw": str(Path.home() / "openclaw"),
+    "agentmanager": str(PROJECT_ROOT),
+    "leopardcat-tarot": str(Path.home() / "leopardcat-tarot"),
+    "zeus-writer": str(Path.home() / "zeus-writer"),
+    "youtube-ai-manager": str(Path.home() / "youtube-ai-manager"),
+    "y2helper": str(Path.home() / "y2helper"),
+    "beauty-pk": str(Path.home() / "beauty-pk")
 }
 
 def load_env():
@@ -213,7 +225,7 @@ def scan_stagnant_projects(dry_run=False):
     掃描所有在 agent-data 的專案狀態，尋找停滯的專案。
     """
     logger.info("🔍 [Self-Pushing] 啟動停滯專案掃描探針...")
-    projects_dir = Path("/home/ubuntu/agent-data/projects")
+    projects_dir = DATA_ROOT / "projects"
     if not projects_dir.exists():
         logger.error(f"Projects directory not found @ {projects_dir}")
         return []
@@ -271,9 +283,8 @@ def run_self_pushing(dry_run=False):
     if not stagnant_projects:
         logger.info("✅ 沒有偵測到任何需要自治推進的停滯專案！")
         return
-        
     logger.info(f"🚀 準備對 {len(stagnant_projects)} 個專案執行自治推進...")
-    prompt_template_path = Path("/home/ubuntu/agentmanager/templates/self_pushing_prompt.txt")
+    prompt_template_path = PROJECT_ROOT / "templates/self_pushing_prompt.txt"
     if not prompt_template_path.exists():
         logger.error(f"Prompt template not found @ {prompt_template_path}")
         return
@@ -290,8 +301,7 @@ def run_self_pushing(dry_run=False):
         custom_message = prompt_template.replace("【專案名稱】", name)
         
         if dry_run:
-            logger.info(f"[Dry-Run] 模擬執行自治推進指令：")
-            logger.info(f"  Command: pnpm --dir /home/ubuntu/openclaw openclaw agent --agent main --model ollama/gemma2:2b --thinking off (cwd={logic_dir})")
+            logger.info(f"  Command: pnpm --dir {Path.home()}/openclaw openclaw agent --agent main --model ollama/gemma2:2b --thinking off (cwd={logic_dir})")
             logger.info(f"  Message length: {len(custom_message)} chars")
             continue
             
@@ -307,7 +317,7 @@ def run_self_pushing(dry_run=False):
             # 使用本機 Gemma2 路由，完全免費免 Token 額度
             # 將 cwd 設為 logic_dir 以自動判定 Workspace，並使用 pnpm --dir 來定位 openclaw 執行檔，移除不合法的 --workspace-dir，並將 --thinking 設為 off (Gemma 不支援 reasoning)
             process = subprocess.run(
-                ["pnpm", "--dir", "/home/ubuntu/openclaw", "openclaw", "agent", "--agent", "main", "--message", custom_message, "--model", "ollama/gemma2:2b", "--thinking", "off"],
+                ["pnpm", "--dir", str(Path.home() / "openclaw"), "openclaw", "agent", "--agent", "main", "--message", custom_message, "--model", "ollama/gemma2:2b", "--thinking", "off"],
                 cwd=logic_dir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

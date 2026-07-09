@@ -7,7 +7,7 @@ schedules:
 
   - name: zeus-autonomous-step
     interval_seconds: 3600  # Evaluate chapter stats and auto-publish every hour
-    command: "python3 /home/ubuntu/zeus-writer/scripts/zeus_autonomous_manager.py --step"
+    command: "python3 $HOME/zeus-writer/scripts/zeus_autonomous_manager.py --step"
 
   - name: project-self-pushing
     interval_seconds: 43200  # Evaluate and push stagnant projects every 12 hours
@@ -19,7 +19,8 @@ schedules:
 
   - name: white-hat-security-audit
     interval_seconds: 86400  # Scan system, generate report and inject security todo tasks once a day
-    command: "python3 /home/ubuntu/agentmanager/scripts/white_hat_hacker.py"
+    command: "python3 $HOME/agentos/scripts/white_hat_hacker.py"
+
 
   - name: status-archiver
     interval_seconds: 86400  # Roll over old STATUS.md logs into archive once a day
