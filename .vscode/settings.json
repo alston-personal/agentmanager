@@ -11,19 +11,5 @@
     "**/.next": true,
     "**/.venv": true,
     "workspace/": true
-  },
-  "claudeCode.environmentVariables": [
-    {
-      "name": "ANTHROPIC_BASE_URL",
-      "value": "http://127.0.0.1:4000"
-    },
-    {
-      "name": "ANTHROPIC_API_KEY",
-      "value": "sk-dummy"
-    },
-    {
-      "name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
-      "value": "1"
-    }
-  ]
+  }
 }

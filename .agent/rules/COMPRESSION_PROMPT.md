@@ -12,3 +12,6 @@ Analyze the provided session logs. Your goal is to emit a **High-Density Memory 
 - NO polite filler.
 - NO repetitive system logs.
 - NO intermediate debugging that didn't lead to a fix.
+- Keep only durable decisions, blockers, risks, and next actions.
+- Prefer slug/file/command references over copied paragraphs.
+- If a project has many details, cap each project summary to 3 short bullets.

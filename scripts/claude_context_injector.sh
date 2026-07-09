@@ -23,8 +23,13 @@ AGENT_DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 
 # --- Read Pulse State ---
 PULSE_FILE="${AGENT_PULSE_FILE:-}"
-if [ -z "$PULSE_FILE" ] && command -v python3 >/dev/null 2>&1; then
-    PULSE_FILE="$(python3 - <<'PY'
+if [ -z "$PULSE_FILE" ]; then
+    PYTHON_BIN="python3"
+    if [ -x "$PROJECT_ROOT/venv/bin/python3" ]; then
+        PYTHON_BIN="$PROJECT_ROOT/venv/bin/python3"
+    fi
+    if command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+        PULSE_FILE="$("$PYTHON_BIN" - <<'PY'
 from pathlib import Path
 import os, sys
 project_root = Path(os.environ.get("AGENT_PROJECT_ROOT", Path.cwd())).resolve()
@@ -35,6 +40,7 @@ driver = get_platform_driver(project_root=project_root, data_root=Path(os.enviro
 print(driver.volatile_state_dir() / "pulse.json")
 PY
 )"
+    fi
 fi
 PULSE_FALLBACK="$AGENT_DATA_ROOT/runtime/pulse_snapshot.json"
 

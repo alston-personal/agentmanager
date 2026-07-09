@@ -9,6 +9,10 @@
       "path": "."
     },
     {
+      "name": "🔴 Redmine 5",
+      "path": "../redmine_5"
+    },
+    {
       "name": "🎞️ Video Indexing Hub",
       "path": "../video-indexing"
     },

@@ -13,7 +13,7 @@ import asyncio
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
 
 # Resolve dynamic paths
@@ -381,6 +381,67 @@ async def heal_stale_git_locks():
         else:
             await backoff_mgr.reset(entity_id)
 
+async def check_runaway_processes():
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ps", "-u", "dqa03", "-o", "pid,rss,etime,comm,args",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await proc.communicate()
+        lines = stdout.decode("utf-8", errors="ignore").splitlines()
+        
+        for line in lines[1:]:
+            parts = line.strip().split(None, 4)
+            if len(parts) < 5:
+                continue
+            pid_str, rss_str, etime_str, comm, args = parts
+            
+            comm_lower = comm.lower()
+            if comm_lower not in ("rg", "find", "grep"):
+                continue
+                
+            try:
+                pid = int(pid_str)
+                rss_kb = int(rss_str)
+                rss_gb = rss_kb / (1024 * 1024)
+            except ValueError:
+                continue
+                
+            is_too_long = False
+            if "-" in etime_str:
+                is_too_long = True
+            else:
+                time_parts = etime_str.split(":")
+                if len(time_parts) >= 3:
+                    is_too_long = True
+                elif len(time_parts) == 2:
+                    try:
+                        minutes = int(time_parts[0])
+                        if minutes >= 5:
+                            is_too_long = True
+                    except ValueError:
+                        pass
+                        
+            is_too_heavy = (rss_gb >= 2.0)
+            
+            if is_too_long or is_too_heavy:
+                logger.warning(f"💥 Runaway process detected: PID {pid} ({comm}) | RSS: {rss_gb:.2f} GB | Elapsed: {etime_str}")
+                kill_proc = await asyncio.create_subprocess_exec("kill", "-9", str(pid))
+                await kill_proc.wait()
+                
+                reason = "記憶體使用過大" if is_too_heavy else "執行時間過長"
+                await send_alert_async(
+                    f"🔧 **[自癒系統啟動]** 偵測並清理了失控的背景搜尋行程！\n"
+                    f"🔹 **行程名稱**: `{comm}`\n"
+                    f"🔹 **PID**: `{pid}`\n"
+                    f"🔹 **記憶體使用量**: `{rss_gb:.2f} GB`\n"
+                    f"🔹 **已執行時間**: `{etime_str}`\n"
+                    f"🔹 **判定原因**: {reason}，已執行強制關閉。"
+                )
+    except Exception as e:
+        logger.error(f"Failed to check runaway processes: {e}")
+
 async def background_health_loop():
     while True:
         try:
@@ -388,6 +449,7 @@ async def background_health_loop():
             await check_mount_points()
             await check_disk_space()
             await heal_core_services()
+            await check_runaway_processes()
         except Exception as e:
             logger.error(f"Error in background_health_loop: {e}")
         await asyncio.sleep(300) # Every 5 minutes

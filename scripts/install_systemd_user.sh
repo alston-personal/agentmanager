@@ -156,6 +156,25 @@ StandardError=append:$DATA_ROOT/logs/lobster.log
 WantedBy=default.target
 EOF
 
+cat > "$USER_SYSTEMD_DIR/os-watchdog.service" <<EOF
+[Unit]
+Description=AgentOS System and Process Watchdog Daemon
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+ExecStart=$PYTHON_BIN scripts/os_watchdog.py
+Restart=always
+RestartSec=30
+StandardOutput=append:$DATA_ROOT/logs/watchdog.log
+StandardError=append:$DATA_ROOT/logs/watchdog.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 systemctl --user daemon-reload
 
 # Stop and disable legacy pulse service if it exists
@@ -168,8 +187,9 @@ if command -v pm2 &>/dev/null; then
   pm2 save 2>/dev/null || true
 fi
 
-systemctl --user enable os-chronos.service agent-maintenance.timer teams-commander.service >/dev/null
+systemctl --user enable os-chronos.service agent-maintenance.timer teams-commander.service os-watchdog.service >/dev/null
 systemctl --user restart teams-commander.service
+systemctl --user restart os-watchdog.service
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user enable tg-commander.service cat-ink-syncer.service os-lobster.service >/dev/null

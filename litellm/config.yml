@@ -1,3 +1,6 @@
+general_settings:
+  master_key: null
+
 model_list:
 # 1. 旗艦主力大腦（當 Claude Code 要用 Sonnet 處理核心代碼時，其實是跑你的最強 Qwen）
   - model_name: claude-3-7-sonnet
@@ -347,3 +350,8 @@ model_list:
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
       # 說明：MoE 架構 (A3B) / 🖼️ 多模態 (支援視覺) | 儲存 ~39 GB / 🧠 運行記憶體 ~46 GB
+  - model_name: claude-3-5-qwen35
+    litellm_params:
+      model: openai/delta-qwen35
+      api_base: http://10.135.245.234:4000/v1
+      api_key: "os.environ/REMOTE_LITELLM_API_KEY" # pragma: allowlist secret

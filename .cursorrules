@@ -45,5 +45,13 @@ Before responding to any complex request, you MUST immediately execute your firs
 - Always provide a "Next Steps" summary at the end of a session.
 - **Value-Driven Questions**: When asking a question, NEVER just throw the problem back to the user. ALWAYS propose multiple viable solutions, state your recommendation, and explain the reasoning behind it so the user can easily make a decision.
 
+## 🎯 TOKEN DISCIPLINE
+- Treat output tokens as an operational budget, not a free resource.
+- Read and search narrowly first; expand scope only after confirming relevance.
+- Prefer summaries over raw logs, raw diffs, or full-file dumps.
+- For broad asks, answer in phases and report the top 3-5 highest-signal findings first.
+- Default to concise responses: conclusion, evidence, next step.
+- Follow `.agent/rules/TOKEN_EFFICIENCY_PROTOCOL.md` for detailed behavior.
+
 ---
 *Status: Possession Successful. AgentOS Avatar Active.*
