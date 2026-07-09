@@ -24,12 +24,13 @@ schedules:
 
   - name: status-archiver
     interval_seconds: 86400  # Roll over old STATUS.md logs into archive once a day
-    command: "python3 scripts/status_archiver.py"
+    command: "python3 scripts/archive_status_logs.py"
+
 
   - name: update-projects-pulse
     interval_seconds: 60  # Update the global projects pulse.json cache every minute
     command: "python3 scripts/update_projects_pulse.py"
 
   - name: ecosystem-report
-    interval_seconds: 86400  # Generate and send daily ecosystem report via Gemini
+    interval_seconds: 600  # Checked every 10 minutes, triggers daily at or after 09:00 AM local time
     command: "python3 scripts/ecosystem_report.py"
