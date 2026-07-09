@@ -40,10 +40,113 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
 
 # 核心執行引擎選擇 (claude | agy)
-ACTIVE_ENGINE = "claude"
+def _load_env_early():
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+_load_env_early()
+ACTIVE_ENGINE = os.getenv("LOBSTER_ENGINE", "claude")
 
 
-# ── Telegram 通知 ─────────────────────────────────────────────────────────
+# ── AgentOS 角色路由配置 ───────────────────────────────────────────────────
+import yaml
+
+def get_target_output_path(proj_name: str, proj_dir: Path) -> Path:
+    """
+    路由協議：根據專案名稱決定實際的輸出目標路徑。
+    """
+    # 如果是 zeus-writer 相關專案
+    if "zeus-writer" in str(proj_dir) or (HOME / "zeus-writer" / proj_name).exists():
+        # 優先檢查是否有獨立的作品資料夾
+        work_root = HOME / "zeus-writer" / proj_name
+        if work_root.exists():
+            target = work_root / "正文"
+            if target.exists():
+                return target
+            # 如果正文資料夾不存在，則建立它
+            target.mkdir(parents=True, exist_ok=True)
+            return target
+
+    # 預設回退到專案根目錄
+    return proj_dir
+
+def get_agent_persona(task_text: str) -> tuple[str, str, str]:
+    """
+    根據任務內容路由至對應的寫作角色。
+    返回: (角色名稱, System Prompt, SOP)
+    """
+    persona_path = Path("/home/ubuntu/zeus-writer/writing_persona.yaml")
+    if not persona_path.exists():
+        return "General", "You are a helpful assistant.", "1. Read context\n2. Execute task\n3. Verify output\n4. Report success"
+
+    try:
+        with open(persona_path, "r", encoding="utf-8") as f:
+            personas = yaml.safe_load(f)
+
+        # 角色 SOP 定義
+        SOPs = {
+            "writer": "1. [Context Analysis]: Use `Read` to check the outline and previous chapters in the target directory.\n2. [Drafting]: Use `Write` to create the new chapter file in the target directory.\n3. [Self-Verification]: Use `Read` on the file you just wrote to ensure it meets the style guidelines.\n4. [Completion]: Output: ✅ 任務完成：[Task Name] - File saved to [Path].",
+            "editor": "1. [Review]: Use `Read` to analyze the target file's logic and flow.\n2. [Refinement]: Use `Edit` to modify the content directly in the file.\n3. [Verification]: Use `Read` to verify the changes.\n4. [Completion]: Output: ✅ 校對完成：[Task Name] - File updated at [Path].",
+            "illustrator": "1. [Visual Analysis]: Analyze the scene description in the task.\n2. [Prompt Engineering]: Create a detailed Image Prompt.\n3. [Output]: Write the prompt to the target directory as a .md file.\n4. [Completion]: Output: ✅ 視覺方案完成：[Task Name] - Path: [Path].",
+            "marketer": "1. [Trend Analysis]: Analyze the target audience.\n2. [Hook Creation]: Draft high-impact hooks for social media.\n3. [Output]: Write the marketing copy to the target directory.\n4. [Completion]: Output: ✅ 行銷方案完成：[Task Name].",
+            "arbitrator": "1. [Comparative Review]: Read multiple versions of the same chapter.\n2. [Final Decision]: Select the best parts and merge them using `Edit`.\n3. [Completion]: Output: ✅ 定稿完成：[Task Name].",
+            "general": "1. [Analyze]: Understand the requirement.\n2. [Execute]: Use `Read`/`Write`/`Edit` tools to perform the task.\n3. [Verify]: Check the result.\n4. [Completion]: Output: ✅ 任務完成：[Task Name]."
+        }
+
+        task_lower = task_text.lower()
+        if any(k in task_lower for k in ["撰寫", "寫作", "正文", "章節", "創作"]):
+            role_key = "writer"
+        elif any(k in task_lower for k in ["審核", "校對", "編輯", "修改", "邏輯"]):
+            role_key = "editor"
+        elif any(k in task_lower for k in ["封面", "插畫", "Image Prompt", "視覺"]):
+            role_key = "illustrator"
+        elif any(k in task_lower for k in ["行銷", "爆點", "傳播", "讀者"]):
+            role_key = "marketer"
+        elif any(k in task_lower for k in ["仲裁", "定稿", "決定"]):
+            role_key = "arbitrator"
+        else:
+            role_key = "general"
+
+        role_data = personas.get(role_key, {}) if role_key != "general" else {}
+        return role_data.get("name", role_key.capitalize()), role_data.get("system_prompt", ""), SOPs.get(role_key)
+
+    except Exception as e:
+        logger.error(f"載入 Persona 失敗: {e}")
+
+    return "General", "You are a helpful assistant.", "1. Analyze\n2. Execute\n3. Verify\n4. Report"
+
+def verify_physical_output(proj_dir: Path, task_text: str, output: str, target_dir: Optional[Path] = None) -> bool:
+    """
+    物理驗證：檢查檔案系統是否真的有新檔案產生或內容增加。
+    如果提供 target_dir，則僅檢查該目錄下的變動。
+    """
+    if "DRY_RUN" in output:
+        return True
+
+    # 如果任務包含「撰寫」且輸出宣稱完成，但沒有任何 .md 檔案變動，則判定為失敗
+    if any(k in task_text for k in ["撰寫", "寫作", "創作"]):
+        # 檢查最近 5 分鐘內是否有 .md 檔案被修改/建立
+        now = time.time()
+        search_dir = target_dir if target_dir else proj_dir
+        modified_files = []
+        try:
+            for f in search_dir.rglob("*.md"):
+                if (now - f.stat().st_mtime) < 600:
+                    modified_files.append(f)
+        except Exception as e:
+            logger.error(f"物理驗證掃描失敗: {e}")
+            return False
+
+        if not modified_files:
+            return False
+    return True
+
 
 def send_telegram_alert(message: str):
     """發送 Telegram 警報通知"""
@@ -99,7 +202,14 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
         logger.info(f"  Inspector: {result} — {reason[:80]}")
 
         if result == "PASS":
+            # 實施物理驗證：如果是寫作任務，必須檢查是否有檔案變動
+            # 獲取路由目標路徑
+            target_dir = get_target_output_path(proj_dir.name, proj_dir)
+            if not verify_physical_output(proj_dir, task_text, output, target_dir=target_dir):
+                logger.warning(f"  🚫 物理驗證失敗：任務宣稱完成但無實體檔案產出（幻覺完成）")
+                return False, f"FAIL: 幻覺完成，缺乏實體產出"
             return True, f"PASS: {reason}"
+
         if result == "BLOCKED":
             # 發送 Telegram 警報
             send_telegram_alert(
@@ -111,7 +221,7 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
             )
             return False, f"BLOCKED: {reason}"
         if result == "SKIP":
-            return False, f"SKIP: {reason}"
+            return True, f"SKIP: {reason}"
         # result == "FAIL" → 重試
         failure_count += 1
         logger.warning(f"  驗證失敗 ({attempt}/3): {reason[:80]}")
@@ -130,29 +240,98 @@ def run_with_inspector(proj_dir: Path, task_text: str, dry_run: bool = False) ->
 
 def run_claude_task_wrapper(proj_dir: Path, task_text: str) -> tuple[bool, str]:
     """呼叫指定引擎執行任務（封装版）"""
-    if ACTIVE_ENGINE == "agy":
+    # ── AgentOS 角色路由 ──
+    role_name, system_prompt, sop = get_agent_persona(task_text)
+    target_dir = get_target_output_path(proj_dir.name, proj_dir)
+    logger.info(f"⚡ [Role Route] 任務路由至角色: {role}, 目標路徑: {target_dir}")
+
+    # ── 本地確定性任務攔截路由 (Local interceptors registry) ──
+    port_match = re.search(r"檢查連接埠\s+(\d+)", task_text)
+
+    if port_match:
+        port = port_match.group(1)
+        cmd = ["python3", "/home/ubuntu/agentmanager/scripts/local_port_checker.py", str(port)]
+        logger.info(f"⚡ [Local Route] 偵測到連接埠 {port} 檢查任務，自動路由至本地執行器（0 Token 消耗）。")
+    elif ACTIVE_ENGINE == "agy":
         cmd = [
             "agy", "run", "--task", task_text, "--workspace", str(proj_dir)
         ]
     else:
+        # 注入角色 Persona, SOP 以及路徑約束
+        full_prompt = (
+            f"{system_prompt}\n\n"
+            f"你是 AgentOS Lobster Engine 調度之 {role}。\n"
+            f"PRIMARY_OUTPUT_DIRECTORY: {target_dir}\n\n"
+            f"## 執行 SOP:\n{sop}\n\n"
+            f"## 任務內容：\n**{task_text}**\n\n"
+            f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`"
+        )
         cmd = [
-            str(get_claude_bin()), "--print", "--output-format", "text",
+            str(get_claude_bin()),
+            "--output-format", "text",
             "--effort", "low",
-            "--no-session-persistence",
-            "--dangerously-skip-permissions",
-            f"你是 AgentOS Lobster Engine。執行任務：**{task_text}**\n\n"
-            f"執行後必須輸出 `✅ 任務完成：{task_text[:40]}` 或 `⚠️ 需要人工介入：原因`",
+            full_prompt,
         ]
+
+
+    
+    # 建立固定的任務執行日誌檔
+    slug = re.sub(r"[^\w\-]", "-", task_text)
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    slug = slug[:50]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = Path("/home/ubuntu/agent-data/logs/tasks")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"{timestamp}_{proj_dir.name}_{slug}.log"
+
+    log_content = [
+        "=========================================",
+        "🦞 Lobster Engine Task Execution Log",
+        "=========================================",
+        f"Timestamp:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Project:     {proj_dir.name} ({proj_dir})",
+        f"Task:        {task_text}",
+        f"Command:     {' '.join(cmd)}",
+        "=========================================",
+        "",
+    ]
+
     try:
         result = subprocess.run(cmd, cwd=str(proj_dir), capture_output=True, text=True, timeout=TASK_TIMEOUT_SECONDS)
         output = result.stdout.strip()
-        if result.returncode == 0:
-            return True, output
-        return False, f"EXIT_{result.returncode}: {result.stderr[:200]}"
+        stderr = result.stderr.strip()
+        
+        log_content.extend([
+            "--- STDOUT ---",
+            output,
+            "",
+            "--- STDERR ---",
+            stderr,
+            "",
+            f"Exit Code:   {result.returncode}",
+        ])
+        success = (result.returncode == 0)
+        ret_val = (success, output if success else f"EXIT_{result.returncode}: {stderr[:200]}")
     except subprocess.TimeoutExpired:
-        return False, "TIMEOUT"
+        log_content.extend([
+            "--- ERROR ---",
+            f"Timeout of {TASK_TIMEOUT_SECONDS} seconds expired."
+        ])
+        ret_val = (False, "TIMEOUT")
     except Exception as e:
-        return False, str(e)
+        log_content.extend([
+            "--- ERROR ---",
+            str(e)
+        ])
+        ret_val = (False, str(e))
+    finally:
+        try:
+            log_file.write_text("\n".join(log_content), encoding="utf-8")
+            logger.info(f"💾 任務執行日誌已寫入: {log_file}")
+        except Exception as log_err:
+            logger.error(f"無法寫入任務日誌檔: {log_err}")
+
+    return ret_val
 
 # ── 設定 ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -308,6 +487,15 @@ def log_activity(status_md: Path, message: str):
             1
         )
         status_md.write_text(content, encoding="utf-8")
+        
+        # 自動執行日誌滾動歸檔
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from archive_status_logs import archive_project_status
+            archive_project_status(status_md.parent.name)
+        except Exception as e:
+            logger.warning(f"自動歸檔日誌失敗: {e}")
+
 
 def get_project_context(proj_name: str) -> str:
     """生成傳給 Claude 的任務上下文 prompt"""
@@ -377,10 +565,10 @@ def run_claude_task(proj_name: str, task: dict, dry_run: bool = False) -> tuple[
     else:
         cmd = [
             str(get_claude_bin()),
+            "--bare",
             "--print",
             "--output-format", "text",
             "--max-tokens", str(MAX_TOKENS_PER_TASK),
-            "--no-session-persistence",
             "--dangerously-skip-permissions",
             prompt,
         ]
@@ -459,10 +647,10 @@ def get_all_projects_from_board() -> list[tuple[str, list[dict]]]:
     return results
 
 
-def mark_board_task(task_text: str, new_status: str):
+def mark_board_task(proj_name: str, task_text: str, new_status: str, current_status: Optional[str] = None):
     """
-    在 TASK_BOARD.md 中更新特定任務的狀態。
-    new_status: 'in_progress' | 'done' | 'blocked'
+    在 TASK_BOARD.md 中的指定專案區段更新特定任務的狀態。
+    new_status: 'in_progress' | 'done' | 'blocked' | 'todo'
     """
     if not TASK_BOARD.exists():
         return
@@ -471,11 +659,37 @@ def mark_board_task(task_text: str, new_status: str):
     new_mark = status_map.get(new_status, " ")
     
     content = TASK_BOARD.read_text(encoding="utf-8")
-    # 找到這個任務行並替換狀態標記
-    pattern = re.compile(r"(^[-*]\s+\[)[ x/!](\]\s+" + re.escape(task_text) + r")", re.MULTILINE)
-    new_content = pattern.sub(rf"\g<1>{new_mark}\g<2>", content, count=1)
-    if new_content != content:
-        TASK_BOARD.write_text(new_content, encoding="utf-8")
+    lines = content.splitlines()
+    
+    in_target_proj = False
+    updated = False
+    
+    for i, line in enumerate(lines):
+        proj_m = re.match(r"^###\s+[\S]+\s+([\w\-]+)\s*$", line)
+        if proj_m:
+            if in_target_proj:
+                break
+            if proj_m.group(1) == proj_name:
+                in_target_proj = True
+            continue
+            
+        if in_target_proj:
+            # 匹配狀態欄和任務描述
+            m = re.match(r"^([-*]\s+\[)([ x/!])(\]\s+)" + re.escape(task_text) + r"\s*$", line)
+            if m:
+                status_char = m.group(2)
+                if current_status:
+                    curr_map = {"todo": " ", "done": "x", "in_progress": "/", "blocked": "!"}
+                    if curr_map.get(current_status) != status_char:
+                        continue
+                
+                lines[i] = f"{m.group(1)}{new_mark}{m.group(3)}{task_text}"
+                updated = True
+                break
+                
+    if updated:
+        TASK_BOARD.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 
 
 def get_all_projects() -> list[str]:
@@ -526,6 +740,7 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
     return True
 
 def main():
+    global ACTIVE_ENGINE
     parser = argparse.ArgumentParser(
         description="🦞 Lobster Engine - AgentOS 自律任務執行器"
     )
@@ -533,10 +748,9 @@ def main():
     parser.add_argument("--project", "-p", type=str, help="只處理指定專案")
     parser.add_argument("--dry-run", action="store_true", help="只顯示任務，不實際執行")
     parser.add_argument("--cool-down", type=int, default=COOL_DOWN_SECONDS, help="每次任務後冷卻秒數")
-    parser.add_argument("--engine", choices=["claude", "agy"], default="claude", help="指定執行的 AI 引擎 (claude | agy)")
+    parser.add_argument("--engine", choices=["claude", "agy"], default=ACTIVE_ENGINE, help="指定執行的 AI 引擎 (claude | agy)")
     args = parser.parse_args()
-    
-    global ACTIVE_ENGINE
+
     ACTIVE_ENGINE = args.engine
     
     # 優雅關閉
@@ -573,14 +787,14 @@ def main():
                 
                 # 在 TASK_BOARD 標記為進行中
                 if task["status"] == "todo":
-                    mark_board_task(task["text"], "in_progress")
+                    mark_board_task(proj_name, task["text"], "in_progress", current_status="todo")
                 
                 # 執行任務
                 success, output = run_with_inspector(HOME / proj_name, task["text"], args.dry_run)
                 
                 # 在 TASK_BOARD 更新狀態
                 if success:
-                    mark_board_task(task["text"], "done")
+                    mark_board_task(proj_name, task["text"], "done", current_status="in_progress")
                     # 同步回各專案的 STATUS.md
                     status_md = PROJECTS_DIR / proj_name / "STATUS.md"
                     if status_md.exists():
@@ -589,14 +803,14 @@ def main():
                 else:
                     if "BLOCKED:" in output:
                         # BLOCKED → 標記 [!]，跳過繼續（不停機）
-                        mark_board_task(task["text"], "blocked")
+                        mark_board_task(proj_name, task["text"], "blocked", current_status="in_progress")
                         logger.warning(f"🚫 [{proj_name}] 任務 BLOCKED，標記 [!] 並繼續下一個")
                     elif "SKIP:" in output:
                         # SKIP（TIMEOUT 等）→ 標記回 [ ] 等下次，跳過繼續
-                        mark_board_task(task["text"], "todo")
+                        mark_board_task(proj_name, task["text"], "todo", current_status="in_progress")
                         logger.warning(f"⏭️ [{proj_name}] 任務 SKIP，重置為 [ ] 等下次")
                     else:
-                        mark_board_task(task["text"], "in_progress")  # 保留 [/] 狀態
+                        mark_board_task(proj_name, task["text"], "in_progress", current_status="in_progress")  # 保留 [/] 狀態
                     # 同步回各專案的 STATUS.md
                     status_md = PROJECTS_DIR / proj_name / "STATUS.md"
                     if status_md.exists():

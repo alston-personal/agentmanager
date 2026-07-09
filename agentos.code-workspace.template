@@ -1,12 +1,24 @@
 {
   "folders": [
     {
+      "name": "🚀 AgentOS Core [Logic]",
+      "path": "."
+    },
+    {
       "name": "🎬 YouTube AI Manager",
       "path": "../youtube-ai-manager"
     },
     {
-      "name": "🚀 AgentOS Core [Logic]",
-      "path": "."
+      "name": "📊 AI Market Research OS",
+      "path": "../ai-market-research-os"
+    },
+    {
+      "name": "🏛️ 漢字基因庫",
+      "path": "../hanzi-gene-database"
+    },
+    {
+      "name": "🖥️ MetaShield Protocol",
+      "path": "../metashield-protocol"
     },
     {
       "name": "🎞️ Video Indexing Hub",
