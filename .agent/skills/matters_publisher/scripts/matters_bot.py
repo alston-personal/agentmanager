@@ -18,7 +18,7 @@ class MattersBot:
 
     def _update_headers(self, token):
         self.token = token
-        auth_value = f"{token}" if not token.startswith("Bearer") else token
+        auth_value = f"Bearer {token}" if not token.startswith("Bearer") else token
         self.headers["Authorization"] = auth_value
         # Simulate browser Cookie for certain GraphQL operations
         raw_token = token.replace("Bearer ", "", 1)
@@ -116,6 +116,11 @@ class MattersBot:
 
         # Convert Markdown to HTML
         content_html = markdown.markdown(content_md)
+        # Clean self-closing tags for Matters HTML parser
+        content_html = re.sub(r'<img\s+([^>]+?)\s*/?>', r'<img \1>', content_html)
+        content_html = re.sub(r'<hr\s*/?>', r'<hr>', content_html)
+        # Convert <p><img ...></p> to <figure class="image"><img ...></figure> for Matters renderer
+        content_html = re.sub(r'<p>\s*<img\s+([^>]+)>\s*</p>', r'<figure class="image"><img \1></figure>', content_html)
         print(f"DEBUG_HTML (Draft {draft_id}): {content_html[:200]}...")
         
         mutation = """

@@ -1,0 +1,18 @@
+apiVersion: agentos/v1
+kind: Project
+metadata:
+  id: if-tv-station
+  version: 0.1.0
+  labels:
+    domain: video
+spec:
+  modules:
+    - id: agentos-ai-gateway
+      version: ">=0.1.0,<0.2.0"
+      alias: ai
+    - id: video-quality-gate
+      version: ">=0.1.0,<0.2.0"
+      alias: quality
+  environments:
+    - development
+    - production

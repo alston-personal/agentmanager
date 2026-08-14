@@ -12,6 +12,7 @@ export interface Project {
   activityLog: ActivityLogEntry[];
   todoList: TodoItem[];
   blockers: string[];
+  likes?: number;
 }
 
 export interface ProjectSummary {
@@ -109,6 +110,9 @@ export interface User {
 
 export interface AuthToken {
   username: string;
+  provider?: string;
+  subject?: string;
+  avatarUrl?: string;
   exp: number;
 }
 

@@ -89,11 +89,18 @@ export default function ProjectCard({ project }: ProjectCardProps) {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-xs)' }}>
           <span>📅 {project.lastUpdated}</span>
-          {project.activityLog.length > 0 && (
-            <span>📝 {project.activityLog.length} logs</span>
-          )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {project.likes !== undefined && project.likes > 0 && (
+              <span style={{ color: '#ec4899', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                ❤️ {project.likes}
+              </span>
+            )}
+            {project.activityLog.length > 0 && (
+              <span>📝 {project.activityLog.length} logs</span>
+            )}
+          </div>
         </div>
       </div>
     </Link>

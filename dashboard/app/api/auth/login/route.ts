@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = generateToken(username);
+    const token = generateToken(username, { provider: 'password', subject: username });
 
     return NextResponse.json({ token, username });
   } catch (error) {

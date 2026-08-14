@@ -220,6 +220,15 @@ def run_pipeline_for_project(project: str, wish_text: str = "", dry_run: bool = 
                 if "<!-- LOG_START -->" in content:
                     content = content.replace("<!-- LOG_START -->", f"<!-- LOG_START -->\n{entry}", 1)
                     status_md.write_text(content, encoding="utf-8")
+                    
+                    # 自動執行日誌滾動歸檔
+                    try:
+                        sys.path.insert(0, str(Path(__file__).parent))
+                        from archive_status_logs import archive_project_status
+                        archive_project_status(project)
+                    except Exception as e:
+                        logger.warning(f"自動歸檔日誌失敗: {e}")
+
         else:
             update_board_task(task_text, "blocked")
             blocked.append((task_text, final_reason))
@@ -258,7 +267,6 @@ def run_pipeline_for_project(project: str, wish_text: str = "", dry_run: bool = 
 def run_with_architect(dry_run: bool = False) -> bool:
        """先執行 Architect 展開許願，再執行流水線"""
        import architect
-       return architect.main(dry_run=dry_run) == 0
        return architect.main(dry_run=dry_run) == 0
 
 

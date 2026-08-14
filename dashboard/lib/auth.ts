@@ -25,9 +25,10 @@ export async function verifyCredentials(username: string, password: string): Pro
 /**
  * Generate JWT token
  */
-export function generateToken(username: string): string {
+export function generateToken(username: string, identity: Pick<AuthToken, 'provider' | 'subject' | 'avatarUrl'> = {}): string {
   const payload: AuthToken = {
     username,
+    ...identity,
     exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
   };
 

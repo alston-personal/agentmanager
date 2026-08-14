@@ -1,74 +1,77 @@
 model_list:
 # 1. 旗艦主力大腦（當 Claude Code 要用 Sonnet 處理核心代碼時，其實是跑你的最強 Qwen）
+  # Claude Code's Anthropic stream parser rejects thinking blocks, so the
+  # Sonnet aliases are temporarily routed to a text-only backend until we can
+  # reintroduce a reasoning-capable model that emits plain text blocks.
   - model_name: claude-3-7-sonnet
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-3-7-sonnet-20250219
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-3-5-sonnet
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-3-5-sonnet-20241022
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-3-5-sonnet-20240620
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-sonnet-4-7
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-sonnet-4-8
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-sonnet-4-9
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-sonnet-5-0
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-3-8-sonnet
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
   - model_name: claude-3-9-sonnet
     litellm_params:
-      model: openai/olm-qwen3.6-35b-a3b-coding-mxfp8
+      model: openai/gemini-3.1-flash-lite
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
 
@@ -347,3 +350,8 @@ model_list:
       api_base: https://ai-api.myacademia.uk/v1
       api_key: "os.environ/AI_API_ACADEMIA_KEY"
       # 說明：MoE 架構 (A3B) / 🖼️ 多模態 (支援視覺) | 儲存 ~39 GB / 🧠 運行記憶體 ~46 GB
+  - model_name: claude-3-5-qwen35
+    litellm_params:
+      model: openai/delta-qwen35
+      api_base: http://10.135.245.234:4000/v1
+      api_key: "os.environ/REMOTE_LITELLM_API_KEY"

@@ -1,8 +1,42 @@
-# Restore AgentOS on a New Machine
+# Restore or Provision AgentOS Node
 
-This is the cold-start checklist for making AgentOS whole after cloning to another computer.
+This document defines how to provision an **AgentOS Runtime Node** on a new computer, as well as the Developer-Only source clone setup.
 
-## 1. Clone the Logic and Data Layers
+> [!IMPORTANT]
+> **Single Source of Truth Directive**: AgentOS logic source is maintained in ONE canonical repository (Oracle Cloud VM). Client execution nodes do NOT clone full source, but install and run the versioned `agentos-runtime` package.
+
+---
+
+## 1. Runtime Node Installation (Recommended / Client Mode)
+
+On any client machine, install the `agentos-runtime` package and run the node CLI:
+
+```bash
+# Install the runtime package
+pip install agentos-runtime
+
+# Inspect and verify local node status
+agentos-node status
+
+# Enroll with Central Control Plane
+agentos-node enroll --gateway=https://oracle-vm.internal
+
+# Run local diagnostic check
+agentos-node doctor
+```
+
+### Harvest Ecosystem State
+To collect local node handoff information and report to Central Control Plane:
+
+```bash
+python3 scripts/harvest_ecosystem.py
+```
+
+---
+
+## 2. Developer Source Setup (Developer-Only Mode)
+
+If you are developing or modifying the AgentOS canonical core itself on a primary workstation:
 
 ```bash
 cd ~
@@ -11,75 +45,31 @@ git clone https://github.com/alston-personal/my-agent-data.git agent-data
 cd agentmanager
 ```
 
-## 2. Configure the Local Environment
-
+### Configure Local Environment
 ```bash
 cp .env.example .env
 python3 scripts/setup_env.py
 ```
 
-At minimum, `.env` must point at the data repo:
-
+Ensure `.env` points to your local or central data layer:
 ```bash
 AGENT_DATA_ROOT=$HOME/agent-data
 AGENT_DATA_DIR=$AGENT_DATA_ROOT
 ```
 
-Set `AGENT_MODE=CORE` only on the machine that should run always-on services such as Telegram command intake and the watchdog.
+Set `AGENT_MODE=CORE` only on the machine that runs persistent services (such as Telegram Intake and Watchdog).
 
-## 3. Rebuild the Data Bridges
+---
+
+## 3. Data Bridges & System Health
 
 ```bash
 python3 scripts/bootstrap.py
-/bin/bash scripts/health_check.sh
-python3 scripts/run_workflow.py status
+agentos-node status
+python3 scripts/harvest_ecosystem.py
 ```
 
 Expected result:
-
-- `memory`, `logs`, `projects`, `projects_status`, `knowledge`, and `ARCHITECTURE.md` point into `agent-data`.
-- `python3 scripts/run_workflow.py status` lists projects from `agent_core.project_store`.
-- Projects should show `fresh` unless the data layer is intentionally old.
-
-## 4. Install Services
-
-```bash
-bash scripts/install_systemd_user.sh
-systemctl --user status os-pulse.service
-systemctl --user status agent-maintenance.timer
-systemctl --user status tg-commander.service
-systemctl --user status cat-ink-syncer.service
-```
-
-The installer writes portable units into `~/.config/systemd/user` using the current clone path and `AGENT_DATA_ROOT`. It starts `tg-commander.service` and `cat-ink-syncer.service` only when `AGENT_MODE=CORE`.
-
-On a client machine this step is optional. If you skip it, `health_check.sh` should report `os-pulse` as informational rather than a failure.
-
-## 5. Sync and Resume
-
-```bash
-/bin/bash scripts/sync_brain.sh
-python3 scripts/internalize.py
-python3 scripts/recall_chronicle.py
-```
-
-The active memory handoff is in:
-
-```text
-$AGENT_DATA_ROOT/memory/session_sync.md
-```
-
-The operational knowledge page is:
-
-```text
-$AGENT_DATA_ROOT/knowledge/system/AgentOS_Operational_State.md
-```
-
-## Recovery Commit
-
-The April 21, 2026 recovery checkpoint is split across both repositories:
-
-- Logic: `Restore AgentOS core recovery pipeline`, then `Improve project yaml initialization`
-- Data: `Sync AgentOS recovery memory state`, then `Add project yaml coverage for legacy projects`
-
-Pull both repos before diagnosing an old machine.
+- `memory`, `logs`, `projects`, `knowledge` point into `agent-data`.
+- `agentos-node status` reports node health as `HEALTHY`.
+- `harvest_ecosystem.py` generates a master handoff snapshot in `$AGENT_DATA_ROOT/handoffs/`.

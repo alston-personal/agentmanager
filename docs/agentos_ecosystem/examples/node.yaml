@@ -1,0 +1,26 @@
+apiVersion: agentos/v1
+kind: Node
+metadata:
+  id: node-gpu-01
+  version: 0.1.0
+  labels:
+    region: home-lab
+    trust: private
+spec:
+  roles:
+    - worker
+  runtimeVersion: 0.1.0
+  endpoints:
+    controlPlane: https://agentos-control.local
+  resources:
+    cpu: 16
+    memory: 64Gi
+    gpu:
+      vendor: nvidia
+      count: 1
+      memory: 24Gi
+  capabilities:
+    - name: ai.generate
+      versions: [0.1.0]
+      constraints:
+        gpu: true

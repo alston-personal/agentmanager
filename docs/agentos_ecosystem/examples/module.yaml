@@ -1,0 +1,26 @@
+apiVersion: agentos/v1
+kind: Module
+metadata:
+  id: agentos-ai-gateway
+  version: 0.1.0
+spec:
+  runtime: python
+  entrypoint: agentos_ai_gateway.server:app
+  artifact:
+    registry: oci://registry.agentos.local/modules/agentos-ai-gateway
+    digest: sha256:REPLACE_WITH_RELEASE_DIGEST
+  capabilities:
+    - name: ai.generate
+      version: 0.1.0
+      idempotent: true
+      inputSchema: https://agentos.local/schemas/ai-generate-input.json
+      outputSchema: https://agentos.local/schemas/ai-generate-output.json
+  requirements:
+    core: ">=0.1.0"
+    resources:
+      cpu: "1"
+      memory: 512Mi
+      gpu: false
+  permissions:
+    - secret:ai/provider-pool
+    - network:ai-providers

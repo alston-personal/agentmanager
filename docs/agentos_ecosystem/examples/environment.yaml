@@ -1,0 +1,14 @@
+apiVersion: agentos/v1
+kind: Environment
+metadata:
+  id: production
+  version: 0.1.0
+spec:
+  project: if-tv-station
+  lockfile: module.lock.yaml
+  nodeSelector:
+    trust: private
+  policies:
+    rollout: canary
+    requireArtifactDigest: true
+    maxTaskRetries: 2

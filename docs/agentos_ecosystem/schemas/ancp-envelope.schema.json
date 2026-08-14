@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.local/schemas/ancp-envelope.schema.json",
+  "title": "ANCP v0.1 envelope",
+  "type": "object",
+  "required": [
+    "protocol", "version", "messageType", "messageId", "taskId",
+    "idempotencyKey", "source", "occurredAt", "payload"
+  ],
+  "properties": {
+    "protocol": {"const": "ancp"},
+    "version": {"const": "0.1"},
+    "messageType": {
+      "enum": [
+        "node.register", "node.heartbeat", "module.install", "module.rollback",
+        "task.submit", "task.lease", "task.progress", "task.cancel", "task.result"
+      ]
+    },
+    "messageId": {"type": "string", "minLength": 1},
+    "taskId": {"type": "string", "minLength": 1},
+    "correlationId": {"type": "string"},
+    "idempotencyKey": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "target": {"type": "object"},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "deadline": {"type": "string", "format": "date-time"},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

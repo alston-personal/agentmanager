@@ -9,6 +9,10 @@
       "path": "../youtube-ai-manager"
     },
     {
+      "name": "🧰 AgentOS Free Resource Registry",
+      "path": "../agent-resource-registry"
+    },
+    {
       "name": "📊 AI Market Research OS",
       "path": "../ai-market-research-os"
     },

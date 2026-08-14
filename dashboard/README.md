@@ -11,6 +11,8 @@ GITHUB_REPO=alstonhuang/AI_Command_Center
 
 # Authentication
 JWT_SECRET=your-secret-key-change-in-production
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 ADMIN_USERNAME=admin
 # Leave empty to use default password 'admin' for development
 # For production, generate hash with: node -e "const bcrypt = require('bcryptjs'); bcrypt.hash('your-password', 10).then(console.log)"

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentos-runtime"
+version = "0.2.0"
+description = "Portable AgentOS Runtime Core and Distributed Node Client"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "AgentOS Core Team", email = "agentos@milkcat.org"}
+]
+keywords = ["agentos", "runtime", "node", "ancp", "ai-agent"]
+dependencies = [
+    "pyyaml>=6.0"
+]
+
+[project.scripts]
+agentos-node = "agentos_node.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["runtime_core*", "agentos_node*"]

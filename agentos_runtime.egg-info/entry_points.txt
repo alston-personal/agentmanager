@@ -1,0 +1,3 @@
+[console_scripts]
+agentos-node = agentos_node.cli:main
+

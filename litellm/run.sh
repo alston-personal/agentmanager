@@ -15,6 +15,14 @@ if [ -f "$REPO_ROOT/.env" ]; then
     export $(grep -v '^#' "$REPO_ROOT/.env" | xargs)
 fi
 
+# Keep old aliases aligned with the canonical Academia key/base URL.
+if [ -n "${AI_API_ACADEMIA_KEY:-}" ]; then
+    export AI_API_KEY="$AI_API_ACADEMIA_KEY"
+fi
+if [ -n "${AI_API_BASE_URL:-}" ]; then
+    export AI_BASE_URL="$AI_API_BASE_URL"
+fi
+
 echo "🕸️  [AgentOS LiteLLM] Starting service initialization..."
 
 # 1. Resolve LiteLLM executable
@@ -55,15 +63,27 @@ fi
 # 3. Start LiteLLM Proxy in background
 echo "🚀 [AgentOS LiteLLM] Starting LiteLLM Proxy on port 4000..."
 # Unset DEBUG because this environment exports DEBUG=release, which breaks LiteLLM's boolean flag parsing.
-nohup env -u DEBUG "$LITELLM_BIN" --config ./config.yml --port 4000 > ./litellm.log 2>&1 &
+setsid env -u DEBUG "$LITELLM_BIN" --config ./config.yml --port 4000 --max_tokens 256 > ./litellm.log 2>&1 < /dev/null &
+STARTED_PID=$!
 
 # 4. Verify Startup success
-sleep 2
-NEW_PID=$(pgrep -f "$LITELLM_BIN --config .*config.yml --port 4000" 2>/dev/null)
-if [ ! -z "$NEW_PID" ]; then
-    echo "✅ [AgentOS LiteLLM] Proxy started successfully! PID: $NEW_PID"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -fsS http://127.0.0.1:4000/v1/models >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+if curl -fsS http://127.0.0.1:4000/v1/models >/dev/null 2>&1; then
+    NEW_PID=$(pgrep -f "$LITELLM_BIN --config .*config.yml --port 4000" 2>/dev/null)
+    echo "✅ [AgentOS LiteLLM] Proxy started successfully! PID: ${NEW_PID:-$STARTED_PID}"
+    echo "📂 Logs are being written to: $LITELLM_DIR/litellm.log"
+elif ss -ltnp 2>/dev/null | grep -q ':4000'; then
+    NEW_PID=$(pgrep -f "$LITELLM_BIN --config .*config.yml --port 4000" 2>/dev/null)
+    echo "⚠️  [AgentOS LiteLLM] Proxy is listening on port 4000 but health check is still warming up. PID: ${NEW_PID:-$STARTED_PID}"
     echo "📂 Logs are being written to: $LITELLM_DIR/litellm.log"
 else
     echo "❌ [AgentOS LiteLLM] Failed to start Proxy. Please check $LITELLM_DIR/litellm.log for details."
+    tail -n 80 ./litellm.log 2>/dev/null || true
     exit 1
 fi

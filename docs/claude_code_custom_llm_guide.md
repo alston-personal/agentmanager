@@ -170,7 +170,7 @@ nohup litellm --config config.yml --port 4000 > litellm.log 2>&1 &
      "theme": "dark",
      "env": {
        "ANTHROPIC_BASE_URL": "http://localhost:4000",
-       "ANTHROPIC_API_KEY": "sk-dummy",
+       "ANTHROPIC_API_KEY": "sk-ant-dummy",
        "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"
      }
    }

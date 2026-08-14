@@ -177,7 +177,6 @@ def expand_wish_with_claude(project: str, wish_text: str) -> Optional[str]:
         str(CLAUDE_BIN),
         "--print",
         "--output-format", "text",
-        "--max-tokens", "4000",
         "--no-session-persistence",
         prompt,
     ]
@@ -324,11 +323,13 @@ def process_wish(wish: dict, dry_run: bool = False) -> bool:
     return True
 
 
-def main():
+def main(dry_run: bool = False):
     parser = argparse.ArgumentParser(description="🧙 Architect Agent - 許願展開器")
     parser.add_argument("--dry-run", action="store_true", help="只顯示，不實際寫入")
     parser.add_argument("--wish", type=str, help="直接指定許願文字（格式：[專案] 需求）")
     args = parser.parse_args()
+    if dry_run:
+        args.dry_run = True
 
     ensure_wishes_file()
 

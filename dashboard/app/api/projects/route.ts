@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 import { getAllProjects, parseDashboard } from '@/lib/markdown-parser';
+import { AGENT_DATA_ROOT } from '@/lib/data-root';
 
 type ParsedMemorySystem = {
   name?: string;
@@ -27,8 +29,24 @@ export async function GET() {
     const { services, ideas } = parseDashboard();
     const agentosStatus = getAgentOSStatus();
 
+    // Read likes
+    let likes: Record<string, number> = {};
+    try {
+      const likesPath = path.join(AGENT_DATA_ROOT, 'likes.json');
+      if (fs.existsSync(likesPath)) {
+        likes = JSON.parse(fs.readFileSync(likesPath, 'utf-8'));
+      }
+    } catch (e) {
+      console.error('Failed to read likes in projects api:', e);
+    }
+
+    const projectsWithLikes = projects.map(p => ({
+      ...p,
+      likes: likes[p.name] || 0,
+    }));
+
     return NextResponse.json({
-      projects,
+      projects: projectsWithLikes,
       services,
       ideas,
       agentosStatus,

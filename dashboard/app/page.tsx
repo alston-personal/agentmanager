@@ -101,6 +101,13 @@ export default function Home() {
             >
               🧬 Skill Promotion
             </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => router.push('/components')}
+              style={{ padding: '0.75rem 1.5rem', borderRadius: '2rem', background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)', border: 'none' }}
+            >
+              🧩 UI 元件庫
+            </button>
             <button className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', borderRadius: '2rem', display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)', background: 'linear-gradient(90deg, #f59e0b, #ef4444)' }}>
               🚀 Start Session
             </button>
