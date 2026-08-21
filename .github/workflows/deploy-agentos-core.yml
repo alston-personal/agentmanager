@@ -1,6 +1,16 @@
 name: Deploy Distributed AgentOS Core
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-agentos-core.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-agentos-core.yml"
   workflow_dispatch:
     inputs:
       deploy_ref:
@@ -16,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: distributed-agentos-cloud-core
@@ -30,11 +41,30 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      DEPLOY_REF: ${{ inputs.deploy_ref }}
-      VERIFY_PUBLIC_URL: ${{ inputs.verify_public_url }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
+      VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
 
     steps:
+      - name: Report bootstrap run started to PR 2
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          body=$(cat <<EOF
+          <!-- agentos-core-bootstrap-start -->
+          Distributed AgentOS Core bootstrap run **STARTED**.
+
+          - main workflow commit: `${GITHUB_SHA}`
+          - deployment performed at this stage: `false`
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          )
+          gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"
+
       - name: Validate deploy connection configuration
+        id: config
         shell: bash
         run: |
           set -euo pipefail
@@ -59,11 +89,13 @@ jobs:
           echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
 
       - name: Start SSH agent
+        id: ssh_agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
       - name: Preflight Oracle Core
+        id: preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -86,7 +118,15 @@ jobs:
           echo "preflight_sha=$(git rev-parse HEAD)"
           REMOTE
 
+      - name: Bootstrap preflight summary
+        if: ${{ github.event_name != 'workflow_dispatch' && success() }}
+        run: |
+          echo "Oracle deployment channel preflight succeeded."
+          echo "No deployment was performed by this bootstrap preflight run."
+
       - name: Deploy and verify local Control Plane
+        id: deploy_core
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -151,7 +191,8 @@ jobs:
           REMOTE
 
       - name: Verify public Control Plane route
-        if: ${{ inputs.verify_public_url }}
+        id: public_verify
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url }}
         shell: bash
         run: |
           set -euo pipefail
@@ -171,10 +212,42 @@ jobs:
           echo
           REMOTE
 
+      - name: Report bootstrap result to PR 2
+        if: ${{ always() && github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          SSH_AGENT_OUTCOME: ${{ steps.ssh_agent.outcome }}
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$PREFLIGHT_OUTCOME" = "success" ]; then
+            verdict="SUCCESS"
+          else
+            verdict="FAILED"
+          fi
+          body=$(cat <<EOF
+          <!-- agentos-core-bootstrap -->
+          Distributed AgentOS Core bootstrap preflight: **${verdict}**
+
+          - main workflow commit: `${GITHUB_SHA}`
+          - config: `${CONFIG_OUTCOME}`
+          - ssh-agent: `${SSH_AGENT_OUTCOME}`
+          - Oracle preflight: `${PREFLIGHT_OUTCOME}`
+          - deployment performed: `false`
+          - next deploy ref: `feature/distributed-agentos-runtime`
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          )
+          gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"
+
       - name: Deployment summary
         if: always()
         shell: bash
         run: |
+          echo "Event: ${{ github.event_name }}"
           echo "Target host: ${DEPLOY_HOST:-unresolved}"
           echo "Target ref: ${DEPLOY_REF}"
           echo "Stable checkout: ${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
