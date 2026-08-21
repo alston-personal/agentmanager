@@ -15,13 +15,34 @@ To ensure permanent memory and easy migration, AgentOS uses a **Logic/Data Separ
 ## 🌐 Distributed AgentOS
 AgentOS is evolving beyond a full Runtime installed on every device. The distributed architecture uses **Canonical IR** as the shared continuation contract and treats local devices, web agents, GitHub Actions, and future cloud workers as capability-specific runtimes.
 
-- `runtime_core/canonical_ir.py` — portable Canonical IR + lineage/digest
+- `runtime_core/canonical_ir.py` — portable Canonical IR + lineage/digest/hop tracking
 - `runtime_core/remote_runtime.py` — capability-gated Remote Runtime contract
-- `scripts/distributed_worker.py` — remote worker entrypoint
-- `.github/workflows/distributed-agentos-worker.yml` — first GitHub Actions Worker adapter
-- `docs/DISTRIBUTED_AGENTOS_RUNTIME.md` — architecture, security boundaries, and migration path
+- `agent_core/distributed_control_plane.py` — task lease/result/continuation semantics
+- `agent_core/runtime_dispatcher.py` — local-first routing, durable push targets, retry/dedupe, GitHub/webhook wake-up
+- `agent_core/dispatching_gateway.py` — closes submit/complete → dispatch loop
+- `agentos_node/control_plane_client.py` + `agentos_node/remote_worker.py` — lightweight runtime without full AgentOS Host
+- `agentos_node/web_agent_adapter.py` — trusted Web Agent request/result contract
+- `.github/workflows/distributed-agentos-worker.yml` — GitHub Actions Runtime Worker
+- `docs/DISTRIBUTED_AGENTOS_RUNTIME.md` — overall architecture and migration path
+- `docs/DISTRIBUTED_CONTROL_PLANE.md` — Control Plane protocol
+- `docs/WEB_AGENT_ADAPTER.md` — browser/web-agent boundary
+- `docs/RUNTIME_DISPATCHER.md` — active routing and wake-up policy
 
 The design rule is: **Canonical IR is the continuity boundary; runtime location is an implementation detail.** GitHub Actions is a worker, not the durable AgentOS brain.
+
+The active continuation path is now:
+
+```text
+Agent/Runtime A
+  → verified Runtime Result
+  → trusted Continuation IR
+  → Control Plane enqueue
+  → Runtime Dispatcher
+  → local lease OR active GitHub/web-agent wake-up
+  → Agent/Runtime B
+```
+
+Push target metadata is durable in the Control Plane database; transport secrets remain outside the registry. Pending tasks are swept after Core restart and failed wake-ups use bounded retry backoff.
 
 ---
 
@@ -69,6 +90,8 @@ If you are setting up this system on a new machine:
 - `scripts/install_systemd_user.sh`: Installs portable user-level systemd units for a cloned machine.
 - `scripts/install_services.py`: Platform-aware service installer entrypoint.
 - `scripts/platform_runtime.py`: Platform-aware runtime selector and diagnostics.
+- `scripts/distributed_gateway.py`: Distributed Control Plane + active Runtime Dispatcher gateway.
+- `scripts/distributed_remote_worker.py`: Single-shot lightweight remote Runtime Worker.
 - `scripts/recall_chronicle.py`: Pulls the latest project history from the data layer.
 - `scripts/reconcile_workspace.py`: Synchronizes remote project status with the local workspace.
 
