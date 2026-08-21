@@ -12,6 +12,8 @@ on:
       - "agent_core/control_plane.py"
       - "agent_core/distributed_control_plane.py"
       - "agent_core/distributed_gateway.py"
+      - "agent_core/runtime_dispatcher.py"
+      - "agent_core/dispatching_gateway.py"
       - "agentos_node/control_plane_client.py"
       - "agentos_node/remote_worker.py"
       - "agentos_node/web_agent_adapter.py"
@@ -25,6 +27,8 @@ on:
       - "tests/test_distributed_gateway.py"
       - "tests/test_distributed_http_client.py"
       - "tests/test_web_agent_adapter.py"
+      - "tests/test_runtime_dispatcher.py"
+      - "tests/test_dispatching_gateway.py"
       - ".github/workflows/distributed-agentos-*.yml"
 
 permissions:
@@ -54,3 +58,5 @@ jobs:
           tests/test_distributed_gateway.py
           tests/test_distributed_http_client.py
           tests/test_web_agent_adapter.py
+          tests/test_runtime_dispatcher.py
+          tests/test_dispatching_gateway.py
