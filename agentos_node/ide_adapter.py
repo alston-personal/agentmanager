@@ -7,7 +7,6 @@ large or sensitive working trees into Canonical IR.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -18,6 +17,7 @@ from runtime_core.canonical_ir import CanonicalIR
 
 
 DEFAULT_CAPABILITY = "agent.reason"
+PROJECT_MARKER_SCHEMA = "agentos.project/v1"
 MAX_CHANGED_FILES = 100
 DEFAULT_MAX_DIFF_CHARS = 32_000
 
@@ -60,21 +60,53 @@ def resolve_workspace(path: str | Path | None = None) -> Path:
     return Path(root).resolve() if root else candidate
 
 
+def _read_project_marker(workspace: Path) -> dict[str, Any] | None:
+    marker = workspace / ".agentos" / "project.json"
+    if not marker.exists():
+        return None
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def infer_project_id(workspace: Path, explicit: str | None = None) -> str:
     if explicit:
         return explicit
     env_value = os.environ.get("AGENTOS_PROJECT_ID")
     if env_value:
         return env_value
-    marker = workspace / ".agentos" / "project.json"
-    if marker.exists():
-        try:
-            payload = json.loads(marker.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            payload = None
-        if isinstance(payload, dict) and isinstance(payload.get("project_id"), str) and payload["project_id"].strip():
-            return payload["project_id"].strip()
+    payload = _read_project_marker(workspace)
+    if isinstance(payload, dict) and isinstance(payload.get("project_id"), str) and payload["project_id"].strip():
+        return payload["project_id"].strip()
     return workspace.name
+
+
+def write_project_marker(
+    project_id: str | None = None,
+    *,
+    workspace: str | Path | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    root = resolve_workspace(workspace)
+    resolved_id = str(project_id or root.name).strip()
+    if not resolved_id:
+        raise ValueError("project_id is required")
+    marker_dir = root / ".agentos"
+    marker = marker_dir / "project.json"
+    current = _read_project_marker(root)
+    if current is not None and not force:
+        current_id = str(current.get("project_id") or "").strip()
+        if current_id == resolved_id:
+            return {"projectId": resolved_id, "path": ".agentos/project.json", "created": False}
+        raise ValueError(
+            f"project marker already exists for {current_id or 'unknown project'}; use --force to replace it"
+        )
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"schema": PROJECT_MARKER_SCHEMA, "project_id": resolved_id}
+    marker.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"projectId": resolved_id, "path": ".agentos/project.json", "created": True}
 
 
 def capture_workspace(
