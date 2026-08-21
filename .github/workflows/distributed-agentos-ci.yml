@@ -27,6 +27,7 @@ permissions:
 jobs:
   distributed-runtime-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,5 +64,7 @@ jobs:
           grep -q '127.0.0.1:8765/health' .github/workflows/deploy-agentos-core.yml
           grep -q 'isolated rollback' .github/workflows/deploy-agentos-core.yml
 
-      - name: Run Distributed AgentOS tests
-        run: python -m pytest -q tests
+      - name: Run deterministic AgentOS tests
+        # test_platform_runtime.py launches a real recurring background runner and
+        # belongs to the explicit integration/side-effect suite, not deterministic CI.
+        run: python -m pytest -q tests --ignore=tests/test_platform_runtime.py
