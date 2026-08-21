@@ -1,0 +1,92 @@
+name: Inspect AgentOS Provider Readiness
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-provider-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect provider credentials and compatible models
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$CONFIG_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          set -a
+          # shellcheck disable=SC1090
+          source "$CONFIG_ROOT/.env"
+          # shellcheck disable=SC1090
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+
+          for key in OPENAI_API_KEY GEMINI_API_KEY AI_API_ACADEMIA_KEY CHATGPT_RELAY_TOKEN; do
+            if [ -n "${!key:-}" ]; then
+              echo "$key=present"
+            else
+              echo "$key=missing"
+            fi
+          done
+          if [ -n "${AI_API_BASE_URL:-}" ]; then
+            echo "AI_API_BASE_URL=$AI_API_BASE_URL"
+          else
+            echo "AI_API_BASE_URL=missing"
+          fi
+
+          if [ -n "${AI_API_BASE_URL:-}" ] && [ -n "${AI_API_ACADEMIA_KEY:-}" ]; then
+            base="${AI_API_BASE_URL%/}"
+            code="$(curl -sS -o /tmp/agentos-models.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${AI_API_ACADEMIA_KEY}" \
+              -H 'Accept: application/json' "$base/models" || true)"
+            echo "openai_compatible_models_http=$code"
+            if [ "$code" = "200" ]; then
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+          try:
+              obj = json.loads(Path('/tmp/agentos-models.json').read_text())
+          except Exception:
+              print('compatible_models=parse_failed')
+              raise SystemExit(0)
+          data = obj.get('data') if isinstance(obj, dict) else None
+          ids = []
+          if isinstance(data, list):
+              for item in data:
+                  if isinstance(item, dict) and item.get('id'):
+                      ids.append(str(item['id']))
+          print('compatible_models=' + ','.join(ids[:30]))
+          PY
+            fi
+          fi
+          REMOTE
