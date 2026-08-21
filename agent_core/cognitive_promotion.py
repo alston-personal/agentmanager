@@ -3,6 +3,8 @@
 Promotion increases persistence and propagation, so evidence and governance
 requirements increase monotonically from working -> project -> cross-project.
 The policy never deletes contradictory evidence and never commits ProjectState.
+Promotion itself is an immutable knowledge-version transition: the promoted
+object links back to and supersedes the lower-trust source candidate.
 """
 
 from __future__ import annotations
@@ -116,4 +118,17 @@ class CognitivePromotionPolicy:
         if not decision.allowed:
             raise PermissionError("knowledge promotion denied: " + "; ".join(decision.reasons))
         status = "candidate" if target_level == "working" else "validated"
-        return replace(candidate, abstraction_level=target_level, status=status)
+
+        # No-op promotion stays identical; a trust/persistence transition creates
+        # a new content-addressed knowledge version linked to the old one.
+        if candidate.abstraction_level == target_level and candidate.status == status:
+            return candidate
+
+        old_id = candidate.knowledge_id
+        return replace(
+            candidate,
+            abstraction_level=target_level,
+            status=status,
+            derived_from=tuple(dict.fromkeys([*candidate.derived_from, old_id])),
+            supersedes=tuple(dict.fromkeys([*candidate.supersedes, old_id])),
+        )
