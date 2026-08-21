@@ -15,6 +15,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gateway", default=os.getenv("AGENTOS_CONTROL_PLANE_URL"))
     parser.add_argument("--runtime-id", default=os.getenv("AGENTOS_RUNTIME_ID"))
+    parser.add_argument("--task-id", default=os.getenv("AGENTOS_TASK_ID"))
     parser.add_argument("--lease-seconds", type=int, default=60)
     parser.add_argument("--allow-insecure-http", action="store_true")
     args = parser.parse_args()
@@ -29,7 +30,12 @@ def main() -> int:
         token=os.getenv("AGENTOS_CONTROL_PLANE_TOKEN"),
         allow_insecure_http=args.allow_insecure_http,
     )
-    outcome = run_once(client, args.runtime_id, lease_seconds=args.lease_seconds)
+    outcome = run_once(
+        client,
+        args.runtime_id,
+        lease_seconds=args.lease_seconds,
+        task_id=args.task_id,
+    )
     print(json.dumps(outcome, ensure_ascii=False, sort_keys=True))
     return 0 if outcome["status"] in {"idle", "succeeded"} else 2
 
