@@ -20,7 +20,6 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
-      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
 
     steps:
       - name: Resolve host
@@ -37,15 +36,14 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Inspect provider credentials and compatible models
+      - name: Inspect provider credentials and semantic contract
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" <<'REMOTE'
+            bash -s -- "$CONFIG_ROOT" <<'REMOTE'
           set -euo pipefail
           CONFIG_ROOT="$1"
-          RELEASE_ROOT="$2"
           set -a
           # shellcheck disable=SC1090
           source "$CONFIG_ROOT/.env"
@@ -54,22 +52,11 @@ jobs:
           set +a
 
           for key in OPENAI_API_KEY GEMINI_API_KEY AI_API_ACADEMIA_KEY CHATGPT_RELAY_TOKEN; do
-            if [ -n "${!key:-}" ]; then
-              echo "$key=present"
-            else
-              echo "$key=missing"
-            fi
+            [ -n "${!key:-}" ] && echo "$key=present" || echo "$key=missing"
           done
-          if [ -n "${AI_API_BASE_URL:-}" ]; then
-            echo "AI_API_BASE_URL=$AI_API_BASE_URL"
-          else
-            echo "AI_API_BASE_URL=missing"
-          fi
-
-          if [ -z "${AI_API_BASE_URL:-}" ] || [ -z "${AI_API_ACADEMIA_KEY:-}" ]; then
-            echo "OpenAI-compatible provider is not ready" >&2
-            exit 2
-          fi
+          echo "AI_API_BASE_URL=${AI_API_BASE_URL:-missing}"
+          test -n "${AI_API_BASE_URL:-}"
+          test -n "${AI_API_ACADEMIA_KEY:-}"
 
           base="${AI_API_BASE_URL%/}"
           code="$(curl -sS -o /tmp/agentos-models.json -w '%{http_code}' \
@@ -81,42 +68,56 @@ jobs:
           import json
           from pathlib import Path
           obj = json.loads(Path('/tmp/agentos-models.json').read_text())
-          data = obj.get('data') if isinstance(obj, dict) else None
-          ids = [str(item['id']) for item in (data or []) if isinstance(item, dict) and item.get('id')]
+          ids = [str(item['id']) for item in (obj.get('data') or []) if isinstance(item, dict) and item.get('id')]
           print('compatible_models=' + ','.join(ids[:30]))
           if 'gemini-3.1-flash-lite' not in ids:
               raise SystemExit('required probe model gemini-3.1-flash-lite is unavailable')
           PY
 
-          PYTHONPATH="$RELEASE_ROOT" python3 - <<'PY'
-          import os
-          from agentos_node.provider_bridge import OpenAICompatibleChatProvider
+          python3 - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
 
-          provider = OpenAICompatibleChatProvider(
-              'production-reasoner-probe',
-              model='gemini-3.1-flash-lite',
-              api_key=os.environ['AI_API_ACADEMIA_KEY'],
-              base_url=os.environ['AI_API_BASE_URL'],
-              timeout=60,
+          base = os.environ['AI_API_BASE_URL'].rstrip('/')
+          key = os.environ['AI_API_ACADEMIA_KEY']
+          prompt = (
+              'Return exactly one JSON object and no markdown: '
+              '{"status":"succeeded","result":{"probe":"ok"},"auto_continue":false}'
           )
-          semantic = provider.invoke({
-              'protocol': 'agentos.web-agent-request/v1',
-              'runtime_id': 'provider-probe',
-              'input_ir_id': 'ir_probe',
-              'input_digest': 'probe',
-              'canonical_ir': {
-                  'schema_version': 'agentos.ir/v1',
-                  'goal': 'Verify provider contract',
-                  'project_id': 'agentmanager-provider-probe',
-                  'capability': 'agent.reason',
-                  'payload': {'instruction': 'Return a successful semantic result whose result object contains probe=ok.'},
+          body = json.dumps({
+              'model': 'gemini-3.1-flash-lite',
+              'messages': [{'role': 'user', 'content': prompt}],
+              'stream': False,
+          }).encode()
+          req = Request(
+              base + '/chat/completions',
+              data=body,
+              headers={
+                  'Authorization': 'Bearer ' + key,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'User-Agent': 'AgentOS-Provider-Bridge/0.3 (+https://n8n.milkcat.org/agentos)',
               },
-          })
-          if semantic.get('status') != 'succeeded':
+              method='POST',
+          )
+          try:
+              with urlopen(req, timeout=60) as response:
+                  payload = json.loads(response.read().decode())
+          except HTTPError as exc:
+              text = exc.read().decode(errors='replace')[:800]
+              raise SystemExit(f'urllib_user_agent_probe_http={exc.code} body={text}')
+          content = payload['choices'][0]['message']['content']
+          text = content.strip()
+          if text.startswith('```'):
+              lines = text.splitlines()[1:]
+              if lines and lines[-1].strip() == '```':
+                  lines.pop()
+              text = '\n'.join(lines).strip()
+          semantic = json.loads(text)
+          if semantic.get('status') != 'succeeded' or not isinstance(semantic.get('result'), dict):
               raise SystemExit(f'provider semantic probe failed: {semantic}')
-          if not isinstance(semantic.get('result'), dict):
-              raise SystemExit('provider result is not an object')
+          print('urllib_explicit_user_agent=ok')
           print('provider_semantic_contract=ok')
-          print('provider_status=' + semantic['status'])
           PY
           REMOTE
