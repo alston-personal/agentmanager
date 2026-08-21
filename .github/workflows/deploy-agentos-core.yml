@@ -40,7 +40,7 @@ jobs:
       RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
       DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
       VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
-      BOOTSTRAP_DEPLOY: "1"
+      BOOTSTRAP_DEPLOY: "0"
 
     steps:
       - name: Validate deploy connection configuration
