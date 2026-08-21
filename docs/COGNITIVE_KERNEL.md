@@ -4,7 +4,7 @@ Status: experimental design and executable foundation on `feature/state-kernel-v
 
 ## Purpose
 
-The Cognitive Kernel is not a replacement for an LLM, vector database, browser bridge, memory product, or workflow engine. It owns the semantics that let accumulated experience become progressively more useful without allowing inference to silently become truth or authority.
+The Cognitive Kernel is not a replacement for an LLM, vector database, browser bridge, memory product, workflow engine, or graph database. It owns the semantics that let accumulated experience become progressively more useful without allowing inference to silently become truth or authority.
 
 The target loop is:
 
@@ -13,6 +13,7 @@ Distributed raw experience
   -> ExperienceEvent IR
   -> governed Experience Compiler
   -> structured knowledge candidates
+  -> entity resolution + relational memory
   -> indexing
   -> near retrieval + far structural analogy
   -> bounded synthesis envelope
@@ -21,8 +22,10 @@ Distributed raw experience
   -> evidence + contradiction review
   -> Working -> Project -> Cross-project promotion
   -> hierarchical compaction / meta-synthesis
+  -> adaptive memory decay / reinforcement / revival
+  -> global relational reconciliation
   -> dependency-aware re-synthesis when new input arrives
-  -> new candidate knowledge
+  -> new candidate knowledge / relation claims
 ```
 
 This is **cognitive compounding**: prior synthesis becomes reusable material for later synthesis, while provenance and governance remain stronger as persistence and propagation increase.
@@ -35,9 +38,10 @@ The Cognitive Kernel can make increasingly powerful associations. That never gra
 
 - Retrieval results are disposable context, not truth.
 - Synthesized output is a candidate, not durable memory.
+- Relation edges are claims, not canonical truth.
 - Durable memory is not canonical ProjectState.
 - Cross-project promotion requires stronger evidence and governance than project-local memory.
-- Re-synthesis planning cannot trigger external actions.
+- Re-synthesis/reconciliation planning cannot trigger external actions.
 - Project HEAD remains exclusively owned by the State Kernel.
 
 ## Experience ingestion
@@ -89,6 +93,41 @@ Ephemeral StateView    = what one execution is allowed to see now
 ```
 
 Promotion is immutable. When a candidate moves to a higher persistence/propagation layer, the promoted content-addressed knowledge object links to and supersedes the lower-trust version instead of mutating it in place.
+
+## Relational memory / project knowledge graph
+
+Knowing that two artifacts exist is not enough if the system cannot tell that they are related.
+
+AgentOS therefore adds portable `agentos.entity/v1` and `agentos.relation/v1` primitives plus a backend-neutral relation graph. Entities carry canonical names, aliases and refs; relation claims carry predicate, provenance evidence, confidence and candidate/validated/superseded/rejected status.
+
+This directly closes cases such as:
+
+```text
+"同源雙模小說"
+ -> alias resolution: project:zeus-writer
+ -> contains: AI 奇幻編年史
+ -> fictionalized_from: AgentOS Grand Chronicle
+```
+
+Alias resolution is discovery, not authority. Relation claims are not ProjectState. Superseded/rejected edges remain auditable and are excluded from ordinary traversal by default.
+
+`CognitiveReconciliationPlanner` performs bounded read-only graph inspection and emits review work for orphan entities, ungrounded relations, unvalidated cross-project links and stale derived artifacts. A newer source can therefore cause a derivative to be reconsidered without silently rewriting it.
+
+See `docs/RELATIONAL_MEMORY.md`.
+
+## Adaptive memory lifecycle
+
+Forgetting is attention decay, not destructive deletion.
+
+Cognitive memories may move reversibly through:
+
+```text
+Hot -> Warm -> Cool -> Cold -> Archive
+```
+
+Time, usage, dependency, historical value and supersession influence retrieval priority. Strong relevance or explicit recall can revive a Cold/Archive memory. Lifecycle activation affects attention/retrieval weighting only; it does not alter confidence, validation status, evidence or provenance.
+
+See `docs/ADAPTIVE_MEMORY_LIFECYCLE.md`.
 
 ## Indexing architecture
 
@@ -172,11 +211,12 @@ The dependency graph tracks which synthesis records depend on which knowledge ID
 - a source is superseded;
 - new contradictory evidence targets a source;
 - retrieval exposes a newly relevant association;
-- a new cross-domain structural analogy enriches an earlier synthesis.
+- a new cross-domain structural analogy enriches an earlier synthesis;
+- global reconciliation finds a stale derivative or missing relationship.
 
 Priority is highest for contradiction/invalidation and lower for enrichment.
 
-A `ResynthesisRequest` means only **reconsider this knowledge**. It does not mutate memory, ProjectState, or the external world.
+A `ResynthesisRequest` means only **reconsider this knowledge**. It does not mutate memory, ProjectState, source artifacts, derived works, or the external world.
 
 ## Hierarchical compaction and meta-synthesis
 
@@ -218,6 +258,7 @@ Superseded/rejected knowledge stays auditable and is excluded from normal retrie
 Commodity components can already provide:
 
 - embeddings/vector search;
+- graph/search storage;
 - chat history;
 - shared memory storage;
 - agent protocols;
@@ -231,15 +272,18 @@ The differentiated layer is the lifecycle:
 ```text
 raw distributed experience
  -> governed structured knowledge
+ -> entity/relation resolution
  -> indexed association
  -> cross-domain analogy
  -> re-synthesis
  -> evidence-aware promotion
  -> hierarchical compaction
+ -> adaptive forgetting/revival
+ -> global relational reconciliation
  -> dependency-driven reconsideration
 ```
 
-with explicit provenance, contradiction retention, supersession, confidence, and governance at every persistence boundary.
+with explicit provenance, contradiction retention, supersession, confidence, relations, temporal evolution and governance at every persistence boundary.
 
 ## Safety posture
 
