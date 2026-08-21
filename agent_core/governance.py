@@ -2,9 +2,10 @@
 
 Prime law: capability must never scale faster than governance.
 
-This module deliberately stays deterministic. Models and runtimes may describe
-or propose a capability, but promotion is decided from explicit risk dimensions
-and controls rather than model confidence or prose.
+Governance strength is monotonic, but controls are effect-aware. A powerful
+cognitive capability must gain stronger cognitive governance; it should not be
+forced to satisfy unrelated external-side-effect controls merely because its
+knowledge can propagate widely.
 """
 
 from __future__ import annotations
@@ -18,47 +19,45 @@ class CapabilityLevel(IntEnum):
     OBSERVE = 0
     SYNTHESIZE = 1
     PROPOSE = 2
-    COMMIT_STATE = 3
-    EXTERNAL_REVERSIBLE = 4
-    EXTERNAL_HIGH_IMPACT = 5
-    AUTONOMOUS_CROSS_PROJECT = 6
+    COMMIT = 3
+    ACT = 4
+    HIGH_IMPACT = 5
+    AUTONOMOUS = 6
 
 
-# Minimum deterministic controls required before a capability may operate at a
-# given level. Higher levels inherit every lower-level requirement.
 _LEVEL_CONTROLS: dict[CapabilityLevel, frozenset[str]] = {
     CapabilityLevel.OBSERVE: frozenset({"authentication", "provenance"}),
     CapabilityLevel.SYNTHESIZE: frozenset(
         {"source_tracking", "confidence_state", "contradiction_retention"}
     ),
-    CapabilityLevel.PROPOSE: frozenset(
-        {"typed_proposal", "validation", "reviewability"}
+    CapabilityLevel.PROPOSE: frozenset({"typed_proposal", "validation", "reviewability"}),
+    CapabilityLevel.COMMIT: frozenset({"audit", "scoped_principal"}),
+    CapabilityLevel.ACT: frozenset({"bounded_scope", "receipt"}),
+    CapabilityLevel.HIGH_IMPACT: frozenset({"least_privilege", "circuit_breaker"}),
+    CapabilityLevel.AUTONOMOUS: frozenset(
+        {"continuous_policy", "budget_limit", "anomaly_detection", "human_override", "revocation"}
     ),
-    CapabilityLevel.COMMIT_STATE: frozenset(
-        {"scoped_principal", "cas_conflict_check", "audit", "rollback"}
+}
+
+_EFFECT_CONTROLS: dict[str, frozenset[str]] = {
+    "canonical_state": frozenset({"cas_conflict_check", "rollback", "audit"}),
+    "durable_memory": frozenset(
+        {"source_tracking", "confidence_state", "contradiction_retention", "revocation"}
     ),
-    CapabilityLevel.EXTERNAL_REVERSIBLE: frozenset(
-        {"idempotency", "receipt", "bounded_scope", "compensation"}
+    "cross_project": frozenset({"independent_verification", "revocation"}),
+    "external_reversible": frozenset({"idempotency", "receipt", "compensation", "bounded_scope"}),
+    "external_high_impact": frozenset(
+        {"approval_gate", "least_privilege", "circuit_breaker", "receipt"}
     ),
-    CapabilityLevel.EXTERNAL_HIGH_IMPACT: frozenset(
-        {"approval_gate", "circuit_breaker", "least_privilege"}
-    ),
-    CapabilityLevel.AUTONOMOUS_CROSS_PROJECT: frozenset(
-        {
-            "continuous_policy",
-            "budget_limit",
-            "anomaly_detection",
-            "revocation",
-            "human_override",
-            "independent_verification",
-        }
+    "autonomous": frozenset(
+        {"continuous_policy", "budget_limit", "anomaly_detection", "human_override", "revocation"}
     ),
 }
 
 
 @dataclass(frozen=True)
 class RiskDimensions:
-    """Normalized 0..6 risk signals used to derive a minimum capability level."""
+    """Normalized 0..6 signals; each raises relevant controls, not unrelated ones."""
 
     authority: int = 0
     blast_radius: int = 0
@@ -76,7 +75,37 @@ class RiskDimensions:
 
     @property
     def required_level(self) -> CapabilityLevel:
-        return CapabilityLevel(max(self.__dict__.values(), default=0))
+        # Authority/autonomy determine minimum operating strength. Other risk
+        # dimensions add controls without pretending to be capability classes.
+        return CapabilityLevel(max(self.authority, self.autonomy))
+
+    def extra_controls(self) -> frozenset[str]:
+        controls: set[str] = set()
+        if self.blast_radius >= 3:
+            controls.add("bounded_scope")
+        if self.blast_radius >= 5:
+            controls.add("circuit_breaker")
+        if self.reversibility >= 4:
+            controls.add("compensation")
+        if self.autonomy >= 3:
+            controls.add("continuous_policy")
+        if self.autonomy >= 5:
+            controls.update({"human_override", "revocation"})
+        if self.persistence >= 3:
+            controls.add("audit")
+        if self.persistence >= 4:
+            controls.add("revocation")
+        if self.propagation >= 3:
+            controls.add("contradiction_retention")
+        if self.propagation >= 4:
+            controls.add("independent_verification")
+        if self.opacity >= 3:
+            controls.add("explanation")
+        if self.uncertainty >= 3:
+            controls.add("confidence_state")
+        if self.uncertainty >= 5:
+            controls.add("independent_verification")
+        return frozenset(controls)
 
 
 @dataclass(frozen=True)
@@ -84,6 +113,7 @@ class CapabilityGovernanceProfile:
     capability: str
     declared_level: CapabilityLevel
     risks: RiskDimensions
+    effects: frozenset[str] = field(default_factory=frozenset)
     controls: frozenset[str] = field(default_factory=frozenset)
     experimental: bool = True
 
@@ -94,16 +124,22 @@ class CapabilityGovernanceProfile:
         declared_level: CapabilityLevel | int,
         *,
         risks: RiskDimensions | None = None,
+        effects: Iterable[str] = (),
         controls: Iterable[str] = (),
         experimental: bool = True,
     ) -> "CapabilityGovernanceProfile":
         capability = str(capability or "").strip()
         if not capability:
             raise ValueError("capability is required")
+        normalized_effects = frozenset(str(item).strip() for item in effects if str(item).strip())
+        unknown = normalized_effects - _EFFECT_CONTROLS.keys()
+        if unknown:
+            raise ValueError(f"unknown governance effects: {', '.join(sorted(unknown))}")
         return cls(
             capability=capability,
             declared_level=CapabilityLevel(declared_level),
             risks=risks or RiskDimensions(),
+            effects=normalized_effects,
             controls=frozenset(str(item).strip() for item in controls if str(item).strip()),
             experimental=bool(experimental),
         )
@@ -121,7 +157,7 @@ class GovernanceDecision:
     reason: str
 
 
-def required_controls(level: CapabilityLevel | int) -> frozenset[str]:
+def level_controls(level: CapabilityLevel | int) -> frozenset[str]:
     level = CapabilityLevel(level)
     controls: set[str] = set()
     for candidate in CapabilityLevel:
@@ -130,13 +166,24 @@ def required_controls(level: CapabilityLevel | int) -> frozenset[str]:
     return frozenset(controls)
 
 
-class GovernanceGate:
-    """Fail-closed promotion checker.
+def required_controls(
+    level: CapabilityLevel | int,
+    *,
+    effects: Iterable[str] = (),
+    risks: RiskDimensions | None = None,
+) -> frozenset[str]:
+    controls = set(level_controls(level))
+    for effect in effects:
+        if effect not in _EFFECT_CONTROLS:
+            raise ValueError(f"unknown governance effect: {effect}")
+        controls.update(_EFFECT_CONTROLS[effect])
+    if risks is not None:
+        controls.update(risks.extra_controls())
+    return frozenset(controls)
 
-    Missing governance never increases authority. When requested operation is
-    above synthesis/proposal and controls are incomplete, callers are told to
-    degrade to proposal/read-only rather than execute the higher authority.
-    """
+
+class GovernanceGate:
+    """Deterministic, fail-closed promotion checker."""
 
     def evaluate(
         self,
@@ -148,8 +195,10 @@ class GovernanceGate:
             profile.declared_level if requested_level is None else requested_level
         )
         required_level = max(profile.declared_level, profile.risks.required_level)
-        effective_required = max(required_level, requested)
-        missing = tuple(sorted(required_controls(effective_required) - profile.controls))
+        controls_needed = required_controls(
+            max(required_level, requested), effects=profile.effects, risks=profile.risks
+        )
+        missing = tuple(sorted(controls_needed - profile.controls))
 
         if requested < required_level:
             return GovernanceDecision(
@@ -160,16 +209,12 @@ class GovernanceGate:
                 effective_level=CapabilityLevel.OBSERVE,
                 missing_controls=missing,
                 degraded_to="read_only",
-                reason="declared/requested authority is lower than the capability risk profile",
+                reason="requested authority is below the capability risk requirement",
             )
 
         if missing:
-            degraded = "proposal" if requested >= CapabilityLevel.COMMIT_STATE else "read_only"
-            effective = (
-                CapabilityLevel.PROPOSE
-                if degraded == "proposal"
-                else CapabilityLevel.OBSERVE
-            )
+            degraded = "proposal" if requested >= CapabilityLevel.COMMIT else "read_only"
+            effective = CapabilityLevel.PROPOSE if degraded == "proposal" else CapabilityLevel.OBSERVE
             return GovernanceDecision(
                 allowed=False,
                 capability=profile.capability,
