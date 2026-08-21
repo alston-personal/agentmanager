@@ -24,6 +24,7 @@ from .web_agent_adapter import RESPONSE_PROTOCOL, WebAgentAdapter
 
 DISPATCH_PROTOCOL = "agentos.runtime-dispatch/v1"
 PROVIDER_REQUEST_PROTOCOL = "agentos.provider-request/v1"
+PROVIDER_USER_AGENT = "AgentOS-Provider-Bridge/0.3"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -114,6 +115,11 @@ class _HTTPProvider(ProviderAdapter):
         self.opener = opener
 
     def _send(self, request: Request) -> dict[str, Any]:
+        # urllib's default Python-urllib User-Agent is rejected by some legitimate
+        # provider front doors (for example Cloudflare browser-signature rules).
+        # Identify this runtime explicitly and consistently across every provider.
+        if not request.has_header("User-agent"):
+            request.add_header("User-Agent", PROVIDER_USER_AGENT)
         try:
             with self.opener(request, timeout=self.timeout) as response:
                 raw = response.read().decode("utf-8")
