@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -22,6 +23,7 @@ from .project_state import read_project_state
 
 
 MIRROR_PROTOCOL = "agentos.continuity-mirror/v1"
+SAFE_PROJECT_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 class ContinuityMirrorError(RuntimeError):
@@ -72,24 +74,33 @@ class GitHubContinuityMirror:
         branch: str = "main",
         root: str = "projects",
         api_base: str = "https://api.github.com",
-        timeout: float = 20.0,
+        timeout: float = 5.0,
         opener: Callable[..., Any] = urlopen,
     ) -> None:
         if repository.count("/") != 1:
             raise ValueError("continuity mirror repository must be owner/name")
         if not token:
             raise ValueError("continuity mirror GitHub token is required")
+        cleaned_root = root.strip("/") or "projects"
+        if ".." in cleaned_root.split("/") or "\\" in cleaned_root:
+            raise ValueError("continuity mirror root contains an unsafe path segment")
         self.repository = repository
         self.token = token
         self.branch = branch
-        self.root = root.strip("/") or "projects"
+        self.root = cleaned_root
         self.api_base = api_base.rstrip("/")
         self.timeout = timeout
         self.opener = opener
 
     @staticmethod
     def _project_slug(project_id: str) -> str:
-        return quote(project_id, safe="-_.")
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            raise ValueError("project_id is required")
+        if SAFE_PROJECT_ID.fullmatch(project_id):
+            return project_id
+        encoded = base64.urlsafe_b64encode(project_id.encode("utf-8")).decode("ascii").rstrip("=")
+        return f"~{encoded}"
 
     def path_for(self, project_id: str) -> str:
         return f"{self.root}/{self._project_slug(project_id)}/continuity/latest.json"
@@ -99,16 +110,17 @@ class GitHubContinuityMirror:
             with self.opener(request, timeout=self.timeout) as response:
                 return int(getattr(response, "status", 200)), response.read()
         except HTTPError as exc:
-            if exc.code == 404:
-                return 404, b""
-            raw = exc.read().decode("utf-8", errors="replace")
-            raise ContinuityMirrorError(f"GitHub continuity mirror HTTP {exc.code}: {raw}") from exc
+            raw = exc.read()
+            if exc.code in {404, 409}:
+                return exc.code, raw
+            text = raw.decode("utf-8", errors="replace")
+            raise ContinuityMirrorError(f"GitHub continuity mirror HTTP {exc.code}: {text}") from exc
         except URLError as exc:
             raise ContinuityMirrorError(f"GitHub continuity mirror unavailable: {exc.reason}") from exc
 
     def _contents_url(self, path: str) -> str:
         owner, repo = self.repository.split("/", 1)
-        encoded_path = quote(path, safe="/%")
+        encoded_path = quote(path, safe="/")
         return (
             f"{self.api_base}/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
             f"/contents/{encoded_path}"
@@ -122,55 +134,62 @@ class GitHubContinuityMirror:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
+    def _read_existing(self, url: str) -> tuple[str | None, bytes | None]:
+        get_url = f"{url}?ref={quote(self.branch, safe='')}"
+        status, existing_raw = self._request(Request(get_url, headers=self._headers(), method="GET"))
+        if status == 404:
+            return None, None
+        try:
+            existing = json.loads(existing_raw.decode("utf-8"))
+            existing_sha = existing.get("sha")
+            encoded = existing.get("content") or ""
+            decoded = base64.b64decode(encoded.replace("\n", "")) if encoded else b""
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            raise ContinuityMirrorError("invalid GitHub contents response for continuity mirror") from exc
+        return existing_sha, decoded
+
     def publish(self, state: dict[str, Any]) -> dict[str, Any]:
         snapshot = build_continuity_snapshot(state)
         project_id = snapshot["project_id"]
         path = self.path_for(project_id)
         raw = (json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
         url = self._contents_url(path)
-        get_url = f"{url}?ref={quote(self.branch, safe='')}"
-        status, existing_raw = self._request(Request(get_url, headers=self._headers(), method="GET"))
 
-        existing_sha = None
-        if status != 404 and existing_raw:
-            try:
-                existing = json.loads(existing_raw.decode("utf-8"))
-                existing_sha = existing.get("sha")
-                encoded = existing.get("content") or ""
-                decoded = base64.b64decode(encoded.replace("\n", "")) if encoded else b""
-            except (json.JSONDecodeError, ValueError, TypeError) as exc:
-                raise ContinuityMirrorError("invalid GitHub contents response for continuity mirror") from exc
+        for attempt in range(2):
+            existing_sha, decoded = self._read_existing(url)
             if decoded == raw:
                 return {"status": "unchanged", "path": path, "projectId": project_id}
 
-        payload: dict[str, Any] = {
-            "message": f"continuity: update {project_id} checkpoint",
-            "content": base64.b64encode(raw).decode("ascii"),
-            "branch": self.branch,
-        }
-        if existing_sha:
-            payload["sha"] = existing_sha
-
-        put = Request(
-            url,
-            data=json.dumps(payload, sort_keys=True).encode("utf-8"),
-            headers=self._headers(),
-            method="PUT",
-        )
-        put_status, response_raw = self._request(put)
-        if put_status not in {200, 201}:
-            raise ContinuityMirrorError(f"GitHub continuity mirror returned HTTP {put_status}")
-        try:
-            response = json.loads(response_raw.decode("utf-8")) if response_raw else {}
-        except json.JSONDecodeError:
-            response = {}
-        commit = response.get("commit") if isinstance(response, dict) else None
-        return {
-            "status": "published",
-            "path": path,
-            "projectId": project_id,
-            "commit": commit.get("sha") if isinstance(commit, dict) else None,
-        }
+            payload: dict[str, Any] = {
+                "message": f"continuity: update {project_id} checkpoint",
+                "content": base64.b64encode(raw).decode("ascii"),
+                "branch": self.branch,
+            }
+            if existing_sha:
+                payload["sha"] = existing_sha
+            put = Request(
+                url,
+                data=json.dumps(payload, sort_keys=True).encode("utf-8"),
+                headers=self._headers(),
+                method="PUT",
+            )
+            put_status, response_raw = self._request(put)
+            if put_status == 409 and attempt == 0:
+                continue
+            if put_status not in {200, 201}:
+                raise ContinuityMirrorError(f"GitHub continuity mirror returned HTTP {put_status}")
+            try:
+                response = json.loads(response_raw.decode("utf-8")) if response_raw else {}
+            except json.JSONDecodeError:
+                response = {}
+            commit = response.get("commit") if isinstance(response, dict) else None
+            return {
+                "status": "published",
+                "path": path,
+                "projectId": project_id,
+                "commit": commit.get("sha") if isinstance(commit, dict) else None,
+            }
+        raise ContinuityMirrorError("GitHub continuity mirror update conflicted repeatedly")
 
 
 class MirroringDispatchingGatewayService(DispatchingGatewayService):
