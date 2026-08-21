@@ -6,6 +6,11 @@ on:
       - main
     paths:
       - ".github/workflows/deploy-agentos-core.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-agentos-core.yml"
   workflow_dispatch:
     inputs:
       deploy_ref:
@@ -113,11 +118,11 @@ jobs:
           echo "preflight_sha=$(git rev-parse HEAD)"
           REMOTE
 
-      - name: Push bootstrap preflight summary
-        if: ${{ github.event_name == 'push' && success() }}
+      - name: Bootstrap preflight summary
+        if: ${{ github.event_name != 'workflow_dispatch' && success() }}
         run: |
           echo "Oracle deployment channel preflight succeeded."
-          echo "No deployment was performed by this push-triggered bootstrap run."
+          echo "No deployment was performed by this bootstrap preflight run."
 
       - name: Deploy and verify local Control Plane
         id: deploy_core
