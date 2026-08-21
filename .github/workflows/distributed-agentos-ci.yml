@@ -29,6 +29,7 @@ on:
       - "scripts/distributed_remote_worker.py"
       - "scripts/web_agent_adapter.py"
       - "scripts/provider_bridge.py"
+      - "scripts/install_systemd_user.sh"
       - "tests/test_control_plane.py"
       - "tests/test_distributed_runtime.py"
       - "tests/test_distributed_control_plane.py"
@@ -71,6 +72,14 @@ jobs:
         run: |
           agentos --help >/dev/null
           agentos-node --help >/dev/null
+
+      - name: Validate Core service installer
+        run: |
+          bash -n scripts/install_systemd_user.sh
+          grep -q 'agentos-control-plane.service' scripts/install_systemd_user.sh
+          grep -q 'agentos-provider-bridge.service' scripts/install_systemd_user.sh
+          grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_systemd_user.sh
+          grep -q 'EnvironmentFile=-%h/.agentos.secrets' scripts/install_systemd_user.sh
 
       - name: Run Distributed AgentOS tests
         run: >-
