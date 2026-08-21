@@ -37,9 +37,15 @@ if [ -z "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ]; then
 fi
 
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"
+PYTHON_BIN="${AGENTOS_DISTRIBUTED_PYTHON:-}"
+if [ -z "$PYTHON_BIN" ] && [ -x "$LOGIC_ROOT/.venv/bin/python3" ]; then
+  PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"
+fi
+if [ -z "$PYTHON_BIN" ]; then
+  PYTHON_BIN="$(command -v python3)"
+fi
 if [ ! -x "$PYTHON_BIN" ]; then
-  echo "Missing deployment virtualenv Python: $PYTHON_BIN" >&2
+  echo "No usable Python interpreter found for Distributed AgentOS" >&2
   exit 2
 fi
 
@@ -55,6 +61,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$LOGIC_ROOT
 Environment=AGENT_PROJECT_ROOT=$LOGIC_ROOT
+Environment=PYTHONPATH=$LOGIC_ROOT
 EnvironmentFile=-$ENV_FILE
 EnvironmentFile=-$DIST_ENV_FILE
 EnvironmentFile=-$SECRETS_FILE
@@ -78,6 +85,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$LOGIC_ROOT
 Environment=AGENT_PROJECT_ROOT=$LOGIC_ROOT
+Environment=PYTHONPATH=$LOGIC_ROOT
 EnvironmentFile=-$ENV_FILE
 EnvironmentFile=-$DIST_ENV_FILE
 EnvironmentFile=-$SECRETS_FILE
@@ -112,6 +120,7 @@ else
 fi
 
 echo "Installed isolated Distributed AgentOS services from $LOGIC_ROOT"
+echo "Python: $PYTHON_BIN"
 echo "Base config: $ENV_FILE"
 echo "Distributed config: $DIST_ENV_FILE"
 echo "Data logs: $DATA_ROOT/logs"
