@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/distributed-agentos-runtime
     paths:
       - "runtime_core/**"
       - "agent_core/control_plane.py"
