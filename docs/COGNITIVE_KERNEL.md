@@ -9,7 +9,9 @@ The Cognitive Kernel is not a replacement for an LLM, vector database, browser b
 The target loop is:
 
 ```text
-Experience
+Distributed raw experience
+  -> ExperienceEvent IR
+  -> governed Experience Compiler
   -> structured knowledge candidates
   -> indexing
   -> near retrieval + far structural analogy
@@ -18,6 +20,7 @@ Experience
   -> governed knowledge candidate
   -> evidence + contradiction review
   -> Working -> Project -> Cross-project promotion
+  -> hierarchical compaction / meta-synthesis
   -> dependency-aware re-synthesis when new input arrives
   -> new candidate knowledge
 ```
@@ -36,6 +39,31 @@ The Cognitive Kernel can make increasingly powerful associations. That never gra
 - Cross-project promotion requires stronger evidence and governance than project-local memory.
 - Re-synthesis planning cannot trigger external actions.
 - Project HEAD remains exclusively owned by the State Kernel.
+
+## Experience ingestion
+
+Vendor integrations do not feed raw proprietary session objects directly into Cognitive Kernel logic.
+
+Each source adapter normalizes into `agentos.experience/v1`:
+
+```text
+project_id
+source_kind
+source_ref
+actor_kind
+event_kind
+content
+occurred_at
+trust_class
+conversation_ref
+parent_event_ids
+artifact_refs
+metadata
+```
+
+Examples of source kinds include ChatGPT web, Gemini web, Codex/IDE, GitHub, Oracle runtimes, A2A agents, MCP tools, and imported historical conversations.
+
+The Experience Compiler may use any extractor/model to classify observations, decisions, hypotheses, rejected ideas, constraints, failures, lessons, and open questions. AgentOS then forces every extracted item back to Working/candidate status with exact supporting ExperienceEvent IDs and source hashes.
 
 ## Three memory layers remain
 
@@ -59,6 +87,8 @@ Canonical ProjectState = what is operationally true now
 Execution Journal      = what happened
 Ephemeral StateView    = what one execution is allowed to see now
 ```
+
+Promotion is immutable. When a candidate moves to a higher persistence/propagation layer, the promoted content-addressed knowledge object links to and supersedes the lower-trust version instead of mutating it in place.
 
 ## Indexing architecture
 
@@ -148,6 +178,26 @@ Priority is highest for contradiction/invalidation and lower for enrichment.
 
 A `ResynthesisRequest` means only **reconsider this knowledge**. It does not mutate memory, ProjectState, or the external world.
 
+## Hierarchical compaction and meta-synthesis
+
+Already-synthesized knowledge can be synthesized again. The system does not need to reread all raw conversations every time.
+
+```text
+ExperienceEvent
+  -> Working candidate
+  -> Project knowledge
+  -> project synthesis
+  -> higher-order project synthesis
+  -> Cross-project knowledge
+  -> cross-project meta-synthesis
+```
+
+Every higher-order synthesis keeps lineage through `derived_from` / `supersedes`. The lineage resolver can walk those links back to original `exp_*` events or durable external evidence anchors.
+
+Compaction is therefore lossy for prompt size but **not lossy for provenance**.
+
+Cross-project meta-synthesis is planned only when validated cross-project candidates from multiple projects converge on shared concepts. It still produces a candidate requiring the normal promotion/governance path.
+
 ## Promotion semantics
 
 Increasing persistence/propagation increases governance.
@@ -185,6 +235,7 @@ raw distributed experience
  -> cross-domain analogy
  -> re-synthesis
  -> evidence-aware promotion
+ -> hierarchical compaction
  -> dependency-driven reconsideration
 ```
 
