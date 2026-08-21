@@ -10,11 +10,8 @@ import threading
 from agent_core.dispatching_gateway import DispatchingGatewayService
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayServer
-from agent_core.runtime_dispatcher import (
-    GitHubActionsDispatchTransport,
-    RuntimeDispatcher,
-    RuntimeTarget,
-)
+from agent_core.push_dispatch import ExactGitHubActionsDispatchTransport, ResilientRuntimeDispatcher
+from agent_core.runtime_dispatcher import RuntimeTarget, WebhookDispatchTransport
 
 
 def _csv(value: str | None) -> tuple[str, ...]:
@@ -25,21 +22,21 @@ def _build_dispatcher(
     store: DistributedControlPlane,
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
-) -> RuntimeDispatcher:
-    dispatcher = RuntimeDispatcher(
+) -> ResilientRuntimeDispatcher:
+    dispatcher = ResilientRuntimeDispatcher(
         store,
         dispatch_timeout_seconds=args.dispatch_timeout_seconds,
         dispatch_retry_seconds=args.dispatch_retry_seconds,
     )
 
-    token = os.getenv("AGENTOS_GITHUB_TOKEN")
-    if token:
-        dispatcher.register_transport(GitHubActionsDispatchTransport(token))
+    github_token = os.getenv("AGENTOS_GITHUB_TOKEN")
+    if github_token:
+        dispatcher.register_transport(ExactGitHubActionsDispatchTransport(github_token))
 
     if args.github_repository:
         capabilities = _csv(args.github_capabilities)
         missing = []
-        if not token:
+        if not github_token:
             missing.append("AGENTOS_GITHUB_TOKEN")
         if not args.public_url:
             missing.append("--public-url / AGENTOS_CONTROL_PLANE_PUBLIC_URL")
@@ -58,6 +55,32 @@ def _build_dispatcher(
                     "repository": args.github_repository,
                     "workflow": args.github_workflow,
                     "ref": args.github_ref,
+                    "control_plane_url": args.public_url,
+                },
+            )
+        )
+
+    if args.provider_bridge_endpoint:
+        capabilities = _csv(args.provider_capabilities)
+        missing = []
+        if not args.public_url:
+            missing.append("--public-url / AGENTOS_CONTROL_PLANE_PUBLIC_URL")
+        if not capabilities:
+            missing.append("--provider-capabilities / AGENTOS_PROVIDER_CAPABILITIES")
+        if missing:
+            parser.error("Provider Bridge dispatcher requires: " + ", ".join(missing))
+
+        bridge_token = os.getenv("AGENTOS_PROVIDER_BRIDGE_TOKEN")
+        token_map = {args.provider_runtime_id: bridge_token} if bridge_token else {}
+        dispatcher.register_transport(WebhookDispatchTransport(tokens=token_map))
+        dispatcher.register_target(
+            RuntimeTarget(
+                target_id=args.provider_runtime_id,
+                kind="webhook",
+                capabilities=capabilities,
+                priority=args.provider_priority,
+                config={
+                    "endpoint": args.provider_bridge_endpoint,
                     "control_plane_url": args.public_url,
                 },
             )
@@ -104,6 +127,26 @@ def main() -> int:
         type=int,
         default=int(os.getenv("AGENTOS_GITHUB_PRIORITY", "100")),
     )
+
+    parser.add_argument(
+        "--provider-bridge-endpoint",
+        default=os.getenv("AGENTOS_PROVIDER_BRIDGE_ENDPOINT"),
+        help="HTTPS /v1/runtime-dispatch endpoint for the Agent Provider Bridge",
+    )
+    parser.add_argument(
+        "--provider-runtime-id",
+        default=os.getenv("AGENTOS_PROVIDER_RUNTIME_ID", "provider-bridge"),
+    )
+    parser.add_argument(
+        "--provider-capabilities",
+        default=os.getenv("AGENTOS_PROVIDER_CAPABILITIES"),
+        help="Comma-separated capabilities routed to the Provider Bridge",
+    )
+    parser.add_argument(
+        "--provider-priority",
+        type=int,
+        default=int(os.getenv("AGENTOS_PROVIDER_PRIORITY", "50")),
+    )
     args = parser.parse_args()
 
     token = os.getenv("AGENTOS_CONTROL_PLANE_TOKEN")
@@ -113,7 +156,6 @@ def main() -> int:
     server = DistributedGatewayServer((args.host, args.port), service, token=token)
 
     stop_event = threading.Event()
-    sweep_thread = None
     if dispatcher.targets and args.dispatch_interval_seconds > 0:
         sweep_thread = threading.Thread(
             target=dispatcher.run_sweep_loop,
