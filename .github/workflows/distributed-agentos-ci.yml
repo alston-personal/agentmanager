@@ -31,6 +31,7 @@ on:
       - "agentos_node/control_plane_client.py"
       - "agentos_node/remote_worker.py"
       - "agentos_node/web_agent_adapter.py"
+      - "agentos_node/ai_browser_bridge.py"
       - "agentos_node/provider_bridge.py"
       - "agentos_node/provider_bridge_server.py"
       - "agentos_node/ide_adapter.py"
@@ -52,6 +53,7 @@ on:
       - "tests/test_distributed_gateway.py"
       - "tests/test_distributed_http_client.py"
       - "tests/test_web_agent_adapter.py"
+      - "tests/test_ai_browser_bridge.py"
       - "tests/test_runtime_dispatcher.py"
       - "tests/test_dispatching_gateway.py"
       - "tests/test_push_task_lease.py"
@@ -132,6 +134,7 @@ jobs:
           tests/test_distributed_gateway.py
           tests/test_distributed_http_client.py
           tests/test_web_agent_adapter.py
+          tests/test_ai_browser_bridge.py
           tests/test_runtime_dispatcher.py
           tests/test_dispatching_gateway.py
           tests/test_push_task_lease.py
