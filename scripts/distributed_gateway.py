@@ -7,6 +7,7 @@ import argparse
 import os
 import threading
 
+from agent_core.continuity_mirror import GitHubContinuityMirror, MirroringDispatchingGatewayService
 from agent_core.dispatching_gateway import DispatchingGatewayService
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayServer
@@ -88,6 +89,27 @@ def _build_dispatcher(
     return dispatcher
 
 
+def _build_service(
+    store: DistributedControlPlane,
+    dispatcher: ResilientRuntimeDispatcher,
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+):
+    if not args.continuity_mirror_repository:
+        return DispatchingGatewayService(store, dispatcher)
+
+    mirror_token = os.getenv("AGENTOS_CONTINUITY_MIRROR_TOKEN")
+    if not mirror_token:
+        parser.error("continuity mirror requires AGENTOS_CONTINUITY_MIRROR_TOKEN")
+    mirror = GitHubContinuityMirror(
+        args.continuity_mirror_repository,
+        mirror_token,
+        branch=args.continuity_mirror_branch,
+        root=args.continuity_mirror_root,
+    )
+    return MirroringDispatchingGatewayService(store, dispatcher, mirror)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default=os.getenv("AGENTOS_CONTROL_PLANE_HOST", "127.0.0.1"))
@@ -147,12 +169,26 @@ def main() -> int:
         type=int,
         default=int(os.getenv("AGENTOS_PROVIDER_PRIORITY", "50")),
     )
+
+    parser.add_argument(
+        "--continuity-mirror-repository",
+        default=os.getenv("AGENTOS_CONTINUITY_MIRROR_REPOSITORY"),
+        help="Private owner/name GitHub Data Layer repo used for connector-readable continuity checkpoints",
+    )
+    parser.add_argument(
+        "--continuity-mirror-branch",
+        default=os.getenv("AGENTOS_CONTINUITY_MIRROR_BRANCH", "main"),
+    )
+    parser.add_argument(
+        "--continuity-mirror-root",
+        default=os.getenv("AGENTOS_CONTINUITY_MIRROR_ROOT", "projects"),
+    )
     args = parser.parse_args()
 
     token = os.getenv("AGENTOS_CONTROL_PLANE_TOKEN")
     store = DistributedControlPlane(args.db) if args.db else DistributedControlPlane()
     dispatcher = _build_dispatcher(store, args, parser)
-    service = DispatchingGatewayService(store, dispatcher)
+    service = _build_service(store, dispatcher, args, parser)
     server = DistributedGatewayServer((args.host, args.port), service, token=token)
 
     stop_event = threading.Event()
@@ -170,9 +206,10 @@ def main() -> int:
         sweep_thread.start()
 
     target_count = len(dispatcher.targets)
+    mirror_mode = "enabled" if args.continuity_mirror_repository else "disabled"
     print(
         f"Distributed AgentOS gateway listening on http://{args.host}:{args.port} "
-        f"(active-dispatch targets={target_count})"
+        f"(active-dispatch targets={target_count}, continuity-mirror={mirror_mode})"
     )
     try:
         server.serve_forever()
