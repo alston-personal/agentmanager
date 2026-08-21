@@ -3,6 +3,7 @@ from pathlib import Path
 
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayServer, DistributedGatewayService
+from agent_core.runtime_dispatcher import RuntimeDispatcher, RuntimeTarget
 from agentos_node.control_plane_client import ControlPlaneClient
 from runtime_core.canonical_ir import CanonicalIR
 
@@ -29,8 +30,17 @@ def test_exact_lease_does_not_steal_another_targeted_task(tmp_path: Path):
     assert store.lease_ir_task(second["taskId"], "push-runtime") is None
 
 
-def test_expired_exact_lease_preserves_push_target(tmp_path: Path):
+def test_expired_exact_lease_preserves_registered_push_target(tmp_path: Path):
     store = DistributedControlPlane(tmp_path / "expiry.sqlite3")
+    dispatcher = RuntimeDispatcher(store)
+    dispatcher.register_target(
+        RuntimeTarget(
+            target_id="provider-bridge",
+            kind="webhook",
+            capabilities=("agentos.ir.validate",),
+            config={"endpoint": "https://bridge.example.test/v1/runtime-dispatch"},
+        )
+    )
     task = store.submit_ir(_ir(1), target_node_id="provider-bridge")
     lease = store.lease_ir_task(task["taskId"], "provider-bridge", lease_seconds=60)
     assert lease is not None
