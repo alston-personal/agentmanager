@@ -55,6 +55,7 @@ on:
       - "tests/test_state_kernel_v2.py"
       - "tests/test_migrate_v1_state_kernel.py"
       - "tests/test_governance.py"
+      - "tests/test_cognitive_ir.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
       - "tests/test_continuity_mirror.py"
@@ -125,6 +126,7 @@ jobs:
           tests/test_state_kernel_v2.py
           tests/test_migrate_v1_state_kernel.py
           tests/test_governance.py
+          tests/test_cognitive_ir.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
           tests/test_continuity_mirror.py
