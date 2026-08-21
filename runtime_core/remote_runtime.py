@@ -40,6 +40,27 @@ class RemoteRuntimeResult:
             "continuation_ir": self.continuation_ir.to_dict() if self.continuation_ir else None,
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RemoteRuntimeResult":
+        required = ("status", "runtime_id", "input_ir_id", "input_digest")
+        missing = [key for key in required if not data.get(key)]
+        if missing:
+            raise ValueError(f"missing runtime result fields: {', '.join(missing)}")
+        raw_continuation = data.get("continuation_ir")
+        if raw_continuation is not None and not isinstance(raw_continuation, dict):
+            raise ValueError("continuation_ir must be an object or null")
+        raw_result = data.get("result") or {}
+        if not isinstance(raw_result, dict):
+            raise ValueError("runtime result payload must be an object")
+        return cls(
+            status=str(data["status"]),
+            runtime_id=str(data["runtime_id"]),
+            input_ir_id=str(data["input_ir_id"]),
+            input_digest=str(data["input_digest"]),
+            result=raw_result,
+            continuation_ir=CanonicalIR.from_dict(raw_continuation) if raw_continuation else None,
+        )
+
 
 class RemoteRuntimeWorker:
     """Capability-gated worker that consumes and emits Canonical IR.
