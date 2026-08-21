@@ -1,0 +1,43 @@
+name: Distributed AgentOS Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      canonical_ir_json:
+        description: Canonical AgentOS IR JSON
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  execute-ir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Execute capability-gated remote runtime
+        env:
+          AGENTOS_CANONICAL_IR_JSON: ${{ inputs.canonical_ir_json }}
+          AGENTOS_RUNTIME_ID: github-actions:${{ github.run_id }}
+        run: |
+          python scripts/distributed_worker.py \
+            --input-json "$AGENTOS_CANONICAL_IR_JSON" \
+            --output .agentos-out/distributed-runtime-result.json
+
+      - name: Upload continuation result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: distributed-agentos-result-${{ github.run_id }}
+          path: .agentos-out/distributed-runtime-result.json
+          if-no-files-found: warn
+          retention-days: 7
