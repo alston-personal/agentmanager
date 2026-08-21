@@ -13,6 +13,7 @@ on:
       - "agent_core/distributed_control_plane.py"
       - "agent_core/distributed_gateway.py"
       - "agent_core/project_state.py"
+      - "agent_core/continuity_mirror.py"
       - "agent_core/runtime_dispatcher.py"
       - "agent_core/push_dispatch.py"
       - "agent_core/dispatching_gateway.py"
@@ -44,6 +45,7 @@ on:
       - "tests/test_project_state_http.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
+      - "tests/test_continuity_mirror.py"
       - ".github/workflows/distributed-agentos-*.yml"
       - "pyproject.toml"
 
@@ -89,3 +91,4 @@ jobs:
           tests/test_project_state_http.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
+          tests/test_continuity_mirror.py
