@@ -38,3 +38,20 @@ def test_project_state_exposes_trusted_continuation(tmp_path: Path):
     assert state["recommendedAction"] == "continue"
     assert state["currentSource"] == "task_continuation"
     assert state["currentIR"]["parent_ir_id"] == ir.ir_id
+
+
+def test_project_state_skips_newer_generic_tasks(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "mixed.sqlite3")
+    ir = CanonicalIR(goal="distributed state", project_id="demo", capability="reason")
+    distributed = store.submit_ir(ir)
+    store.submit_task(
+        capability="legacy.task",
+        payload={"legacy": True},
+        idempotency_key="legacy-demo-task",
+        project_id="demo",
+    )
+
+    state = read_project_state(store, "demo")
+    assert state["latestTask"]["taskId"] == distributed["taskId"]
+    assert state["currentIR"]["ir_id"] == ir.ir_id
+    assert state["ignoredNonDistributedTasks"] == 1
