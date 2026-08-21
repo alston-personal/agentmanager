@@ -20,6 +20,7 @@ on:
       - "agent_core/cognitive_promotion.py"
       - "agent_core/cognitive_index.py"
       - "agent_core/cognitive_synthesis.py"
+      - "agent_core/cognitive_refresh.py"
       - "agent_core/continuity_mirror.py"
       - "agent_core/runtime_dispatcher.py"
       - "agent_core/push_dispatch.py"
@@ -40,6 +41,7 @@ on:
       - "scripts/install_distributed_systemd_user.sh"
       - "config/provider-routes.production.json"
       - "docs/GOVERNANCE_INVARIANTS.md"
+      - "docs/COGNITIVE_KERNEL.md"
       - "tests/test_control_plane.py"
       - "tests/test_distributed_runtime.py"
       - "tests/test_distributed_control_plane.py"
@@ -62,6 +64,7 @@ on:
       - "tests/test_cognitive_promotion.py"
       - "tests/test_cognitive_index.py"
       - "tests/test_cognitive_synthesis.py"
+      - "tests/test_cognitive_refresh.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
       - "tests/test_continuity_mirror.py"
@@ -136,6 +139,7 @@ jobs:
           tests/test_cognitive_promotion.py
           tests/test_cognitive_index.py
           tests/test_cognitive_synthesis.py
+          tests/test_cognitive_refresh.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
           tests/test_continuity_mirror.py
