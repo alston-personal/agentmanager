@@ -15,6 +15,10 @@ on:
         description: Stable runtime id assigned by the Control Plane dispatcher
         required: false
         type: string
+      task_id:
+        description: Exact Control Plane task id assigned by the Dispatcher
+        required: false
+        type: string
       dispatch_id:
         description: Dispatcher attempt id for observability/idempotent wake-up tracing
         required: false
@@ -32,10 +36,16 @@ jobs:
         env:
           DIRECT_IR: ${{ inputs.canonical_ir_json }}
           CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
+          RUNTIME_ID: ${{ inputs.runtime_id }}
+          TASK_ID: ${{ inputs.task_id }}
         run: |
           if { [ -n "$DIRECT_IR" ] && [ -n "$CONTROL_PLANE_URL" ]; } || \
              { [ -z "$DIRECT_IR" ] && [ -z "$CONTROL_PLANE_URL" ]; }; then
             echo "Provide exactly one of canonical_ir_json or control_plane_url" >&2
+            exit 2
+          fi
+          if [ -n "$CONTROL_PLANE_URL" ] && { [ -z "$RUNTIME_ID" ] || [ -z "$TASK_ID" ]; }; then
+            echo "Gateway mode requires runtime_id and task_id" >&2
             exit 2
           fi
 
@@ -65,23 +75,20 @@ jobs:
               --input-json "$AGENTOS_CANONICAL_IR_JSON" \
               --output .agentos-out/distributed-runtime-result.json
 
-      - name: Lease and complete through Control Plane
+      - name: Lease exact task and complete through Control Plane
         if: ${{ inputs.control_plane_url != '' }}
         env:
           AGENTOS_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
           AGENTOS_CONTROL_PLANE_TOKEN: ${{ secrets.AGENTOS_CONTROL_PLANE_TOKEN }}
-          AGENTOS_RUNTIME_ID_INPUT: ${{ inputs.runtime_id }}
-          GITHUB_RUN_ID_VALUE: ${{ github.run_id }}
+          AGENTOS_RUNTIME_ID: ${{ inputs.runtime_id }}
+          AGENTOS_TASK_ID: ${{ inputs.task_id }}
           AGENTOS_DISPATCH_ID: ${{ inputs.dispatch_id }}
         run: |
-          RUNTIME_ID="$AGENTOS_RUNTIME_ID_INPUT"
-          if [ -z "$RUNTIME_ID" ]; then
-            RUNTIME_ID="github-actions:$GITHUB_RUN_ID_VALUE"
-          fi
           mkdir -p .agentos-out
           python scripts/distributed_remote_worker.py \
             --gateway "$AGENTOS_CONTROL_PLANE_URL" \
-            --runtime-id "$RUNTIME_ID" \
+            --runtime-id "$AGENTOS_RUNTIME_ID" \
+            --task-id "$AGENTOS_TASK_ID" \
             | tee .agentos-out/distributed-runtime-result.json
 
       - name: Upload runtime result
