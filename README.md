@@ -21,6 +21,7 @@ AgentOS is evolving beyond a full Runtime installed on every device. The distrib
 - `agent_core/project_state.py` — project-scoped current Canonical IR read model for cross-IDE continuation
 - `agent_core/runtime_dispatcher.py` + `agent_core/push_dispatch.py` — local-first routing, durable push targets, retry/dedupe, GitHub/webhook wake-up
 - `agent_core/dispatching_gateway.py` — closes submit/complete → dispatch loop
+- `agent_core/continuity_mirror.py` — best-effort private Data Layer mirror for connector-only agents
 - `agentos_node/control_plane_client.py` + `agentos_node/remote_worker.py` — lightweight runtime without full AgentOS Host
 - `agentos_node/ide_adapter.py` + `agentos_node/ide_cli.py` — portable `agentos` CLI for VS Code/Cursor/Antigravity/JetBrains/SSH/CI
 - `agentos_node/web_agent_adapter.py` — trusted Web Agent request/result contract
@@ -31,6 +32,7 @@ AgentOS is evolving beyond a full Runtime installed on every device. The distrib
 - `docs/DISTRIBUTED_AGENTOS_RUNTIME.md` — overall architecture and migration path
 - `docs/DISTRIBUTED_CONTROL_PLANE.md` — Control Plane protocol
 - `docs/IDE_ADAPTER.md` — cross-IDE install/continue/delegate workflow
+- `docs/CONTINUITY_MIRROR.md` — private GitHub fallback mailbox for connector-only agents
 - `docs/WEB_AGENT_ADAPTER.md` — browser/web-agent boundary
 - `docs/RUNTIME_DISPATCHER.md` — active routing and wake-up policy
 - `docs/PROVIDER_BRIDGE.md` — provider routing, deployment, security, and browser-relay boundary
@@ -49,6 +51,8 @@ IDE / Agent / Runtime A
   → capability/provider routing
   → Agent/Runtime B
 ```
+
+For agents that cannot directly reach the Control Plane but can access the private Data Layer, the Core can mirror the latest project checkpoint to `projects/<project-id>/continuity/latest.json`. The Control Plane remains authoritative; the mirror is a connector-readable fallback only.
 
 Push wake-ups carry an exact `task_id`; the runtime must atomically lease that same task before execution. Push target metadata is durable in the Control Plane database while transport/provider secrets remain outside the registry. Pending tasks are swept after Core restart and failed/stale wake-ups use bounded retry recovery.
 
