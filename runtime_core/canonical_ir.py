@@ -35,8 +35,13 @@ class CanonicalIR:
     continuation: Dict[str, Any] = field(default_factory=dict)
     ir_id: str = field(default_factory=lambda: f"ir_{uuid.uuid4().hex}")
     parent_ir_id: str | None = None
+    hop_count: int = 0
     created_at: str = field(default_factory=_utc_now)
     schema_version: str = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.hop_count < 0:
+            raise ValueError("hop_count cannot be negative")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -85,4 +90,5 @@ class CanonicalIR:
             pending_tasks=list(self.pending_tasks),
             continuation=continuation or {},
             parent_ir_id=self.ir_id,
+            hop_count=self.hop_count + 1,
         )

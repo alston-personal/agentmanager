@@ -8,7 +8,17 @@ from typing import Any, Callable, Dict
 from .canonical_ir import CanonicalIR
 
 
-ExecutorFn = Callable[[CanonicalIR], Dict[str, Any]]
+ExecutorFn = Callable[[CanonicalIR], Any]
+
+
+@dataclass
+class ExecutionOutcome:
+    """Structured executor output with an optional next-runtime handoff."""
+
+    result: Dict[str, Any] = field(default_factory=dict)
+    next_capability: str | None = None
+    continuation: Dict[str, Any] = field(default_factory=dict)
+    auto_continue: bool = False
 
 
 @dataclass
@@ -69,20 +79,50 @@ class RemoteRuntimeWorker:
                 },
             )
 
-        result = executor(ir)
+        try:
+            raw_outcome = executor(ir)
+        except Exception as exc:
+            return RemoteRuntimeResult(
+                status="failed",
+                runtime_id=self.runtime_id,
+                input_ir_id=ir.ir_id,
+                input_digest=ir.digest(),
+                result={"error": "executor_failed", "message": str(exc)},
+            )
+
+        if isinstance(raw_outcome, ExecutionOutcome):
+            outcome = raw_outcome
+        elif isinstance(raw_outcome, dict):
+            outcome = ExecutionOutcome(result=raw_outcome)
+        else:
+            return RemoteRuntimeResult(
+                status="failed",
+                runtime_id=self.runtime_id,
+                input_ir_id=ir.ir_id,
+                input_digest=ir.digest(),
+                result={"error": "invalid_executor_result", "type": type(raw_outcome).__name__},
+            )
+
+        continuation_metadata = {
+            "completed_by": self.runtime_id,
+            "previous_capability": ir.capability,
+            "ready_for_next_agent": True,
+            "auto_continue": outcome.auto_continue,
+        }
+        if outcome.next_capability:
+            continuation_metadata["next_capability"] = outcome.next_capability
+        continuation_metadata.update(outcome.continuation)
+
         continuation = ir.derive_continuation(
-            payload=result,
-            continuation={
-                "completed_by": self.runtime_id,
-                "previous_capability": ir.capability,
-                "ready_for_next_agent": True,
-            },
+            payload=outcome.result,
+            continuation=continuation_metadata,
+            capability=outcome.next_capability or ir.capability,
         )
         return RemoteRuntimeResult(
             status="succeeded",
             runtime_id=self.runtime_id,
             input_ir_id=ir.ir_id,
             input_digest=ir.digest(),
-            result=result,
+            result=outcome.result,
             continuation_ir=continuation,
         )
