@@ -30,6 +30,8 @@ on:
       - "scripts/web_agent_adapter.py"
       - "scripts/provider_bridge.py"
       - "scripts/install_systemd_user.sh"
+      - "scripts/install_distributed_systemd_user.sh"
+      - "config/provider-routes.production.json"
       - "tests/test_control_plane.py"
       - "tests/test_distributed_runtime.py"
       - "tests/test_distributed_control_plane.py"
@@ -41,6 +43,7 @@ on:
       - "tests/test_push_task_lease.py"
       - "tests/test_push_dispatch.py"
       - "tests/test_provider_bridge.py"
+      - "tests/test_provider_http_user_agent.py"
       - "tests/test_provider_bridge_server.py"
       - "tests/test_project_state.py"
       - "tests/test_project_state_http.py"
@@ -74,22 +77,24 @@ jobs:
           agentos --help >/dev/null
           agentos-node --help >/dev/null
 
-      - name: Validate Core service installer
+      - name: Validate Core service installers
         run: |
           bash -n scripts/install_systemd_user.sh
-          grep -q 'agentos-control-plane.service' scripts/install_systemd_user.sh
-          grep -q 'agentos-provider-bridge.service' scripts/install_systemd_user.sh
-          grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_systemd_user.sh
-          grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_systemd_user.sh
-          grep -q 'EnvironmentFile=-%h/.agentos.secrets' scripts/install_systemd_user.sh
+          bash -n scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-control-plane.service' scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-provider-bridge.service' scripts/install_distributed_systemd_user.sh
+          grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_distributed_systemd_user.sh
+          grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_distributed_systemd_user.sh
+          grep -q 'EnvironmentFile=-$SECRETS_FILE' scripts/install_distributed_systemd_user.sh
 
       - name: Validate Cloud-Core deploy workflow contract
         run: |
           grep -q 'workflow_dispatch:' .github/workflows/deploy-agentos-core.yml
           grep -q 'N8N_DEPLOY_SSH_KEY' .github/workflows/deploy-agentos-core.yml
-          grep -q 'scripts/install_services.py' .github/workflows/deploy-agentos-core.yml
+          grep -q 'agentos-distributed' .github/workflows/deploy-agentos-core.yml
+          grep -q 'install_distributed_systemd_user.sh' .github/workflows/deploy-agentos-core.yml
           grep -q '127.0.0.1:8765/health' .github/workflows/deploy-agentos-core.yml
-          grep -q 'attempting rollback' .github/workflows/deploy-agentos-core.yml
+          grep -q 'isolated rollback' .github/workflows/deploy-agentos-core.yml
 
       - name: Run Distributed AgentOS tests
         run: >-
@@ -105,6 +110,7 @@ jobs:
           tests/test_push_task_lease.py
           tests/test_push_dispatch.py
           tests/test_provider_bridge.py
+          tests/test_provider_http_user_agent.py
           tests/test_provider_bridge_server.py
           tests/test_project_state.py
           tests/test_project_state_http.py
