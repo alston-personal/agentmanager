@@ -19,6 +19,7 @@ from .ide_adapter import (
     derive_ide_continuation,
     infer_project_id,
     resolve_workspace,
+    write_project_marker,
 )
 
 
@@ -78,8 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gateway", help="Control Plane URL (or AGENTOS_CONTROL_PLANE_URL)")
     parser.add_argument("--allow-insecure-http", action="store_true")
     parser.add_argument("--http-timeout", type=float, default=30.0)
-    parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    parser.add_argument("--json", action="store_true", help="Machine-readable JSON error output")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="Create a stable .agentos/project.json marker for this workspace")
+    init.add_argument("project_id", nargs="?")
+    init.add_argument("--workspace")
+    init.add_argument("--force", action="store_true")
 
     status = sub.add_parser("status", help="Show Control Plane, workspace, and project continuity state")
     status.add_argument("--project")
@@ -142,6 +148,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "init":
+            _emit(
+                write_project_marker(
+                    args.project_id,
+                    workspace=args.workspace,
+                    force=args.force,
+                ),
+                True,
+            )
+            return 0
+
         client = _client(args)
 
         if args.command == "status":
