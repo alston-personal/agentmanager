@@ -2,7 +2,67 @@
 
 Status: design baseline for `feature/state-kernel-v2`.
 
-This document intentionally narrows AgentOS. The goal is not to replace MCP, ACP, A2A, agent memory products, or workflow runtimes. AgentOS owns the layer those systems do not reliably own together: canonical project operational state and governed transitions between versions of that state.
+This document intentionally narrows AgentOS. The goal is not to replace MCP, ACP, A2A, agent memory products, browser bridges, or workflow runtimes. AgentOS owns the layer those systems do not reliably own together: canonical project operational state and governed transitions between versions of that state.
+
+## 0. Reuse-first architecture policy
+
+**Do not rebuild a wheel that already has a mature protocol or implementation.**
+
+AgentOS must prefer adopting, wrapping, or adapting existing components over owning another copy of their functionality. New AgentOS code is justified only when the behavior is part of the unique State Kernel / execution-governance contract, or when no suitable standard/component exists.
+
+Default adoption map:
+
+| Problem | Prefer | AgentOS responsibility |
+| --- | --- | --- |
+| Tool/resource/context protocol | MCP | expose canonical state/work as MCP resources/tools; preserve AgentOS authorization and commit rules |
+| IDE/editor integration | ACP | one ACP adapter or native agent + AgentOS MCP; do not maintain per-IDE extensions |
+| Independent remote agents | A2A | map A2A tasks/artifacts to ExecutionEnvelope/StateDelta; never let remote agents commit HEAD directly |
+| Web ChatGPT/Gemini/Claude execution | existing browser/web-agent bridges | implement a generic WebSessionAdapter contract; do not maintain vendor DOM automation unless unavoidable |
+| Workflow/subgraph execution | LangGraph or existing workflow runtimes | treat workflow as one runtime behind a WorkItem; accept only semantic result/StateDelta |
+| CI/ephemeral workers | GitHub Actions | use as a runtime/transport; keep state authority in AgentOS |
+| Long-term/shared memory | Iranti/OACP-compatible/native provider | store refs/provenance/promotion policy; do not build another general vector-memory product |
+| Human-readable handoff | Lead/OACP-style projections | export from canonical state; never treat exported files as authority |
+| Provider/model APIs | existing SDKs/OpenAI-compatible/Gemini adapters | normalize output and enforce trust boundary |
+
+A third-party component is treated as an **adapter/runtime/provider**, not as the canonical project authority. Reuse must never weaken the following invariants:
+
+1. Project HEAD is owned only by the State Kernel.
+2. External agents/models/browser sessions return proposals, not commits.
+3. Runtime/session/provider identifiers are not project-state identifiers.
+4. External side effects remain governed and auditable.
+5. Replacing one wheel/provider must not require migrating canonical ProjectState.
+
+### Web-agent rule
+
+AgentOS should not create its own ChatGPT/Gemini/Claude browser automation stack when an existing bridge can reliably drive an authenticated browser session.
+
+The AgentOS-owned boundary is a small transport-neutral contract such as:
+
+```text
+WebSessionAdapter
+  discover_sessions()
+  invoke(session_ref, ExecutionEnvelope)
+  poll(result_ref)
+  cancel(result_ref)
+    -> untrusted SemanticResult / StateDelta proposal
+```
+
+Concrete browser bridges may implement that contract. Vendor DOM selectors, Chrome extension internals, login/session persistence, anti-bot workarounds, and conversation discovery belong to those bridges, not to the State Kernel.
+
+This preserves the valuable behavior:
+
+```text
+Project HEAD
+  -> bounded StateView + WorkItem
+  -> WebSessionAdapter
+  -> existing ChatGPT/Gemini/Claude web conversation
+  -> semantic output
+  -> StateDelta proposal
+  -> validation / merge / commit
+  -> new Project HEAD
+```
+
+without making AgentOS a browser-automation product.
 
 ## 1. Core thesis
 
@@ -322,6 +382,7 @@ AgentOS should not become a workflow framework.
 - GitHub Actions can remain a push runtime.
 - Raw OpenAI/Gemini-compatible APIs use Provider Bridge.
 - A2A agents use the A2A adapter.
+- Existing browser bridges drive authenticated web-agent sessions through the generic WebSessionAdapter.
 - Local pull workers keep exact lease/fencing semantics.
 
 The State Kernel does not care which one executed the work.
@@ -402,12 +463,13 @@ During migration:
 3. memory candidate/promotion interface;
 4. native memory backend plus optional adapters.
 
-### Phase D — protocol adapters
+### Phase D — protocol/adoption adapters
 
 1. MCP 2026-07-28 server;
 2. ACP adapter;
 3. A2A 1.0 runtime adapter;
-4. keep private REST as internal/backward-compatible API.
+4. generic WebSessionAdapter wired to an existing browser bridge before considering any custom browser automation;
+5. keep private REST as internal/backward-compatible API.
 
 ### Phase E — side effects and governance
 
@@ -423,6 +485,7 @@ During migration:
 - another generic agent-to-agent wire protocol;
 - another tool protocol;
 - another graph/workflow framework;
+- vendor-specific browser automation when a maintained bridge already exists;
 - vendor-specific conversation history as canonical state;
 - implicit session-bound state.
 
@@ -432,4 +495,4 @@ The durable value of AgentOS is:
 
 > **A vendor-neutral State Kernel that lets heterogeneous agents safely continue, coordinate, and commit work against one canonical project state.**
 
-Everything else should be a protocol adapter, provider, runtime, or projection.
+Everything else should be a protocol adapter, provider, runtime, projection, or reused external wheel.
