@@ -1,0 +1,43 @@
+[
+  {
+    "provider_id": "openai-reasoner",
+    "kind": "openai_responses",
+    "model": "gpt-5.6",
+    "capabilities": ["ai.reason", "ai.synthesize"],
+    "priority": 10,
+    "api_key_env": "OPENAI_API_KEY"
+  },
+  {
+    "provider_id": "gemini-verifier",
+    "kind": "gemini_generate_content",
+    "model": "gemini-3.7-flash",
+    "capabilities": ["ai.verify", "ai.research"],
+    "priority": 20,
+    "api_key_env": "GEMINI_API_KEY"
+  },
+  {
+    "provider_id": "codex-coder",
+    "kind": "openai_responses",
+    "model": "gpt-5.3-codex",
+    "capabilities": ["code.implement", "code.review"],
+    "priority": 10,
+    "api_key_env": "OPENAI_API_KEY"
+  },
+  {
+    "provider_id": "existing-litellm-proxy",
+    "kind": "openai_chat",
+    "model": "gemma4:e4b",
+    "base_url": "https://ai-api.example.com/v1",
+    "capabilities": ["ai.low-cost"],
+    "priority": 50,
+    "api_key_env": "AI_API_ACADEMIA_KEY"
+  },
+  {
+    "provider_id": "chatgpt-browser-relay",
+    "kind": "relay_webhook",
+    "endpoint": "https://browser-bridge.example.com/v1/provider-request",
+    "capabilities": ["web.chatgpt"],
+    "priority": 30,
+    "token_env": "CHATGPT_RELAY_TOKEN"
+  }
+]

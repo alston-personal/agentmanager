@@ -1,0 +1,123 @@
+name: Inspect AgentOS Provider Readiness
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/inspect-provider-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect provider credentials and semantic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$CONFIG_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          set -a
+          # shellcheck disable=SC1090
+          source "$CONFIG_ROOT/.env"
+          # shellcheck disable=SC1090
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+
+          for key in OPENAI_API_KEY GEMINI_API_KEY AI_API_ACADEMIA_KEY CHATGPT_RELAY_TOKEN; do
+            [ -n "${!key:-}" ] && echo "$key=present" || echo "$key=missing"
+          done
+          echo "AI_API_BASE_URL=${AI_API_BASE_URL:-missing}"
+          test -n "${AI_API_BASE_URL:-}"
+          test -n "${AI_API_ACADEMIA_KEY:-}"
+
+          base="${AI_API_BASE_URL%/}"
+          code="$(curl -sS -o /tmp/agentos-models.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${AI_API_ACADEMIA_KEY}" \
+            -H 'Accept: application/json' "$base/models" || true)"
+          echo "openai_compatible_models_http=$code"
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          obj = json.loads(Path('/tmp/agentos-models.json').read_text())
+          ids = [str(item['id']) for item in (obj.get('data') or []) if isinstance(item, dict) and item.get('id')]
+          print('compatible_models=' + ','.join(ids[:30]))
+          if 'gemini-3.1-flash-lite' not in ids:
+              raise SystemExit('required probe model gemini-3.1-flash-lite is unavailable')
+          PY
+
+          python3 - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+
+          base = os.environ['AI_API_BASE_URL'].rstrip('/')
+          key = os.environ['AI_API_ACADEMIA_KEY']
+          prompt = (
+              'Return exactly one JSON object and no markdown: '
+              '{"status":"succeeded","result":{"probe":"ok"},"auto_continue":false}'
+          )
+          body = json.dumps({
+              'model': 'gemini-3.1-flash-lite',
+              'messages': [{'role': 'user', 'content': prompt}],
+              'stream': False,
+          }).encode()
+          req = Request(
+              base + '/chat/completions',
+              data=body,
+              headers={
+                  'Authorization': 'Bearer ' + key,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'User-Agent': 'AgentOS-Provider-Bridge/0.3 (+https://n8n.milkcat.org/agentos)',
+              },
+              method='POST',
+          )
+          try:
+              with urlopen(req, timeout=60) as response:
+                  payload = json.loads(response.read().decode())
+          except HTTPError as exc:
+              text = exc.read().decode(errors='replace')[:800]
+              raise SystemExit(f'urllib_user_agent_probe_http={exc.code} body={text}')
+          content = payload['choices'][0]['message']['content']
+          text = content.strip()
+          if text.startswith('```'):
+              lines = text.splitlines()[1:]
+              if lines and lines[-1].strip() == '```':
+                  lines.pop()
+              text = '\n'.join(lines).strip()
+          semantic = json.loads(text)
+          if semantic.get('status') != 'succeeded' or not isinstance(semantic.get('result'), dict):
+              raise SystemExit(f'provider semantic probe failed: {semantic}')
+          print('urllib_explicit_user_agent=ok')
+          print('provider_semantic_contract=ok')
+          PY
+          REMOTE

@@ -1,0 +1,119 @@
+name: Distributed AgentOS CI
+
+on:
+  push:
+    branches:
+      - feature/distributed-agentos-runtime
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "runtime_core/**"
+      - "agent_core/control_plane.py"
+      - "agent_core/distributed_control_plane.py"
+      - "agent_core/distributed_gateway.py"
+      - "agent_core/project_state.py"
+      - "agent_core/continuity_mirror.py"
+      - "agent_core/runtime_dispatcher.py"
+      - "agent_core/push_dispatch.py"
+      - "agent_core/dispatching_gateway.py"
+      - "agentos_node/control_plane_client.py"
+      - "agentos_node/remote_worker.py"
+      - "agentos_node/web_agent_adapter.py"
+      - "agentos_node/provider_bridge.py"
+      - "agentos_node/provider_bridge_server.py"
+      - "agentos_node/ide_adapter.py"
+      - "agentos_node/ide_cli.py"
+      - "scripts/distributed_worker.py"
+      - "scripts/distributed_gateway.py"
+      - "scripts/distributed_remote_worker.py"
+      - "scripts/web_agent_adapter.py"
+      - "scripts/provider_bridge.py"
+      - "scripts/install_systemd_user.sh"
+      - "scripts/install_distributed_systemd_user.sh"
+      - "config/provider-routes.production.json"
+      - "tests/test_control_plane.py"
+      - "tests/test_distributed_runtime.py"
+      - "tests/test_distributed_control_plane.py"
+      - "tests/test_distributed_gateway.py"
+      - "tests/test_distributed_http_client.py"
+      - "tests/test_web_agent_adapter.py"
+      - "tests/test_runtime_dispatcher.py"
+      - "tests/test_dispatching_gateway.py"
+      - "tests/test_push_task_lease.py"
+      - "tests/test_push_dispatch.py"
+      - "tests/test_provider_bridge.py"
+      - "tests/test_provider_http_user_agent.py"
+      - "tests/test_provider_bridge_server.py"
+      - "tests/test_project_state.py"
+      - "tests/test_project_state_http.py"
+      - "tests/test_ide_adapter.py"
+      - "tests/test_ide_cli.py"
+      - "tests/test_continuity_mirror.py"
+      - ".github/workflows/distributed-agentos-*.yml"
+      - ".github/workflows/deploy-agentos-core.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  distributed-runtime-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and test dependencies
+        run: python -m pip install --upgrade -e . pytest
+
+      - name: Smoke-test installed CLIs
+        run: |
+          agentos --help >/dev/null
+          agentos-node --help >/dev/null
+
+      - name: Validate Core service installers
+        run: |
+          bash -n scripts/install_systemd_user.sh
+          bash -n scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-control-plane.service' scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-provider-bridge.service' scripts/install_distributed_systemd_user.sh
+          grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_distributed_systemd_user.sh
+          grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_distributed_systemd_user.sh
+          grep -q 'EnvironmentFile=-$SECRETS_FILE' scripts/install_distributed_systemd_user.sh
+
+      - name: Validate Cloud-Core deploy workflow contract
+        run: |
+          grep -q 'workflow_dispatch:' .github/workflows/deploy-agentos-core.yml
+          grep -q 'N8N_DEPLOY_SSH_KEY' .github/workflows/deploy-agentos-core.yml
+          grep -q 'agentos-distributed' .github/workflows/deploy-agentos-core.yml
+          grep -q 'install_distributed_systemd_user.sh' .github/workflows/deploy-agentos-core.yml
+          grep -q '127.0.0.1:8765/health' .github/workflows/deploy-agentos-core.yml
+          grep -q 'isolated rollback' .github/workflows/deploy-agentos-core.yml
+
+      - name: Run Distributed AgentOS tests
+        run: >-
+          python -m pytest -q
+          tests/test_control_plane.py
+          tests/test_distributed_runtime.py
+          tests/test_distributed_control_plane.py
+          tests/test_distributed_gateway.py
+          tests/test_distributed_http_client.py
+          tests/test_web_agent_adapter.py
+          tests/test_runtime_dispatcher.py
+          tests/test_dispatching_gateway.py
+          tests/test_push_task_lease.py
+          tests/test_push_dispatch.py
+          tests/test_provider_bridge.py
+          tests/test_provider_http_user_agent.py
+          tests/test_provider_bridge_server.py
+          tests/test_project_state.py
+          tests/test_project_state_http.py
+          tests/test_ide_adapter.py
+          tests/test_ide_cli.py
+          tests/test_continuity_mirror.py
