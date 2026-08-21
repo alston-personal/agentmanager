@@ -64,8 +64,24 @@ A `(task_id, target_id)` pair keeps:
 
 Repeated calls do not re-trigger an already successful dispatch. A dispatcher
 that crashed while in `dispatching` may retry after the configured stale timeout.
-A duplicate external wake-up is still safe because only one runtime can lease the
-task.
+Failed wake-ups use a separate retry backoff so a periodic sweep does not hammer
+an unavailable provider. A duplicate external wake-up is still safe because only
+one runtime can lease the task.
+
+## Durable runtime target registry
+
+Push target definitions are stored separately in `runtime_targets`. The registry
+contains only routing metadata:
+
+- target id and kind
+- advertised capabilities
+- priority
+- non-secret transport configuration
+- enabled state
+
+Secrets stay in transport configuration/environment variables and are never
+written into the target registry. `RuntimeDispatcher` reloads enabled targets on
+startup, so a Core restart does not forget where continuations can run.
 
 ## GitHub Actions transport
 
@@ -93,6 +109,10 @@ export AGENTOS_GITHUB_CAPABILITIES='agentos.ir.validate,ci.test'
 
 python3 scripts/distributed_gateway.py --host 127.0.0.1 --port 8765
 ```
+
+The gateway persists the target definition. On later restarts, the repository,
+workflow, ref, public URL, capabilities, and priority are reloaded from SQLite;
+only `AGENTOS_GITHUB_TOKEN` must be supplied again as a secret.
 
 Expose the local gateway through an authenticated HTTPS reverse proxy/tunnel; do
 not bind a bearer-token gateway directly to the public Internet without TLS.
@@ -124,3 +144,21 @@ runtime completes
 
 This is the first slice where AgentOS can automatically move from “the next task
 exists” to “the next eligible runtime is actively woken”.
+
+## Dispatcher sweep
+
+`DispatchingGatewayService` immediately dispatches tasks created through the HTTP
+gateway. A background sweep also scans submitted tasks so work created through a
+different trusted path, or a failed wake-up whose backoff expired, is resumed.
+
+Defaults:
+
+- sweep interval: 5 seconds
+- sweep limit: 100 submitted tasks
+- failed-dispatch retry backoff: 60 seconds
+- stale `dispatching` recovery: 120 seconds
+
+These can be tuned with `--dispatch-interval-seconds`, `--dispatch-limit`,
+`--dispatch-retry-seconds`, and `--dispatch-timeout-seconds`.
+
+The sweep is only started when at least one persisted/enabled push target exists.

@@ -157,3 +157,66 @@ def test_github_actions_transport_sends_stable_runtime_and_dispatch_ids():
     assert captured["payload"]["inputs"]["dispatch_id"] == "dispatch-1"
     assert captured["payload"]["inputs"]["control_plane_url"] == "https://agentos.example.test"
     assert metadata["http_status"] == 204
+
+
+class FailingTransport(DispatchTransport):
+    kind = "failing"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def dispatch(self, *, target, task, ir, dispatch_id):
+        self.calls += 1
+        raise RuntimeError("wake failed")
+
+
+def test_runtime_targets_survive_dispatcher_restart(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "control-plane.sqlite3")
+    first = RuntimeDispatcher(store)
+    first.register_target(
+        RuntimeTarget(
+            target_id="persisted-worker",
+            kind="fake",
+            capabilities=("ai.generate",),
+            priority=7,
+            config={"endpoint": "https://example.test"},
+        )
+    )
+
+    restarted = RuntimeDispatcher(store)
+    targets = restarted.list_targets()
+
+    assert targets[0]["targetId"] == "persisted-worker"
+    assert targets[0]["capabilities"] == ["ai.generate"]
+    assert targets[0]["priority"] == 7
+    assert targets[0]["transportReady"] is False
+
+
+def test_failed_dispatch_uses_retry_backoff(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "control-plane.sqlite3")
+    ir = CanonicalIR(
+        goal="retry safely",
+        project_id="agentmanager",
+        capability="ai.generate",
+        context={"runtime_policy": {"prefer_push": True}},
+    )
+    task = store.submit_ir(ir)
+
+    transport = FailingTransport()
+    dispatcher = RuntimeDispatcher(store, dispatch_retry_seconds=60)
+    dispatcher.register_transport(transport)
+    dispatcher.register_target(
+        RuntimeTarget(
+            target_id="failing-worker",
+            kind="failing",
+            capabilities=("ai.generate",),
+        )
+    )
+
+    first = dispatcher.dispatch_task(task["taskId"])
+    second = dispatcher.dispatch_task(task["taskId"])
+
+    assert first["status"] == "failed"
+    assert second["status"] == "retry_wait"
+    assert second["dispatchId"] == first["dispatchId"]
+    assert transport.calls == 1

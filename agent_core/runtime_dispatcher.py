@@ -255,14 +255,19 @@ class RuntimeDispatcher:
         store: DistributedControlPlane,
         *,
         dispatch_timeout_seconds: int = 120,
+        dispatch_retry_seconds: int = 60,
     ) -> None:
         if dispatch_timeout_seconds < 1:
             raise ValueError("dispatch_timeout_seconds must be >= 1")
+        if dispatch_retry_seconds < 1:
+            raise ValueError("dispatch_retry_seconds must be >= 1")
         self.store = store
         self.dispatch_timeout_seconds = dispatch_timeout_seconds
+        self.dispatch_retry_seconds = dispatch_retry_seconds
         self.targets: dict[str, RuntimeTarget] = {}
         self.transports: dict[str, DispatchTransport] = {}
         self._init_dispatch_state()
+        self._load_persisted_targets()
 
     def _init_dispatch_state(self) -> None:
         with self.store._connect() as connection:
@@ -283,14 +288,97 @@ class RuntimeDispatcher:
                 );
                 CREATE INDEX IF NOT EXISTS runtime_dispatches_status
                     ON runtime_dispatches(status, updated_at);
+                CREATE TABLE IF NOT EXISTS runtime_targets (
+                    target_id TEXT PRIMARY KEY,
+                    target_kind TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    priority INTEGER NOT NULL,
+                    config_json TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS runtime_targets_enabled_priority
+                    ON runtime_targets(enabled, priority, target_id);
                 """
             )
 
     def register_transport(self, transport: DispatchTransport) -> None:
         self.transports[transport.kind] = transport
 
-    def register_target(self, target: RuntimeTarget) -> None:
+    def _load_persisted_targets(self) -> None:
+        with self.store._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM runtime_targets WHERE enabled=1 ORDER BY priority, target_id"
+            ).fetchall()
+        for row in rows:
+            capabilities = json.loads(row["capabilities_json"])
+            config = json.loads(row["config_json"])
+            if not isinstance(capabilities, list) or not all(isinstance(item, str) for item in capabilities):
+                raise ValueError(f"invalid persisted capabilities for target {row['target_id']}")
+            if not isinstance(config, dict):
+                raise ValueError(f"invalid persisted config for target {row['target_id']}")
+            self.targets[row["target_id"]] = RuntimeTarget(
+                target_id=row["target_id"],
+                kind=row["target_kind"],
+                capabilities=tuple(capabilities),
+                priority=int(row["priority"]),
+                config=config,
+            )
+
+    def register_target(self, target: RuntimeTarget, *, persist: bool = True) -> None:
         self.targets[target.target_id] = target
+        if not persist:
+            return
+        capabilities_json = json.dumps(list(target.capabilities), sort_keys=True)
+        config_json = json.dumps(target.config, sort_keys=True)
+        now = _timestamp(_now())
+        with self.store._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO runtime_targets(
+                    target_id, target_kind, capabilities_json, priority,
+                    config_json, enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(target_id) DO UPDATE SET
+                    target_kind=excluded.target_kind,
+                    capabilities_json=excluded.capabilities_json,
+                    priority=excluded.priority,
+                    config_json=excluded.config_json,
+                    enabled=1,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    target.target_id,
+                    target.kind,
+                    capabilities_json,
+                    target.priority,
+                    config_json,
+                    now,
+                    now,
+                ),
+            )
+
+    def disable_target(self, target_id: str) -> None:
+        self.targets.pop(target_id, None)
+        with self.store._connect() as connection:
+            connection.execute(
+                "UPDATE runtime_targets SET enabled=0, updated_at=? WHERE target_id=?",
+                (_timestamp(_now()), target_id),
+            )
+
+    def list_targets(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "targetId": target.target_id,
+                "kind": target.kind,
+                "capabilities": list(target.capabilities),
+                "priority": target.priority,
+                "config": dict(target.config),
+                "transportReady": target.kind in self.transports,
+            }
+            for target in sorted(self.targets.values(), key=lambda item: (item.priority, item.target_id))
+        ]
 
     def _runtime_policy(self, ir: CanonicalIR) -> dict[str, Any]:
         policy = ir.context.get("runtime_policy") if isinstance(ir.context, dict) else None
@@ -342,6 +430,7 @@ class RuntimeDispatcher:
     def _claim_dispatch(self, task_id: str, target: RuntimeTarget) -> tuple[dict[str, Any], bool]:
         now = _now()
         stale_before = now - timedelta(seconds=self.dispatch_timeout_seconds)
+        retry_before = now - timedelta(seconds=self.dispatch_retry_seconds)
         with self.store._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -356,6 +445,12 @@ class RuntimeDispatcher:
                 if (
                     current["status"] == "dispatching"
                     and _parse_timestamp(current["updated_at"]) >= stale_before
+                ):
+                    connection.commit()
+                    return current, False
+                if (
+                    current["status"] == "failed"
+                    and _parse_timestamp(current["updated_at"]) >= retry_before
                 ):
                     connection.commit()
                     return current, False
@@ -474,10 +569,24 @@ class RuntimeDispatcher:
 
         if not explicit_target:
             task = self._target_submitted_ir_task(task_id, target.target_id)
+            actual_target_id = task.get("targetNodeId")
+            if actual_target_id != target.target_id:
+                target = self.targets.get(str(actual_target_id))
+                if target is None or not target.supports(ir.capability) or target.kind not in self.transports:
+                    return {
+                        "taskId": task_id,
+                        "status": "waiting_for_pull",
+                        "targetId": actual_target_id,
+                    }
 
         row, should_send = self._claim_dispatch(task_id, target)
         if not should_send:
-            existing_status = "already_dispatched" if row["status"] == "dispatched" else "dispatching"
+            if row["status"] == "dispatched":
+                existing_status = "already_dispatched"
+            elif row["status"] == "failed":
+                existing_status = "retry_wait"
+            else:
+                existing_status = "dispatching"
             return self._receipt(row, status_override=existing_status)
 
         transport = self.transports[target.kind]
@@ -520,8 +629,8 @@ class RuntimeDispatcher:
                 raise ValueError(f"task {task_id} is not targetable from state {task['status']}")
             current_target = task.get("targetNodeId")
             if current_target and current_target != target_id:
-                connection.rollback()
-                raise ValueError(f"task {task_id} is already targeted to {current_target}")
+                connection.commit()
+                return task
             connection.execute(
                 "UPDATE tasks SET target_node_id=?, updated_at=? WHERE task_id=? AND status='submitted'",
                 (target_id, now, task_id),
@@ -541,4 +650,29 @@ class RuntimeDispatcher:
     def dispatch_pending(self, *, limit: int = 20) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be >= 1")
-        return [self.dispatch_task(task_id) for task_id in self._submitted_task_ids(limit)]
+        results = []
+        for task_id in self._submitted_task_ids(limit):
+            try:
+                results.append(self.dispatch_task(task_id))
+            except Exception as exc:
+                results.append(
+                    {
+                        "taskId": task_id,
+                        "status": "dispatcher_error",
+                        "error": str(exc),
+                    }
+                )
+        return results
+
+    def run_sweep_loop(
+        self,
+        stop_event: Any,
+        *,
+        interval_seconds: float = 5.0,
+        limit: int = 100,
+    ) -> None:
+        if interval_seconds <= 0:
+            raise ValueError("interval_seconds must be > 0")
+        while not stop_event.is_set():
+            self.dispatch_pending(limit=limit)
+            stop_event.wait(interval_seconds)
