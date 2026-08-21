@@ -7,11 +7,12 @@ from agent_core.governance import (
 )
 
 
-def profile(level, *, risks=None, controls=()):
+def profile(level, *, risks=None, effects=(), controls=()):
     return CapabilityGovernanceProfile.build(
         "cognitive.synthesis",
         level,
         risks=risks,
+        effects=effects,
         controls=controls,
     )
 
@@ -33,10 +34,11 @@ def test_synthesis_requires_provenance_confidence_and_contradictions():
     assert decision.effective_level == CapabilityLevel.SYNTHESIZE
 
 
-def test_missing_control_fails_closed():
-    controls = required_controls(CapabilityLevel.COMMIT_STATE) - {"rollback"}
+def test_canonical_state_commit_requires_state_specific_controls():
+    effects = {"canonical_state"}
+    controls = required_controls(CapabilityLevel.COMMIT, effects=effects) - {"rollback"}
     decision = GovernanceGate().evaluate(
-        profile(CapabilityLevel.COMMIT_STATE, controls=controls)
+        profile(CapabilityLevel.COMMIT, effects=effects, controls=controls)
     )
     assert decision.allowed is False
     assert decision.degraded_to == "proposal"
@@ -44,49 +46,65 @@ def test_missing_control_fails_closed():
     assert "rollback" in decision.missing_controls
 
 
-def test_high_risk_dimensions_raise_required_governance():
-    risks = RiskDimensions(
-        authority=2,
-        blast_radius=5,
-        reversibility=5,
-        autonomy=2,
-        persistence=3,
-        propagation=4,
+def test_cross_project_cognition_does_not_require_external_action_controls():
+    risks = RiskDimensions(authority=1, persistence=4, propagation=5, uncertainty=3)
+    effects = {"durable_memory", "cross_project"}
+    controls = required_controls(
+        CapabilityLevel.SYNTHESIZE, effects=effects, risks=risks
     )
-    controls = required_controls(CapabilityLevel.PROPOSE)
+    decision = GovernanceGate().evaluate(
+        profile(
+            CapabilityLevel.SYNTHESIZE,
+            risks=risks,
+            effects=effects,
+            controls=controls,
+        )
+    )
+    assert decision.allowed is True
+    assert "independent_verification" in controls
+    assert "revocation" in controls
+    assert "compensation" not in controls
+    assert "idempotency" not in controls
+    assert "approval_gate" not in controls
+
+
+def test_external_reversible_action_requires_compensation_and_idempotency():
+    effects = {"external_reversible"}
+    controls = required_controls(CapabilityLevel.ACT, effects=effects)
+    decision = GovernanceGate().evaluate(
+        profile(CapabilityLevel.ACT, effects=effects, controls=controls)
+    )
+    assert decision.allowed is True
+    assert "compensation" in controls
+    assert "idempotency" in controls
+    assert "receipt" in controls
+
+
+def test_high_impact_external_action_requires_approval_gate():
+    effects = {"external_high_impact"}
+    controls = required_controls(CapabilityLevel.HIGH_IMPACT, effects=effects) - {"approval_gate"}
+    decision = GovernanceGate().evaluate(
+        profile(CapabilityLevel.HIGH_IMPACT, effects=effects, controls=controls)
+    )
+    assert decision.allowed is False
+    assert "approval_gate" in decision.missing_controls
+
+
+def test_autonomy_risk_raises_minimum_operating_level():
+    risks = RiskDimensions(authority=2, autonomy=5)
+    controls = required_controls(CapabilityLevel.PROPOSE, risks=risks)
     decision = GovernanceGate().evaluate(
         profile(CapabilityLevel.PROPOSE, risks=risks, controls=controls)
     )
     assert decision.allowed is False
-    assert decision.required_level == CapabilityLevel.EXTERNAL_HIGH_IMPACT
-
-
-def test_high_impact_action_requires_all_inherited_controls():
-    level = CapabilityLevel.EXTERNAL_HIGH_IMPACT
-    controls = required_controls(level)
-    decision = GovernanceGate().evaluate(profile(level, controls=controls))
-    assert decision.allowed is True
-    assert "approval_gate" in controls
-    assert "compensation" in controls
-    assert "rollback" in controls
-    assert "provenance" in controls
-
-
-def test_autonomous_cross_project_requires_independent_verification_and_override():
-    level = CapabilityLevel.AUTONOMOUS_CROSS_PROJECT
-    controls = required_controls(level) - {"independent_verification", "human_override"}
-    decision = GovernanceGate().evaluate(profile(level, controls=controls))
-    assert decision.allowed is False
-    assert decision.degraded_to == "proposal"
-    assert set(decision.missing_controls) == {
-        "human_override",
-        "independent_verification",
-    }
+    assert decision.required_level == CapabilityLevel.HIGH_IMPACT
 
 
 def test_require_raises_when_governance_is_incomplete():
     try:
-        GovernanceGate().require(profile(CapabilityLevel.COMMIT_STATE))
+        GovernanceGate().require(
+            profile(CapabilityLevel.COMMIT, effects={"canonical_state"})
+        )
     except PermissionError as exc:
         assert "fail closed" in str(exc)
     else:
@@ -100,3 +118,12 @@ def test_invalid_risk_dimension_is_rejected():
         assert "autonomy" in str(exc)
     else:
         raise AssertionError("expected invalid risk dimension rejection")
+
+
+def test_unknown_effect_is_rejected():
+    try:
+        profile(CapabilityLevel.PROPOSE, effects={"magic"})
+    except ValueError as exc:
+        assert "magic" in str(exc)
+    else:
+        raise AssertionError("expected unknown effect rejection")
