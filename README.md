@@ -13,22 +13,25 @@ To ensure permanent memory and easy migration, AgentOS uses a **Logic/Data Separ
 ---
 
 ## 🌐 Distributed AgentOS
-AgentOS is evolving beyond a full Runtime installed on every device. The distributed architecture uses **Canonical IR** as the shared continuation contract and treats local devices, web agents, GitHub Actions, and future cloud workers as capability-specific runtimes.
+AgentOS is evolving beyond a full Runtime installed on every device. The distributed architecture uses **Canonical IR** as the shared continuation contract and treats local devices, web agents, GitHub Actions, provider APIs, and future cloud workers as capability-specific runtimes.
 
 - `runtime_core/canonical_ir.py` — portable Canonical IR + lineage/digest/hop tracking
 - `runtime_core/remote_runtime.py` — capability-gated Remote Runtime contract
-- `agent_core/distributed_control_plane.py` — task lease/result/continuation semantics
-- `agent_core/runtime_dispatcher.py` — local-first routing, durable push targets, retry/dedupe, GitHub/webhook wake-up
+- `agent_core/distributed_control_plane.py` — task lease/result/continuation semantics, including exact push-task lease
+- `agent_core/runtime_dispatcher.py` + `agent_core/push_dispatch.py` — local-first routing, durable push targets, retry/dedupe, GitHub/webhook wake-up
 - `agent_core/dispatching_gateway.py` — closes submit/complete → dispatch loop
 - `agentos_node/control_plane_client.py` + `agentos_node/remote_worker.py` — lightweight runtime without full AgentOS Host
 - `agentos_node/web_agent_adapter.py` — trusted Web Agent request/result contract
-- `.github/workflows/distributed-agentos-worker.yml` — GitHub Actions Runtime Worker
+- `agentos_node/provider_bridge.py` — capability-routed Provider Registry for OpenAI, Gemini, OpenAI-compatible proxies, and authorized relays
+- `agentos_node/provider_bridge_server.py` — asynchronous authenticated wake endpoint for provider runtimes
+- `.github/workflows/distributed-agentos-worker.yml` — GitHub Actions Runtime Worker with exact task binding
 - `docs/DISTRIBUTED_AGENTOS_RUNTIME.md` — overall architecture and migration path
 - `docs/DISTRIBUTED_CONTROL_PLANE.md` — Control Plane protocol
 - `docs/WEB_AGENT_ADAPTER.md` — browser/web-agent boundary
 - `docs/RUNTIME_DISPATCHER.md` — active routing and wake-up policy
+- `docs/PROVIDER_BRIDGE.md` — provider routing, deployment, security, and browser-relay boundary
 
-The design rule is: **Canonical IR is the continuity boundary; runtime location is an implementation detail.** GitHub Actions is a worker, not the durable AgentOS brain.
+The design rule is: **Canonical IR is the continuity boundary; runtime location is an implementation detail.** GitHub Actions and model providers are workers, not the durable AgentOS brain.
 
 The active continuation path is now:
 
@@ -38,11 +41,12 @@ Agent/Runtime A
   → trusted Continuation IR
   → Control Plane enqueue
   → Runtime Dispatcher
-  → local lease OR active GitHub/web-agent wake-up
+  → local exact/pull lease OR active GitHub/Provider Bridge wake-up
+  → capability/provider routing
   → Agent/Runtime B
 ```
 
-Push target metadata is durable in the Control Plane database; transport secrets remain outside the registry. Pending tasks are swept after Core restart and failed wake-ups use bounded retry backoff.
+Push wake-ups carry an exact `task_id`; the runtime must atomically lease that same task before execution. Push target metadata is durable in the Control Plane database while transport/provider secrets remain outside the registry. Pending tasks are swept after Core restart and failed/stale wake-ups use bounded retry recovery.
 
 ---
 
@@ -92,6 +96,7 @@ If you are setting up this system on a new machine:
 - `scripts/platform_runtime.py`: Platform-aware runtime selector and diagnostics.
 - `scripts/distributed_gateway.py`: Distributed Control Plane + active Runtime Dispatcher gateway.
 - `scripts/distributed_remote_worker.py`: Single-shot lightweight remote Runtime Worker.
+- `scripts/provider_bridge.py`: Provider Bridge runtime for OpenAI/Gemini/proxy/browser-relay providers.
 - `scripts/recall_chronicle.py`: Pulls the latest project history from the data layer.
 - `scripts/reconcile_workspace.py`: Synchronizes remote project status with the local workspace.
 
