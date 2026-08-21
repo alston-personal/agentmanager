@@ -1,0 +1,204 @@
+name: Bootstrap Distributed AgentOS Continuity
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/bootstrap-agentos-continuity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distributed-agentos-continuity-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PUBLIC_URL: https://n8n.milkcat.org/agentos
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+
+    steps:
+      - name: Checkout feature implementation
+        uses: actions/checkout@v4
+        with:
+          ref: feature/distributed-agentos-runtime
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install portable client
+        run: python -m pip install -e .
+
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Load Control Plane credential without exposing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "sed -n 's/^AGENTOS_CONTROL_PLANE_TOKEN=//p' ~/.agentos.secrets | tail -n 1")"
+          test -n "$TOKEN"
+          echo "::add-mask::$TOKEN"
+          echo "AGENTOS_CONTROL_PLANE_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Submit, exact-lease, and complete production bootstrap IR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          from agentos_node.control_plane_client import ControlPlaneClient
+          from runtime_core.canonical_ir import CanonicalIR
+          from runtime_core.remote_runtime import ExecutionOutcome, RemoteRuntimeWorker
+
+          public_url = os.environ["PUBLIC_URL"]
+          token = os.environ["AGENTOS_CONTROL_PLANE_TOKEN"]
+          logic_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          client = ControlPlaneClient(public_url, token=token)
+
+          existing = client.get_project_state("agentmanager")
+          if existing.get("currentIR") is not None:
+              print(json.dumps({
+                  "bootstrap": "already_initialized",
+                  "recommendedAction": existing.get("recommendedAction"),
+                  "currentSource": existing.get("currentSource"),
+                  "currentCapability": existing.get("currentIR", {}).get("capability"),
+              }, sort_keys=True))
+              raise SystemExit(0)
+
+          ir = CanonicalIR(
+              goal="Complete Distributed AgentOS cross-IDE continuity and operate the shared production Control Plane",
+              project_id="agentmanager",
+              capability="project.bootstrap",
+              payload={"instruction": "Bind the verified production deployment into authoritative AgentOS continuity."},
+              constraints=[
+                  "Control Plane is the authoritative continuity state.",
+                  "Private GitHub continuity mirror is a connector-readable fallback, not execution authority.",
+                  "Never store Control Plane, GitHub, provider, or SSH secrets inside Canonical IR.",
+                  "Do not merge Draft PR #2 without explicit user approval.",
+              ],
+              context={
+                  "logic_repo": "alston-personal/agentmanager",
+                  "branch": "feature/distributed-agentos-runtime",
+                  "logic_head": logic_head,
+                  "draft_pr": 2,
+                  "production_core": {
+                      "public_url": public_url,
+                      "host": "n8n.milkcat.org",
+                      "release_root": "/home/ubuntu/agentos-distributed",
+                      "config_root": "/home/ubuntu/agentmanager",
+                      "control_plane": "active",
+                      "continuity_mirror": "enabled",
+                      "provider_bridge": "disabled",
+                      "github_runtime_dispatch": "disabled",
+                  },
+              },
+              artifacts=[
+                  {"kind": "workflow", "path": ".github/workflows/deploy-agentos-core.yml"},
+                  {"kind": "workflow", "path": ".github/workflows/activate-agentos-core.yml"},
+                  {"kind": "documentation", "path": "docs/IDE_ADAPTER.md"},
+              ],
+              decisions=[
+                  {"decision": "Use https://n8n.milkcat.org/agentos as the shared HTTPS Control Plane endpoint."},
+                  {"decision": "Use an isolated /home/ubuntu/agentos-distributed release checkout and preserve the existing dirty config checkout."},
+                  {"decision": "Keep Provider Bridge and GitHub runtime dispatch disabled until shared-state connectivity is validated."},
+              ],
+              pending_tasks=[
+                  {"requires_user": False, "task": "Validate agentos CLI continuity from external IDE/runtime clients."},
+                  {"requires_user": False, "task": "Enable at least one agent.reason execution runtime after connectivity validation."},
+                  {"requires_user": True, "task": "Explicitly approve merging Draft PR #2 after production validation is satisfactory."},
+              ],
+              continuation={"checkpoint_kind": "production_core_bootstrap"},
+              parent_ir_id="ir_24703b98c4ed4e0e933e106f8cc88a9c",
+              hop_count=3,
+          )
+          submitted = client.submit_ir(ir, idempotency_key="agentmanager-production-bootstrap-v1")
+          task = submitted["task"]
+          task_id = task["taskId"]
+
+          worker = RemoteRuntimeWorker("github-actions-bootstrap")
+          def bootstrap(current: CanonicalIR) -> ExecutionOutcome:
+              return ExecutionOutcome(
+                  result={
+                      "bootstrap": "production_control_plane_active",
+                      "public_url": public_url,
+                      "logic_head": logic_head,
+                  },
+                  next_capability="agent.reason",
+                  continuation={"checkpoint_kind": "production_core_active"},
+                  auto_continue=False,
+              )
+          worker.register("project.bootstrap", bootstrap)
+
+          lease = client.lease_task(task_id, worker.runtime_id, lease_seconds=60)
+          if not lease:
+              raise SystemExit("bootstrap task could not be exact-leased")
+          leased_ir = CanonicalIR.from_dict(lease["canonicalIR"])
+          if lease.get("inputDigest") != leased_ir.digest():
+              raise SystemExit("bootstrap lease digest mismatch")
+          completed = client.complete(task_id, worker.execute(leased_ir))
+          state = client.get_project_state("agentmanager")
+          current = state.get("currentIR") or {}
+          summary = {
+              "bootstrap": "completed",
+              "taskId": task_id,
+              "taskStatus": completed.get("task", {}).get("status"),
+              "mirrorStatus": completed.get("continuityMirror", {}).get("status"),
+              "recommendedAction": state.get("recommendedAction"),
+              "currentSource": state.get("currentSource"),
+              "currentCapability": current.get("capability"),
+              "currentIR": current.get("ir_id"),
+              "parentIR": current.get("parent_ir_id"),
+              "hopCount": current.get("hop_count"),
+          }
+          print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
+          if summary["taskStatus"] != "succeeded":
+              raise SystemExit("bootstrap task did not succeed")
+          if summary["currentCapability"] != "agent.reason":
+              raise SystemExit("bootstrap continuation did not hand off to agent.reason")
+          if summary["recommendedAction"] != "continue":
+              raise SystemExit("project did not reach resumable continuation state")
+          if summary["mirrorStatus"] not in {"published", "unchanged"}:
+              raise SystemExit("production continuity mirror did not publish")
+          PY
+
+      - name: Black-box portable client state check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from agentos_node.control_plane_client import ControlPlaneClient
+          client = ControlPlaneClient(os.environ["PUBLIC_URL"], token=os.environ["AGENTOS_CONTROL_PLANE_TOKEN"])
+          state = client.get_project_state("agentmanager")
+          assert state["recommendedAction"] == "continue", state
+          assert state["currentIR"]["capability"] == "agent.reason", state
+          print("portable_client_cross_internet_state=ok")
+          PY
