@@ -31,15 +31,22 @@ def run_once(
     *,
     worker: RemoteRuntimeWorker | None = None,
     lease_seconds: int = 60,
+    task_id: str | None = None,
 ) -> dict[str, Any]:
     active_worker = worker or build_default_worker(runtime_id)
     if active_worker.runtime_id != runtime_id:
         raise ValueError("worker.runtime_id must match the leasing runtime_id")
 
-    lease = client.lease(runtime_id, active_worker.capabilities, lease_seconds=lease_seconds)
+    lease = (
+        client.lease_task(task_id, runtime_id, lease_seconds=lease_seconds)
+        if task_id
+        else client.lease(runtime_id, active_worker.capabilities, lease_seconds=lease_seconds)
+    )
     if lease is None:
-        return {"status": "idle", "runtime_id": runtime_id}
+        return {"status": "idle", "runtime_id": runtime_id, "task_id": task_id}
 
+    if task_id and str(lease.get("taskId")) != task_id:
+        raise ValueError("exact lease returned unexpected task id")
     raw_ir = lease.get("canonicalIR")
     if not isinstance(raw_ir, dict):
         raise ValueError("lease canonicalIR must be an object")
