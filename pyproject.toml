@@ -7,7 +7,7 @@ name = "agentos-runtime"
 version = "0.3.0"
 description = "Portable AgentOS Runtime Core, Distributed Node Client, and IDE Adapter"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "AgentOS Core Team", email = "agentos@milkcat.org"}
