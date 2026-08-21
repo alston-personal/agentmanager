@@ -15,6 +15,16 @@ from agent_core.push_dispatch import ExactGitHubActionsDispatchTransport, Resili
 from agent_core.runtime_dispatcher import RuntimeTarget, WebhookDispatchTransport
 
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _enabled(name: str, *, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in _TRUE_VALUES
+
+
 def _csv(value: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in (value or "").split(",") if item.strip())
 
@@ -30,38 +40,39 @@ def _build_dispatcher(
         dispatch_retry_seconds=args.dispatch_retry_seconds,
     )
 
-    github_token = os.getenv("AGENTOS_GITHUB_TOKEN")
-    if github_token:
-        dispatcher.register_transport(ExactGitHubActionsDispatchTransport(github_token))
+    if _enabled("AGENTOS_GITHUB_DISPATCH_ENABLED"):
+        github_token = os.getenv("AGENTOS_GITHUB_TOKEN")
+        if github_token:
+            dispatcher.register_transport(ExactGitHubActionsDispatchTransport(github_token))
 
-    if args.github_repository:
-        capabilities = _csv(args.github_capabilities)
-        missing = []
-        if not github_token:
-            missing.append("AGENTOS_GITHUB_TOKEN")
-        if not args.public_url:
-            missing.append("--public-url / AGENTOS_CONTROL_PLANE_PUBLIC_URL")
-        if not capabilities:
-            missing.append("--github-capabilities / AGENTOS_GITHUB_CAPABILITIES")
-        if missing:
-            parser.error("GitHub Actions dispatcher requires: " + ", ".join(missing))
+        if args.github_repository:
+            capabilities = _csv(args.github_capabilities)
+            missing = []
+            if not github_token:
+                missing.append("AGENTOS_GITHUB_TOKEN")
+            if not args.public_url:
+                missing.append("--public-url / AGENTOS_CONTROL_PLANE_PUBLIC_URL")
+            if not capabilities:
+                missing.append("--github-capabilities / AGENTOS_GITHUB_CAPABILITIES")
+            if missing:
+                parser.error("GitHub Actions dispatcher requires: " + ", ".join(missing))
 
-        dispatcher.register_target(
-            RuntimeTarget(
-                target_id=args.github_runtime_id,
-                kind="github_actions",
-                capabilities=capabilities,
-                priority=args.github_priority,
-                config={
-                    "repository": args.github_repository,
-                    "workflow": args.github_workflow,
-                    "ref": args.github_ref,
-                    "control_plane_url": args.public_url,
-                },
+            dispatcher.register_target(
+                RuntimeTarget(
+                    target_id=args.github_runtime_id,
+                    kind="github_actions",
+                    capabilities=capabilities,
+                    priority=args.github_priority,
+                    config={
+                        "repository": args.github_repository,
+                        "workflow": args.github_workflow,
+                        "ref": args.github_ref,
+                        "control_plane_url": args.public_url,
+                    },
+                )
             )
-        )
 
-    if args.provider_bridge_endpoint:
+    if _enabled("AGENTOS_PROVIDER_DISPATCH_ENABLED") and args.provider_bridge_endpoint:
         capabilities = _csv(args.provider_capabilities)
         missing = []
         if not args.public_url:
@@ -95,8 +106,10 @@ def _build_service(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
 ):
-    if not args.continuity_mirror_repository:
+    if not _enabled("AGENTOS_CONTINUITY_MIRROR_ENABLED"):
         return DispatchingGatewayService(store, dispatcher)
+    if not args.continuity_mirror_repository:
+        parser.error("continuity mirror requires AGENTOS_CONTINUITY_MIRROR_REPOSITORY")
 
     mirror_token = os.getenv("AGENTOS_CONTINUITY_MIRROR_TOKEN")
     if not mirror_token:
@@ -206,7 +219,7 @@ def main() -> int:
         sweep_thread.start()
 
     target_count = len(dispatcher.targets)
-    mirror_mode = "enabled" if args.continuity_mirror_repository else "disabled"
+    mirror_mode = "enabled" if _enabled("AGENTOS_CONTINUITY_MIRROR_ENABLED") else "disabled"
     print(
         f"Distributed AgentOS gateway listening on http://{args.host}:{args.port} "
         f"(active-dispatch targets={target_count}, continuity-mirror={mirror_mode})"
