@@ -115,9 +115,9 @@ jobs:
               echo "Deployment failed; attempting isolated rollback" >&2
               if [ -n "$PREVIOUS_SHA" ]; then
                 git -C "$RELEASE_ROOT" checkout --detach "$PREVIOUS_SHA" || true
-                AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" || true
-              else
-                systemctl --user stop agentos-provider-bridge.service agentos-control-plane.service 2>/dev/null || true
+                if [ -f "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" ]; then
+                  AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" || true
+                fi
               fi
               curl -fsS http://127.0.0.1:8765/health || true
             fi
@@ -130,10 +130,19 @@ jobs:
           echo "Deploying isolated Distributed Core $TARGET_SHA from $REF"
           git -C "$RELEASE_ROOT" checkout --detach "$TARGET_SHA"
 
-          if [ ! -x "$RELEASE_ROOT/.venv/bin/python3" ]; then
-            python3 -m venv "$RELEASE_ROOT/.venv"
+          PYTHON_BIN="$(command -v python3)"
+          rm -rf "$RELEASE_ROOT/.venv" 2>/dev/null || true
+          if python3 -m venv "$RELEASE_ROOT/.venv" >/dev/null 2>&1; then
+            PYTHON_BIN="$RELEASE_ROOT/.venv/bin/python3"
+            echo "Using isolated Python virtualenv"
+          else
+            rm -rf "$RELEASE_ROOT/.venv" 2>/dev/null || true
+            echo "python3-venv unavailable; using system Python without global package installation"
           fi
-          "$RELEASE_ROOT/.venv/bin/python3" -m pip install -e "$RELEASE_ROOT"
+          PYTHONPATH="$RELEASE_ROOT" "$PYTHON_BIN" -m py_compile \
+            "$RELEASE_ROOT/scripts/distributed_gateway.py" \
+            "$RELEASE_ROOT/agent_core/distributed_gateway.py" \
+            "$RELEASE_ROOT/agent_core/runtime_dispatcher.py"
           bash -n "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
 
           set -a
@@ -160,13 +169,14 @@ jobs:
           touch "$SECRETS_FILE"
           chmod 600 "$SECRETS_FILE"
           if ! grep -q '^AGENTOS_CONTROL_PLANE_TOKEN=' "$SECRETS_FILE"; then
-            TOKEN="$($RELEASE_ROOT/.venv/bin/python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+            TOKEN="$($PYTHON_BIN -c 'import secrets; print(secrets.token_urlsafe(48))')"
             printf '\nAGENTOS_CONTROL_PLANE_TOKEN=%s\n' "$TOKEN" >> "$SECRETS_FILE"
             unset TOKEN
             echo "Created a new Control Plane bearer token in ~/.agentos.secrets"
           fi
 
-          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+          AGENTOS_DISTRIBUTED_PYTHON="$PYTHON_BIN" AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" \
+            bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
           systemctl --user is-active --quiet agentos-control-plane.service
           curl -fsS http://127.0.0.1:8765/health
           echo
