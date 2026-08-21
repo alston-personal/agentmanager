@@ -40,6 +40,7 @@ on:
       - "scripts/distributed_remote_worker.py"
       - "scripts/web_agent_adapter.py"
       - "scripts/provider_bridge.py"
+      - "scripts/shadow_ingest_github.py"
       - "scripts/install_systemd_user.sh"
       - "scripts/install_distributed_systemd_user.sh"
       - "config/provider-routes.production.json"
@@ -72,6 +73,7 @@ on:
       - "tests/test_experience_compiler.py"
       - "tests/test_cognitive_compounding_e2e.py"
       - "tests/test_github_experience_adapter.py"
+      - "tests/test_shadow_ingest_github_cli.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
       - "tests/test_continuity_mirror.py"
@@ -151,6 +153,7 @@ jobs:
           tests/test_experience_compiler.py
           tests/test_cognitive_compounding_e2e.py
           tests/test_github_experience_adapter.py
+          tests/test_shadow_ingest_github_cli.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
           tests/test_continuity_mirror.py
