@@ -17,6 +17,7 @@ on:
       - "agent_core/project_state.py"
       - "agent_core/state_kernel.py"
       - "agent_core/governance.py"
+      - "agent_core/cognitive_promotion.py"
       - "agent_core/continuity_mirror.py"
       - "agent_core/runtime_dispatcher.py"
       - "agent_core/push_dispatch.py"
@@ -56,6 +57,7 @@ on:
       - "tests/test_migrate_v1_state_kernel.py"
       - "tests/test_governance.py"
       - "tests/test_cognitive_ir.py"
+      - "tests/test_cognitive_promotion.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
       - "tests/test_continuity_mirror.py"
@@ -127,6 +129,7 @@ jobs:
           tests/test_migrate_v1_state_kernel.py
           tests/test_governance.py
           tests/test_cognitive_ir.py
+          tests/test_cognitive_promotion.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
           tests/test_continuity_mirror.py
