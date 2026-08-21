@@ -8,6 +8,8 @@ lease validation, runtime-result verification, and guarded auto-continuation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
 from typing import Any
 
 from runtime_core.canonical_ir import CanonicalIR
@@ -19,6 +21,10 @@ from .control_plane import ControlPlaneStore
 TASK_PROTOCOL = "agentos.distributed-task/v1"
 RESULT_PROTOCOL = "agentos.distributed-result/v1"
 DEFAULT_MAX_AUTO_CONTINUATION_HOPS = 32
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -94,12 +100,50 @@ class DistributedControlPlane(ControlPlaneStore):
             raise ValueError("task project does not match Canonical IR project")
         return ir
 
+    def requeue_expired_ir_leases(self) -> int:
+        """Return expired Distributed AgentOS leases to the submitted queue.
+
+        This is intentionally scoped to TASK_PROTOCOL payloads so unrelated
+        generic Control Plane tasks keep their existing lease policy.
+        """
+        now = _utc_now()
+        requeued = 0
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT task_id, payload_json
+                FROM tasks
+                WHERE status='leased' AND lease_until IS NOT NULL AND lease_until < ?
+                """,
+                (now,),
+            ).fetchall()
+            for row in rows:
+                try:
+                    payload = json.loads(row["payload_json"])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if payload.get("protocol") != TASK_PROTOCOL:
+                    continue
+                cursor = connection.execute(
+                    """
+                    UPDATE tasks
+                    SET status='submitted', target_node_id=NULL, lease_until=NULL, updated_at=?
+                    WHERE task_id=? AND status='leased'
+                    """,
+                    (now, row["task_id"]),
+                )
+                requeued += cursor.rowcount
+        return requeued
+
     def lease_next_ir(
         self,
         node_id: str,
         capabilities: list[str],
         lease_seconds: int = 60,
     ) -> IRTaskLease | None:
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be >= 1")
+        self.requeue_expired_ir_leases()
         task = self.lease_next_task(node_id, capabilities, lease_seconds=lease_seconds)
         if task is None:
             return None
@@ -128,6 +172,9 @@ class DistributedControlPlane(ControlPlaneStore):
             raise ValueError(f"task {task_id} is not completable from state {task['status']}")
         input_ir = self._ir_from_task(task)
 
+        lease_owner = task.get("targetNodeId")
+        if lease_owner and runtime_result.runtime_id != lease_owner:
+            raise ValueError("runtime_id does not match current task lease owner")
         if runtime_result.input_ir_id != input_ir.ir_id:
             raise ValueError("runtime result input_ir_id does not match leased Canonical IR")
         if runtime_result.input_digest != input_ir.digest():

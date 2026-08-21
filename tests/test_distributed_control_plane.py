@@ -93,3 +93,32 @@ def test_auto_continuation_has_hop_limit(tmp_path: Path):
     assert completed["task"]["status"] == "succeeded"
     assert completed["enqueuedTask"] is None
     assert completed["continuationBlocked"] == "hop_limit"
+
+
+def test_expired_lease_is_requeued_and_stale_worker_is_fenced(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "control-plane.sqlite3")
+    ir = CanonicalIR(goal="survive worker loss", project_id="agentmanager", capability="recover.step")
+    store.submit_ir(ir)
+
+    first_lease = store.lease_next_ir("worker-old", ["recover.step"])
+    assert first_lease is not None
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_until='2000-01-01T00:00:00Z' WHERE task_id=?",
+            (first_lease.task_id,),
+        )
+
+    second_lease = store.lease_next_ir("worker-new", ["recover.step"])
+    assert second_lease is not None
+    assert second_lease.task_id == first_lease.task_id
+
+    old_worker = RemoteRuntimeWorker("worker-old")
+    old_worker.register("recover.step", lambda current: {"worker": "old"})
+    with pytest.raises(ValueError, match="lease owner"):
+        store.complete_ir(first_lease.task_id, old_worker.execute(first_lease.ir))
+
+    new_worker = RemoteRuntimeWorker("worker-new")
+    new_worker.register("recover.step", lambda current: {"worker": "new"})
+    completed = store.complete_ir(second_lease.task_id, new_worker.execute(second_lease.ir))
+    assert completed["task"]["status"] == "succeeded"
+    assert completed["task"]["result"]["runtime_id"] == "worker-new"
