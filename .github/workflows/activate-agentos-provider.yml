@@ -1,0 +1,235 @@
+name: Activate AgentOS Provider Bridge
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/activate-agentos-provider.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distributed-agentos-provider-activation
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+      DEPLOY_REF: feature/distributed-agentos-runtime
+      PUBLIC_URL: https://n8n.milkcat.org/agentos
+
+    steps:
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy latest release and enable provider runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$DEPLOY_REF" "$PUBLIC_URL" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          RELEASE_ROOT="$2"
+          REF="$3"
+          PUBLIC_URL="$4"
+          DIST_ENV="$HOME/.config/agentos/distributed.env"
+          SECRETS_FILE="$HOME/.agentos.secrets"
+          ROUTES_FILE="$RELEASE_ROOT/config/provider-routes.production.json"
+
+          test -d "$RELEASE_ROOT/.git"
+          test -f "$CONFIG_ROOT/.env"
+          test -f "$DIST_ENV"
+          test -f "$SECRETS_FILE"
+
+          PREVIOUS_SHA="$(git -C "$RELEASE_ROOT" rev-parse HEAD)"
+          PREVIOUS_DIST="$(mktemp)"
+          cp "$DIST_ENV" "$PREVIOUS_DIST"
+
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Provider activation failed; restoring previous release/config" >&2
+              cp "$PREVIOUS_DIST" "$DIST_ENV" || true
+              git -C "$RELEASE_ROOT" checkout --detach "$PREVIOUS_SHA" || true
+              AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" || true
+            fi
+            rm -f "$PREVIOUS_DIST"
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          git -C "$RELEASE_ROOT" fetch --prune origin "$REF"
+          TARGET_SHA="$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)"
+          git -C "$RELEASE_ROOT" checkout --detach "$TARGET_SHA"
+          echo "provider_release_sha=$TARGET_SHA"
+          grep -q 'PROVIDER_USER_AGENT = "AgentOS-Provider-Bridge/0.3"' "$RELEASE_ROOT/agentos_node/provider_bridge.py"
+          test -f "$ROUTES_FILE"
+          python3 -m json.tool "$ROUTES_FILE" >/dev/null
+          bash -n "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+
+          set -a
+          # shellcheck disable=SC1090
+          source "$CONFIG_ROOT/.env"
+          # shellcheck disable=SC1090
+          source "$DIST_ENV"
+          # shellcheck disable=SC1090
+          source "$SECRETS_FILE"
+          set +a
+          test -n "${AI_API_ACADEMIA_KEY:-}" || { echo "AI_API_ACADEMIA_KEY missing"; exit 2; }
+          test -n "${AGENTOS_CONTROL_PLANE_TOKEN:-}" || { echo "Control Plane token missing"; exit 2; }
+
+          if ! grep -q '^AGENTOS_PROVIDER_BRIDGE_TOKEN=' "$SECRETS_FILE"; then
+            TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+            printf '\nAGENTOS_PROVIDER_BRIDGE_TOKEN=%s\n' "$TOKEN" >> "$SECRETS_FILE"
+            unset TOKEN
+            chmod 600 "$SECRETS_FILE"
+            echo "Created Provider Bridge token in ~/.agentos.secrets"
+          fi
+
+          python3 - "$DIST_ENV" "$PUBLIC_URL" "$ROUTES_FILE" <<'PY'
+          import pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          public_url = sys.argv[2]
+          routes = sys.argv[3]
+          wanted = {
+              "AGENTOS_CONTROL_PLANE_PUBLIC_URL": public_url,
+              "AGENTOS_PROVIDER_BRIDGE_ENABLED": "1",
+              "AGENTOS_PROVIDER_DISPATCH_ENABLED": "1",
+              "AGENTOS_PROVIDER_BRIDGE_ENDPOINT": "http://127.0.0.1:8775/v1/runtime-dispatch",
+              "AGENTOS_PROVIDER_RUNTIME_ID": "provider-bridge",
+              "AGENTOS_PROVIDER_CAPABILITIES": "agent.reason",
+              "AGENTOS_PROVIDER_PRIORITY": "10",
+              "AGENTOS_PROVIDER_BRIDGE_HOST": "127.0.0.1",
+              "AGENTOS_PROVIDER_BRIDGE_PORT": "8775",
+              "AGENTOS_PROVIDER_ROUTES_FILE": routes,
+              "AGENTOS_PROVIDER_LEASE_SECONDS": "300",
+              "AGENTOS_PROVIDER_MAX_WORKERS": "2",
+          }
+          lines = path.read_text().splitlines()
+          seen = set()
+          out = []
+          for line in lines:
+              key = line.split("=", 1)[0] if "=" in line else None
+              if key in wanted:
+                  if key not in seen:
+                      out.append(f"{key}={wanted[key]}")
+                      seen.add(key)
+              else:
+                  out.append(line)
+          for key, value in wanted.items():
+              if key not in seen:
+                  out.append(f"{key}={value}")
+          path.write_text("\n".join(out) + "\n")
+          PY
+          chmod 600 "$DIST_ENV"
+
+          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            cp_ok=0
+            pb_ok=0
+            curl -fsS http://127.0.0.1:8765/health >/dev/null 2>&1 && cp_ok=1
+            curl -fsS http://127.0.0.1:8775/health >/dev/null 2>&1 && pb_ok=1
+            [ "$cp_ok" = "1" ] && [ "$pb_ok" = "1" ] && break
+            sleep 1
+          done
+          systemctl --user is-active --quiet agentos-control-plane.service
+          systemctl --user is-active --quiet agentos-provider-bridge.service
+          curl -fsS http://127.0.0.1:8765/health
+          echo
+          curl -fsS http://127.0.0.1:8775/health
+          echo
+          rm -f "$PREVIOUS_DIST"
+          trap - EXIT
+          REMOTE
+
+      - name: End-to-end provider smoke project
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "sed -n 's/^AGENTOS_CONTROL_PLANE_TOKEN=//p' ~/.agentos.secrets | tail -n 1")"
+          test -n "$TOKEN"
+          echo "::add-mask::$TOKEN"
+          export AGENTOS_CONTROL_PLANE_TOKEN="$TOKEN"
+
+          git clone --depth 1 --branch "$DEPLOY_REF" https://github.com/alston-personal/agentmanager.git /tmp/agentos-smoke
+          PYTHONPATH=/tmp/agentos-smoke python3 - <<'PY'
+          import os, time
+          from agentos_node.control_plane_client import ControlPlaneClient
+          from runtime_core.canonical_ir import CanonicalIR
+
+          client = ControlPlaneClient(
+              os.environ['PUBLIC_URL'],
+              token=os.environ['AGENTOS_CONTROL_PLANE_TOKEN'],
+          )
+          ir = CanonicalIR(
+              goal='Verify the production AgentOS provider execution path',
+              project_id='agentmanager-provider-smoke',
+              capability='agent.reason',
+              payload={
+                  'instruction': 'Return a successful semantic result confirming the production provider bridge smoke test. Keep auto_continue false.'
+              },
+              context={
+                  'runtime_policy': {
+                      'prefer_push': True,
+                      'preferred_target': 'provider-bridge',
+                  },
+                  'provider_policy': {
+                      'preferred_provider': 'academia-gemini-reasoner',
+                  },
+              },
+          )
+          submitted = client.submit_ir(ir, idempotency_key='production-provider-smoke-v1')
+          task_id = submitted['task']['taskId']
+          final = None
+          for _ in range(90):
+              task = client.get_task(task_id)['task']
+              if task['status'] in {'succeeded', 'failed', 'cancelled', 'expired'}:
+                  final = task
+                  break
+              time.sleep(1)
+          if final is None:
+              raise SystemExit('provider smoke task timed out')
+          print('provider_smoke_task=' + task_id)
+          print('provider_smoke_status=' + final['status'])
+          if final['status'] != 'succeeded':
+              print('provider_smoke_result=' + repr(final.get('result')))
+              raise SystemExit('provider smoke task failed')
+          result = final.get('result') or {}
+          continuation = result.get('continuation_ir') or {}
+          metadata = continuation.get('continuation') or {}
+          if metadata.get('provider_id') != 'academia-gemini-reasoner':
+              raise SystemExit(f'unexpected provider continuation metadata: {metadata}')
+          state = client.get_project_state('agentmanager-provider-smoke')
+          if state.get('recommendedAction') != 'continue':
+              raise SystemExit(f'smoke project not resumable: {state}')
+          if (state.get('currentIR') or {}).get('capability') != 'agent.reason':
+              raise SystemExit(f'smoke continuation capability mismatch: {state}')
+          print('provider_smoke_provider=' + metadata['provider_id'])
+          print('provider_smoke_continuation=ok')
+          PY
