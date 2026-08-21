@@ -6,7 +6,7 @@ Status: normative architecture constraints for State Kernel v2 and all future Co
 
 > **Capability must never scale faster than governance.**
 >
-> 能力越強，治理至少要同等變強；任何新增能力若提高自主性、影響範圍、不可逆性、資訊權限或推理權重，必須同時提高相應的驗證、授權、可追溯、隔離、回滾/補償與人工介入能力。
+> 能力越強，治理至少要同等變強；任何新增能力若提高自主性、影響範圍、不可逆性、資訊權限、持久性、跨專案傳播或推理權重，必須同時提高相應的驗證、授權、可追溯、隔離、回滾/補償、撤銷與人工介入能力。
 
 This is not a product slogan. It is a release invariant.
 
@@ -25,11 +25,11 @@ Every capability change must be evaluated across at least these dimensions:
 7. **Opacity** — how difficult is it to explain why an action, promotion, merge, or synthesis occurred?
 8. **Uncertainty** — how much inference, ambiguity, untrusted input, or model judgment is involved?
 
-Governance must strengthen monotonically as any of these dimensions increase.
+Governance must strengthen monotonically as any of these dimensions increase, but controls are effect-aware rather than one universal checklist.
 
 ## Required governance controls
 
-Depending on capability risk, controls include:
+Depending on capability risk and effect domain, controls include:
 
 - least-privilege scoped principals and capabilities;
 - proposal-before-commit semantics;
@@ -50,7 +50,7 @@ Depending on capability risk, controls include:
 
 ## Cognitive Kernel rules
 
-The Cognitive Kernel may retrieve, associate, abstract, brainstorm, analogize, synthesize, and generate hypotheses. These abilities do not grant truth authority.
+The Cognitive Kernel may retrieve, associate, abstract, brainstorm, analogize, synthesize, compact, re-synthesize, and generate hypotheses. These abilities do not grant truth authority.
 
 The following rules are mandatory:
 
@@ -59,14 +59,18 @@ The following rules are mandatory:
 3. **Synthesis must retain provenance.** New conclusions preserve links to supporting and contradicting evidence.
 4. **Contradictions must survive.** Conflicting evidence may not be silently summarized away.
 5. **Confidence is explicit.** Important synthesized knowledge carries confidence/validation state rather than rhetorical certainty.
-6. **Promotion is governed.** L1 -> L2 -> L3 memory promotion requires stronger evidence as persistence and propagation increase.
+6. **Promotion is governed.** Working -> Project -> Cross-project memory promotion requires stronger evidence as persistence and propagation increase.
 7. **Cross-project influence requires stricter gates.** L3 knowledge has wider blast radius than project-local memory and therefore requires stronger validation.
-8. **Supersession is reversible and auditable.** New knowledge may supersede old knowledge, but history and reasons remain inspectable.
+8. **Supersession is immutable and auditable.** New knowledge may supersede old knowledge, but history and reasons remain inspectable.
 9. **Autonomous re-synthesis does not imply autonomous action.** A new insight can create a proposal or review WorkItem; it cannot silently trigger high-impact external effects.
+10. **Compaction may reduce prompt material, not provenance.** Meta-synthesis must remain traceable through immutable knowledge lineage to original ExperienceEvents or durable evidence anchors.
+11. **A synthesizer cannot self-promote.** Model output claiming validated/project/cross-project authority is normalized back to Working/candidate until deterministic promotion gates pass.
+12. **Re-synthesis is reconsideration, not mutation.** New contradiction, supersession, or analogy may schedule cognitive work but cannot directly rewrite durable memory.
+13. **Source credentials are not experience.** Tokens, cookies, authorization headers and browser login material may not enter ExperienceEvent, memory, synthesis, or canonical state.
+14. **Shadow before promotion.** A new real-world source adapter must first operate read-only/shadow and demonstrate bounded, idempotent, provenance-preserving ingestion before durable promotion is enabled.
+15. **Third-party bridge authority stays bounded.** Browser/IDE/agent bridges are transports/runtimes; their session state and internal automation never become AgentOS authority.
 
 ## Capability ladder
-
-A practical default ladder:
 
 ```text
 Level 0  Observe / read
@@ -94,11 +98,11 @@ Level 6  Autonomous recurring / cross-project cognition or action
                      human override must exist before enablement
 ```
 
-A subsystem may not move up the capability ladder before the corresponding governance controls exist and are tested.
+A subsystem may not move up the capability ladder before corresponding effect-appropriate governance controls exist and are tested.
 
 ## Fail-closed rule
 
-When governance state is unknown, validation is unavailable, provenance is incomplete, approval cannot be verified, or a side-effect receipt is ambiguous:
+When governance state is unknown, validation is unavailable, provenance is incomplete, lineage is broken/cyclic, approval cannot be verified, or a side-effect receipt is ambiguous:
 
 > **Do not silently increase authority. Fail closed or degrade to proposal/read-only mode.**
 
@@ -108,17 +112,13 @@ Availability is never a justification for bypassing a required governance gate.
 
 Where practical, high-impact flows should avoid letting one model/runtime both propose and authorize its own durable or external effects.
 
-Preferred flow:
-
 ```text
 Agent/runtime
   -> proposal
   -> independent policy / validator / human gate
-  -> State Kernel or Side-effect Executor
-  -> commit + receipt
+  -> State Kernel / Cognitive Promotion Gate / Side-effect Executor
+  -> commit/promotion + receipt/lineage
 ```
-
-The validator may be deterministic policy, independent evidence, a separate runtime, or a human depending on risk.
 
 ## Release gate
 
@@ -130,29 +130,10 @@ What new authority does it gain?
 What is the worst credible failure/blast radius?
 What governance control is added at the same time?
 How is the decision/action audited?
-How is it stopped, revoked, rolled back, or compensated?
+How is it stopped, revoked, rolled back, superseded, or compensated?
 What happens when governance dependencies fail?
+Can resulting knowledge/actions be traced to original sources?
+Are source credentials/secrets excluded from cognitive state?
 ```
 
 If these questions cannot be answered, the capability remains experimental and must not be promoted.
-
-## Architectural consequence
-
-State Kernel and Cognitive Kernel are complementary:
-
-```text
-Cognitive Kernel
-  retrieve -> associate -> synthesize -> propose
-                              |
-                              v
-Governance gates / validators
-                              |
-                              v
-State Kernel / Side-effect executor
-  validate -> commit -> observe -> journal
-                              |
-                              v
-                    new governed experience
-```
-
-The system may become more capable over time, but its authority must remain explicit, bounded, inspectable, and revocable.
