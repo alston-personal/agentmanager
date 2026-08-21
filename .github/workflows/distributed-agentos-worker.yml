@@ -4,8 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       canonical_ir_json:
-        description: Canonical AgentOS IR JSON
-        required: true
+        description: Direct-mode Canonical AgentOS IR JSON (leave empty for gateway mode)
+        required: false
+        type: string
+      control_plane_url:
+        description: HTTPS Distributed Control Plane URL (leave empty for direct mode)
+        required: false
         type: string
 
 permissions:
@@ -16,6 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Validate invocation mode
+        env:
+          DIRECT_IR: ${{ inputs.canonical_ir_json }}
+          CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
+        run: |
+          if { [ -n "$DIRECT_IR" ] && [ -n "$CONTROL_PLANE_URL" ]; } || \
+             { [ -z "$DIRECT_IR" ] && [ -z "$CONTROL_PLANE_URL" ]; }; then
+            echo "Provide exactly one of canonical_ir_json or control_plane_url" >&2
+            exit 2
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -24,16 +39,31 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Execute capability-gated remote runtime
+      - name: Execute direct Canonical IR
+        if: ${{ inputs.canonical_ir_json != '' }}
         env:
           AGENTOS_CANONICAL_IR_JSON: ${{ inputs.canonical_ir_json }}
           AGENTOS_RUNTIME_ID: github-actions:${{ github.run_id }}
         run: |
+          mkdir -p .agentos-out
           python scripts/distributed_worker.py \
             --input-json "$AGENTOS_CANONICAL_IR_JSON" \
             --output .agentos-out/distributed-runtime-result.json
 
-      - name: Upload continuation result
+      - name: Lease and complete through Control Plane
+        if: ${{ inputs.control_plane_url != '' }}
+        env:
+          AGENTOS_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
+          AGENTOS_CONTROL_PLANE_TOKEN: ${{ secrets.AGENTOS_CONTROL_PLANE_TOKEN }}
+          AGENTOS_RUNTIME_ID: github-actions:${{ github.run_id }}
+        run: |
+          mkdir -p .agentos-out
+          python scripts/distributed_remote_worker.py \
+            --gateway "$AGENTOS_CONTROL_PLANE_URL" \
+            --runtime-id "$AGENTOS_RUNTIME_ID" \
+            | tee .agentos-out/distributed-runtime-result.json
+
+      - name: Upload runtime result
         if: always()
         uses: actions/upload-artifact@v4
         with:
