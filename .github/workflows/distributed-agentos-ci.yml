@@ -43,6 +43,7 @@ on:
       - "tests/test_project_state.py"
       - "tests/test_project_state_http.py"
       - "tests/test_ide_adapter.py"
+      - "tests/test_ide_cli.py"
       - ".github/workflows/distributed-agentos-*.yml"
       - "pyproject.toml"
 
@@ -87,3 +88,4 @@ jobs:
           tests/test_project_state.py
           tests/test_project_state_http.py
           tests/test_ide_adapter.py
+          tests/test_ide_cli.py
