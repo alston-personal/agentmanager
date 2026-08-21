@@ -19,6 +19,7 @@ on:
       - "agent_core/governance.py"
       - "agent_core/cognitive_promotion.py"
       - "agent_core/cognitive_index.py"
+      - "agent_core/cognitive_memory_lifecycle.py"
       - "agent_core/cognitive_synthesis.py"
       - "agent_core/cognitive_refresh.py"
       - "agent_core/cognitive_compaction.py"
@@ -47,6 +48,7 @@ on:
       - "config/provider-routes.production.json"
       - "docs/GOVERNANCE_INVARIANTS.md"
       - "docs/COGNITIVE_KERNEL.md"
+      - "docs/ADAPTIVE_MEMORY_LIFECYCLE.md"
       - "tests/test_control_plane.py"
       - "tests/test_distributed_runtime.py"
       - "tests/test_distributed_control_plane.py"
@@ -69,6 +71,7 @@ on:
       - "tests/test_cognitive_ir.py"
       - "tests/test_cognitive_promotion.py"
       - "tests/test_cognitive_index.py"
+      - "tests/test_cognitive_memory_lifecycle.py"
       - "tests/test_cognitive_synthesis.py"
       - "tests/test_cognitive_refresh.py"
       - "tests/test_cognitive_compaction.py"
@@ -150,6 +153,7 @@ jobs:
           tests/test_cognitive_ir.py
           tests/test_cognitive_promotion.py
           tests/test_cognitive_index.py
+          tests/test_cognitive_memory_lifecycle.py
           tests/test_cognitive_synthesis.py
           tests/test_cognitive_refresh.py
           tests/test_cognitive_compaction.py
