@@ -8,47 +8,51 @@ from .distributed_control_plane import DistributedControlPlane
 
 
 ACTIVE_TASK_STATES = {"submitted", "leased", "running"}
+PROJECT_STATE_SCAN_LIMIT = 100
 
 
 def read_project_state(store: DistributedControlPlane, project_id: str) -> dict[str, Any]:
-    """Return the latest durable task and the Canonical IR an IDE should resume from."""
+    """Return the latest durable Distributed AgentOS task and resumable Canonical IR."""
     project_id = str(project_id or "").strip()
     if not project_id:
         raise ValueError("project_id is required")
 
     with store._connect() as connection:
-        row = connection.execute(
+        rows = connection.execute(
             """
             SELECT * FROM tasks
             WHERE project_id=?
             ORDER BY updated_at DESC, created_at DESC, task_id DESC
-            LIMIT 1
+            LIMIT ?
             """,
-            (project_id,),
-        ).fetchone()
+            (project_id, PROJECT_STATE_SCAN_LIMIT),
+        ).fetchall()
 
-    if row is None:
+    selected_task = None
+    input_ir = None
+    ignored = 0
+    for row in rows:
+        task = store._task_from_row(row)
+        try:
+            candidate_ir = store._ir_from_task(task)
+        except ValueError:
+            ignored += 1
+            continue
+        selected_task = task
+        input_ir = candidate_ir
+        break
+
+    if selected_task is None or input_ir is None:
         return {
             "projectId": project_id,
             "latestTask": None,
             "currentIR": None,
             "currentSource": None,
             "recommendedAction": "start",
+            "ignoredNonDistributedTasks": ignored,
         }
 
-    task = store._task_from_row(row)
-    try:
-        input_ir = store._ir_from_task(task)
-    except ValueError:
-        return {
-            "projectId": project_id,
-            "latestTask": task,
-            "currentIR": None,
-            "currentSource": None,
-            "recommendedAction": "unsupported_task",
-        }
-
-    continuation = store.load_continuation_ir(task["taskId"])
+    continuation = store.load_continuation_ir(selected_task["taskId"])
     if continuation is not None:
         current_ir = continuation
         current_source = "task_continuation"
@@ -56,7 +60,7 @@ def read_project_state(store: DistributedControlPlane, project_id: str) -> dict[
         current_ir = input_ir
         current_source = "task_input"
 
-    status = task["status"]
+    status = selected_task["status"]
     if status in ACTIVE_TASK_STATES:
         action = "wait"
     elif status == "succeeded":
@@ -68,8 +72,9 @@ def read_project_state(store: DistributedControlPlane, project_id: str) -> dict[
 
     return {
         "projectId": project_id,
-        "latestTask": task,
+        "latestTask": selected_task,
         "currentIR": current_ir.to_dict(),
         "currentSource": current_source,
         "recommendedAction": action,
+        "ignoredNonDistributedTasks": ignored,
     }
