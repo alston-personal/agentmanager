@@ -74,9 +74,9 @@ jobs:
             docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null || true
           fi
 
-          echo "=== Reverse proxy hints ==="
-          if [ -d /etc/nginx ]; then
-            grep -R -n -E 'server_name|proxy_pass|n8n\.milkcat\.org' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -n 120 || true
+          echo "=== Exact n8n nginx vhost ==="
+          if [ -f /etc/nginx/sites-enabled/n8n ]; then
+            sudo -n nl -ba /etc/nginx/sites-enabled/n8n
           fi
           echo "sudo_noninteractive=$(sudo -n true >/dev/null 2>&1 && echo yes || echo no)"
           echo "nginx_site_writable=$(test -w /etc/nginx/sites-enabled/n8n && echo yes || echo no)"
