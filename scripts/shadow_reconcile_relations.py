@@ -13,6 +13,13 @@ import json
 from pathlib import Path
 import sys
 
+# A checkout-local script must be runnable directly without depending on an
+# editable install to expose the repo root. Keep this bootstrap local to the CLI;
+# it does not change source authority or import behavior inside the packages.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from agent_core.cognitive_reconciliation import CognitiveReconciliationPlanner
 from agent_core.relational_seed import load_relation_seed
 
