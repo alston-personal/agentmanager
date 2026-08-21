@@ -58,6 +58,14 @@ class DistributedGatewayService:
         lease = self.store.lease_next_ir(node_id, capabilities, lease_seconds=lease_seconds)
         return {"lease": lease.to_dict() if lease else None}
 
+    def lease_task(self, task_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        node_id = str(body.get("node_id") or "")
+        if not node_id:
+            raise ValueError("node_id is required")
+        lease_seconds = int(body.get("lease_seconds", 60))
+        lease = self.store.lease_ir_task(task_id, node_id, lease_seconds=lease_seconds)
+        return {"lease": lease.to_dict() if lease else None}
+
     def complete(self, task_id: str, body: dict[str, Any]) -> dict[str, Any]:
         raw_result = body.get("runtime_result")
         if not isinstance(raw_result, dict):
@@ -158,6 +166,9 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
                 return
             if path == "/v1/lease":
                 self._json(200, self.server.service.lease(body))
+                return
+            if len(parts) == 4 and parts[:2] == ["v1", "tasks"] and parts[3] == "lease":
+                self._json(200, self.server.service.lease_task(parts[2], body))
                 return
             if len(parts) == 4 and parts[:2] == ["v1", "tasks"] and parts[3] == "complete":
                 self._json(200, self.server.service.complete(parts[2], body))
