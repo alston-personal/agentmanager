@@ -21,6 +21,7 @@ on:
       - "agent_core/cognitive_index.py"
       - "agent_core/cognitive_memory_lifecycle.py"
       - "agent_core/relational_memory.py"
+      - "agent_core/cognitive_reconciliation.py"
       - "agent_core/cognitive_synthesis.py"
       - "agent_core/cognitive_refresh.py"
       - "agent_core/cognitive_compaction.py"
@@ -74,6 +75,7 @@ on:
       - "tests/test_cognitive_index.py"
       - "tests/test_cognitive_memory_lifecycle.py"
       - "tests/test_relational_memory.py"
+      - "tests/test_cognitive_reconciliation.py"
       - "tests/test_cognitive_synthesis.py"
       - "tests/test_cognitive_refresh.py"
       - "tests/test_cognitive_compaction.py"
@@ -157,6 +159,7 @@ jobs:
           tests/test_cognitive_index.py
           tests/test_cognitive_memory_lifecycle.py
           tests/test_relational_memory.py
+          tests/test_cognitive_reconciliation.py
           tests/test_cognitive_synthesis.py
           tests/test_cognitive_refresh.py
           tests/test_cognitive_compaction.py
