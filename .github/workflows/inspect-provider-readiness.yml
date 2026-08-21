@@ -20,6 +20,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
 
     steps:
       - name: Resolve host
@@ -41,9 +42,10 @@ jobs:
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$CONFIG_ROOT" <<'REMOTE'
+            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" <<'REMOTE'
           set -euo pipefail
           CONFIG_ROOT="$1"
+          RELEASE_ROOT="$2"
           set -a
           # shellcheck disable=SC1090
           source "$CONFIG_ROOT/.env"
@@ -64,29 +66,57 @@ jobs:
             echo "AI_API_BASE_URL=missing"
           fi
 
-          if [ -n "${AI_API_BASE_URL:-}" ] && [ -n "${AI_API_ACADEMIA_KEY:-}" ]; then
-            base="${AI_API_BASE_URL%/}"
-            code="$(curl -sS -o /tmp/agentos-models.json -w '%{http_code}' \
-              -H "Authorization: Bearer ${AI_API_ACADEMIA_KEY}" \
-              -H 'Accept: application/json' "$base/models" || true)"
-            echo "openai_compatible_models_http=$code"
-            if [ "$code" = "200" ]; then
-              python3 - <<'PY'
+          if [ -z "${AI_API_BASE_URL:-}" ] || [ -z "${AI_API_ACADEMIA_KEY:-}" ]; then
+            echo "OpenAI-compatible provider is not ready" >&2
+            exit 2
+          fi
+
+          base="${AI_API_BASE_URL%/}"
+          code="$(curl -sS -o /tmp/agentos-models.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${AI_API_ACADEMIA_KEY}" \
+            -H 'Accept: application/json' "$base/models" || true)"
+          echo "openai_compatible_models_http=$code"
+          test "$code" = "200"
+          python3 - <<'PY'
           import json
           from pathlib import Path
-          try:
-              obj = json.loads(Path('/tmp/agentos-models.json').read_text())
-          except Exception:
-              print('compatible_models=parse_failed')
-              raise SystemExit(0)
+          obj = json.loads(Path('/tmp/agentos-models.json').read_text())
           data = obj.get('data') if isinstance(obj, dict) else None
-          ids = []
-          if isinstance(data, list):
-              for item in data:
-                  if isinstance(item, dict) and item.get('id'):
-                      ids.append(str(item['id']))
+          ids = [str(item['id']) for item in (data or []) if isinstance(item, dict) and item.get('id')]
           print('compatible_models=' + ','.join(ids[:30]))
+          if 'gemini-3.1-flash-lite' not in ids:
+              raise SystemExit('required probe model gemini-3.1-flash-lite is unavailable')
           PY
-            fi
-          fi
+
+          PYTHONPATH="$RELEASE_ROOT" python3 - <<'PY'
+          import os
+          from agentos_node.provider_bridge import OpenAICompatibleChatProvider
+
+          provider = OpenAICompatibleChatProvider(
+              'production-reasoner-probe',
+              model='gemini-3.1-flash-lite',
+              api_key=os.environ['AI_API_ACADEMIA_KEY'],
+              base_url=os.environ['AI_API_BASE_URL'],
+              timeout=60,
+          )
+          semantic = provider.invoke({
+              'protocol': 'agentos.web-agent-request/v1',
+              'runtime_id': 'provider-probe',
+              'input_ir_id': 'ir_probe',
+              'input_digest': 'probe',
+              'canonical_ir': {
+                  'schema_version': 'agentos.ir/v1',
+                  'goal': 'Verify provider contract',
+                  'project_id': 'agentmanager-provider-probe',
+                  'capability': 'agent.reason',
+                  'payload': {'instruction': 'Return a successful semantic result whose result object contains probe=ok.'},
+              },
+          })
+          if semantic.get('status') != 'succeeded':
+              raise SystemExit(f'provider semantic probe failed: {semantic}')
+          if not isinstance(semantic.get('result'), dict):
+              raise SystemExit('provider result is not an object')
+          print('provider_semantic_contract=ok')
+          print('provider_status=' + semantic['status'])
+          PY
           REMOTE
