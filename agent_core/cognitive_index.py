@@ -84,6 +84,7 @@ class AssociationQuery:
     domain: str | None = None
     include_cross_project: bool = True
     include_superseded: bool = False
+    include_archive: bool = False
     limit_near: int = 8
     limit_far: int = 4
 
@@ -122,6 +123,17 @@ class CognitiveIndexBackend(Protocol):
     def records(self) -> Sequence[CognitiveIndexRecord]: ...
 
 
+class LifecycleStateLike(Protocol):
+    tier: object
+
+    @property
+    def retrieval_weight(self) -> float: ...
+
+
+class LifecycleStoreLike(Protocol):
+    def get(self, knowledge_id: str) -> LifecycleStateLike | None: ...
+
+
 class InMemoryCognitiveIndex:
     """Deterministic reference backend for tests/small deployments.
 
@@ -143,8 +155,14 @@ class InMemoryCognitiveIndex:
 class CognitiveAssociationEngine:
     """Build near and far retrieval sets while retaining exact source IDs."""
 
-    def __init__(self, backend: CognitiveIndexBackend) -> None:
+    def __init__(
+        self,
+        backend: CognitiveIndexBackend,
+        *,
+        lifecycle_store: LifecycleStoreLike | None = None,
+    ) -> None:
         self.backend = backend
+        self.lifecycle_store = lifecycle_store
 
     @staticmethod
     def _jaccard(left: frozenset[str], right: frozenset[str]) -> float:
@@ -152,10 +170,23 @@ class CognitiveAssociationEngine:
             return 0.0
         return len(left & right) / len(left | right)
 
+    def _lifecycle_weight(self, knowledge_id: str, query: AssociationQuery) -> float:
+        if self.lifecycle_store is None:
+            return 1.0
+        state = self.lifecycle_store.get(knowledge_id)
+        if state is None:
+            return 1.0
+        tier_name = getattr(state.tier, "name", str(state.tier)).upper()
+        if tier_name == "ARCHIVE" and not query.include_archive:
+            return 0.0
+        return max(0.0, min(1.0, float(state.retrieval_weight)))
+
     def _eligible(self, record: CognitiveIndexRecord, query: AssociationQuery) -> bool:
         if not query.include_superseded and record.status in {"superseded", "rejected"}:
             return False
         if not query.include_cross_project and query.project_id and record.project_id != query.project_id:
+            return False
+        if self._lifecycle_weight(record.knowledge_id, query) <= 0:
             return False
         return True
 
@@ -174,9 +205,10 @@ class CognitiveAssociationEngine:
             if not self._eligible(record, query):
                 continue
 
+            lifecycle_weight = self._lifecycle_weight(record.knowledge_id, query)
             term_score = self._jaccard(q_terms, record.terms)
             concept_score = self._jaccard(q_concepts, record.concepts)
-            near_score = 0.65 * term_score + 0.35 * concept_score
+            near_score = (0.65 * term_score + 0.35 * concept_score) * lifecycle_weight
             if near_score > 0:
                 reasons = []
                 if q_terms & record.terms:
@@ -185,7 +217,9 @@ class CognitiveAssociationEngine:
                     reasons.append("shared_concepts")
                 if query.project_id and record.project_id == query.project_id:
                     reasons.append("same_project")
-                    near_score += 0.05
+                    near_score += 0.05 * lifecycle_weight
+                if lifecycle_weight < 0.999:
+                    reasons.append("lifecycle_weighted")
                 near_hits.append(
                     AssociationHit(
                         knowledge_id=record.knowledge_id,
@@ -198,16 +232,17 @@ class CognitiveAssociationEngine:
             structure_score = self._jaccard(q_structures, record.structural_signatures)
             different_domain = bool(q_domain and record.domain and record.domain != q_domain)
             if structure_score > 0 and different_domain:
-                # Far association deliberately rewards structural similarity across
-                # different domains, not ordinary lexical similarity.
                 lexical_penalty = min(term_score, 0.5) * 0.15
-                far_score = max(0.0, structure_score - lexical_penalty)
+                far_score = max(0.0, structure_score - lexical_penalty) * lifecycle_weight
+                reasons = ["shared_structure", "cross_domain"]
+                if lifecycle_weight < 0.999:
+                    reasons.append("lifecycle_weighted")
                 far_hits.append(
                     AssociationHit(
                         knowledge_id=record.knowledge_id,
                         mode="far",
                         score=round(far_score, 6),
-                        reasons=("shared_structure", "cross_domain"),
+                        reasons=tuple(reasons),
                     )
                 )
 
