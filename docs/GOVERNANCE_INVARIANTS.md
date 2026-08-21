@@ -12,6 +12,16 @@ This is not a product slogan. It is a release invariant.
 
 A capability that violates this law is incomplete and must not be promoted to a higher-trust or production role.
 
+## Cognitive confidence law
+
+> **Cognition may compound, but confidence must compound more slowly than evidence.**
+>
+> **認知可以快速複利，但確信程度不能跑得比證據快。**
+
+New associations, abstractions and syntheses may be generated aggressively because they begin as reversible candidates. Confidence, validation, persistence, propagation and action authority must rise only when supporting evidence and governance justify them.
+
+This prevents a highly connected cognitive graph from turning repeated self-reference into false certainty.
+
 ## Governance dimensions
 
 Every capability change must be evaluated across at least these dimensions:
@@ -22,8 +32,8 @@ Every capability change must be evaluated across at least these dimensions:
 4. **Autonomy** — can the system act without an explicit user turn or approval?
 5. **Persistence** — can output become durable memory, canonical state, policy, or future retrieval input?
 6. **Propagation** — can one agent's conclusion influence other agents, projects, devices, or long-term memory?
-7. **Opacity** — how difficult is it to explain why an action, promotion, merge, or synthesis occurred?
-8. **Uncertainty** — how much inference, ambiguity, untrusted input, or model judgment is involved?
+7. **Opacity** — how difficult is it to explain why an action, promotion, merge, relation, decay, revival, or synthesis occurred?
+8. **Uncertainty** — how much inference, ambiguity, untrusted input, heuristic entity resolution, or model judgment is involved?
 
 Governance must strengthen monotonically as any of these dimensions increase, but controls are effect-aware rather than one universal checklist.
 
@@ -45,12 +55,12 @@ Depending on capability risk and effect domain, controls include:
 - circuit breakers / kill switches;
 - safe degraded modes when dependencies fail;
 - independent verification for high-risk synthesized conclusions;
-- ability to revoke credentials, runtimes, memories, and policies;
+- ability to revoke credentials, runtimes, memories, relations, and policies;
 - human-readable explanation of current authority and pending effects.
 
 ## Cognitive Kernel rules
 
-The Cognitive Kernel may retrieve, associate, abstract, brainstorm, analogize, synthesize, compact, re-synthesize, and generate hypotheses. These abilities do not grant truth authority.
+The Cognitive Kernel may retrieve, associate, abstract, brainstorm, analogize, synthesize, compact, decay, revive, re-link, reconcile, re-synthesize, and generate hypotheses. These abilities do not grant truth authority.
 
 The following rules are mandatory:
 
@@ -65,10 +75,17 @@ The following rules are mandatory:
 9. **Autonomous re-synthesis does not imply autonomous action.** A new insight can create a proposal or review WorkItem; it cannot silently trigger high-impact external effects.
 10. **Compaction may reduce prompt material, not provenance.** Meta-synthesis must remain traceable through immutable knowledge lineage to original ExperienceEvents or durable evidence anchors.
 11. **A synthesizer cannot self-promote.** Model output claiming validated/project/cross-project authority is normalized back to Working/candidate until deterministic promotion gates pass.
-12. **Re-synthesis is reconsideration, not mutation.** New contradiction, supersession, or analogy may schedule cognitive work but cannot directly rewrite durable memory.
-13. **Source credentials are not experience.** Tokens, cookies, authorization headers and browser login material may not enter ExperienceEvent, memory, synthesis, or canonical state.
-14. **Shadow before promotion.** A new real-world source adapter must first operate read-only/shadow and demonstrate bounded, idempotent, provenance-preserving ingestion before durable promotion is enabled.
+12. **Re-synthesis is reconsideration, not mutation.** New contradiction, supersession, analogy or reconciliation issue may schedule cognitive work but cannot directly rewrite durable memory or derived artifacts.
+13. **Source credentials are not experience.** Tokens, cookies, authorization headers and browser login material may not enter ExperienceEvent, memory, synthesis, relation seeds, or canonical state.
+14. **Shadow before promotion.** A new real-world source adapter or relation seed must first operate read-only/shadow and demonstrate bounded, idempotent, provenance-preserving behavior before durable promotion is enabled.
 15. **Third-party bridge authority stays bounded.** Browser/IDE/agent bridges are transports/runtimes; their session state and internal automation never become AgentOS authority.
+16. **Forgetting changes attention, not historical truth.** Decay/tiering may lower retrieval priority but may not silently erase immutable evidence, lineage, contradiction history, or audit records.
+17. **Revival does not imply re-validation.** A Cold/Archive memory may become cognitively active again without its confidence or validation status automatically increasing.
+18. **A relation is a claim, not a fact merely because it is an edge.** Relation records retain evidence, confidence and candidate/validated/superseded/rejected status.
+19. **Alias resolution is discovery, not identity authority.** Heuristic matching can suggest an entity; it cannot authorize writes or independently validate `same_as` semantics.
+20. **Cross-project relations require stronger grounding.** A relation that propagates conclusions across projects must have provenance and validation appropriate to its wider blast radius.
+21. **Reconciliation is inspection first.** Orphan nodes, ungrounded edges and stale derivatives generate review/re-synthesis work; they are not silently repaired by mutating source artifacts.
+22. **Cognitive feedback is not independent evidence.** A synthesis repeatedly citing earlier syntheses derived from the same source cannot manufacture additional source independence or confidence.
 
 ## Capability ladder
 
@@ -76,14 +93,15 @@ The following rules are mandatory:
 Level 0  Observe / read
          governance: authentication + provenance
 
-Level 1  Retrieve / summarize / synthesize
+Level 1  Retrieve / summarize / associate / synthesize
          governance: source tracking + confidence + contradiction retention
 
-Level 2  Propose state or memory changes
+Level 2  Propose state, memory or relation changes
          governance: typed proposal + validation + reviewability
 
-Level 3  Commit low-risk canonical state
-         governance: scoped principal + CAS/conflict checks + audit + rollback
+Level 3  Commit low-risk canonical state / validated durable cognition
+         governance: scoped principal + CAS/conflict checks or promotion gates
+                     + audit + rollback/supersession
 
 Level 4  Execute reversible external actions
          governance: idempotency + receipts + bounded scope + compensation
@@ -102,7 +120,7 @@ A subsystem may not move up the capability ladder before corresponding effect-ap
 
 ## Fail-closed rule
 
-When governance state is unknown, validation is unavailable, provenance is incomplete, lineage is broken/cyclic, approval cannot be verified, or a side-effect receipt is ambiguous:
+When governance state is unknown, validation is unavailable, provenance is incomplete, lineage is broken/cyclic, relation endpoints are unknown, approval cannot be verified, or a side-effect receipt is ambiguous:
 
 > **Do not silently increase authority. Fail closed or degrade to proposal/read-only mode.**
 
@@ -130,9 +148,10 @@ What new authority does it gain?
 What is the worst credible failure/blast radius?
 What governance control is added at the same time?
 How is the decision/action audited?
-How is it stopped, revoked, rolled back, superseded, or compensated?
+How is it stopped, revoked, rolled back, superseded, decayed, or compensated?
 What happens when governance dependencies fail?
-Can resulting knowledge/actions be traced to original sources?
+Can resulting knowledge/relations/actions be traced to original sources?
+Are apparent independent sources actually derived from the same evidence lineage?
 Are source credentials/secrets excluded from cognitive state?
 ```
 
