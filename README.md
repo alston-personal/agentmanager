@@ -12,6 +12,19 @@ To ensure permanent memory and easy migration, AgentOS uses a **Logic/Data Separ
 
 ---
 
+## 🌐 Distributed AgentOS
+AgentOS is evolving beyond a full Runtime installed on every device. The distributed architecture uses **Canonical IR** as the shared continuation contract and treats local devices, web agents, GitHub Actions, and future cloud workers as capability-specific runtimes.
+
+- `runtime_core/canonical_ir.py` — portable Canonical IR + lineage/digest
+- `runtime_core/remote_runtime.py` — capability-gated Remote Runtime contract
+- `scripts/distributed_worker.py` — remote worker entrypoint
+- `.github/workflows/distributed-agentos-worker.yml` — first GitHub Actions Worker adapter
+- `docs/DISTRIBUTED_AGENTOS_RUNTIME.md` — architecture, security boundaries, and migration path
+
+The design rule is: **Canonical IR is the continuity boundary; runtime location is an implementation detail.** GitHub Actions is a worker, not the durable AgentOS brain.
+
+---
+
 ## 🚀 Quick Start (Installation)
 
 If you are setting up this system on a new machine:
