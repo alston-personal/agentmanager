@@ -43,6 +43,19 @@ class _CreateOnlyGitHub:
         return _Response(201, json.dumps({"commit": {"sha": "abc123"}}).encode("utf-8"))
 
 
+class _ConflictThenCreateGitHub:
+    def __init__(self):
+        self.put_attempts = 0
+
+    def __call__(self, request, timeout=0):
+        if request.method == "GET":
+            raise HTTPError(request.full_url, 404, "not found", {}, BytesIO(b""))
+        self.put_attempts += 1
+        if self.put_attempts == 1:
+            raise HTTPError(request.full_url, 409, "conflict", {}, BytesIO(b"{}"))
+        return _Response(201, json.dumps({"commit": {"sha": "after-retry"}}).encode("utf-8"))
+
+
 def _state(ir: CanonicalIR) -> dict:
     return {
         "projectId": ir.project_id,
@@ -85,6 +98,27 @@ def test_github_continuity_mirror_creates_private_checkpoint_payload():
     payload = json.loads(decoded)
     assert payload["current_ir_digest"] == ir.digest()
     assert "secret-token" not in decoded.decode("utf-8")
+
+
+def test_github_continuity_mirror_retries_one_optimistic_conflict():
+    ir = CanonicalIR(goal="retry conflict", project_id="agentmanager", capability="agent.reason")
+    fake = _ConflictThenCreateGitHub()
+    mirror = GitHubContinuityMirror("alston-personal/my-agent-data", "token", opener=fake)
+    result = mirror.publish(_state(ir))
+    assert result["status"] == "published"
+    assert result["commit"] == "after-retry"
+    assert fake.put_attempts == 2
+
+
+def test_github_continuity_mirror_encodes_unsafe_project_id_as_one_path_segment():
+    mirror = GitHubContinuityMirror("alston-personal/my-agent-data", "token", opener=_CreateOnlyGitHub())
+    path = mirror.path_for("../team/demo")
+    assert path.startswith("projects/~/") is False
+    assert path.startswith("projects/~")
+    assert path.endswith("/continuity/latest.json")
+    project_segment = path.removeprefix("projects/").removesuffix("/continuity/latest.json")
+    assert "/" not in project_segment
+    assert ".." not in project_segment
 
 
 def test_mirror_failure_does_not_fail_control_plane_submit(tmp_path: Path):
