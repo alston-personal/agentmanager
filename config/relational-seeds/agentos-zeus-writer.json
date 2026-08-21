@@ -1,0 +1,146 @@
+{
+  "schema_version": "agentos.relation-seed/v1",
+  "mode": "shadow",
+  "entities": [
+    {
+      "entity_id": "project:agentmanager",
+      "kind": "project",
+      "canonical_name": "AgentManager",
+      "aliases": ["AgentOS", "Distributed AgentOS", "LeopardCat"],
+      "refs": ["github:alston-personal/agentmanager"],
+      "metadata": {"project_id": "agentmanager"}
+    },
+    {
+      "entity_id": "artifact:agentos-grand-chronicle",
+      "kind": "artifact",
+      "canonical_name": "AgentOS Grand Chronicle",
+      "aliases": ["AgentOS 編年史", "GRAND_CHRONICLE", "AgentOS開發血淚編年史"],
+      "refs": ["github:alston-personal/my-agent-data:GRAND_CHRONICLE.md"],
+      "metadata": {"project_id": "agentmanager"}
+    },
+    {
+      "entity_id": "project:zeus-writer",
+      "kind": "project",
+      "canonical_name": "Zeus Writer",
+      "aliases": ["Zeus-writer", "同源雙模小說", "小說專案"],
+      "refs": ["github:alston-personal/zeus-writer"],
+      "metadata": {"project_id": "zeus-writer"}
+    },
+    {
+      "entity_id": "work:ai-fantasy-chronicles",
+      "kind": "creative_work",
+      "canonical_name": "AI 奇幻編年史：代碼與靈魂的交織",
+      "aliases": ["AI 奇幻編年史", "代碼與靈魂的交織"],
+      "refs": ["github:alston-personal/zeus-writer:AI_奇幻編年史"],
+      "metadata": {"project_id": "zeus-writer"}
+    },
+    {
+      "entity_id": "work:agentos-blood-tears-history",
+      "kind": "creative_work",
+      "canonical_name": "AgentOS開發血淚史",
+      "aliases": ["AgentOS 血淚史"],
+      "refs": ["github:alston-personal/zeus-writer:AgentOS開發血淚史"],
+      "metadata": {"project_id": "zeus-writer"}
+    },
+    {
+      "entity_id": "work:heavenly-decree",
+      "kind": "creative_work",
+      "canonical_name": "天道敕令",
+      "aliases": [],
+      "refs": ["github:alston-personal/zeus-writer:天道敕令"],
+      "metadata": {"project_id": "zeus-writer"}
+    }
+  ],
+  "relations": [
+    {
+      "subject_id": "project:agentmanager",
+      "predicate": "documented_by",
+      "object_id": "artifact:agentos-grand-chronicle",
+      "confidence": 0.99,
+      "status": "validated",
+      "evidence": [
+        {
+          "source_kind": "github",
+          "source_ref": "alston-personal/my-agent-data:GRAND_CHRONICLE.md",
+          "content_hash": "pending_live_hash",
+          "trust_class": "observed"
+        }
+      ]
+    },
+    {
+      "subject_id": "project:zeus-writer",
+      "predicate": "contains",
+      "object_id": "work:ai-fantasy-chronicles",
+      "confidence": 0.99,
+      "status": "validated",
+      "evidence": [
+        {
+          "source_kind": "github",
+          "source_ref": "alston-personal/zeus-writer:tree",
+          "content_hash": "pending_live_hash",
+          "trust_class": "observed"
+        }
+      ]
+    },
+    {
+      "subject_id": "project:zeus-writer",
+      "predicate": "contains",
+      "object_id": "work:agentos-blood-tears-history",
+      "confidence": 0.99,
+      "status": "validated",
+      "evidence": [
+        {
+          "source_kind": "github",
+          "source_ref": "alston-personal/zeus-writer:tree",
+          "content_hash": "pending_live_hash",
+          "trust_class": "observed"
+        }
+      ]
+    },
+    {
+      "subject_id": "project:zeus-writer",
+      "predicate": "contains",
+      "object_id": "work:heavenly-decree",
+      "confidence": 0.90,
+      "status": "candidate",
+      "evidence": [
+        {
+          "source_kind": "github",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md",
+          "content_hash": "pending_live_hash",
+          "trust_class": "observed"
+        }
+      ]
+    },
+    {
+      "subject_id": "work:ai-fantasy-chronicles",
+      "predicate": "fictionalized_from",
+      "object_id": "artifact:agentos-grand-chronicle",
+      "confidence": 0.98,
+      "status": "validated",
+      "evidence": [
+        {
+          "source_kind": "github",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md",
+          "content_hash": "pending_live_hash",
+          "trust_class": "observed"
+        }
+      ]
+    },
+    {
+      "subject_id": "work:agentos-blood-tears-history",
+      "predicate": "derived_from",
+      "object_id": "artifact:agentos-grand-chronicle",
+      "confidence": 0.90,
+      "status": "candidate",
+      "evidence": [
+        {
+          "source_kind": "github",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md",
+          "content_hash": "pending_live_hash",
+          "trust_class": "observed"
+        }
+      ]
+    }
+  ]
+}
