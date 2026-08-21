@@ -108,18 +108,22 @@ jobs:
           fi
           git -C "$RELEASE_ROOT" remote set-url origin "$REPO_URL"
           PREVIOUS_SHA="$(git -C "$RELEASE_ROOT" rev-parse HEAD 2>/dev/null || true)"
+          PREVIOUS_HAS_DISTRIBUTED=0
+          if [ -n "$PREVIOUS_SHA" ] && git -C "$RELEASE_ROOT" cat-file -e "$PREVIOUS_SHA:scripts/install_distributed_systemd_user.sh" 2>/dev/null; then
+            PREVIOUS_HAS_DISTRIBUTED=1
+          fi
 
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
-              echo "Deployment failed; attempting isolated rollback" >&2
-              if [ -n "$PREVIOUS_SHA" ]; then
+              echo "Deployment failed; isolated rollback policy engaged" >&2
+              if [ "$PREVIOUS_HAS_DISTRIBUTED" = "1" ]; then
                 git -C "$RELEASE_ROOT" checkout --detach "$PREVIOUS_SHA" || true
-                if [ -f "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" ]; then
-                  AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" || true
-                fi
+                AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh" || true
+              else
+                echo "No previously deployed Distributed Core exists; leaving failed target checkout for diagnostics and stopping service."
+                systemctl --user stop agentos-control-plane.service 2>/dev/null || true
               fi
-              curl -fsS http://127.0.0.1:8765/health || true
             fi
             exit "$rc"
           }
@@ -177,9 +181,28 @@ jobs:
 
           AGENTOS_DISTRIBUTED_PYTHON="$PYTHON_BIN" AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" \
             bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
-          systemctl --user is-active --quiet agentos-control-plane.service
-          curl -fsS http://127.0.0.1:8765/health
+
+          HEALTH_OK=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS http://127.0.0.1:8765/health >/tmp/agentos-health.json 2>/dev/null; then
+              HEALTH_OK=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$HEALTH_OK" != "1" ]; then
+            echo "=== agentos-control-plane.service status ==="
+            systemctl --user --no-pager --full status agentos-control-plane.service || true
+            echo "=== journal ==="
+            journalctl --user -u agentos-control-plane.service -n 120 --no-pager || true
+            echo "=== file log ==="
+            tail -n 120 "$DATA_ROOT/logs/distributed_control_plane.log" 2>/dev/null || true
+            exit 7
+          fi
+
+          cat /tmp/agentos-health.json
           echo
+          systemctl --user is-active --quiet agentos-control-plane.service
           echo "deployed_sha=$TARGET_SHA"
           echo "release_root=$RELEASE_ROOT"
           echo "config_root=$CONFIG_ROOT"
