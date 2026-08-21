@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/distributed-agentos-runtime
+      - feature/state-kernel-v2
   pull_request:
     branches:
       - main
@@ -13,6 +14,7 @@ on:
       - "agent_core/distributed_control_plane.py"
       - "agent_core/distributed_gateway.py"
       - "agent_core/project_state.py"
+      - "agent_core/state_kernel.py"
       - "agent_core/continuity_mirror.py"
       - "agent_core/runtime_dispatcher.py"
       - "agent_core/push_dispatch.py"
@@ -47,6 +49,7 @@ on:
       - "tests/test_provider_bridge_server.py"
       - "tests/test_project_state.py"
       - "tests/test_project_state_http.py"
+      - "tests/test_state_kernel_v2.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
       - "tests/test_continuity_mirror.py"
@@ -114,6 +117,7 @@ jobs:
           tests/test_provider_bridge_server.py
           tests/test_project_state.py
           tests/test_project_state_http.py
+          tests/test_state_kernel_v2.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
           tests/test_continuity_mirror.py
