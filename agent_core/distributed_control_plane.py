@@ -104,20 +104,31 @@ class DistributedControlPlane(ControlPlaneStore):
             raise ValueError("task project does not match Canonical IR project")
         return ir
 
+    def _durable_push_targets(self, connection: Any) -> set[str]:
+        table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime_targets'"
+        ).fetchone()
+        if table is None:
+            return set()
+        return {
+            str(row["target_id"])
+            for row in connection.execute("SELECT target_id FROM runtime_targets WHERE enabled=1")
+        }
+
     def requeue_expired_ir_leases(self) -> int:
         """Return expired Distributed AgentOS leases to the submitted queue.
 
-        This is intentionally scoped to TASK_PROTOCOL payloads so unrelated
-        generic Control Plane tasks keep their existing lease policy. The prior
-        target is preserved so a push dispatch can be retried by the same runtime
-        without losing the routing fence.
+        Pull-node ownership is released so another node can recover the task.
+        Durable push targets registered by RuntimeDispatcher are preserved so the
+        dispatcher can safely re-wake the same external runtime after timeout.
         """
         now = _utc_now()
         requeued = 0
         with self._connect() as connection:
+            push_targets = self._durable_push_targets(connection)
             rows = connection.execute(
                 """
-                SELECT task_id, payload_json
+                SELECT task_id, payload_json, target_node_id
                 FROM tasks
                 WHERE status='leased' AND lease_until IS NOT NULL AND lease_until < ?
                 """,
@@ -130,13 +141,14 @@ class DistributedControlPlane(ControlPlaneStore):
                     continue
                 if payload.get("protocol") != TASK_PROTOCOL:
                     continue
+                keep_target = row["target_node_id"] in push_targets
                 cursor = connection.execute(
                     """
                     UPDATE tasks
-                    SET status='submitted', lease_until=NULL, updated_at=?
+                    SET status='submitted', target_node_id=?, lease_until=NULL, updated_at=?
                     WHERE task_id=? AND status='leased'
                     """,
-                    (now, row["task_id"]),
+                    (row["target_node_id"] if keep_target else None, now, row["task_id"]),
                 )
                 requeued += cursor.rowcount
         return requeued
