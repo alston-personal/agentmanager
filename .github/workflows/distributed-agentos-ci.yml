@@ -21,6 +21,7 @@ on:
       - "agent_core/cognitive_index.py"
       - "agent_core/cognitive_synthesis.py"
       - "agent_core/cognitive_refresh.py"
+      - "agent_core/cognitive_compaction.py"
       - "agent_core/experience_compiler.py"
       - "agent_core/continuity_mirror.py"
       - "agent_core/runtime_dispatcher.py"
@@ -66,6 +67,7 @@ on:
       - "tests/test_cognitive_index.py"
       - "tests/test_cognitive_synthesis.py"
       - "tests/test_cognitive_refresh.py"
+      - "tests/test_cognitive_compaction.py"
       - "tests/test_experience_compiler.py"
       - "tests/test_ide_adapter.py"
       - "tests/test_ide_cli.py"
@@ -142,6 +144,7 @@ jobs:
           tests/test_cognitive_index.py
           tests/test_cognitive_synthesis.py
           tests/test_cognitive_refresh.py
+          tests/test_cognitive_compaction.py
           tests/test_experience_compiler.py
           tests/test_ide_adapter.py
           tests/test_ide_cli.py
