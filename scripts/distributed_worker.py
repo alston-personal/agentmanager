@@ -8,23 +8,8 @@ import json
 import os
 from pathlib import Path
 
+from agentos_node.remote_worker import build_default_worker
 from runtime_core.canonical_ir import CanonicalIR
-from runtime_core.remote_runtime import RemoteRuntimeWorker
-
-
-def _validate(ir: CanonicalIR) -> dict:
-    return {
-        "validated": True,
-        "project_id": ir.project_id,
-        "goal": ir.goal,
-        "payload_keys": sorted(ir.payload),
-    }
-
-
-def build_worker(runtime_id: str) -> RemoteRuntimeWorker:
-    worker = RemoteRuntimeWorker(runtime_id)
-    worker.register("agentos.ir.validate", _validate)
-    return worker
 
 
 def main() -> int:
@@ -40,7 +25,7 @@ def main() -> int:
 
     raw = args.input.read_text(encoding="utf-8") if args.input else args.input_json
     ir = CanonicalIR.from_json(raw)
-    result = build_worker(args.runtime_id).execute(ir)
+    result = build_default_worker(args.runtime_id).execute(ir)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

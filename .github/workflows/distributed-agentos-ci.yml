@@ -12,12 +12,16 @@ on:
       - "agent_core/control_plane.py"
       - "agent_core/distributed_control_plane.py"
       - "agent_core/distributed_gateway.py"
+      - "agentos_node/control_plane_client.py"
+      - "agentos_node/remote_worker.py"
       - "scripts/distributed_worker.py"
       - "scripts/distributed_gateway.py"
+      - "scripts/distributed_remote_worker.py"
       - "tests/test_control_plane.py"
       - "tests/test_distributed_runtime.py"
       - "tests/test_distributed_control_plane.py"
       - "tests/test_distributed_gateway.py"
+      - "tests/test_distributed_http_client.py"
       - ".github/workflows/distributed-agentos-*.yml"
 
 permissions:
@@ -45,3 +49,4 @@ jobs:
           tests/test_distributed_runtime.py
           tests/test_distributed_control_plane.py
           tests/test_distributed_gateway.py
+          tests/test_distributed_http_client.py
