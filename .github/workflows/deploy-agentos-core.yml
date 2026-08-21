@@ -1,0 +1,181 @@
+name: Deploy Distributed AgentOS Core
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: Branch, tag, or SHA to deploy into the stable Oracle Core checkout
+        required: true
+        default: main
+        type: string
+      verify_public_url:
+        description: Also verify AGENTOS_CONTROL_PLANE_PUBLIC_URL after local health succeeds
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distributed-agentos-cloud-core
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+      DEPLOY_REF: ${{ inputs.deploy_ref }}
+      VERIFY_PUBLIC_URL: ${{ inputs.verify_public_url }}
+
+    steps:
+      - name: Validate deploy connection configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for key in DEPLOY_HOST_SOURCE DEPLOY_USER; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing deployment setting: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 2
+          fi
+
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "Unable to derive deployment host"
+            exit 2
+          fi
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Preflight Oracle Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test -d "$ROOT/.git" || { echo "Stable AgentOS checkout not found: $ROOT"; exit 2; }
+          test -f "$ROOT/.env" || { echo "Missing $ROOT/.env"; exit 2; }
+          cd "$ROOT"
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "Refusing deployment: tracked local changes exist in $ROOT"
+            git status --short --untracked-files=no
+            exit 2
+          fi
+          test -f "$HOME/.agentos.secrets" || echo "WARN: ~/.agentos.secrets does not exist"
+          systemctl --user --version >/dev/null
+          python3 --version
+          echo "preflight_sha=$(git rev-parse HEAD)"
+          REMOTE
+
+      - name: Deploy and verify local Control Plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" "$DEPLOY_REF" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          REF="$2"
+          cd "$ROOT"
+
+          PREVIOUS_SHA="$(git rev-parse HEAD)"
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Deployment failed; attempting rollback to $PREVIOUS_SHA" >&2
+              git checkout --detach "$PREVIOUS_SHA" || true
+              python3 -m pip install -e . || true
+              python3 scripts/install_services.py || true
+              curl -fsS http://127.0.0.1:8765/health || true
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          git fetch --prune origin "$REF"
+          TARGET_SHA="$(git rev-parse FETCH_HEAD)"
+          echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
+          git checkout --detach "$TARGET_SHA"
+
+          python3 -m pip install -e .
+          bash -n scripts/install_systemd_user.sh
+
+          set -a
+          # shellcheck disable=SC1091
+          source .env
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+
+          if [ "${AGENT_MODE:-CLIENT}" != "CORE" ]; then
+            echo "AGENT_MODE must be CORE on the deployment host" >&2
+            exit 2
+          fi
+          if [ "${AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0}" != "1" ]; then
+            echo "AGENTOS_DISTRIBUTED_SERVICES_ENABLED must be 1 before production deployment" >&2
+            exit 2
+          fi
+          if [ -z "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ]; then
+            echo "AGENTOS_CONTROL_PLANE_TOKEN is missing" >&2
+            exit 2
+          fi
+
+          python3 scripts/install_services.py
+          systemctl --user is-active --quiet agentos-control-plane.service
+          curl -fsS http://127.0.0.1:8765/health
+          echo
+          systemctl --user --no-pager --full status agentos-control-plane.service | head -n 30
+
+          mkdir -p "${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}/runtime"
+          printf '%s\n' "$PREVIOUS_SHA" > "${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}/runtime/previous-agentos-core-sha"
+          trap - EXIT
+          REMOTE
+
+      - name: Verify public Control Plane route
+        if: ${{ inputs.verify_public_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+          set -a
+          source .env
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          test -n "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" || { echo "AGENTOS_CONTROL_PLANE_PUBLIC_URL is missing"; exit 2; }
+          curl -fsS -H "Authorization: Bearer ${AGENTOS_CONTROL_PLANE_TOKEN}" \
+            "${AGENTOS_CONTROL_PLANE_PUBLIC_URL%/}/v1/projects/agentmanager/state"
+          echo
+          REMOTE
+
+      - name: Deployment summary
+        if: always()
+        shell: bash
+        run: |
+          echo "Target host: ${DEPLOY_HOST:-unresolved}"
+          echo "Target ref: ${DEPLOY_REF}"
+          echo "Stable checkout: ${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          echo "Public verification requested: ${VERIFY_PUBLIC_URL}"
