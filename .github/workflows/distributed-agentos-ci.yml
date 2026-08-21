@@ -48,6 +48,7 @@ on:
       - "tests/test_ide_cli.py"
       - "tests/test_continuity_mirror.py"
       - ".github/workflows/distributed-agentos-*.yml"
+      - ".github/workflows/deploy-agentos-core.yml"
       - "pyproject.toml"
 
 permissions:
@@ -81,6 +82,14 @@ jobs:
           grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_systemd_user.sh
           grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_systemd_user.sh
           grep -q 'EnvironmentFile=-%h/.agentos.secrets' scripts/install_systemd_user.sh
+
+      - name: Validate Cloud-Core deploy workflow contract
+        run: |
+          grep -q 'workflow_dispatch:' .github/workflows/deploy-agentos-core.yml
+          grep -q 'N8N_DEPLOY_SSH_KEY' .github/workflows/deploy-agentos-core.yml
+          grep -q 'scripts/install_services.py' .github/workflows/deploy-agentos-core.yml
+          grep -q '127.0.0.1:8765/health' .github/workflows/deploy-agentos-core.yml
+          grep -q 'attempting rollback' .github/workflows/deploy-agentos-core.yml
 
       - name: Run Distributed AgentOS tests
         run: >-
