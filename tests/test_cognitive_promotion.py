@@ -59,6 +59,9 @@ def test_project_promotion_requires_verified_evidence_and_governance():
     promoted = policy.promote(candidate, "project", governance_controls=project_controls())
     assert promoted.status == "validated"
     assert promoted.abstraction_level == "project"
+    assert promoted.knowledge_id != candidate.knowledge_id
+    assert candidate.knowledge_id in promoted.derived_from
+    assert candidate.knowledge_id in promoted.supersedes
 
 
 def test_cross_project_requires_two_independent_verified_sources():
@@ -96,6 +99,12 @@ def test_cross_project_promotion_succeeds_with_independent_evidence_and_controls
     assert decision.allowed is True
     assert decision.independent_support_count == 2
     assert "independent_verification" in controls
+
+    promoted = CognitivePromotionPolicy().promote(
+        candidate, "cross_project", governance_controls=controls
+    )
+    assert candidate.knowledge_id in promoted.derived_from
+    assert candidate.knowledge_id in promoted.supersedes
 
 
 def test_unreviewed_contradiction_blocks_promotion_but_is_not_deleted():
@@ -140,3 +149,21 @@ def test_reviewed_contradiction_can_promote_while_evidence_remains():
     )
     assert promoted.status == "validated"
     assert promoted.contradiction_count == 1
+
+
+def test_noop_promotion_does_not_create_self_lineage():
+    candidate = KnowledgeCandidate(
+        project_id="agentmanager",
+        kind="lesson",
+        statement="already project memory",
+        abstraction_level="project",
+        status="validated",
+        confidence=0.9,
+        evidence=(ev("test", "e1", "verified"),),
+    )
+    result = CognitivePromotionPolicy().promote(
+        candidate, "project", governance_controls=project_controls()
+    )
+    assert result is candidate
+    assert candidate.knowledge_id not in result.derived_from
+    assert candidate.knowledge_id not in result.supersedes
