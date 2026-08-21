@@ -114,6 +114,23 @@ class ControlPlaneClient:
             raise ControlPlaneClientError("lease response must be an object or null")
         return lease
 
+    def lease_task(
+        self,
+        task_id: str,
+        node_id: str,
+        *,
+        lease_seconds: int = 60,
+    ) -> dict[str, Any] | None:
+        response = self._request(
+            "POST",
+            f"/v1/tasks/{task_id}/lease",
+            {"node_id": node_id, "lease_seconds": lease_seconds},
+        )
+        lease = response.get("lease")
+        if lease is not None and not isinstance(lease, dict):
+            raise ControlPlaneClientError("exact lease response must be an object or null")
+        return lease
+
     def complete(
         self,
         task_id: str,
