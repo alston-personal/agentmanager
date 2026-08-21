@@ -12,6 +12,7 @@ on:
       - "agent_core/control_plane.py"
       - "agent_core/distributed_control_plane.py"
       - "agent_core/distributed_gateway.py"
+      - "agent_core/project_state.py"
       - "agent_core/runtime_dispatcher.py"
       - "agent_core/push_dispatch.py"
       - "agent_core/dispatching_gateway.py"
@@ -20,6 +21,8 @@ on:
       - "agentos_node/web_agent_adapter.py"
       - "agentos_node/provider_bridge.py"
       - "agentos_node/provider_bridge_server.py"
+      - "agentos_node/ide_adapter.py"
+      - "agentos_node/ide_cli.py"
       - "scripts/distributed_worker.py"
       - "scripts/distributed_gateway.py"
       - "scripts/distributed_remote_worker.py"
@@ -37,7 +40,11 @@ on:
       - "tests/test_push_dispatch.py"
       - "tests/test_provider_bridge.py"
       - "tests/test_provider_bridge_server.py"
+      - "tests/test_project_state.py"
+      - "tests/test_project_state_http.py"
+      - "tests/test_ide_adapter.py"
       - ".github/workflows/distributed-agentos-*.yml"
+      - "pyproject.toml"
 
 permissions:
   contents: read
@@ -72,3 +79,6 @@ jobs:
           tests/test_push_dispatch.py
           tests/test_provider_bridge.py
           tests/test_provider_bridge_server.py
+          tests/test_project_state.py
+          tests/test_project_state_http.py
+          tests/test_ide_adapter.py

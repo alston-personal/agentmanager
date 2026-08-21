@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from runtime_core.canonical_ir import CanonicalIR
@@ -27,7 +27,7 @@ class ControlPlaneHTTPError(ControlPlaneClientError):
 
 
 class ControlPlaneClient:
-    """JSON client shared by lightweight nodes and remote runtime adapters."""
+    """JSON client shared by lightweight nodes, IDE adapters, and remote runtimes."""
 
     def __init__(
         self,
@@ -145,3 +145,10 @@ class ControlPlaneClient:
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/tasks/{task_id}")
+
+    def get_project_state(self, project_id: str) -> dict[str, Any]:
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            raise ValueError("project_id is required")
+        encoded = quote(project_id, safe="")
+        return self._request("GET", f"/v1/projects/{encoded}/state")

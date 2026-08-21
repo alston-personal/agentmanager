@@ -12,12 +12,13 @@ import hmac
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
 from .distributed_control_plane import DistributedControlPlane
+from .project_state import read_project_state
 
 
 MAX_REQUEST_BYTES = 1024 * 1024
@@ -81,6 +82,9 @@ class DistributedGatewayService:
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         return {"task": self.store.get_task(task_id)}
+
+    def project_state(self, project_id: str) -> dict[str, Any]:
+        return read_project_state(self.store, project_id)
 
 
 class DistributedGatewayServer(ThreadingHTTPServer):
@@ -147,6 +151,9 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         try:
             if len(parts) == 3 and parts[:2] == ["v1", "tasks"]:
                 self._json(200, self.server.service.get_task(parts[2]))
+                return
+            if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "state":
+                self._json(200, self.server.service.project_state(unquote(parts[2])))
                 return
             self._json(404, {"error": "not_found"})
         except KeyError as exc:
