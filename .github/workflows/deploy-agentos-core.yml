@@ -40,6 +40,24 @@ jobs:
       VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
 
     steps:
+      - name: Report bootstrap run started to PR 2
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          body=$(cat <<EOF
+          <!-- agentos-core-bootstrap-start -->
+          Distributed AgentOS Core bootstrap run **STARTED**.
+
+          - main workflow commit: `${GITHUB_SHA}`
+          - deployment performed at this stage: `false`
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          )
+          gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"
+
       - name: Validate deploy connection configuration
         id: config
         shell: bash
