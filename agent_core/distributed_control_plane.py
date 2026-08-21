@@ -8,7 +8,7 @@ lease validation, runtime-result verification, and guarded auto-continuation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Any
 
@@ -25,6 +25,10 @@ DEFAULT_MAX_AUTO_CONTINUATION_HOPS = 32
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _timestamp(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -104,7 +108,9 @@ class DistributedControlPlane(ControlPlaneStore):
         """Return expired Distributed AgentOS leases to the submitted queue.
 
         This is intentionally scoped to TASK_PROTOCOL payloads so unrelated
-        generic Control Plane tasks keep their existing lease policy.
+        generic Control Plane tasks keep their existing lease policy. The prior
+        target is preserved so a push dispatch can be retried by the same runtime
+        without losing the routing fence.
         """
         now = _utc_now()
         requeued = 0
@@ -127,7 +133,7 @@ class DistributedControlPlane(ControlPlaneStore):
                 cursor = connection.execute(
                     """
                     UPDATE tasks
-                    SET status='submitted', target_node_id=NULL, lease_until=NULL, updated_at=?
+                    SET status='submitted', lease_until=NULL, updated_at=?
                     WHERE task_id=? AND status='leased'
                     """,
                     (now, row["task_id"]),
@@ -157,6 +163,74 @@ class DistributedControlPlane(ControlPlaneStore):
             node_id=node_id,
             lease_until=task["leaseUntil"],
             idempotency_key=task["idempotencyKey"],
+            ir=ir,
+        )
+
+    def lease_ir_task(
+        self,
+        task_id: str,
+        node_id: str,
+        *,
+        lease_seconds: int = 60,
+    ) -> IRTaskLease | None:
+        """Atomically lease one exact Canonical IR task to a runtime.
+
+        Push dispatch carries a task id. Using a generic "lease next" call after
+        wake-up can steal a different queued task for the same runtime. This API
+        binds the wake-up, lease, and eventual result to the intended task while
+        retaining the normal lease as the execution fence.
+        """
+        if not task_id or not node_id:
+            raise ValueError("task_id and node_id are required")
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be >= 1")
+
+        self.requeue_expired_ir_leases()
+        now = datetime.now(timezone.utc)
+        lease_until = _timestamp(now + timedelta(seconds=lease_seconds))
+        updated = _timestamp(now)
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError(f"unknown task: {task_id}")
+            task = self._task_from_row(row)
+            if task["status"] != "submitted":
+                connection.commit()
+                return None
+            target = task.get("targetNodeId")
+            if target and target != node_id:
+                connection.rollback()
+                raise ValueError("task is targeted to a different runtime")
+            try:
+                ir = self._ir_from_task(task)
+            except Exception:
+                connection.rollback()
+                raise
+
+            cursor = connection.execute(
+                """
+                UPDATE tasks
+                SET status='leased', target_node_id=?, lease_until=?, updated_at=?
+                WHERE task_id=? AND status='submitted'
+                  AND (target_node_id IS NULL OR target_node_id=?)
+                """,
+                (node_id, lease_until, updated, task_id, node_id),
+            )
+            if cursor.rowcount != 1:
+                connection.commit()
+                return None
+            row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+            connection.commit()
+
+        leased = self._task_from_row(row)
+        return IRTaskLease(
+            task_id=leased["taskId"],
+            node_id=node_id,
+            lease_until=leased["leaseUntil"],
+            idempotency_key=leased["idempotencyKey"],
             ir=ir,
         )
 
