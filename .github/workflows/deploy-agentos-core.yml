@@ -1,6 +1,11 @@
 name: Deploy Distributed AgentOS Core
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-agentos-core.yml"
   workflow_dispatch:
     inputs:
       deploy_ref:
@@ -30,8 +35,8 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      DEPLOY_REF: ${{ inputs.deploy_ref }}
-      VERIFY_PUBLIC_URL: ${{ inputs.verify_public_url }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
+      VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
 
     steps:
       - name: Validate deploy connection configuration
@@ -86,7 +91,14 @@ jobs:
           echo "preflight_sha=$(git rev-parse HEAD)"
           REMOTE
 
+      - name: Push bootstrap preflight summary
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          echo "Oracle deployment channel preflight succeeded."
+          echo "No deployment was performed by this push-triggered bootstrap run."
+
       - name: Deploy and verify local Control Plane
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -151,7 +163,7 @@ jobs:
           REMOTE
 
       - name: Verify public Control Plane route
-        if: ${{ inputs.verify_public_url }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url }}
         shell: bash
         run: |
           set -euo pipefail
@@ -175,6 +187,7 @@ jobs:
         if: always()
         shell: bash
         run: |
+          echo "Event: ${{ github.event_name }}"
           echo "Target host: ${DEPLOY_HOST:-unresolved}"
           echo "Target ref: ${DEPLOY_REF}"
           echo "Stable checkout: ${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
