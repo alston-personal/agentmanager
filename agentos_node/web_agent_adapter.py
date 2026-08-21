@@ -16,6 +16,13 @@ from runtime_core.remote_runtime import ExecutionOutcome, RemoteRuntimeResult, R
 
 REQUEST_PROTOCOL = "agentos.web-agent-request/v1"
 RESPONSE_PROTOCOL = "agentos.web-agent-result/v1"
+RESERVED_CONTINUATION_KEYS = {
+    "completed_by",
+    "previous_capability",
+    "ready_for_next_agent",
+    "auto_continue",
+    "next_capability",
+}
 
 
 class WebAgentAdapter:
@@ -44,7 +51,8 @@ class WebAgentAdapter:
                 ],
                 "status_values": ["succeeded", "failed"],
                 "optional": ["next_capability", "auto_continue", "continuation"],
-                "rule": "Return semantic result only; never construct continuation_ir.",
+                "reserved_continuation_keys": sorted(RESERVED_CONTINUATION_KEYS),
+                "rule": "Return semantic result only; never construct continuation_ir or trusted runtime metadata.",
             },
         }
 
@@ -84,6 +92,9 @@ class WebAgentAdapter:
         continuation = response.get("continuation") or {}
         if not isinstance(continuation, dict):
             raise ValueError("continuation must be an object")
+        reserved = sorted(RESERVED_CONTINUATION_KEYS.intersection(continuation))
+        if reserved:
+            raise ValueError("continuation contains reserved runtime metadata: " + ", ".join(reserved))
 
         outcome = ExecutionOutcome(
             result=raw_result,
