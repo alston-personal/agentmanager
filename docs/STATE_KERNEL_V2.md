@@ -4,11 +4,18 @@ Status: design baseline for `feature/state-kernel-v2`.
 
 This document intentionally narrows AgentOS. The goal is not to replace MCP, ACP, A2A, agent memory products, browser bridges, or workflow runtimes. AgentOS owns the layer those systems do not reliably own together: canonical project operational state and governed transitions between versions of that state.
 
+Normative companion documents:
+
+- `docs/GOVERNANCE_INVARIANTS.md` — **Capability must never scale faster than governance.**
+- `docs/COGNITIVE_KERNEL.md` — governed experience accumulation, indexing, association, synthesis, promotion, compaction, and re-synthesis.
+
+The State Kernel and Cognitive Kernel are deliberately separate. Cognitive output may become a proposal or knowledge candidate; only the State Kernel owns canonical Project HEAD.
+
 ## 0. Reuse-first architecture policy
 
 **Do not rebuild a wheel that already has a mature protocol or implementation.**
 
-AgentOS must prefer adopting, wrapping, or adapting existing components over owning another copy of their functionality. New AgentOS code is justified only when the behavior is part of the unique State Kernel / execution-governance contract, or when no suitable standard/component exists.
+AgentOS must prefer adopting, wrapping, or adapting existing components over owning another copy of their functionality. New AgentOS code is justified only when the behavior is part of the unique State Kernel / Cognitive Kernel / execution-governance contract, or when no suitable standard/component exists.
 
 Default adoption map:
 
@@ -21,6 +28,7 @@ Default adoption map:
 | Workflow/subgraph execution | LangGraph or existing workflow runtimes | treat workflow as one runtime behind a WorkItem; accept only semantic result/StateDelta |
 | CI/ephemeral workers | GitHub Actions | use as a runtime/transport; keep state authority in AgentOS |
 | Long-term/shared memory | Iranti/OACP-compatible/native provider | store refs/provenance/promotion policy; do not build another general vector-memory product |
+| Search/index backend | SQLite FTS/pgvector/Qdrant/other maintained index | AgentOS owns index projection, near/far association semantics, provenance and re-synthesis triggers, not search infrastructure |
 | Human-readable handoff | Lead/OACP-style projections | export from canonical state; never treat exported files as authority |
 | Provider/model APIs | existing SDKs/OpenAI-compatible/Gemini adapters | normalize output and enforce trust boundary |
 
@@ -31,6 +39,7 @@ A third-party component is treated as an **adapter/runtime/provider**, not as th
 3. Runtime/session/provider identifiers are not project-state identifiers.
 4. External side effects remain governed and auditable.
 5. Replacing one wheel/provider must not require migrating canonical ProjectState.
+6. Cognitive synthesis cannot self-promote into durable truth or canonical state.
 
 ### Web-agent rule
 
@@ -73,10 +82,11 @@ An LLM/provider produces a proposal. A runtime executes work. A protocol transpo
 AgentOS v2 separates:
 
 1. **State Kernel** — canonical project state, immutable commits, concurrency, validation, provenance, audit.
-2. **Execution Control Plane** — work items, leases, dispatch, runtimes, provider execution.
-3. **Protocol Adapters** — MCP for tools/context, ACP for editor/agent UI, A2A for remote agent interoperability.
-4. **Memory Providers** — durable facts/decisions/lessons that may be backed by AgentOS-native storage, OACP-style files, Iranti, or future providers.
-5. **Runtime Providers** — raw model APIs, GitHub Actions, local workers, LangGraph, browser/desktop relays, or A2A agents.
+2. **Cognitive Kernel** — distributed experience compilation, governed memory semantics, association, synthesis, promotion and re-synthesis.
+3. **Execution Control Plane** — work items, leases, dispatch, runtimes, provider execution.
+4. **Protocol Adapters** — MCP for tools/context, ACP for editor/agent UI, A2A for remote agent interoperability.
+5. **Memory/Search Providers** — durable payload/index backends behind AgentOS memory semantics.
+6. **Runtime Providers** — raw model APIs, GitHub Actions, local workers, LangGraph, browser/desktop relays, or A2A agents.
 
 ## 2. Why v1 must evolve
 
@@ -270,19 +280,17 @@ AgentOS must keep four layers distinct:
 3. **Execution journal** — raw task/runtime/tool events and logs.
 4. **Ephemeral model context** — one bounded StateView generated for one execution.
 
-Memory promotion follows:
+The Cognitive Kernel additionally preserves the original three memory semantics:
 
 ```text
-observation
- -> candidate memory
- -> provenance/trust labeling
- -> validation/promotion
- -> durable memory
+Working -> Project -> Cross-project
 ```
 
-A retrieved web page, tool response, email, or model statement must never become durable project truth merely because it appeared in context.
+Promotion increases evidence/governance requirements and produces immutable linked knowledge versions.
 
-Memory providers are pluggable. AgentOS may provide a minimal native store, but should be able to import/export or delegate to systems such as OACP-style project files or Iranti rather than rebuilding every memory feature.
+A retrieved web page, tool response, email, conversation, or model statement must never become durable project truth merely because it appeared in context.
+
+Memory/search providers are pluggable. AgentOS may provide minimal native reference stores, but should import/export or delegate storage/search instead of rebuilding commodity infrastructure.
 
 ## 8. Provenance and trust
 
@@ -299,7 +307,7 @@ untrusted_input flag
 derivation refs[]
 ```
 
-Untrusted input is allowed to influence a proposal, but policy gates decide whether it can affect canonical state.
+Untrusted input is allowed to influence a proposal, but policy gates decide whether it can affect durable memory or canonical state.
 
 ## 9. Side-effect governance
 
@@ -325,7 +333,7 @@ High-impact actions may require `prepare -> approve/validate -> commit` instead 
 
 ### MCP — tools, resources, context
 
-AgentOS should expose a standard MCP 2026-07-28 endpoint instead of requiring every compatible agent to learn a private REST API.
+AgentOS should expose a standard MCP endpoint instead of requiring every compatible agent to learn a private REST API.
 
 Candidate resources/tools:
 
@@ -342,9 +350,7 @@ work/status
 memory/search
 ```
 
-MCP is stateless at the protocol layer; `project_id`, `state_id`, `work_id`, and `commit_id` are explicit state handles. This matches the AgentOS architecture.
-
-MCP Tasks may expose long-running AgentOS operations to MCP clients, but they do not replace internal lease/fencing semantics.
+`project_id`, `state_id`, `work_id`, and `commit_id` are explicit state handles. MCP Tasks may expose long-running AgentOS operations to MCP clients, but they do not replace internal lease/fencing semantics.
 
 ### ACP — editor UI boundary
 
@@ -361,16 +367,7 @@ ACP session IDs are UI/session handles only. They must never become project stat
 
 ### A2A — remote agent boundary
 
-Use A2A 1.0 for independent remote agents that support it:
-
-```text
-AgentCard discovery
-A2A Task
-Messages / Parts / Artifacts
-streaming / async updates
-```
-
-Map A2A task output into an untrusted AgentOS StateDelta proposal. A remote A2A agent cannot directly commit ProjectState.
+Use A2A for independent remote agents that support it. Map remote task output into an untrusted AgentOS StateDelta proposal. A remote A2A agent cannot directly commit ProjectState.
 
 The current custom webhook transport remains useful for providers/runtimes that do not speak A2A, including GitHub Actions and browser/desktop relays.
 
@@ -413,7 +410,7 @@ Long term:
 
 - prefer standard OAuth/OIDC authorization for human-facing MCP/HTTP access;
 - preserve service credentials for runtime-to-runtime calls;
-- avoid inventing a permanent proprietary login protocol if MCP/HTTP clients can use standard auth.
+- avoid inventing a permanent proprietary login protocol if standard auth can be used.
 
 The current GitHub identity enrollment prototype is acceptable as a development bridge, but should not become the final protocol boundary before OAuth integration is evaluated.
 
@@ -443,32 +440,43 @@ During migration:
 
 ### Phase A — State Kernel foundation
 
+Implemented experimentally:
+
 1. immutable ProjectState / StateDelta / StateCommit schemas;
 2. SQLite project_heads + state_commits + state_blobs;
 3. CAS commit semantics;
 4. v1 -> v2 migration adapter;
-5. tests for stale-base rejection and disjoint auto-merge.
+5. stale-base conflict rejection and disjoint auto-merge.
 
-### Phase B — Work graph
+### Phase B — Cognitive foundation
 
-1. typed WorkItem IDs/dependencies/status;
-2. task -> work mapping;
-3. `continue(project)` resolves HEAD/work graph instead of latest task;
-4. active-work duplicate prevention.
+Implemented experimentally:
 
-### Phase C — state views and memory promotion
+1. governance prime law + executable GovernanceGate;
+2. cognitive knowledge/synthesis IR;
+3. Working -> Project -> Cross-project promotion;
+4. ExperienceEvent IR + governed Experience Compiler;
+5. backend-neutral index projection + near/far association;
+6. governed SynthesisEnvelope;
+7. dependency-driven re-synthesis planning;
+8. hierarchical project/cross-project compaction with lineage resolution.
 
-1. bounded StateView builder;
-2. provenance/trust model;
-3. memory candidate/promotion interface;
-4. native memory backend plus optional adapters.
+### Phase C — Real-source shadow ingestion
+
+Next:
+
+1. choose existing bridge/connectors for real ChatGPT/Gemini/IDE/GitHub sources;
+2. normalize read-only historical data into ExperienceEvent;
+3. shadow compile/index/synthesize without changing production state or durable memory;
+4. evaluate provenance quality, duplication, contradiction behavior, and cost;
+5. only then enable governed L2/L3 promotion.
 
 ### Phase D — protocol/adoption adapters
 
-1. MCP 2026-07-28 server;
+1. MCP server;
 2. ACP adapter;
-3. A2A 1.0 runtime adapter;
-4. generic WebSessionAdapter wired to an existing browser bridge before considering any custom browser automation;
+3. A2A runtime adapter;
+4. generic WebSessionAdapter wired to an existing browser bridge;
 5. keep private REST as internal/backward-compatible API.
 
 ### Phase E — side effects and governance
@@ -491,8 +499,10 @@ During migration:
 
 ## 17. Product boundary
 
-The durable value of AgentOS is:
+The durable value of AgentOS is two complementary kernels:
 
-> **A vendor-neutral State Kernel that lets heterogeneous agents safely continue, coordinate, and commit work against one canonical project state.**
+> **State Kernel:** heterogeneous agents safely coordinate and commit work against one canonical project state.
+>
+> **Cognitive Kernel:** distributed experience compounds into governed, traceable, reusable knowledge without granting inference automatic truth or action authority.
 
-Everything else should be a protocol adapter, provider, runtime, projection, or reused external wheel.
+Everything else should be a protocol adapter, provider, runtime, index/storage backend, or projection.
