@@ -79,6 +79,7 @@ jobs:
           grep -q 'agentos-control-plane.service' scripts/install_systemd_user.sh
           grep -q 'agentos-provider-bridge.service' scripts/install_systemd_user.sh
           grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_systemd_user.sh
+          grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_systemd_user.sh
           grep -q 'EnvironmentFile=-%h/.agentos.secrets' scripts/install_systemd_user.sh
 
       - name: Run Distributed AgentOS tests
