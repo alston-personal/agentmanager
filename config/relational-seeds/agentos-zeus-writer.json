@@ -60,9 +60,9 @@
       "status": "validated",
       "evidence": [
         {
-          "source_kind": "github",
-          "source_ref": "alston-personal/my-agent-data:GRAND_CHRONICLE.md",
-          "content_hash": "pending_live_hash",
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/my-agent-data:GRAND_CHRONICLE.md@main",
+          "content_hash": "gitblob:74aa99337e5d66cbb55bad497fa4adffe6aefb1e",
           "trust_class": "observed"
         }
       ]
@@ -75,9 +75,9 @@
       "status": "validated",
       "evidence": [
         {
-          "source_kind": "github",
-          "source_ref": "alston-personal/zeus-writer:tree",
-          "content_hash": "pending_live_hash",
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md@master",
+          "content_hash": "gitblob:29ca40ed50bdb31f1729caa4a714bea62946dd3c",
           "trust_class": "observed"
         }
       ]
@@ -86,13 +86,13 @@
       "subject_id": "project:zeus-writer",
       "predicate": "contains",
       "object_id": "work:agentos-blood-tears-history",
-      "confidence": 0.99,
+      "confidence": 0.95,
       "status": "validated",
       "evidence": [
         {
-          "source_kind": "github",
-          "source_ref": "alston-personal/zeus-writer:tree",
-          "content_hash": "pending_live_hash",
+          "source_kind": "github_tree",
+          "source_ref": "alston-personal/zeus-writer:tree@master",
+          "content_hash": "gittree:d9387336fe83b1dc0f15f4aac6608793b0483933",
           "trust_class": "observed"
         }
       ]
@@ -101,13 +101,13 @@
       "subject_id": "project:zeus-writer",
       "predicate": "contains",
       "object_id": "work:heavenly-decree",
-      "confidence": 0.90,
+      "confidence": 0.75,
       "status": "candidate",
       "evidence": [
         {
-          "source_kind": "github",
-          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md",
-          "content_hash": "pending_live_hash",
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md@master",
+          "content_hash": "gitblob:29ca40ed50bdb31f1729caa4a714bea62946dd3c",
           "trust_class": "observed"
         }
       ]
@@ -116,13 +116,19 @@
       "subject_id": "work:ai-fantasy-chronicles",
       "predicate": "fictionalized_from",
       "object_id": "artifact:agentos-grand-chronicle",
-      "confidence": 0.98,
-      "status": "validated",
+      "confidence": 0.78,
+      "status": "candidate",
       "evidence": [
         {
-          "source_kind": "github",
-          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md",
-          "content_hash": "pending_live_hash",
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md@master",
+          "content_hash": "gitblob:29ca40ed50bdb31f1729caa4a714bea62946dd3c",
+          "trust_class": "observed"
+        },
+        {
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/my-agent-data:GRAND_CHRONICLE.md@main",
+          "content_hash": "gitblob:74aa99337e5d66cbb55bad497fa4adffe6aefb1e",
           "trust_class": "observed"
         }
       ]
@@ -131,13 +137,19 @@
       "subject_id": "work:agentos-blood-tears-history",
       "predicate": "derived_from",
       "object_id": "artifact:agentos-grand-chronicle",
-      "confidence": 0.90,
+      "confidence": 0.70,
       "status": "candidate",
       "evidence": [
         {
-          "source_kind": "github",
-          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md",
-          "content_hash": "pending_live_hash",
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/zeus-writer:AI_奇幻編年史/寫作計畫.md@master",
+          "content_hash": "gitblob:29ca40ed50bdb31f1729caa4a714bea62946dd3c",
+          "trust_class": "observed"
+        },
+        {
+          "source_kind": "github_blob",
+          "source_ref": "alston-personal/my-agent-data:GRAND_CHRONICLE.md@main",
+          "content_hash": "gitblob:74aa99337e5d66cbb55bad497fa4adffe6aefb1e",
           "trust_class": "observed"
         }
       ]
