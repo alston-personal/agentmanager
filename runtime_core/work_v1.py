@@ -49,10 +49,31 @@ class WorkItem:
         if any(not str(item).strip() for item in self.acceptance_criteria):
             raise ValueError("acceptance criteria cannot be blank")
 
+    def identity_payload(self) -> dict[str, Any]:
+        """Fields that define the stable identity of a unit of intended work.
+
+        Lifecycle state deliberately does not participate. A work item must keep
+        the same ID while moving pending -> ready -> running -> done so dependency
+        edges remain stable. Mutable scheduling annotations belong to the graph,
+        not identity.
+        """
+        return {
+            "schema_version": self.schema_version,
+            "project_id": self.project_id,
+            "base_state_id": self.base_state_id,
+            "instruction": self.instruction,
+            "capability": self.capability,
+            "depends_on": self.depends_on,
+            "acceptance_criteria": self.acceptance_criteria,
+            "runtime_policy": self.runtime_policy,
+            "provider_policy": self.provider_policy,
+            "created_by": self.created_by,
+            "metadata": self.metadata,
+        }
+
     @property
     def work_id(self) -> str:
-        payload = asdict(self)
-        return "work_" + sha256(_canonical(payload).encode("utf-8")).hexdigest()[:32]
+        return "work_" + sha256(_canonical(self.identity_payload()).encode("utf-8")).hexdigest()[:32]
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
