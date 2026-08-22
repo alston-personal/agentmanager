@@ -1,6 +1,6 @@
 """Read-only host capability discovery for AgentOS Nodes.
 
-Discovery reports presence only.  It never authorizes device access, opens a
+Discovery reports presence only. It never authorizes device access, opens a
 camera/microphone, mounts storage, sends USB traffic, or changes host state.
 """
 
@@ -32,13 +32,98 @@ def _device_paths(pattern: str) -> list[str]:
     return sorted(str(path) for path in Path("/dev").glob(pattern))
 
 
+def _base_observations(command_exists: Callable[[str], str | None]) -> list[CapabilityObservation]:
+    found = [
+        CapabilityObservation("node.status", "builtin"),
+        CapabilityObservation("node.capabilities.read", "builtin"),
+    ]
+    if command_exists("git"):
+        found.append(CapabilityObservation("repo.read", "command:git"))
+    if command_exists("docker"):
+        found.append(CapabilityObservation("container.runtime.observe", "command:docker"))
+    if command_exists("curl"):
+        found.append(CapabilityObservation("http.client.observe", "command:curl"))
+    if command_exists("ffmpeg"):
+        found.append(CapabilityObservation("media.transform", "command:ffmpeg"))
+    return found
+
+
+def _linux_device_observations(command_exists: Callable[[str], str | None]) -> list[CapabilityObservation]:
+    found: list[CapabilityObservation] = []
+    video = _device_paths("video*")
+    if video:
+        found.append(
+            CapabilityObservation(
+                "camera.observe",
+                "device:/dev/video*",
+                device_ref="video-device",
+                attributes={"device_count": len(video)},
+                risk_tags=("privacy", "sensor"),
+            )
+        )
+    if _exists_any([Path("/dev/snd")]):
+        found.append(
+            CapabilityObservation(
+                "microphone.observe",
+                "device:/dev/snd",
+                device_ref="sound-device",
+                risk_tags=("privacy", "sensor"),
+            )
+        )
+    if command_exists("lpstat") or command_exists("lp"):
+        found.append(CapabilityObservation("printer.observe", "command:cups", risk_tags=("external-effect",)))
+    usb = _device_paths("bus/usb/*/*")
+    if usb:
+        found.append(
+            CapabilityObservation(
+                "usb.observe",
+                "device:/dev/bus/usb",
+                device_ref="usb-bus",
+                attributes={"device_count": len(usb)},
+                risk_tags=("device-io",),
+            )
+        )
+    if command_exists("bluetoothctl"):
+        found.append(CapabilityObservation("bluetooth.observe", "command:bluetoothctl", risk_tags=("radio", "device-io")))
+    return found
+
+
+def discover_capabilities_for_identity(
+    identity: NodeIdentity,
+    *,
+    observed_at: str,
+    command_exists: Callable[[str], str | None] = shutil.which,
+) -> NodeCapabilityManifest:
+    """Discover capabilities while preserving the already-claimed Node identity.
+
+    Platform-specific deep device probes are intentionally conservative. Linux
+    has a metadata-only adapter today; other platforms receive portable software
+    observations until dedicated read-only adapters are implemented.
+    """
+
+    found = _base_observations(command_exists)
+    if identity.platform.lower() == "linux":
+        found.extend(_linux_device_observations(command_exists))
+    capabilities = tuple(sorted(found, key=lambda item: item.capability))
+    return NodeCapabilityManifest(
+        identity=identity,
+        observed_at=observed_at,
+        capabilities=capabilities,
+        metadata={
+            "discovery_mode": "read-only",
+            "authorization_inferred": False,
+            "platform_adapter": "linux" if identity.platform.lower() == "linux" else "portable-base",
+        },
+    )
+
+
 def discover_linux_capabilities(
     context: DiscoveryContext,
     *,
     command_exists: Callable[[str], str | None] = shutil.which,
     hostname: str | None = None,
 ) -> NodeCapabilityManifest:
-    """Create a conservative, metadata-only Linux capability manifest."""
+    """Compatibility wrapper for conservative, metadata-only Linux discovery."""
 
     identity = NodeIdentity(
         node_id=context.node_id,
@@ -49,64 +134,4 @@ def discover_linux_capabilities(
         profile=context.profile,
         labels=("linux",),
     )
-
-    found: list[CapabilityObservation] = []
-
-    def add(name: str, source: str, **kwargs: object) -> None:
-        found.append(CapabilityObservation(capability=name, source=source, **kwargs))
-
-    add("node.status", "builtin")
-    add("node.capabilities.read", "builtin")
-
-    if command_exists("git"):
-        add("repo.read", "command:git")
-    if command_exists("docker"):
-        add("container.runtime.observe", "command:docker")
-    if command_exists("curl"):
-        add("http.client.observe", "command:curl")
-
-    video = _device_paths("video*")
-    if video:
-        add(
-            "camera.observe",
-            "device:/dev/video*",
-            device_ref="video-device",
-            attributes={"device_count": len(video)},
-            risk_tags=("privacy", "sensor"),
-        )
-
-    sound_paths = [Path("/dev/snd")]
-    if _exists_any(sound_paths):
-        add(
-            "microphone.observe",
-            "device:/dev/snd",
-            device_ref="sound-device",
-            risk_tags=("privacy", "sensor"),
-        )
-
-    if command_exists("lpstat") or command_exists("lp"):
-        add("printer.observe", "command:cups", risk_tags=("external-effect",))
-
-    usb = _device_paths("bus/usb/*/*")
-    if usb:
-        add(
-            "usb.observe",
-            "device:/dev/bus/usb",
-            device_ref="usb-bus",
-            attributes={"device_count": len(usb)},
-            risk_tags=("device-io",),
-        )
-
-    if command_exists("bluetoothctl"):
-        add("bluetooth.observe", "command:bluetoothctl", risk_tags=("radio", "device-io"))
-
-    if command_exists("ffmpeg"):
-        add("media.transform", "command:ffmpeg")
-
-    capabilities = tuple(sorted(found, key=lambda item: item.capability))
-    return NodeCapabilityManifest(
-        identity=identity,
-        observed_at=context.observed_at,
-        capabilities=capabilities,
-        metadata={"discovery_mode": "read-only", "authorization_inferred": False},
-    )
+    return discover_capabilities_for_identity(identity, observed_at=context.observed_at, command_exists=command_exists)
