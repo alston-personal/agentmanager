@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import asdict
 from datetime import datetime, timezone
+import getpass
 import json
 from pathlib import Path
 import sys
@@ -9,6 +10,31 @@ from agentos_node import __version__
 from agentos_node.capability_discovery import DiscoveryContext, discover_linux_capabilities
 from agentos_node.enrollment_client import enroll_node
 from agentos_node.inspector import NodeInspector
+
+
+def _read_join_reference(args) -> str:
+    """Read one-time Join Reference without requiring it in process argv.
+
+    ``--reference`` remains for development/backward compatibility, but stdin or
+    the hidden interactive prompt is preferred because a bearer reference placed
+    directly on a shell command line may be retained in history/process listings.
+    """
+
+    if args.reference:
+        return args.reference.strip()
+    if args.reference_stdin:
+        value = sys.stdin.readline().strip()
+        if not value:
+            raise ValueError("no Join Reference received on stdin")
+        return value
+    if not sys.stdin.isatty():
+        value = sys.stdin.readline().strip()
+        if value:
+            return value
+    value = getpass.getpass("AgentOS Join Reference: ").strip()
+    if not value:
+        raise ValueError("Join Reference is required")
+    return value
 
 
 def main():
@@ -29,7 +55,16 @@ def main():
     capabilities_parser.add_argument("--json", action="store_true")
 
     enroll_parser = subparsers.add_parser("enroll", help="Join this device to AgentOS using a one-time Join Reference")
-    enroll_parser.add_argument("--reference", required=True, help="AGENTOSREF1 code or HTTPS Join Link")
+    enroll_source = enroll_parser.add_mutually_exclusive_group()
+    enroll_source.add_argument(
+        "--reference",
+        help="AGENTOSREF1 code or HTTPS Join Link (development only; stdin/prompt is safer than argv)",
+    )
+    enroll_source.add_argument(
+        "--reference-stdin",
+        action="store_true",
+        help="Read the one-time Join Reference from stdin so it need not appear in argv/history",
+    )
     enroll_parser.add_argument("--identity-dir", help="Override local Node identity directory")
     enroll_parser.add_argument("--json", action="store_true", help="Output enrollment receipt as JSON")
 
@@ -92,8 +127,9 @@ def main():
 
     elif args.command == "enroll":
         try:
+            reference = _read_join_reference(args)
             response = enroll_node(
-                args.reference,
+                reference,
                 identity_dir=Path(args.identity_dir).expanduser() if args.identity_dir else None,
             )
         except Exception as exc:
