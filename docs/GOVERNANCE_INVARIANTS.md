@@ -68,6 +68,7 @@ Depending on capability risk and effect domain, controls include:
 - reversible state commits;
 - side-effect prepare/commit/compensate lifecycle;
 - explicit approval gates for high-impact actions;
+- authorization-freshness or serializable/reservation boundaries when an external effect depends on mutable policy state;
 - rate, scope, budget, and time limits;
 - circuit breakers / kill switches;
 - safe degraded modes when dependencies fail;
@@ -137,10 +138,12 @@ Level 3  Commit low-risk canonical state / validated durable cognition
 Level 4  Execute reversible external actions
          governance: idempotency + receipts + bounded scope + compensation
                      + SideEffect Ledger
+                     + authorization freshness when policy state can change
 
 Level 5  Execute high-impact / irreversible actions
          governance: explicit intent-bound approval or independently enforced
-                     policy gate, strongest audit, circuit breaker, and minimal privileges
+                     policy gate, strongest audit, circuit breaker, minimal privileges,
+                     and stale-authorization prevention for mutable policy state
 
 Level 6  Autonomous recurring / cross-project cognition or action
          governance: continuous policy enforcement, budgets, anomaly detection,
@@ -159,6 +162,7 @@ registered capability profile
 -> canonical GovernanceGate decision
 -> exact ActionIntent binding
 -> intent-bound approval when required
+-> authorization-freshness / policy-state check when policy state is mutable
 -> SideEffect Ledger prepare
 -> executor
 -> receipt / failure / compensation record
@@ -166,9 +170,11 @@ registered capability profile
 
 A generic model/tool decision is not an external-action authorization.
 
+**Intent binding and authorization freshness are distinct.** Intent binding prevents a valid decision from being reused for a different action. It does not prove that budgets, inventory, approvals, risk signals, device state, or other mutable policy inputs remain unchanged before the effect commits. Stateful external actions therefore require commit-time revalidation, a serializable transaction, a reservation/lease, or another independently enforced mechanism that closes this check-then-act window. Until such a mechanism is wired and tested, the affected capability remains proposal/shadow only.
+
 ## Fail-closed rule
 
-When governance state is unknown, validation is unavailable, provenance is incomplete, lineage is broken/cyclic, relation endpoints are unknown, approval cannot be verified, or a side-effect receipt is ambiguous:
+When governance state is unknown, validation is unavailable, provenance is incomplete, lineage is broken/cyclic, relation endpoints are unknown, approval cannot be verified, authorization freshness cannot be established for a stateful effect, or a side-effect receipt is ambiguous:
 
 > **Do not silently increase authority. Fail closed or degrade to proposal/read-only mode.**
 
@@ -203,6 +209,7 @@ Are apparent independent sources actually derived from the same evidence lineage
 Are source credentials/secrets excluded from cognitive state?
 Is the capability registered in the governance-owned inventory/registry?
 Can the runtime under-declare its effect or self-supply controls? (It must not.)
+If authorization depends on mutable policy state, how is stale authorization prevented before commit?
 ```
 
 If these questions cannot be answered, the capability remains experimental and must not be promoted.
