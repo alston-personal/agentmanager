@@ -8,27 +8,8 @@ from agent_core.cognitive_promotion import CognitivePromotionPolicy
 from agent_core.cognitive_refresh import CognitiveRefreshPlanner, SynthesisDependencyIndex
 from agent_core.cognitive_synthesis import CognitiveSynthesisBoundary
 from agent_core.experience_compiler import ExperienceCompilerBoundary
-from agent_core.governance import CapabilityLevel, RiskDimensions, required_controls
 from runtime_core.cognitive_ir import KnowledgeCandidate
 from runtime_core.experience_ir import ExperienceBatch, ExperienceEvent
-
-
-def project_controls():
-    risks = RiskDimensions(authority=3, persistence=3, propagation=2, uncertainty=3)
-    return required_controls(
-        CapabilityLevel.COMMIT,
-        effects={"durable_memory"},
-        risks=risks,
-    )
-
-
-def cross_project_controls():
-    risks = RiskDimensions(authority=3, persistence=5, propagation=5, uncertainty=3)
-    return required_controls(
-        CapabilityLevel.COMMIT,
-        effects={"durable_memory", "cross_project"},
-        risks=risks,
-    )
 
 
 def event(project, source_ref, content):
@@ -68,11 +49,7 @@ def compile_project_memory(project, source_event, statement, *, concepts, struct
         proposed,
         supporting_event_ids=(source_event.event_id,),
     )
-    return CognitivePromotionPolicy().promote(
-        working,
-        "project",
-        governance_controls=project_controls(),
-    )
+    return CognitivePromotionPolicy().promote(working, "project")
 
 
 def test_full_cognitive_compounding_loop():
@@ -158,13 +135,9 @@ def test_full_cognitive_compounding_loop():
 
     record = boundary.record(synthesis_envelope, (working_insight,))
 
-    # 4. Only the separate evidence+governance promotion gate may turn the
-    # synthesis into reusable L3 knowledge.
-    cross_project = CognitivePromotionPolicy().promote(
-        working_insight,
-        "cross_project",
-        governance_controls=cross_project_controls(),
-    )
+    # 4. Only the separate evidence + registry-backed governance gate may turn
+    # the synthesis into reusable L3 knowledge.
+    cross_project = CognitivePromotionPolicy().promote(working_insight, "cross_project")
     assert cross_project.status == "validated"
     assert cross_project.abstraction_level == "cross_project"
     assert working_insight.knowledge_id in cross_project.supersedes
