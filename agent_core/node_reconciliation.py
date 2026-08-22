@@ -1,6 +1,6 @@
 """Plan safe reconciliation of Node-local cognition into AgentOS.
 
-"回歸一" is intentionally not raw-data centralization.  The Node exposes
+"回歸一" is intentionally not raw-data centralization. The Node exposes
 metadata/provenance descriptors, AgentOS classifies them, and only governed
 promotion may later change durable project/cross-project cognition.
 """
@@ -13,6 +13,8 @@ from hashlib import sha256
 import json
 from typing import Iterable
 
+from runtime_core.node_reconciliation_v1 import LocalCognitionDescriptor
+
 
 RECONCILIATION_SCHEMA = "agentos.node-reconciliation/v1"
 
@@ -24,22 +26,6 @@ class ReconciliationDisposition(str, Enum):
     SUPERSESSION_REVIEW = "supersession_review"
     KEEP_NODE_LOCAL = "keep_node_local"
     BLOCK_SENSITIVE = "block_sensitive"
-
-
-@dataclass(frozen=True)
-class LocalCognitionDescriptor:
-    local_ref: str
-    content_hash: str
-    kind: str
-    provenance: str
-    project_id: str | None = None
-    supersedes_hash: str | None = None
-    sensitive: bool = False
-    node_local_only: bool = False
-
-    def __post_init__(self) -> None:
-        if not self.local_ref.strip() or not self.content_hash.strip() or not self.kind.strip() or not self.provenance.strip():
-            raise ValueError("local cognition identity/provenance fields are required")
 
 
 @dataclass(frozen=True)
