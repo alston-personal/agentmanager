@@ -1,7 +1,8 @@
-"""Bind canonical GovernanceGate decisions to concrete action intents.
+"""Bind canonical governance decisions to concrete action intents.
 
-High-impact approvals are intent-scoped so a model/runtime cannot reuse a broad
-capability decision as authority for a different target or operation.
+High-impact approvals are intent-scoped, and capability profiles are resolved
+only from the authoritative GovernanceRegistry. Runtimes/providers/nodes may
+name a capability but cannot supply their own permissions or controls.
 """
 
 from __future__ import annotations
@@ -9,12 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from agent_core.governance import (
-    CapabilityGovernanceProfile,
-    CapabilityLevel,
-    GovernanceDecision,
-    GovernanceGate,
-)
+from agent_core.governance import CapabilityLevel, GovernanceDecision, GovernanceGate
+from agent_core.governance_registry import GovernanceRegistry
 from runtime_core.governance_v1 import ActionIntent, ApprovalGrant
 
 
@@ -46,16 +43,21 @@ def _approval_valid(intent: ActionIntent, approval: ApprovalGrant | None) -> boo
 
 
 class ActionAuthorizationGate:
-    def __init__(self, capability_gate: GovernanceGate | None = None) -> None:
+    def __init__(
+        self,
+        registry: GovernanceRegistry,
+        capability_gate: GovernanceGate | None = None,
+    ) -> None:
+        self._registry = registry
         self._capability_gate = capability_gate or GovernanceGate()
 
     def evaluate(
         self,
         *,
         intent: ActionIntent,
-        profile: CapabilityGovernanceProfile | None,
         approval: ApprovalGrant | None = None,
     ) -> ActionAuthorization:
+        profile = self._registry.get(intent.capability)
         if profile is None:
             return ActionAuthorization(
                 intent.intent_id,
@@ -63,14 +65,6 @@ class ActionAuthorizationGate:
                 CapabilityLevel.OBSERVE,
                 False,
                 "unknown capability; fail closed",
-            )
-        if profile.capability != intent.capability:
-            return ActionAuthorization(
-                intent.intent_id,
-                intent.capability,
-                CapabilityLevel.OBSERVE,
-                False,
-                "capability/profile mismatch",
             )
         if intent.requested_level > int(profile.declared_level):
             return ActionAuthorization(
