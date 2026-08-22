@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.execution-handoff/v1",
+  "title": "AgentOS Execution Handoff v1",
+  "type": "object",
+  "required": ["schema", "goal", "execution_world", "disposition", "governance", "failure_knowledge", "checkpoint"],
+  "properties": {
+    "schema": {"const": "agentos.execution-handoff/v1"},
+    "goal": {
+      "type": "object",
+      "required": ["id", "objective", "closure_invariants", "next_gap"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "objective": {"type": "string", "minLength": 1},
+        "closure_invariants": {"type": "array", "items": {"type": "string"}},
+        "next_gap": {"type": "string", "minLength": 1}
+      }
+    },
+    "execution_world": {
+      "type": "object",
+      "required": ["repository", "canonical_ref", "observed_head_sha", "mutable_facts_require_live_reconciliation"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "canonical_ref": {"type": "string", "minLength": 1},
+        "observed_head_sha": {"type": "string", "minLength": 1},
+        "pr_number": {"type": ["integer", "null"]},
+        "base_ref": {"type": ["string", "null"]},
+        "latest_receipts": {"type": "array", "items": {"type": "object"}},
+        "capability_routes": {"type": "array", "items": {"type": "object"}},
+        "mutable_facts_require_live_reconciliation": {"const": true}
+      }
+    },
+    "disposition": {
+      "type": "object",
+      "required": ["contract", "current"],
+      "properties": {
+        "contract": {"const": "agentos.execution-disposition/v1"},
+        "current": {"enum": ["CONTINUE", "FINAL_COMPLETE", "FINAL_PARTIAL_BLOCKED", "REQUEST_AUTHORITY", "WAIT_FOR_DEPENDENCY", "INTERRUPTED_BY_USER"]}
+      }
+    },
+    "governance": {
+      "type": "object",
+      "required": ["authority_summary", "protected_effects"],
+      "properties": {
+        "authority_summary": {"type": "array", "items": {"type": "string"}},
+        "protected_effects": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "failure_knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "failure", "avoid"],
+        "properties": {
+          "id": {"type": "string"},
+          "failure": {"type": "string"},
+          "avoid": {"type": "string"},
+          "evidence": {"type": "array", "items": {"type": "object"}}
+        }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "required": ["epistemic_policy", "resume_protocol"],
+      "properties": {
+        "epistemic_policy": {"enum": ["VERIFIED_RECONSTRUCTED_UNKNOWN"]},
+        "resume_protocol": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    }
+  },
+  "additionalProperties": true
+}
