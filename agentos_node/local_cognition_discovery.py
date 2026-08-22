@@ -11,7 +11,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Iterable
 
-from agent_core.node_reconciliation import LocalCognitionDescriptor
+from runtime_core.node_reconciliation_v1 import LocalCognitionDescriptor
 
 
 _ALLOWED_SUFFIXES = {".json", ".jsonl", ".md", ".txt", ".yaml", ".yml"}
