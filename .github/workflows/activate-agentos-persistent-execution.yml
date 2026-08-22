@@ -2,7 +2,7 @@ name: Activate AgentOS Persistent Execution
 
 on:
   pull_request:
-    branches: [main]
+    branches: [feature/distributed-agentos-runtime]
     paths:
       - ".github/workflows/activate-agentos-persistent-execution.yml"
   workflow_dispatch:
@@ -62,8 +62,6 @@ jobs:
           source "$SECRETS"
           set +a
 
-          # Fail closed: activation requires credentials already provisioned by the
-          # governed deployment. Never synthesize or print them here.
           test -n "${AGENTOS_CONTROL_PLANE_TOKEN:-}"
           test -n "${AGENTOS_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
           test -n "${AGENTOS_PROVIDER_BRIDGE_TOKEN:-}"
