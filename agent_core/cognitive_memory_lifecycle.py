@@ -60,8 +60,6 @@ class MemoryLifecycleState:
     def retrieval_weight(self) -> float:
         """Attention multiplier used by retrieval engines."""
         tier_weight = _TIER_RETRIEVAL_WEIGHT[self.tier]
-        # Archive remains recallable through explicit/strong association even when
-        # activation has decayed nearly to zero.
         return round(tier_weight * (0.35 + 0.65 * self.activation), 6)
 
 
@@ -86,7 +84,12 @@ class MemoryLifecyclePolicy:
         return value.astimezone(timezone.utc)
 
     def decay(self, state: MemoryLifecycleState, *, now: datetime) -> MemoryLifecycleState:
-        """Apply time decay without deleting or severing provenance."""
+        """Apply time decay without deleting or severing provenance.
+
+        Supersession lowers ordinary attention, but dependency/history floors are
+        applied afterwards so required lineage cannot be pushed below its
+        reconstruction floor merely because a newer belief exists.
+        """
         now = self._ensure_aware(now)
         anchor = state.last_evaluated_at or state.last_accessed_at
         if anchor is None:
@@ -95,6 +98,11 @@ class MemoryLifecyclePolicy:
         elapsed_days = max(0.0, (now - anchor).total_seconds() / 86400.0)
         factor = math.pow(0.5, elapsed_days / self.decay_half_life_days)
         activation = state.activation * factor
+
+        # Superseded memories should gracefully leave active cognition, but this
+        # penalty must not erase floors needed by downstream dependencies/history.
+        if state.superseded and not state.pinned:
+            activation *= 0.65
 
         if state.dependency_count:
             activation = max(activation, self.dependency_floor)
@@ -105,11 +113,6 @@ class MemoryLifecyclePolicy:
             )
         if state.pinned:
             activation = max(activation, 0.75)
-
-        # Superseded memories should gracefully leave active cognition unless they
-        # are still needed for dependency/history/audit lineage.
-        if state.superseded and not state.pinned:
-            activation *= 0.65
 
         activation = max(0.0, min(1.0, activation))
         return replace(
