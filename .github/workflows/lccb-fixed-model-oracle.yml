@@ -15,12 +15,29 @@ on:
 permissions:
   contents: read
 
+# Scope the execution lease to an exact revision. A stale queued experiment must
+# never monopolize future revisions, while duplicate events for the same frozen
+# revision remain serialized.
 concurrency:
-  group: lccb-fixed-model-oracle
+  group: lccb-fixed-model-oracle-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
+  scheduler-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record scheduler materialization receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "workflow_materialized=true"
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "sha=${GITHUB_SHA}"
+          echo "run_id=${GITHUB_RUN_ID}"
+
   fixed-model-series:
+    needs: scheduler-preflight
     runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 20
     steps:
