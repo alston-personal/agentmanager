@@ -4,20 +4,36 @@
 
 > **The human should establish trust once; AgentOS should do the rest.**
 
-Joining a Node must be simpler than configuring the Node manually. The preferred UX is one of:
+Joining a Node must be simpler than configuring the Node manually. Preferred UX:
 
 - scan one QR code and confirm;
 - open one Join Link and confirm;
 - run one short command on a server;
 - zero-touch enrollment for a pre-managed fleet.
 
-All transports carry the same short-lived, single-use `agentos.join-ticket/v1` bearer ticket. QR, URL, NFC and CLI are representations of one protocol rather than separate enrollment mechanisms.
+QR, URL, NFC and CLI are representations of one protocol rather than separate enrollment mechanisms.
 
-## Trust boundary
+## One-touch transport
 
-A Join Ticket is a temporary password. It contains a short-lived enrollment secret because one artifact is required for one-touch enrollment. Core stores only the SHA-256 digest of that secret. A successful claim consumes the invitation permanently.
+The preferred user-facing artifact is `agentos.join-reference/v1`, not the full policy envelope. It contains only:
 
-The ticket MUST NOT be:
+```text
+trusted Core origin
+one-time enrollment id
+one-time enrollment secret
+```
+
+For a link, the reference is placed after `#`:
+
+```text
+https://core.example/join#AGENTOSREF1...
+```
+
+A normal HTTPS GET does not transmit the fragment to the web server or access logs. The bootstrap client explicitly submits it to the trusted Core origin. Core stores only the SHA-256 digest of the secret.
+
+Core resolves the reference to its authoritative `agentos.join/v1` policy, yielding an in-memory `agentos.join-ticket/v1`. The ticket is consumed exactly once by the claim operation.
+
+Join material MUST NOT be:
 
 - written to durable Node state;
 - included in logs, telemetry or GitHub artifacts;
@@ -58,13 +74,15 @@ Any stage → REVOKED
 ```text
 Create invitation
 ↓
-Join Ticket
+Join Reference
 ↓ QR / link / CLI / NFC
 Bootstrap client
+↓ HTTPS resolve against trusted Core
+Authoritative Join Ticket
 ↓
 Claim once with device public key + fingerprint
 ↓
-Node Identity
+Stable Node Identity
 ↓
 Capability Discovery
 ↓
@@ -74,7 +92,7 @@ Local cognition descriptor scan
 ↓
 agentos.node-reconciliation/v1
 ↓
-Node Registry
+Durable Node Directory
 ↓
 Governance gap assessment
 ↓
@@ -136,9 +154,7 @@ Raw credentials, browser profiles and explicitly sensitive local material do not
 
 ## Hardware and software use the same protocol
 
-A Node is not necessarily a physical computer. It is any governed execution body that exposes identifiable capabilities.
-
-Examples:
+A Node is any governed execution body that exposes identifiable capabilities, not necessarily a physical computer.
 
 ```text
 Physical: PC, server, IP camera, robot, NAS, phone
@@ -149,7 +165,7 @@ Data: database, object store, vector store
 Gateway: Zigbee/MQTT/Modbus/BLE bridge for devices too small to run a client
 ```
 
-Weak devices do not need to host a full cognitive runtime. `agentos-node-micro` may only provide identity, heartbeat, discovery, event publication and governed capability invocation.
+Weak devices do not need a full cognitive runtime. `agentos-node-micro` may only provide identity, heartbeat, discovery, event publication and governed capability invocation.
 
 ## Target UX
 
@@ -166,10 +182,11 @@ The current GitHub self-hosted-runner flow is Bootstrap v0 and remains useful as
 
 1. Capability growth never implies authority growth.
 2. Nodes cannot mint GovernanceRegistry profiles.
-3. Join Tickets are short-lived and single-use.
+3. Join references/tickets are short-lived and single-use.
 4. A Node cannot activate before all active capabilities have governance-owned profiles.
 5. Local credentials never become reconciliation payloads.
 6. Reconnect re-discovers capabilities; hardware/software changes do not silently inherit old authority.
 7. Revocation must remain possible independently of Node cooperation.
+8. Join UX may be one-touch; bootstrap authority remains minimal.
 
 > **UX may be one touch. Authority may not be one assumption.**
