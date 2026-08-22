@@ -16,6 +16,7 @@ from agent_core.governance import (
     GovernanceGate,
     RiskDimensions,
 )
+from agent_core.governance_registry import GovernanceRegistry
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,15 @@ def current_inventory() -> tuple[GovernedCapability, ...]:
             ("docs/GOVERNANCE_INVARIANTS.md",),
         ),
     )
+
+
+def build_current_registry() -> GovernanceRegistry:
+    """Build the governance-owned profile registry from the reviewed inventory.
+
+    Callers may resolve a capability from this registry; they may not supply a
+    substitute profile or control set as authorization evidence.
+    """
+    return GovernanceRegistry(tuple(entry.profile for entry in current_inventory()))
 
 
 def audit_inventory() -> tuple[str, ...]:
