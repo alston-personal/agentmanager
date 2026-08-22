@@ -1,3 +1,3 @@
-trigger=2026-08-22T08:59:00Z
-purpose=oracle-readonly-probe
+trigger=2026-08-22T09:17:00Z
+purpose=oracle-node-capability-discovery
 report=commit-status
