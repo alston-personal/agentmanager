@@ -75,7 +75,7 @@ class CognitivePromotionPolicy:
         if target_level in {"project", "cross_project"}:
             effects = {"durable_memory"}
             risks = RiskDimensions(
-                authority=1,
+                authority=3,
                 persistence=3 if target_level == "project" else 5,
                 propagation=2 if target_level == "project" else 5,
                 uncertainty=3,
@@ -84,7 +84,7 @@ class CognitivePromotionPolicy:
                 effects.add("cross_project")
             profile = CapabilityGovernanceProfile.build(
                 f"cognitive.promote.{target_level}",
-                CapabilityLevel.SYNTHESIZE,
+                CapabilityLevel.COMMIT,
                 risks=risks,
                 effects=effects,
                 controls=governance_controls,
