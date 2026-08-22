@@ -2,9 +2,12 @@ name: Activate AgentOS Persistent Execution
 
 on:
   pull_request:
-    branches: [feature/distributed-agentos-runtime]
+    branches: [main]
     paths:
       - ".github/workflows/activate-agentos-persistent-execution.yml"
+      - "scripts/install_distributed_systemd_user.sh"
+      - "scripts/distributed_gateway.py"
+      - "agent_core/push_dispatch.py"
   workflow_dispatch:
 
 permissions:
@@ -78,7 +81,7 @@ jobs:
               'AGENTOS_GITHUB_DISPATCH_ENABLED': '1',
               'AGENTOS_GITHUB_REPOSITORY': 'alston-personal/agentmanager',
               'AGENTOS_GITHUB_WORKFLOW': 'distributed-agentos-worker.yml',
-              'AGENTOS_GITHUB_REF': 'feature/state-kernel-v2',
+              'AGENTOS_GITHUB_REF': 'feature/distributed-agentos-runtime',
               'AGENTOS_GITHUB_RUNTIME_ID': 'github-actions-worker',
               'AGENTOS_GITHUB_CAPABILITIES': 'project.bootstrap,artifact.inspect,artifact.validate',
               'AGENTOS_PROVIDER_BRIDGE_ENABLED': '1',
