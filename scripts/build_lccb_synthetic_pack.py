@@ -12,6 +12,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from research.lccb_public_tasks import public_tasks_jsonl
 from research.lccb_synthetic import (
     DEFAULT_SEED,
     STAGES,
@@ -43,9 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     public_dir.mkdir(parents=True, exist_ok=True)
     private_dir.mkdir(parents=True, exist_ok=True)
 
-    public_path = public_dir / "experience.jsonl"
+    experience_path = public_dir / "experience.jsonl"
+    tasks_path = public_dir / "tasks.jsonl"
     private_path = private_dir / "labels.jsonl"
-    public_path.write_text(public_experience_jsonl(pack), encoding="utf-8")
+    experience_path.write_text(public_experience_jsonl(pack), encoding="utf-8")
+    tasks_path.write_text(public_tasks_jsonl(pack.labels), encoding="utf-8")
     private_path.write_text(private_labels_jsonl(pack), encoding="utf-8")
 
     counts_by_stage = {
@@ -61,7 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         "task_count_by_stage": counts_by_stage,
         "experience_manifest_hash": pack.experience_manifest_hash,
         "evaluator_manifest_hash": pack.evaluator_manifest_hash,
-        "public_artifact": "public/experience.jsonl",
+        "public_experience_artifact": "public/experience.jsonl",
+        "public_tasks_artifact": "public/tasks.jsonl",
         "private_artifact": "private/labels.jsonl",
         "private_artifact_must_not_be_exposed_to_agent": True,
     }
