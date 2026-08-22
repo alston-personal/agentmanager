@@ -32,6 +32,12 @@ jobs:
           test "$(id -un)" = "agentos-node"
           test "$(uname -m)" = "aarch64" -o "$(uname -m)" = "arm64"
 
+      - name: Checkout experimental Node contracts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
       - name: Collect sanitized read-only status
         shell: bash
         run: |
@@ -66,6 +72,18 @@ jobs:
 
           cat "$OUT"
 
+      - name: Discover Node capabilities without activating them
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="$RUNNER_TEMP/oracle-agentos-node-capabilities.json"
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 scripts/discover_agentos_node.py \
+            --node-id oracle-agentos-node-01 \
+            --realm-id personal \
+            --profile edge \
+            --output "$MANIFEST" | tee "$RUNNER_TEMP/oracle-capability-summary.txt"
+          test -s "$MANIFEST"
+
       - name: Report sanitized status to commit
         shell: bash
         env:
@@ -77,9 +95,9 @@ jobs:
           DIRTY=$(awk -F= '$1=="repo_dirty_count"{print $2}' "$OUT")
           H8765=$(awk -F= '$1=="localhost_8765_health_http"{print $2}' "$OUT")
           H8775=$(awk -F= '$1=="localhost_8775_health_http"{print $2}' "$OUT")
-          HOST=$(awk -F= '$1=="hostname"{print $2}' "$OUT")
-          SHORT_HEAD="${REPO_HEAD:0:12}"
-          DESC="host=${HOST} repo=${SHORT_HEAD} dirty=${DIRTY} 8765=${H8765} 8775=${H8775}"
+          MANIFEST_ID=$(head -n1 "$RUNNER_TEMP/oracle-capability-summary.txt")
+          CAP_COUNT=$(awk -F= '$1=="capability_count"{print $2}' "$RUNNER_TEMP/oracle-capability-summary.txt")
+          DESC="node=oracle caps=${CAP_COUNT} manifest=${MANIFEST_ID:0:17} 8765=${H8765} 8775=${H8775} dirty=${DIRTY}"
           export DESC
           PAYLOAD=$(python3 - <<'PY'
           import json, os
@@ -98,10 +116,12 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -d "$PAYLOAD" >/dev/null
 
-      - name: Upload sanitized probe artifact
+      - name: Upload sanitized Node probe artifacts
         uses: actions/upload-artifact@v4
         with:
           name: oracle-agentos-node-readonly-probe
-          path: ${{ runner.temp }}/oracle-agentos-node-status.txt
+          path: |
+            ${{ runner.temp }}/oracle-agentos-node-status.txt
+            ${{ runner.temp }}/oracle-agentos-node-capabilities.json
           if-no-files-found: error
           retention-days: 7
