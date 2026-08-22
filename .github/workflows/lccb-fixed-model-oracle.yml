@@ -5,101 +5,219 @@ on:
     branches: [feature/state-kernel-v2]
     paths:
       - ".agentos/triggers/lccb-fixed-model-oracle"
-  pull_request:
-    branches: [feature/distributed-agentos-runtime]
-    paths:
-      - ".agentos/triggers/lccb-fixed-model-oracle"
-      - ".github/workflows/lccb-fixed-model-oracle.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
 
-# Scope the execution lease to an exact revision. A stale queued experiment must
-# never monopolize future revisions, while duplicate events for the same frozen
-# revision remain serialized.
 concurrency:
-  group: lccb-fixed-model-oracle-${{ github.sha }}
+  group: lccb-fixed-model-oracle-ssh
   cancel-in-progress: false
 
 jobs:
-  scheduler-preflight:
+  fixed-model-series:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      EXPERIMENT_SHA: ${{ github.sha }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      LCCB_MODEL_NAME: gemini-3.1-flash-lite
+
     steps:
-      - name: Record scheduler materialization receipt
+      - name: Record execution coordination receipt
         shell: bash
         run: |
           set -euo pipefail
-          echo "workflow_materialized=true"
-          echo "event=${GITHUB_EVENT_NAME}"
-          echo "sha=${GITHUB_SHA}"
+          echo "transport=github-hosted-ssh-to-oracle"
+          echo "series=meridian-fixed-model-73129"
+          echo "sha=${EXPERIMENT_SHA}"
           echo "run_id=${GITHUB_RUN_ID}"
 
-  fixed-model-series:
-    needs: scheduler-preflight
-    runs-on: [self-hosted, Linux, ARM64]
-    timeout-minutes: 20
-    steps:
-      - name: Verify Oracle execution boundary
+      - name: Cancel superseded queued self-hosted recovery runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run_id in 32576122422 32580465338 32580494643; do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" || true)
+            echo "cancel_run_${run_id}_http=${code}"
+          done
+
+      - name: Validate Oracle SSH route
         shell: bash
         run: |
           set -euo pipefail
-          test "$(hostname)" = "instance-20260129-0852"
-          test "$(id -un)" = "agentos-node"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
 
-      - name: Checkout frozen experiment implementation
-        uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          persist-credentials: false
-          clean: true
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Load provider contract without exposing secrets
+      - name: Execute frozen LCCB series on isolated Oracle workspace
         shell: bash
         run: |
           set -euo pipefail
-          CONFIG_ROOT=/home/ubuntu/agentmanager
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$EXPERIMENT_SHA" "$GITHUB_RUN_ID" "$CONFIG_ROOT" "$LCCB_MODEL_NAME" <<'REMOTE'
+          set -euo pipefail
+          EXPERIMENT_SHA="$1"
+          RUN_ID="$2"
+          CONFIG_ROOT="$3"
+          MODEL="$4"
+          WORK="/tmp/agentos-lccb-${RUN_ID}"
+          REPO_URL="https://github.com/alston-personal/agentmanager.git"
+
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          git clone --quiet "$REPO_URL" "$WORK/repo"
+          git -C "$WORK/repo" fetch --quiet origin "$EXPERIMENT_SHA"
+          git -C "$WORK/repo" checkout --quiet --detach "$EXPERIMENT_SHA"
+          cd "$WORK/repo"
+
+          test -f "$CONFIG_ROOT/.env" || { echo "Missing Oracle provider configuration" >&2; exit 21; }
           set -a
-          [ -f "$CONFIG_ROOT/.env" ] && source "$CONFIG_ROOT/.env"
+          # shellcheck disable=SC1090
+          source "$CONFIG_ROOT/.env"
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
-          test -n "${AI_API_BASE_URL:-}"
-          test -n "${AI_API_ACADEMIA_KEY:-}"
-          echo "::add-mask::$AI_API_ACADEMIA_KEY"
-          echo "LCCB_BASE_URL=$AI_API_BASE_URL" >> "$GITHUB_ENV"
-          echo "LCCB_API_KEY=$AI_API_ACADEMIA_KEY" >> "$GITHUB_ENV"
-          echo "LCCB_MODEL=gemini-3.1-flash-lite" >> "$GITHUB_ENV"
+          test -n "${AI_API_BASE_URL:-}" || { echo "Missing provider base URL" >&2; exit 22; }
+          test -n "${AI_API_ACADEMIA_KEY:-}" || { echo "Missing provider credential" >&2; exit 23; }
+          export LCCB_BASE_URL="$AI_API_BASE_URL"
+          export LCCB_API_KEY="$AI_API_ACADEMIA_KEY"
+          export LCCB_MODEL="$MODEL"
 
-      - name: Freeze Project Meridian pack
-        shell: bash
-        run: |
-          set -euo pipefail
           rm -rf artifacts/lccb-meridian
-          python3 scripts/build_lccb_synthetic_pack.py --output artifacts/lccb-meridian --seed 73129 --events 1000
+          python3 scripts/build_lccb_synthetic_pack.py \
+            --output artifacts/lccb-meridian \
+            --seed 73129 \
+            --events 1000
 
-      - name: Run fixed-model longitudinal series
+          python3 scripts/discover_agentos_node.py \
+            --node-id oracle-agentos-node-01 \
+            --realm-id personal \
+            --profile edge \
+            --output artifacts/lccb-capability-manifest.json >/dev/null
+
+          python3 - <<'PY'
+          import json, pathlib, platform, socket, subprocess, sys
+          payload = {
+              "schema_version": "agentos.lccb-environment/v1",
+              "hostname": socket.gethostname(),
+              "platform": platform.platform(),
+              "machine": platform.machine(),
+              "python": sys.version.split()[0],
+              "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "execution_transport": "github-hosted-ssh-to-oracle",
+          }
+          pathlib.Path("artifacts/lccb-environment.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+          # Enforce evaluator blindness at the filesystem boundary during model execution.
+          chmod 000 artifacts/lccb-meridian/private/labels.jsonl
+          restore_labels() { chmod 600 artifacts/lccb-meridian/private/labels.jsonl 2>/dev/null || true; }
+          trap restore_labels EXIT
+          python3 scripts/run_lccb_openai_compatible.py \
+            --pack artifacts/lccb-meridian \
+            --output artifacts/lccb-raw-responses.jsonl \
+            --stages 0,100,1000 \
+            --temperature 0 \
+            --repeat 3
+          restore_labels
+          trap - EXIT
+
+          python3 scripts/score_lccb_responses.py \
+            --pack artifacts/lccb-meridian \
+            --responses artifacts/lccb-raw-responses.jsonl \
+            --output artifacts/lccb-scored-results.json
+
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path("artifacts/lccb-meridian")
+          def sha(path):
+              return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+          manifest = {
+              "schema_version": "agentos.lccb-series-manifest/v2",
+              "series": "meridian-fixed-model-73129",
+              "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "provider_family": "openai-compatible",
+              "model": os.environ["LCCB_MODEL"],
+              "seed": 73129,
+              "events": 1000,
+              "stages": [0, 100, 1000],
+              "repeat": 3,
+              "temperature": 0,
+              "evaluator_blind_during_model_execution": True,
+              "pack_manifest_sha256": sha(root / "manifest.json"),
+              "experience_sha256": sha(root / "public" / "experience.jsonl"),
+              "tasks_sha256": sha(root / "public" / "tasks.jsonl"),
+              "private_labels_sha256": sha(root / "private" / "labels.jsonl"),
+              "runner_policy_sha256": sha("research/lccb_openai_compatible.py"),
+              "runner_cli_sha256": sha("scripts/run_lccb_openai_compatible.py"),
+              "capability_manifest_sha256": sha("artifacts/lccb-capability-manifest.json"),
+              "environment_sha256": sha("artifacts/lccb-environment.json"),
+              "raw_responses_sha256": sha("artifacts/lccb-raw-responses.jsonl"),
+              "scored_results_sha256": sha("artifacts/lccb-scored-results.json"),
+          }
+          pathlib.Path("artifacts/lccb-series-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print("experiment_manifest_sha256=" + sha("artifacts/lccb-series-manifest.json"))
+          PY
+
+          tar -czf "$WORK/evidence.tar.gz" \
+            artifacts/lccb-meridian/manifest.json \
+            artifacts/lccb-capability-manifest.json \
+            artifacts/lccb-environment.json \
+            artifacts/lccb-raw-responses.jsonl \
+            artifacts/lccb-scored-results.json \
+            artifacts/lccb-series-manifest.json
+          echo "oracle_lccb_execution=completed"
+          REMOTE
+
+      - name: Retrieve preserved evidence from Oracle
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/run_lccb_openai_compatible.py --pack artifacts/lccb-meridian --output artifacts/lccb-raw-responses.jsonl --stages 0,100,1000 --temperature 0 --repeat 3
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          mkdir -p artifacts/lccb-evidence
+          scp -q -P "$PORT" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/agentos-lccb-${GITHUB_RUN_ID}/evidence.tar.gz" \
+            artifacts/lccb-evidence/evidence.tar.gz
+          tar -xzf artifacts/lccb-evidence/evidence.tar.gz -C .
 
-      - name: Score with evaluator-only labels
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/score_lccb_responses.py --pack artifacts/lccb-meridian --responses artifacts/lccb-raw-responses.jsonl --output artifacts/lccb-scored-results.json
-
-      - name: Record immutable experiment manifest
+      - name: Verify evidence hashes locally
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, subprocess
-          root=pathlib.Path('artifacts/lccb-meridian')
-          def sha(p): return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
-          manifest={'schema_version':'agentos.lccb-series-manifest/v1','series':'meridian-fixed-model-73129','git_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'model':os.environ['LCCB_MODEL'],'seed':73129,'events':1000,'stages':[0,100,1000],'repeat':3,'temperature':0,'experience_sha256':sha(root/'public/experience.jsonl'),'tasks_sha256':sha(root/'public/tasks.jsonl'),'raw_responses_sha256':sha('artifacts/lccb-raw-responses.jsonl'),'scored_results_sha256':sha('artifacts/lccb-scored-results.json')}
-          pathlib.Path('artifacts/lccb-series-manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
-          print(json.dumps(manifest,sort_keys=True))
+          import hashlib, json, pathlib
+          manifest = json.loads(pathlib.Path("artifacts/lccb-series-manifest.json").read_text())
+          checks = {
+              "pack_manifest_sha256": "artifacts/lccb-meridian/manifest.json",
+              "capability_manifest_sha256": "artifacts/lccb-capability-manifest.json",
+              "environment_sha256": "artifacts/lccb-environment.json",
+              "raw_responses_sha256": "artifacts/lccb-raw-responses.jsonl",
+              "scored_results_sha256": "artifacts/lccb-scored-results.json",
+          }
+          for key, path in checks.items():
+              actual = hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              if actual != manifest[key]:
+                  raise SystemExit(f"hash mismatch: {key}")
+          print("evidence_hash_verification=pass")
           PY
 
       - name: Upload preserved experiment evidence
@@ -108,8 +226,20 @@ jobs:
           name: lccb-fixed-model-meridian-73129
           path: |
             artifacts/lccb-meridian/manifest.json
+            artifacts/lccb-capability-manifest.json
+            artifacts/lccb-environment.json
             artifacts/lccb-raw-responses.jsonl
             artifacts/lccb-scored-results.json
             artifacts/lccb-series-manifest.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Clean isolated Oracle workspace
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          PORT="${DEPLOY_SSH_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "rm -rf '/tmp/agentos-lccb-${GITHUB_RUN_ID}'" >/dev/null 2>&1
+          exit 0
