@@ -41,6 +41,8 @@ Join material MUST NOT be:
 - accepted after expiry;
 - transported to a non-HTTPS Core, except `127.0.0.1` development.
 
+A CLI bearer reference should preferably be read from stdin or a hidden interactive prompt rather than placed directly in process arguments/shell history. `agentos-node enroll --reference-stdin` is the explicit non-interactive form; bare `agentos-node enroll` accepts a hidden prompt. `--reference` remains a development/backward-compatible escape hatch.
+
 Bootstrap authority is deliberately tiny. It may establish identity, heartbeat, capability metadata and reconciliation metadata. It may not grant external effects.
 
 ## Lifecycle
@@ -100,6 +102,21 @@ owner/governance registration where required
 ↓
 ACTIVE
 ```
+
+## Canonical API surface
+
+Transport implementations should route through one protocol contract instead of re-implementing onboarding semantics:
+
+```text
+POST /v1/nodes/enrollment/resolve
+POST /v1/nodes/enrollment/claim
+GET  /v1/nodes
+GET  /v1/nodes/{node_id}
+GET  /v1/nodes/{node_id}/capabilities
+GET  /v1/capabilities/{capability}/nodes
+```
+
+`agent_core.node_http_api.NodeHttpApi` is the reference route contract. It is not itself a production network server: TLS termination, client authentication, rate limiting and external exposure remain responsibilities of the trusted transport adapter.
 
 ## Capability discovery
 
@@ -188,5 +205,6 @@ The current GitHub self-hosted-runner flow is Bootstrap v0 and remains useful as
 6. Reconnect re-discovers capabilities; hardware/software changes do not silently inherit old authority.
 7. Revocation must remain possible independently of Node cooperation.
 8. Join UX may be one-touch; bootstrap authority remains minimal.
+9. Bearer Join References should not be exposed in logs/process argv when a safer input channel is available.
 
 > **UX may be one touch. Authority may not be one assumption.**
