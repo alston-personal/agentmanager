@@ -1,7 +1,7 @@
 """Durable, single-use AgentOS Node enrollment invitations.
 
-Raw join secrets are never persisted.  The store keeps only a SHA-256 digest,
-expiry and claim state.  Successful claim consumes the invitation permanently.
+Raw join secrets are never persisted. The store keeps only a SHA-256 digest,
+expiry and claim state. Successful claim consumes the invitation permanently.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import secrets
 import sqlite3
 from typing import Callable
 
-from runtime_core.onboarding_v1 import BootstrapPolicy, EnrollmentClaim, JoinEnvelope
+from runtime_core.onboarding_v1 import BootstrapPolicy, EnrollmentClaim, JoinEnvelope, JoinReference, JoinTicket
 
 
 class EnrollmentError(RuntimeError):
@@ -57,6 +57,14 @@ class EnrollmentStore:
     @staticmethod
     def _digest(secret: str) -> str:
         return sha256(secret.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _parse_expiry(value: str) -> datetime:
+        try:
+            expiry = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise EnrollmentError("invalid enrollment expiry") from exc
+        return expiry if expiry.tzinfo is not None else expiry.replace(tzinfo=timezone.utc)
 
     def issue(
         self,
@@ -101,25 +109,49 @@ class EnrollmentStore:
             )
         return envelope, secret
 
+    def issue_reference(self, **kwargs: object) -> JoinReference:
+        envelope, secret = self.issue(**kwargs)
+        return JoinReference(core_url=envelope.core_url, enrollment_id=envelope.enrollment_id, secret=secret)
+
+    def resolve(self, reference: JoinReference) -> JoinTicket:
+        """Resolve compact QR/link material to authoritative Core policy without consuming it."""
+        now = self._now()
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM enrollments WHERE enrollment_id = ?", (reference.enrollment_id,)).fetchone()
+        if row is None:
+            raise EnrollmentError("unknown enrollment invitation")
+        if row["consumed_at"] is not None:
+            raise EnrollmentError("enrollment invitation already consumed")
+        if row["secret_hash"] != self._digest(reference.secret):
+            raise EnrollmentError("invalid enrollment secret")
+        if row["core_url"] != reference.core_url:
+            raise EnrollmentError("join reference Core does not match issued invitation")
+        if now >= self._parse_expiry(row["expires_at"]):
+            raise EnrollmentError("enrollment invitation expired")
+        policy_payload = json.loads(row["bootstrap_policy_json"])
+        if "requested_capabilities" in policy_payload:
+            policy_payload["requested_capabilities"] = tuple(policy_payload["requested_capabilities"])
+        envelope = JoinEnvelope(
+            enrollment_id=row["enrollment_id"],
+            realm_id=row["realm_id"],
+            core_url=row["core_url"],
+            expires_at=row["expires_at"],
+            nonce=row["nonce"],
+            bootstrap_policy=BootstrapPolicy(**policy_payload),
+            issuer=row["issuer"],
+        )
+        return JoinTicket(envelope=envelope, secret=reference.secret)
+
     def claim(self, *, envelope: JoinEnvelope, secret: str, claim: EnrollmentClaim) -> str:
         if claim.enrollment_id != envelope.enrollment_id:
             raise EnrollmentError("claim enrollment_id does not match join envelope")
         now = self._now()
-        try:
-            expiry = datetime.fromisoformat(envelope.expires_at.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise EnrollmentError("invalid enrollment expiry") from exc
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        if now >= expiry:
+        if now >= self._parse_expiry(envelope.expires_at):
             raise EnrollmentError("enrollment invitation expired")
 
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT * FROM enrollments WHERE enrollment_id = ?",
-                (envelope.enrollment_id,),
-            ).fetchone()
+            row = db.execute("SELECT * FROM enrollments WHERE enrollment_id = ?", (envelope.enrollment_id,)).fetchone()
             if row is None:
                 raise EnrollmentError("unknown enrollment invitation")
             if row["consumed_at"] is not None:
@@ -139,13 +171,7 @@ class EnrollmentStore:
                 SET consumed_at = ?, claim_id = ?, device_fingerprint = ?, node_public_key = ?
                 WHERE enrollment_id = ? AND consumed_at IS NULL
                 """,
-                (
-                    consumed_at,
-                    claim.claim_id,
-                    claim.device_fingerprint,
-                    claim.node_public_key,
-                    envelope.enrollment_id,
-                ),
+                (consumed_at, claim.claim_id, claim.device_fingerprint, claim.node_public_key, envelope.enrollment_id),
             )
             if updated.rowcount != 1:
                 raise EnrollmentError("enrollment claim lost single-use race")
