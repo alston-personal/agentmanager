@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.workstream/v1",
+  "title": "AgentOS Workstream v1",
+  "type": "object",
+  "required": ["schema", "project_id", "workstream_id", "goal", "canonical_parent", "status", "closure_invariants", "next_gap", "ownership", "dependencies", "proposal_refs", "failure_refs", "integration"],
+  "properties": {
+    "schema": {"const": "agentos.workstream/v1"},
+    "project_id": {"type": "string", "minLength": 1},
+    "workstream_id": {"type": "string", "minLength": 1},
+    "goal": {
+      "type": "object",
+      "required": ["goal_id", "objective"],
+      "properties": {
+        "goal_id": {"type": "string", "minLength": 1},
+        "objective": {"type": "string", "minLength": 1}
+      }
+    },
+    "canonical_parent": {
+      "type": "object",
+      "required": ["revision", "ref", "observed_head_sha"],
+      "properties": {
+        "revision": {"type": "string", "minLength": 1},
+        "ref": {"type": "string", "minLength": 1},
+        "observed_head_sha": {"type": "string", "minLength": 1}
+      }
+    },
+    "status": {"enum": ["READY", "RUNNING", "WAITING", "BLOCKED", "INTEGRATION_READY", "DONE", "ABANDONED"]},
+    "closure_invariants": {"type": "array", "items": {"type": "string"}},
+    "next_gap": {"type": "string"},
+    "ownership": {
+      "type": "object",
+      "required": ["executor_id", "lease_id", "fencing_token"],
+      "properties": {
+        "executor_id": {"type": ["string", "null"]},
+        "lease_id": {"type": ["string", "null"]},
+        "fencing_token": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "resource_scope": {"type": "array", "items": {"type": "string"}},
+    "latest_receipts": {"type": "array", "items": {"type": "object"}},
+    "dependencies": {"type": "array", "items": {"type": "string"}},
+    "proposal_refs": {"type": "array", "items": {"type": "string"}},
+    "failure_refs": {"type": "array", "items": {"type": "string"}},
+    "integration": {
+      "type": "object",
+      "required": ["disposition"],
+      "properties": {
+        "disposition": {"enum": ["NOT_READY", "READY", "CONFLICT", "ACCEPTED", "REJECTED", "SUPERSEDED"]},
+        "canonical_revision": {"type": ["string", "null"]}
+      }
+    }
+  },
+  "additionalProperties": true
+}
