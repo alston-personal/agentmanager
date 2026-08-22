@@ -14,6 +14,7 @@ from urllib.parse import unquote
 
 from agent_core.enrollment_api import EnrollmentApi
 from agent_core.node_directory_api import NodeDirectoryApi
+from agent_core.onboarding_submission_api import OnboardingSubmissionApi
 
 
 @dataclass(frozen=True)
@@ -28,10 +29,12 @@ class NodeHttpApi:
         *,
         enrollment: EnrollmentApi,
         directory: NodeDirectoryApi,
+        onboarding: OnboardingSubmissionApi | None = None,
         now_iso: Callable[[], str] | None = None,
     ) -> None:
         self.enrollment = enrollment
         self.directory = directory
+        self.onboarding = onboarding
         self._now_iso = now_iso or (
             lambda: datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         )
@@ -45,6 +48,10 @@ class NodeHttpApi:
                 return ApiResponse(200, self.enrollment.resolve(body))
             if method == "POST" and path == "/v1/nodes/enrollment/claim":
                 return ApiResponse(200, self.enrollment.claim(body, observed_at=self._now_iso()))
+            if method == "POST" and path == "/v1/nodes/onboarding/submit":
+                if self.onboarding is None:
+                    return ApiResponse(503, {"schema": "agentos.error/v1", "error": "onboarding_unavailable", "message": "onboarding submission is not configured"})
+                return ApiResponse(200, self.onboarding.submit(body))
             if method == "GET" and path == "/v1/nodes":
                 return ApiResponse(200, self.directory.list_nodes())
 
