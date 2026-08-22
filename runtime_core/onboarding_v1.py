@@ -1,7 +1,7 @@
 """Portable AgentOS Node onboarding contracts.
 
-The human establishes trust once; AgentOS performs the rest.  Join material is
-short-lived and single-use.  Discovery never implies authority, and onboarding
+The human establishes trust once; AgentOS performs the rest. Join material is
+short-lived and single-use. Discovery never implies authority, and onboarding
 cannot silently activate a Node before governance has accepted its capabilities.
 """
 
@@ -17,6 +17,7 @@ from typing import Any
 
 ONBOARDING_SCHEMA = "agentos.node-onboarding/v1"
 JOIN_SCHEMA = "agentos.join/v1"
+JOIN_TICKET_SCHEMA = "agentos.join-ticket/v1"
 
 
 def _canonical(value: Any) -> str:
@@ -25,6 +26,23 @@ def _canonical(value: Any) -> str:
 
 def _content_id(prefix: str, value: Any) -> str:
     return prefix + sha256(_canonical(value).encode("utf-8")).hexdigest()[:32]
+
+
+def _encode_payload(prefix: str, payload: dict[str, Any]) -> str:
+    raw = _canonical(payload).encode("utf-8")
+    token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"{prefix}.{token}"
+
+
+def _decode_payload(prefix: str, value: str) -> dict[str, Any]:
+    if not value.startswith(prefix + "."):
+        raise ValueError("unsupported AgentOS join code")
+    token = value.split(".", 1)[1]
+    token += "=" * (-len(token) % 4)
+    try:
+        return json.loads(base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - boundary parser must fail closed
+        raise ValueError("invalid AgentOS join code") from exc
 
 
 class NodeLifecycle(str, Enum):
@@ -97,22 +115,57 @@ class JoinEnvelope:
         return _content_id("join_", asdict(self))
 
     def encode(self) -> str:
-        payload = _canonical(asdict(self)).encode("utf-8")
-        token = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
-        return f"AGENTOS1.{token}"
+        return _encode_payload("AGENTOS1", asdict(self))
 
     @classmethod
     def decode(cls, value: str) -> "JoinEnvelope":
-        if not value.startswith("AGENTOS1."):
-            raise ValueError("unsupported AgentOS join code")
-        token = value.split(".", 1)[1]
-        token += "=" * (-len(token) % 4)
-        try:
-            payload = json.loads(base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8"))
-        except Exception as exc:  # noqa: BLE001 - boundary parser must fail closed
-            raise ValueError("invalid AgentOS join code") from exc
-        policy = BootstrapPolicy(**payload.pop("bootstrap_policy", {}))
+        payload = _decode_payload("AGENTOS1", value)
+        policy_payload = payload.pop("bootstrap_policy", {})
+        if "requested_capabilities" in policy_payload:
+            policy_payload["requested_capabilities"] = tuple(policy_payload["requested_capabilities"])
+        policy = BootstrapPolicy(**policy_payload)
         return cls(bootstrap_policy=policy, **payload)
+
+
+@dataclass(frozen=True)
+class JoinTicket:
+    """Short-lived bearer ticket suitable for QR, link, NFC or one-line CLI.
+
+    The secret is intentionally present in the transport ticket because the
+    human needs only one artifact to join a device. Core persists only its hash.
+    The ticket must therefore be treated like a temporary password and consumed
+    once; it must never be written to logs or durable Node state.
+    """
+
+    envelope: JoinEnvelope
+    secret: str
+    schema_version: str = JOIN_TICKET_SCHEMA
+
+    def __post_init__(self) -> None:
+        if not self.secret.strip():
+            raise ValueError("join ticket secret is required")
+
+    def encode(self) -> str:
+        return _encode_payload(
+            "AGENTOSJOIN1",
+            {
+                "schema_version": self.schema_version,
+                "envelope": asdict(self.envelope),
+                "secret": self.secret,
+            },
+        )
+
+    @classmethod
+    def decode(cls, value: str) -> "JoinTicket":
+        payload = _decode_payload("AGENTOSJOIN1", value)
+        if payload.get("schema_version") != JOIN_TICKET_SCHEMA:
+            raise ValueError("unsupported AgentOS join ticket schema")
+        envelope_payload = payload["envelope"]
+        policy_payload = envelope_payload.pop("bootstrap_policy", {})
+        if "requested_capabilities" in policy_payload:
+            policy_payload["requested_capabilities"] = tuple(policy_payload["requested_capabilities"])
+        envelope = JoinEnvelope(bootstrap_policy=BootstrapPolicy(**policy_payload), **envelope_payload)
+        return cls(envelope=envelope, secret=payload["secret"])
 
 
 @dataclass(frozen=True)
