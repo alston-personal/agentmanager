@@ -34,6 +34,9 @@ from research.lccb_openai_compatible import (
 )
 
 
+_PROVIDER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AgentOS/1.0"
+
+
 def _load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
@@ -60,6 +63,10 @@ def _chat(base_url: str, api_key: str, model: str, messages: list[dict[str, str]
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            # Keep the same upstream HTTP contract as agent_core.ai_client.
+            # Some compatible gateways/WAFs reject urllib's default Python UA.
+            "User-Agent": _PROVIDER_USER_AGENT,
         },
     )
     try:
