@@ -1,0 +1,127 @@
+name: Oracle AgentOS Node Read-Only Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_hostname:
+        description: "Fail closed if the selected self-hosted runner is not this host"
+        required: true
+        default: "instance-20260129-0852"
+  push:
+    branches:
+      - feature/state-kernel-v2
+    paths:
+      - ".agentos/triggers/oracle-readonly-probe"
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  oracle-readonly-probe:
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_HOST="${{ github.event_name == 'workflow_dispatch' && inputs.expected_hostname || 'instance-20260129-0852' }}"
+          test "$(hostname)" = "$EXPECTED_HOST"
+          test "$(id -un)" = "agentos-node"
+          test "$(uname -m)" = "aarch64" -o "$(uname -m)" = "arm64"
+
+      - name: Checkout experimental Node contracts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Collect sanitized read-only status
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oracle-agentos-node-status.txt"
+          REPO="/home/ubuntu/agentos-distributed"
+
+          {
+            echo "schema=agentos.oracle-readonly-probe/v1"
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "runner_user=$(id -un)"
+            echo "arch=$(uname -m)"
+            echo "uptime_seconds=$(cut -d' ' -f1 /proc/uptime)"
+
+            if git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              echo "repo_read=ok"
+              echo "repo_head=$(git -C "$REPO" rev-parse HEAD)"
+              echo "repo_dirty_count=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+            else
+              echo "repo_read=failed"
+              echo "repo_head=unknown"
+              echo "repo_dirty_count=unknown"
+            fi
+
+            for port in 8765 8775; do
+              code=$(curl --max-time 3 --silent --show-error --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:${port}/health" || true)
+              test -n "$code" || code="000"
+              echo "localhost_${port}_health_http=$code"
+            done
+          } > "$OUT"
+
+          cat "$OUT"
+
+      - name: Discover Node capabilities without activating them
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="$RUNNER_TEMP/oracle-agentos-node-capabilities.json"
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 scripts/discover_agentos_node.py \
+            --node-id oracle-agentos-node-01 \
+            --realm-id personal \
+            --profile edge \
+            --output "$MANIFEST" | tee "$RUNNER_TEMP/oracle-capability-summary.txt"
+          test -s "$MANIFEST"
+
+      - name: Report sanitized status to commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oracle-agentos-node-status.txt"
+          REPO_HEAD=$(awk -F= '$1=="repo_head"{print $2}' "$OUT")
+          DIRTY=$(awk -F= '$1=="repo_dirty_count"{print $2}' "$OUT")
+          H8765=$(awk -F= '$1=="localhost_8765_health_http"{print $2}' "$OUT")
+          H8775=$(awk -F= '$1=="localhost_8775_health_http"{print $2}' "$OUT")
+          MANIFEST_ID=$(head -n1 "$RUNNER_TEMP/oracle-capability-summary.txt")
+          CAP_COUNT=$(awk -F= '$1=="capability_count"{print $2}' "$RUNNER_TEMP/oracle-capability-summary.txt")
+          DESC="node=oracle caps=${CAP_COUNT} manifest=${MANIFEST_ID:0:17} 8765=${H8765} 8775=${H8775} dirty=${DIRTY}"
+          export DESC
+          PAYLOAD=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({
+              "state": "success",
+              "context": "agentos/oracle-readonly",
+              "description": os.environ["DESC"][:140],
+          }))
+          PY
+          )
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -d "$PAYLOAD" >/dev/null
+
+      - name: Upload sanitized Node probe artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-agentos-node-readonly-probe
+          path: |
+            ${{ runner.temp }}/oracle-agentos-node-status.txt
+            ${{ runner.temp }}/oracle-agentos-node-capabilities.json
+          if-no-files-found: error
+          retention-days: 7
