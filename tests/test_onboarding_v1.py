@@ -3,6 +3,7 @@ import pytest
 from runtime_core.onboarding_v1 import (
     BootstrapPolicy,
     JoinEnvelope,
+    JoinTicket,
     NodeLifecycle,
     validate_transition,
 )
@@ -20,6 +21,20 @@ def test_join_code_round_trip_preserves_fail_closed_bootstrap_policy() -> None:
     decoded = JoinEnvelope.decode(envelope.encode())
     assert decoded == envelope
     assert decoded.bootstrap_policy.allow_external_effects is False
+
+
+def test_join_ticket_round_trip_contains_one_short_lived_bearer_artifact() -> None:
+    envelope = JoinEnvelope(
+        enrollment_id="enr_test",
+        realm_id="realm-personal",
+        core_url="https://core.example.test",
+        expires_at="2026-08-22T10:00:00Z",
+        nonce="nonce-test",
+    )
+    ticket = JoinTicket(envelope=envelope, secret="temporary-secret")
+    encoded = ticket.encode()
+    assert encoded.startswith("AGENTOSJOIN1.")
+    assert JoinTicket.decode(encoded) == ticket
 
 
 def test_bootstrap_policy_cannot_grant_external_effects() -> None:
