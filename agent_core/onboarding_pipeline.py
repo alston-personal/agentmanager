@@ -1,4 +1,4 @@
-"""End-to-end AgentOS Node onboarding pipeline.
+"""End-to-end AgentOS Node onboarding and reconnect pipeline.
 
 The pipeline composes identity claim, capability discovery, cognitive
 reconciliation, durable registration and governance assessment. It may activate
@@ -14,7 +14,7 @@ from agent_core.enrollment_service import EnrollmentReceipt
 from agent_core.node_directory_store import NodeDirectoryStore
 from agent_core.node_onboarding import NodeOnboardingCoordinator, OnboardingAssessment
 from agent_core.node_reconciliation import LocalCognitionDescriptor, NodeReconciliationPlan, plan_node_reconciliation
-from runtime_core.node_v1 import NodeCapabilityManifest
+from runtime_core.node_v1 import NodeCapabilityDelta, NodeCapabilityManifest, diff_manifests
 from runtime_core.onboarding_v1 import NodeLifecycle, OnboardingCheckpoint
 
 
@@ -23,6 +23,7 @@ class OnboardingPipelineResult:
     checkpoint: OnboardingCheckpoint
     reconciliation: NodeReconciliationPlan
     governance: OnboardingAssessment
+    capability_delta: NodeCapabilityDelta | None = None
 
 
 class NodeOnboardingPipeline:
@@ -48,8 +49,14 @@ class NodeOnboardingPipeline:
         if manifest.identity != receipt.node_identity:
             raise ValueError("capability manifest identity does not match enrollment receipt")
 
-        if self.directory.checkpoint(receipt.node_identity.node_id) is None:
+        existing_checkpoint = self.directory.checkpoint(receipt.node_identity.node_id)
+        previous_manifest = self.directory.latest_manifest(receipt.node_identity.node_id)
+        capability_delta = diff_manifests(previous_manifest, manifest) if previous_manifest else None
+
+        if existing_checkpoint is None:
             self.directory.initialize_node(receipt.checkpoint)
+        elif existing_checkpoint.lifecycle is NodeLifecycle.REVOKED:
+            raise PermissionError("revoked Node cannot re-onboard itself")
 
         self.directory.save_manifest(manifest)
         self.coordinator.register_discovery(manifest)
@@ -102,4 +109,5 @@ class NodeOnboardingPipeline:
             checkpoint=checkpoint,
             reconciliation=reconciliation,
             governance=assessment,
+            capability_delta=capability_delta,
         )
