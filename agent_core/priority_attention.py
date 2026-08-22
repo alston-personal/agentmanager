@@ -1,4 +1,9 @@
-"""Dynamic Eisenhower priority and resurfacing policy for deferred work."""
+"""Dynamic Eisenhower priority and resurfacing policy for deferred work.
+
+Priority answers what deserves attention. Governance separately answers what may
+actually execute. A Q1 item can therefore resurface strongly while still being
+limited to proposal/shadow mode.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ from runtime_core.work_v1 import WorkItem
 
 IMPORTANT_THRESHOLD = 0.60
 URGENT_THRESHOLD = 0.60
+AUTHORITY_MODES = frozenset({"allow", "proposal", "shadow", "deny"})
 
 
 def _parse_time(value: str) -> datetime:
@@ -44,6 +50,7 @@ class PrioritySnapshot:
     quadrant: str
     initial_quadrant: str
     readiness: str
+    authority_mode: str
     action: str
     elapsed_days: float
     resurfaced: bool
@@ -57,12 +64,17 @@ def evaluate_priority(
     importance_event_delta: float = 0.0,
     urgency_event_delta: float = 0.0,
     semantic_match: bool = False,
+    authority_mode: str = "allow",
 ) -> PrioritySnapshot:
-    """Evaluate priority lazily; elapsed time does not mutate the packet.
+    """Evaluate dynamic priority without conflating attention and authority.
 
-    Time drift changes priority/attention only.  It never changes epistemic
-    confidence, ProjectState, or execution authorization.
+    Time drift changes priority/attention only. It never changes epistemic
+    confidence, ProjectState, or execution authorization. ``authority_mode``
+    must come from reviewed governance state, not from priority itself.
     """
+    if authority_mode not in AUTHORITY_MODES:
+        raise ValueError("authority_mode must be allow, proposal, shadow, or deny")
+
     start = _parse_time(packet.deferred_since)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -86,6 +98,12 @@ def evaluate_priority(
 
     if blocked:
         action = "wait"
+    elif authority_mode == "deny":
+        action = "governance_blocked"
+    elif authority_mode == "proposal":
+        action = "propose_only"
+    elif authority_mode == "shadow":
+        action = "shadow_only"
     elif quadrant == "Q1":
         action = "do_now"
     elif quadrant == "Q2":
@@ -102,8 +120,12 @@ def evaluate_priority(
         reasons.append("priority_quadrant_changed")
     if quadrant == "Q1" and initial_quadrant != "Q1":
         reasons.append("became_urgent_and_important")
+    if readiness == "ready" and authority_mode != "allow":
+        reasons.append(f"authority_{authority_mode}")
 
-    # Blocked work may be remembered but should not repeatedly interrupt active work.
+    # A blocked item should not interrupt merely because time passes. A ready
+    # governance-limited item may resurface for review/proposal, but never gains
+    # execution authority from priority pressure.
     resurfaced = bool(reasons) and readiness == "ready"
     return PrioritySnapshot(
         deferred_id=packet.deferred_id,
@@ -112,6 +134,7 @@ def evaluate_priority(
         quadrant=quadrant,
         initial_quadrant=initial_quadrant,
         readiness=readiness,
+        authority_mode=authority_mode,
         action=action,
         elapsed_days=elapsed_days,
         resurfaced=resurfaced,
@@ -129,7 +152,11 @@ def resolve_blocker(packet: DeferredWorkPacket, blocker: str) -> DeferredWorkPac
 
 
 def promote_to_work(packet: DeferredWorkPacket, *, priority: int = 0) -> WorkItem:
-    """Create active work only from a ready deferred checkpoint."""
+    """Create active work only from a locally ready deferred checkpoint.
+
+    This function does not grant execution authority. Work dispatch must still
+    resolve the capability through GovernanceRegistry before acting.
+    """
     if packet.status == "blocked" or packet.blockers:
         raise ValueError("blocked deferred work cannot be promoted")
     if packet.status in {"promoted", "cancelled"}:
