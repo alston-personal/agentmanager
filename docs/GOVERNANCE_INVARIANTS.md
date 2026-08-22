@@ -22,6 +22,23 @@ New associations, abstractions and syntheses may be generated aggressively becau
 
 This prevents a highly connected cognitive graph from turning repeated self-reference into false certainty.
 
+## Governance self-limitation laws
+
+> **Ideas may scale quickly; authority must scale deliberately.**
+
+> **Intelligence learns how to do more; governance learns when it must not.**
+
+> **Governance may autonomously become more conservative; it may not autonomously grant itself greater authority.**
+
+Executable consequences:
+
+- a runtime/model/provider/node may name a capability but may not provide its own governance controls;
+- capability profiles are resolved from a governance-owned registry;
+- effect classes impose minimum authority floors even if a component under-declares its level;
+- adding controls, increasing risk classification or reducing authority may be automated;
+- removing controls, lowering risk classification, hiding/removing an effect classification, registering new authority or increasing authority requires explicit owner approval;
+- unknown capability/profile state fails closed.
+
 ## Governance dimensions
 
 Every capability change must be evaluated across at least these dimensions:
@@ -58,6 +75,19 @@ Depending on capability risk and effect domain, controls include:
 - ability to revoke credentials, runtimes, memories, relations, and policies;
 - human-readable explanation of current authority and pending effects.
 
+## Effect-derived minimum authority
+
+An implementation cannot lower its governance burden by declaring a weaker capability level than its real effect.
+
+```text
+canonical_state       -> at least COMMIT (L3)
+durable_memory        -> at least COMMIT (L3)
+cross_project         -> at least COMMIT (L3)
+external_reversible   -> at least ACT (L4)
+external_high_impact  -> at least HIGH_IMPACT (L5)
+autonomous            -> at least AUTONOMOUS (L6)
+```
+
 ## Cognitive Kernel rules
 
 The Cognitive Kernel may retrieve, associate, abstract, brainstorm, analogize, synthesize, compact, decay, revive, re-link, reconcile, re-synthesize, and generate hypotheses. These abilities do not grant truth authority.
@@ -86,6 +116,7 @@ The following rules are mandatory:
 20. **Cross-project relations require stronger grounding.** A relation that propagates conclusions across projects must have provenance and validation appropriate to its wider blast radius.
 21. **Reconciliation is inspection first.** Orphan nodes, ungrounded edges and stale derivatives generate review/re-synthesis work; they are not silently repaired by mutating source artifacts.
 22. **Cognitive feedback is not independent evidence.** A synthesis repeatedly citing earlier syntheses derived from the same source cannot manufacture additional source independence or confidence.
+23. **Durable cognitive promotion is COMMIT authority.** Project/cross-project validated cognition may not be governed as mere synthesis simply because it does not mutate canonical ProjectState.
 
 ## Capability ladder
 
@@ -105,10 +136,11 @@ Level 3  Commit low-risk canonical state / validated durable cognition
 
 Level 4  Execute reversible external actions
          governance: idempotency + receipts + bounded scope + compensation
+                     + SideEffect Ledger
 
 Level 5  Execute high-impact / irreversible actions
-         governance: explicit approval or independently enforced policy gate,
-                     strongest audit, circuit breaker, and minimal privileges
+         governance: explicit intent-bound approval or independently enforced
+                     policy gate, strongest audit, circuit breaker, and minimal privileges
 
 Level 6  Autonomous recurring / cross-project cognition or action
          governance: continuous policy enforcement, budgets, anomaly detection,
@@ -117,6 +149,22 @@ Level 6  Autonomous recurring / cross-project cognition or action
 ```
 
 A subsystem may not move up the capability ladder before corresponding effect-appropriate governance controls exist and are tested.
+
+## Side-effect authority rule
+
+External effects require all of the following before execution:
+
+```text
+registered capability profile
+-> canonical GovernanceGate decision
+-> exact ActionIntent binding
+-> intent-bound approval when required
+-> SideEffect Ledger prepare
+-> executor
+-> receipt / failure / compensation record
+```
+
+A generic model/tool decision is not an external-action authorization.
 
 ## Fail-closed rule
 
@@ -153,6 +201,8 @@ What happens when governance dependencies fail?
 Can resulting knowledge/relations/actions be traced to original sources?
 Are apparent independent sources actually derived from the same evidence lineage?
 Are source credentials/secrets excluded from cognitive state?
+Is the capability registered in the governance-owned inventory/registry?
+Can the runtime under-declare its effect or self-supply controls? (It must not.)
 ```
 
 If these questions cannot be answered, the capability remains experimental and must not be promoted.
