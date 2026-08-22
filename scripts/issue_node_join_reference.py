@@ -5,6 +5,14 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sys
+
+# Make the checkout itself runnable without requiring agent_core to be packaged.
+# This matches other research/operator scripts that execute from repository root.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from agent_core.enrollment_store import EnrollmentStore
 from runtime_core.onboarding_v1 import BootstrapPolicy
@@ -34,8 +42,8 @@ def main() -> int:
     if args.format == "code":
         print(reference.code())
     elif args.format == "command":
-        # Shell quoting is intentionally left to the operator/UI because Join
-        # References are bearer credentials and should not be copied into logs.
+        # The placeholder prevents a bearer Join Reference from being copied into
+        # shell history by an operator who only asked to inspect the command form.
         print("agentos-node enroll --reference '<JOIN_REFERENCE>'")
         print(reference.link())
     else:
