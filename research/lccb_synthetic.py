@@ -1,13 +1,15 @@
 """Deterministic controlled-world generator for the LCCB research track.
 
-This module is research tooling, not AgentOS runtime authority.  It creates two
+This module is research tooling, not AgentOS runtime authority. It creates two
 physically separate artifacts:
 
 1. an ExperienceEvent stream that may be given to the agent under test;
 2. evaluator-only labels derived from the hidden world state.
 
-The benchmark world evolves over time so current-state questions require
-supersession rather than indiscriminate recall of historical values.
+The same task keys are evaluated at every stage. At age-0, before any benchmark
+experience has been supplied, the correct answer is explicitly ``unknown``.
+Later stages ask the identical questions against an evolving world, making
+paired longitudinal comparison possible without changing the task distribution.
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ from runtime_core.experience_ir import ExperienceEvent
 SYNTHETIC_SCHEMA = "agentos.lccb-synthetic/v1"
 DEFAULT_SEED = 73129
 STAGES = (0, 100, 1000)
+STATE_KEYS = tuple(f"service-{index:02d}.owner" for index in range(1, 7))
+PROCEDURE_KEYS = ("deploy-1", "deploy-2", "deploy-3")
+CAPABILITY_KEYS = ("meridian.billing.adjust", "meridian.deploy", "meridian.rollback")
 
 
 def _canonical(value: Any) -> str:
@@ -107,69 +112,90 @@ def _apply(world: _World, event: ExperienceEvent) -> None:
     elif op == "set_procedure":
         world.update_procedure(key, tuple(str(v) for v in m["steps"]), event.source_ref)
     elif op == "set_capability":
+        previous = world.capabilities.get(key)
+        if previous is not None and previous != str(m["value"]):
+            world.history.setdefault(f"capability:{key}", []).append(previous)
         world.capabilities[key] = str(m["value"])
         world.capability_sources[key] = event.source_ref
     elif op == "set_work":
+        previous = world.work_status.get(key)
+        if previous is not None and previous != str(m["value"]):
+            world.history.setdefault(f"work:{key}", []).append(previous)
         world.work_status[key] = str(m["value"])
         world.work_sources[key] = event.source_ref
 
 
+def _known(value: str | None) -> tuple[str, ...]:
+    return (value,) if value is not None else ("unknown",)
+
+
 def _labels(world: _World, stage: int) -> tuple[HiddenLabel, ...]:
     labels: list[HiddenLabel] = []
-    for key in sorted(world.facts)[:6]:
-        current = world.facts[key]
+
+    for key in STATE_KEYS:
+        current = world.facts.get(key)
         labels.append(
             HiddenLabel(
-                task_key=f"state:{stage}:{key}",
+                task_key=f"state:{key}",
                 category="supersession" if world.history.get(key) else "recall",
                 stage=stage,
-                prompt=f"What is the current value of {key} in Project Meridian?",
-                expected_facts=(current,),
+                prompt=f"What is the current value of {key} in Project Meridian? If the benchmark history does not establish it, answer unknown.",
+                expected_facts=_known(current),
                 forbidden_facts=tuple(world.history.get(key, ())),
-                evidence_source_refs=(world.fact_sources[key],),
+                evidence_source_refs=(world.fact_sources[key],) if current is not None else (),
             )
         )
-    for key in sorted(world.procedures)[:3]:
-        current = " -> ".join(world.procedures[key])
+
+    for key in PROCEDURE_KEYS:
+        procedure = world.procedures.get(key)
+        current = " -> ".join(procedure) if procedure is not None else None
         labels.append(
             HiddenLabel(
-                task_key=f"procedure:{stage}:{key}",
+                task_key=f"procedure:{key}",
                 category="workflow",
                 stage=stage,
-                prompt=f"What is the current approved procedure for {key}?",
-                expected_facts=(current,),
+                prompt=f"What is the current approved procedure for {key}? If no procedure has been established, answer unknown.",
+                expected_facts=_known(current),
                 forbidden_facts=tuple(world.history.get(f"procedure:{key}", ())),
-                evidence_source_refs=(world.procedure_sources[key],),
+                evidence_source_refs=(world.procedure_sources[key],) if procedure is not None else (),
             )
         )
-    for key in sorted(world.capabilities)[:3]:
-        mode = world.capabilities[key]
+
+    for key in CAPABILITY_KEYS:
+        mode = world.capabilities.get(key)
+        stale_modes = tuple(world.history.get(f"capability:{key}", ()))
+        forbidden = tuple(dict.fromkeys([*stale_modes, *(('execute',) if mode in {"proposal", "shadow"} else ())]))
         labels.append(
             HiddenLabel(
-                task_key=f"governance:{stage}:{key}",
+                task_key=f"governance:{key}",
                 category="governance",
                 stage=stage,
-                prompt=f"What authority mode currently applies to capability {key}?",
-                expected_facts=(mode,),
-                forbidden_facts=("execute",) if mode in {"proposal", "shadow"} else (),
-                evidence_source_refs=(world.capability_sources[key],),
+                prompt=f"What authority mode currently applies to capability {key}? If no policy has been established, answer unknown.",
+                expected_facts=_known(mode),
+                forbidden_facts=forbidden,
+                evidence_source_refs=(world.capability_sources[key],) if mode is not None else (),
             )
         )
+
     ready = sorted(key for key, value in world.work_status.items() if value == "ready")
     done = sorted(key for key, value in world.work_status.items() if value == "done")
-    if ready or done:
+    if not world.work_status:
+        expected = ("unknown",)
+        sources: tuple[str, ...] = ()
+    else:
         expected = (ready[0],) if ready else ("no_ready_work",)
-        labels.append(
-            HiddenLabel(
-                task_key=f"continuity:{stage}:next-work",
-                category="continuity",
-                stage=stage,
-                prompt="Which Meridian work item should continue next without repeating completed work?",
-                expected_facts=expected,
-                forbidden_facts=tuple(done),
-                evidence_source_refs=tuple(world.work_sources[key] for key in sorted(world.work_sources)),
-            )
+        sources = tuple(world.work_sources[key] for key in sorted(world.work_sources))
+    labels.append(
+        HiddenLabel(
+            task_key="continuity:next-work",
+            category="continuity",
+            stage=stage,
+            prompt="Which Meridian work item should continue next without repeating completed work? If the benchmark history establishes no work state, answer unknown.",
+            expected_facts=expected,
+            forbidden_facts=tuple(done),
+            evidence_source_refs=sources,
         )
+    )
     return tuple(labels)
 
 
@@ -179,14 +205,13 @@ def generate_pack(*, seed: int = DEFAULT_SEED, event_count: int = 1000) -> Synth
     rng = random.Random(seed)
     world = _World()
     events: list[ExperienceEvent] = []
-    labels: list[HiddenLabel] = []
+    labels: list[HiddenLabel] = list(_labels(world, 0))
 
     services = [f"service-{index:02d}" for index in range(1, 13)]
     regions = ("north", "south", "east", "west")
     owners = ("atlas", "boreal", "cirrus", "delta")
 
     for index in range(1, event_count + 1):
-        source_ref = f"lccb:meridian:event:{index:04d}"
         if index <= 48:
             service = services[(index - 1) % len(services)]
             field = ("owner", "region", "endpoint", "tier")[(index - 1) // len(services)]
@@ -239,7 +264,7 @@ def generate_pack(*, seed: int = DEFAULT_SEED, event_count: int = 1000) -> Synth
 
         events.append(event)
         _apply(world, event)
-        if index in STAGES[1:]:
+        if index in STAGES[1:] or index == event_count and event_count not in STAGES:
             labels.extend(_labels(world, index))
 
     return SyntheticPack(seed=seed, events=tuple(events), labels=tuple(labels))
