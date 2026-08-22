@@ -1,0 +1,109 @@
+name: LCCB Fixed Model Oracle Experiment
+
+on:
+  push:
+    branches: [feature/state-kernel-v2]
+    paths:
+      - ".agentos/triggers/lccb-fixed-model-oracle"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lccb-fixed-model-oracle
+  cancel-in-progress: false
+
+jobs:
+  fixed-model-series:
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 20
+    steps:
+      - name: Verify Oracle execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "instance-20260129-0852"
+          test "$(id -un)" = "agentos-node"
+
+      - name: Checkout frozen experiment implementation
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Load provider contract without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIG_ROOT=/home/ubuntu/agentmanager
+          set -a
+          [ -f "$CONFIG_ROOT/.env" ] && source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          test -n "${AI_API_BASE_URL:-}"
+          test -n "${AI_API_ACADEMIA_KEY:-}"
+          echo "::add-mask::$AI_API_ACADEMIA_KEY"
+          echo "LCCB_BASE_URL=$AI_API_BASE_URL" >> "$GITHUB_ENV"
+          echo "LCCB_API_KEY=$AI_API_ACADEMIA_KEY" >> "$GITHUB_ENV"
+          echo "LCCB_MODEL=gemini-3.1-flash-lite" >> "$GITHUB_ENV"
+
+      - name: Freeze Project Meridian pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts/lccb-meridian
+          python3 scripts/build_lccb_synthetic_pack.py --output artifacts/lccb-meridian --seed 73129 --events 1000
+
+      - name: Run fixed-model longitudinal series
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/run_lccb_openai_compatible.py \
+            --pack artifacts/lccb-meridian \
+            --output artifacts/lccb-raw-responses.jsonl \
+            --stages 0,100,1000 --temperature 0 --repeat 3
+
+      - name: Score with evaluator-only labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/score_lccb_responses.py \
+            --pack artifacts/lccb-meridian \
+            --responses artifacts/lccb-raw-responses.jsonl \
+            --output artifacts/lccb-scored-results.json
+
+      - name: Record immutable experiment manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          root=pathlib.Path('artifacts/lccb-meridian')
+          def sha(p): return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+          manifest={
+            'schema_version':'agentos.lccb-series-manifest/v1',
+            'series':'meridian-fixed-model-73129',
+            'git_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'model':os.environ['LCCB_MODEL'],
+            'seed':73129,'events':1000,'stages':[0,100,1000],'repeat':3,'temperature':0,
+            'experience_sha256':sha(root/'public/experience.jsonl'),
+            'tasks_sha256':sha(root/'public/tasks.jsonl'),
+            'raw_responses_sha256':sha('artifacts/lccb-raw-responses.jsonl'),
+            'scored_results_sha256':sha('artifacts/lccb-scored-results.json'),
+          }
+          pathlib.Path('artifacts/lccb-series-manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(manifest,sort_keys=True))
+          PY
+
+      - name: Upload preserved experiment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-fixed-model-meridian-73129
+          path: |
+            artifacts/lccb-meridian/manifest.json
+            artifacts/lccb-raw-responses.jsonl
+            artifacts/lccb-scored-results.json
+            artifacts/lccb-series-manifest.json
+          if-no-files-found: error
+          retention-days: 30
