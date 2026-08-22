@@ -5,6 +5,11 @@ on:
     branches: [feature/state-kernel-v2]
     paths:
       - ".agentos/triggers/lccb-fixed-model-oracle"
+  pull_request:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".agentos/triggers/lccb-fixed-model-oracle"
+      - ".github/workflows/lccb-fixed-model-oracle.yml"
   workflow_dispatch:
 
 permissions:
@@ -59,19 +64,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/run_lccb_openai_compatible.py \
-            --pack artifacts/lccb-meridian \
-            --output artifacts/lccb-raw-responses.jsonl \
-            --stages 0,100,1000 --temperature 0 --repeat 3
+          python3 scripts/run_lccb_openai_compatible.py --pack artifacts/lccb-meridian --output artifacts/lccb-raw-responses.jsonl --stages 0,100,1000 --temperature 0 --repeat 3
 
       - name: Score with evaluator-only labels
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/score_lccb_responses.py \
-            --pack artifacts/lccb-meridian \
-            --responses artifacts/lccb-raw-responses.jsonl \
-            --output artifacts/lccb-scored-results.json
+          python3 scripts/score_lccb_responses.py --pack artifacts/lccb-meridian --responses artifacts/lccb-raw-responses.jsonl --output artifacts/lccb-scored-results.json
 
       - name: Record immutable experiment manifest
         shell: bash
@@ -81,17 +80,7 @@ jobs:
           import hashlib, json, os, pathlib, subprocess
           root=pathlib.Path('artifacts/lccb-meridian')
           def sha(p): return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
-          manifest={
-            'schema_version':'agentos.lccb-series-manifest/v1',
-            'series':'meridian-fixed-model-73129',
-            'git_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
-            'model':os.environ['LCCB_MODEL'],
-            'seed':73129,'events':1000,'stages':[0,100,1000],'repeat':3,'temperature':0,
-            'experience_sha256':sha(root/'public/experience.jsonl'),
-            'tasks_sha256':sha(root/'public/tasks.jsonl'),
-            'raw_responses_sha256':sha('artifacts/lccb-raw-responses.jsonl'),
-            'scored_results_sha256':sha('artifacts/lccb-scored-results.json'),
-          }
+          manifest={'schema_version':'agentos.lccb-series-manifest/v1','series':'meridian-fixed-model-73129','git_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'model':os.environ['LCCB_MODEL'],'seed':73129,'events':1000,'stages':[0,100,1000],'repeat':3,'temperature':0,'experience_sha256':sha(root/'public/experience.jsonl'),'tasks_sha256':sha(root/'public/tasks.jsonl'),'raw_responses_sha256':sha('artifacts/lccb-raw-responses.jsonl'),'scored_results_sha256':sha('artifacts/lccb-scored-results.json')}
           pathlib.Path('artifacts/lccb-series-manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
           print(json.dumps(manifest,sort_keys=True))
           PY
