@@ -1,7 +1,9 @@
 """Auditable SideEffect Ledger for governed external actions.
 
-The ledger is intentionally executor-neutral.  It records intent/effect lineage
-and enforces an idempotent prepare -> commit|fail -> compensate lifecycle.
+The ledger is executor-neutral. It records intent/effect lineage and enforces an
+idempotent prepare -> commit|fail -> compensate lifecycle. It never accepts a
+raw model/runtime decision as authority; preparation requires an intent-bound
+ActionAuthorization from the Governance Kernel.
 """
 
 from __future__ import annotations
@@ -11,14 +13,16 @@ from hashlib import sha256
 import json
 from typing import Any
 
-from runtime_core.governance_v1 import ActionIntent, GovernanceDecision
+from agent_core.action_authorization import ActionAuthorization
+from agent_core.governance import CapabilityLevel
+from runtime_core.governance_v1 import ActionIntent
 
 
 SIDE_EFFECT_STATUSES = frozenset({"prepared", "committed", "failed", "compensated"})
 
 
 def _hash(value: Any) -> str:
-    raw = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    raw = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -32,6 +36,7 @@ class SideEffectRecord:
     intent_hash: str
     status: str
     idempotency_key: str
+    authorization_reason: str
     compensation_ref: str | None = None
     receipt_ref: str | None = None
     failure_reason: str | None = None
@@ -41,8 +46,8 @@ class SideEffectRecord:
             raise ValueError("invalid side-effect status")
         if not self.side_effect_id.strip() or not self.intent_id.strip() or not self.kind.strip() or not self.target.strip():
             raise ValueError("side-effect identity fields are required")
-        if not self.idempotency_key.strip() or not self.intent_hash.strip():
-            raise ValueError("idempotency_key and intent_hash are required")
+        if not self.idempotency_key.strip() or not self.intent_hash.strip() or not self.authorization_reason.strip():
+            raise ValueError("idempotency/intent hash/authorization reason are required")
         if self.status == "committed" and not self.receipt_ref:
             raise ValueError("committed side effect requires receipt")
         if self.status == "failed" and not self.failure_reason:
@@ -60,16 +65,16 @@ class InMemorySideEffectLedger:
         self,
         *,
         intent: ActionIntent,
-        decision: GovernanceDecision,
+        authorization: ActionAuthorization,
         kind: str,
         target: str,
         work_id: str | None = None,
         compensation_ref: str | None = None,
     ) -> SideEffectRecord:
-        if decision.intent_id != intent.intent_id:
-            raise ValueError("governance decision does not bind intent")
-        if decision.decision != "allow" or decision.effective_level < 4:
-            raise PermissionError("external side effect requires allowed level >= 4")
+        if authorization.intent_id != intent.intent_id or authorization.capability != intent.capability:
+            raise ValueError("authorization does not bind this intent")
+        if not authorization.allowed or authorization.effective_level < CapabilityLevel.ACT:
+            raise PermissionError("external side effect requires governed ACT-or-higher authorization")
 
         existing_id = self._by_idempotency.get(intent.idempotency_key)
         if existing_id:
@@ -95,6 +100,7 @@ class InMemorySideEffectLedger:
             intent_hash=intent_hash,
             status="prepared",
             idempotency_key=intent.idempotency_key,
+            authorization_reason=authorization.reason,
             compensation_ref=compensation_ref,
         )
         self._records[side_effect_id] = record
