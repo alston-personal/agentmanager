@@ -1,5 +1,6 @@
 from agent_core.action_authorization import ActionAuthorizationGate
 from agent_core.governance import CapabilityGovernanceProfile, CapabilityLevel, required_controls
+from agent_core.governance_registry import GovernanceRegistry
 from agent_core.side_effect_ledger import InMemorySideEffectLedger
 from agent_core.side_effect_store import SideEffectLedgerStore
 from runtime_core.governance_v1 import ActionIntent
@@ -23,7 +24,8 @@ def governed_action():
         requested_level=4,
         idempotency_key="persist-key",
     )
-    auth = ActionAuthorizationGate().evaluate(intent=intent, profile=profile)
+    registry = GovernanceRegistry((profile,))
+    auth = ActionAuthorizationGate(registry).evaluate(intent=intent)
     return intent, auth
 
 
