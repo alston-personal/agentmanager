@@ -7,6 +7,11 @@ on:
         description: "Fail closed if the selected self-hosted runner is not this host"
         required: true
         default: "instance-20260129-0852"
+  push:
+    branches:
+      - feature/state-kernel-v2
+    paths:
+      - ".agentos/triggers/oracle-readonly-probe"
 
 permissions:
   contents: read
@@ -21,7 +26,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(hostname)" = "${{ inputs.expected_hostname }}"
+          EXPECTED_HOST="${{ github.event_name == 'workflow_dispatch' && inputs.expected_hostname || 'instance-20260129-0852' }}"
+          test "$(hostname)" = "$EXPECTED_HOST"
           test "$(id -un)" = "agentos-node"
           test "$(uname -m)" = "aarch64" -o "$(uname -m)" = "arm64"
 
