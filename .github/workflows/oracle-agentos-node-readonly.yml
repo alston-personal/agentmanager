@@ -1,0 +1,66 @@
+name: Oracle AgentOS Node Read-Only Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_hostname:
+        description: "Fail closed if the selected self-hosted runner is not this host"
+        required: true
+        default: "instance-20260129-0852"
+
+permissions:
+  contents: read
+
+jobs:
+  oracle-readonly-probe:
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify execution boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(hostname)" = "${{ inputs.expected_hostname }}"
+          test "$(id -un)" = "agentos-node"
+          test "$(uname -m)" = "aarch64" -o "$(uname -m)" = "arm64"
+
+      - name: Collect sanitized read-only status
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/oracle-agentos-node-status.txt"
+          REPO="/home/ubuntu/agentos-distributed"
+
+          {
+            echo "schema=agentos.oracle-readonly-probe/v1"
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "runner_user=$(id -un)"
+            echo "arch=$(uname -m)"
+            echo "uptime_seconds=$(cut -d' ' -f1 /proc/uptime)"
+
+            if git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              echo "repo_read=ok"
+              echo "repo_head=$(git -C "$REPO" rev-parse HEAD)"
+              echo "repo_dirty_count=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')"
+            else
+              echo "repo_read=failed"
+            fi
+
+            for port in 8765 8775; do
+              code=$(curl --max-time 3 --silent --show-error --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:${port}/health" || true)
+              test -n "$code" || code="000"
+              echo "localhost_${port}_health_http=$code"
+            done
+          } > "$OUT"
+
+          cat "$OUT"
+
+      - name: Upload sanitized probe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-agentos-node-readonly-probe
+          path: ${{ runner.temp }}/oracle-agentos-node-status.txt
+          if-no-files-found: error
+          retention-days: 7
