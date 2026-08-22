@@ -14,18 +14,18 @@ def ev(kind, ref, text, *, relation="supports", trust="verified"):
 
 
 def project_controls():
-    risks = RiskDimensions(authority=1, persistence=3, propagation=2, uncertainty=3)
+    risks = RiskDimensions(authority=3, persistence=3, propagation=2, uncertainty=3)
     return required_controls(
-        CapabilityLevel.SYNTHESIZE,
+        CapabilityLevel.COMMIT,
         effects={"durable_memory"},
         risks=risks,
     )
 
 
 def cross_project_controls():
-    risks = RiskDimensions(authority=1, persistence=5, propagation=5, uncertainty=3)
+    risks = RiskDimensions(authority=3, persistence=5, propagation=5, uncertainty=3)
     return required_controls(
-        CapabilityLevel.SYNTHESIZE,
+        CapabilityLevel.COMMIT,
         effects={"durable_memory", "cross_project"},
         risks=risks,
     )
