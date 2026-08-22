@@ -13,6 +13,7 @@ on:
       - "runtime_core/**"
       - "agent_core/**"
       - "agentos_node/**"
+      - "research/**"
       - "scripts/**"
       - "config/**"
       - "docs/**"
@@ -68,3 +69,13 @@ jobs:
         # test_platform_runtime.py launches a real recurring background runner and
         # belongs to the explicit integration/side-effect suite, not deterministic CI.
         run: python -m pytest -q tests --ignore=tests/test_platform_runtime.py
+
+      - name: Generate controlled LCCB baseline artifact
+        run: python scripts/run_lccb_controlled_baselines.py --output artifacts/lccb-controlled-baselines.json
+
+      - name: Upload controlled LCCB baseline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-controlled-baselines
+          path: artifacts/lccb-controlled-baselines.json
+          if-no-files-found: error
