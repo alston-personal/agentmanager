@@ -1,9 +1,9 @@
 """Authenticated continuation of AgentOS Node onboarding after identity claim.
 
-The bootstrap session is scoped only to metadata submission.  A Node may submit
+The bootstrap session is scoped only to metadata submission. A Node may submit
 its capability manifest and local-cognition descriptors, but it may not provide a
-governance_ref or grant itself authority.  Successful submission consumes the
-bootstrap session and stops at REGISTERED unless Core-owned governance already
+governance_ref or grant itself authority. Successful submission consumes the
+bootstrap session and stops at REGISTERED unless Core-owned governance later
 completes activation through a separate path.
 """
 
@@ -94,6 +94,21 @@ class OnboardingSubmissionApi:
             contradicted_hashes=set(),
             governance_ref=None,
         )
+        delta = None
+        if result.capability_delta is not None:
+            delta = {
+                "schema": result.capability_delta.schema_version,
+                "previous_manifest_id": result.capability_delta.previous_manifest_id,
+                "current_manifest_id": result.capability_delta.current_manifest_id,
+                "changes": [
+                    {
+                        "capability": change.capability,
+                        "before": change.before.value if change.before else None,
+                        "after": change.after.value if change.after else None,
+                    }
+                    for change in result.capability_delta.changes
+                ],
+            }
         return {
             "schema": "agentos.onboarding-submit-response/v1",
             "node_id": node_id,
@@ -102,8 +117,8 @@ class OnboardingSubmissionApi:
             "reconciliation_plan_id": result.reconciliation.plan_id,
             "governance": {
                 "can_activate": result.governance.can_activate,
-                "missing_profiles": list(result.governance.missing_profiles),
+                "missing_profiles": [gap.capability for gap in result.governance.governance_gaps],
             },
-            "capability_delta_id": result.capability_delta.current_manifest_id if result.capability_delta else None,
+            "capability_delta": delta,
             "bootstrap_session_consumed": True,
         }
