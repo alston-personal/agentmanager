@@ -55,7 +55,9 @@ class NodeDirectoryStore:
     @staticmethod
     def _parse_manifest(payload: str) -> NodeCapabilityManifest:
         data = json.loads(payload)
-        identity = NodeIdentity(**data["identity"])
+        identity_payload = data["identity"]
+        identity_payload["labels"] = tuple(identity_payload.get("labels", ()))
+        identity = NodeIdentity(**identity_payload)
         capabilities = tuple(
             CapabilityObservation(
                 capability=item["capability"],
