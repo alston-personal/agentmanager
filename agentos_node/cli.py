@@ -66,6 +66,12 @@ def main():
         help="Read the one-time Join Reference from stdin so it need not appear in argv/history",
     )
     enroll_parser.add_argument("--identity-dir", help="Override local Node identity directory")
+    enroll_parser.add_argument(
+        "--cognition-root",
+        action="append",
+        default=None,
+        help="Explicit local AgentOS cognition directory to reconcile; may be repeated. Defaults to ~/.agentos/cognition.",
+    )
     enroll_parser.add_argument("--json", action="store_true", help="Output enrollment receipt as JSON")
 
     subparsers.add_parser("doctor", help="Run node diagnostic checks")
@@ -128,9 +134,15 @@ def main():
     elif args.command == "enroll":
         try:
             reference = _read_join_reference(args)
+            cognition_roots = (
+                tuple(Path(value).expanduser() for value in args.cognition_root)
+                if args.cognition_root is not None
+                else None
+            )
             response = enroll_node(
                 reference,
                 identity_dir=Path(args.identity_dir).expanduser() if args.identity_dir else None,
+                cognition_roots=cognition_roots,
             )
         except Exception as exc:
             print(f"Enrollment failed: {exc}", file=sys.stderr)
@@ -139,10 +151,18 @@ def main():
             print(json.dumps(response, ensure_ascii=False, indent=2))
         else:
             node = response.get("node_identity", {})
+            onboarding = response.get("onboarding") if isinstance(response.get("onboarding"), dict) else None
             checkpoint = response.get("checkpoint", {})
-            print(f"Node enrolled: {node.get('node_id', 'unknown')}")
-            print(f"Lifecycle: {checkpoint.get('lifecycle', 'unknown')}")
-            print("Capability discovery/governance continues after identity enrollment; no external authority was granted by this command.")
+            lifecycle = onboarding.get("lifecycle", "unknown") if onboarding else checkpoint.get("lifecycle", "unknown")
+            print(f"Node joined: {node.get('node_id', 'unknown')}")
+            print(f"Lifecycle: {lifecycle}")
+            if onboarding:
+                governance = onboarding.get("governance", {})
+                gaps = governance.get("missing_profiles", []) if isinstance(governance, dict) else []
+                print(f"Capabilities discovered and local cognition reconciled; governance gaps: {len(gaps)}")
+            else:
+                print("Core supports identity enrollment only; capability onboarding remains pending.")
+            print("No external action authority was granted by enrollment.")
 
     elif args.command == "doctor":
         inspector = NodeInspector()
