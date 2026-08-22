@@ -1,30 +1,39 @@
-import sys
 import argparse
+from dataclasses import asdict
+from datetime import datetime, timezone
 import json
-from agentos_node.inspector import NodeInspector
+from pathlib import Path
+import sys
+
 from agentos_node import __version__
+from agentos_node.capability_discovery import DiscoveryContext, discover_linux_capabilities
+from agentos_node.enrollment_client import enroll_node
+from agentos_node.inspector import NodeInspector
+
 
 def main():
     parser = argparse.ArgumentParser(description="AgentOS Runtime Node CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available node commands")
 
-    # Command: status
     status_parser = subparsers.add_parser("status", help="Display current Runtime Node health and configuration")
     status_parser.add_argument("--json", action="store_true", help="Output status as JSON")
 
-    # Command: harvest
     harvest_parser = subparsers.add_parser("harvest", help="Harvest local node handoff payload")
     harvest_parser.add_argument("-o", "--output", help="Save payload to specified JSON file")
     harvest_parser.add_argument("--json", action="store_true", help="Output raw JSON payload to stdout")
 
-    # Command: enroll
-    enroll_parser = subparsers.add_parser("enroll", help="Enroll this node with Central Control Plane")
-    enroll_parser.add_argument("--gateway", default="http://localhost:8088", help="Central Gateway URL")
+    capabilities_parser = subparsers.add_parser("capabilities", help="Discover local capabilities without authorizing them")
+    capabilities_parser.add_argument("--node-id", required=True)
+    capabilities_parser.add_argument("--realm-id", required=True)
+    capabilities_parser.add_argument("--profile", default="edge")
+    capabilities_parser.add_argument("--json", action="store_true")
 
-    # Command: doctor
-    doctor_parser = subparsers.add_parser("doctor", help="Run node diagnostic checks")
+    enroll_parser = subparsers.add_parser("enroll", help="Join this device to AgentOS using a one-time Join Reference")
+    enroll_parser.add_argument("--reference", required=True, help="AGENTOSREF1 code or HTTPS Join Link")
+    enroll_parser.add_argument("--identity-dir", help="Override local Node identity directory")
+    enroll_parser.add_argument("--json", action="store_true", help="Output enrollment receipt as JSON")
 
-    # Command: version
+    subparsers.add_parser("doctor", help="Run node diagnostic checks")
     subparsers.add_parser("version", help="Print agentos-node version")
 
     args = parser.parse_args()
@@ -54,30 +63,64 @@ def main():
         payload = inspector.harvest_payload()
         if args.output:
             inspector.save_payload_to_file(args.output)
-            print(f"✅ Harvest payload saved to {args.output}")
+            print(f"Harvest payload saved to {args.output}")
         elif args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            print(f"🌾 Harvested handoff payload for [{payload['device_alias']}] at {payload['collected_at']}")
-            print(f"   OS: {payload['os']} | Agent Mode: {payload['agent_mode']} | Git: {payload['git_info']['branch']}")
+            print(f"Harvested handoff payload for [{payload['device_alias']}] at {payload['collected_at']}")
+            print(f"OS: {payload['os']} | Agent Mode: {payload['agent_mode']} | Git: {payload['git_info']['branch']}")
+
+    elif args.command == "capabilities":
+        observed_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        manifest = discover_linux_capabilities(
+            DiscoveryContext(
+                realm_id=args.realm_id,
+                node_id=args.node_id,
+                observed_at=observed_at,
+                profile=args.profile,
+            )
+        )
+        if args.json:
+            payload = asdict(manifest)
+            payload["manifest_id"] = manifest.manifest_id
+            print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        else:
+            print(f"manifest={manifest.manifest_id}")
+            for item in manifest.capabilities:
+                print(f"{item.capability}\t{item.state.value}\t{item.source}")
+            print("authorization_inferred=false")
 
     elif args.command == "enroll":
-        inspector = NodeInspector()
-        payload = inspector.harvest_payload()
-        print(f"🔗 Enrolling node [{payload['device_alias']}] to Central Gateway ({args.gateway})...")
-        print("✅ ANCP node.register handshake complete. Identity confirmed.")
+        try:
+            response = enroll_node(
+                args.reference,
+                identity_dir=Path(args.identity_dir).expanduser() if args.identity_dir else None,
+            )
+        except Exception as exc:
+            print(f"Enrollment failed: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(response, ensure_ascii=False, indent=2))
+        else:
+            node = response.get("node_identity", {})
+            checkpoint = response.get("checkpoint", {})
+            print(f"Node enrolled: {node.get('node_id', 'unknown')}")
+            print(f"Lifecycle: {checkpoint.get('lifecycle', 'unknown')}")
+            print("Capability discovery/governance continues after identity enrollment; no external authority was granted by this command.")
 
     elif args.command == "doctor":
         inspector = NodeInspector()
         secrets = inspector.check_secrets_status()
-        print("🩺 Running AgentOS Node Diagnostics...")
-        print(f" [✓] Node CLI version: {__version__}")
-        print(f" [✓] Secrets isolation: {'PASS' if secrets['has_secrets'] else 'WARN (No ~/.agentos.secrets)'}")
-        print(f" [✓] Runtime Core module: PASS")
-        print("All diagnostic checks completed successfully.")
+        print("Running AgentOS Node diagnostics...")
+        print(f" [ok] Node CLI version: {__version__}")
+        print(f" [{'ok' if secrets['has_secrets'] else 'warn'}] Secrets isolation: {'PASS' if secrets['has_secrets'] else 'No ~/.agentos.secrets'}")
+        print(" [ok] Runtime Core module: PASS")
 
     elif args.command == "version":
         print(f"agentos-node v{__version__}")
 
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
