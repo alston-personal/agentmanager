@@ -5,18 +5,19 @@ requirements increase monotonically from working -> project -> cross-project.
 The policy never deletes contradictory evidence and never commits ProjectState.
 Promotion itself is an immutable knowledge-version transition: the promoted
 object links back to and supersedes the lower-trust source candidate.
+
+Capability authority is resolved from a governance-owned registry. Callers may
+request a target level, but they cannot self-supply controls or mint a substitute
+permission profile.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from agent_core.governance import (
-    CapabilityGovernanceProfile,
-    CapabilityLevel,
-    GovernanceGate,
-    RiskDimensions,
-)
+from agent_core.governance import CapabilityLevel, GovernanceGate
+from agent_core.governance_inventory import build_current_registry
+from agent_core.governance_registry import GovernanceRegistry
 from runtime_core.cognitive_ir import KnowledgeCandidate
 
 
@@ -32,7 +33,7 @@ class PromotionDecision:
 
 
 class CognitivePromotionPolicy:
-    """Deterministic evidence + governance gate for durable knowledge promotion."""
+    """Deterministic evidence + registry-backed governance gate for promotion."""
 
     CONFIDENCE = {
         "working": 0.0,
@@ -40,15 +41,18 @@ class CognitivePromotionPolicy:
         "cross_project": 0.80,
     }
 
-    def __init__(self, governance_gate: GovernanceGate | None = None) -> None:
+    def __init__(
+        self,
+        governance_gate: GovernanceGate | None = None,
+        governance_registry: GovernanceRegistry | None = None,
+    ) -> None:
         self.governance_gate = governance_gate or GovernanceGate()
+        self.governance_registry = governance_registry or build_current_registry()
 
     def evaluate(
         self,
         candidate: KnowledgeCandidate,
         target_level: str,
-        *,
-        governance_controls: frozenset[str] | set[str] = frozenset(),
     ) -> PromotionDecision:
         if target_level not in self.CONFIDENCE:
             raise ValueError("target_level must be working, project, or cross_project")
@@ -73,25 +77,22 @@ class CognitivePromotionPolicy:
             reasons.append("contradictory evidence exists and has not been reviewed")
 
         if target_level in {"project", "cross_project"}:
-            effects = {"durable_memory"}
-            risks = RiskDimensions(
-                authority=3,
-                persistence=3 if target_level == "project" else 5,
-                propagation=2 if target_level == "project" else 5,
-                uncertainty=3,
-            )
-            if target_level == "cross_project":
-                effects.add("cross_project")
-            profile = CapabilityGovernanceProfile.build(
-                f"cognitive.promote.{target_level}",
-                CapabilityLevel.COMMIT,
-                risks=risks,
-                effects=effects,
-                controls=governance_controls,
-            )
-            governance = self.governance_gate.evaluate(profile)
-            if not governance.allowed:
-                reasons.extend(f"governance:{item}" for item in governance.missing_controls)
+            capability = f"cognitive.promote.{target_level}"
+            profile = self.governance_registry.get(capability)
+            if profile is None:
+                reasons.append("governance:unknown_capability")
+            else:
+                governance = self.governance_gate.evaluate(
+                    profile,
+                    requested_level=CapabilityLevel.COMMIT,
+                )
+                if not governance.allowed:
+                    if governance.missing_controls:
+                        reasons.extend(
+                            f"governance:{item}" for item in governance.missing_controls
+                        )
+                    else:
+                        reasons.append("governance:authority_denied")
 
         return PromotionDecision(
             allowed=not reasons,
@@ -107,14 +108,8 @@ class CognitivePromotionPolicy:
         self,
         candidate: KnowledgeCandidate,
         target_level: str,
-        *,
-        governance_controls: frozenset[str] | set[str] = frozenset(),
     ) -> KnowledgeCandidate:
-        decision = self.evaluate(
-            candidate,
-            target_level,
-            governance_controls=governance_controls,
-        )
+        decision = self.evaluate(candidate, target_level)
         if not decision.allowed:
             raise PermissionError("knowledge promotion denied: " + "; ".join(decision.reasons))
         status = "candidate" if target_level == "working" else "validated"
