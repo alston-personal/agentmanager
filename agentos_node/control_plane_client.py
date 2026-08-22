@@ -83,6 +83,33 @@ class ControlPlaneClient:
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
 
+    def resolve_enrollment(self, reference: str) -> dict[str, Any]:
+        return self._request("POST", "/v1/nodes/enrollment/resolve", {"reference": reference})
+
+    def claim_enrollment(self, ticket: str, claim: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/nodes/enrollment/claim", {"ticket": ticket, "claim": claim})
+
+    def list_nodes(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/nodes")
+
+    def get_node(self, node_id: str) -> dict[str, Any]:
+        node_id = str(node_id or "").strip()
+        if not node_id:
+            raise ValueError("node_id is required")
+        return self._request("GET", f"/v1/nodes/{quote(node_id, safe='')}")
+
+    def get_node_capabilities(self, node_id: str) -> dict[str, Any]:
+        node_id = str(node_id or "").strip()
+        if not node_id:
+            raise ValueError("node_id is required")
+        return self._request("GET", f"/v1/nodes/{quote(node_id, safe='')}/capabilities")
+
+    def nodes_for_capability(self, capability: str) -> dict[str, Any]:
+        capability = str(capability or "").strip()
+        if not capability:
+            raise ValueError("capability is required")
+        return self._request("GET", f"/v1/capabilities/{quote(capability, safe='')}/nodes")
+
     def submit_ir(
         self,
         ir: CanonicalIR,
