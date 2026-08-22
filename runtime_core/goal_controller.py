@@ -10,6 +10,8 @@ from hashlib import sha256
 import json
 from typing import Any
 
+from runtime_core.execution_disposition import ClosureState, Disposition, decide_disposition
+
 SCHEMA_VERSION = "agentos.goal-controller/v2"
 ACTIVE = frozenset({"READY", "EXECUTING", "WAITING_EXTERNAL", "BLOCKED_RECOVERABLE"})
 TERMINAL = frozenset({"DONE", "BLOCKED_HUMAN_AUTHORITY", "FAILED_TERMINAL", "CANCELLED"})
@@ -60,9 +62,28 @@ class GoalControllerState:
     def should_continue(self) -> bool:
         return self.execution_state in ACTIVE
 
+    def disposition(self, *, dependency_pending: bool = False, independent_safe_progress_available: bool = False) -> Disposition:
+        """Map durable goal state into portable termination semantics.
+
+        A milestone, receipt, successful action, or answerable progress report is
+        deliberately not represented here and therefore cannot authorize yield.
+        """
+        closure = ClosureState(
+            goal_closed_verified=self.execution_state == "DONE",
+            new_authority_required=self.execution_state == "BLOCKED_HUMAN_AUTHORITY",
+            dependency_pending=dependency_pending or self.execution_state == "WAITING_EXTERNAL",
+            independent_safe_progress_available=independent_safe_progress_available,
+            material_closure_gap=self.execution_state in ACTIVE,
+            next_action_derivable=bool(self.next_action),
+            next_action_authorized=self.execution_state not in {"BLOCKED_HUMAN_AUTHORITY", "FAILED_TERMINAL", "CANCELLED"},
+        )
+        if self.execution_state in {"FAILED_TERMINAL", "CANCELLED"}:
+            return Disposition.FINAL_PARTIAL_BLOCKED
+        return decide_disposition(closure)
+
     @property
     def may_yield_to_human(self) -> bool:
-        return self.execution_state in TERMINAL
+        return self.disposition() not in {Disposition.CONTINUE, Disposition.WAIT_FOR_DEPENDENCY}
 
     @property
     def state_digest(self) -> str:
@@ -91,22 +112,11 @@ class GoalControllerState:
         """Advance the observation boundary without changing execution ownership."""
         if not current_head_sha:
             raise ValueError("current_head_sha is required")
-        return replace(
-            self,
-            revision=self.revision + 1,
-            observed_head_sha=current_head_sha,
-            next_action=next_action or self.next_action,
-        )
+        return replace(self, revision=self.revision + 1, observed_head_sha=current_head_sha, next_action=next_action or self.next_action)
 
     def transition(self, *, new_state: str, next_action: str, receipt: dict[str, Any] | None = None) -> "GoalControllerState":
         if self.terminal:
             raise ValueError("terminal goal cannot transition without explicit new revision")
         if new_state not in ALL_STATES:
             raise ValueError(f"invalid execution_state: {new_state}")
-        return replace(
-            self,
-            revision=self.revision + 1,
-            execution_state=new_state,
-            next_action=next_action,
-            last_receipt=receipt or self.last_receipt,
-        )
+        return replace(self, revision=self.revision + 1, execution_state=new_state, next_action=next_action, last_receipt=receipt or self.last_receipt)
