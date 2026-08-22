@@ -61,6 +61,15 @@ _EFFECT_CONTROLS: dict[str, frozenset[str]] = {
     ),
 }
 
+_EFFECT_MIN_LEVEL: dict[str, CapabilityLevel] = {
+    "canonical_state": CapabilityLevel.COMMIT,
+    "durable_memory": CapabilityLevel.COMMIT,
+    "cross_project": CapabilityLevel.COMMIT,
+    "external_reversible": CapabilityLevel.ACT,
+    "external_high_impact": CapabilityLevel.HIGH_IMPACT,
+    "autonomous": CapabilityLevel.AUTONOMOUS,
+}
+
 
 @dataclass(frozen=True)
 class RiskDimensions:
@@ -171,6 +180,15 @@ def level_controls(level: CapabilityLevel | int) -> frozenset[str]:
     return frozenset(controls)
 
 
+def effect_minimum_level(effects: Iterable[str]) -> CapabilityLevel:
+    minimum = CapabilityLevel.OBSERVE
+    for effect in effects:
+        if effect not in _EFFECT_MIN_LEVEL:
+            raise ValueError(f"unknown governance effect: {effect}")
+        minimum = max(minimum, _EFFECT_MIN_LEVEL[effect])
+    return minimum
+
+
 def required_controls(
     level: CapabilityLevel | int,
     *,
@@ -199,7 +217,11 @@ class GovernanceGate:
         requested = CapabilityLevel(
             profile.declared_level if requested_level is None else requested_level
         )
-        required_level = max(profile.declared_level, profile.risks.required_level)
+        required_level = max(
+            profile.declared_level,
+            profile.risks.required_level,
+            effect_minimum_level(profile.effects),
+        )
         controls_needed = required_controls(
             max(required_level, requested), effects=profile.effects, risks=profile.risks
         )
@@ -214,7 +236,7 @@ class GovernanceGate:
                 effective_level=CapabilityLevel.OBSERVE,
                 missing_controls=missing,
                 degraded_to="read_only",
-                reason="requested authority is below the capability risk requirement",
+                reason="requested authority is below the capability effect/risk requirement",
             )
 
         if missing:
@@ -239,7 +261,7 @@ class GovernanceGate:
             effective_level=requested,
             missing_controls=(),
             degraded_to=None,
-            reason="capability and governance controls are aligned",
+            reason="capability effects, risks, and governance controls are aligned",
         )
 
     def require(
@@ -250,7 +272,7 @@ class GovernanceGate:
     ) -> GovernanceDecision:
         decision = self.evaluate(profile, requested_level=requested_level)
         if not decision.allowed:
-            missing = ", ".join(decision.missing_controls) or "risk/authority alignment"
+            missing = ", ".join(decision.missing_controls) or "risk/effect/authority alignment"
             raise PermissionError(
                 f"governance gate denied {profile.capability}: {decision.reason}; missing={missing}"
             )
