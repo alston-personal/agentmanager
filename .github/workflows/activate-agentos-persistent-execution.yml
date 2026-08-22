@@ -1,0 +1,121 @@
+name: Activate AgentOS Persistent Execution
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/activate-agentos-persistent-execution.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentos-persistent-execution-activation
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+
+    steps:
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Enable persistent dispatcher and provider bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          RELEASE_ROOT="$2"
+          DIST_ENV="$HOME/.config/agentos/distributed.env"
+          SECRETS="$HOME/.agentos.secrets"
+          test -f "$DIST_ENV"
+          test -f "$SECRETS"
+          test -f "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+
+          set -a
+          source "$CONFIG_ROOT/.env"
+          source "$DIST_ENV"
+          source "$SECRETS"
+          set +a
+
+          # Fail closed: activation requires credentials already provisioned by the
+          # governed deployment. Never synthesize or print them here.
+          test -n "${AGENTOS_CONTROL_PLANE_TOKEN:-}"
+          test -n "${AGENTOS_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
+          test -n "${AGENTOS_PROVIDER_BRIDGE_TOKEN:-}"
+          if [ -z "${AGENTOS_GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            printf '\nAGENTOS_GITHUB_TOKEN=%s\n' "$GITHUB_TOKEN" >> "$SECRETS"
+            chmod 600 "$SECRETS"
+          fi
+
+          python3 - "$DIST_ENV" <<'PY'
+          import pathlib
+          path = pathlib.Path(__import__('sys').argv[1])
+          wanted = {
+              'AGENTOS_DISTRIBUTED_SERVICES_ENABLED': '1',
+              'AGENTOS_GITHUB_DISPATCH_ENABLED': '1',
+              'AGENTOS_GITHUB_REPOSITORY': 'alston-personal/agentmanager',
+              'AGENTOS_GITHUB_WORKFLOW': 'distributed-agentos-worker.yml',
+              'AGENTOS_GITHUB_REF': 'feature/state-kernel-v2',
+              'AGENTOS_GITHUB_RUNTIME_ID': 'github-actions-worker',
+              'AGENTOS_GITHUB_CAPABILITIES': 'project.bootstrap,artifact.inspect,artifact.validate',
+              'AGENTOS_PROVIDER_BRIDGE_ENABLED': '1',
+              'AGENTOS_PROVIDER_DISPATCH_ENABLED': '1',
+              'AGENTOS_PROVIDER_RUNTIME_ID': 'provider-bridge',
+              'AGENTOS_PROVIDER_CAPABILITIES': 'agent.reason',
+              'AGENTOS_PROVIDER_BRIDGE_ENDPOINT': 'http://127.0.0.1:8775/v1/runtime-dispatch',
+              'AGENTOS_DISPATCH_INTERVAL_SECONDS': '5',
+          }
+          lines = path.read_text().splitlines()
+          out, seen = [], set()
+          for line in lines:
+              key = line.split('=', 1)[0] if '=' in line else None
+              if key in wanted:
+                  if key not in seen:
+                      out.append(f'{key}={wanted[key]}')
+                      seen.add(key)
+              else:
+                  out.append(line)
+          for key, value in wanted.items():
+              if key not in seen:
+                  out.append(f'{key}={value}')
+          path.write_text('\n'.join(out) + '\n')
+          PY
+          chmod 600 "$DIST_ENV"
+
+          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+          systemctl --user is-active --quiet agentos-control-plane.service
+          systemctl --user is-active --quiet agentos-provider-bridge.service
+          health="$(curl -fsS http://127.0.0.1:8765/health)"
+          bridge="$(curl -fsS http://127.0.0.1:8775/health)"
+          printf '%s\n' "$health"
+          printf '%s\n' "$bridge"
+          printf '%s' "$bridge" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert any(p.get("providerId")=="academia-gemini-reasoner" and "agent.reason" in (p.get("capabilities") or []) for p in d.get("providers",[])), d'
+          echo "persistent_execution=active"
+          echo "github_dispatch=active"
+          echo "provider_dispatch=active"
+          REMOTE
