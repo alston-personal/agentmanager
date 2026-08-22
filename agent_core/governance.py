@@ -2,10 +2,8 @@
 
 Prime law: capability must never scale faster than governance.
 
-Governance strength is monotonic, but controls are effect-aware. A powerful
-cognitive capability must gain stronger cognitive governance; it should not be
-forced to satisfy unrelated external-side-effect controls merely because its
-knowledge can propagate widely.
+This module is the canonical capability-risk authority. Runtime/provider/node
+code may consume its decisions but may not mint a parallel authority model.
 """
 
 from __future__ import annotations
@@ -45,9 +43,18 @@ _EFFECT_CONTROLS: dict[str, frozenset[str]] = {
         {"source_tracking", "confidence_state", "contradiction_retention", "revocation"}
     ),
     "cross_project": frozenset({"independent_verification", "revocation"}),
-    "external_reversible": frozenset({"idempotency", "receipt", "compensation", "bounded_scope"}),
+    "external_reversible": frozenset(
+        {"idempotency", "receipt", "compensation", "bounded_scope", "side_effect_ledger"}
+    ),
     "external_high_impact": frozenset(
-        {"approval_gate", "least_privilege", "circuit_breaker", "receipt"}
+        {
+            "approval_gate",
+            "approval_binding",
+            "least_privilege",
+            "circuit_breaker",
+            "receipt",
+            "side_effect_ledger",
+        }
     ),
     "autonomous": frozenset(
         {"continuous_policy", "budget_limit", "anomaly_detection", "human_override", "revocation"}
@@ -75,8 +82,6 @@ class RiskDimensions:
 
     @property
     def required_level(self) -> CapabilityLevel:
-        # Authority/autonomy determine minimum operating strength. Other risk
-        # dimensions add controls without pretending to be capability classes.
         return CapabilityLevel(max(self.authority, self.autonomy))
 
     def extra_controls(self) -> frozenset[str]:
@@ -183,7 +188,7 @@ def required_controls(
 
 
 class GovernanceGate:
-    """Deterministic, fail-closed promotion checker."""
+    """Deterministic, fail-closed capability promotion checker."""
 
     def evaluate(
         self,
@@ -250,3 +255,10 @@ class GovernanceGate:
                 f"governance gate denied {profile.capability}: {decision.reason}; missing={missing}"
             )
         return decision
+
+
+def governance_change_allowed(*, old_level: CapabilityLevel | int, new_level: CapabilityLevel | int, owner_approved: bool) -> bool:
+    """Governance may autonomously tighten, never autonomously expand authority."""
+    old = CapabilityLevel(old_level)
+    new = CapabilityLevel(new_level)
+    return new <= old or bool(owner_approved)
