@@ -1,0 +1,57 @@
+{
+  "schema_version": "agentos.failure-knowledge-set/v1",
+  "records": [
+    {
+      "schema_version": "agentos.failure-knowledge/v1",
+      "failure_id": "lccb-provider-http-403-20260822",
+      "goal": "Execute the fixed-model LCCB series through the Oracle OpenAI-compatible provider",
+      "approach": "Call /chat/completions with urllib using Authorization and Content-Type only",
+      "expected_result": "OpenAI-compatible JSON chat completion",
+      "actual_result": "HTTP 403 before model execution",
+      "failure_class": "provider_http_contract_mismatch",
+      "environment_fingerprint": "oracle-aarch64+myacademia-openai-compatible+python-urllib",
+      "capability_manifest_digest": "provider-contract-attested-before-node-manifest",
+      "evidence_refs": [
+        "commit:4456d2cb75f23051c4a382d659a7eebc219926dd",
+        "status:agentos/lccb-provider-http-403",
+        "file:agent_core/ai_client.py",
+        "file:scripts/run_lccb_openai_compatible.py"
+      ],
+      "root_cause": "The LCCB runner did not match the repository's canonical upstream HTTP header contract. The canonical AI client sends Accept: application/json and an AgentOS browser-like User-Agent; the failing runner omitted both and the upstream returned 403.",
+      "root_cause_confidence": 0.99,
+      "recovery": "Align the LCCB runner with the canonical AI client header contract and regression-test the emitted request headers.",
+      "retry_conditions": ["provider_http_headers_changed", "upstream_waf_policy_changed"],
+      "scope": {
+        "provider_family": "openai-compatible",
+        "observed_http_status": 403,
+        "fixed_by_commit": "fffe249394d442ad2aefa2c13da342cf57ef7e1b",
+        "regression_test_commit": "317505f839ee771bb759251aaafc5c758fafd56f"
+      }
+    },
+    {
+      "schema_version": "agentos.failure-knowledge/v1",
+      "failure_id": "lccb-fresh-checkout-import-path-20260822",
+      "goal": "Freeze the Oracle capability manifest as part of the reproducible LCCB execution environment",
+      "approach": "Run scripts/discover_agentos_node.py directly from a fresh isolated git clone without installing the package",
+      "expected_result": "Read-only agentos.node-capability-manifest/v1 artifact",
+      "actual_result": "ModuleNotFoundError: agentos_node.capability_discovery",
+      "failure_class": "execution_environment_import_assumption",
+      "environment_fingerprint": "oracle-aarch64+fresh-git-clone+no-editable-install",
+      "capability_manifest_digest": "unavailable-because-discovery-failed-before-manifest",
+      "evidence_refs": [
+        "workflow-run:32581216205",
+        "workflow-job:97050760352",
+        "file:scripts/discover_agentos_node.py"
+      ],
+      "root_cause": "The script assumed repo-root importability supplied by an editable install or PYTHONPATH. Direct execution sets sys.path[0] to scripts/, so the agentos_node package was not importable in the isolated checkout.",
+      "root_cause_confidence": 1.0,
+      "recovery": "Bootstrap the repository root into sys.path before importing agentos_node and regression-test execution from a different cwd with PYTHONPATH removed.",
+      "retry_conditions": ["script_import_bootstrap_changed", "package_installed_in_execution_environment"],
+      "scope": {
+        "fixed_by_commit": "0c3ae07aa87bf7005eb5e1653beef6757b066e3b",
+        "regression_test_commit": "1741bcab146784450c22bf85418513a3f8981273",
+        "successful_recovery_run": 32581330887
+      }
+    }
+  ]
+}
