@@ -7,6 +7,12 @@ import argparse
 from pathlib import Path
 import sys
 
+# Checkout-local scripts must work when invoked as ``python scripts/...py``.
+# Add only the repository root; this does not change package/runtime authority.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from agent_core.cognitive_observatory_export import export_timeline_dot, export_timeline_json
 from agent_core.cognitive_observatory_store import CognitiveObservatoryStore
 
