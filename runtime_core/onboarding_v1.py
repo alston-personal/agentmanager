@@ -18,6 +18,7 @@ from typing import Any
 ONBOARDING_SCHEMA = "agentos.node-onboarding/v1"
 JOIN_SCHEMA = "agentos.join/v1"
 JOIN_TICKET_SCHEMA = "agentos.join-ticket/v1"
+JOIN_REFERENCE_SCHEMA = "agentos.join-reference/v1"
 
 
 def _canonical(value: Any) -> str:
@@ -41,7 +42,7 @@ def _decode_payload(prefix: str, value: str) -> dict[str, Any]:
     token += "=" * (-len(token) % 4)
     try:
         return json.loads(base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8"))
-    except Exception as exc:  # noqa: BLE001 - boundary parser must fail closed
+    except Exception as exc:  # noqa: BLE001
         raise ValueError("invalid AgentOS join code") from exc
 
 
@@ -123,18 +124,52 @@ class JoinEnvelope:
         policy_payload = payload.pop("bootstrap_policy", {})
         if "requested_capabilities" in policy_payload:
             policy_payload["requested_capabilities"] = tuple(policy_payload["requested_capabilities"])
-        policy = BootstrapPolicy(**policy_payload)
-        return cls(bootstrap_policy=policy, **payload)
+        return cls(bootstrap_policy=BootstrapPolicy(**policy_payload), **payload)
+
+
+@dataclass(frozen=True)
+class JoinReference:
+    """Compact one-touch transport for QR/link/CLI.
+
+    The opaque secret is carried in the URL fragment so a normal HTTPS GET does
+    not send it to access logs. The bootstrap client explicitly posts it to the
+    trusted Core origin when resolving/claiming the invitation.
+    """
+
+    core_url: str
+    enrollment_id: str
+    secret: str
+    schema_version: str = JOIN_REFERENCE_SCHEMA
+
+    def __post_init__(self) -> None:
+        if not self.core_url.startswith("https://") and not self.core_url.startswith("http://127.0.0.1"):
+            raise ValueError("join reference core_url must use HTTPS except localhost")
+        if not self.enrollment_id.strip() or not self.secret.strip():
+            raise ValueError("join reference enrollment_id and secret are required")
+
+    def code(self) -> str:
+        return _encode_payload("AGENTOSREF1", asdict(self))
+
+    def link(self) -> str:
+        return self.core_url.rstrip("/") + "/join#" + self.code()
+
+    @classmethod
+    def decode(cls, value: str) -> "JoinReference":
+        if "#" in value:
+            value = value.rsplit("#", 1)[1]
+        payload = _decode_payload("AGENTOSREF1", value)
+        if payload.get("schema_version") != JOIN_REFERENCE_SCHEMA:
+            raise ValueError("unsupported AgentOS join reference schema")
+        return cls(**payload)
 
 
 @dataclass(frozen=True)
 class JoinTicket:
-    """Short-lived bearer ticket suitable for QR, link, NFC or one-line CLI.
+    """Resolved authoritative invitation plus bearer secret.
 
-    The secret is intentionally present in the transport ticket because the
-    human needs only one artifact to join a device. Core persists only its hash.
-    The ticket must therefore be treated like a temporary password and consumed
-    once; it must never be written to logs or durable Node state.
+    JoinReference is preferred for QR/link UX. JoinTicket is produced after Core
+    resolution and is useful inside the enrollment transport. It must not be
+    logged or persisted on the Node.
     """
 
     envelope: JoinEnvelope
@@ -146,14 +181,7 @@ class JoinTicket:
             raise ValueError("join ticket secret is required")
 
     def encode(self) -> str:
-        return _encode_payload(
-            "AGENTOSJOIN1",
-            {
-                "schema_version": self.schema_version,
-                "envelope": asdict(self.envelope),
-                "secret": self.secret,
-            },
-        )
+        return _encode_payload("AGENTOSJOIN1", {"schema_version": self.schema_version, "envelope": asdict(self.envelope), "secret": self.secret})
 
     @classmethod
     def decode(cls, value: str) -> "JoinTicket":
@@ -179,15 +207,7 @@ class EnrollmentClaim:
     requested_profile: str
 
     def __post_init__(self) -> None:
-        required = (
-            self.enrollment_id,
-            self.node_public_key,
-            self.device_fingerprint,
-            self.hostname,
-            self.platform,
-            self.arch,
-            self.requested_profile,
-        )
+        required = (self.enrollment_id, self.node_public_key, self.device_fingerprint, self.hostname, self.platform, self.arch, self.requested_profile)
         if any(not value.strip() for value in required):
             raise ValueError("enrollment claim fields are required")
 
