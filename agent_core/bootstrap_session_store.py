@@ -1,8 +1,8 @@
 """Short-lived, scope-bound bootstrap sessions for Node onboarding.
 
 A successful Join claim establishes identity but does not grant normal Node
-authority.  This store issues a fresh bearer credential usable only for the
-remaining onboarding metadata submission.  Raw tokens are never persisted and a
+authority. This store issues a fresh bearer credential usable only for the
+remaining onboarding metadata submission. Raw tokens are never persisted and a
 successful submission consumes the session.
 """
 
@@ -15,7 +15,7 @@ import sqlite3
 from typing import Callable
 
 
-class BootstrapSessionError(RuntimeError):
+class BootstrapSessionError(PermissionError):
     pass
 
 
