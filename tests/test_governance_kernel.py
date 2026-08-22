@@ -7,6 +7,7 @@ from agent_core.governance import (
     governance_change_allowed,
     required_controls,
 )
+from agent_core.governance_registry import GovernanceRegistry
 from agent_core.side_effect_ledger import InMemorySideEffectLedger
 from runtime_core.governance_v1 import ActionIntent, ApprovalGrant
 
@@ -23,6 +24,10 @@ def profile(*, capability="home.light.set", level=CapabilityLevel.ACT, effects=(
     )
 
 
+def gate_for(*profiles):
+    return ActionAuthorizationGate(GovernanceRegistry(tuple(profiles)))
+
+
 def intent(*, capability="home.light.set", level=4, key="k1", operation="set:on"):
     return ActionIntent(
         realm_id="realm-alston",
@@ -37,7 +42,7 @@ def intent(*, capability="home.light.set", level=4, key="k1", operation="set:on"
 
 
 def test_unknown_capability_fails_closed_at_action_boundary():
-    authorization = ActionAuthorizationGate().evaluate(intent=intent(), profile=None)
+    authorization = gate_for().evaluate(intent=intent())
     assert authorization.allowed is False
     assert "unknown capability" in authorization.reason
 
@@ -51,7 +56,7 @@ def test_missing_external_controls_fail_closed_and_include_side_effect_ledger():
 
 def test_complete_reversible_action_can_be_intent_authorized():
     p = profile()
-    authorization = ActionAuthorizationGate().evaluate(intent=intent(), profile=p)
+    authorization = gate_for(p).evaluate(intent=intent())
     assert authorization.allowed is True
     assert authorization.effective_level == CapabilityLevel.ACT
 
@@ -66,26 +71,27 @@ def test_high_impact_requires_intent_bound_approval():
         controls=controls,
     )
     i = intent(capability="home.lock.unlock", level=5)
-    pending = ActionAuthorizationGate().evaluate(intent=i, profile=p)
+    gate = gate_for(p)
+    pending = gate.evaluate(intent=i)
     assert pending.allowed is False
     assert "approval" in pending.reason
 
     wrong = ApprovalGrant(intent_id="intent_wrong", approver_ref="owner:alston", scope="home.lock.unlock")
-    assert ActionAuthorizationGate().evaluate(intent=i, profile=p, approval=wrong).allowed is False
+    assert gate.evaluate(intent=i, approval=wrong).allowed is False
 
     approval = ApprovalGrant(intent_id=i.intent_id, approver_ref="owner:alston", scope="home.lock.unlock", grant_id="approval:1")
-    allowed = ActionAuthorizationGate().evaluate(intent=i, profile=p, approval=approval)
+    allowed = gate.evaluate(intent=i, approval=approval)
     assert allowed.allowed is True
     assert allowed.approval_ref == "approval:1"
 
 
-def test_requested_authority_cannot_exceed_declared_capability():
+def test_requested_authority_cannot_exceed_registry_profile():
     p = profile(
         level=CapabilityLevel.PROPOSE,
         effects=(),
         controls=required_controls(CapabilityLevel.PROPOSE),
     )
-    authorization = ActionAuthorizationGate().evaluate(intent=intent(level=4), profile=p)
+    authorization = gate_for(p).evaluate(intent=intent(level=4))
     assert authorization.allowed is False
     assert "exceeds" in authorization.reason
 
@@ -104,11 +110,10 @@ def test_autonomous_risk_requires_stronger_governance_before_authorization():
         level=CapabilityLevel.PROPOSE,
         effects=(),
         risks=risks,
-        controls=required_controls(CapabilityLevel.PROPOSE, risks=risks),
+        controls=required_controls(CapabilityLevel.AUTONOMOUS, risks=risks),
     )
-    authorization = ActionAuthorizationGate().evaluate(
+    authorization = gate_for(p).evaluate(
         intent=intent(capability="agent.autonomous.act", level=2),
-        profile=p,
     )
     assert authorization.allowed is False
 
@@ -117,7 +122,7 @@ def test_side_effect_requires_intent_bound_authorization():
     ledger = InMemorySideEffectLedger()
     i = intent()
     p = profile()
-    auth = ActionAuthorizationGate().evaluate(intent=i, profile=p)
+    auth = gate_for(p).evaluate(intent=i)
     other = intent(key="k2", operation="set:off")
     try:
         ledger.prepare(intent=other, authorization=auth, kind="device", target="light")
@@ -130,7 +135,7 @@ def test_side_effect_requires_intent_bound_authorization():
 def test_side_effect_ledger_is_idempotent_receipted_and_compensatable():
     p = profile()
     i = intent(key="same-request")
-    auth = ActionAuthorizationGate().evaluate(intent=i, profile=p)
+    auth = gate_for(p).evaluate(intent=i)
     ledger = InMemorySideEffectLedger()
     first = ledger.prepare(
         intent=i,
