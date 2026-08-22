@@ -76,6 +76,21 @@ def test_positive_velocity_moves_q2_to_q1_and_resurfaces_when_ready():
     assert "priority_quadrant_changed" in snap.resurfacing_reasons
 
 
+def test_q1_attention_does_not_override_governance_authority():
+    item = packet(status="ready", blockers=())
+    snap = evaluate_priority(
+        item,
+        now=datetime(2026, 9, 22, tzinfo=timezone.utc),
+        authority_mode="shadow",
+    )
+    assert snap.quadrant == "Q1"
+    assert snap.readiness == "ready"
+    assert snap.authority_mode == "shadow"
+    assert snap.action == "shadow_only"
+    assert snap.resurfaced is True
+    assert "authority_shadow" in snap.resurfacing_reasons
+
+
 def test_negative_velocity_can_sink_low_value_work():
     item = packet(
         status="ready",
