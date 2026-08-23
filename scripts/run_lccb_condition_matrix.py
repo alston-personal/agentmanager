@@ -54,6 +54,8 @@ def main() -> int:
             for stage in stages:
                 stage_tasks = tasks_for_stage(tasks, stage)
                 messages = build_condition_messages(events, tasks, stage, condition)
+                prompt_characters = sum(len(message["content"]) for message in messages)
+                prompt_utf8_bytes = sum(len(message["content"].encode("utf-8")) for message in messages)
                 started = _utc_now()
                 raw = _chat(base_url, api_key, model, messages, temperature=args.temperature, max_tokens=args.max_tokens)
                 completed = _utc_now()
@@ -72,6 +74,8 @@ def main() -> int:
                         "temperature": args.temperature,
                         "max_tokens": args.max_tokens,
                         "prompt_hash": p_hash,
+                        "prompt_characters": prompt_characters,
+                        "prompt_utf8_bytes": prompt_utf8_bytes,
                         "response_hash": response_hash(answer),
                         "response_text": answer,
                         "started_at": started,
