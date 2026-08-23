@@ -76,14 +76,13 @@ jobs:
           LCCB_MODEL_NAME="$2"
           set -a
           [ -f "$HOME/agentmanager/.env" ] && source "$HOME/agentmanager/.env"
-          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
-          test -n "${AGENTOS_AI_API_KEY:-}"
-          test -n "${AGENTOS_AI_BASE_URL:-}"
+          test -n "${AI_API_ACADEMIA_KEY:-}"
+          test -n "${AI_API_BASE_URL:-}"
           cd "$REMOTE_WORK"
           chmod 000 artifacts/lccb-pack/private/labels.jsonl
-          LCCB_API_KEY="$AGENTOS_AI_API_KEY" LCCB_BASE_URL="$AGENTOS_AI_BASE_URL" LCCB_MODEL="$LCCB_MODEL_NAME" \
+          LCCB_API_KEY="$AI_API_ACADEMIA_KEY" LCCB_BASE_URL="$AI_API_BASE_URL" LCCB_MODEL="$LCCB_MODEL_NAME" \
             python3 scripts/run_lccb_condition_matrix.py --pack artifacts/lccb-pack --output artifacts/condition-responses.jsonl --conditions B0,B1,B2,B3 --stages 0,100,1000 --temperature 0 --repeat 3
           chmod 600 artifacts/lccb-pack/private/labels.jsonl
           python3 scripts/score_lccb_condition_matrix.py --pack artifacts/lccb-pack --responses artifacts/condition-responses.jsonl --output artifacts/condition-scores.json
