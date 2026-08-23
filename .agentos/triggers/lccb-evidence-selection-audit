@@ -1,5 +1,8 @@
-triggered_at=2026-08-23T12:43:00+08:00
+triggered_at=2026-08-23T12:47:00+08:00
 analysis=lccb-evidence-selection-audit-v1
+attempt=2
+prior_run=32618347026
+prior_failure=missing_repo_import_bootstrap
 source_experiment_run=32615130545
 source_experiment_sha=561e878ba502e54ef81b947b57a88a47f8bad79a
 seed=73129
