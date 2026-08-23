@@ -1,0 +1,9 @@
+triggered_at=2026-08-23T12:43:00+08:00
+analysis=lccb-evidence-selection-audit-v1
+source_experiment_run=32615130545
+source_experiment_sha=561e878ba502e54ef81b947b57a88a47f8bad79a
+seed=73129
+events=1000
+conditions=B1,B2,B3
+stages=100,1000
+model_calls=0
