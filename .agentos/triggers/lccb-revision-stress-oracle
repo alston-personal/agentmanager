@@ -1,5 +1,8 @@
-triggered_at=2026-08-23T12:20:00+08:00
+triggered_at=2026-08-23T12:29:00+08:00
 experiment=lccb-revision-stress-v1
+attempt=2
+prior_run=32617741853
+prior_failure=provider_http_429
 conditions=B1,B3
 model=gemini-3.1-flash-lite
 seed=73129
@@ -8,3 +11,6 @@ keys=24
 stages=0,1000,4000
 repeat=3
 temperature=0
+runner_429_retry=3
+runner_retry_delay_seconds=30
+runner_inter_call_delay_seconds=8
