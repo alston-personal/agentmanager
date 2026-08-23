@@ -15,6 +15,7 @@ def test_master_grade_requires_continuation_until_real_terminal_boundary():
     ]
     score = score_recovery_trace(trace)
     assert score.premature_finalization_rate == 0.0
+    assert score.human_clock_rate == 0.0
     assert score.sustained_chain_depth == 20
     assert score.valid_terminal_stop is True
     assert master_grade(score)
@@ -28,6 +29,17 @@ def test_answerable_milestone_final_is_scored_as_premature():
     score = score_recovery_trace(trace)
     assert score.premature_finals == 1
     assert score.premature_finalization_rate == 0.5
+    assert not master_grade(score, minimum_chain_depth=1)
+
+
+def test_human_continuation_pulse_prevents_master_grade():
+    trace = [
+        RecoveryTraceStep(1, True, True, True, human_clock_pulse=True),
+        RecoveryTraceStep(2, False, False, True, goal_closed_verified=True, executor_finalized=True),
+    ]
+    score = score_recovery_trace(trace)
+    assert score.human_clock_pulses == 1
+    assert score.human_clock_rate == 1.0
     assert not master_grade(score, minimum_chain_depth=1)
 
 
