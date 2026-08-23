@@ -14,6 +14,9 @@ This is the **Logic Layer Root** of the AgentOS ecosystem.
 - `.agent/workflows/` — slash command definitions
 - `docs/IDE_ADAPTER.md` — cross-IDE Distributed AgentOS continuity
 - `docs/CONTINUITY_MIRROR.md` — private connector fallback for agents that cannot reach the Control Plane
+- `contracts/execution-disposition-v1.json` — portable final/continue semantics
+- `contracts/master-trace-exemplars-v1.json` — task-neutral long-horizon execution demonstrations
+- `docs/MASTER_EXPERIENCE_REPRODUCTION_PROTOCOL.md` — blind reproduction/measurement protocol
 
 ## Distributed Continuity
 Treat shared Canonical IR as the cross-agent continuity authority rather than the current IDE/chat session alone.
@@ -29,6 +32,15 @@ Operational rules:
 - Use `agentos ask` only for a genuinely new goal and `agentos delegate <provider>` for explicit cross-provider delegation.
 - `.agentos/project.json` is the stable, non-secret project identity marker and may be committed.
 - `projects/<project-id>/handoff_capsule.md` is legacy human handoff text; do not treat it as newer than `continuity/latest.json`.
+
+## Goal-level Execution Regime
+For an active goal, **answerability is not completion**. A successful commit, test, tool call, receipt, completed subproblem, or useful progress report is not a terminal condition by itself.
+
+Before yielding/finalizing, evaluate the parent goal using `agentos.execution-disposition/v1` semantics. If a material closure gap remains and the next action is derivable, authorized, and safe, continue the inspect -> act -> receipt -> reassess loop without requiring a human continuation pulse.
+
+On a recoverable bounded failure: localize it, inspect authoritative state/implementation, apply the smallest repair, and revalidate. On mutable-state drift: refresh authoritative state before acting. On protected effects or new authority: stop before the effect and request authority; capability never grants permission.
+
+When bootstrapping a fresh executor for long-horizon work, load the task-neutral exemplars from `contracts/master-trace-exemplars-v1.json`. These exemplars define execution behavior, not task answers. Preserve VERIFIED / RECONSTRUCTED / UNKNOWN distinctions.
 
 ## Critical Constraint
 Never create real files named `STATUS.md` or `memory/` here.
