@@ -1,0 +1,91 @@
+name: LCCB Evidence Selection Audit
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".agentos/triggers/lccb-evidence-selection-audit"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout audit commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Build frozen Meridian pack
+        run: |
+          set -euo pipefail
+          python3 scripts/build_lccb_synthetic_pack.py \
+            --output-dir artifacts/lccb-evidence-audit-pack \
+            --seed 73129 \
+            --events 1000
+
+      - name: Audit B1 B2 B3 selected evidence
+        run: |
+          set -euo pipefail
+          python3 scripts/analyze_lccb_evidence_selection.py \
+            --pack artifacts/lccb-evidence-audit-pack \
+            --output artifacts/lccb-evidence-selection-audit.json \
+            --conditions B1,B2,B3 \
+            --stages 100,1000
+
+      - name: Sanity-check frozen manifest
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          pack = json.loads(Path('artifacts/lccb-evidence-audit-pack/manifest.json').read_text())
+          audit = json.loads(Path('artifacts/lccb-evidence-selection-audit.json').read_text())
+          assert pack['seed'] == 73129
+          assert pack['event_count'] == 1000
+          assert audit['pack_manifest']['experience_manifest_hash'] == pack['experience_manifest_hash']
+          assert audit['pack_manifest']['evaluator_manifest_hash'] == pack['evaluator_manifest_hash']
+          assert len(audit['aggregates']) == 6
+          print(json.dumps(audit['aggregates'], indent=2))
+          PY
+
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-evidence-selection-audit-${{ github.run_id }}
+          path: |
+            artifacts/lccb-evidence-selection-audit.json
+            artifacts/lccb-evidence-audit-pack/manifest.json
+          if-no-files-found: error
+
+      - name: Publish audit receipt
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ job.status }}" = "success" ]; then
+            state=success
+            desc="LCCB evidence-selection audit passed"
+          else
+            state=failure
+            desc="LCCB evidence-selection audit failed"
+          fi
+          export STATE="$state" DESC="$desc" RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({"state":os.environ["STATE"],"context":"agentos/lccb-evidence-audit","description":os.environ["DESC"],"target_url":os.environ["RUN_URL"]}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -d "$payload" >/dev/null
