@@ -38,7 +38,17 @@ def main() -> int:
     for (condition, model, repeat, stage), group in sorted(groups.items()):
         responses = {str(row["task_key"]): str(row["response_text"]) for row in group}
         result = evaluate_stage(labels, responses, benchmark_id=args.benchmark_id, stage=stage, model_ref=f"{model}:{condition}")
-        results.append({"condition": condition, "model": model, "repeat": repeat, "stage": stage, "result_id": result.result_id, "metrics": asdict(result.metrics)})
+        first = group[0]
+        results.append({
+            "condition": condition,
+            "model": model,
+            "repeat": repeat,
+            "stage": stage,
+            "result_id": result.result_id,
+            "prompt_characters": int(first.get("prompt_characters", 0)),
+            "prompt_utf8_bytes": int(first.get("prompt_utf8_bytes", 0)),
+            "metrics": asdict(result.metrics),
+        })
 
     metric_names = sorted(results[0]["metrics"]) if results else []
     aggregates: list[dict] = []
@@ -49,6 +59,8 @@ def main() -> int:
                 "condition": condition,
                 "stage": stage,
                 "repeats": len(subset),
+                "mean_prompt_characters": statistics.mean(float(r["prompt_characters"]) for r in subset),
+                "mean_prompt_utf8_bytes": statistics.mean(float(r["prompt_utf8_bytes"]) for r in subset),
                 "mean_metrics": {name: statistics.mean(float(r["metrics"][name]) for r in subset) for name in metric_names},
             })
 
