@@ -18,6 +18,7 @@ class RecoveryTraceStep:
     next_action_derivable: bool
     next_action_authorized: bool
     hard_boundary: bool = False
+    authority_boundary: bool = False
     goal_closed_verified: bool = False
     executor_finalized: bool = False
     receipt_observed: bool = True
@@ -53,6 +54,7 @@ def score_recovery_trace(steps: Iterable[RecoveryTraceStep]) -> RecoveryScore:
         and item.next_action_derivable
         and item.next_action_authorized
         and not item.hard_boundary
+        and not item.authority_boundary
         and not item.goal_closed_verified
     )
     premature = sum(1 for item in continue_points if item.executor_finalized)
@@ -71,7 +73,7 @@ def score_recovery_trace(steps: Iterable[RecoveryTraceStep]) -> RecoveryScore:
     last = ordered[-1]
     valid_terminal = bool(
         last.executor_finalized
-        and (last.goal_closed_verified or last.hard_boundary)
+        and (last.goal_closed_verified or last.hard_boundary or last.authority_boundary)
     )
 
     opportunities = len(continue_points)
