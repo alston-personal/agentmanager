@@ -2,13 +2,17 @@
 
 ## An Evidence-Bounded Systems Study of Longitudinal Cognition, Context Compression, Governance, and Executor Replacement
 
-**Manuscript status:** completed evidence-bounded manuscript, revised 2026-08-23 after the controlled B0-B3 fixed-model condition matrix. The paper reports completed experiments as results and keeps stronger untested claims explicitly open.
+**Manuscript status:** completed evidence-bounded manuscript, revised 2026-08-23 after the controlled B0-B3 fixed-model condition matrix, task-level artifact reanalysis, and the frozen dense-revision stress protocol. Completed experiments are reported as results; provider-blocked attempts and stronger untested claims remain explicitly separated from efficacy evidence.
 
 ## Abstract
 
 Large-language-model agents can appear to learn over time even when model weights never change. A longer transcript, retrieval over prior observations, tool access, external state, and broader permissions can all improve behavior while creating ambiguity about what actually became more capable. AgentOS investigates a narrower systems hypothesis: durable, governed cognitive and execution state can be externalized from the model so that project semantics survive executor replacement, remain auditable, and do not silently expand authority. We introduce the Longitudinal Cognitive Capability Benchmark (LCCB), a controlled evaluation protocol that freezes the model, decoding policy, public experience, capability envelope, governance condition, evaluator, and evidence boundary. Public experience is physically separated from evaluator-only labels, and external execution is preserved through immutable GitHub Actions and artifact receipts.
 
-Two completed fixed-model experiments are reported with `gemini-3.1-flash-lite`, Project Meridian seed 73129, 1,000 synthetic events, cognitive ages 0/100/1000, temperature 0, and three repeats. The first full-public-history experiment reached ceiling fact accuracy at ages 100 and 1000 and therefore did not demonstrate longitudinal cognitive improvement; it also exposed a provenance task-contract defect. A second controlled B0-B3 matrix compared no history (B0), full public history (B1), retrieval-only evidence without explicit supersession semantics (B2), and a structured current-state projection retaining the latest public semantic value per key (B3). At age 1000, B1 and B3 both achieved fact accuracy 1.0 and stale-error rate 0.0. B3 required 36,637 prompt characters versus 563,209 for B1, a 93.49% reduction. B2 used only 11,939 characters but achieved fact accuracy 0.3077 and stale-error rate 0.2308. Thus the present evidence supports structured-state equivalence to full history with substantial context compression and superiority over the tested retrieval-only baseline, but it does not establish capability beyond full history. Cross-session long-horizon execution recovery is reported only as preliminary mechanism evidence. The contribution is therefore architectural, methodological, and empirical: AgentOS supplies a governed persistence substrate, LCCB makes the hypothesis falsifiable, and the completed matrix identifies where structured state already helps and where the stronger cognitive-growth claim remains unproven.
+Two completed fixed-model experiments are reported with `gemini-3.1-flash-lite`, Project Meridian seed 73129, 1,000 synthetic events, cognitive ages 0/100/1000, temperature 0, and three repeats. The first full-public-history experiment reached ceiling fact accuracy at ages 100 and 1000 and therefore did not demonstrate longitudinal cognitive improvement; it also exposed a provenance task-contract defect. A second controlled B0-B3 matrix compared no history (B0), full public history (B1), retrieval-only evidence without explicit supersession semantics (B2), and a structured current-state projection retaining the latest public semantic value per key (B3). At age 1000, B1 and B3 both achieved fact accuracy 1.0 and stale-error rate 0.0. B3 required 36,637 prompt characters versus 563,209 for B1, a 93.49% reduction. B2 used only 11,939 characters but achieved fact accuracy 0.3077 and stale-error rate 0.2308.
+
+Task-level reanalysis of the immutable Experiment 2 artifact sharpens the mechanism: B2 was correct on 7/13 facts at age 100 and 4/13 at age 1000; the entire three-task loss consisted of previously correct items that were later authoritatively revised, and exactly those three became stale answers. The four B2 facts that remained correct were unchanged owner keys. This supports a bounded supersession interpretation rather than a generic claim that small context is harmful. A third pre-specified dense-revision B1/B3 stress protocol was implemented and externally attempted twice, but the provider returned persistent HTTP 429 before the first scored response; the second attempt failed on B1 stage 0 with only a 6,390-character prompt after 30/60/120-second retries. Those attempts are therefore recorded as provider-serving failures, not cognitive outcomes or context-limit evidence.
+
+Thus the completed evidence supports structured-state equivalence to full history with substantial context compression and superiority over the tested retrieval-only baseline, but it does not establish capability beyond full history. Cross-session long-horizon execution recovery is reported only as preliminary mechanism evidence. The contribution is architectural, methodological, and empirical: AgentOS supplies a governed persistence substrate, LCCB makes the hypothesis falsifiable, the completed matrix identifies where structured state already helps, and the preserved failed stress-series receipts demonstrate why serving availability must be separated from cognition.
 
 ## 1. Introduction
 
@@ -24,9 +28,9 @@ We study two research questions:
 
 **RQ2 — Executor replacement.** Can governed state support correct continuation after the conversational executor is replaced, without duplicate work, forgotten failures, premature finalization, or authority drift?
 
-The completed experiments provide a partial answer to RQ1. Structured current-state projection matches full-history fact accuracy while using far less input and materially outperforms the tested retrieval-only condition. It does not exceed full-history accuracy on the current tasks. RQ2 is supported at the mechanism level and by exploratory observations, but not yet by a controlled fresh-executor efficacy series.
+The completed experiments provide a partial answer to RQ1. Structured current-state projection matches full-history fact accuracy while using far less input and materially outperforms the tested retrieval-only condition. Task-level decomposition shows that the tested retrieval-only degradation is concentrated in revised facts becoming stale, strengthening the specific supersession interpretation. Structured state still does not exceed full-history accuracy on the completed task family. A denser pre-specified B1/B3 stress test is implemented but currently provider-blocked and therefore contributes no efficacy result. RQ2 is supported at the mechanism level and by exploratory observations, but not yet by a controlled fresh-executor efficacy series.
 
-The paper deliberately preserves this distinction. Architectural plausibility, successful system implementation, and one strong anecdote are not promoted into a claim of general cognitive growth.
+The paper deliberately preserves this distinction. Architectural plausibility, successful system implementation, one strong anecdote, or an external-provider failure are not promoted into a claim of general cognitive growth.
 
 ## 2. Contributions
 
@@ -36,8 +40,8 @@ This work makes six bounded contributions.
 2. **A governance invariant.** Capability discovery and cognitive accumulation do not grant authority. `Discovered != Registered != Authorized != Active`; governance may tighten automatically but may not silently relax.
 3. **Goal-level execution semantics.** The executor is expected to stop on verified goal closure or a real boundary, not merely because an intermediate answer is available.
 4. **LCCB.** A controlled longitudinal benchmark physically separates public experience from hidden evaluator labels and freezes the competing variables needed for causal interpretation.
-5. **Two completed fixed-model provider experiments.** The first identifies a full-history ceiling and a provenance-contract defect. The second directly compares B0-B3 memory conditions.
-6. **An empirical context-compression result.** At age 1000, structured current state preserves full-history fact performance with 93.49% fewer prompt characters, while the tested retrieval-only condition degrades and becomes stale.
+5. **Two completed fixed-model provider experiments plus preserved negative execution evidence.** The first identifies a full-history ceiling and a provenance-contract defect. The second directly compares B0-B3 memory conditions. A third dense-revision protocol is frozen and externally attempted, but its provider-blocked runs are retained as non-efficacy evidence rather than converted into task failures.
+6. **An empirical context-compression and supersession result.** At age 1000, structured current state preserves full-history fact performance with 93.49% fewer prompt characters, while the tested retrieval-only condition degrades and becomes stale. Task-level decomposition localizes the entire age-100→1000 B2 loss to three later-revised facts.
 
 ## 3. AgentOS system model
 
@@ -257,7 +261,27 @@ The provenance endpoint therefore remains secondary until the benchmark specifie
 
 This is a narrower problem than Experiment 1's missing citation request, but it still limits strong provenance claims.
 
-## 7. Failure evidence and experimental repair
+### 6.7 Task-level mechanism decomposition
+
+The preserved Experiment 2 artifact permits a stronger within-pack explanation of the B2 decline without any new model calls.
+
+At age 100, B2 is correct on `7/13` facts on every repeat. Those seven successes are all six queried service-owner facts plus `meridian.deploy` governance. The remaining continuity, procedure, and two governance tasks are answered `unknown`; stale-error rate is still `0/13`.
+
+At age 1000, B2 falls to `4/13` correct and `3/13` stale on every repeat. The four facts that remain correct are exactly the four queried owner keys that were not revised (`service-03` through `service-06`). The entire three-task loss consists of items that were correct at age 100 and later authoritatively revised:
+
+| Task | Age-100 B2 | Age-1000 truth | Age-1000 B2 |
+|---|---|---|---|
+| `state:service-01.owner` | `atlas` | `boreal` | `atlas` |
+| `state:service-02.owner` | `boreal` | `cirrus` | `boreal` |
+| `governance:meridian.deploy` | `proposal` | `allow` | `proposal` / `proposal-only` |
+
+Thus the exact within-pack age effect is localized to supersession: three previously correct retrieved values are revised, and those same three become stale. The six tasks not recovered at age 100 remain unrecovered rather than explaining the new decline.
+
+This does not prove that retrieval in general is inferior. It does provide more specific evidence that the **tested lexical retrieval policy is revision-blind without explicit supersession/current-state semantics**. A stronger retrieval baseline with temporal filtering, revision graphs, authoritative-source ranking, or state reconciliation remains necessary for broader comparison.
+
+The same artifact also explains the small B1/B3 provenance difference. At age 1000, B3 source recall is `13/16` on all repeats. B1 scores `13/16`, `12/16`, and `13/16`. The single lower B1 repeat cites `lccb:meridian:event:0520` for `procedure:deploy-3` instead of the later canonical source `event:0880`; both public events carry the same current procedure text, so fact accuracy remains perfect. B3's current-state projection exposes only the later event and therefore remains provenance-stable in this case. Because continuity proof-set semantics are still unresolved, this observation is reported as a specific provenance-recency effect rather than a general provenance superiority claim.
+
+## 7. Failure evidence, experimental repair, and provider-blocked stress series
 
 The successful condition matrix was preceded by two bounded workflow failures that are retained as negative knowledge.
 
@@ -266,6 +290,22 @@ The first attempt, workflow run `32614903376`, attempted `git archive` before ch
 The second attempt, run `32614940543`, assumed provider variables named `AGENTOS_AI_API_KEY` and `AGENTOS_AI_BASE_URL`. Existing provider-readiness evidence showed that the verified Oracle credential contract is `AI_API_ACADEMIA_KEY` and `AI_API_BASE_URL`. The matrix workflow was aligned with that existing contract rather than creating another credential path or weakening isolation.
 
 The successful run followed those repairs, uploaded the evidence artifact, and published a success receipt. These failures are not discarded from the research history because avoiding repeated known failures after executor replacement is itself a future LCCB target.
+
+### 7.1 Experiment 3 — dense revision stress protocol
+
+The completed matrix still leaves B1 and B3 fact accuracy at ceiling. To create a direct discrimination opportunity, a third series was frozen in which 24 semantic keys undergo 4,000 authoritative revisions. B1 receives the complete ordered history without truncation; B3 receives only the latest public semantic state per key derived from the identical history. The fixed target model remains `gemini-3.1-flash-lite`, temperature 0, with stages 0/1000/4000 and three repeats.
+
+The protocol is intentionally adversarial to naive history replay but not privileged toward B3: no hidden label, extra tool, new authority, or evaluator information is given to B3. Pre-specified outcomes permit B1=B3, B3>B1, or B1>B3. Prompt compactness alone is not scored as cognitive superiority.
+
+### 7.2 Provider-blocked attempts are not cognitive results
+
+The first dense-revision attempt, workflow run `32617741853` at SHA `6208daeb7a194f1c595f55ea3f65976b64d6aa61`, completed checkout, SSH transport, and pack construction but failed with provider HTTP 429 before a complete scored response set was produced. No artifact was uploaded.
+
+The runner was then repaired operationally—not semantically—to trace repeat/condition/stage/prompt size, retry only HTTP 429, bound retries, and pace provider calls. The second attempt, run `32617901460` at SHA `c895aa4c307f788d5d9a6ddc260595e0031c65d3`, failed on the **first** model call: repeat 0, B1, stage 0, with a prompt of only `6,390` characters. HTTP 429 persisted after 30-, 60-, and 120-second backoffs.
+
+That trace rules out a tempting but invalid interpretation. The failed run is not evidence that the 4,000-event B1 history exceeded context capacity because stage 0 contains no such history. It is evidence of provider availability/quota/rate throttling during the attempted series. Neither failed workflow is counted as a B1 or B3 task error.
+
+Experiment 3 therefore has status **`PROTOCOL_READY_PROVIDER_BLOCKED`**. It may revise the cognitive conclusion only after a successful run emits raw responses, deterministic scores, manifest, artifact ID, digest, and an immutable receipt. The failed attempts remain preserved rather than being deleted or converted into favorable evidence.
 
 ## 8. Cross-session execution observations
 
@@ -293,21 +333,27 @@ The completed provider experiments use one synthetic world seed and three repeat
 
 For Experiment 2, the large B3/B2 difference is exact for the tested seed and provider series, but no confidence interval across benchmark worlds is yet justified. The B1/B3 fact-accuracy endpoint is at ceiling, making a superiority test uninformative. Prompt-size differences are deterministic consequences of the public representation and can be reported exactly for this pack.
 
-A broader efficacy series should freeze multiple seeds in advance and use matched tasks across B0-B3. Suitable reporting includes task-level outcomes, paired condition differences, bootstrap confidence intervals across matched task instances/seeds where appropriate, and explicit provider-repeat variance. Any semantic judge should be secondary to the deterministic evaluator rather than replacing it post hoc.
+The task-level decomposition should likewise be treated as an exact within-pack mechanism observation rather than an i.i.d. sampling result. The 13 tasks are heterogeneous, and three provider repeats are repeated executions of the same benchmark world, not 39 independent population samples. A naive binomial interval over repeated task calls would therefore overstate inferential certainty.
+
+Within the frozen pack, however, the matched pattern is exact: B2 is `7/13` at age 100 and `4/13` at age 1000 on all three repeats; the three lost tasks are precisely the three previously correct items that later receive authoritative revisions, and all three are scored stale. B1 and B3 remain `13/13` fact-correct with zero stale tasks on every repeat.
+
+A broader efficacy series should freeze multiple seeds in advance and use matched tasks across B0-B3. Suitable reporting includes task-level outcomes, paired condition differences, bootstrap confidence intervals across matched task instances/seeds where appropriate, hierarchical treatment of provider repeats if modeled probabilistically, and explicit provider-repeat variance. Any semantic judge should be secondary to the deterministic evaluator rather than replacing it post hoc.
 
 The evidence ladder remains:
 
 **harness validated → mechanism observed → replicated → discriminates against strong baselines → survives ablation → transfers across executor/model replacement where claimed.**
 
-The present work reaches controlled discrimination against the tested retrieval-only baseline and context-efficiency equivalence to full history; it does not reach the final transfer stages.
+The present work reaches controlled discrimination against the tested retrieval-only baseline and context-efficiency equivalence to full history. The dense-revision protocol is a pre-specified attempt to move toward discrimination against full history but is not yet completed because of provider serving failure. The work does not reach the final transfer stages.
 
 ## 10. Threats to validity
 
 **Single synthetic seed.** Both completed provider experiments use seed 73129. Generalization across worlds is not established.
 
-**Ceiling fact endpoint.** B1 and B3 saturate current-state fact recall, preventing the present task family from establishing B3 capability superiority.
+**Ceiling fact endpoint.** B1 and B3 saturate current-state fact recall, preventing the completed task family from establishing B3 capability superiority.
 
-**Retrieval baseline specificity.** B2 is one lexical retrieval policy with no explicit supersession semantics. The result does not show that every retrieval architecture is inferior.
+**Retrieval baseline specificity.** B2 is one lexical retrieval policy with no explicit supersession semantics. The task-level decomposition localizes its failure, but the result does not show that every retrieval architecture is inferior.
+
+**Post-hoc mechanism decomposition.** The task-level analysis was performed after the aggregate Experiment 2 result was known. It is deterministic and fully traceable to the immutable artifact, but it should be treated as explanatory analysis rather than an independently pre-registered efficacy endpoint. The dense-revision protocol was then frozen as a prospective follow-up.
 
 **B3 is not full AgentOS.** The structured projection isolates current-state/supersession semantics. It does not yet include all durable failure, workstream, disposition, or governance mechanisms in the model-facing condition.
 
@@ -316,6 +362,8 @@ The present work reaches controlled discrimination against the tested retrieval-
 **Provider drift.** `gemini-3.1-flash-lite` is a provider model reference and may not denote an immutable weight snapshot forever. Immutable workflow, prompt, response, and artifact receipts reduce but cannot eliminate this risk.
 
 **Provider nondeterminism.** B1 source recall varied across repeats at temperature 0. Provider repeats are therefore necessary.
+
+**Provider availability and quota.** The dense-revision series encountered persistent HTTP 429 even at stage 0 with a 6,390-character prompt after bounded backoff. Serving failures must be separated from cognitive failures. Until the provider accepts the frozen series and produces a scored artifact, Experiment 3 provides no efficacy estimate.
 
 **Synthetic-world validity.** Project Meridian provides auditability, contradiction, and controlled revisions but does not establish real-project benefit.
 
@@ -337,31 +385,39 @@ The present work reaches controlled discrimination against the tested retrieval-
 4. A structured current-state projection matches full-history fact accuracy at ages 100 and 1000.
 5. At age 1000, that structured projection uses 36,637 prompt characters versus 563,209 for full history, a 93.49% reduction.
 6. The tested retrieval-only condition is materially worse at ages 100 and 1000 and produces stale errors at age 1000.
-7. No condition in the completed matrix produced unauthorized-action errors.
-8. AgentOS mechanisms exist for durable goal state, execution disposition, workstream fencing, governance separation, failure preservation, and persistent runtime dispatch.
-9. Session-local reproduction of long-horizon execution has been observed and preserved as provisional evidence.
+7. Within the completed Experiment 2 artifact, the entire B2 fact decline from `7/13` at age 100 to `4/13` at age 1000 is accounted for by three previously correct items that were later revised and then emitted as stale values.
+8. The four B2 facts that remain correct at age 1000 are queried owner keys that were unchanged in the benchmark history.
+9. B1 and B3 remain fact-perfect and stale-free across all three provider repeats at ages 100 and 1000 in the completed series.
+10. No condition in the completed matrix produced unauthorized-action errors.
+11. AgentOS mechanisms exist for durable goal state, execution disposition, workstream fencing, governance separation, failure preservation, and persistent runtime dispatch.
+12. Session-local reproduction of long-horizon execution has been observed and preserved as provisional evidence.
+13. The dense-revision follow-up protocol is implemented and externally attempted; its two failed runs establish a provider-serving blocker, not a cognitive result.
 
 ### 11.2 Not established
 
 1. Structured state has greater fact capability than a fixed model given all relevant history.
 2. The B3 result generalizes across benchmark seeds, task families, provider models, or real projects.
 3. All retrieval systems are inferior to structured cognition.
-4. Full AgentOS failure memory measurably reduces repeated failures after executor replacement.
-5. Fresh ChatGPT conversations reliably reproduce the strongest historical long-horizon interaction regime.
-6. Cross-model replacement preserves equivalent cognitive capability.
-7. AgentOS changes model weights or constitutes parameter learning.
+4. B3 beats B1 under the 4,000-event dense-revision stress protocol; that series is provider-blocked and unscored.
+5. Full-history B1 fails because of context capacity in the dense-revision protocol; the observed 429 occurs even at stage 0 and therefore cannot support that inference.
+6. Full AgentOS failure memory measurably reduces repeated failures after executor replacement.
+7. Fresh ChatGPT conversations reliably reproduce the strongest historical long-horizon interaction regime.
+8. Cross-model replacement preserves equivalent cognitive capability.
+9. AgentOS changes model weights or constitutes parameter learning.
 
 ## 12. Discussion
 
-The two experiments move the research question from an intuition about “memory” toward a more precise distinction between history and state.
+The completed experiments move the research question from an intuition about “memory” toward a more precise distinction between history and state.
 
 The first experiment shows that raw recall is a weak endpoint when all relevant history fits into the model's available input. The second shows why structured persistence may still matter even before it creates a higher task score: the same current-state accuracy can be retained while the history grows by an order of magnitude. At age 1000, B1 expands to more than half a million prompt characters while B3 remains near thirty-seven thousand. This is not merely a cost observation. Smaller decision-relevant state leaves more context capacity for new tasks, reduces distractor exposure, and makes executor replacement less dependent on replaying an ever-growing transcript.
 
-The comparison with B2 also matters. A small context is not automatically a good context. The retrieval-only condition is even smaller than B3, but it loses current facts and eventually emits stale values. For the tested policy, explicit supersession/current-state semantics preserve information that lexical relevance alone does not.
+The comparison with B2 also matters. A small context is not automatically a good context. The retrieval-only condition is even smaller than B3, but it loses current facts and eventually emits stale values. The task-level decomposition strengthens this interpretation: all three facts lost between ages 100 and 1000 are facts that were subsequently revised, while the four previously retrieved owner facts that remained unchanged stay correct. For the tested policy, explicit supersession/current-state semantics preserve information that lexical relevance alone does not.
 
 This suggests a useful way to conceptualize persistent cognition. It is not a larger notebook. It is an operating state: what is true now, why it is believed, what it supersedes, what failed, what remains unfinished, and what may be done next. Such state can potentially act as a sufficient statistic over a much larger interaction history.
 
-The current evidence stops short of the strongest claim. Because B1 remains perfect on fact accuracy, B3 has not demonstrated capability inaccessible to full history. That stronger test requires tasks where full raw history becomes a liability or where structure carries semantics unavailable from naive replay: context-budget overflow, multi-source trust, failure reuse, incomplete-work continuation, cross-workstream reconciliation, governance divergence, and executor replacement.
+The current evidence stops short of the strongest claim. Because B1 remains perfect on fact accuracy in the completed matrix, B3 has not demonstrated capability inaccessible to full history. The dense-revision follow-up is designed to test exactly that boundary by replacing mostly irrelevant history growth with thousands of authoritative revisions. Its current HTTP 429 failures do not answer the scientific question; the stage-0 trace demonstrates why operational availability must not be confused with cognitive capacity.
+
+A stronger future test therefore requires both a discriminating task and a functioning frozen provider series. Candidate dimensions remain context-budget overflow, multi-source trust, failure reuse, incomplete-work continuation, cross-workstream reconciliation, governance divergence, and executor replacement. Stronger retrieval baselines should include explicit temporal/revision semantics so the comparison is not artificially weak.
 
 The distinction between knowledge continuity and execution continuity is equally important. A replacement executor may recover the correct state yet still finalize after every answerable milestone. The historical and session-local observations motivate treating execution disposition itself as durable cognitive-operational state. Whether that disposition transfers reliably across fresh conversational sessions is now directly measurable through premature-finalization rate, human-clock rate, receipt follow-through, known-failure repetition, authority violations, and sustained chain depth.
 
@@ -373,13 +429,15 @@ AgentOS proposes a model-external substrate for durable, governed cognition and 
 
 The first fixed-model experiment showed that full-history recall saturates the initial benchmark and therefore cannot demonstrate cognitive accumulation. The second controlled B0-B3 matrix provides the first discriminating empirical result. Structured current-state projection matches full-history fact accuracy and zero stale-error performance while reducing age-1000 prompt size by 93.49%. The tested retrieval-only condition is substantially less accurate and becomes stale as history grows.
 
-This is meaningful evidence for **structured-state efficiency and supersession semantics**, but not yet evidence that AgentOS creates capability beyond full history. The central stronger hypothesis therefore remains open rather than being declared successful by definition.
+Artifact-level decomposition makes the mechanism more precise: B2's exact loss from seven correct facts at age 100 to four at age 1000 is entirely explained by three later-revised facts that become stale, while unchanged retrieved owner facts remain correct. This is meaningful evidence for **structured-state efficiency and supersession semantics**, but still not evidence that AgentOS creates capability beyond full history.
+
+A pre-specified 4,000-revision B1/B3 stress series is now implemented to attack that remaining ceiling directly. Two external attempts were provider-blocked by persistent HTTP 429 before scoring; the second failed at stage 0 on a 6,390-character B1 prompt despite bounded backoff. These failures are retained as negative execution evidence but do not alter the cognitive conclusion. The central stronger hypothesis therefore remains open rather than being declared successful by definition or by infrastructure failure.
 
 The most defensible conclusion is:
 
 > **Persistent cognition becomes scientifically meaningful when structured state preserves or improves decision-relevant capability as raw history grows, and becomes a stronger claim only when that structure explains performance that full-history access and strong retrieval baselines cannot.**
 
-The present experiments establish the first half of that progression: on the controlled Meridian world, structured current state preserves full-history fact performance with dramatically less context and avoids the degradation observed in the tested retrieval-only baseline. The remaining work is to test harder tasks, multiple seeds, failure-memory reuse, governance-sensitive continuity, and genuinely fresh executor replacement.
+The completed experiments establish the first half of that progression: on the controlled Meridian world, structured current state preserves full-history fact performance with dramatically less context and avoids the revision-linked stale degradation observed in the tested retrieval-only baseline. The remaining work is to complete the frozen dense-revision series when serving is available, expand to multiple pre-specified seeds and stronger retrieval baselines, test failure-memory reuse and governance-sensitive continuity, and perform genuinely fresh executor replacement trials.
 
 ## Reproducibility record
 
@@ -410,5 +468,25 @@ The present experiments establish the first half of that progression: on the con
 - Conditions: `B0,B1,B2,B3`
 - Canonical result summary: `research/results/lccb-condition-matrix-73129-20260823.json`
 - Detailed interpretation: `docs/LCCB_CONDITION_MATRIX_RESULT_20260823.md`
+- Task-level decomposition: `docs/LCCB_CONDITION_MATRIX_TASK_LEVEL_ANALYSIS_20260823.md`
 
-All stronger future results should be appended with their own immutable receipts rather than retroactively changing the interpretation of these completed series.
+### Experiment 3 — dense revision stress protocol (`PROTOCOL_READY_PROVIDER_BLOCKED`)
+
+- Target model: `gemini-3.1-flash-lite`
+- Seed / series identity: `73129`
+- Events: `4000`
+- Semantic revision events: `4000`
+- Keys: `24`
+- Stages: `0,1000,4000`
+- Temperature: `0`
+- Planned repeats: `3`
+- Conditions: `B1,B3`
+- Builder: `scripts/build_lccb_revision_stress_pack.py`
+- Workflow: `.github/workflows/lccb-revision-stress-oracle.yml`
+- Protocol: `docs/LCCB_REVISION_STRESS_PROTOCOL_20260823.md`
+- Attempt record: `research/results/lccb-revision-stress-attempts-20260823.json`
+- Failed run 1: `32617741853`, SHA `6208daeb7a194f1c595f55ea3f65976b64d6aa61`, provider HTTP 429, no artifact
+- Failed run 2: `32617901460`, SHA `c895aa4c307f788d5d9a6ddc260595e0031c65d3`, persistent provider HTTP 429 on B1 stage 0, 6,390 prompt characters, retries after 30/60/120 seconds, no artifact
+- Cognitive result: **none; series not completed**
+
+All stronger future results must be appended with their own immutable receipts. Failed serving attempts must remain distinguishable from cognitive task outcomes, and future successful runs must not retroactively erase the negative execution record.
