@@ -7,6 +7,7 @@ on:
       - ".github/workflows/activate-agentos-persistent-execution.yml"
       - "scripts/install_distributed_systemd_user.sh"
       - "scripts/distributed_gateway.py"
+      - "scripts/provider_bridge.py"
       - "agent_core/push_dispatch.py"
   workflow_dispatch:
 
@@ -109,8 +110,35 @@ jobs:
           chmod 600 "$DIST_ENV"
 
           AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
-          systemctl --user is-active --quiet agentos-control-plane.service
-          systemctl --user is-active --quiet agentos-provider-bridge.service
+
+          # Services can briefly report active while a process is still failing during
+          # startup. Poll the actual HTTP endpoints and emit bounded diagnostics on
+          # failure; never print environment files or secrets.
+          wait_http() {
+            local url="$1" attempts="${2:-15}"
+            for _ in $(seq 1 "$attempts"); do
+              if curl -fsS "$url" >/dev/null 2>&1; then return 0; fi
+              sleep 1
+            done
+            return 1
+          }
+
+          if ! wait_http http://127.0.0.1:8765/health; then
+            echo 'control_plane_health=failed' >&2
+            systemctl --user --no-pager --full status agentos-control-plane.service >&2 || true
+            journalctl --user -u agentos-control-plane.service -n 40 --no-pager >&2 || true
+            exit 20
+          fi
+          if ! wait_http http://127.0.0.1:8775/health; then
+            echo 'provider_bridge_health=failed' >&2
+            systemctl --user --no-pager --full status agentos-provider-bridge.service >&2 || true
+            journalctl --user -u agentos-provider-bridge.service -n 40 --no-pager >&2 || true
+            # Application logs are configured explicitly by the installer and do not
+            # contain the environment-file contents. Tail only the bounded service log.
+            tail -n 40 "${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}/logs/provider_bridge.log" >&2 || true
+            exit 21
+          fi
+
           health="$(curl -fsS http://127.0.0.1:8765/health)"
           bridge="$(curl -fsS http://127.0.0.1:8775/health)"
           printf '%s\n' "$health"
