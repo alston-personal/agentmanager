@@ -64,9 +64,9 @@ def main() -> int:
     p.add_argument("--temperature", type=float, default=0.0)
     p.add_argument("--repeat", type=int, default=3)
     p.add_argument("--max-tokens", type=int, default=1600)
-    p.add_argument("--retry-429", type=int, default=0, help="Bounded retries for provider HTTP 429 only")
-    p.add_argument("--retry-delay-seconds", type=float, default=20.0, help="Initial 429 backoff; doubles per retry")
-    p.add_argument("--inter-call-delay-seconds", type=float, default=0.0, help="Optional pacing between successful provider calls")
+    p.add_argument("--retry-429", type=int, default=3, help="Bounded retries for provider HTTP 429 only")
+    p.add_argument("--retry-delay-seconds", type=float, default=30.0, help="Initial 429 backoff; doubles per retry")
+    p.add_argument("--inter-call-delay-seconds", type=float, default=8.0, help="Pacing between successful provider calls")
     args = p.parse_args()
 
     if args.repeat < 1 or args.retry_429 < 0 or args.retry_delay_seconds < 0 or args.inter_call_delay_seconds < 0:
@@ -87,6 +87,7 @@ def main() -> int:
     stages = tuple(int(x.strip()) for x in args.stages.split(",") if x.strip())
     rows: list[dict] = []
     call_index = 0
+    total_calls = args.repeat * len(conditions) * len(stages)
     for repeat in range(args.repeat):
         for condition in conditions:
             for stage in stages:
@@ -133,7 +134,7 @@ def main() -> int:
                         "completed_at": completed,
                     })
                 call_index += 1
-                if args.inter_call_delay_seconds > 0 and call_index < args.repeat * len(conditions) * len(stages):
+                if args.inter_call_delay_seconds > 0 and call_index < total_calls:
                     time.sleep(args.inter_call_delay_seconds)
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
