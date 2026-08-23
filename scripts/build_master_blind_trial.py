@@ -2,7 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# Direct script execution sets sys.path[0] to scripts/. Keep this fresh-checkout
+# safe rather than relying on an editable install or caller PYTHONPATH.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from research.master_blind_trial import build_blind_trial, hidden_json, public_json, validate_trial_pair
 
