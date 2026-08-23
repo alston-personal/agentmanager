@@ -1,0 +1,61 @@
+{
+  "schema": "agentos.paper-completion-receipt/v1",
+  "date": "2026-08-23",
+  "goal": "complete the AgentOS/LCCB paper including a real controlled experiment",
+  "status": "FINAL_COMPLETE",
+  "manuscript": {
+    "path": "docs/LCCB_PAPER_FINAL_20260823.md",
+    "commit_sha": "af5330b80844f2b85aac2b3b5c72d89ab4f5cea1",
+    "blob_sha": "b884241de354e62a214df95d5a5cdcc22bb0a518",
+    "scope": "completed evidence-bounded manuscript revised after the controlled B0-B3 matrix"
+  },
+  "experiment_1": {
+    "type": "full-history fixed-model baseline",
+    "workflow_run": 32581330887,
+    "experiment_sha": "11a910eeefd09f2a33a994c2bbef04c3831bdbe0",
+    "artifact_digest": "sha256:96ca40f58c8f743dc53bd4eb7fe0ae9345d3d8b9306d3a675d235e4dbd942b8a",
+    "result": "full-history fact-recall ceiling; no age-100 to age-1000 gain; provenance task-contract defect identified"
+  },
+  "experiment_2": {
+    "type": "controlled B0-B3 fixed-model condition matrix",
+    "workflow_run": 32615130545,
+    "experiment_sha": "561e878ba502e54ef81b947b57a88a47f8bad79a",
+    "artifact_id": 9486716442,
+    "artifact_digest": "sha256:196df7ae2147fb9fdd7e03669e1d8725929ed93e2d734e1acae372f45e55b992",
+    "result_summary": {
+      "age1000_b1_fact_accuracy": 1.0,
+      "age1000_b3_fact_accuracy": 1.0,
+      "age1000_b2_fact_accuracy": 0.3076923076923077,
+      "age1000_b2_stale_error_rate": 0.23076923076923078,
+      "age1000_b1_prompt_characters": 563209,
+      "age1000_b3_prompt_characters": 36637,
+      "age1000_b3_prompt_reduction_vs_b1": 0.9349495480363418
+    },
+    "bounded_claim": "structured current-state projection matches full-history fact accuracy with 93.49% fewer prompt characters and outperforms the tested retrieval-only baseline; capability beyond full history remains unproven"
+  },
+  "validation": {
+    "ci_run": 32615346392,
+    "tests": "350 passed in 7.61s",
+    "persistent_execution_run": 32615346275,
+    "persistent_execution": "success",
+    "provider_readiness_run": 32615346334,
+    "provider_readiness": "success",
+    "deploy_core_run": 32615346288,
+    "deploy_core": "success",
+    "inspect_core_run": 32615346279,
+    "inspect_core": "success",
+    "activate_core_run": 32615346436,
+    "activate_core": "success",
+    "continuity_bootstrap_run": 32615346273,
+    "continuity_bootstrap": "success"
+  },
+  "governance": {
+    "pull_request": 2,
+    "pull_request_state": "open",
+    "draft": true,
+    "merged": false,
+    "main_modified": false,
+    "note": "paper completion does not authorize merge or production governance changes"
+  },
+  "closure_reason": "The requested paper now contains completed external experiments, immutable evidence receipts, bounded interpretation, reproducibility details, threats to validity, supported/unsupported claims, and green deterministic validation. The stronger scientific hypothesis remains open as a reported research finding/future-work boundary, not as unfinished work required for this manuscript."
+}
