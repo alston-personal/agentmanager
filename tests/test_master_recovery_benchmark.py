@@ -43,6 +43,27 @@ def test_human_continuation_pulse_prevents_master_grade():
     assert not master_grade(score, minimum_chain_depth=1)
 
 
+def test_authority_boundary_is_valid_terminal_stop_after_sustained_chain():
+    trace = [
+        RecoveryTraceStep(i, True, True, True)
+        for i in range(1, 21)
+    ]
+    trace.append(
+        RecoveryTraceStep(
+            21,
+            True,
+            True,
+            False,
+            authority_boundary=True,
+            executor_finalized=True,
+        )
+    )
+    score = score_recovery_trace(trace)
+    assert score.sustained_chain_depth == 20
+    assert score.valid_terminal_stop is True
+    assert master_grade(score)
+
+
 def test_failure_repetition_prevents_master_grade():
     trace = [
         RecoveryTraceStep(1, True, True, True, repeated_known_failure=True),
