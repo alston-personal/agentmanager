@@ -27,6 +27,11 @@ jobs:
       LCCB_MODEL_NAME: gemini-3.1-flash-lite
 
     steps:
+      - name: Checkout experiment commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Publish start receipt
         shell: bash
         env:
@@ -58,9 +63,6 @@ jobs:
 
       - name: Execute B0-B3 fixed-model matrix
         shell: bash
-        env:
-          AGENTOS_AI_API_KEY: ${{ secrets.AGENTOS_AI_API_KEY }}
-          AGENTOS_AI_BASE_URL: ${{ secrets.AGENTOS_AI_BASE_URL }}
         run: |
           set -euo pipefail
           ssh-keyscan -p "${DEPLOY_SSH_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
@@ -68,8 +70,24 @@ jobs:
           ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK' && mkdir -p '$REMOTE_WORK'"
           git archive "$EXPERIMENT_SHA" | ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "tar -x -C '$REMOTE_WORK'"
           ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '$REMOTE_WORK' && python3 scripts/build_lccb_synthetic_pack.py --output-dir artifacts/lccb-pack --seed 73129 --events 1000"
-          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '$REMOTE_WORK' && chmod 000 artifacts/lccb-pack/private/labels.jsonl && LCCB_API_KEY='$AGENTOS_AI_API_KEY' LCCB_BASE_URL='$AGENTOS_AI_BASE_URL' LCCB_MODEL='$LCCB_MODEL_NAME' python3 scripts/run_lccb_condition_matrix.py --pack artifacts/lccb-pack --output artifacts/condition-responses.jsonl --conditions B0,B1,B2,B3 --stages 0,100,1000 --temperature 0 --repeat 3"
-          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '$REMOTE_WORK' && chmod 600 artifacts/lccb-pack/private/labels.jsonl && python3 scripts/score_lccb_condition_matrix.py --pack artifacts/lccb-pack --responses artifacts/condition-responses.jsonl --output artifacts/condition-scores.json"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$REMOTE_WORK" "$LCCB_MODEL_NAME" <<'REMOTE'
+          set -euo pipefail
+          REMOTE_WORK="$1"
+          LCCB_MODEL_NAME="$2"
+          set -a
+          [ -f "$HOME/agentmanager/.env" ] && source "$HOME/agentmanager/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          test -n "${AGENTOS_AI_API_KEY:-}"
+          test -n "${AGENTOS_AI_BASE_URL:-}"
+          cd "$REMOTE_WORK"
+          chmod 000 artifacts/lccb-pack/private/labels.jsonl
+          LCCB_API_KEY="$AGENTOS_AI_API_KEY" LCCB_BASE_URL="$AGENTOS_AI_BASE_URL" LCCB_MODEL="$LCCB_MODEL_NAME" \
+            python3 scripts/run_lccb_condition_matrix.py --pack artifacts/lccb-pack --output artifacts/condition-responses.jsonl --conditions B0,B1,B2,B3 --stages 0,100,1000 --temperature 0 --repeat 3
+          chmod 600 artifacts/lccb-pack/private/labels.jsonl
+          python3 scripts/score_lccb_condition_matrix.py --pack artifacts/lccb-pack --responses artifacts/condition-responses.jsonl --output artifacts/condition-scores.json
+          REMOTE
           mkdir -p artifacts/lccb-condition-matrix
           scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/condition-responses.jsonl" artifacts/lccb-condition-matrix/
           scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/condition-scores.json" artifacts/lccb-condition-matrix/
