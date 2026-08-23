@@ -1,0 +1,136 @@
+name: LCCB Revision Stress Oracle Experiment
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".agentos/triggers/lccb-revision-stress-oracle"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: lccb-revision-stress-oracle-ssh
+  cancel-in-progress: false
+
+jobs:
+  revision-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      EXPERIMENT_SHA: ${{ github.sha }}
+      LCCB_MODEL_NAME: gemini-3.1-flash-lite
+
+    steps:
+      - name: Checkout experiment commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Publish start receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({"state":"pending","context":"agentos/lccb-revision-stress","description":"B1/B3 revision-stress experiment started","target_url":os.environ["RUN_URL"]}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -d "$payload" >/dev/null
+
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Execute fixed-model revision stress
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh-keyscan -p "${DEPLOY_SSH_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          export REMOTE_WORK="/tmp/agentos-lccb-revision-stress-${GITHUB_RUN_ID}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK' && mkdir -p '$REMOTE_WORK'"
+          git archive "$EXPERIMENT_SHA" | ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "tar -x -C '$REMOTE_WORK'"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && python3 scripts/build_lccb_revision_stress_pack.py --output-dir artifacts/lccb-revision-stress-pack --seed 73129 --events 4000 --key-count 24 --stages 0,1000,4000"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$REMOTE_WORK" "$LCCB_MODEL_NAME" <<'REMOTE'
+          set -euo pipefail
+          REMOTE_WORK="$1"
+          LCCB_MODEL_NAME="$2"
+          set -a
+          [ -f "$HOME/agentmanager/.env" ] && source "$HOME/agentmanager/.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          test -n "${AI_API_ACADEMIA_KEY:-}"
+          test -n "${AI_API_BASE_URL:-}"
+          cd "$REMOTE_WORK"
+          chmod 000 artifacts/lccb-revision-stress-pack/private/labels.jsonl
+          LCCB_API_KEY="$AI_API_ACADEMIA_KEY" LCCB_BASE_URL="$AI_API_BASE_URL" LCCB_MODEL="$LCCB_MODEL_NAME" \
+            python3 scripts/run_lccb_condition_matrix.py \
+              --pack artifacts/lccb-revision-stress-pack \
+              --output artifacts/revision-stress-responses.jsonl \
+              --conditions B1,B3 --stages 0,1000,4000 --temperature 0 --repeat 3 --max-tokens 2600
+          chmod 600 artifacts/lccb-revision-stress-pack/private/labels.jsonl
+          python3 scripts/score_lccb_condition_matrix.py \
+            --pack artifacts/lccb-revision-stress-pack \
+            --responses artifacts/revision-stress-responses.jsonl \
+            --output artifacts/revision-stress-scores.json \
+            --benchmark-id lccb-revision-stress-v1
+          REMOTE
+
+          mkdir -p artifacts/lccb-revision-stress
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/revision-stress-responses.jsonl" artifacts/lccb-revision-stress/
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/revision-stress-scores.json" artifacts/lccb-revision-stress/
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/lccb-revision-stress-pack/manifest.json" artifacts/lccb-revision-stress/
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK'"
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-revision-stress-${{ github.run_id }}
+          path: artifacts/lccb-revision-stress
+          if-no-files-found: error
+
+      - name: Publish result receipt
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ job.status }}" = "success" ]; then
+            state=success
+            desc="B1/B3 revision-stress experiment passed"
+          else
+            state=failure
+            desc="B1/B3 revision-stress experiment failed"
+          fi
+          export STATE="$state" DESC="$desc" RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({"state":os.environ["STATE"],"context":"agentos/lccb-revision-stress","description":os.environ["DESC"],"target_url":os.environ["RUN_URL"]}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -d "$payload" >/dev/null
