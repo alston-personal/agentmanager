@@ -1,0 +1,72 @@
+name: LCCB Condition Matrix Oracle Experiment
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".agentos/triggers/lccb-condition-matrix-oracle"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lccb-condition-matrix-oracle-ssh
+  cancel-in-progress: false
+
+jobs:
+  condition-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      EXPERIMENT_SHA: ${{ github.sha }}
+      LCCB_MODEL_NAME: gemini-3.1-flash-lite
+
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Execute B0-B3 fixed-model matrix
+        shell: bash
+        env:
+          AGENTOS_AI_API_KEY: ${{ secrets.AGENTOS_AI_API_KEY }}
+          AGENTOS_AI_BASE_URL: ${{ secrets.AGENTOS_AI_BASE_URL }}
+        run: |
+          set -euo pipefail
+          ssh-keyscan -p "${DEPLOY_SSH_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          export REMOTE_WORK="/tmp/agentos-lccb-matrix-${GITHUB_RUN_ID}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK' && mkdir -p '$REMOTE_WORK'"
+          git archive "$EXPERIMENT_SHA" | ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "tar -x -C '$REMOTE_WORK'"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && python3 scripts/build_lccb_synthetic_pack.py --output-dir artifacts/lccb-pack --seed 73129 --events 1000"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && chmod 000 artifacts/lccb-pack/private/labels.jsonl && LCCB_API_KEY='$AGENTOS_AI_API_KEY' LCCB_BASE_URL='$AGENTOS_AI_BASE_URL' LCCB_MODEL='$LCCB_MODEL_NAME' python3 scripts/run_lccb_condition_matrix.py --pack artifacts/lccb-pack --output artifacts/condition-responses.jsonl --conditions B0,B1,B2,B3 --stages 0,100,1000 --temperature 0 --repeat 3"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && chmod 600 artifacts/lccb-pack/private/labels.jsonl && python3 scripts/score_lccb_condition_matrix.py --pack artifacts/lccb-pack --responses artifacts/condition-responses.jsonl --output artifacts/condition-scores.json"
+          mkdir -p artifacts/lccb-condition-matrix
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/condition-responses.jsonl" artifacts/lccb-condition-matrix/
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/condition-scores.json" artifacts/lccb-condition-matrix/
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/lccb-pack/manifest.json" artifacts/lccb-condition-matrix/
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK'"
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-condition-matrix-${{ github.run_id }}
+          path: artifacts/lccb-condition-matrix
+          if-no-files-found: error
