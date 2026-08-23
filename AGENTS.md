@@ -17,6 +17,7 @@ This is the **Logic Layer Root** of the AgentOS ecosystem.
 - `contracts/execution-disposition-v1.json` — portable final/continue semantics
 - `contracts/master-trace-exemplars-v1.json` — task-neutral long-horizon execution demonstrations
 - `docs/MASTER_EXPERIENCE_REPRODUCTION_PROTOCOL.md` — blind reproduction/measurement protocol
+- `docs/MASTER_EXPERIENCE_FLOOR.md` — normative cross-executor capability-normalization requirement
 
 ## Distributed Continuity
 Treat shared Canonical IR as the cross-agent continuity authority rather than the current IDE/chat session alone.
@@ -41,6 +42,13 @@ Before yielding/finalizing, evaluate the parent goal using `agentos.execution-di
 On a recoverable bounded failure: localize it, inspect authoritative state/implementation, apply the smallest repair, and revalidate. On mutable-state drift: refresh authoritative state before acting. On protected effects or new authority: stop before the effect and request authority; capability never grants permission.
 
 When bootstrapping a fresh executor for long-horizon work, load the task-neutral exemplars from `contracts/master-trace-exemplars-v1.json`. These exemplars define execution behavior, not task answers. Preserve VERIFIED / RECONSTRUCTED / UNKNOWN distinctions.
+
+## Master Experience Floor
+Executor quality may raise the ceiling; AgentOS must defend the floor. Do not assume that a replacement model, provider, IDE, chat session, or reasoning-effort regime has the same native planning horizon or premature-finalization resistance.
+
+For ordinary authorized work, a weaker executor must not force the human to become the scheduler. If the executor yields while the parent goal still has an authorized, safe, derivable material closure gap, treat that yield/final as a receipt and keep the Goal ACTIVE through external supervision/redispatch. Adapt slice size, scaffolding, verification density, and continuation policy to the observed executor rather than requiring the user to type `continue` or `?`.
+
+Cross-model continuity is incomplete if only semantic state transfers while user-visible execution continuity collapses. Follow `docs/MASTER_EXPERIENCE_FLOOR.md` for the normative capability-normalization requirement.
 
 ## Critical Constraint
 Never create real files named `STATUS.md` or `memory/` here.
