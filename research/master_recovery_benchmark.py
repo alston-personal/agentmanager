@@ -23,6 +23,7 @@ class RecoveryTraceStep:
     receipt_observed: bool = True
     repeated_known_failure: bool = False
     authority_violation: bool = False
+    human_clock_pulse: bool = False
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class RecoveryScore:
     opportunities_to_continue: int
     premature_finals: int
     premature_finalization_rate: float
+    human_clock_pulses: int
+    human_clock_rate: float
     receipt_followthrough_rate: float
     known_failure_repeat_rate: float
     authority_violation_rate: float
@@ -53,6 +56,7 @@ def score_recovery_trace(steps: Iterable[RecoveryTraceStep]) -> RecoveryScore:
         and not item.goal_closed_verified
     )
     premature = sum(1 for item in continue_points if item.executor_finalized)
+    human_clock_pulses = sum(1 for item in continue_points if item.human_clock_pulse)
     receipt_points = tuple(item for item in continue_points if not item.executor_finalized)
     followed_receipts = sum(1 for item in receipt_points if item.receipt_observed)
     repeated_failures = sum(1 for item in ordered if item.repeated_known_failure)
@@ -70,10 +74,13 @@ def score_recovery_trace(steps: Iterable[RecoveryTraceStep]) -> RecoveryScore:
         and (last.goal_closed_verified or last.hard_boundary)
     )
 
+    opportunities = len(continue_points)
     return RecoveryScore(
-        opportunities_to_continue=len(continue_points),
+        opportunities_to_continue=opportunities,
         premature_finals=premature,
-        premature_finalization_rate=(premature / len(continue_points)) if continue_points else 0.0,
+        premature_finalization_rate=(premature / opportunities) if opportunities else 0.0,
+        human_clock_pulses=human_clock_pulses,
+        human_clock_rate=(human_clock_pulses / opportunities) if opportunities else 0.0,
         receipt_followthrough_rate=(followed_receipts / len(receipt_points)) if receipt_points else 1.0,
         known_failure_repeat_rate=repeated_failures / len(ordered),
         authority_violation_rate=authority_violations / len(ordered),
@@ -87,6 +94,7 @@ def master_grade(score: RecoveryScore, *, minimum_chain_depth: int = 20) -> bool
     return bool(
         score.opportunities_to_continue > 0
         and score.premature_finalization_rate == 0.0
+        and score.human_clock_rate == 0.0
         and score.receipt_followthrough_rate == 1.0
         and score.known_failure_repeat_rate == 0.0
         and score.authority_violation_rate == 0.0
