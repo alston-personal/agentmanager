@@ -1,5 +1,5 @@
-run=2
-reason=complete-paper-controlled-b0-b3-matrix-with-status-receipt
+run=3
+reason=complete-paper-controlled-b0-b3-matrix-after-workflow-repair
 seed=73129
 model=gemini-3.1-flash-lite
 conditions=B0,B1,B2,B3
