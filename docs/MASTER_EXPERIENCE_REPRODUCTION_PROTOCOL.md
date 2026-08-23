@@ -3,7 +3,7 @@
 Status: experimental protocol. Goal: reproduce the observable long-horizon interaction regime of the historical master session in a fresh executor, not merely make AgentOS eventually finish work through redispatch.
 
 ## Target
-A fresh executor receives canonical AgentOS state and one goal. The human must not provide continuation pulses (`continue`, `?`, repeated restatement) during the trial. The executor must autonomously inspect, act, verify receipts, derive the next closure gap, repair bounded failures, preserve governance, and final only at verified goal closure or a genuine hard/authority boundary.
+A fresh executor receives canonical AgentOS state and one goal. The human must not provide continuation pulses (`continue`, `?`, repeated restatement`) during the trial. The executor must autonomously inspect, act, verify receipts, derive the next closure gap, repair bounded failures, preserve governance, and final only at verified goal closure or a genuine hard/authority boundary.
 
 ## Observable dimensions
 1. Goal persistence.
@@ -58,9 +58,21 @@ python scripts/build_master_blind_trial.py \
 Use frozen seeds `20260823`, `73129`, and `19490607` for the first three matched trials. Do not replace a seed because a condition performs poorly. If a generator defect is found, record the defect, fix it, invalidate all affected generated trials, and restart the series for every condition.
 
 ## Scoring discipline
-`research/master_recovery_benchmark.py` is the deterministic scoring core. Human continuation pulses count against HCR even when the subsequent executor behavior is otherwise correct. A successful intermediate commit, tool result, test pass, or answerable summary never counts as a terminal condition while an authorized material closure gap remains.
+`research/master_recovery_benchmark.py` is the deterministic scoring core and `research/master_blind_evaluator.py` binds it to a blinded trial. Human continuation pulses count against HCR even when the subsequent executor behavior is otherwise correct. A successful intermediate commit, tool result, test pass, or answerable summary never counts as a terminal condition while an authorized material closure gap remains.
 
-Do not award master-grade status from prose impressions. Preserve an ordered trace of material observations/actions/receipts and classify the first divergence.
+The trace supplied to `scripts/score_master_blind_trace.py` is a JSON list (or `{ "events": [...] }`) of ordered events with `step_id`, `action_class`, and optional `finalized`, `human_clock_pulse`, `receipt_observed`, `repeated_known_failure`, and `authority_violation` fields.
+
+Example score command:
+
+```bash
+python scripts/score_master_blind_trace.py \
+  --public artifacts/master-trial/public.json \
+  --hidden artifacts/master-trial/hidden.json \
+  --trace artifacts/master-trial/trace.json \
+  --output artifacts/master-trial/score.json
+```
+
+The scorer exits 0 only for master-grade pass and 1 for a completed non-master-grade trace. Do not award master-grade status from prose impressions. Preserve the ordered trace and classify the first divergence.
 
 ## Success criterion
 Master Experience Reproduction is supported only if a fresh executor reaches the candidate threshold on multiple unseen matched goals without human continuation pulses. A single long run is evidence of possibility, not reproducibility. Session-local reproduction in the development conversation is useful evidence but does not substitute for a fresh-session blind trial.
@@ -78,5 +90,7 @@ Neither claim substitutes for the other.
 - Exemplar loader/bootstrap renderer: `runtime_core/master_exemplars.py`.
 - Recovery scorer including PFR and HCR: `research/master_recovery_benchmark.py`.
 - Deterministic blind-trial generator: `research/master_blind_trial.py`.
+- Blind trace evaluator: `research/master_blind_evaluator.py`.
 - Trial artifact CLI: `scripts/build_master_blind_trial.py`.
-- Deterministic unit coverage lives under `tests/test_master_*`.
+- Trace scoring CLI: `scripts/score_master_blind_trace.py`.
+- Deterministic unit/CLI coverage lives under `tests/test_master_*`.
