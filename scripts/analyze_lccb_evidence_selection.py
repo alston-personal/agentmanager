@@ -14,7 +14,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 from typing import Iterable
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from research.lccb_condition_prompts import _retrieved, _structured, _visible
 from research.lccb_openai_compatible import tasks_for_stage
@@ -100,9 +105,6 @@ def main() -> int:
                 same_key_refs = {_ref(event) for event in same_key}
 
                 if task_key == "continuity:next-work":
-                    # Continuity intentionally has a multi-source proof set; report
-                    # source coverage but do not classify other work-state sources
-                    # as stale because several may be jointly relevant.
                     stale_same_key_refs: list[str] = []
                     current_present = bool(current_ref_set.intersection(evidence_refs)) if current_ref_set else False
                     all_current_present = current_ref_set.issubset(evidence_refs) if current_ref_set else False
@@ -141,6 +143,8 @@ def main() -> int:
             stale_only = sum(row["evidence_state"] == "stale_only" for row in single_source)
             no_same_key = sum(row["evidence_state"] == "no_same_key_evidence" for row in single_source)
             current_any = sum(bool(row["current_source_any_present"]) for row in single_source)
+            continuity = next(row for row in condition_rows if row["task_key"] == "continuity:next-work")
+            continuity_refs = continuity["current_source_refs"]
             aggregates.append({
                 "stage": stage,
                 "condition": condition,
@@ -151,13 +155,9 @@ def main() -> int:
                 "current_plus_stale_tasks": current_plus_stale,
                 "stale_only_tasks": stale_only,
                 "no_same_key_evidence_tasks": no_same_key,
-                "continuity_current_source_coverage": next(
-                    (
-                        sum(ref in evidence_refs for ref in row["current_source_refs"]) / len(row["current_source_refs"])
-                        if row["current_source_refs"] else 1.0
-                    )
-                    for row in condition_rows
-                    if row["task_key"] == "continuity:next-work"
+                "continuity_current_source_coverage": (
+                    sum(ref in evidence_refs for ref in continuity_refs) / len(continuity_refs)
+                    if continuity_refs else 1.0
                 ),
             })
 
