@@ -1,0 +1,46 @@
+{
+  "aggregates": [
+    {"condition":"B0","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":1.0,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":3038.0,"mean_prompt_utf8_bytes":3038.0,"repeats":3,"stage":0},
+    {"condition":"B0","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":0.0,"source_recall_accuracy":0.0,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":3040.0,"mean_prompt_utf8_bytes":3040.0,"repeats":3,"stage":100},
+    {"condition":"B0","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":0.0,"source_recall_accuracy":0.0,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":3041.0,"mean_prompt_utf8_bytes":3041.0,"repeats":3,"stage":1000},
+    {"condition":"B1","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":1.0,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":3038.0,"mean_prompt_utf8_bytes":3038.0,"repeats":3,"stage":0},
+    {"condition":"B1","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":0.8125,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":59515.0,"mean_prompt_utf8_bytes":59515.0,"repeats":3,"stage":100},
+    {"condition":"B1","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":0.7916666666666666,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":563209.0,"mean_prompt_utf8_bytes":563209.0,"repeats":3,"stage":1000},
+    {"condition":"B2","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":1.0,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":3086.0,"mean_prompt_utf8_bytes":3086.0,"repeats":3,"stage":0},
+    {"condition":"B2","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":0.5384615384615384,"source_recall_accuracy":0.4375,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":11938.0,"mean_prompt_utf8_bytes":11938.0,"repeats":3,"stage":100},
+    {"condition":"B2","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":0.3076923076923077,"source_recall_accuracy":0.25,"stale_error_rate":0.23076923076923078,"unauthorized_action_rate":0.0},"mean_prompt_characters":11939.0,"mean_prompt_utf8_bytes":11939.0,"repeats":3,"stage":1000},
+    {"condition":"B3","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":1.0,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":3089.0,"mean_prompt_utf8_bytes":3089.0,"repeats":3,"stage":0},
+    {"condition":"B3","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":0.8125,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":36129.0,"mean_prompt_utf8_bytes":36129.0,"repeats":3,"stage":100},
+    {"condition":"B3","mean_metrics":{"completion_rate":1.0,"fact_recall_accuracy":1.0,"source_recall_accuracy":0.8125,"stale_error_rate":0.0,"unauthorized_action_rate":0.0},"mean_prompt_characters":36637.0,"mean_prompt_utf8_bytes":36637.0,"repeats":3,"stage":1000}
+  ],
+  "artifact_digest": "sha256:196df7ae2147fb9fdd7e03669e1d8725929ed93e2d734e1acae372f45e55b992",
+  "artifact_id": 9486716442,
+  "conditions": {
+    "B0": "task-local / no prior experience",
+    "B1": "full public history",
+    "B2": "retrieval-only public evidence without explicit supersession semantics",
+    "B3": "structured current public state using latest semantic value per key"
+  },
+  "date": "2026-08-23",
+  "derived": {
+    "age1000_b3_prompt_fraction_of_b1": 0.06505045196365825,
+    "age1000_b3_prompt_reduction_vs_b1": 0.9349495480363418,
+    "age1000_b3_vs_b1_fact_accuracy_delta": 0.0,
+    "age1000_b3_vs_b2_fact_accuracy_delta": 0.6923076923076923,
+    "age1000_b3_vs_b2_stale_error_delta": -0.23076923076923078,
+    "age100_b3_prompt_reduction_vs_b1": 0.39294295555742254
+  },
+  "experiment_sha": "561e878ba502e54ef81b947b57a88a47f8bad79a",
+  "interpretation": [
+    "B3 matched B1 fact accuracy at ages 100 and 1000; therefore this matrix does not establish capability superiority over full history.",
+    "At age 1000, B3 used 36,637 prompt characters versus B1's 563,209 while preserving fact accuracy 1.0 and stale-error rate 0.0.",
+    "B2 retrieval-only degraded with age and produced stale errors at age 1000, showing that compactness alone is insufficient without explicit current-state/supersession semantics.",
+    "The revised task instruction explicitly requested source_ref values, but source recall remained below 1.0 for B1/B3 because continuity provenance can require multiple supporting work-state receipts; provenance semantics remain a measurement limitation."
+  ],
+  "model": "gemini-3.1-flash-lite",
+  "repeats": 3,
+  "schema": "agentos.lccb-condition-matrix-evidence/v1",
+  "seed": 73129,
+  "temperature": 0,
+  "workflow_run": 32615130545
+}
