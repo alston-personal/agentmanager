@@ -1,0 +1,10 @@
+triggered_at=2026-08-23T12:20:00+08:00
+experiment=lccb-revision-stress-v1
+conditions=B1,B3
+model=gemini-3.1-flash-lite
+seed=73129
+events=4000
+keys=24
+stages=0,1000,4000
+repeat=3
+temperature=0
