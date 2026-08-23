@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: lccb-condition-matrix-oracle-ssh
@@ -26,6 +27,20 @@ jobs:
       LCCB_MODEL_NAME: gemini-3.1-flash-lite
 
     steps:
+      - name: Publish start receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({"state":"pending","context":"agentos/lccb-condition-matrix","description":"B0-B3 Oracle matrix started","target_url":os.environ["RUN_URL"]}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -d "$payload" >/dev/null
+
       - name: Resolve Oracle target
         shell: bash
         run: |
@@ -52,12 +67,9 @@ jobs:
           export REMOTE_WORK="/tmp/agentos-lccb-matrix-${GITHUB_RUN_ID}"
           ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK' && mkdir -p '$REMOTE_WORK'"
           git archive "$EXPERIMENT_SHA" | ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "tar -x -C '$REMOTE_WORK'"
-          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd '$REMOTE_WORK' && python3 scripts/build_lccb_synthetic_pack.py --output-dir artifacts/lccb-pack --seed 73129 --events 1000"
-          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd '$REMOTE_WORK' && chmod 000 artifacts/lccb-pack/private/labels.jsonl && LCCB_API_KEY='$AGENTOS_AI_API_KEY' LCCB_BASE_URL='$AGENTOS_AI_BASE_URL' LCCB_MODEL='$LCCB_MODEL_NAME' python3 scripts/run_lccb_condition_matrix.py --pack artifacts/lccb-pack --output artifacts/condition-responses.jsonl --conditions B0,B1,B2,B3 --stages 0,100,1000 --temperature 0 --repeat 3"
-          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd '$REMOTE_WORK' && chmod 600 artifacts/lccb-pack/private/labels.jsonl && python3 scripts/score_lccb_condition_matrix.py --pack artifacts/lccb-pack --responses artifacts/condition-responses.jsonl --output artifacts/condition-scores.json"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '$REMOTE_WORK' && python3 scripts/build_lccb_synthetic_pack.py --output-dir artifacts/lccb-pack --seed 73129 --events 1000"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '$REMOTE_WORK' && chmod 000 artifacts/lccb-pack/private/labels.jsonl && LCCB_API_KEY='$AGENTOS_AI_API_KEY' LCCB_BASE_URL='$AGENTOS_AI_BASE_URL' LCCB_MODEL='$LCCB_MODEL_NAME' python3 scripts/run_lccb_condition_matrix.py --pack artifacts/lccb-pack --output artifacts/condition-responses.jsonl --conditions B0,B1,B2,B3 --stages 0,100,1000 --temperature 0 --repeat 3"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '$REMOTE_WORK' && chmod 600 artifacts/lccb-pack/private/labels.jsonl && python3 scripts/score_lccb_condition_matrix.py --pack artifacts/lccb-pack --responses artifacts/condition-responses.jsonl --output artifacts/condition-scores.json"
           mkdir -p artifacts/lccb-condition-matrix
           scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/condition-responses.jsonl" artifacts/lccb-condition-matrix/
           scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/condition-scores.json" artifacts/lccb-condition-matrix/
@@ -70,3 +82,19 @@ jobs:
           name: lccb-condition-matrix-${{ github.run_id }}
           path: artifacts/lccb-condition-matrix
           if-no-files-found: error
+
+      - name: Publish result receipt
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ job.status }}" = "success" ]; then state=success; desc="B0-B3 Oracle matrix passed"; else state=failure; desc="B0-B3 Oracle matrix failed"; fi
+          export STATE="$state" DESC="$desc" RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({"state":os.environ["STATE"],"context":"agentos/lccb-condition-matrix","description":os.environ["DESC"],"target_url":os.environ["RUN_URL"]}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -d "$payload" >/dev/null
