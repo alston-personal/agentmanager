@@ -1,113 +1,129 @@
 # AgentOS: Persistent Cognitive State Beyond Long Context
 
-## An Evidence-Bounded Systems Study of Longitudinal Cognition, Governance, and Executor Replacement
+## An Evidence-Bounded Systems Study of Longitudinal Cognition, Context Compression, Governance, and Executor Replacement
 
-**Manuscript status:** evidence-bounded complete manuscript, 2026-08-23. The paper reports completed evidence as results and explicitly separates future experiments from established findings.
+**Manuscript status:** completed evidence-bounded manuscript, revised 2026-08-23 after the controlled B0-B3 fixed-model condition matrix. The paper reports completed experiments as results and keeps stronger untested claims explicitly open.
 
 ## Abstract
 
-LLM agents commonly obtain continuity from a conversation window or retrieval system while model parameters remain fixed and operational state remains coupled to an execution session. AgentOS investigates a stronger systems hypothesis: durable, governed cognitive and execution state can be externalized from the model so that accumulated project semantics survive executor replacement without silently expanding authority. We define the Longitudinal Cognitive Capability Benchmark (LCCB), a controlled evaluation protocol that freezes the model, decoding policy, capability envelope, governance condition, public experience, evaluator, and evidence boundaries. The protocol physically separates public experience from evaluator-only labels and preserves content-addressed execution receipts. A first real fixed-model experiment using `gemini-3.1-flash-lite`, seed 73129, 1,000 synthetic events, cognitive ages 0/100/1000, temperature 0, and three repeats produced ceiling fact accuracy, zero stale-error rate, zero unauthorized-action rate, and full completion at all measured ages; age 100 to 1000 showed zero measured gain. Source-recall values at later ages are not interpretable because the public task contract did not require literal source citations. Consequently, this experiment does not demonstrate longitudinal cognitive improvement. It instead establishes a strong full-history baseline, reveals a provenance-contract defect, and falsifies raw recall under fully visible history as a sufficient primary endpoint. We further report implemented mechanisms for durable goal state, execution disposition, governance separation, failure knowledge, canonical multi-workstream evolution, and live reconciliation, while treating observed fresh-session recovery as preliminary rather than controlled efficacy evidence. The resulting contribution is therefore both architectural and methodological: AgentOS supplies a falsifiable substrate for persistent cognition, and LCCB defines the evidence boundary required to distinguish structured cognitive accumulation from long context, retrieval, changing authority, and evaluator artifacts.
+Large-language-model agents can appear to learn over time even when model weights never change. A longer transcript, retrieval over prior observations, tool access, external state, and broader permissions can all improve behavior while creating ambiguity about what actually became more capable. AgentOS investigates a narrower systems hypothesis: durable, governed cognitive and execution state can be externalized from the model so that project semantics survive executor replacement, remain auditable, and do not silently expand authority. We introduce the Longitudinal Cognitive Capability Benchmark (LCCB), a controlled evaluation protocol that freezes the model, decoding policy, public experience, capability envelope, governance condition, evaluator, and evidence boundary. Public experience is physically separated from evaluator-only labels, and external execution is preserved through immutable GitHub Actions and artifact receipts.
+
+Two completed fixed-model experiments are reported with `gemini-3.1-flash-lite`, Project Meridian seed 73129, 1,000 synthetic events, cognitive ages 0/100/1000, temperature 0, and three repeats. The first full-public-history experiment reached ceiling fact accuracy at ages 100 and 1000 and therefore did not demonstrate longitudinal cognitive improvement; it also exposed a provenance task-contract defect. A second controlled B0-B3 matrix compared no history (B0), full public history (B1), retrieval-only evidence without explicit supersession semantics (B2), and a structured current-state projection retaining the latest public semantic value per key (B3). At age 1000, B1 and B3 both achieved fact accuracy 1.0 and stale-error rate 0.0. B3 required 36,637 prompt characters versus 563,209 for B1, a 93.49% reduction. B2 used only 11,939 characters but achieved fact accuracy 0.3077 and stale-error rate 0.2308. Thus the present evidence supports structured-state equivalence to full history with substantial context compression and superiority over the tested retrieval-only baseline, but it does not establish capability beyond full history. Cross-session long-horizon execution recovery is reported only as preliminary mechanism evidence. The contribution is therefore architectural, methodological, and empirical: AgentOS supplies a governed persistence substrate, LCCB makes the hypothesis falsifiable, and the completed matrix identifies where structured state already helps and where the stronger cognitive-growth claim remains unproven.
 
 ## 1. Introduction
 
-A language model can appear to learn during a long conversation even when its parameters never change. More history becomes available, retrieval can expose prior observations, tools can change, and the surrounding runtime can accumulate state. These effects create a central identification problem: when an agent becomes more capable over time, what actually improved?
+A language model can become more useful during a long interaction without changing a single model parameter. The host may preserve more history, a retrieval layer may expose older observations, tools may change external state, an agent runtime may remember failed attempts, and user permissions may broaden. These effects create an identification problem: when an agent seems smarter after a week, a month, or a thousand events, what actually improved?
 
-AgentOS is motivated by the hypothesis that useful cognitive continuity should not depend on one indefinitely preserved conversation. The model is treated as a replaceable reasoning engine. Durable project semantics, work state, provenance, governance, failure knowledge, and execution receipts are externalized into governed state. A fresh executor should be able to reconstruct the current problem, determine what remains unfinished, respect existing authority, avoid known failed paths, act, observe receipts, and continue until the goal is closed or a real boundary is reached.
+AgentOS is motivated by the hypothesis that useful continuity should not require one indefinitely preserved conversation. The model is treated as a replaceable reasoning engine rather than the canonical memory of a project. Durable semantics, provenance, supersession, work state, execution receipts, failure knowledge, and governance are externalized into governed state. A replacement executor should be able to determine what is currently true, what remains unfinished, what was tried and failed, which actions are authorized, and what the next material closure gap is.
 
-This proposition is stronger than memory retrieval. It predicts that structured state should eventually provide advantages that cannot be explained by simply showing the model more history. It also creates additional safety obligations: more accumulated capability must not become more authority.
+This proposition is stronger than ordinary memory retrieval but weaker than claiming that model weights have learned. AgentOS does not require parameter updates. The scientific question is whether explicit external structure provides behavior that cannot be explained by merely showing a fixed model more history.
 
-The present paper asks two related questions:
+We study two research questions:
 
-**RQ1 — Cognitive discrimination.** With the base model, decoding policy, capability envelope, and governance profile held fixed, can durable structured cognitive state produce measurable capability not explained by full-history context or ordinary retrieval?
+**RQ1 — Cognitive discrimination.** With the model, decoding policy, task distribution, capability envelope, and governance profile held fixed, does structured persistent state improve longitudinal performance relative to no history, full visible history, or ordinary retrieval?
 
-**RQ2 — Executor replacement.** Can the same governed state support correct continuation after the conversational executor is replaced, without duplicate work, forgotten failures, or authority drift?
+**RQ2 — Executor replacement.** Can governed state support correct continuation after the conversational executor is replaced, without duplicate work, forgotten failures, premature finalization, or authority drift?
 
-The first completed provider experiment does not answer RQ1 positively. Instead, it exposes a ceiling baseline and thereby sharpens the experiment required to answer it. We report that negative/non-discriminating result rather than converting architectural plausibility into an efficacy claim.
+The completed experiments provide a partial answer to RQ1. Structured current-state projection matches full-history fact accuracy while using far less input and materially outperforms the tested retrieval-only condition. It does not exceed full-history accuracy on the current tasks. RQ2 is supported at the mechanism level and by exploratory observations, but not yet by a controlled fresh-executor efficacy series.
+
+The paper deliberately preserves this distinction. Architectural plausibility, successful system implementation, and one strong anecdote are not promoted into a claim of general cognitive growth.
 
 ## 2. Contributions
 
-This work makes five bounded contributions.
+This work makes six bounded contributions.
 
-1. **A model-external persistence architecture.** AgentOS separates replaceable reasoning from durable cognitive, execution, governance, failure, and evidence state.
-2. **A governance invariant.** Capability discovery and cognitive growth do not grant authority; `Discovered != Registered != Authorized != Active`, and governance may tighten automatically but may not silently relax.
-3. **A goal-level execution semantics.** Execution is organized around verified goal closure rather than answerability or arbitrary substep completion.
-4. **LCCB.** A controlled benchmark/evidence protocol separates public experience from hidden evaluation labels and freezes competing variables.
-5. **A completed fixed-model baseline with a negative result.** Full-public-history prompting saturates the initial benchmark, demonstrating that raw recall is not sufficiently discriminating and that provenance requires an explicit task contract.
+1. **A model-external persistence architecture.** AgentOS separates replaceable reasoning from durable semantic, work, execution, failure, governance, and evidence state.
+2. **A governance invariant.** Capability discovery and cognitive accumulation do not grant authority. `Discovered != Registered != Authorized != Active`; governance may tighten automatically but may not silently relax.
+3. **Goal-level execution semantics.** The executor is expected to stop on verified goal closure or a real boundary, not merely because an intermediate answer is available.
+4. **LCCB.** A controlled longitudinal benchmark physically separates public experience from hidden evaluator labels and freezes the competing variables needed for causal interpretation.
+5. **Two completed fixed-model provider experiments.** The first identifies a full-history ceiling and a provenance-contract defect. The second directly compares B0-B3 memory conditions.
+6. **An empirical context-compression result.** At age 1000, structured current state preserves full-history fact performance with 93.49% fewer prompt characters, while the tested retrieval-only condition degrades and becomes stale.
 
 ## 3. AgentOS system model
 
 ### 3.1 Replaceable executor, durable state
 
-AgentOS treats a conversation/session as an execution surface rather than the canonical source of truth. Durable state is divided conceptually into:
+AgentOS treats a chat session, IDE agent, provider model call, or remote worker as an execution surface. Canonical project state is external. The architecture separates:
 
-- semantic/cognitive state: current facts, relations, procedures, provenance and supersession;
-- goal/work state: objectives, closure invariants, dependencies and next gaps;
-- execution state: observations, decisions, actions and receipts;
-- execution disposition: continue/final/block semantics;
-- governance state: capability discovery, registration, authorization and activation;
-- failure knowledge: failed paths, diagnoses, repairs and retry conditions;
-- reconciliation state: differences between persisted belief and the current execution world.
+- **semantic/cognitive state:** current facts, relations, procedures, provenance, revision, and supersession;
+- **goal/work state:** objectives, closure invariants, dependencies, ownership, leases, and next gaps;
+- **execution state:** observations, actions, receipts, and continuation lineage;
+- **execution disposition:** continue/final/block/wait/authority semantics;
+- **failure knowledge:** failed routes, diagnoses, repairs, retry conditions, and validation receipts;
+- **governance state:** capability discovery, registration, authorization, activation, and protected effects;
+- **reconciliation state:** differences between persisted belief and current authoritative external state.
 
-This decomposition is intended to make executor replacement possible without treating a transcript as the operating system.
+The design goal is not to reconstruct every historical token. It is to retain the decision-relevant state required for safe continuation.
 
-### 3.2 Goal-level execution
+### 3.2 Answerability is not completion
 
-The central execution invariant is:
+A central execution invariant is:
 
 > **Answerability is not completion.**
 
-After every material receipt, the executor reassesses the goal. If a closure gap remains and the next action is derivable, authorized, and safe, execution continues. A final response is appropriate only when closure is verified, new authority is required, necessary information is unavailable, a governance/risk boundary is reached, an unrecoverable dependency blocks progress, or the user interrupts/supersedes the goal.
+After a material action returns a receipt, that receipt becomes the next observation. The executor reassesses the parent goal. If a material closure gap remains and the next action is derivable, authorized, and safe, the disposition remains `CONTINUE`. Finalization is appropriate only when goal closure is verified, new authority is required, required information can only come from the user, a governance/risk boundary is reached, a non-recoverable dependency blocks progress, or the user interrupts or supersedes the goal.
 
-This distinguishes goal-directed execution from a common conversational loop in which one meaningful substep is completed and control is returned to the user even though the requested goal remains open.
+This matters because memory continuity alone does not guarantee execution continuity. An executor may remember the correct next step and still return control after every substep. AgentOS therefore models execution disposition as durable state rather than assuming it emerges automatically from retrieved memory.
 
-### 3.3 Canonical evolution and concurrent work
+### 3.3 Canonical evolution and multiple workstreams
 
-Executor replacement does not imply that only one session may exist. AgentOS instead separates one governed canonical evolution from multiple concurrent workstreams. Each workstream carries goal lineage, its observed canonical parent, closure invariants, dependencies, ownership/lease information, receipts, failures, and integration disposition. Effectful ownership includes fencing identity so two executors cannot silently become simultaneous writers to the same workstream. Workstream completion and canonical integration are separate states.
+AgentOS allows multiple executors to contribute concurrently while preserving a single governed canonical evolution. Workstreams carry their observed canonical parent, goal lineage, closure invariants, receipts, failures, ownership/lease state, and integration disposition. Effectful ownership is fenced so stale executors cannot silently become simultaneous writers. Workstream completion and canonical integration are distinct events.
 
-The design principle is: many executors may contribute, but no executor independently defines canonical history.
+The rule is: many executors may reason in parallel, but no executor independently defines canonical history.
 
 ### 3.4 Governance
 
-The governing safety law is:
+The safety law is:
 
 > **Capability must never scale faster than governance.**
 
-The architecture therefore separates discovery, registration, authorization, and activation. New cognition does not imply new permission. External effects require scoped authority; discovery cannot self-grant permission; governance may tighten automatically but may not self-relax; credentials remain local where possible; and execution success is never inferred without a receipt.
+New cognition does not imply new permission. Discovery cannot self-authorize. Protected external effects require explicit authority. Credentials remain outside canonical cognitive state where possible. Governance may become stricter automatically but may not silently relax. Successful mutations require receipts, and merge/deploy/production activation is treated by semantic effect rather than by API method name.
+
+This separation is also necessary for scientific identification. If an experimental condition receives broader permissions, improved task success cannot safely be interpreted as improved cognition.
 
 ## 4. Longitudinal Cognitive Capability Benchmark
 
 ### 4.1 Identification problem
 
-A longitudinal agent experiment is invalid if an apparent gain can be explained by a different model, prompt, decoder, tool set, permission profile, hidden information, evaluator, or task distribution. LCCB therefore treats these as experimental conditions rather than implementation details.
+A longitudinal experiment is confounded if the apparent gain can be explained by a different model, prompt contract, tool set, permission profile, hidden evaluator information, task distribution, or benchmark state. LCCB treats these as controlled variables rather than incidental implementation details.
 
-### 4.2 Controlled synthetic world
+### 4.2 Project Meridian
 
-The current controlled world, Project Meridian, is generated deterministically from a frozen seed. It emits public `ExperienceEvent` records containing state observations, procedures, governance modes, work-state transitions, revisions/supersessions, and irrelevant background telemetry. Evaluator labels are generated from the hidden world state and stored separately.
+The controlled synthetic world, Project Meridian, is deterministically generated from a frozen seed. Public `ExperienceEvent` records contain:
 
-The same task keys are evaluated at ages 0, 100, and 1000. At age 0, before benchmark experience is supplied, `unknown` is explicitly correct. Later labels track current state and mark superseded values as forbidden. This pairing makes longitudinal comparisons deterministic, but—as the completed experiment demonstrates—also creates a ceiling risk when full history is directly visible.
+- service ownership facts;
+- procedures;
+- governance/capability modes;
+- work-state transitions;
+- revisions and supersessions;
+- irrelevant distractor telemetry.
 
-### 4.3 Evidence isolation
+Evaluator labels are generated from hidden canonical world state and stored separately. Public model execution never needs to open the private labels.
 
-Public execution may consume public experience, public task prompts, and the public manifest. Hidden labels are evaluator-only. The deterministic evaluator runs outside AgentOS authority and does not mutate cognition, project state, or governance.
+The same task keys are evaluated at cognitive ages 0, 100, and 1000. At age 0, `unknown` is explicitly correct because benchmark experience has not yet been supplied. At later ages, hidden labels track current state and mark superseded values as forbidden.
 
-### 4.4 Frozen experimental condition
+### 4.3 Frozen condition
 
-Within a longitudinal series, the following must remain fixed:
+Within a longitudinal comparison, the following are frozen:
 
-- model/version reference;
-- system instruction and task contract;
-- decoding parameters;
-- tool policy and capability manifest;
-- enabled cognitive modules;
+- provider model reference;
+- system instruction and output contract;
+- temperature and maximum output policy;
+- benchmark seed and public event stream;
+- task set and evaluator;
+- capability/tool envelope;
 - governance profile;
-- benchmark pack and seed;
-- evaluator/rubric.
+- execution route and evidence boundary.
 
-A change in these variables starts a new series rather than being interpreted as longitudinal improvement.
+Changing one of these creates a new experimental series rather than a new cognitive age.
+
+### 4.4 Evidence isolation
+
+The runner consumes only public experience, public tasks, and the public manifest. The private label file is permission-blocked during model execution and restored only for deterministic scoring. Execution occurs in an isolated Oracle workspace created from the exact experiment commit. Raw responses, scored results, manifest, workflow run, commit SHA, artifact ID, and artifact digest are preserved.
 
 ### 4.5 Metrics
 
-The initial evaluator reports:
+The deterministic evaluator reports:
 
 - fact recall accuracy;
 - source/provenance recall accuracy;
@@ -115,184 +131,284 @@ The initial evaluator reports:
 - unauthorized-action rate;
 - completion rate.
 
-Expected and forbidden facts are literal benchmark atoms, making the canonical score deterministic and auditable. A semantic judge may be added as a secondary condition but must not silently replace the deterministic evaluator.
+The second experiment additionally records prompt characters and UTF-8 bytes so memory quality can be evaluated together with context cost.
 
-## 5. Completed fixed-model experiment
+## 5. Experiment 1 — Full-history fixed-model baseline
 
-### 5.1 Experimental condition
+### 5.1 Condition
 
-The first real provider series used:
+The first external provider series used:
 
 | Variable | Value |
 |---|---|
 | Model | `gemini-3.1-flash-lite` |
 | Provider interface | OpenAI-compatible |
 | Seed | 73129 |
-| Synthetic events | 1,000 |
-| Cognitive ages | 0, 100, 1000 |
+| Events | 1,000 |
+| Ages | 0, 100, 1000 |
 | Temperature | 0 |
 | Repeats | 3 |
 | Execution route | GitHub-hosted Actions -> governed SSH -> isolated Oracle AArch64 workspace |
 | Workflow run | `32581330887` |
-| Experiment commit | `11a910eeefd09f2a33a994c2bbef04c3831bdbe0` |
+| Experiment SHA | `11a910eeefd09f2a33a994c2bbef04c3831bdbe0` |
 | Artifact digest | `sha256:96ca40f58c8f743dc53bd4eb7fe0ae9345d3d8b9306d3a675d235e4dbd942b8a` |
 
-Evaluator-only labels were inaccessible during model execution and restored only for scoring.
+The model received all public history visible at each age.
 
 ### 5.2 Results
 
-| Cognitive age | Fact accuracy | Source recall* | Stale error | Unauthorized action | Completion |
+| Age | Fact accuracy | Source recall* | Stale error | Unauthorized | Completion |
 |---|---:|---:|---:|---:|---:|
-| 0 | 1.00 | 1.00 | 0.00 | 0.00 | 1.00 |
-| 100 | 1.00 | 0.00 | 0.00 | 0.00 | 1.00 |
-| 1000 | 1.00 | 0.00 | 0.00 | 0.00 | 1.00 |
+| 0 | 1.0000 | 1.0000 | 0.0000 | 0.0000 | 1.0000 |
+| 100 | 1.0000 | 0.0000 | 0.0000 | 0.0000 | 1.0000 |
+| 1000 | 1.0000 | 0.0000 | 0.0000 | 0.0000 | 1.0000 |
 
-All three repeats were identical per task under the observed provider condition. The measured gain from age 100 to age 1000 on the primary non-provenance metrics was **0**.
-
-`*` The later-age source-recall score is not an interpretable provenance result. Public prompts asked for the answer but did not require literal source references, while the evaluator counted those references. The measurement contract and task contract therefore disagreed.
+The age-100→1000 gain on the non-provenance metrics was zero. The later-age source score was not interpretable because the public prompt had not required literal source references while the evaluator expected them.
 
 ### 5.3 Interpretation
 
-The age-0 score is not evidence that the model knew hidden Meridian state: `unknown` is the benchmark-defined correct response before experience is supplied. Once history is available, the full-history condition reaches the ceiling of the initial recall tasks. Consequently:
+The first experiment establishes three things and does not establish a fourth.
 
-- the result does **not** demonstrate cognitive accumulation;
-- the result does **not** refute structured cognition, because the task is non-discriminating at ceiling;
-- it establishes a strong long-context/full-history baseline;
-- it invalidates raw recall under fully visible history as the sole primary efficacy endpoint;
-- it exposes the provenance task-contract defect.
+It establishes that the provider harness and hidden-label isolation work in a real external execution path. It establishes that the initial full-history recall task is at ceiling. It exposes a task/evaluator mismatch for provenance. It does **not** establish longitudinal cognitive improvement.
 
-This is a useful negative result because it narrows the hypothesis rather than rewarding an easy benchmark.
+The negative result is useful because it prevents a weak benchmark from being mistaken for evidence of persistent cognition.
 
-## 6. Reproducibility and failure evidence
+## 6. Experiment 2 — Controlled B0-B3 condition matrix
 
-The provider experiment also exposed two implementation assumptions. First, the upstream endpoint required canonical `Accept` and AgentOS `User-Agent` headers. Second, execution from a fresh isolated checkout exposed an implicit repository import/PYTHONPATH dependency. Both were diagnosed and repaired before the successful run.
+### 6.1 Conditions
 
-AgentOS treats such failures as durable negative knowledge. A failed route is not discarded simply because a later route succeeds: the failure, its context, diagnosis, repair, and validation receipt are retained so a replacement executor can avoid repeating known-bad paths. This mechanism is architecturally implemented but its efficacy under controlled executor replacement remains to be measured.
+The second experiment uses the same model, seed, ages, temperature, repeat count, and hidden evaluator, while varying only the public memory representation.
 
-## 7. Cross-session execution observations
+| Condition | Public state supplied | Explicit supersession/current-state semantics |
+|---|---|---|
+| B0 | no prior Meridian experience | No |
+| B1 | full visible public history | model must infer |
+| B2 | compact lexical retrieval-only evidence | No |
+| B3 | structured latest public semantic value per key | Yes |
 
-### 7.1 Historical observation
+B3 is intentionally narrower than the complete AgentOS runtime. It tests one core persistence claim: explicit current-state/supersession structure. It does not yet test durable failure memory, goal disposition, workstream integration, or executor replacement.
 
-During AgentOS development, one long-lived conversation evolved from user-clocked `continue` interactions into extended inspect→act→verify→derive-next chains. In the strongest observed instances, more than twenty and later more than thirty tool/action steps occurred after a single user instruction before interruption or finalization.
+The system instruction in this series explicitly requests supporting `source_ref` values for known answers, repairing the largest provenance-contract defect from Experiment 1.
 
-Historical reconstruction does not identify a single causal trigger. Exact `/goal` syntax is neither necessary nor sufficient; GitHub persistence existed before mature execution; GitHub Actions strengthened machine-readable feedback but did not by itself establish goal semantics; Oracle strengthened bidirectional persistent execution but appeared after long-horizon behavior had already begun.
+### 6.2 Reproducibility receipt
 
-The best current explanation is joint emergence from stable goal semantics, broad termination criteria, accumulated context/IR, reliable multi-tool actions, persistent machine-readable state, verification feedback, and sufficient authority for reversible low-risk steps.
+| Variable | Value |
+|---|---|
+| Workflow run | `32615130545` |
+| Experiment SHA | `561e878ba502e54ef81b947b57a88a47f8bad79a` |
+| Artifact ID | `9486716442` |
+| Artifact digest | `sha256:196df7ae2147fb9fdd7e03669e1d8725929ed93e2d734e1acae372f45e55b992` |
+| Model | `gemini-3.1-flash-lite` |
+| Seed | 73129 |
+| Events | 1,000 |
+| Ages | 0, 100, 1000 |
+| Temperature | 0 |
+| Repeats | 3 |
 
-### 7.2 Transfer observation
+### 6.3 Age-100 results
 
-The execution behavior was subsequently summarized into portable handoff/disposition contracts and used in fresh conversations. Fresh-session recovery has been observed informally: a new executor can recover project state, reconcile live repository state, derive a next action, and continue. However, the sustained execution depth has not consistently matched the strongest historical executor.
+| Condition | Fact accuracy | Source recall | Stale error | Unauthorized | Completion | Prompt chars |
+|---|---:|---:|---:|---:|---:|---:|
+| B0 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 1.0000 | 3,040 |
+| B1 | 1.0000 | 0.8125 | 0.0000 | 0.0000 | 1.0000 | 59,515 |
+| B2 | 0.5385 | 0.4375 | 0.0000 | 0.0000 | 1.0000 | 11,938 |
+| B3 | 1.0000 | 0.8125 | 0.0000 | 0.0000 | 1.0000 | 36,129 |
 
-This observation motivates a useful decomposition. Cross-session continuity is not one variable. It contains at least:
+B3 matches B1 fact accuracy and stale-error performance while reducing prompt characters by 39.29%.
 
-- state recovery;
-- goal recovery;
-- next-action derivation;
-- termination persistence / premature-finalization resistance;
-- duplicate-work avoidance;
-- failure avoidance;
-- governance preservation;
-- sustained action→receipt→next-action depth.
+### 6.4 Age-1000 results
 
-The observations in this section are **not** counted as controlled evidence for RQ1 or RQ2.
+| Condition | Fact accuracy | Source recall | Stale error | Unauthorized | Completion | Prompt chars |
+|---|---:|---:|---:|---:|---:|---:|
+| B0 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 1.0000 | 3,041 |
+| B1 | 1.0000 | 0.7917 | 0.0000 | 0.0000 | 1.0000 | 563,209 |
+| B2 | 0.3077 | 0.2500 | 0.2308 | 0.0000 | 1.0000 | 11,939 |
+| B3 | 1.0000 | 0.8125 | 0.0000 | 0.0000 | 1.0000 | 36,637 |
 
-## 8. What remains falsifiable
+The central comparisons are:
 
-The architecture becomes scientifically interesting only if it beats strong competing explanations. The next discriminating matrix is therefore pre-specified as follows.
+- B3 − B1 fact accuracy = `0.0000`;
+- B3 prompt size / B1 prompt size = `0.06505`;
+- B3 prompt reduction relative to B1 = `93.49%`;
+- B3 − B2 fact accuracy = `+0.6923`;
+- B3 − B2 stale-error rate = `-0.2308`.
 
-| Condition | Persistent structure | Direct full history | Retrieval | Supersession/reconciliation |
-|---|---|---|---|---|
-| B0 task-local frozen model | No | No | No | No |
-| B1 long-context/full history | No | Yes | No | Model must infer |
-| B2 retrieval-only | No | No | Yes | No explicit semantics |
-| B3 structured AgentOS cognition | Yes | No/controlled budget | Structured access | Yes |
+The three B3 repeats were identical on the reported age-1000 metrics. B1 retained perfect fact accuracy but source recall varied slightly across repeats (0.8125, 0.7500, 0.8125), demonstrating that provider behavior is not perfectly deterministic even with temperature 0.
 
-Additional ablations remove supersession, reconciliation, failure knowledge, durable execution disposition, or governance separation one at a time.
+### 6.5 Interpretation
 
-The primary discriminating task families are pre-specified as:
+The second experiment yields a positive but bounded result.
 
-- contradiction and supersession under many distractors;
-- explicit provenance and trust selection;
-- context-budget-constrained continuity;
-- forgetting and later revival;
-- unseen transfer requiring relations rather than verbatim recall;
-- known-failure avoidance after executor replacement;
-- incomplete-work continuation without repeating completed work;
-- governance changes where capability and authority diverge;
-- fresh-session executor replacement.
+**Structured state is a much more compact sufficient representation for the current task family.** At age 1000, B3 preserves the same 1.0 fact accuracy and zero stale-error rate as B1 while using only 6.51% of the prompt characters. This supports an efficiency claim: explicit current-state structure can replace a large amount of raw history without losing measured current-state performance.
 
-A positive AgentOS claim requires B3/full AgentOS to outperform B1 and B2 on pre-specified endpoints under the same model and authority envelope. Merely increasing available context is not sufficient evidence.
+**The tested retrieval-only condition is not sufficient.** B2 degrades as the event history grows. At age 1000 it reaches only 0.3077 fact accuracy and produces stale answers at rate 0.2308. Compactness by itself is therefore not the explanation for B3's performance; the tested result is consistent with explicit supersession/current-state semantics being important.
 
-## 9. Statistical analysis plan
+**The stronger capability claim is not yet supported.** B3 does not beat B1 on fact accuracy. If the entire history remains available and within the provider's effective context capacity, the fixed model can still infer the correct current facts. The experiment therefore demonstrates context compression and robustness relative to this retrieval baseline, not cognitive capability beyond full history.
 
-The completed seed-73129 deterministic series is a mechanism/harness result, not a population-level efficacy estimate. A discriminating efficacy series should use multiple frozen seeds and matched tasks across conditions. Reporting should include task-level outcomes, condition means, paired differences, confidence intervals, and effect sizes where meaningful. Provider stochasticity should be sampled with repeated runs even at temperature 0 unless deterministic execution is guaranteed by the provider.
+### 6.6 Provenance after contract repair
 
-Ceiling endpoints should not serve as the sole primary outcome. For binary or bounded task success, paired bootstrap confidence intervals or an appropriate paired categorical test can be reported across matched task instances; hierarchical analysis can be used if multiple seeds and task families create nested observations. Statistical choices must be fixed before inspecting the target comparison.
+Experiment 2 explicitly asks for source references, so the original provenance defect is substantially repaired. Source recall nevertheless remains below 1.0 for B1 and B3 at later ages. Manual inspection shows that answers generally cite the decisive event for the selected fact. The remaining gap arises in part because a continuity decision can be supported by multiple work-state events while a concise answer naturally cites the selected ready-work event.
 
-Evidence claims are promoted only through the following ladder:
+The provenance endpoint therefore remains secondary until the benchmark specifies whether success requires:
+
+- the decisive source only;
+- all contributing sources;
+- or a minimal sufficient proof set.
+
+This is a narrower problem than Experiment 1's missing citation request, but it still limits strong provenance claims.
+
+## 7. Failure evidence and experimental repair
+
+The successful condition matrix was preceded by two bounded workflow failures that are retained as negative knowledge.
+
+The first attempt, workflow run `32614903376`, attempted `git archive` before checking out the triggering repository commit. The receipt exposed `fatal: not a git repository`. The repair added an explicit `actions/checkout` step.
+
+The second attempt, run `32614940543`, assumed provider variables named `AGENTOS_AI_API_KEY` and `AGENTOS_AI_BASE_URL`. Existing provider-readiness evidence showed that the verified Oracle credential contract is `AI_API_ACADEMIA_KEY` and `AI_API_BASE_URL`. The matrix workflow was aligned with that existing contract rather than creating another credential path or weakening isolation.
+
+The successful run followed those repairs, uploaded the evidence artifact, and published a success receipt. These failures are not discarded from the research history because avoiding repeated known failures after executor replacement is itself a future LCCB target.
+
+## 8. Cross-session execution observations
+
+### 8.1 Historical execution regime
+
+During AgentOS development, one long-lived conversation evolved from user-clocked `continue` interactions into extended inspect→act→verify→derive-next chains. In the strongest observed cases, more than twenty and later more than thirty tool/action steps followed a single user instruction before interruption or legitimate finalization.
+
+Historical reconstruction does not support a single magic trigger. `/goal` syntax is neither necessary nor sufficient. GitHub persistence existed before the strongest behavior. GitHub Actions strengthened machine-readable receipts. Oracle strengthened persistent execution. The most plausible explanation is joint emergence from stable goals, broad termination semantics, rich accumulated context/IR, reliable tool authority for reversible actions, machine-readable receipts, persistent external state, and repeated observation→action→verification loops.
+
+### 8.2 Session-local reproduction
+
+The behavior was externalized into an executable disposition contract, durable GoalController semantics, task-neutral master trace exemplars, and a recovery benchmark measuring premature-finalization rate and human-clock dependence. A later development-session run re-entered a long-horizon regime with zero intermediate user continuation pulses, multiple autonomous self-corrections, and verified CI/runtime receipts. This is preserved as `PROVISIONAL_SESSION_LOCAL_REPRODUCTION` evidence.
+
+It is not a fresh-session blind trial. Because the same conversation constructed the reproduction protocol and then exhibited the behavior, the observation cannot establish cross-session reproducibility.
+
+### 8.3 RQ2 status
+
+The repository implements state recovery, goal recovery, workstream leasing/fencing, durable execution disposition, failure knowledge, persistent runtime dispatch, and live reconciliation. These mechanisms are test-covered. What remains unestablished is the strongest behavioral claim: that a genuinely fresh conversational executor, supplied only canonical bootstrap state, will repeatedly reproduce the historical long single-turn regime on unseen goals without human continuation pulses.
+
+RQ2 therefore remains **mechanism-supported but efficacy-open**.
+
+## 9. Statistical interpretation
+
+The completed provider experiments use one synthetic world seed and three repeats. They should not be treated as population-level estimates.
+
+For Experiment 2, the large B3/B2 difference is exact for the tested seed and provider series, but no confidence interval across benchmark worlds is yet justified. The B1/B3 fact-accuracy endpoint is at ceiling, making a superiority test uninformative. Prompt-size differences are deterministic consequences of the public representation and can be reported exactly for this pack.
+
+A broader efficacy series should freeze multiple seeds in advance and use matched tasks across B0-B3. Suitable reporting includes task-level outcomes, paired condition differences, bootstrap confidence intervals across matched task instances/seeds where appropriate, and explicit provider-repeat variance. Any semantic judge should be secondary to the deterministic evaluator rather than replacing it post hoc.
+
+The evidence ladder remains:
 
 **harness validated → mechanism observed → replicated → discriminates against strong baselines → survives ablation → transfers across executor/model replacement where claimed.**
 
+The present work reaches controlled discrimination against the tested retrieval-only baseline and context-efficiency equivalence to full history; it does not reach the final transfer stages.
+
 ## 10. Threats to validity
 
-**Ceiling effects.** The first full-history condition saturates the initial benchmark and therefore cannot establish improvement.
+**Single synthetic seed.** Both completed provider experiments use seed 73129. Generalization across worlds is not established.
 
-**Metric-contract mismatch.** Initial source recall counted literal references that public prompts did not request.
+**Ceiling fact endpoint.** B1 and B3 saturate current-state fact recall, preventing the present task family from establishing B3 capability superiority.
 
-**Provider drift.** `gemini-3.1-flash-lite` is a provider model reference rather than necessarily an immutable weight snapshot. Repeated series must preserve provider/model receipts and avoid interpreting alias drift as learning.
+**Retrieval baseline specificity.** B2 is one lexical retrieval policy with no explicit supersession semantics. The result does not show that every retrieval architecture is inferior.
 
-**Synthetic-world validity.** Project Meridian provides control and auditability but does not establish performance on real long-lived projects.
+**B3 is not full AgentOS.** The structured projection isolates current-state/supersession semantics. It does not yet include all durable failure, workstream, disposition, or governance mechanisms in the model-facing condition.
 
-**Context leakage.** A host product may expose session/user context not represented in the experiment packet. Formal fresh-session trials must control supplied state as far as the host permits and document residual uncertainty.
+**Provenance semantics.** The citation request is now explicit, but the evaluator's expected source set can be broader than the concise evidence a model naturally emits for continuity decisions.
 
-**Tool and authority confounding.** A system with more tools or permissions can appear more intelligent. Capability and governance must remain fixed in cognitive comparisons.
+**Provider drift.** `gemini-3.1-flash-lite` is a provider model reference and may not denote an immutable weight snapshot forever. Immutable workflow, prompt, response, and artifact receipts reduce but cannot eliminate this risk.
 
-**Executor/runtime dependence.** Very long single-turn action chains may depend partly on host runtime behavior. AgentOS correctness must not require a particular product's hidden scheduling semantics.
+**Provider nondeterminism.** B1 source recall varied across repeats at temperature 0. Provider repeats are therefore necessary.
 
-**Selection bias.** Successful recovery anecdotes cannot substitute for pre-specified fresh-session trials.
+**Synthetic-world validity.** Project Meridian provides auditability, contradiction, and controlled revisions but does not establish real-project benefit.
 
-**Evaluator literalism.** Deterministic atom matching is auditable but may under-credit semantically correct paraphrases. Any semantic judge must be reported as a separate evaluator condition.
+**Context leakage.** Formal product-host fresh-session experiments may have user/session context not represented in the research packet.
+
+**Tool/authority confounding.** More tools or more permission can mimic intelligence. Cognitive comparisons must keep capability and governance fixed.
+
+**Host execution boundary.** Very long conversational action chains may depend on hidden host turn semantics. AgentOS system correctness should not depend on one product's turn scheduler.
+
+**Selection bias.** Historical master-like runs and session-local reproduction are hypothesis-generating observations until pre-specified blind trials are completed.
 
 ## 11. Supported and unsupported claims
 
-### Supported by completed evidence
+### 11.1 Supported by completed evidence
 
-1. A controlled LCCB pack can physically separate public experience from evaluator-only labels.
-2. The fixed-model provider harness executed successfully in an isolated external environment with preserved receipts.
-3. Under the completed full-public-history condition, the initial non-provenance metrics are at ceiling and show zero measured age-100→1000 gain.
-4. The initial later-age provenance score is not interpretable because the task did not require the evidence representation being scored.
-5. The benchmark therefore needs discriminating tasks beyond raw full-history recall.
-6. AgentOS has implemented system mechanisms for durable state separation, goal-level disposition, governance boundaries, failure preservation, and concurrent canonical workstream design; mechanism existence is not equivalent to efficacy.
+1. LCCB can physically isolate public experience from evaluator-only labels during real provider execution.
+2. The fixed-model Oracle/provider harness has completed with immutable workflow and artifact receipts.
+3. Full public history reaches ceiling fact accuracy on the current Meridian recall tasks.
+4. A structured current-state projection matches full-history fact accuracy at ages 100 and 1000.
+5. At age 1000, that structured projection uses 36,637 prompt characters versus 563,209 for full history, a 93.49% reduction.
+6. The tested retrieval-only condition is materially worse at ages 100 and 1000 and produces stale errors at age 1000.
+7. No condition in the completed matrix produced unauthorized-action errors.
+8. AgentOS mechanisms exist for durable goal state, execution disposition, workstream fencing, governance separation, failure preservation, and persistent runtime dispatch.
+9. Session-local reproduction of long-horizon execution has been observed and preserved as provisional evidence.
 
-### Not established by the present evidence
+### 11.2 Not established
 
-1. AgentOS structured cognition improves longitudinal capability relative to long context.
-2. Structured cognition outperforms retrieval-only memory.
-3. Fresh conversations reliably reproduce the strongest observed long-horizon execution behavior.
-4. Cross-model replacement preserves equivalent cognitive capability.
-5. Persistent failure knowledge measurably reduces repeated failures after replacement.
-6. AgentOS improves real-world project outcomes.
-
-These statements are deliberately left unsupported until the pre-specified discriminating experiments are completed.
+1. Structured state has greater fact capability than a fixed model given all relevant history.
+2. The B3 result generalizes across benchmark seeds, task families, provider models, or real projects.
+3. All retrieval systems are inferior to structured cognition.
+4. Full AgentOS failure memory measurably reduces repeated failures after executor replacement.
+5. Fresh ChatGPT conversations reliably reproduce the strongest historical long-horizon interaction regime.
+6. Cross-model replacement preserves equivalent cognitive capability.
+7. AgentOS changes model weights or constitutes parameter learning.
 
 ## 12. Discussion
 
-The first empirical result changes the interpretation of AgentOS in a productive way. If a model can answer a benchmark perfectly because the entire relevant history is directly visible, storing a structured representation has not yet demonstrated cognitive value. The meaningful problem begins when history is too large, contradictory, superseded, differently trusted, partially forgotten, distributed across workstreams, or detached from the current executor.
+The two experiments move the research question from an intuition about “memory” toward a more precise distinction between history and state.
 
-This suggests that persistent cognition should be evaluated less like a larger notebook and more like an operating state: what is currently true, why it is believed, what it replaced, which failed routes must not be repeated, what remains unfinished, and which actions are authorized now. Those semantics can in principle compress a large history into decision-relevant state. Whether they actually improve a fixed model is the empirical question LCCB is designed to answer.
+The first experiment shows that raw recall is a weak endpoint when all relevant history fits into the model's available input. The second shows why structured persistence may still matter even before it creates a higher task score: the same current-state accuracy can be retained while the history grows by an order of magnitude. At age 1000, B1 expands to more than half a million prompt characters while B3 remains near thirty-seven thousand. This is not merely a cost observation. Smaller decision-relevant state leaves more context capacity for new tasks, reduces distractor exposure, and makes executor replacement less dependent on replaying an ever-growing transcript.
 
-The cross-session observations also expose a distinction between knowledge continuity and execution continuity. An executor may recover the correct state and know the next action yet still finalize prematurely because conversational answerability competes with goal completion. This motivates treating execution disposition itself as durable, testable state rather than assuming that memory recovery automatically produces long-horizon agency.
+The comparison with B2 also matters. A small context is not automatically a good context. The retrieval-only condition is even smaller than B3, but it loses current facts and eventually emits stale values. For the tested policy, explicit supersession/current-state semantics preserve information that lexical relevance alone does not.
 
-Finally, governance cannot be treated as a post-hoc safety layer. If accumulated cognition changes what the system can accomplish, experimental comparisons must ensure that gains are not merely permission gains. The architectural separation between capability and authority is therefore part of the scientific identification strategy as well as the safety design.
+This suggests a useful way to conceptualize persistent cognition. It is not a larger notebook. It is an operating state: what is true now, why it is believed, what it supersedes, what failed, what remains unfinished, and what may be done next. Such state can potentially act as a sufficient statistic over a much larger interaction history.
+
+The current evidence stops short of the strongest claim. Because B1 remains perfect on fact accuracy, B3 has not demonstrated capability inaccessible to full history. That stronger test requires tasks where full raw history becomes a liability or where structure carries semantics unavailable from naive replay: context-budget overflow, multi-source trust, failure reuse, incomplete-work continuation, cross-workstream reconciliation, governance divergence, and executor replacement.
+
+The distinction between knowledge continuity and execution continuity is equally important. A replacement executor may recover the correct state yet still finalize after every answerable milestone. The historical and session-local observations motivate treating execution disposition itself as durable cognitive-operational state. Whether that disposition transfers reliably across fresh conversational sessions is now directly measurable through premature-finalization rate, human-clock rate, receipt follow-through, known-failure repetition, authority violations, and sustained chain depth.
+
+Finally, governance is not an appendix to intelligence. A persistent system that gets better at accomplishing goals while silently expanding its own permissions would invalidate both the safety model and the experiment. Capability growth and authority growth must remain separable.
 
 ## 13. Conclusion
 
-AgentOS proposes that a replaceable LLM executor can operate over durable, governed cognitive and execution state. The present evidence establishes the experimental substrate but does not yet establish the central efficacy claim. The first real fixed-model full-history experiment reaches ceiling and yields zero measured age-100→1000 gain, showing that the initial recall benchmark is too easy to distinguish structured cognition from visible history. A provenance-contract defect further demonstrates why benchmark semantics must match scoring semantics.
+AgentOS proposes a model-external substrate for durable, governed cognition and execution. LCCB makes that proposal empirically falsifiable by separating public experience from hidden labels and freezing the variables that can otherwise masquerade as learning.
 
-Rather than treating these outcomes as failed evidence, we use them to narrow the claim. AgentOS must earn its value where persistence requires structure rather than visibility: supersession, reconciliation, provenance, failure memory, unfinished-work continuity, context compression, governance preservation, and executor replacement. LCCB now provides a pre-specified path for testing those claims against full-history and retrieval baselines under a frozen model and authority envelope.
+The first fixed-model experiment showed that full-history recall saturates the initial benchmark and therefore cannot demonstrate cognitive accumulation. The second controlled B0-B3 matrix provides the first discriminating empirical result. Structured current-state projection matches full-history fact accuracy and zero stale-error performance while reducing age-1000 prompt size by 93.49%. The tested retrieval-only condition is substantially less accurate and becomes stale as history grows.
 
-The strongest conclusion supported today is therefore methodological and architectural, not a claim of achieved machine cognitive growth: **persistent cognition becomes scientifically meaningful only when its structured state explains capability that access to history alone cannot explain.**
+This is meaningful evidence for **structured-state efficiency and supersession semantics**, but not yet evidence that AgentOS creates capability beyond full history. The central stronger hypothesis therefore remains open rather than being declared successful by definition.
+
+The most defensible conclusion is:
+
+> **Persistent cognition becomes scientifically meaningful when structured state preserves or improves decision-relevant capability as raw history grows, and becomes a stronger claim only when that structure explains performance that full-history access and strong retrieval baselines cannot.**
+
+The present experiments establish the first half of that progression: on the controlled Meridian world, structured current state preserves full-history fact performance with dramatically less context and avoids the degradation observed in the tested retrieval-only baseline. The remaining work is to test harder tasks, multiple seeds, failure-memory reuse, governance-sensitive continuity, and genuinely fresh executor replacement.
 
 ## Reproducibility record
 
-The completed result reported in Section 5 is tied to GitHub Actions workflow run `32581330887`, experiment commit `11a910eeefd09f2a33a994c2bbef04c3831bdbe0`, seed `73129`, 1,000 events, ages `0,100,1000`, temperature `0`, three repeats, and artifact digest `sha256:96ca40f58c8f743dc53bd4eb7fe0ae9345d3d8b9306d3a675d235e4dbd942b8a`. Future results must be appended with their own immutable receipts rather than retroactively changing the interpretation of this series.
+### Experiment 1 — full-history baseline
+
+- Workflow run: `32581330887`
+- Experiment SHA: `11a910eeefd09f2a33a994c2bbef04c3831bdbe0`
+- Model: `gemini-3.1-flash-lite`
+- Seed: `73129`
+- Events: `1000`
+- Ages: `0,100,1000`
+- Temperature: `0`
+- Repeats: `3`
+- Artifact digest: `sha256:96ca40f58c8f743dc53bd4eb7fe0ae9345d3d8b9306d3a675d235e4dbd942b8a`
+
+### Experiment 2 — B0-B3 condition matrix
+
+- Workflow run: `32615130545`
+- Experiment SHA: `561e878ba502e54ef81b947b57a88a47f8bad79a`
+- Artifact ID: `9486716442`
+- Artifact digest: `sha256:196df7ae2147fb9fdd7e03669e1d8725929ed93e2d734e1acae372f45e55b992`
+- Model: `gemini-3.1-flash-lite`
+- Seed: `73129`
+- Events: `1000`
+- Ages: `0,100,1000`
+- Temperature: `0`
+- Repeats: `3`
+- Conditions: `B0,B1,B2,B3`
+- Canonical result summary: `research/results/lccb-condition-matrix-73129-20260823.json`
+- Detailed interpretation: `docs/LCCB_CONDITION_MATRIX_RESULT_20260823.md`
+
+All stronger future results should be appended with their own immutable receipts rather than retroactively changing the interpretation of these completed series.
