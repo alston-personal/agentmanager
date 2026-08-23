@@ -1,6 +1,6 @@
 # Master Experience Floor
 
-Status: normative design requirement.
+Status: normative design requirement with deterministic weak-executor proof harness.
 
 ## Requirement
 
@@ -90,6 +90,27 @@ The executor itself meets the long-horizon threshold (for example PFR=0, HCR=0, 
 The end-to-end AgentOS system meets the user-experience floor even when the executor itself does not. A deliberate weak-executor trial should force the executor to yield after every bounded action. The external controller must still reach verified closure or a real authority/hard boundary with **HCR=0** and **AVR=0**.
 
 The weak-executor trial is critical: if the user must type `continue`, AgentOS has not preserved the master experience floor even if canonical memory recovery is perfect.
+
+## Deterministic implementation receipt
+
+The first executable floor mechanism is now implemented in `runtime_core/execution_supervisor.py` and tested by `tests/test_execution_supervisor.py`.
+
+The synthetic executor is deliberately pathological: it performs exactly one material action and then finalizes on every slice. The supervisor treats that model final as a slice receipt, re-evaluates the durable `GoalControllerState`, and redispatches whenever the parent goal remains active.
+
+The frozen 24-action test establishes the following end-to-end system behavior:
+
+- material actions: `24`;
+- executor finalizations before closure: `23`;
+- premature yields absorbed by the supervisor: `23`;
+- automatic redispatches: `23`;
+- human continuation pulses: `0`;
+- final state: verified `DONE`.
+
+The same supervisor tests preserve real boundaries: verified closure completes, `BLOCKED_HUMAN_AUTHORITY` yields without crossing the boundary, and `WAITING_EXTERNAL` waits only when no independent safe progress exists.
+
+Validation receipt: Distributed AgentOS CI run `32619284750` completed successfully with **355 passed in 7.50s** on PR merge SHA `8d2eeb2f0582a92ab98b72a56c0158b97dd00d01` for branch head `28a1f006b123de86f8a5917b7b5d35aeb5103564`.
+
+This is strong evidence for **system robustness under forced executor yielding**, not yet proof that a real ChatGPT "Instant" executor can be externally intercepted and transparently redispatched inside the current host UI. That host-boundary integration remains the next discriminating test.
 
 ## Design consequence
 
