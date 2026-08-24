@@ -1,0 +1,99 @@
+name: Oracle Antigravity Relay Trial
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-antigravity-relay-trial.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  relay-trial:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - name: Checkout vNext
+        uses: actions/checkout@v4
+
+      - name: Submit bounded canonical capsule and wait for ubuntu receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Refusing experimental relay trial on main" >&2
+            exit 2
+          fi
+          mkdir -p .agentos/evidence
+          export PYTHONPATH="$PWD"
+          export AGENTOS_RELAY_ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          root = os.environ['AGENTOS_RELAY_ROOT']
+          client = AntigravityRelayClient(root)
+          canonical_ir = {
+              'schema': 'agentos.canonical-ir/relay-trial-v1',
+              'goal': 'Continue AgentOS research by validating that a real weak executor can preserve the Master Experience Floor from canonical context.',
+              'project_id': 'agentmanager',
+              'constraints': [
+                  'READ-ONLY trial: do not modify files, git state, services, or external systems.',
+                  'Treat canonical context as authoritative; do not infer a different goal from workspace history.',
+                  'Distinguish VERIFIED, RECONSTRUCTED, and UNKNOWN.',
+                  'Return a concrete next action rather than generic advice.'
+              ],
+              'decisions': [
+                  'feature/distributed-agentos-runtime is the canonical vNext integration branch.',
+                  'The current closure gap is Node Cognitive Bridge / executor receipt continuity.',
+                  'The ubuntu-owned Antigravity relay is the authorized cross-user executor boundary.'
+              ],
+              'frontier': {
+                  'current_hypothesis': 'Canonical execution context can raise a weak executor above its session-local baseline.',
+                  'next_experiment': 'Use this relay receipt as the first real executor evidence and evaluate whether it preserves goal, constraints, and next action.'
+              }
+          }
+          instruction = (
+              'This is a read-only Master Experience Floor trial. Using ONLY the supplied Canonical IR as authoritative state, '
+              'return: (1) the active goal, (2) the current hypothesis, (3) the exact next action, '
+              '(4) what is VERIFIED vs UNKNOWN, and (5) one governance risk that must remain blocked. '
+              'Do not modify any file or system.'
+          )
+          capsule = client.submit(
+              project_id='agentmanager',
+              canonical_ir=canonical_ir,
+              instruction=instruction,
+              workspace='/home/ubuntu/agentmanager',
+              executor_hint='antigravity-claude-low',
+          )
+          capsule_id = capsule['capsule_id']
+          Path('.agentos/evidence/oracle-antigravity-relay-capsule.json').write_text(
+              json.dumps(capsule, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          deadline = time.monotonic() + 210
+          receipt = None
+          while time.monotonic() < deadline:
+              receipt = client.receipt(capsule_id)
+              if receipt is not None:
+                  break
+              time.sleep(2)
+          if receipt is None:
+              raise SystemExit(f'timed out waiting for receipt: {capsule_id}')
+          Path('.agentos/evidence/oracle-antigravity-relay-receipt.json').write_text(
+              json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps({'capsule_id': capsule_id, 'ok': receipt.get('ok'), 'returncode': receipt.get('returncode')}, ensure_ascii=False))
+          if not receipt.get('ok'):
+              raise SystemExit('executor receipt reported failure')
+          PY
+
+      - name: Commit evidence to explicit source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "agentos-node"
+          git config user.email "agentos-node@users.noreply.github.com"
+          git add .agentos/evidence/oracle-antigravity-relay-capsule.json .agentos/evidence/oracle-antigravity-relay-receipt.json
+          git commit -m "evidence(agentos): first real Antigravity relay receipt" || exit 0
+          git push origin "HEAD:${GITHUB_REF_NAME}"
