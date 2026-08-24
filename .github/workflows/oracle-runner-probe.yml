@@ -1,6 +1,6 @@
 name: Oracle Cognitive Bridge Probe
 
-# manual retrigger marker: 2026-08-24T16:45+08:00 after shared-group rollout
+# retrigger: validate shared-group access + workspace guard + Antigravity relay surface
 on:
   workflow_dispatch:
   push:
@@ -35,6 +35,27 @@ jobs:
             echo "head=$(git rev-parse HEAD)"
             echo
 
+            echo "=== WORKSPACE GUARD TEST ==="
+            timeout 60s python3 -m pytest -q tests/test_workspace_guard.py 2>&1 || true
+            echo
+
+            echo "=== WORKSPACE GUARD LIVE DECISIONS ==="
+            python3 - <<'PY'
+          from agentos_node.workspace_guard import WorkspaceGuard
+          guard = WorkspaceGuard.from_file('.agentos/node-workspaces/oracle-instance-20260129-0852.json')
+          probes = [
+              ('/home/ubuntu/agent-data/projects/agentmanager/STATUS.md', 'write'),
+              ('/home/ubuntu/agent-data/runtime/receipts/probe.json', 'create'),
+              ('/home/ubuntu/agent-data/secrets/youtube-ai-manager/cookies.txt', 'write'),
+              ('/home/ubuntu/agent-data/projects/youtube-ai-manager/video_library.json', 'write'),
+              ('/home/ubuntu/agentmanager/README.md', 'write'),
+          ]
+          for path, effect in probes:
+              d = guard.evaluate(path, effect)
+              print(f'{effect} {path} allowed={str(d.allowed).lower()} reason={d.reason}')
+          PY
+            echo
+
             echo "=== NODE CLI ==="
             timeout 20s python3 -m agentos_node.cli version 2>&1 || true
             timeout 30s python3 -m agentos_node.cli status --json 2>&1 || true
@@ -57,8 +78,13 @@ jobs:
             echo "=== ANTIGRAVITY DISCOVERY ==="
             command -v antigravity >/dev/null 2>&1 && echo "antigravity_cli=$(command -v antigravity)" || echo "antigravity_cli=not_found"
             command -v agy >/dev/null 2>&1 && echo "agy_cli=$(command -v agy)" || echo "agy_cli=not_found"
-            command -v bridge >/dev/null 2>&1 && echo "browser_bridge_cli=$(command -v bridge)" || echo "browser_bridge_cli=not_found"
-            ps -eo user=,comm=,args= 2>/dev/null | grep -Ei 'antigravity|agy|ai-browser-bridge|browser-bridge' | grep -v grep | sed -E 's/(token|key|secret|authorization)=[^ ]+/\1=[REDACTED]/Ig' | sed -n '1,80p' || true
+            ps -eo user=,pid=,comm=,args= 2>/dev/null | grep -Ei 'antigravity|language_server|extensionHost|codex .*app-server|claude ' | grep -v grep | sed -E 's/(token|key|secret|authorization|csrf_token|extension_server_csrf_token)[ =][^ ]+/\1=[REDACTED]/Ig' | sed -n '1,100p' || true
+            echo
+
+            echo "=== ANTIGRAVITY LOCAL LISTENERS ==="
+            if command -v ss >/dev/null 2>&1; then
+              ss -ltnp 2>/dev/null | grep -E '127\.0\.0\.1|\[::1\]' | sed -E 's/users:\(.*\)$/users=[REDACTED]/' | sed -n '1,120p' || true
+            fi
             echo
 
             echo "=== DESKTOP SESSION BOUNDARY ==="
@@ -80,11 +106,7 @@ jobs:
             echo "=== BRIDGE VERDICT INPUTS ==="
             echo "runner_transport=true"
             test -n "${AGENTOS_CONTROL_PLANE_URL:-}" && echo "canonical_gateway_candidate=true" || echo "canonical_gateway_candidate=false"
-            if command -v antigravity >/dev/null 2>&1 || command -v agy >/dev/null 2>&1 || command -v bridge >/dev/null 2>&1; then
-              echo "executor_bridge_candidate=true"
-            else
-              echo "executor_bridge_candidate=false"
-            fi
+            pgrep -u ubuntu -f 'antigravity-ide-server|language_server_linux_arm' >/dev/null 2>&1 && echo "antigravity_session_candidate=true" || echo "antigravity_session_candidate=false"
           } | tee "$OUT"
 
       - name: Commit evidence to explicit source branch
