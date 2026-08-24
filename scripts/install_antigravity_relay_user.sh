@@ -39,11 +39,17 @@ else
 fi
 
 # Fail before touching the service if the runtime code cannot actually import.
-PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - <<'PY'
+# Run from the runtime worktree itself: when this installer is piped from a
+# human workspace on main, Python's sys.path[0] would otherwise resolve the
+# older ./agentos_node package first and shadow the vNext package on PYTHONPATH.
+(
+  cd "$RUNTIME_ROOT"
+  PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - <<'PY'
 from agentos_node.antigravity_relay_worker import discover_executor
 print("runtime_import=ok")
 print("executor=", discover_executor())
 PY
+)
 
 cat > "$UNIT" <<EOF
 [Unit]
