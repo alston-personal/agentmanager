@@ -1,5 +1,6 @@
 name: Oracle Antigravity Relay Trial
 
+# retrigger marker: 2026-08-24T17:10+08:00 after relay shared-permission rollout
 on:
   workflow_dispatch:
   push:
