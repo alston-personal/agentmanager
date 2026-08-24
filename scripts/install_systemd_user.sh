@@ -156,6 +156,48 @@ StandardError=append:$DATA_ROOT/logs/lobster.log
 WantedBy=default.target
 EOF
 
+cat > "$USER_SYSTEMD_DIR/agentos-control-plane.service" <<EOF
+[Unit]
+Description=Distributed AgentOS Control Plane and Runtime Dispatcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+EnvironmentFile=-%h/.agentos.secrets
+ExecStart=$PYTHON_BIN scripts/distributed_gateway.py
+Restart=always
+RestartSec=5
+StandardOutput=append:$DATA_ROOT/logs/distributed_control_plane.log
+StandardError=append:$DATA_ROOT/logs/distributed_control_plane.log
+
+[Install]
+WantedBy=default.target
+EOF
+
+cat > "$USER_SYSTEMD_DIR/agentos-provider-bridge.service" <<EOF
+[Unit]
+Description=Distributed AgentOS Provider Bridge
+After=network-online.target agentos-control-plane.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+EnvironmentFile=-%h/.agentos.secrets
+ExecStart=$PYTHON_BIN scripts/provider_bridge.py
+Restart=always
+RestartSec=5
+StandardOutput=append:$DATA_ROOT/logs/provider_bridge.log
+StandardError=append:$DATA_ROOT/logs/provider_bridge.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 systemctl --user daemon-reload
 
 # Stop and disable legacy pulse service if it exists
@@ -178,6 +220,41 @@ if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user restart os-lobster.service
 else
   echo "AGENT_MODE is not CORE; tg-commander.service, cat-ink-syncer.service, and os-lobster.service installed but not started."
+fi
+
+if [ "${AGENT_MODE:-CLIENT}" = "CORE" ] && [ "${AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0}" = "1" ]; then
+  if [ -z "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ]; then
+    echo "AGENTOS_DISTRIBUTED_SERVICES_ENABLED=1 requires AGENTOS_CONTROL_PLANE_TOKEN." >&2
+    exit 2
+  fi
+  if [ -z "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" ]; then
+    echo "AGENTOS_DISTRIBUTED_SERVICES_ENABLED=1 requires AGENTOS_CONTROL_PLANE_PUBLIC_URL." >&2
+    exit 2
+  fi
+
+  systemctl --user enable agentos-control-plane.service >/dev/null
+  systemctl --user restart agentos-control-plane.service
+
+  if [ "${AGENTOS_PROVIDER_BRIDGE_ENABLED:-0}" = "1" ]; then
+    if [ -z "${AGENTOS_PROVIDER_BRIDGE_TOKEN:-}" ]; then
+      echo "AGENTOS_PROVIDER_BRIDGE_ENABLED=1 requires AGENTOS_PROVIDER_BRIDGE_TOKEN." >&2
+      exit 2
+    fi
+    if [ -z "${AGENTOS_PROVIDER_ROUTES_FILE:-}" ] && [ -z "${AGENTOS_PROVIDER_ROUTES_JSON:-}" ]; then
+      echo "AGENTOS_PROVIDER_BRIDGE_ENABLED=1 requires AGENTOS_PROVIDER_ROUTES_FILE or AGENTOS_PROVIDER_ROUTES_JSON." >&2
+      exit 2
+    fi
+    systemctl --user enable agentos-provider-bridge.service >/dev/null
+    systemctl --user restart agentos-provider-bridge.service
+  else
+    systemctl --user stop agentos-provider-bridge.service 2>/dev/null || true
+    systemctl --user disable agentos-provider-bridge.service 2>/dev/null || true
+    echo "Distributed Control Plane enabled; Provider Bridge remains disabled. Set AGENTOS_PROVIDER_BRIDGE_ENABLED=1 after provider routes/credentials are ready."
+  fi
+else
+  systemctl --user stop agentos-provider-bridge.service agentos-control-plane.service 2>/dev/null || true
+  systemctl --user disable agentos-provider-bridge.service agentos-control-plane.service 2>/dev/null || true
+  echo "Distributed AgentOS services installed but disabled. Set AGENT_MODE=CORE and AGENTOS_DISTRIBUTED_SERVICES_ENABLED=1 after configuring production endpoints/secrets."
 fi
 
 systemctl --user restart os-chronos.service

@@ -1,0 +1,204 @@
+name: Activate Distributed AgentOS Core
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/activate-agentos-core.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distributed-agentos-core-activation
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+      PUBLIC_URL: https://n8n.milkcat.org/agentos
+
+    steps:
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Configure HTTPS ingress and continuity mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$PUBLIC_URL" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          RELEASE_ROOT="$2"
+          PUBLIC_URL="$3"
+          NGINX_SITE=/etc/nginx/sites-enabled/n8n
+          DIST_ENV="$HOME/.config/agentos/distributed.env"
+          SECRETS_FILE="$HOME/.agentos.secrets"
+
+          test -f "$NGINX_SITE"
+          test -f "$DIST_ENV"
+          test -f "$CONFIG_ROOT/.env"
+          test -f "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+          sudo -n true
+
+          backup="/tmp/n8n.nginx.agentos.$(date +%s).bak"
+          sudo -n cp "$NGINX_SITE" "$backup"
+          rollback_nginx() {
+            echo "Restoring nginx config from $backup" >&2
+            sudo -n cp "$backup" "$NGINX_SITE" || true
+            sudo -n nginx -t || true
+            sudo -n systemctl reload nginx || true
+          }
+
+          if ! grep -q 'agentos-control-plane ingress' "$NGINX_SITE"; then
+            tmp="$(mktemp)"
+            python3 - "$NGINX_SITE" "$tmp" <<'PY'
+          import pathlib, sys
+          source = pathlib.Path(sys.argv[1]).read_text()
+          needle = "    location / {\n"
+          if needle not in source:
+              raise SystemExit("n8n nginx vhost does not contain expected location / block")
+          block = '''    # agentos-control-plane ingress
+              location = /agentos {
+                  return 308 /agentos/;
+              }
+
+              location ^~ /agentos/ {
+                  proxy_pass http://127.0.0.1:8765/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header Authorization $http_authorization;
+                  proxy_buffering off;
+                  client_max_body_size 1m;
+              }
+
+          '''
+          pathlib.Path(sys.argv[2]).write_text(source.replace(needle, block + needle, 1))
+          PY
+            sudo -n install -m 644 "$tmp" "$NGINX_SITE"
+            rm -f "$tmp"
+          fi
+
+          if ! sudo -n nginx -t; then
+            rollback_nginx
+            exit 2
+          fi
+          sudo -n systemctl reload nginx
+
+          set -a
+          # shellcheck disable=SC1090
+          source "$CONFIG_ROOT/.env"
+          # shellcheck disable=SC1090
+          [ -f "$SECRETS_FILE" ] && source "$SECRETS_FILE"
+          set +a
+
+          if [ -z "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ]; then
+            echo "Control Plane token missing" >&2
+            rollback_nginx
+            exit 2
+          fi
+          if [ -z "${AGENTOS_CONTINUITY_MIRROR_TOKEN:-}" ]; then
+            if [ -z "${GITHUB_TOKEN:-}" ]; then
+              echo "No GitHub token available for continuity mirror" >&2
+              rollback_nginx
+              exit 2
+            fi
+            printf '\nAGENTOS_CONTINUITY_MIRROR_TOKEN=%s\n' "$GITHUB_TOKEN" >> "$SECRETS_FILE"
+            chmod 600 "$SECRETS_FILE"
+            AGENTOS_CONTINUITY_MIRROR_TOKEN="$GITHUB_TOKEN"
+            export AGENTOS_CONTINUITY_MIRROR_TOKEN
+            echo "Reused existing private-repo-capable GitHub token for continuity mirror."
+          fi
+
+          python3 - "$DIST_ENV" "$PUBLIC_URL" <<'PY'
+          import pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          public_url = sys.argv[2]
+          wanted = {
+              "AGENTOS_CONTROL_PLANE_PUBLIC_URL": public_url,
+              "AGENTOS_CONTINUITY_MIRROR_ENABLED": "1",
+              "AGENTOS_CONTINUITY_MIRROR_REPOSITORY": "alston-personal/my-agent-data",
+              "AGENTOS_CONTINUITY_MIRROR_BRANCH": "main",
+              "AGENTOS_CONTINUITY_MIRROR_ROOT": "projects",
+          }
+          lines = path.read_text().splitlines()
+          seen = set()
+          out = []
+          for line in lines:
+              key = line.split("=", 1)[0] if "=" in line else None
+              if key in wanted:
+                  if key not in seen:
+                      out.append(f"{key}={wanted[key]}")
+                      seen.add(key)
+              else:
+                  out.append(line)
+          for key, value in wanted.items():
+              if key not in seen:
+                  out.append(f"{key}={value}")
+          path.write_text("\n".join(out) + "\n")
+          PY
+          chmod 600 "$DIST_ENV"
+
+          repo_json="$(curl -fsS \
+            -H "Authorization: Bearer ${AGENTOS_CONTINUITY_MIRROR_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/alston-personal/my-agent-data)"
+          push_permission="$(printf '%s' "$repo_json" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("permissions",{}).get("push",False)).lower())')"
+          echo "continuity_mirror_push_permission=$push_permission"
+          if [ "$push_permission" != "true" ]; then
+            echo "Continuity mirror token lacks push permission" >&2
+            rollback_nginx
+            exit 2
+          fi
+
+          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash "$RELEASE_ROOT/scripts/install_distributed_systemd_user.sh"
+
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            curl -fsS http://127.0.0.1:8765/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8765/health
+          echo
+          curl -fsS "${PUBLIC_URL}/health"
+          echo
+          curl -fsS \
+            -H "Authorization: Bearer ${AGENTOS_CONTROL_PLANE_TOKEN}" \
+            "${PUBLIC_URL}/v1/projects/agentmanager/state"
+          echo
+          echo "public_url=$PUBLIC_URL"
+          echo "continuity_mirror=enabled"
+          echo "provider_bridge=disabled"
+          echo "github_runtime_dispatch=disabled"
+          REMOTE
+
+      - name: Verify public route from GitHub runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "$PUBLIC_URL/health"
+          echo

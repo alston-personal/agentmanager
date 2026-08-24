@@ -1,0 +1,4 @@
+interface:
+  display_name: "Redmine 2.6 to 5 Porting Guide"
+  short_description: "Port legacy Redmine plugins to Redmine 5"
+  default_prompt: "Use $skill-name to port legacy Redmine 2.6 plugins to Redmine 5 and catch Rails 6 compatibility traps."

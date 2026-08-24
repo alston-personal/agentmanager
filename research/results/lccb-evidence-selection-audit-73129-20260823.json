@@ -1,0 +1,134 @@
+{
+  "schema_version": "agentos.lccb-evidence-selection-audit-summary/v1",
+  "analysis_id": "lccb-evidence-selection-audit-v1",
+  "status": "COMPLETED",
+  "analysis_type": "evaluator-side representation audit; no model calls",
+  "source_experiment": {
+    "workflow_run": 32615130545,
+    "experiment_sha": "561e878ba502e54ef81b947b57a88a47f8bad79a",
+    "artifact_id": 9486716442,
+    "artifact_digest": "sha256:196df7ae2147fb9fdd7e03669e1d8725929ed93e2d734e1acae372f45e55b992"
+  },
+  "audit_receipt": {
+    "workflow_run": 32618376056,
+    "audit_sha": "96ce428b32fad9067a1cf8ca26d4c51c27ead283",
+    "artifact_id": 9487630043,
+    "artifact_digest": "sha256:0e87b9aeb2d19d81b0764a0166998860976bd930c57260ee99329c7546729f6c"
+  },
+  "frozen_pack": {
+    "seed": 73129,
+    "events": 1000,
+    "experience_manifest_hash": "3d76a3b0a24fec821c27fba7c33c34aecfd64cdecc8329c50bccca56e01498d5",
+    "evaluator_manifest_hash": "41872f0c465c43dff86b81403f3b26707854f86b3ac0a6a26aac549b6cafaead",
+    "stages": [100, 1000],
+    "conditions": ["B1", "B2", "B3"]
+  },
+  "aggregates": [
+    {
+      "stage": 100,
+      "condition": "B1",
+      "selected_evidence_events": 100,
+      "single_source_tasks": 12,
+      "current_source_task_coverage": 1.0,
+      "current_only_tasks": 12,
+      "current_plus_stale_tasks": 0,
+      "stale_only_tasks": 0,
+      "no_same_key_evidence_tasks": 0,
+      "continuity_current_source_coverage": 1.0
+    },
+    {
+      "stage": 100,
+      "condition": "B2",
+      "selected_evidence_events": 16,
+      "single_source_tasks": 12,
+      "current_source_task_coverage": 0.5833333333333334,
+      "current_only_tasks": 7,
+      "current_plus_stale_tasks": 0,
+      "stale_only_tasks": 0,
+      "no_same_key_evidence_tasks": 5,
+      "continuity_current_source_coverage": 0.0
+    },
+    {
+      "stage": 100,
+      "condition": "B3",
+      "selected_evidence_events": 58,
+      "single_source_tasks": 12,
+      "current_source_task_coverage": 1.0,
+      "current_only_tasks": 12,
+      "current_plus_stale_tasks": 0,
+      "stale_only_tasks": 0,
+      "no_same_key_evidence_tasks": 0,
+      "continuity_current_source_coverage": 1.0
+    },
+    {
+      "stage": 1000,
+      "condition": "B1",
+      "selected_evidence_events": 1000,
+      "single_source_tasks": 12,
+      "current_source_task_coverage": 1.0,
+      "current_only_tasks": 5,
+      "current_plus_stale_tasks": 7,
+      "stale_only_tasks": 0,
+      "no_same_key_evidence_tasks": 0,
+      "continuity_current_source_coverage": 1.0
+    },
+    {
+      "stage": 1000,
+      "condition": "B2",
+      "selected_evidence_events": 16,
+      "single_source_tasks": 12,
+      "current_source_task_coverage": 0.3333333333333333,
+      "current_only_tasks": 4,
+      "current_plus_stale_tasks": 0,
+      "stale_only_tasks": 3,
+      "no_same_key_evidence_tasks": 5,
+      "continuity_current_source_coverage": 0.0
+    },
+    {
+      "stage": 1000,
+      "condition": "B3",
+      "selected_evidence_events": 58,
+      "single_source_tasks": 12,
+      "current_source_task_coverage": 1.0,
+      "current_only_tasks": 12,
+      "current_plus_stale_tasks": 0,
+      "stale_only_tasks": 0,
+      "no_same_key_evidence_tasks": 0,
+      "continuity_current_source_coverage": 1.0
+    }
+  ],
+  "b2_stage_1000_stale_only_tasks": [
+    {
+      "task_key": "governance:meridian.deploy",
+      "current_source": "lccb:meridian:event:0300",
+      "selected_stale_source": "lccb:meridian:event:0070"
+    },
+    {
+      "task_key": "state:service-01.owner",
+      "current_source": "lccb:meridian:event:0120",
+      "selected_stale_source": "lccb:meridian:event:0001"
+    },
+    {
+      "task_key": "state:service-02.owner",
+      "current_source": "lccb:meridian:event:0250",
+      "selected_stale_source": "lccb:meridian:event:0002"
+    }
+  ],
+  "cross_layer_alignment": {
+    "b2_stage_100_evidence_current_tasks_plus_continuity": "7/13",
+    "b2_stage_100_provider_fact_accuracy": "7/13",
+    "b2_stage_1000_evidence_current_tasks_plus_continuity": "4/13",
+    "b2_stage_1000_provider_fact_accuracy": "4/13",
+    "b2_stage_1000_evidence_stale_only_tasks": "3/13",
+    "b2_stage_1000_provider_stale_error_rate": "3/13",
+    "b3_stage_100_and_1000_evidence_current_coverage": "all 13 tasks have current evidence; 12 single-source current-only plus full continuity source coverage",
+    "b3_stage_100_and_1000_provider_fact_accuracy": "13/13"
+  },
+  "interpretation": "For the frozen Meridian pack, the tested B2 lexical evidence selector's representation-level current-source coverage exactly predicts its observed fact accuracy at ages 100 and 1000, and its three stale-only selections exactly match the three stale model outputs at age 1000. B3 preserves current evidence without stale same-key evidence for all single-source tasks, while B1 preserves current evidence but increasingly co-exposes superseded same-key history. This is mechanism evidence for the tested selectors, not a universal claim about retrieval architectures.",
+  "claim_boundary": [
+    "This audit does not measure model cognition and makes zero model calls.",
+    "Private labels are used only evaluator-side after public evidence selection to identify canonical current sources.",
+    "The audit strengthens the mechanism explanation of Experiment 2 but does not create a B3 greater-than-B1 cognitive result.",
+    "Stronger retrieval systems with explicit temporal or supersession semantics remain untested baselines."
+  ]
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "provider_id": "academia-gemini-reasoner",
+    "kind": "openai_chat",
+    "model": "gemini-3.1-flash-lite",
+    "base_url": "https://ai-api.myacademia.uk/v1",
+    "capabilities": ["agent.reason"],
+    "priority": 10,
+    "api_key_env": "AI_API_ACADEMIA_KEY",
+    "timeout_seconds": 90
+  }
+]

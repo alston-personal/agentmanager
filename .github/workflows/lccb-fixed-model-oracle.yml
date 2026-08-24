@@ -1,0 +1,126 @@
+name: LCCB Fixed Model Oracle Experiment
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".agentos/triggers/lccb-fixed-model-oracle"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  statuses: write
+
+concurrency:
+  group: lccb-fixed-model-oracle-ssh
+  cancel-in-progress: false
+
+jobs:
+  fixed-model-series:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      EXPERIMENT_SHA: ${{ github.sha }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      LCCB_MODEL_NAME: gemini-3.1-flash-lite
+
+    steps:
+      - name: Publish execution start receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({
+              "state": "pending",
+              "context": "agentos/lccb-fixed-model",
+              "description": "Oracle SSH LCCB execution started",
+              "target_url": os.environ["RUN_URL"],
+          }))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -d "$payload" >/dev/null
+
+      - name: Cancel superseded self-hosted recovery runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run_id in 32576122422 32580465338 32580494643; do
+            curl --silent --output /dev/null -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel" || true
+          done
+
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Execute frozen LCCB series on isolated Oracle workspace
+        shell: bash
+        env:
+          AGENTOS_AI_API_KEY: ${{ secrets.AGENTOS_AI_API_KEY }}
+          AGENTOS_AI_BASE_URL: ${{ secrets.AGENTOS_AI_BASE_URL }}
+        run: |
+          set -euo pipefail
+          ssh-keyscan -p "${DEPLOY_SSH_PORT:-22}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          export REMOTE_WORK="/tmp/agentos-lccb-${GITHUB_RUN_ID}"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK' && mkdir -p '$REMOTE_WORK'"
+          git archive "$EXPERIMENT_SHA" | ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "tar -x -C '$REMOTE_WORK'"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && python3 scripts/build_lccb_synthetic_pack.py --output-dir artifacts/lccb-pack --seed 73129 --events 1000"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && chmod 000 artifacts/lccb-pack/private/labels.jsonl && AGENTOS_AI_API_KEY='$AGENTOS_AI_API_KEY' AGENTOS_AI_BASE_URL='$AGENTOS_AI_BASE_URL' LCCB_MODEL='$LCCB_MODEL_NAME' python3 scripts/run_lccb_openai_compatible.py --pack artifacts/lccb-pack --output artifacts/raw-responses.jsonl --stages 0,100,1000 --temperature 0 --repeat 3"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '$REMOTE_WORK' && chmod 600 artifacts/lccb-pack/private/labels.jsonl && python3 scripts/score_lccb_responses.py --pack artifacts/lccb-pack --responses artifacts/raw-responses.jsonl --output artifacts/scored-results.json"
+          mkdir -p artifacts/lccb-evidence
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/raw-responses.jsonl" artifacts/lccb-evidence/
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/scored-results.json" artifacts/lccb-evidence/
+          scp -P "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_WORK/artifacts/lccb-pack/manifest.json" artifacts/lccb-evidence/
+          ssh -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$REMOTE_WORK'"
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-fixed-model-${{ github.run_id }}
+          path: artifacts/lccb-evidence
+          if-no-files-found: error
+
+      - name: Publish execution result receipt
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ job.status }}" = "success" ]; then state=success; desc="Oracle SSH LCCB execution passed"; else state=failure; desc="Oracle SSH LCCB execution failed"; fi
+          export STATE="$state" DESC="$desc" RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(python3 - <<'PY'
+          import json, os
+          print(json.dumps({"state": os.environ["STATE"], "context": "agentos/lccb-fixed-model", "description": os.environ["DESC"], "target_url": os.environ["RUN_URL"]}))
+          PY
+          )
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -d "$payload" >/dev/null

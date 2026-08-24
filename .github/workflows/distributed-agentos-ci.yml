@@ -1,0 +1,81 @@
+name: Distributed AgentOS CI
+
+on:
+  push:
+    branches:
+      - feature/distributed-agentos-runtime
+      - feature/state-kernel-v2
+  pull_request:
+    branches:
+      - main
+      - feature/distributed-agentos-runtime
+    paths:
+      - "runtime_core/**"
+      - "agent_core/**"
+      - "agentos_node/**"
+      - "research/**"
+      - "scripts/**"
+      - "config/**"
+      - "docs/**"
+      - "tests/**"
+      - ".github/workflows/distributed-agentos-*.yml"
+      - ".github/workflows/deploy-agentos-core.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  distributed-runtime-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and test dependencies
+        run: python -m pip install --upgrade -e . pytest
+
+      - name: Smoke-test installed CLIs
+        run: |
+          agentos --help >/dev/null
+          agentos-node --help >/dev/null
+
+      - name: Validate Core service installers
+        run: |
+          bash -n scripts/install_systemd_user.sh
+          bash -n scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-control-plane.service' scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-provider-bridge.service' scripts/install_distributed_systemd_user.sh
+          grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_distributed_systemd_user.sh
+          grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_distributed_systemd_user.sh
+          grep -q 'EnvironmentFile=-$SECRETS_FILE' scripts/install_distributed_systemd_user.sh
+
+      - name: Validate Cloud-Core deploy workflow contract
+        run: |
+          grep -q 'workflow_dispatch:' .github/workflows/deploy-agentos-core.yml
+          grep -q 'N8N_DEPLOY_SSH_KEY' .github/workflows/deploy-agentos-core.yml
+          grep -q 'agentos-distributed' .github/workflows/deploy-agentos-core.yml
+          grep -q 'install_distributed_systemd_user.sh' .github/workflows/deploy-agentos-core.yml
+          grep -q '127.0.0.1:8765/health' .github/workflows/deploy-agentos-core.yml
+          grep -q 'isolated rollback' .github/workflows/deploy-agentos-core.yml
+
+      - name: Run deterministic AgentOS tests
+        # test_platform_runtime.py launches a real recurring background runner and
+        # belongs to the explicit integration/side-effect suite, not deterministic CI.
+        run: python -m pytest -q tests --ignore=tests/test_platform_runtime.py
+
+      - name: Generate controlled LCCB baseline artifact
+        run: python scripts/run_lccb_controlled_baselines.py --output artifacts/lccb-controlled-baselines.json
+
+      - name: Upload controlled LCCB baseline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lccb-controlled-baselines
+          path: artifacts/lccb-controlled-baselines.json
+          if-no-files-found: error
