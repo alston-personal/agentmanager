@@ -10,7 +10,8 @@
     "no_sudo_required": true,
     "no_recursive_chown": true,
     "canonical_ubuntu_workspace_remains_owned_by_ubuntu": true,
-    "runner_checkout_is_the_default_writable_execution_workspace": true
+    "runner_checkout_is_the_default_writable_execution_workspace": true,
+    "os_permission_is_not_agentos_authorization": true
   },
   "paths": [
     {
@@ -18,43 +19,61 @@
       "role": "runner_checkout",
       "required_access": "read_write_execute",
       "observed_access": "read_write_execute",
-      "allowed_effects": ["build", "test", "generate_ephemeral_output", "commit_evidence_to_explicit_branch"]
+      "allowed_effects": ["read", "write", "create", "delete", "build", "test", "generate_ephemeral_output", "commit_evidence_to_explicit_branch"]
     },
     {
       "path": "/home/ubuntu/agentmanager",
       "role": "human_antigravity_logic_workspace",
-      "required_access": "read_execute",
-      "observed_access": "read_execute_no_write",
-      "allowed_effects": ["inspect_explicit_known_paths"],
-      "forbidden_effects": ["direct_write", "ownership_change", "implicit_git_trust_override"]
+      "required_access": "read_write_execute_os_layer",
+      "observed_access": "read_write_execute_via_agentos_group",
+      "allowed_effects": ["read"],
+      "forbidden_effects": ["write", "create", "delete", "commit", "ownership_change", "implicit_git_trust_override"],
+      "notes": "OS group write exists for controlled future bridging, but direct AgentOS mutation remains fail-closed until a narrower effect is explicitly added."
     },
     {
       "path": "/home/ubuntu/agent-data",
       "role": "human_canonical_data_workspace",
-      "required_access": "read_execute",
-      "observed_access": "read_execute_no_write",
-      "allowed_effects": ["inspect_explicit_known_paths"],
-      "forbidden_effects": ["direct_write", "ownership_change", "implicit_git_trust_override"]
+      "required_access": "read_write_execute_os_layer",
+      "observed_access": "read_write_execute_via_agentos_group",
+      "allowed_effects": ["read", "write", "create", "delete"],
+      "allowed_write_patterns": [
+        "projects/agentmanager/STATUS.md",
+        "projects/agentmanager/continuity/**",
+        "runtime/receipts/**",
+        "runtime/checkpoints/**"
+      ],
+      "protected_patterns": [
+        "secrets/**",
+        "**/cookies.txt",
+        "**/*.key",
+        "**/*.pem",
+        "**/*token*",
+        "**/*credential*"
+      ],
+      "forbidden_effects": ["git_add_all", "root_commit", "root_push", "ownership_change"]
     },
     {
       "path": "/home/ubuntu",
       "role": "human_home_boundary",
       "observed_access": "traverse_only_no_list",
       "allowed_effects": ["traverse_to_explicitly_authorized_path"],
-      "forbidden_effects": ["directory_enumeration"]
+      "forbidden_effects": ["directory_enumeration", "write", "create", "delete"]
     }
   ],
   "git_policy": {
-    "cross_owner_repo_dubious_ownership_is_expected": true,
+    "cross_owner_repo_safe_directory_is_explicit_only": true,
     "do_not_globally_mark_ubuntu_repositories_safe_for_runner": true,
-    "operate_on_runner_checkout_for_git_mutations": true,
+    "operate_on_runner_checkout_for_logic_git_mutations": true,
+    "agent_data_root_git_add_all": "deny",
+    "agent_data_root_auto_commit": "deny",
     "all_remote_writes_require_explicit_branch": true,
     "experimental_writes_to_main": "deny"
   },
   "bridge_boundary": {
     "runner_is_transport_not_antigravity_identity": true,
+    "antigravity_processes_run_under_ubuntu": true,
     "future_antigravity_control_requires_authorized_local_adapter_or_relay": true,
-    "canonical_state_should_be_resolved_via_agentos_control_plane_or_verified_continuity_mirror_not_by_mutating_ubuntu_workspace": true
+    "canonical_state_should_be_resolved_via_agentos_control_plane_or_verified_continuity_mirror_not_by_unbounded_workspace_mutation": true
   },
-  "evidence": ".agentos/evidence/oracle-node-permission-audit.txt"
+  "evidence": ".agentos/evidence/oracle-cognitive-bridge-probe.txt"
 }
