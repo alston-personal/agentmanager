@@ -1,9 +1,11 @@
-timestamp_utc=2026-08-24T07:48:38Z
+timestamp_utc=2026-08-24T08:46:12Z
 hostname=instance-20260129-0852
 whoami=agentos-node
+uid_gid=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+groups=agentos-node agentos
 runner_ref=feature/distributed-agentos-runtime
 runner_workspace=/home/agentos-node/runner/_work/agentmanager/agentmanager
-head=c6ede0db0ca5ea3f21eef9f04b3862cf325531a6
+head=47e4629571a2f7ba08e138aa13da2f5633f69f25
 
 === NODE CLI ===
 agentos-node v0.2.0
@@ -17,9 +19,9 @@ agentos-node v0.2.0
   "os_release": "6.8.0-1050-oracle",
   "python_version": "3.10.12",
   "node_version": "0.2.0",
-  "collected_at": "2026-08-24T15:48:38.936274",
+  "collected_at": "2026-08-24T16:46:12.587485",
   "git_info": {
-    "commit": "c6ede0db0ca5ea3f21eef9f04b3862cf325531a6",
+    "commit": "47e4629571a2f7ba08e138aa13da2f5633f69f25",
     "branch": "feature/distributed-agentos-runtime",
     "is_git": true
   },
@@ -73,6 +75,7 @@ ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74
 ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=2541357
 ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
 ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu   claude          /home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.241-linux-arm64/resources/native-binary/claude --bare --print --output-format text --effort low 你是 AgentOS Lobster Engine。執行任務：**實作健康檢查、延遲、錯誤率與可用性評分**  執行後必須輸出 `✅ 任務完成：實作健康檢查、延遲、錯誤率與可用性評分` 或 `⚠️ 需要人工介入：原因`
 
 === DESKTOP SESSION BOUNDARY ===
 display_present=false
@@ -83,11 +86,11 @@ dbus_session_bus_present=false
 === KNOWN UBUNTU WORKSPACE ACCESS ===
 PATH=/home/ubuntu/agentmanager
 read=true
-write=false
+write=true
 execute=true
 PATH=/home/ubuntu/agent-data
 read=true
-write=false
+write=true
 execute=true
 
 === BRIDGE VERDICT INPUTS ===
