@@ -123,7 +123,14 @@ class AntigravityRelayWorker:
                 "error": f"{type(exc).__name__}: {exc}",
             }
         target = self.paths.receipts / f"{receipt['capsule_id']}.json"
-        target.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        # Receipt is a cross-user handoff artifact: ubuntu writes it and the
+        # agentos-node runner (same agentos group) must be able to reconcile it.
+        # Do not rely only on the service umask; make the file contract explicit.
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o660)
+        tmp.replace(target)
+        os.chmod(target, 0o660)
         processing.unlink(missing_ok=True)
         return receipt
 
