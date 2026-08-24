@@ -1,4 +1,4 @@
-name: Oracle Runner Probe
+name: Oracle Cognitive Bridge Probe
 
 on:
   workflow_dispatch:
@@ -17,75 +17,87 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Probe host and workspace permissions
+      - name: Probe AgentOS and Antigravity bridge readiness
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/oracle-node-permission-audit.txt
+          OUT=.agentos/evidence/oracle-cognitive-bridge-probe.txt
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "hostname=$(hostname)"
             echo "whoami=$(whoami)"
-            echo "uid_gid=$(id)"
-            echo "groups=$(id -Gn)"
-            echo "uname=$(uname -a)"
+            echo "runner_ref=${GITHUB_REF_NAME}"
             echo "runner_workspace=$PWD"
+            echo "head=$(git rev-parse HEAD)"
             echo
-            echo "=== PATH ACCESS ==="
-            for p in /home/ubuntu /home/ubuntu/agentmanager /home/ubuntu/agent-data /home/agentos-node /home/agentos-node/runner; do
-              echo "PATH=$p"
-              if test -e "$p"; then
-                stat -c 'owner=%U group=%G mode=%a type=%F' "$p" || true
-                test -r "$p" && echo 'read=true' || echo 'read=false'
-                test -w "$p" && echo 'write=true' || echo 'write=false'
-                test -x "$p" && echo 'execute=true' || echo 'execute=false'
-              else
-                echo 'exists=false'
-              fi
-              echo
-            done
 
-            echo "=== UBUNTU HOME TOP LEVEL ==="
-            ls -la /home/ubuntu 2>&1 | sed -n '1,120p' || true
-
+            echo "=== NODE CLI ==="
+            timeout 20s python3 -m agentos_node.cli version 2>&1 || true
+            timeout 30s python3 -m agentos_node.cli status --json 2>&1 || true
             echo
-            echo "=== CANDIDATE PROJECT DIRECTORIES ==="
-            find /home/ubuntu -maxdepth 2 -mindepth 1 -type d \
-              \( -name .git -o -name node_modules -o -name .cache -o -name .config -o -name .local \) -prune -o \
-              -maxdepth 2 -mindepth 1 -type d -print 2>/dev/null | sed -n '1,160p' || true
 
+            echo "=== CANONICAL PROJECT MARKER ==="
+            if test -f .agentos/project.json; then cat .agentos/project.json; else echo "project_marker=false"; fi
             echo
-            echo "=== AGENTMANAGER LOCAL REPO ==="
-            if test -d /home/ubuntu/agentmanager/.git; then
-              git -C /home/ubuntu/agentmanager rev-parse --abbrev-ref HEAD 2>&1 || true
-              git -C /home/ubuntu/agentmanager rev-parse HEAD 2>&1 || true
-              git -C /home/ubuntu/agentmanager status --short --branch 2>&1 | sed -n '1,80p' || true
+
+            echo "=== CONTROL PLANE CONFIG PRESENCE ==="
+            test -n "${AGENTOS_CONTROL_PLANE_URL:-}" && echo "control_plane_url_present=true" || echo "control_plane_url_present=false"
+            test -n "${AGENTOS_CONTROL_PLANE_TOKEN:-}" && echo "control_plane_token_present=true" || echo "control_plane_token_present=false"
+            if test -n "${AGENTOS_CONTROL_PLANE_URL:-}"; then
+              timeout 20s python3 -m agentos_node.ide_cli --json status --workspace "$PWD" 2>&1 || true
             else
-              echo 'not_git_repo_or_inaccessible=true'
+              echo "ide_cli_status=not_attempted_no_gateway"
             fi
-
             echo
-            echo "=== AGENT-DATA LOCAL REPO ==="
-            if test -d /home/ubuntu/agent-data/.git; then
-              git -C /home/ubuntu/agent-data rev-parse --abbrev-ref HEAD 2>&1 || true
-              git -C /home/ubuntu/agent-data rev-parse HEAD 2>&1 || true
-              git -C /home/ubuntu/agent-data status --short --branch 2>&1 | sed -n '1,80p' || true
+
+            echo "=== ANTIGRAVITY DISCOVERY ==="
+            command -v antigravity >/dev/null 2>&1 && echo "antigravity_cli=$(command -v antigravity)" || echo "antigravity_cli=not_found"
+            command -v agy >/dev/null 2>&1 && echo "agy_cli=$(command -v agy)" || echo "agy_cli=not_found"
+            command -v bridge >/dev/null 2>&1 && echo "browser_bridge_cli=$(command -v bridge)" || echo "browser_bridge_cli=not_found"
+            ps -eo user=,comm=,args= 2>/dev/null | grep -Ei 'antigravity|agy|ai-browser-bridge|browser-bridge' | grep -v grep | sed -E 's/(token|key|secret|authorization)=[^ ]+/\1=[REDACTED]/Ig' | sed -n '1,80p' || true
+            echo
+
+            echo "=== DESKTOP SESSION BOUNDARY ==="
+            test -n "${DISPLAY:-}" && echo "display_present=true" || echo "display_present=false"
+            test -n "${WAYLAND_DISPLAY:-}" && echo "wayland_display_present=true" || echo "wayland_display_present=false"
+            test -n "${XDG_RUNTIME_DIR:-}" && echo "xdg_runtime_dir_present=true" || echo "xdg_runtime_dir_present=false"
+            test -n "${DBUS_SESSION_BUS_ADDRESS:-}" && echo "dbus_session_bus_present=true" || echo "dbus_session_bus_present=false"
+            echo
+
+            echo "=== KNOWN UBUNTU WORKSPACE ACCESS ==="
+            for p in /home/ubuntu/agentmanager /home/ubuntu/agent-data; do
+              echo "PATH=$p"
+              test -r "$p" && echo "read=true" || echo "read=false"
+              test -w "$p" && echo "write=true" || echo "write=false"
+              test -x "$p" && echo "execute=true" || echo "execute=false"
+            done
+            echo
+
+            echo "=== BRIDGE VERDICT INPUTS ==="
+            echo "runner_transport=true"
+            test -n "${AGENTOS_CONTROL_PLANE_URL:-}" && echo "canonical_gateway_candidate=true" || echo "canonical_gateway_candidate=false"
+            if command -v antigravity >/dev/null 2>&1 || command -v agy >/dev/null 2>&1 || command -v bridge >/dev/null 2>&1; then
+              echo "executor_bridge_candidate=true"
             else
-              echo 'not_git_repo_or_inaccessible=true'
+              echo "executor_bridge_candidate=false"
             fi
           } | tee "$OUT"
 
-      - name: Commit evidence
+      - name: Commit evidence to explicit source branch
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Refusing experimental evidence write to main"
+            exit 2
+          fi
           git config user.name "agentos-node"
           git config user.email "agentos-node@users.noreply.github.com"
-          git add .agentos/evidence/oracle-node-permission-audit.txt
+          git add .agentos/evidence/oracle-cognitive-bridge-probe.txt
           if git diff --cached --quiet; then
             echo "No evidence change to commit"
             exit 0
           fi
-          git commit -m "evidence(agentos): Oracle node permission audit"
-          git push
+          git commit -m "evidence(agentos): Oracle cognitive bridge probe"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
