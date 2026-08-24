@@ -1,0 +1,8 @@
+timestamp_utc=2026-08-24T06:40:13Z
+hostname=instance-20260129-0852
+whoami=agentos-node
+uname=Linux instance-20260129-0852 6.8.0-1050-oracle #51~22.04.1-Ubuntu SMP Tue Apr 21 04:35:38 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+workspace=/home/agentos-node/runner/_work/agentmanager/agentmanager
+agentmanager_exists=true
+agent_data_exists=true
+runner_registration_exists=true
