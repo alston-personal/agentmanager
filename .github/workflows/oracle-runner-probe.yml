@@ -1,5 +1,6 @@
 name: Oracle Cognitive Bridge Probe
 
+# manual retrigger marker: 2026-08-24T16:45+08:00 after shared-group rollout
 on:
   workflow_dispatch:
   push:
@@ -27,6 +28,8 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "hostname=$(hostname)"
             echo "whoami=$(whoami)"
+            echo "uid_gid=$(id)"
+            echo "groups=$(id -Gn)"
             echo "runner_ref=${GITHUB_REF_NAME}"
             echo "runner_workspace=$PWD"
             echo "head=$(git rev-parse HEAD)"
