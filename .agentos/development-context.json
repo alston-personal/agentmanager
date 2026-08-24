@@ -1,6 +1,6 @@
 {
   "schema": "agentos.development-context/v1",
-  "updated_at": "2026-08-24T15:45:00+08:00",
+  "updated_at": "2026-08-24T16:49:00+08:00",
   "repo": "alston-personal/agentmanager",
   "stable_branch": "main",
   "integration_branch": "feature/distributed-agentos-runtime",
@@ -17,71 +17,37 @@
     "current_findings": [
       "Oracle host instance-20260129-0852 is registered and online as a GitHub self-hosted runner using service account agentos-node.",
       "GitHub -> Oracle machine execution loop has been proven by committed runner evidence.",
-      "agentos-node can read /home/ubuntu/agentmanager and /home/ubuntu/agent-data but cannot write them; Git also blocks cross-owner repositories as dubious ownership.",
-      "Oracle Antigravity can reconstruct local context but reported ONE canonical state unavailable, exposing a Node Cognitive Bridge gap.",
-      "A real branch-continuity incident occurred on 2026-08-24 when probe writes omitted an explicit branch and GitHub defaulted to main. This is now treated as an execution-context/constraint-propagation failure, not merely human memory failure.",
-      "Branch consolidation audit completed on 2026-08-24: state-kernel-v2 and watchdog-backoff have no unique commits relative to integration; node-cognitive-bridge-v0 is wrong-lineage probe/evidence only; agent/auto-pushing was selectively audited.",
-      "agent/auto-pushing's hybrid Data Layer sync and watchdog/indexing semantics already exist in the integration branch. Its historical merge should not be transplanted. Its mixed Lobster/config commit is rejected wholesale; only the independent Redmine 2.6-to-5 porting skill was salvaged into vNext.",
-      "The verified Oracle runner and permission-audit evidence has now been reconciled into the vNext branch.",
-      "A machine-readable Oracle node workspace contract now preserves ubuntu ownership, keeps agentos-node least-privileged, treats the runner checkout as the writable execution workspace, and forbids blanket sudo/chown/global safe.directory overrides."
+      "After the 2026-08-24 shared-group rollout, the runner process has supplemental group agentos and OS-layer read/write/execute access to /home/ubuntu/agentmanager and /home/ubuntu/agent-data.",
+      "OS-layer write capability is explicitly not equivalent to AgentOS authorization. agent-data contains unrelated mutable project state and secrets/cookies, so root git add/commit/push remains denied.",
+      "WorkspaceGuard now fail-closes path/effect authorization. Only explicit agentmanager continuity/status, receipt/checkpoint, and Antigravity relay spool paths are allowlisted for data-layer mutation; secrets/cookies/keys/tokens/credentials remain protected.",
+      "Oracle Antigravity is definitely running under ubuntu as antigravity-ide-server, extensionHost, language_server, Codex app-server, and observed Claude executor processes, but no antigravity/agy CLI is exposed to agentos-node PATH.",
+      "The bridge direction is therefore a cross-user authorized relay rather than direct session impersonation. A bounded file-spool Antigravity relay client/protocol has been added under agentos_node/antigravity_relay.py.",
+      "Control Plane URL/token are still absent in the runner environment, so canonical gateway resolution on Oracle remains the next configuration gap.",
+      "A real branch-continuity incident occurred on 2026-08-24 when probe writes omitted an explicit branch and GitHub defaulted to main; experimental workflows now fail closed on main and push to an explicit source branch.",
+      "Branch consolidation is complete logically: feature/distributed-agentos-runtime is the sole canonical vNext continuation line; historical child branches are retired continuation targets."
     ],
     "next_actions": [
-      "Keep all further implementation on feature/distributed-agentos-runtime unless a short-lived child branch is explicitly declared with parent and merge target.",
-      "Treat feature/state-kernel-v2, feature/watchdog-backoff, agent/auto-pushing, and feature/node-cognitive-bridge-v0 as retired continuation targets; physical branch deletion is optional cleanup, not a prerequisite for continued work.",
-      "Implement the minimum Node Cognitive Bridge using existing vNext primitives: canonical state resolution -> execution capsule -> executor -> receipt -> reconcile.",
-      "Discover whether the Oracle Antigravity installation exposes an authorized CLI/API/socket/relay path; do not equate GitHub runner shell access with Antigravity control.",
-      "Repeat the same fresh-session Antigravity /goal continuation test without manually revealing the active goal, and preserve before/after evidence."
+      "Finish validation of WorkspaceGuard and the Antigravity relay client on the real Oracle runner and preserve evidence.",
+      "Implement the ubuntu-owned relay consumer/adapter that consumes runtime/antigravity-relay/inbox capsules, invokes an authorized local Antigravity executor surface, and emits receipts without sharing the desktop session identity with agentos-node.",
+      "Configure or resolve the AgentOS Control Plane endpoint for the Oracle node so agentos continue can fetch canonical project state instead of reconstructing it from local workspace state.",
+      "Wire canonical state -> execution capsule -> Antigravity relay -> receipt -> reconcile, then rerun the same blind fresh-session /goal test without manually revealing the active goal.",
+      "Preserve Master Experience Floor evidence that user-visible continuation must remain system-owned; a model/session must not require repeated human 'continue' pulses while safe derivable work remains."
     ]
   },
   "branch_registry": {
-    "main": {
-      "role": "stable/production baseline",
-      "status": "keep",
-      "notes": "Contains six accidental 2026-08-24 Oracle probe/evidence commits; their useful evidence has been reconciled into vNext. Do not add further experimental work."
-    },
-    "feature/distributed-agentos-runtime": {
-      "role": "AgentOS vNext integration branch",
-      "status": "ACTIVE_CANONICAL_DEVELOPMENT_BRANCH",
-      "notes": "Open draft PR #2 to main. Canonical home for Distributed AgentOS runtime, continuity, State Kernel integration, Master Experience Floor work, Node Join and Cognitive Bridge."
-    },
-    "feature/state-kernel-v2": {
-      "role": "historical child branch",
-      "status": "retired_continuation_target",
-      "notes": "PR #3 merged into feature/distributed-agentos-runtime; no unique commits remain relative to integration branch."
-    },
-    "feature/watchdog-backoff": {
-      "role": "historical child branch",
-      "status": "retired_continuation_target",
-      "notes": "0 commits ahead and 536 behind feature/distributed-agentos-runtime; no unique content remains."
-    },
-    "agent/auto-pushing": {
-      "role": "legacy divergent work branch",
-      "status": "retired_after_selective_salvage",
-      "notes": "Four historical commits were audited. Data Layer sync and watchdog/indexing semantics already exist in vNext; historical merge is not transplantable; mixed Lobster/config changes are stale/risky. Independent Redmine 2.6-to-5 skill was salvaged. See docs/BRANCH_CONSOLIDATION_AUDIT_20260824.md."
-    },
-    "feature/node-cognitive-bridge-v0": {
-      "role": "mistaken child branch",
-      "status": "retired_continuation_target",
-      "notes": "Created from main during 2026-08-24 continuity incident; carries only Oracle probe/evidence files from the wrong lineage. Do not develop on it."
-    }
+    "main": {"role": "stable/production baseline", "status": "keep", "notes": "Do not add further experimental work."},
+    "feature/distributed-agentos-runtime": {"role": "AgentOS vNext integration branch", "status": "ACTIVE_CANONICAL_DEVELOPMENT_BRANCH", "notes": "Canonical continuation point for current work."},
+    "feature/state-kernel-v2": {"role": "historical child branch", "status": "retired_continuation_target"},
+    "feature/watchdog-backoff": {"role": "historical child branch", "status": "retired_continuation_target"},
+    "agent/auto-pushing": {"role": "legacy divergent work branch", "status": "retired_after_selective_salvage"},
+    "feature/node-cognitive-bridge-v0": {"role": "mistaken child branch", "status": "retired_continuation_target"}
   },
   "branch_lifecycle": {
     "default": "Work directly on the integration branch for the current vNext program.",
-    "short_lived_child_allowed_when": [
-      "independent review or rollback is materially useful",
-      "high-risk experiment needs isolation",
-      "parallel work would otherwise conflict"
-    ],
-    "required_metadata": [
-      "parent_branch",
-      "merge_target",
-      "purpose",
-      "completion_condition"
-    ],
+    "short_lived_child_allowed_when": ["independent review or rollback is materially useful", "high-risk experiment needs isolation", "parallel work would otherwise conflict"],
+    "required_metadata": ["parent_branch", "merge_target", "purpose", "completion_condition"],
     "completion": "merge or selectively transplant accepted changes back to integration branch, then retire the child branch"
   },
   "branch_history_reference": "docs/BRANCH_CONSOLIDATION_AUDIT_20260824.md",
-  "node_workspace_contracts": [
-    ".agentos/node-workspaces/oracle-instance-20260129-0852.json"
-  ]
+  "node_workspace_contracts": [".agentos/node-workspaces/oracle-instance-20260129-0852.json"]
 }
