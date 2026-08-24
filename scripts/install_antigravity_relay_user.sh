@@ -20,6 +20,10 @@ if [ ! -d "$REPO/.git" ]; then
 fi
 
 mkdir -p "$(dirname "$RUNTIME_ROOT")" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$UNIT_DIR"
+# Relay is deliberately shared by ubuntu and agentos-node through group agentos.
+# Normalize the existing spool now; setgid preserves the group on future files.
+chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
 
 # The human workspace may intentionally remain on main and may be dirty. Never
 # switch/reset it just to run the relay. Keep a dedicated detached worktree that
@@ -38,10 +42,6 @@ else
   git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" "origin/$BRANCH"
 fi
 
-# Fail before touching the service if the runtime code cannot actually import.
-# Run from the runtime worktree itself: when this installer is piped from a
-# human workspace on main, Python's sys.path[0] would otherwise resolve the
-# older ./agentos_node package first and shadow the vNext package on PYTHONPATH.
 (
   cd "$RUNTIME_ROOT"
   PYTHONPATH="$RUNTIME_ROOT" /usr/bin/python3 - <<'PY'
@@ -60,6 +60,7 @@ After=default.target
 Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
+UMask=0007
 ExecStart=/usr/bin/python3 -m agentos_node.antigravity_relay_worker --root $RELAY_ROOT
 Restart=on-failure
 RestartSec=3
@@ -80,4 +81,6 @@ echo
 echo "runtime_root=$RUNTIME_ROOT"
 echo "runtime_branch=$BRANCH"
 echo "relay_root=$RELAY_ROOT"
+echo "relay_mode=$(stat -c '%a %U %G' "$RELAY_ROOT")"
+echo "inbox_mode=$(stat -c '%a %U %G' "$RELAY_ROOT/inbox")"
 echo "installed=$UNIT"
