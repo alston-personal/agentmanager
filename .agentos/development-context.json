@@ -1,6 +1,6 @@
 {
   "schema": "agentos.development-context/v1",
-  "updated_at": "2026-08-24T15:40:00+08:00",
+  "updated_at": "2026-08-24T15:45:00+08:00",
   "repo": "alston-personal/agentmanager",
   "stable_branch": "main",
   "integration_branch": "feature/distributed-agentos-runtime",
@@ -21,14 +21,15 @@
       "Oracle Antigravity can reconstruct local context but reported ONE canonical state unavailable, exposing a Node Cognitive Bridge gap.",
       "A real branch-continuity incident occurred on 2026-08-24 when probe writes omitted an explicit branch and GitHub defaulted to main. This is now treated as an execution-context/constraint-propagation failure, not merely human memory failure.",
       "Branch consolidation audit completed on 2026-08-24: state-kernel-v2 and watchdog-backoff have no unique commits relative to integration; node-cognitive-bridge-v0 is wrong-lineage probe/evidence only; agent/auto-pushing was selectively audited.",
-      "agent/auto-pushing's hybrid Data Layer sync and watchdog/indexing semantics already exist in the integration branch. Its historical merge should not be transplanted. Its mixed Lobster/config commit is rejected wholesale; only the independent Redmine 2.6-to-5 porting skill was salvaged into vNext."
+      "agent/auto-pushing's hybrid Data Layer sync and watchdog/indexing semantics already exist in the integration branch. Its historical merge should not be transplanted. Its mixed Lobster/config commit is rejected wholesale; only the independent Redmine 2.6-to-5 porting skill was salvaged into vNext.",
+      "The verified Oracle runner and permission-audit evidence has now been reconciled into the vNext branch.",
+      "A machine-readable Oracle node workspace contract now preserves ubuntu ownership, keeps agentos-node least-privileged, treats the runner checkout as the writable execution workspace, and forbids blanket sudo/chown/global safe.directory overrides."
     ],
     "next_actions": [
       "Keep all further implementation on feature/distributed-agentos-runtime unless a short-lived child branch is explicitly declared with parent and merge target.",
       "Treat feature/state-kernel-v2, feature/watchdog-backoff, agent/auto-pushing, and feature/node-cognitive-bridge-v0 as retired continuation targets; physical branch deletion is optional cleanup, not a prerequisite for continued work.",
-      "Reconcile the accidental Oracle probe/evidence delta currently on main into the integration-line history without adding further experimental writes to main.",
-      "Define a controlled workspace access contract for agentos-node rather than granting sudo or changing ownership wholesale.",
-      "Implement the minimum Node Cognitive Bridge: canonical state resolution -> execution capsule -> executor -> receipt -> reconcile.",
+      "Implement the minimum Node Cognitive Bridge using existing vNext primitives: canonical state resolution -> execution capsule -> executor -> receipt -> reconcile.",
+      "Discover whether the Oracle Antigravity installation exposes an authorized CLI/API/socket/relay path; do not equate GitHub runner shell access with Antigravity control.",
       "Repeat the same fresh-session Antigravity /goal continuation test without manually revealing the active goal, and preserve before/after evidence."
     ]
   },
@@ -36,7 +37,7 @@
     "main": {
       "role": "stable/production baseline",
       "status": "keep",
-      "notes": "Contains six accidental 2026-08-24 Oracle probe/evidence commits that must be reconciled deliberately; do not add further experimental work."
+      "notes": "Contains six accidental 2026-08-24 Oracle probe/evidence commits; their useful evidence has been reconciled into vNext. Do not add further experimental work."
     },
     "feature/distributed-agentos-runtime": {
       "role": "AgentOS vNext integration branch",
@@ -79,5 +80,8 @@
     ],
     "completion": "merge or selectively transplant accepted changes back to integration branch, then retire the child branch"
   },
-  "branch_history_reference": "docs/BRANCH_CONSOLIDATION_AUDIT_20260824.md"
+  "branch_history_reference": "docs/BRANCH_CONSOLIDATION_AUDIT_20260824.md",
+  "node_workspace_contracts": [
+    ".agentos/node-workspaces/oracle-instance-20260129-0852.json"
+  ]
 }
