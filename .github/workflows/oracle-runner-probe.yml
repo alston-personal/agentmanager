@@ -6,26 +6,43 @@ on:
     paths:
       - '.github/workflows/oracle-runner-probe.yml'
 
+permissions:
+  contents: write
+
 jobs:
   probe:
     runs-on: [self-hosted, Linux, ARM64, oracle]
 
     steps:
-      - name: Probe host
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Probe host and persist evidence
         shell: bash
         run: |
-          set -euxo pipefail
-          echo "=== HOST ==="
-          hostname
-          whoami
-          uname -a
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "whoami=$(whoami)"
+            echo "uname=$(uname -a)"
+            echo "workspace=$PWD"
+            if test -d /home/ubuntu/agentmanager; then echo "agentmanager_exists=true"; else echo "agentmanager_exists=false"; fi
+            if test -d /home/ubuntu/agent-data; then echo "agent_data_exists=true"; else echo "agent_data_exists=false"; fi
+            if test -f /home/agentos-node/runner/.runner; then echo "runner_registration_exists=true"; else echo "runner_registration_exists=false"; fi
+          } | tee .agentos/evidence/oracle-runner-probe.txt
 
-          echo "=== PATH ==="
-          pwd
-
-          echo "=== AGENTOS ==="
-          test -d /home/ubuntu/agentmanager && echo "agentmanager exists"
-          test -d /home/ubuntu/agent-data && echo "agent-data exists"
-
-          echo "=== RUNNER ==="
-          test -f /home/agentos-node/runner/.runner && echo "runner registration exists"
+      - name: Commit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "agentos-node"
+          git config user.email "agentos-node@users.noreply.github.com"
+          git add .agentos/evidence/oracle-runner-probe.txt
+          if git diff --cached --quiet; then
+            echo "No evidence change to commit"
+            exit 0
+          fi
+          git commit -m "evidence(agentos): Oracle runner probe"
+          git push
