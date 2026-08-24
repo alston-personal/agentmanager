@@ -1,0 +1,28 @@
+name: Oracle Runner Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+
+    steps:
+      - name: Probe host
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "=== HOST ==="
+          hostname
+          whoami
+          uname -a
+
+          echo "=== PATH ==="
+          pwd
+
+          echo "=== AGENTOS ==="
+          test -d /home/ubuntu/agentmanager && echo "agentmanager exists"
+          test -d /home/ubuntu/agent-data && echo "agent-data exists"
+
+          echo "=== RUNNER ==="
+          test -f /home/agentos-node/runner/.runner && echo "runner registration exists"
