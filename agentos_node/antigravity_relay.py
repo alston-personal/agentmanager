@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 import uuid
@@ -19,6 +20,8 @@ import uuid
 
 RELAY_SCHEMA = "agentos.antigravity-relay/v1"
 RECEIPT_SCHEMA = "agentos.antigravity-receipt/v1"
+SHARED_DIR_MODE = 0o2770
+SHARED_FILE_MODE = 0o660
 
 
 def _utc_now() -> str:
@@ -46,8 +49,16 @@ class RelayPaths:
         return self.root / "receipts"
 
     def ensure(self) -> None:
-        for path in (self.inbox, self.processing, self.receipts):
+        # This spool is intentionally cross-user (ubuntu <-> agentos-node), so
+        # directories must remain group-writable and inherit the shared group.
+        # chmod may fail for a non-owner if an installer has not yet normalized
+        # ownership/mode; in that case the caller will fail naturally on write.
+        for path in (self.root, self.inbox, self.processing, self.receipts):
             path.mkdir(parents=True, exist_ok=True)
+            try:
+                path.chmod(SHARED_DIR_MODE)
+            except PermissionError:
+                pass
 
 
 class AntigravityRelayClient:
@@ -92,6 +103,7 @@ class AntigravityRelayClient:
         target = self.paths.inbox / f"{capsule_id}.json"
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.chmod(tmp, SHARED_FILE_MODE)
         tmp.replace(target)
         return payload
 
