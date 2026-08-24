@@ -1,11 +1,21 @@
-timestamp_utc=2026-08-24T08:46:12Z
+timestamp_utc=2026-08-24T08:51:38Z
 hostname=instance-20260129-0852
 whoami=agentos-node
 uid_gid=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 groups=agentos-node agentos
 runner_ref=feature/distributed-agentos-runtime
 runner_workspace=/home/agentos-node/runner/_work/agentmanager/agentmanager
-head=47e4629571a2f7ba08e138aa13da2f5633f69f25
+head=c441e3885030b678d1851bb9c74b79dfc5cc4152
+
+=== WORKSPACE GUARD TEST ===
+/usr/bin/python3: No module named pytest
+
+=== WORKSPACE GUARD LIVE DECISIONS ===
+write /home/ubuntu/agent-data/projects/agentmanager/STATUS.md allowed=true reason=authorized by workspace contract
+create /home/ubuntu/agent-data/runtime/receipts/probe.json allowed=true reason=authorized by workspace contract
+write /home/ubuntu/agent-data/secrets/youtube-ai-manager/cookies.txt allowed=false reason=path matches protected pattern
+write /home/ubuntu/agent-data/projects/youtube-ai-manager/video_library.json allowed=false reason=write path not allowlisted
+write /home/ubuntu/agentmanager/README.md allowed=false reason=effect explicitly forbidden
 
 === NODE CLI ===
 agentos-node v0.2.0
@@ -19,9 +29,9 @@ agentos-node v0.2.0
   "os_release": "6.8.0-1050-oracle",
   "python_version": "3.10.12",
   "node_version": "0.2.0",
-  "collected_at": "2026-08-24T16:46:12.587485",
+  "collected_at": "2026-08-24T16:51:38.779191",
   "git_info": {
-    "commit": "47e4629571a2f7ba08e138aa13da2f5633f69f25",
+    "commit": "c441e3885030b678d1851bb9c74b79dfc5cc4152",
     "branch": "feature/distributed-agentos-runtime",
     "is_git": true
   },
@@ -54,28 +64,44 @@ ide_cli_status=not_attempted_no_gateway
 === ANTIGRAVITY DISCOVERY ===
 antigravity_cli=not_found
 agy_cli=not_found
-browser_bridge_cli=/usr/sbin/bridge
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   sh              sh /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/bin/antigravity-ide-server --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/server-main.js --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-6b7891f61e1c53de75eb.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-3a5130c03dca555b2485.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=ptyHost --logsPath /home/ubuntu/.antigravity-ide-server/data/logs/20260824T082547
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   language_server /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/antigravity/bin/language_server_linux_arm --enable_lsp --csrf_token 0000b0a9-ca25-48e6-8aa2-e5d1f775e73a --extension_server_port 38117 --extension_server_csrf_token ec7cd454-8431-4f27-a19e-5f6fe003012b --workspace_id file_home_ubuntu_agentmanager --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --subclient_type ide --app_data_dir antigravity-ide --parent_pipe_path /tmp/server_99a5a964f3347bd3
-ubuntu   codex           /home/ubuntu/.antigravity-ide-server/extensions/openai.chatgpt-26.818.41509-linux-arm64/bin/linux-aarch64/codex -c features.code_mode_host=true app-server --analytics-default-enabled
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=2541357
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=2541357
-ubuntu   node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=2541357
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
-ubuntu   claude          /home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.241-linux-arm64/resources/native-binary/claude --bare --print --output-format text --effort low 你是 AgentOS Lobster Engine。執行任務：**實作健康檢查、延遲、錯誤率與可用性評分**  執行後必須輸出 `✅ 任務完成：實作健康檢查、延遲、錯誤率與可用性評分` 或 `⚠️ 需要人工介入：原因`
+ubuntu     10469 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu     27361 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu     73894 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu    125593 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.0.2-bd0307c171dbaf4cd6135192515e160af7d9d132/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu   2541305 sh              sh /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/bin/antigravity-ide-server --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token=[REDACTED] off --enable-remote-auto-shutdown --accept-server-license-terms
+ubuntu   2541312 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/server-main.js --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token=[REDACTED] off --enable-remote-auto-shutdown --accept-server-license-terms
+ubuntu   2541357 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
+ubuntu   2541364 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
+ubuntu   2541389 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-6b7891f61e1c53de75eb.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   2541390 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-3a5130c03dca555b2485.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   2541403 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
+ubuntu   2541473 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=ptyHost --logsPath /home/ubuntu/.antigravity-ide-server/data/logs/20260824T082547
+ubuntu   2541488 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu   2541516 language_server /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/antigravity/bin/language_server_linux_arm --enable_lsp --csrf_token=[REDACTED] --extension_server_port 38117 --extension_server_csrf_token=[REDACTED] --workspace_id file_home_ubuntu_agentmanager --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --subclient_type ide --app_data_dir antigravity-ide --parent_pipe_path /tmp/server_99a5a964f3347bd3
+ubuntu   2541681 codex           /home/ubuntu/.antigravity-ide-server/extensions/openai.chatgpt-26.818.41509-linux-arm64/bin/linux-aarch64/codex -c features.code_mode_host=true app-server --analytics-default-enabled
+ubuntu   2541682 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=2541357
+ubuntu   2541688 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=2541357
+ubuntu   2542123 node            /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=2541357
+ubuntu   2542927 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu   2550594 bash            /bin/bash --init-file /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/vs/workbench/contrib/terminal/common/scripts/shellIntegration-bash.sh
+ubuntu   2794314 claude          /home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.241-linux-arm64/resources/native-binary/claude --bare --print --output-format text --effort low 你是 AgentOS Lobster Engine。執行任務：**實作健康檢查、延遲、錯誤率與可用性評分**  執行後必須輸出 `✅ 任務完成：實作健康檢查、延遲、錯誤率與可用性評分` 或 `⚠️ 需要人工介入：原因`
+
+=== ANTIGRAVITY LOCAL LISTENERS ===
+LISTEN 0      4096       127.0.0.1:34305      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:3011       0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:18791      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:18789      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:38117      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:37931      0.0.0.0:*          
+LISTEN 0      5          127.0.0.1:8085       0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:39959      0.0.0.0:*          
+LISTEN 0      5          127.0.0.1:8765       0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:25181      0.0.0.0:*          
+LISTEN 0      5          127.0.0.1:8775       0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:42311      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:44023      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:11434      0.0.0.0:*          
+LISTEN 0      511            [::1]:18789         [::]:*          
 
 === DESKTOP SESSION BOUNDARY ===
 display_present=false
@@ -96,4 +122,4 @@ execute=true
 === BRIDGE VERDICT INPUTS ===
 runner_transport=true
 canonical_gateway_candidate=false
-executor_bridge_candidate=true
+antigravity_session_candidate=true
