@@ -40,7 +40,9 @@
         "projects/agentmanager/STATUS.md",
         "projects/agentmanager/continuity/**",
         "runtime/receipts/**",
-        "runtime/checkpoints/**"
+        "runtime/checkpoints/**",
+        "runtime/antigravity-relay/inbox/**",
+        "runtime/antigravity-relay/receipts/**"
       ],
       "protected_patterns": [
         "secrets/**",
@@ -72,6 +74,8 @@
   "bridge_boundary": {
     "runner_is_transport_not_antigravity_identity": true,
     "antigravity_processes_run_under_ubuntu": true,
+    "direct_cross_user_session_impersonation": "deny",
+    "authorized_relay_spool": "/home/ubuntu/agent-data/runtime/antigravity-relay",
     "future_antigravity_control_requires_authorized_local_adapter_or_relay": true,
     "canonical_state_should_be_resolved_via_agentos_control_plane_or_verified_continuity_mirror_not_by_unbounded_workspace_mutation": true
   },
