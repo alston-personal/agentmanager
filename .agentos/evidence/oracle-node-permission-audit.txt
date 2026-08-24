@@ -1,0 +1,71 @@
+timestamp_utc=2026-08-24T07:29:02Z
+hostname=instance-20260129-0852
+whoami=agentos-node
+uid_gid=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node)
+groups=agentos-node
+uname=Linux instance-20260129-0852 6.8.0-1050-oracle #51~22.04.1-Ubuntu SMP Tue Apr 21 04:35:38 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux
+runner_workspace=/home/agentos-node/runner/_work/agentmanager/agentmanager
+
+=== PATH ACCESS ===
+PATH=/home/ubuntu
+owner=ubuntu group=ubuntu mode=751 type=directory
+read=false
+write=false
+execute=true
+
+PATH=/home/ubuntu/agentmanager
+owner=ubuntu group=ubuntu mode=775 type=directory
+read=true
+write=false
+execute=true
+
+PATH=/home/ubuntu/agent-data
+owner=ubuntu group=ubuntu mode=775 type=directory
+read=true
+write=false
+execute=true
+
+PATH=/home/agentos-node
+owner=agentos-node group=agentos-node mode=755 type=directory
+read=true
+write=true
+execute=true
+
+PATH=/home/agentos-node/runner
+owner=agentos-node group=agentos-node mode=755 type=directory
+read=true
+write=true
+execute=true
+
+=== UBUNTU HOME TOP LEVEL ===
+ls: cannot open directory '/home/ubuntu': Permission denied
+
+=== CANDIDATE PROJECT DIRECTORIES ===
+
+=== AGENTMANAGER LOCAL REPO ===
+fatal: detected dubious ownership in repository at '/home/ubuntu/agentmanager'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/agentmanager
+fatal: detected dubious ownership in repository at '/home/ubuntu/agentmanager'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/agentmanager
+fatal: detected dubious ownership in repository at '/home/ubuntu/agentmanager'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/agentmanager
+
+=== AGENT-DATA LOCAL REPO ===
+fatal: detected dubious ownership in repository at '/home/ubuntu/agent-data'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/agent-data
+fatal: detected dubious ownership in repository at '/home/ubuntu/agent-data'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/agent-data
+fatal: detected dubious ownership in repository at '/home/ubuntu/agent-data'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/agent-data
