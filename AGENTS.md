@@ -9,6 +9,8 @@ This is the **Logic Layer Root** of the AgentOS ecosystem.
 
 ## Key Entry Points
 - `ONBOARDING.md` — system state overview (read this first)
+- `.agentos/development-context.json` — canonical development branch, write policy, branch registry, active work, and next actions (**read before any repository write**)
+- `docs/CANONICAL_DEVELOPMENT_CONTEXT.md` — human-readable development continuity / branch consolidation record
 - `DASHBOARD.md` — all registered projects
 - `scripts/bootstrap.py` — repair symlinks
 - `.agent/workflows/` — slash command definitions
@@ -19,13 +21,27 @@ This is the **Logic Layer Root** of the AgentOS ecosystem.
 - `docs/MASTER_EXPERIENCE_REPRODUCTION_PROTOCOL.md` — blind reproduction/measurement protocol
 - `docs/MASTER_EXPERIENCE_FLOOR.md` — normative cross-executor capability-normalization requirement
 
+## Development Branch Continuity
+For current AgentOS vNext work, `feature/distributed-agentos-runtime` is the canonical integration/continuation branch unless `.agentos/development-context.json` explicitly says otherwise.
+
+Before **every repository write**:
+1. Read/refresh `.agentos/development-context.json`.
+2. Confirm repository, active branch, merge target, and write policy.
+3. Pass the branch explicitly to the Git/GitHub write operation. Never rely on default-branch fallback.
+4. Treat experimental writes to `main` as denied unless production promotion is explicitly intended and authorized.
+
+Do not create a new branch merely because the task sounds like a new feature. Short-lived child branches are exceptional and must declare parent branch, merge target, purpose, and completion condition; merge/salvage them back promptly and retire them.
+
+This rule is evidence-backed: on 2026-08-24 an Oracle probe write omitted the branch argument and landed on `main` despite the higher-level intent being experimental. AgentOS therefore treats branch/repo/write-policy/merge-target as execution constraints that must propagate to the final tool boundary, not as facts an executor is expected to remember informally.
+
 ## Distributed Continuity
 Treat shared Canonical IR as the cross-agent continuity authority rather than the current IDE/chat session alone.
 
 Preferred read order:
 1. If the `agentos` CLI is configured and the Control Plane is reachable, run `agentos status` and use the returned project state.
 2. If direct Control Plane access is unavailable but an authorized GitHub connector can read the private Data Layer, read `alston-personal/my-agent-data:projects/agentmanager/continuity/latest.json` and verify its Canonical IR digest.
-3. Fall back to ordinary repository/session context only when neither shared-state path is available; report that distributed continuity could not be consulted.
+3. For repository-development continuity, read `.agentos/development-context.json` and `docs/CANONICAL_DEVELOPMENT_CONTEXT.md` before falling back to ordinary repository/session reconstruction.
+4. Fall back to ordinary repository/session context only when shared-state paths are unavailable; report that distributed continuity could not be consulted.
 
 Operational rules:
 - If the user says `continue`, prefer `agentos continue` when the Control Plane is available.
@@ -56,4 +72,4 @@ They MUST be symlinks to `~/agent-data/projects/agentmanager/`.
 
 ## Git Push Reporting
 After pushing changes, report the pushed remote/branch and the latest commit hash.
-Example: `origin/main @ 4639f87`.
+Example: `origin/feature/distributed-agentos-runtime @ <sha>`.
