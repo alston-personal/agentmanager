@@ -17,21 +17,64 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Probe host and persist evidence
+      - name: Probe host and workspace permissions
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/oracle-node-permission-audit.txt
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "hostname=$(hostname)"
             echo "whoami=$(whoami)"
+            echo "uid_gid=$(id)"
+            echo "groups=$(id -Gn)"
             echo "uname=$(uname -a)"
-            echo "workspace=$PWD"
-            if test -d /home/ubuntu/agentmanager; then echo "agentmanager_exists=true"; else echo "agentmanager_exists=false"; fi
-            if test -d /home/ubuntu/agent-data; then echo "agent_data_exists=true"; else echo "agent_data_exists=false"; fi
-            if test -f /home/agentos-node/runner/.runner; then echo "runner_registration_exists=true"; else echo "runner_registration_exists=false"; fi
-          } | tee .agentos/evidence/oracle-runner-probe.txt
+            echo "runner_workspace=$PWD"
+            echo
+            echo "=== PATH ACCESS ==="
+            for p in /home/ubuntu /home/ubuntu/agentmanager /home/ubuntu/agent-data /home/agentos-node /home/agentos-node/runner; do
+              echo "PATH=$p"
+              if test -e "$p"; then
+                stat -c 'owner=%U group=%G mode=%a type=%F' "$p" || true
+                test -r "$p" && echo 'read=true' || echo 'read=false'
+                test -w "$p" && echo 'write=true' || echo 'write=false'
+                test -x "$p" && echo 'execute=true' || echo 'execute=false'
+              else
+                echo 'exists=false'
+              fi
+              echo
+            done
+
+            echo "=== UBUNTU HOME TOP LEVEL ==="
+            ls -la /home/ubuntu 2>&1 | sed -n '1,120p' || true
+
+            echo
+            echo "=== CANDIDATE PROJECT DIRECTORIES ==="
+            find /home/ubuntu -maxdepth 2 -mindepth 1 -type d \
+              \( -name .git -o -name node_modules -o -name .cache -o -name .config -o -name .local \) -prune -o \
+              -maxdepth 2 -mindepth 1 -type d -print 2>/dev/null | sed -n '1,160p' || true
+
+            echo
+            echo "=== AGENTMANAGER LOCAL REPO ==="
+            if test -d /home/ubuntu/agentmanager/.git; then
+              git -C /home/ubuntu/agentmanager rev-parse --abbrev-ref HEAD 2>&1 || true
+              git -C /home/ubuntu/agentmanager rev-parse HEAD 2>&1 || true
+              git -C /home/ubuntu/agentmanager status --short --branch 2>&1 | sed -n '1,80p' || true
+            else
+              echo 'not_git_repo_or_inaccessible=true'
+            fi
+
+            echo
+            echo "=== AGENT-DATA LOCAL REPO ==="
+            if test -d /home/ubuntu/agent-data/.git; then
+              git -C /home/ubuntu/agent-data rev-parse --abbrev-ref HEAD 2>&1 || true
+              git -C /home/ubuntu/agent-data rev-parse HEAD 2>&1 || true
+              git -C /home/ubuntu/agent-data status --short --branch 2>&1 | sed -n '1,80p' || true
+            else
+              echo 'not_git_repo_or_inaccessible=true'
+            fi
+          } | tee "$OUT"
 
       - name: Commit evidence
         shell: bash
@@ -39,10 +82,10 @@ jobs:
           set -euo pipefail
           git config user.name "agentos-node"
           git config user.email "agentos-node@users.noreply.github.com"
-          git add .agentos/evidence/oracle-runner-probe.txt
+          git add .agentos/evidence/oracle-node-permission-audit.txt
           if git diff --cached --quiet; then
             echo "No evidence change to commit"
             exit 0
           fi
-          git commit -m "evidence(agentos): Oracle runner probe"
+          git commit -m "evidence(agentos): Oracle node permission audit"
           git push
