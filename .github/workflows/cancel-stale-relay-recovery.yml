@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for run_id in 32858420762 32858849735; do
+          for run_id in 32858420762 32858849735 32858516453; do
             echo "Cancelling superseded run $run_id"
             code=$(curl -sS -o /tmp/cancel-$run_id.out -w '%{http_code}' \
               -X POST \
