@@ -1,0 +1,142 @@
+inventory_utc=2026-08-25T14:12:20Z
+count=14
+
+=== relay-12ebee3d1eb94e8fad0307db3ff3e290 ===
+created_at=2026-08-25T09:36:48Z
+age_seconds=16532
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install or repair the governed AgentOS Action Relay from canonical main.
+constraints=["Execute only the trusted installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=2ca90085289264bf0035ff81df3998a846aacf00eebd4d472805ae0220697a49
+instruction_preview=Execute exactly: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/install_action_relay_user.sh . Return stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-21e1f5b65d2e4eb580332e624967675c ===
+created_at=2026-08-25T13:56:25Z
+age_seconds=955
+project_id=studio-web-migration
+workspace=/home/ubuntu/agentmanager
+goal=Safely extract the complete studio.milkcat.org platform website into an independent studio-web project with zero regression across all integrated services.
+constraints=["Audit phase is read-only", "Do not treat Zeus Writer as the only integrated service", "No DNS/TLS/firewall/web-server/service/repository mutation during audit", "Preserve all existing routes and behavior in later migration"]
+instruction_sha256=00cee635a911cde372eb2e909ad16c6b6d336709aabd5e8e6b73dd043dfad136
+instruction_preview=Audit the COMPLETE current production surface of https://studio.milkcat.org before any repository extraction or migration. This is NOT only a Zeus Writer migration. The official site has accumulated multiple services, product pages, reverse proxies, APIs, static applications, deployment workflows, background services and ports. We need a safe plan to extract the platform website from /home/ubuntu/zeus-writer/website into an independent studio-web project without breaking anything.  Do a read-only production audit. Do NOT change web server config, DNS, TLS, services, repositories, ports, running processes, or deployed files.  Required audit: 1. Identify the actual source checkout(s), build output(s), and deployment path(s) used by studio.milkcat.org. Include /home/ubuntu/zeus-writer/website but do not assume it is the only source. 2. Inspect the active web server configuration for studio.milkcat.org and enumerate every location/route, static root/alias, reverse proxy, upstream, websocket/SSE rule, SPA fallback, redirect and special header that affects the domain. 3. Enumerate every product/service currently integrated into the official site, including but not limited to Zeus Writer 
+
+=== relay-4028cd63d9914fc9ad4b4a6bf12c821d ===
+created_at=2026-08-25T02:17:54Z
+age_seconds=42866
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Continue AgentOS research by validating that a real weak executor can preserve the Master Experience Floor from canonical context.
+constraints=["READ-ONLY trial: do not modify files, git state, services, or external systems.", "Treat canonical context as authoritative; do not infer a different goal from workspace history.", "Distinguish VERIFIED, RECONSTRUCTED, and UNKNOWN.", "Return a concrete next action rather than generic advice."]
+instruction_sha256=73010eb34e3e7c2814baaa6653d65c783c884ef6589b228584af464a5a21d912
+instruction_preview=This is a read-only Master Experience Floor trial. Using ONLY the supplied Canonical IR as authoritative state, return: (1) the active goal, (2) the current hypothesis, (3) the exact next action, (4) what is VERIFIED vs UNKNOWN, and (5) one governance risk that must remain blocked. Do not modify any file or system.
+
+=== relay-43a0999bbc73485d9a78524040126711 ===
+created_at=2026-08-25T06:48:11Z
+age_seconds=26649
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install the governed AgentOS Action Relay exactly from the trusted repository installer.
+constraints=["Execute only the named installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=36a97b45a79af0b43106a09e49373536fcc787b0adae4aed78a197d99d437f3e
+instruction_preview=Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-4d6493a55f8c48c0bec5202287e0d1ae ===
+created_at=2026-08-25T00:25:56Z
+age_seconds=49584
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Continue AgentOS research by validating that a real weak executor can preserve the Master Experience Floor from canonical context.
+constraints=["READ-ONLY trial: do not modify files, git state, services, or external systems.", "Treat canonical context as authoritative; do not infer a different goal from workspace history.", "Distinguish VERIFIED, RECONSTRUCTED, and UNKNOWN.", "Return a concrete next action rather than generic advice."]
+instruction_sha256=73010eb34e3e7c2814baaa6653d65c783c884ef6589b228584af464a5a21d912
+instruction_preview=This is a read-only Master Experience Floor trial. Using ONLY the supplied Canonical IR as authoritative state, return: (1) the active goal, (2) the current hypothesis, (3) the exact next action, (4) what is VERIFIED vs UNKNOWN, and (5) one governance risk that must remain blocked. Do not modify any file or system.
+
+=== relay-59493d8babd14e16b6b2ead436b0fc37 ===
+created_at=2026-08-25T06:38:34Z
+age_seconds=27226
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install the governed AgentOS Action Relay exactly from the trusted repository installer.
+constraints=["Execute only the named installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=36a97b45a79af0b43106a09e49373536fcc787b0adae4aed78a197d99d437f3e
+instruction_preview=Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-627f83d2f55b40779977ba71c0e1d300 ===
+created_at=2026-08-25T13:15:01Z
+age_seconds=3439
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install or repair the governed AgentOS Action Relay from canonical main.
+constraints=["Execute only the trusted installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=2ca90085289264bf0035ff81df3998a846aacf00eebd4d472805ae0220697a49
+instruction_preview=Execute exactly: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/install_action_relay_user.sh . Return stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-9bbe2b0531194942973da6b6f0887e76 ===
+created_at=2026-08-25T06:35:22Z
+age_seconds=27418
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install the governed AgentOS Action Relay exactly from the trusted repository installer.
+constraints=["Execute only the named installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=36a97b45a79af0b43106a09e49373536fcc787b0adae4aed78a197d99d437f3e
+instruction_preview=Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-a84b7065842941bcbdb9e8d34e1dbfdd ===
+created_at=2026-08-25T06:52:00Z
+age_seconds=26420
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install the governed AgentOS Action Relay exactly from the trusted repository installer.
+constraints=["Execute only the named installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=36a97b45a79af0b43106a09e49373536fcc787b0adae4aed78a197d99d437f3e
+instruction_preview=Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-c70089381b7d4d8f984ef0ecea2cc100 ===
+created_at=2026-08-25T13:24:27Z
+age_seconds=2873
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Repair the governed AgentOS relay boundary so deterministic actions can execute again.
+constraints=["Use only the trusted repair script from canonical main.", "Do not use sudo.", "Do not modify unrelated services or projects."]
+instruction_sha256=69a9f0677dc4cb8fe2c7e624c0fa5d5e13439ebbba015b64ffc63dac4fa84fe7
+instruction_preview=Use your shell execution capability now. Execute exactly this command and do not merely describe it: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/repair_antigravity_relay_user.sh . Do not perform any unrelated change. Return stdout/stderr and exit status.
+
+=== relay-d7a701f81d70486ca4ed5d8ab578e93e ===
+created_at=2026-08-25T06:41:46Z
+age_seconds=27034
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install the governed AgentOS Action Relay exactly from the trusted repository installer.
+constraints=["Execute only the named installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=36a97b45a79af0b43106a09e49373536fcc787b0adae4aed78a197d99d437f3e
+instruction_preview=Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-e00c3556d6df45bebc802214ad6dbb7c ===
+created_at=2026-08-25T01:47:38Z
+age_seconds=44682
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Continue AgentOS research by validating that a real weak executor can preserve the Master Experience Floor from canonical context.
+constraints=["READ-ONLY trial: do not modify files, git state, services, or external systems.", "Treat canonical context as authoritative; do not infer a different goal from workspace history.", "Distinguish VERIFIED, RECONSTRUCTED, and UNKNOWN.", "Return a concrete next action rather than generic advice."]
+instruction_sha256=73010eb34e3e7c2814baaa6653d65c783c884ef6589b228584af464a5a21d912
+instruction_preview=This is a read-only Master Experience Floor trial. Using ONLY the supplied Canonical IR as authoritative state, return: (1) the active goal, (2) the current hypothesis, (3) the exact next action, (4) what is VERIFIED vs UNKNOWN, and (5) one governance risk that must remain blocked. Do not modify any file or system.
+
+=== relay-e652256ce9a0467c9809fcdbf8c1d2ec ===
+created_at=2026-08-25T09:17:33Z
+age_seconds=17687
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install or repair the governed AgentOS Action Relay from canonical main.
+constraints=["Execute only the trusted installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=2ca90085289264bf0035ff81df3998a846aacf00eebd4d472805ae0220697a49
+instruction_preview=Execute exactly: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/install_action_relay_user.sh . Return stdout/stderr and exit status. Do not perform any other changes.
+
+=== relay-f5c414d77b50408880ce857edd058e1d ===
+created_at=2026-08-25T06:44:58Z
+age_seconds=26842
+project_id=agentmanager
+workspace=/home/ubuntu/agentmanager
+goal=Install the governed AgentOS Action Relay exactly from the trusted repository installer.
+constraints=["Execute only the named installer.", "Do not edit source files.", "Do not use sudo."]
+instruction_sha256=36a97b45a79af0b43106a09e49373536fcc787b0adae4aed78a197d99d437f3e
+instruction_preview=Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.
