@@ -23,6 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
+          echo 'status_refresh=v2'
           headers=(-H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
           curl -fsSL "${headers[@]}" \
             "https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml/runs?per_page=5" \
