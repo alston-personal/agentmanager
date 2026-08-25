@@ -17,11 +17,21 @@ for user in ubuntu agentos-node; do
 done
 
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
-git -C "$REPO" fetch origin main
-git -C "$REPO" merge --ff-only origin/main
+mkdir -p "$RUNTIME/agentos_node" "$UNIT_DIR"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
 
-install -m 0664 "$REPO/agentos_node/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
-install -m 0664 "$REPO/agentos_node/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
+# Runtime repair must not depend on the mutable checkout being clean or fast-forwardable.
+# Fetch canonical main, then materialize only the trusted repair inputs directly from
+# the fetched Git object. This preserves local checkout state while making the repair
+# deterministic and rollback-friendly.
+git -C "$REPO" fetch origin main
+git -C "$REPO" show origin/main:agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
+git -C "$REPO" show origin/main:agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
+git -C "$REPO" show origin/main:scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
+
+install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
+install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
 
 for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
   mkdir -p "$d"
@@ -32,7 +42,6 @@ done
 # The ubuntu user manager was started before the agentos supplementary-group
 # grant, so its children may not inherit agentos even though /etc/group is
 # correct. Pin the boundary explicitly with `sg agentos` on every service start.
-mkdir -p "$UNIT_DIR"
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
@@ -62,10 +71,12 @@ from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
 print('antigravity_runtime_import=PASS')
 PY
 
-bash "$REPO/scripts/install_action_relay_user.sh"
+AGENTOS_REPO="$REPO" bash "$TMPDIR/install_action_relay_user.sh"
 systemctl --user is-active --quiet agentos-action-relay.service
 
 echo "antigravity_repair=PASS"
+echo "antigravity_source=origin/main"
+echo "antigravity_checkout_merge=SKIPPED"
 echo "antigravity_group_context=agentos"
 echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
