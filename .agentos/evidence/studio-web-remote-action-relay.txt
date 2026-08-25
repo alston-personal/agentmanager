@@ -1,0 +1,26 @@
+action_runtime_ready=PASS
+capsule_id=action-b923175916e84e79be7f9d81ce9d79ed
+{
+  "action": "github.repo.ensure_studio_web",
+  "auth": {
+    "argv": [
+      "/usr/bin/gh",
+      "auth",
+      "status"
+    ],
+    "returncode": 1,
+    "stderr": "github.com\n  X github.com: authentication failed\n  - The github.com token in /home/ubuntu/.config/gh/hosts.yml is no longer valid.\n  - To re-authenticate, run: gh auth login -h github.com\n  - To forget about this host, run: gh auth logout -h github.com\n  \n",
+    "stdout": ""
+  },
+  "capsule_id": "action-b923175916e84e79be7f9d81ce9d79ed",
+  "completed_at": "2026-08-25T23:35:00Z",
+  "created": false,
+  "error": "ubuntu GitHub identity is not authenticated",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "repository": "alston-personal/studio-web",
+  "schema": "agentos.action-receipt/v1",
+  "started_at": "2026-08-25T23:35:00Z"
+}
+executor_user=ubuntu
+studio_web_remote_action_relay=NO_GO
