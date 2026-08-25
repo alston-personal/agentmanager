@@ -36,17 +36,16 @@ jobs:
             case "$code" in 202|409) ;; *) return 1 ;; esac
           }
 
-          # Explicit historical/superseded attempts only. The canonical
-          # bootstrap control plane is now the sole migration path. Cancel the
-          # old safe-v2 and all owned-carrier recovery attempts so they cannot
-          # take the single Oracle runner ahead of the current control-plane run.
-          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864566296 32864607057 32864566302 32864607021; do
+          # Explicit historical/superseded attempts only. Bootstrap transport is
+          # now installed and Action Relay reaches stable active state, so the
+          # queued repeat control-plane run is also superseded by the targeted
+          # live spool diagnostic.
+          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864566296 32864607057 32864566302 32864607021 32864607038; do
             cancel_run "$run_id"
           done
 
           # The original inline Chronos bootstrap is retired. Cancel any active
-          # run from that legacy workflow, but leave current corrected bootstrap
-          # control-plane runs alone.
+          # run from that legacy workflow.
           curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
@@ -62,5 +61,5 @@ jobs:
             [ -z "$run_id" ] || cancel_run "$run_id"
           done < /tmp/old-inline-runs
 
-          echo 'canonical_bootstrap_control_plane=ONLY_ACTIVE_MIGRATION_PATH'
+          echo 'next_oracle_task=live_action_relay_diagnostic'
           echo 'superseded_recovery_cancel=PASS'
