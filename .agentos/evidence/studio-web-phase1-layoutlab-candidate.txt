@@ -1,0 +1,11 @@
+timestamp_utc=2026-08-25T15:34:39Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+zeus=/home/ubuntu/zeus-writer
+source=/home/ubuntu/zeus-writer/website
+layoutlab_commit=8dd61bc9664db7867db5d3cdf51da1b0a2162443
+=== SAFETY ===
+production_worktree_mutation=NO
+production_nginx_mutation=NO
+production_service_restart=NO
+=== VERIFY COMMITTED INPUT ===
+fatal: Not a valid object name 8dd61bc9664db7867db5d3cdf51da1b0a2162443^{commit}
