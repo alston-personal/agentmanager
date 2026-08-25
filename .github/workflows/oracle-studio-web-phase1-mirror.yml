@@ -1,0 +1,43 @@
+name: Oracle Studio Web Phase1 Mirror
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-studio-web-phase1-mirror.yml'
+      - 'scripts/studio_web_phase1_mirror.sh'
+      - 'docs/STUDIO_WEB_MIGRATION_CONTRACT.md'
+      - 'docs/STUDIO_WEB_ROUTE_OWNERSHIP_MATRIX.md'
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build zero-cutover Studio Web mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/studio_web_phase1_mirror.sh
+      - name: Commit Phase1 mirror evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-web-phase1-mirror.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-web-phase1-mirror.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-web-phase1-mirror.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): phase1 zero-cutover mirror build'
+          git push origin HEAD:main
