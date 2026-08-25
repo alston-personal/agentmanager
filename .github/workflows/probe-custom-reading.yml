@@ -1,0 +1,55 @@
+name: Probe Custom Reading
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/probe-custom-reading.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe latest deck and reading API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -u
+          WEB=/home/ubuntu/leopardcat-tarot/website
+          echo '=== commit ==='
+          git -C /home/ubuntu/leopardcat-tarot rev-parse HEAD
+          latest=$(find "$WEB/data/custom_decks" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+          echo "latest_deck_id=${latest:-none}"
+          if [ -z "${latest:-}" ]; then exit 0; fi
+          echo '=== files ==='
+          ls -la "$WEB/data/custom_decks/$latest" || true
+          echo '=== local deck GET ==='
+          curl -sS -i "http://127.0.0.1:8088/api/v1/decks/$latest" | head -40 || true
+          echo '=== public deck GET ==='
+          curl -sS -i "https://leopardcat-tarot.milkcat.org/api/v1/decks/$latest" | head -40 || true
+          echo '=== local reading POST ==='
+          curl -sS -i -H 'Content-Type: application/json' --data "{\"method\":\"tarot\",\"persona\":\"master\",\"question\":\"測試\",\"input\":{\"deck_id\":\"$latest\",\"spread\":\"single\"},\"lang\":\"zh-TW\"}" http://127.0.0.1:8088/api/v1/readings | head -80 || true
+          echo '=== server log ==='
+          tail -120 /tmp/fortune_server.log 2>/dev/null || true
+          REMOTE
