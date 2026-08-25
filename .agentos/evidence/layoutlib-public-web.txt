@@ -1,29 +1,45 @@
-timestamp_utc=2026-08-25T08:12:54Z
+timestamp_utc=2026-08-25T08:19:27Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-home=/home/agentos-node
 python=Python 3.10.12
 layoutlib_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=14
 layoutlib_web_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=3
 layoutlib_hardening_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=6
-=== PORT ALLOCATION ===
+=== BROWSER IMAGE ADAPTER ===
+Requirement already satisfied: Pillow<13,>=10 in /home/agentos-node/.local/lib/python3.10/site-packages (12.3.0)
+pillow_version=12.3.0
+=== GOVERNED PORT ===
 Project 'layoutlib-web' already has port 8766 allocated.
 layoutlib_port=8766
 === START WEB DAEMON ===
-web_pid=3328955
-=== LOCAL WEB PROBE ===
-local_web_health=PASS
-=== CLOUDFLARED USER INSTALL ===
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-100 35.6M  100 35.6M    0     0  50.0M      0 --:--:-- --:--:-- --:--:-- 50.0M
+curl: (7) Failed to connect to 127.0.0.1 port 8766 after 0 ms: Connection refused
+web_pid=3335386
+local_health=PASS
+=== CLOUDFLARED ===
 cloudflared version 2026.8.2 (built 2026-08-14-12:17 UTC)
-=== START PUBLIC QUICK TUNNEL ===
-tunnel_pid=3328978
-public_url=https://during-classification-instruction-combat.trycloudflare.com/
-=== EXTERNAL PUBLIC WEB PROBE ===
+=== START QUICK TUNNEL ===
+tunnel_pid=3335408
+public_url=https://returned-hiv-institutional-measured.trycloudflare.com/
+=== PUBLIC UI + HEALTH ===
+public_ui_http_code=200
+public_ui_payload=PASS
 public_health_http_code=200
 public_health_payload=PASS
-public_ui_http_code=000
+=== BUILD PUBLIC PARSE FIXTURES ===
+=== PUBLIC PARSE ACCEPTANCE ===
+public_pgm_http_code=200
+public_pgm_parse=PASS walls=4 spatial_ir=0.1
+public_png_http_code=200
+public_png_parse=PASS walls=4 spatial_ir=0.1
+public_jpg_http_code=200
+public_jpg_parse=PASS walls=4 spatial_ir=0.1
+=== ACCEPTANCE ===
+web_daemon=PASS
+tunnel_daemon=PASS
+public_ui=PASS
+public_health=PASS
+public_pgm_parse=PASS
+public_png_parse=PASS
+public_jpg_parse=PASS
+public_url=https://returned-hiv-institutional-measured.trycloudflare.com/
+goal_direct_web_ui=PASS
