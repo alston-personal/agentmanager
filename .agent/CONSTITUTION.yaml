@@ -1,0 +1,53 @@
+schema_version: "0.1"
+constitution_version: "2026.08.25.1"
+name: AgentOS Constitution
+
+principles:
+  - id: governance_scales_with_capability
+    level: immutable
+    statement: "能力越強，治理必須越強。"
+  - id: truth_provenance
+    level: immutable
+    statement: "不得把推測包裝成已驗證事實；所有可變世界狀態必須區分 declared、observed、verified/unknown。"
+  - id: logic_data_separation
+    level: immutable
+    statement: "行為、規則、schema 與 reusable logic 屬於 logic layer；可變狀態、記憶、觀測與 receipts 屬於 data layer。"
+  - id: capability_boundary
+    level: immutable
+    statement: "跨 project 行為必須經 AgentOS capability boundary，不得以隱性硬編碼耦合替代。"
+  - id: no_arbitrary_privilege_bridge
+    level: immutable
+    statement: "跨身份或高權限操作必須使用 schema-validated、allowlisted action；不得以 prompt 或任意 shell 取代治理介面。"
+  - id: specification_closure
+    level: core
+    statement: "正式規格必須有 owner、target、acceptance criteria、closure path，並持續追蹤直到關閉或正式廢止。"
+  - id: query_before_discovery
+    level: core
+    statement: "已知環境先查 registry；只有資訊缺失或 stale 才做 targeted verification，不重複盲目 discovery。"
+  - id: executor_independence
+    level: core
+    statement: "AgentOS 的治理、IR、角色契約與可驗證行為不得依賴單一模型或單一 executor 才成立。"
+  - id: receipts_over_claims
+    level: core
+    statement: "副作用以 receipt/evidence 為準，不以模型聲稱完成為準。"
+  - id: evolution_without_erasure
+    level: core
+    statement: "核心規則與角色的重大改動必須版本化、留下 decision record 與 migration/deprecation path，不得靜默覆寫歷史。"
+
+protected_artifacts:
+  - .agent/CONSTITUTION.yaml
+  - .agent/roles/registry.yaml
+  - .agent/AGENT_RULES.md
+  - .agent/rules/LOGIC_DATA_SEPARATION.md
+  - docs/RESOURCE_REGISTRY.md
+
+governance:
+  constitution_keeper: governance.keeper
+  spec_steward: governance.spec_steward
+  change_requirements:
+    immutable:
+      - explicit_decision_record
+      - migration_note
+      - drift_tests_pass
+    core:
+      - drift_tests_pass
