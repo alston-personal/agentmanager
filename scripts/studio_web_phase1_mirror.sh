@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR=$(pwd)
 SOURCE=${STUDIO_SOURCE:-/home/ubuntu/zeus-writer/website}
 STAGE=${STUDIO_MIRROR_ROOT:-/tmp/studio-web-phase1-mirror}
 WORK="$STAGE/source"
 DIST="$WORK/dist"
-EVIDENCE=${STUDIO_MIRROR_EVIDENCE:-.agentos/evidence/studio-web-phase1-mirror.txt}
-MANIFEST_DIR=${STUDIO_MIRROR_MANIFEST_DIR:-.agentos/evidence/studio-web-phase1-manifests}
+EVIDENCE=${STUDIO_MIRROR_EVIDENCE:-$ROOT_DIR/.agentos/evidence/studio-web-phase1-mirror.txt}
+MANIFEST_DIR=${STUDIO_MIRROR_MANIFEST_DIR:-$ROOT_DIR/.agentos/evidence/studio-web-phase1-manifests}
 
 mkdir -p "$(dirname "$EVIDENCE")" "$MANIFEST_DIR"
 
@@ -52,6 +53,7 @@ install_and_build() {
     echo 'ERROR: no supported lockfile found; refusing non-reproducible install' >&2
     return 21
   fi
+  cd "$ROOT_DIR"
 }
 
 probe_file() {
@@ -72,6 +74,8 @@ probe_file() {
   echo "runner_identity=$(id)"
   echo "source=$SOURCE"
   echo "stage=$STAGE"
+  echo "evidence=$EVIDENCE"
+  echo "manifest_dir=$MANIFEST_DIR"
 
   echo '=== SAFETY PRECONDITIONS ==='
   test -d "$SOURCE"
