@@ -1,27 +1,25 @@
-timestamp_utc=2026-08-25T14:42:13Z
+timestamp_utc=2026-08-25T14:43:13Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-request_id=chronos-safe-20260825T144213Z-32861145703
+request_id=chronos-safe-20260825T144313Z-32861172143
 === VERIFY EXISTING UBUNTU CHRONOS ===
-ubuntu   ubuntu    472462    1027 48-06:48:17 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
-chronos_log_age_seconds=31.9
+ubuntu   ubuntu    472462    1027 48-06:49:17 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+chronos_log_age_seconds=31.4
 === RECOVER CANCELLED BRIDGE IF PRESENT ===
-stale_bridge_present=YES
-stale_bridge_recovered_from=chronos-safe-20260825T143720Z-32860383378.update_scheduler_board.py
-stale_bridge_recovery=PASS
+stale_bridge_present=NO
 one_time_safe_bridge_installed=YES
 chronos_receipt_owner=ubuntu:ubuntu 644
 {
   "schema": "agentos.one-time-chronos-safe-bootstrap/v1",
-  "request_id": "chronos-safe-20260825T144213Z-32861145703",
+  "request_id": "chronos-safe-20260825T144313Z-32861172143",
   "executor_user": "ubuntu",
   "executor_uid": 1001,
   "returncode": 1,
   "ok": false,
-  "stdout": "",
-  "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   42f2156..a4983c8  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nTraceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nModuleNotFoundError: No module named 'agentos_node.antigravity_relay'\n",
-  "started_at": "2026-08-25T14:42:42.118810+00:00",
-  "completed_at": "2026-08-25T14:42:43.828669+00:00"
+  "stdout": "antigravity_runtime_import=PASS\n",
+  "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   a4983c8..462a76d  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\n",
+  "started_at": "2026-08-25T14:43:42.171141+00:00",
+  "completed_at": "2026-08-25T14:43:43.550717+00:00"
 }
 Traceback (most recent call last):
   File "<stdin>", line 3, in <module>
-AssertionError: {'schema': 'agentos.one-time-chronos-safe-bootstrap/v1', 'request_id': 'chronos-safe-20260825T144213Z-32861145703', 'executor_user': 'ubuntu', 'executor_uid': 1001, 'returncode': 1, 'ok': False, 'stdout': '', 'stderr': 'From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   42f2156..a4983c8  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nTraceback (most recent call last):\n  File "<stdin>", line 1, in <module>\nModuleNotFoundError: No module named \'agentos_node.antigravity_relay\'\n', 'started_at': '2026-08-25T14:42:42.118810+00:00', 'completed_at': '2026-08-25T14:42:43.828669+00:00'}
+AssertionError: {'schema': 'agentos.one-time-chronos-safe-bootstrap/v1', 'request_id': 'chronos-safe-20260825T144313Z-32861172143', 'executor_user': 'ubuntu', 'executor_uid': 1001, 'returncode': 1, 'ok': False, 'stdout': 'antigravity_runtime_import=PASS\n', 'stderr': 'From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   a4983c8..462a76d  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\n', 'started_at': '2026-08-25T14:43:42.171141+00:00', 'completed_at': '2026-08-25T14:43:43.550717+00:00'}
