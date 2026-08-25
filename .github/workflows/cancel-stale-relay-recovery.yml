@@ -18,13 +18,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          KEEP_CHRONOS_SHA: 9b7d75ab2fed814a70c229c7a7ed23222973f6c1
         shell: bash
         run: |
           set -euo pipefail
-          # These runs belong to the superseded LLM self-repair path. Cancelling
-          # them only releases CI capacity; quarantined capsules remain untouched.
+
+          # Historical LLM self-repair runs. Cancelling them only releases CI
+          # capacity; quarantined capsules remain untouched.
           for run_id in 32858420762 32858849735 32858516453; do
-            echo "Cancelling superseded run $run_id"
+            echo "Cancelling superseded recovery run $run_id"
             code=$(curl -sS -o /tmp/cancel-$run_id.out -w '%{http_code}' \
               -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
@@ -33,9 +35,38 @@ jobs:
               "https://api.github.com/repos/$GH_REPO/actions/runs/$run_id/cancel")
             cat /tmp/cancel-$run_id.out || true
             echo "http_code=$code"
-            case "$code" in
-              202|409) ;;
-              *) exit 1 ;;
-            esac
+            case "$code" in 202|409) ;; *) exit 1 ;; esac
           done
+
+          # Keep only the newest production-safe Chronos bootstrap run. This is
+          # executed on GitHub-hosted infrastructure so it does not consume the
+          # single Oracle self-hosted runner we are trying to free.
+          runs=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos.yml/runs?per_page=20")
+          python3 - "$KEEP_CHRONOS_SHA" > /tmp/stale-chronos-runs <<'PY' <<<"$runs"
+          import json,sys
+          keep=sys.argv[1]
+          data=json.load(sys.stdin)
+          for r in data.get('workflow_runs', []):
+              if r.get('status') in {'queued','in_progress','waiting','pending'} and r.get('head_sha') != keep:
+                  print(r['id'])
+          PY
+
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            echo "Cancelling superseded Chronos run $run_id"
+            code=$(curl -sS -o /tmp/cancel-chronos-$run_id.out -w '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GH_REPO/actions/runs/$run_id/cancel")
+            cat /tmp/cancel-chronos-$run_id.out || true
+            echo "http_code=$code"
+            case "$code" in 202|409) ;; *) exit 1 ;; esac
+          done < /tmp/stale-chronos-runs
+
           echo 'superseded_recovery_cancel=PASS'
