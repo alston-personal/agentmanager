@@ -1,0 +1,17 @@
+governed_port=8800
+capsule_id=relay-e3748409bff14c87be1f87654d444ec5
+=== EXECUTOR RECEIPT ===
+{
+  "capsule_id": "relay-e3748409bff14c87be1f87654d444ec5",
+  "completed_at": "2026-08-25T16:14:01Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.243-linux-arm64/resources/native-binary/claude",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "returncode": 124,
+  "schema": "agentos.antigravity-receipt/v1",
+  "started_at": "2026-08-25T16:11:00Z",
+  "stderr": "\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+  "stdout": "",
+  "timed_out": true
+}
+official_layoutlab_goal=FAIL error=RuntimeError: Antigravity deployment receipt is not ok=true
