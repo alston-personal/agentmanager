@@ -1,0 +1,140 @@
+name: Deploy Modular Divination Production
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/deploy-modular-divination-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy with automatic rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          PROD=/home/ubuntu/leopardcat-tarot
+          WEB="$PROD/website"
+          TARGET=38889cb6749ef3a90d7bec897b2ed81149aae313
+          OLD=$(git -C "$PROD" rev-parse HEAD)
+          echo "old_commit=$OLD"
+          echo "target_commit=$TARGET"
+
+          dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' || true)
+          if [ -n "$dirty" ]; then
+            echo 'Unexpected production changes; refusing deployment:' >&2
+            echo "$dirty" >&2
+            exit 40
+          fi
+          cp "$WEB/stats.json" /tmp/leopardcat-stats.pre-modular.json
+
+          stop_server() {
+            for pid in $(pgrep -f 'python3 fortune_server.py' || true); do
+              cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+              if [ "$cwd" = "$WEB" ]; then
+                kill "$pid" >/dev/null 2>&1 || true
+                for _ in $(seq 1 20); do
+                  kill -0 "$pid" >/dev/null 2>&1 || break
+                  sleep 0.25
+                done
+                kill -9 "$pid" >/dev/null 2>&1 || true
+              fi
+            done
+          }
+
+          start_server() {
+            cd "$WEB"
+            nohup /usr/bin/python3 fortune_server.py >/tmp/fortune_server.log 2>&1 &
+            echo $! >/tmp/fortune_server.pid
+            for _ in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:8088/api/stats >/dev/null 2>&1; then return 0; fi
+              sleep 1
+            done
+            echo 'fortune server failed to become ready' >&2
+            tail -80 /tmp/fortune_server.log >&2 || true
+            return 1
+          }
+
+          rollback() {
+            echo 'deployment_smoke_failed=rolling_back' >&2
+            stop_server
+            git -C "$PROD" reset --hard "$OLD"
+            cp /tmp/leopardcat-stats.pre-modular.json "$WEB/stats.json"
+            cd "$WEB"
+            npm run build
+            start_server
+            echo "rollback_commit=$OLD" >&2
+          }
+
+          trap 'rc=$?; if [ $rc -ne 0 ]; then rollback || true; fi; exit $rc' EXIT
+
+          git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
+          fetched=$(git -C "$PROD" rev-parse FETCH_HEAD)
+          echo "fetched_commit=$fetched"
+          if [ "$fetched" != "$TARGET" ]; then
+            echo "Expected $TARGET but fetched $fetched" >&2
+            exit 41
+          fi
+          git -C "$PROD" merge --ff-only FETCH_HEAD
+          cp /tmp/leopardcat-stats.pre-modular.json "$WEB/stats.json"
+
+          cd "$WEB"
+          npm run build
+          grep -R -q '/api/v1/readings' dist || { echo 'built frontend lacks modular API reference' >&2; exit 42; }
+          python3 -m py_compile fortune_server.py divination/*.py
+          stop_server
+          start_server
+
+          python3 - <<'PY'
+          import json, urllib.request
+          url='http://127.0.0.1:8088/api/v1/readings'
+          body={
+              'method':'tarot', 'persona':'leopardcat',
+              'question':'部署驗證：請給我一句今日提醒。',
+              'input':{'spread':'single'}, 'lang':'zh-TW', 'seed':'production-release-smoke'
+          }
+          req=urllib.request.Request(url, data=json.dumps(body, ensure_ascii=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          with urllib.request.urlopen(req, timeout=45) as r:
+              data=json.loads(r.read().decode())
+          assert data['reading_id'].startswith('rd_')
+          assert data['method']=='tarot'
+          assert data['persona']=='leopardcat'
+          assert len(data['method_result']['cards']) == 1
+          assert data['method_result']['cards'][0]['orientation'] in ('upright','reversed')
+          assert len(data.get('reading','').strip()) > 20
+          print('local_production_api_smoke=passed')
+          print('orientation='+data['method_result']['cards'][0]['orientation'])
+          PY
+
+          curl -fsS https://leopardcat-tarot.milkcat.org/ >/dev/null
+          curl -fsS https://leopardcat-tarot.milkcat.org/api/stats >/dev/null
+          echo 'public_http_smoke=passed'
+          echo "deployed_commit=$(git -C "$PROD" rev-parse HEAD)"
+          trap - EXIT
+          REMOTE
