@@ -1,0 +1,88 @@
+name: Oracle Antigravity Runtime Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-antigravity-runtime-diagnostic.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  runtime-diagnostic:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout vNext
+        uses: actions/checkout@v4
+
+      - name: Capture bounded runtime state
+        shell: bash
+        run: |
+          set -u
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Refusing experimental diagnostic on main" >&2
+            exit 2
+          fi
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/oracle-antigravity-runtime-diagnostic.txt
+          ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "whoami=$(whoami)"
+            echo "groups=$(id -Gn)"
+            echo "ref=${GITHUB_REF_NAME}"
+            echo "head=$(git rev-parse HEAD)"
+            echo
+            echo "=== PROCESSES (bounded, no argv) ==="
+            ps -eo user=,pid=,ppid=,etimes=,stat=,comm= | awk '$1=="ubuntu" && ($6=="python3" || $6=="claude") {print}' | tail -40 || true
+            echo
+            echo "=== RELAY ARTIFACTS ==="
+            find "$ROOT" -maxdepth 2 -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TS %M %u %g %s %p\n' 2>&1 | sort | tail -120 || true
+            echo
+            echo "=== PROCESSING AGES ==="
+            now=$(date +%s)
+            find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %u %g %p\n' 2>/dev/null | while read -r mt owner group path; do
+              sec=${mt%%.*}
+              age=$((now-sec))
+              printf 'age_seconds=%s owner=%s group=%s path=%s\n' "$age" "$owner" "$group" "$path"
+            done || true
+            echo
+            echo "=== RECEIPT SUMMARIES ==="
+            python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path('/home/ubuntu/agent-data/runtime/antigravity-relay/receipts')
+for p in sorted(root.glob('relay-*.json'))[-20:]:
+    try:
+        data = json.loads(p.read_text(encoding='utf-8'))
+        print({
+            'file': p.name,
+            'capsule_id': data.get('capsule_id'),
+            'ok': data.get('ok'),
+            'returncode': data.get('returncode'),
+            'error': data.get('error'),
+            'started_at': data.get('started_at'),
+            'completed_at': data.get('completed_at'),
+            'executor_user': data.get('executor_user'),
+        })
+    except Exception as exc:
+        print({'file': p.name, 'read_error': f'{type(exc).__name__}: {exc}'})
+PY
+          } | tee "$OUT"
+
+      - name: Persist diagnostic
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "agentos-node"
+          git config user.email "agentos-node@users.noreply.github.com"
+          git add .agentos/evidence/oracle-antigravity-runtime-diagnostic.txt
+          if git diff --cached --quiet; then
+            echo 'No diagnostic change to commit'
+            exit 0
+          fi
+          git commit -m "evidence(agentos): capture Antigravity runtime state"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
