@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Deployment acceptance retrigger: governed Action Relay proven 2026-08-25.
 import argparse
 import cgi
 import json
