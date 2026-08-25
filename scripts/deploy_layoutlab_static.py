@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
-import shutil
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'web_assets/layoutlab_official.html'
@@ -19,14 +18,19 @@ def main() -> int:
     if b'<title>Layout Lab | Milkcat Studio</title>' not in data or b'Analyze layout' not in data:
         raise SystemExit('source asset failed identity check')
     TARGET.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(TARGET.parent, 0o755)
     tmp = TARGET.with_suffix('.html.tmp')
     tmp.write_bytes(data)
+    os.chmod(tmp, 0o644)
     tmp.replace(TARGET)
+    os.chmod(TARGET, 0o644)
     digest = hashlib.sha256(data).hexdigest()
     result = {
         'ok': True,
         'source': str(SOURCE),
         'target': str(TARGET),
+        'directory_mode': '0755',
+        'file_mode': '0644',
         'bytes': len(data),
         'sha256': digest,
         'mode': 'browser-only-layoutlib-v0.1-compatible',
