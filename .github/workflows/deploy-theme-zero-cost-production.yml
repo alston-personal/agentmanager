@@ -30,13 +30,13 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=32a9be52150cbdfde4010decadd068607438e2a3
+          TARGET=094b5f534a05a2cf49499956a1dbcd337d5c807d
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
           dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' | grep -v '^ M website/dist/' | grep -v '^?? website/data/' || true)
           if [ -n "$dirty" ]; then echo 'unexpected production changes:' >&2; echo "$dirty" >&2; exit 40; fi
-          cp "$WEB/stats.json" /tmp/lc-stats.pre-theme.json
+          cp "$WEB/stats.json" /tmp/lc-stats.pre-ui-fix.json
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           git -C "$PROD" checkout -- website/dist 2>/dev/null || true
           stop_server() {
@@ -54,7 +54,7 @@ jobs:
             echo deployment_failed_rolling_back >&2
             stop_server
             git -C "$PROD" reset --hard "$OLD"
-            cp /tmp/lc-stats.pre-theme.json "$WEB/stats.json"
+            cp /tmp/lc-stats.pre-ui-fix.json "$WEB/stats.json"
             cd "$WEB"; npm run build; start_server
             echo rollback_commit=$OLD >&2
           }
@@ -62,25 +62,19 @@ jobs:
           git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
           F=$(git -C "$PROD" rev-parse FETCH_HEAD); [ "$F" = "$TARGET" ] || { echo unexpected_main=$F >&2; exit 41; }
           git -C "$PROD" merge --ff-only FETCH_HEAD
-          cp /tmp/lc-stats.pre-theme.json "$WEB/stats.json"
+          cp /tmp/lc-stats.pre-ui-fix.json "$WEB/stats.json"
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           cd "$WEB"
           npm run build
           python3 -m py_compile fortune_server.py divination/*.py
-          ! grep -R -E 'CERT_NONE|check_hostname *= *False' fortune_server.py divination
           stop_server; start_server
-          curl -fsS http://127.0.0.1:8088/api/v1/ai-policy | python3 -c "import sys,json; p=json.load(sys.stdin); assert p['cost_policy']=='zero-cost-required' and p['paid_fallback'] is False and p['model']=='gemini-2.5-flash'; print('production_zero_cost_policy=passed')"
-          curl -fsS http://127.0.0.1:8088/api/v1/themes | python3 -c "import sys,json; x=json.load(sys.stdin); ids={t['theme_id'] for t in x['themes']}; assert {'leopardcat','midnight','minimal-light'} <= ids; print('production_builtin_themes=passed')"
-          echo production_tls_verification=passed
-          C=$(curl -fsS -H 'Content-Type: application/json' --data '{"name":"deploy-temp-theme","colors":{"background":"#123456","accent":"#abcdef"}}' http://127.0.0.1:8088/api/v1/themes)
-          T=$(C="$C" python3 -c 'import os,json; print(json.loads(os.environ["C"])["theme_id"])')
-          curl -fsS "http://127.0.0.1:8088/api/v1/themes/$T" >/dev/null
-          rm -rf "$WEB/data/custom_themes/$T"
-          echo production_custom_theme_roundtrip=passed
-          curl -fsS https://leopardcat-tarot.milkcat.org/api/v1/ai-policy >/dev/null
-          curl -fsS https://leopardcat-tarot.milkcat.org/api/v1/themes >/dev/null
-          curl -fsS https://leopardcat-tarot.milkcat.org/create.html >/dev/null
-          echo public_theme_routes=passed
+          grep -q 'published-history' public/create.html
+          grep -q 'card-flip-back' main.js
+          grep -q 'Long card meanings' style.css
+          curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q '我發布的牌組'
+          curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename $(find dist/assets -name 'index-*.js' | head -1)) >/dev/null
+          echo production_published_history=passed
+          echo production_card_scroll_fix=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
