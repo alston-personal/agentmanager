@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# This allocator is also the canonical port source for persistent project web services.
+# Canonical port source for persistent project web services, including LayoutLib.
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
 REGISTRY_FILE = DATA_ROOT / "config" / "port_registry.json"
 
