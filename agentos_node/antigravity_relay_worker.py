@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import glob
+import grp
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,20 @@ from .antigravity_relay import RELAY_SCHEMA, RECEIPT_SCHEMA, RelayPaths
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _agentos_gid() -> int | None:
+    try:
+        return grp.getgrnam("agentos").gr_gid
+    except KeyError:
+        return None
+
+
+def _share_path(path: Path, *, directory: bool = False) -> None:
+    gid = _agentos_gid()
+    if gid is not None:
+        os.chown(path, -1, gid)
+    os.chmod(path, 0o2770 if directory else 0o660)
 
 
 def discover_executor() -> list[str] | None:
@@ -69,8 +84,18 @@ class AntigravityRelayWorker:
         self.executor = list(executor) if executor else discover_executor()
         self.timeout = timeout
 
-    def process_one(self) -> dict[str, Any] | None:
+    def _ensure_shared_spool(self) -> None:
         self.paths.ensure()
+        for path in (self.paths.root, self.paths.inbox, self.paths.processing, self.paths.receipts):
+            _share_path(path, directory=True)
+        for receipt in self.paths.receipts.glob("relay-*.json"):
+            try:
+                _share_path(receipt)
+            except OSError:
+                pass
+
+    def process_one(self) -> dict[str, Any] | None:
+        self._ensure_shared_spool()
         candidates = sorted(self.paths.inbox.glob("relay-*.json"))
         if not candidates:
             return None
@@ -123,18 +148,16 @@ class AntigravityRelayWorker:
                 "error": f"{type(exc).__name__}: {exc}",
             }
         target = self.paths.receipts / f"{receipt['capsule_id']}.json"
-        # Receipt is a cross-user handoff artifact: ubuntu writes it and the
-        # agentos-node runner (same agentos group) must be able to reconcile it.
-        # Do not rely only on the service umask; make the file contract explicit.
         tmp = target.with_suffix(target.suffix + ".tmp")
         tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.chmod(tmp, 0o660)
+        _share_path(tmp)
         tmp.replace(target)
-        os.chmod(target, 0o660)
+        _share_path(target)
         processing.unlink(missing_ok=True)
         return receipt
 
     def serve(self, *, interval: float = 1.0) -> None:
+        self._ensure_shared_spool()
         while True:
             processed = self.process_one()
             if processed is None:
