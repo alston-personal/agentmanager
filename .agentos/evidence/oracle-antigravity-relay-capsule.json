@@ -1,0 +1,35 @@
+{
+  "authority": {
+    "desktop_user": "ubuntu",
+    "direct_session_impersonation": false,
+    "source": "agentos-node"
+  },
+  "canonical_ir": {
+    "constraints": [
+      "READ-ONLY trial: do not modify files, git state, services, or external systems.",
+      "Treat canonical context as authoritative; do not infer a different goal from workspace history.",
+      "Distinguish VERIFIED, RECONSTRUCTED, and UNKNOWN.",
+      "Return a concrete next action rather than generic advice."
+    ],
+    "decisions": [
+      "feature/distributed-agentos-runtime is the canonical vNext integration branch.",
+      "The current closure gap is Node Cognitive Bridge / executor receipt continuity.",
+      "The ubuntu-owned Antigravity relay is the authorized cross-user executor boundary."
+    ],
+    "frontier": {
+      "current_hypothesis": "Canonical execution context can raise a weak executor above its session-local baseline.",
+      "next_experiment": "Use this relay receipt as the first real executor evidence and evaluate whether it preserves goal, constraints, and next action."
+    },
+    "goal": "Continue AgentOS research by validating that a real weak executor can preserve the Master Experience Floor from canonical context.",
+    "project_id": "agentmanager",
+    "schema": "agentos.canonical-ir/relay-trial-v1"
+  },
+  "capsule_id": "relay-871ae05c733849a1ae4c51736377f555",
+  "created_at": "2026-08-25T00:04:40Z",
+  "digest": "sha256:2e1c5d75028c0372027ab0a9481f316ecb296dc8980d5b00ffafb58233471a84",
+  "executor_hint": "antigravity-claude-low",
+  "instruction": "This is a read-only Master Experience Floor trial. Using ONLY the supplied Canonical IR as authoritative state, return: (1) the active goal, (2) the current hypothesis, (3) the exact next action, (4) what is VERIFIED vs UNKNOWN, and (5) one governance risk that must remain blocked. Do not modify any file or system.",
+  "project_id": "agentmanager",
+  "schema": "agentos.antigravity-relay/v1",
+  "workspace": "/home/ubuntu/agentmanager"
+}
