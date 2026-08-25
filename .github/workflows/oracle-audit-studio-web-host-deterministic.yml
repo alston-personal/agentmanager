@@ -1,0 +1,41 @@
+name: Oracle Audit Studio Web Host Deterministic
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-audit-studio-web-host-deterministic.yml'
+      - 'scripts/audit_studio_web_host_deterministic.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit current Studio Web host without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/audit_studio_web_host_deterministic.sh
+      - name: Commit audit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-web-host-audit-deterministic.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-web-host-audit-deterministic.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-web-host-audit-deterministic.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): deterministic host migration audit'
+          git push origin HEAD:main
