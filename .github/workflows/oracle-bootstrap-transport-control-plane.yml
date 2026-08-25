@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-bootstrap-transport-control-plane.yml'
+      - 'agentos_node/action_relay.py'
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/update_scheduler_board.py'
       - 'scripts/repair_antigravity_relay_user.sh'
@@ -42,7 +43,7 @@ jobs:
             echo "request_id=$REQUEST_ID"
 
             echo '=== COMPILE CANONICAL HOOK ==='
-            python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py
+            python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py agentos_node/action_relay.py
             echo 'canonical_py_compile=PASS'
 
             echo '=== INSTALL CANONICAL HOOK INTO LIVE CHECKOUT ==='
@@ -61,7 +62,7 @@ jobs:
 
             echo '=== WAIT FOR UBUNTU CHRONOS TO OWN RENDEZVOUS ==='
             # The long-lived ubuntu Chronos process itself creates /tmp control
-            # directories.  This is the key bootstrap property: no supplementary
+            # directories. This is the key bootstrap property: no supplementary
             # agentos group is required before Action Relay exists.
             for i in $(seq 1 120); do
               [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
@@ -125,6 +126,7 @@ jobs:
           text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
           assert 'antigravity_repair=PASS' in text, text[-18000:]
           assert 'action_relay_install=PASS' in text, text[-18000:]
+          assert 'action_relay_user_bus=ubuntu:/run/user/1001/bus' in text, text[-18000:]
           print('bootstrap_control_repair=PASS')
           PY
 
@@ -135,7 +137,7 @@ jobs:
           PY
           )
             RESTART_RECEIPT="$ACTION_ROOT/receipts/$RESTART_ID.json"
-            for i in $(seq 1 120); do
+            for i in $(seq 1 60); do
               [ -f "$RESTART_RECEIPT" ] && break
               sleep 1
             done
