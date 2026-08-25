@@ -1,0 +1,66 @@
+timestamp_utc=2026-08-25T09:22:33Z
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+=== PROCESSES ===
+ubuntu   3373318    1027 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+=== SPOOL ===
+-- /home/ubuntu/agent-data/runtime/antigravity-relay
+drwxrwx--- 5 ubuntu agentos 4096 Aug 24 16:58 /home/ubuntu/agent-data/runtime/antigravity-relay
+drwxrwx--- 2 ubuntu agentos 4096 Aug 25 17:17 /home/ubuntu/agent-data/runtime/antigravity-relay/inbox
+drwxrwx--- 2 ubuntu agentos 4096 Aug 25 17:17 /home/ubuntu/agent-data/runtime/antigravity-relay/processing
+drwxrwx--- 2 ubuntu agentos 4096 Aug 25 08:25 /home/ubuntu/agent-data/runtime/antigravity-relay/receipts
+inbox:
+total 0
+processing:
+total 40
+-rw-rw---- 1 agentos-node agentos       956 Aug 25 17:17 relay-e652256ce9a0467c9809fcdbf8c1d2ec.json
+-rw-rw---- 1 agentos-node agentos       908 Aug 25 14:52 relay-a84b7065842941bcbdb9e8d34e1dbfdd.json
+-rw-rw---- 1 agentos-node agentos       908 Aug 25 14:48 relay-43a0999bbc73485d9a78524040126711.json
+-rw-rw---- 1 agentos-node agentos       908 Aug 25 14:44 relay-f5c414d77b50408880ce857edd058e1d.json
+-rw-rw---- 1 agentos-node agentos       908 Aug 25 14:41 relay-d7a701f81d70486ca4ed5d8ab578e93e.json
+-rw-rw---- 1 agentos-node agentos       908 Aug 25 14:38 relay-59493d8babd14e16b6b2ead436b0fc37.json
+-rw-rw---- 1 agentos-node agentos       908 Aug 25 14:35 relay-9bbe2b0531194942973da6b6f0887e76.json
+-rw-rw---- 1 agentos-node agentos      2012 Aug 25 10:17 relay-4028cd63d9914fc9ad4b4a6bf12c821d.json
+-rw-rw---- 1 agentos-node agentos      2012 Aug 25 09:47 relay-e00c3556d6df45bebc802214ad6dbb7c.json
+-rw-rw---- 1 agentos-node agentos-node 2012 Aug 25 08:25 relay-4d6493a55f8c48c0bec5202287e0d1ae.json
+receipts:
+total 16
+-rw-rw---- 1 ubuntu agentos  401 Aug 25 08:25 relay-4d6493a55f8c48c0bec5202287e0d1ae.json.tmp
+-rw-rw---- 1 ubuntu agentos  401 Aug 25 08:04 relay-871ae05c733849a1ae4c51736377f555.json
+-rw-rw---- 1 ubuntu agentos  401 Aug 24 17:11 relay-0ffb494c1fb748698e01fe8ef0acb4fc.json
+-rw-rw---- 1 ubuntu agentos 1611 Aug 24 17:07 relay-54306ff022b04c43a048a025bc616cac.json
+-- /home/ubuntu/agent-data/runtime/action-relay
+drwxrws--- 5 agentos-node agentos 4096 Aug 25 17:02 /home/ubuntu/agent-data/runtime/action-relay
+drwxrws--- 2 agentos-node agentos 4096 Aug 25 17:02 /home/ubuntu/agent-data/runtime/action-relay/inbox
+drwxrws--- 2 agentos-node agentos 4096 Aug 25 17:02 /home/ubuntu/agent-data/runtime/action-relay/processing
+drwxrws--- 2 agentos-node agentos 4096 Aug 25 17:02 /home/ubuntu/agent-data/runtime/action-relay/receipts
+inbox:
+total 4
+-rw-rw---- 1 agentos-node agentos 421 Aug 25 17:02 action-749c21f16c9a4e41a637cb8c76d1baf8.json
+processing:
+total 0
+receipts:
+total 0
+=== PATH AUTHORITY ===
+drwxrwsr-x 28 ubuntu agentos 4096 Aug 25 15:19 /home/ubuntu/agentmanager
+writable=yes /home/ubuntu/agentmanager
+drwxrwxr-x 19 ubuntu ubuntu 4096 Jul  2 15:47 /home/ubuntu/zeus-writer
+writable=no /home/ubuntu/zeus-writer
+drwxrwxr-x 8 ubuntu ubuntu 4096 May 25 16:48 /home/ubuntu/zeus-writer/website
+writable=no /home/ubuntu/zeus-writer/website
+drwxrwxr-x 15 ubuntu ubuntu 4096 Aug 21 20:01 /home/ubuntu/zeus-writer/website/dist
+writable=no /home/ubuntu/zeus-writer/website/dist
+lrwxrwxrwx 1 root root 45 Jun  1 11:13 /etc/nginx/sites-enabled/studio.milkcat.org -> /etc/nginx/sites-available/studio.milkcat.org
+writable=no /etc/nginx/sites-enabled/studio.milkcat.org
+=== USER SESSION ===
+RuntimePath=/run/user/1001
+State=active
+Linger=yes
+=== CROSS USER SYSTEMD PROBES ===
+Failed to connect to bus: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)
+Failed to get properties: Transport endpoint is not connected
+Failed to connect to bus: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)
+Failed to get properties: Transport endpoint is not connected
+=== LOCAL SSH PROBE ===
+Warning: Permanently added '127.0.0.1' (ED25519) to the list of known hosts.
+ubuntu@127.0.0.1: Permission denied (publickey).
+diagnostic_complete=YES
