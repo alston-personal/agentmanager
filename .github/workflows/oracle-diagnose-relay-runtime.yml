@@ -25,7 +25,15 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "identity=$(id)"
             echo '=== PROCESSES ==='
-            ps -eo user,pid,ppid,args | grep -E 'antigravity_relay|action_relay|agentos-action-relay|agentos-antigravity' | grep -v grep || true
+            ps -eo user,pid,lstart,ppid,args | grep -E 'antigravity_relay|action_relay|agentos-action-relay|agentos-antigravity' | grep -v grep || true
+            echo '=== ANTIGRAVITY RECEIPT TMP ==='
+            for f in /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/*.tmp; do [ -e "$f" ] || continue; echo "-- $f"; stat "$f" || true; cat "$f" || true; done
+            echo '=== ANTIGRAVITY PROCESSING SAMPLE ==='
+            for f in $(ls -tr /home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-*.json 2>/dev/null | head -3); do echo "-- $f"; cat "$f"; done
+            echo '=== USER UNIT FILES ==='
+            for f in /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service /home/ubuntu/.config/systemd/user/agentos-action-relay.service; do echo "-- $f"; cat "$f" 2>&1 || true; done
+            echo '=== JOURNAL UID1001 ==='
+            journalctl --no-pager --since '2026-08-25 08:00:00' _UID=1001 2>&1 | grep -E -i 'antigravity|relay|traceback|permission|error|exception' | tail -160 || true
             echo '=== SPOOL ==='
             for d in /home/ubuntu/agent-data/runtime/antigravity-relay /home/ubuntu/agent-data/runtime/action-relay; do
               echo "-- $d"; ls -ld "$d" "$d"/inbox "$d"/processing "$d"/receipts 2>&1 || true
@@ -34,17 +42,12 @@ jobs:
               echo 'receipts:'; ls -lt "$d"/receipts 2>&1 | head -10 || true
             done
             echo '=== PATH AUTHORITY ==='
-            for p in /home/ubuntu/agentmanager /home/ubuntu/zeus-writer /home/ubuntu/zeus-writer/website /home/ubuntu/zeus-writer/website/dist /etc/nginx/sites-enabled/studio.milkcat.org; do
+            for p in /home/ubuntu/agentmanager /home/ubuntu/zeus-writer /home/ubuntu/zeus-writer/website /home/ubuntu/zeus-writer/website/dist /etc/nginx/sites-enabled/studio.milkcat.org /etc/nginx/sites-available/studio.milkcat.org; do
               ls -ld "$p" 2>&1 || true
               if [ -w "$p" ]; then echo "writable=yes $p"; else echo "writable=no $p"; fi
             done
             echo '=== USER SESSION ==='
             loginctl show-user ubuntu -p State -p Linger -p RuntimePath 2>&1 || true
-            echo '=== CROSS USER SYSTEMD PROBES ==='
-            systemctl --user --machine=ubuntu@ --no-pager status agentos-antigravity-relay.service 2>&1 | head -60 || true
-            systemctl --user --machine=ubuntu@ --no-pager status agentos-action-relay.service 2>&1 | head -60 || true
-            echo '=== LOCAL SSH PROBE ==='
-            timeout 8 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 ubuntu@127.0.0.1 'id; systemctl --user is-active agentos-antigravity-relay.service || true; systemctl --user is-active agentos-action-relay.service || true' 2>&1 || true
             echo 'diagnostic_complete=YES'
           } | tee "$OUT"
       - name: Commit diagnostic evidence
