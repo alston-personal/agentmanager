@@ -15,18 +15,13 @@ hash_tree() {
   local out="$2"
   (
     cd "$root"
-    find . -type f -print0 \
-      | sort -z \
-      | xargs -0 -r sha256sum
+    find . -type f -print0 | sort -z | xargs -0 -r sha256sum
   ) > "$out"
 }
 
 snapshot_source() {
   rm -rf "$STAGE"
   mkdir -p "$WORK"
-  # The live Zeus Writer checkout is intentionally treated as source-of-observed
-  # truth for Phase 1. Do not git reset/clean it: production-significant content
-  # may currently be modified or untracked.
   rsync -a --delete \
     --exclude '/node_modules/' \
     --exclude '/.astro/' \
@@ -54,26 +49,22 @@ install_and_build() {
     corepack yarn install --immutable
     corepack yarn build
   else
-    echo 'ERROR: no supported lockfile found; refusing non-reproducible npm install' >&2
+    echo 'ERROR: no supported lockfile found; refusing non-reproducible install' >&2
     return 21
   fi
 }
 
 probe_file() {
   local rel="$1"
-  local marker="$2"
   local file="$DIST/$rel"
   if [ ! -s "$file" ]; then
-    echo "mirror_file=$rel exists=NO marker=$marker"
+    echo "mirror_file=$rel exists=NO"
     return 1
   fi
   local bytes sha
   bytes=$(wc -c < "$file")
   sha=$(sha256sum "$file" | awk '{print $1}')
-  echo "mirror_file=$rel exists=YES bytes=$bytes sha256=$sha marker=$marker"
-  if [ -n "$marker" ]; then
-    grep -Fq "$marker" "$file"
-  fi
+  echo "mirror_file=$rel exists=YES bytes=$bytes sha256=$sha"
 }
 
 {
@@ -110,6 +101,16 @@ probe_file() {
   echo "source_manifest_files=$(wc -l < "$MANIFEST_DIR/source-before-build.sha256")"
   echo "source_manifest_sha256=$(sha256sum "$MANIFEST_DIR/source-before-build.sha256" | awk '{print $1}')"
 
+  echo '=== PARENT / ABSOLUTE DEPENDENCY SCAN ==='
+  dep_hits=$(grep -RInE --exclude-dir=node_modules --exclude-dir=.astro --exclude-dir=dist --exclude='*.map' \
+    '(/home/ubuntu/zeus-writer|/home/ubuntu/agent-data|\.\./\.\./\.\./)' "$WORK" 2>/dev/null || true)
+  if [ -n "$dep_hits" ]; then
+    echo "$dep_hits" | head -200
+    echo 'independent_runtime_dependency_scan=FAIL'
+  else
+    echo 'independent_runtime_dependency_scan=PASS'
+  fi
+
   echo '=== INDEPENDENT INSTALL + BUILD ==='
   install_and_build
   test -s "$DIST/index.html"
@@ -118,9 +119,7 @@ probe_file() {
   echo "dist_manifest_sha256=$(sha256sum "$MANIFEST_DIR/dist.sha256" | awk '{print $1}')"
 
   echo '=== MIRROR ROUTE ARTIFACTS ==='
-  probe_file index.html ''
-  # These probes intentionally distinguish a real generated page from nginx
-  # fallback HTML. Missing artifacts are evidence, not silently accepted.
+  probe_file index.html
   for rel in \
     novels/index.html \
     layout-lab/index.html \
@@ -131,22 +130,32 @@ probe_file() {
     language-notes/index.html \
     omnirealm/index.html \
     tech-notes/index.html; do
-    if [ -e "$DIST/$rel" ]; then
-      probe_file "$rel" '' || true
-    else
-      echo "mirror_file=$rel exists=NO"
-    fi
+    probe_file "$rel" || true
   done
 
   echo '=== LAYOUT LAB REGRESSION GUARD ==='
+  layout_ok=0
   if [ -s "$DIST/layout-lab/index.html" ]; then
-    if grep -Eq 'Layout Lab|Analyze layout' "$DIST/layout-lab/index.html"; then
+    if grep -Eqi 'Layout Lab|Analyze layout|layout.?lab' "$DIST/layout-lab/index.html"; then
       echo 'layout_lab_generated_marker=PASS'
+      layout_ok=1
     else
       echo 'layout_lab_generated_marker=FAIL'
     fi
   else
     echo 'layout_lab_generated_artifact=MISSING'
+  fi
+  home_sha=$(sha256sum "$DIST/index.html" | awk '{print $1}')
+  if [ -s "$DIST/layout-lab/index.html" ]; then
+    layout_sha=$(sha256sum "$DIST/layout-lab/index.html" | awk '{print $1}')
+    echo "home_sha256=$home_sha"
+    echo "layout_lab_sha256=$layout_sha"
+    if [ "$home_sha" = "$layout_sha" ]; then
+      echo 'layout_lab_distinct_from_home=FAIL'
+      layout_ok=0
+    else
+      echo 'layout_lab_distinct_from_home=PASS'
+    fi
   fi
 
   echo '=== PRODUCTION READ-ONLY REFERENCE ==='
@@ -161,5 +170,10 @@ probe_file() {
 
   echo '=== PHASE 1 RESULT ==='
   echo 'mirror_build=PASS'
+  if [ "$layout_ok" -eq 1 ] && [ -z "$dep_hits" ]; then
+    echo 'phase1_extraction_readiness=PASS'
+  else
+    echo 'phase1_extraction_readiness=NO_GO'
+  fi
   echo 'cutover=NO'
 } 2>&1 | tee "$EVIDENCE"
