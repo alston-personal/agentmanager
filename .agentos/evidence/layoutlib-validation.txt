@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-25T05:21:44Z
+timestamp_utc=2026-08-25T07:13:13Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 python=Python 3.10.12
@@ -9,13 +9,14 @@ Slug: layoutlib
 STATUS: /home/ubuntu/agent-data/projects/layoutlib/STATUS.md
 Workspace: /home/ubuntu/agentmanager/workspace/layoutlib
 Dashboard: /home/ubuntu/agent-data/DASHBOARD.md
-✅ Created: /home/ubuntu/agent-data/projects/layoutlib/project.yaml
 
 --- Summary ---
-Created: 1
-Skipped (already exists): 0
+Created: 0
+Skipped (already exists): 1
 Errors: 0
+Skipped projects: layoutlib
 layoutlib_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=14
+layoutlib_web_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=3
 === UNIT + INTEGRATION TESTS ===
 test_cli_end_to_end (test_layoutlib.LayoutLibTests) ... ok
 test_ir_roundtrip (test_layoutlib.LayoutLibTests) ... ok
@@ -27,19 +28,26 @@ test_rejects_invalid_scale (test_layoutlib.LayoutLibTests) ... ok
 Ran 5 tests in 0.081s
 
 OK
-walls=4 out=/tmp/tmpfv9klh1u/ir.json
-walls=4 out=/tmp/tmpfv9klh1u/model.obj
+walls=4 out=/tmp/tmpqr73utln/ir.json
+walls=4 out=/tmp/tmpqr73utln/model.obj
 === END-TO-END DEMO ===
 generated 4 walls
 === CLI SMOKE ===
 walls=4 out=/tmp/layoutlib-smoke.ir.json
 walls=4 out=/tmp/layoutlib-smoke.obj
+=== WEB DEMO/API SMOKE ===
+web_health=PASS
+web_parse=PASS walls=4 spatial_ir=0.1
 === ACCEPTANCE ===
 layoutlib_validation=PASS
 unit_tests=5_passed
 demo_walls=4
 obj_vertices=32
 obj_faces=24
+web_health=PASS
+web_parse=PASS
+web_ui=/home/agentos-node/projects/layoutlib/web_demo/static/index.html
+web_docs=/home/agentos-node/projects/layoutlib/docs/WEB_DEMO.md
 library=/home/agentos-node/projects/layoutlib/src/layoutlib
 readme=/home/agentos-node/projects/layoutlib/README.md
 docs=/home/agentos-node/projects/layoutlib/docs
