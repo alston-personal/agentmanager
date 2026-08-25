@@ -2,9 +2,17 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+import sys
 import time
+
+# When this file is executed as `python3 scripts/...py`, Python puts `scripts/`
+# at sys.path[0]. This repo also has scripts/agentos_node.py, which would shadow
+# the real AgentOS runtime package. Pin the canonical runtime ahead of it.
+RUNTIME = '/home/ubuntu/.local/share/agentos/runtime-vnext'
+if RUNTIME in sys.path:
+    sys.path.remove(RUNTIME)
+sys.path.insert(0, RUNTIME)
 
 from agentos_node.antigravity_relay import AntigravityRelayClient
 
