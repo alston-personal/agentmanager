@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=48cd9bcb2c31343d27ee7b9cb094cf53f6f84ef9
+          TARGET=ff3ef92c5ce4ade8a58d15e7d533fe62bf60c437
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
@@ -75,6 +75,8 @@ jobs:
           grep -q "shareU.searchParams.set('deck', window.activeDeckId)" main.js
           grep -q "shareU.searchParams.set('theme', window.activeThemeId)" main.js
           grep -q "shareU.searchParams.set('orientation', 'reversed')" main.js
+          grep -q 'Bootstrap exactly one Deck Module' main.js
+          grep -q 'Custom deck bootstrap is owned by initAllSystems' main.js
           stop_server; start_server
           curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('cards',[])) == 5; assert all(c.get('image') for c in d['cards']); print('custom_deck_shared_contract=passed')"
           curl -fsS http://127.0.0.1:8088/api/v1/themes/leopardcat | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('theme_id') == 'leopardcat'; print('leopardcat_theme_contract=passed')"
@@ -82,6 +84,7 @@ jobs:
           test -s "$JS"
           curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") >/dev/null
           echo production_shared_experience=passed
+          echo production_exclusive_deck_bootstrap=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
