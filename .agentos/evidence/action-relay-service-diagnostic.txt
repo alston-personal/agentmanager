@@ -1,0 +1,54 @@
+timestamp_utc=2026-08-25T15:23:17Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+=== UNIT ===
+[Unit]
+Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/.local/share/agentos/action-runtime
+Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime
+UMask=0007
+#  is the deliberate supplementary-group bootstrap boundary for this old
+# ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
+# it prevents the setgid helper from establishing the already-authorized
+#  group context.
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay'
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
+=== RUNTIME ===
+ubuntu:ubuntu 775 /home/ubuntu/.local/share/agentos/action-runtime
+ubuntu:ubuntu 775 /home/ubuntu/.local/share/agentos/action-runtime/agentos_node
+agentos-node:agentos 2770 /home/ubuntu/agent-data/runtime/action-relay
+total 72
+drwxrwxr-x  3 ubuntu ubuntu 4096 Aug 25 23:11 .
+drwxrwxr-x 24 ubuntu ubuntu 4096 Aug 25 22:46 ..
+-rw-rw-r--  1 ubuntu ubuntu  205 Aug 25 22:46 __init__.py
+drwxrwxr-x  2 ubuntu ubuntu 4096 Aug 25 22:46 __pycache__
+-rw-rw-r--  1 ubuntu ubuntu 8256 Aug 25 22:46 action_relay.py
+-rw-rw-r--  1 ubuntu ubuntu 3359 Aug 25 22:46 antigravity_relay.py
+-rw-rw-r--  1 ubuntu ubuntu 8767 Aug 25 22:46 antigravity_relay_worker.py
+-rw-rw-r--  1 ubuntu ubuntu 7632 Aug 25 23:11 bootstrap_control.py
+-rw-rw-r--  1 ubuntu ubuntu 6220 Aug 25 22:46 cli.py
+-rw-rw-r--  1 ubuntu ubuntu 2978 Aug 25 22:46 inspector.py
+-rw-rw-r--  1 ubuntu ubuntu 7310 Aug 25 22:46 resource_registry.py
+=== SERVICE STATUS ===
+Failed to connect to bus: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)
+=== JOURNAL ===
+-- No entries --
+=== DIRECT MODULE PROBE ===
+usage: action_relay.py [-h] --root ROOT [--once]
+
+options:
+  -h, --help   show this help message and exit
+  --root ROOT
+  --once
+=== PROCESS ===
+root     ubuntu   3620336    1027 Ss         01:25 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  3620337 3620336 S          01:25 sh -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  3620338 3620337 S          01:25 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
