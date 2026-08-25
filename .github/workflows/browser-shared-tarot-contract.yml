@@ -1,0 +1,92 @@
+name: Browser Shared Tarot Contract
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths: ['.github/workflows/browser-shared-tarot-contract.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+      - name: Browser contract
+        shell: bash
+        run: |
+          cat > /tmp/shared-contract.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          import assert from 'node:assert/strict';
+
+          const base = 'https://leopardcat-tarot.milkcat.org/';
+          const api = await fetch(base + 'api/v1/decks/test-2cfe3b');
+          assert.equal(api.status, 200);
+          const deck = await api.json();
+          assert.equal(deck.cards.length, 5);
+          const first = deck.cards[0];
+
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage();
+          await page.goto(base + '?deck=test-2cfe3b&theme=minimal-light', {waitUntil:'networkidle'});
+          await page.waitForFunction(() => window.activeDeckId === 'test-2cfe3b' && Array.isArray(window.cardData) && window.cardData.length === 5);
+          assert.equal(await page.locator('.custom-deck-gallery .card-wrapper').count(), 5);
+          assert.equal(await page.evaluate(() => window.activeDeckId), 'test-2cfe3b');
+          assert.equal(await page.evaluate(() => window.activeThemeId), 'minimal-light');
+
+          await page.route('**/api/v1/readings', async route => {
+            await route.fulfill({status:200, contentType:'application/json', body: JSON.stringify({
+              reading_id:'rd_browser_contract', session_token:'browser-contract-token',
+              method:'tarot', persona:'master',
+              method_result:{spread:'single', cards:[{card_id:first.id, orientation:'reversed', position:'focus', position_label:'核心'}]},
+              reading:'測試解讀'
+            })});
+          });
+
+          await page.evaluate(() => window.getModularReading('browser contract'));
+          const state = await page.evaluate(() => window.currentReadingState);
+          assert.equal(state.deck_id, 'test-2cfe3b');
+          assert.equal(state.theme_id, 'minimal-light');
+          assert.equal(state.card_id, first.id);
+          assert.equal(state.orientation, 'reversed');
+
+          await page.evaluate(() => {
+            Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{write:async()=>{}, writeText:async()=>{}}});
+            window.ClipboardItem = class { constructor(v){ this.v=v; } };
+            window.html2canvas = async () => ({toBlob: cb => cb(new Blob(['x'], {type:'image/png'}))});
+          });
+          await page.evaluate(() => window.generateShareImage());
+          const share = await page.evaluate(() => ({
+            transform: document.getElementById('share-card-img')?.style.transform || '',
+            title: document.getElementById('share-card-title')?.innerText || '',
+            src: document.getElementById('share-card-img')?.getAttribute('src') || '',
+            url: window.shareUrl || ''
+          }));
+          assert.match(share.transform, /180deg/);
+          assert.match(share.title, /逆位|Reversed/);
+          assert.equal(share.src, first.image);
+          assert.match(share.url, /deck=test-2cfe3b/);
+          assert.match(share.url, /theme=minimal-light/);
+          assert.match(share.url, /orientation=reversed/);
+          assert.match(share.url, new RegExp('card=' + encodeURIComponent(first.id)));
+
+          const leopard = await browser.newPage();
+          await leopard.goto(base, {waitUntil:'networkidle'});
+          await leopard.waitForFunction(() => window.activeDeckId === 'leopardcat' && window.activeThemeId === 'leopardcat');
+          assert.equal(await leopard.evaluate(() => window.activeDeckId), 'leopardcat');
+          assert.equal(await leopard.evaluate(() => window.activeThemeId), 'leopardcat');
+
+          console.log('browser_custom_gallery=passed');
+          console.log('browser_reversed_reading_state=passed');
+          console.log('browser_reversed_share_card=passed');
+          console.log('browser_deep_link_contract=passed');
+          console.log('browser_leopardcat_theme_default=passed');
+          await browser.close();
+          NODE
+          node /tmp/shared-contract.mjs
