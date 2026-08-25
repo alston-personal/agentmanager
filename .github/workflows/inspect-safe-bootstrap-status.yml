@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
-      - name: Read safe bootstrap and active workflow runs
+      - name: Read safe bootstrap, active runs, and self-hosted runners
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -30,10 +30,20 @@ jobs:
           curl -fsSL "${headers[@]}" \
             "https://api.github.com/repos/$GH_REPO/actions/runs?per_page=50" \
             > /tmp/all-runs.json
+          if curl -fsSL "${headers[@]}" \
+            "https://api.github.com/repos/$GH_REPO/actions/runners?per_page=100" \
+            > /tmp/runners.json; then
+            runners_ok=1
+          else
+            runners_ok=0
+            printf '{"total_count":0,"runners":[]}' > /tmp/runners.json
+          fi
+          export runners_ok
           python3 - <<'PY' > .agentos/evidence/safe-bootstrap-status.txt
-          import json
+          import json,os
           safe=json.load(open('/tmp/safe-runs.json'))
           allruns=json.load(open('/tmp/all-runs.json'))
+          runners=json.load(open('/tmp/runners.json'))
           print('=== SAFE BOOTSTRAP ===')
           print('total_count='+str(safe.get('total_count',0)))
           for r in safe.get('workflow_runs',[]):
@@ -50,6 +60,17 @@ jobs:
               print('event='+str(r.get('event')))
               print('head_sha='+str(r.get('head_sha')))
               print('created_at='+str(r.get('created_at')))
+              print('---')
+          print('=== REPOSITORY SELF-HOSTED RUNNERS ===')
+          print('runner_api_ok='+os.environ.get('runners_ok','0'))
+          print('runner_count='+str(runners.get('total_count',0)))
+          for r in runners.get('runners',[]):
+              print('runner_id='+str(r.get('id')))
+              print('runner_name='+str(r.get('name')))
+              print('runner_os='+str(r.get('os')))
+              print('runner_status='+str(r.get('status')))
+              print('runner_busy='+str(r.get('busy')))
+              print('runner_labels='+','.join(x.get('name','') for x in r.get('labels',[])))
               print('---')
           PY
           cat .agentos/evidence/safe-bootstrap-status.txt
