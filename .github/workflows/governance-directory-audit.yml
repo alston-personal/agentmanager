@@ -37,7 +37,7 @@ jobs:
           set -euo pipefail
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
           python3 -m py_compile agent_core/governance_directory.py agent_core/resource_registry.py scripts/agentos_node.py scripts/governance_directory.py scripts/core_services/port_manager.py
-          python3 -m pytest -q tests/test_governance_directory.py tests/test_agentos_node.py
+          python3 -m unittest tests.test_governance_directory tests.test_agentos_node -v
 
       - name: Install canonical agentos-node runtime for node identity
         shell: bash
