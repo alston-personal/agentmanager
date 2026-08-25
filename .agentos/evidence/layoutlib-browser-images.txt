@@ -1,0 +1,9 @@
+timestamp_utc=2026-08-25T08:15:12Z
+Collecting Pillow<13,>=10
+  Downloading pillow-12.3.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (6.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 59.8 MB/s eta 0:00:00
+Installing collected packages: Pillow
+Successfully installed Pillow-12.3.0
+pillow_version=12.3.0
+public_url=https://during-classification-instruction-combat.trycloudflare.com/
+png parse failed: <urlopen error [Errno 101] Network is unreachable>
