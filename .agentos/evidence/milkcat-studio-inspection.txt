@@ -1,0 +1,134 @@
+timestamp_utc=2026-08-25T06:08:23Z
+hostname=instance-20260129-0852
+=== HTTP HEADERS ===
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Tue, 25 Aug 2026 06:08:23 GMT
+Content-Type: text/html
+Content-Length: 11733
+Last-Modified: Fri, 21 Aug 2026 12:01:18 GMT
+Connection: keep-alive
+ETag: "6a883e0e-2dd5"
+Accept-Ranges: bytes
+
+=== HOMEPAGE SAMPLE ===
+<!DOCTYPE html><html lang="zh-TW"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="canonical" href="https://studio.milkcat.org/"><!-- SEO Base Tags --><title>Milkcat Studio | Alston Huang 的創作實驗室</title><meta name="description" content="Zeus Writer 官方連載網站"><!-- Open Graph / Facebook / Threads --><meta property="og:title" content="Milkcat Studio | Alston Huang 的創作實驗室"><meta property="og:description" content="Zeus Writer 官方連載網站"><meta property="og:type" content="website"><meta property="og:url" content="https://studio.milkcat.org/"><meta property="og:image" content="https://imagedelivery.net/kDRCweMmqLnTPNlbum-pYA/prod/cover/48e2a1a1-fc23-4ed8-be66-9129a3ca7df9.png/public"><!-- Twitter Card --><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Milkcat Studio | Alston Huang 的創作實驗室"><meta name="twitter:description" content="Zeus Writer 官方連載網站"><meta name="twitter:image" content="https://imagedelivery.net/kDRCweMmqLnTPNlbum-pYA/prod/cover/48e2a1a1-fc23-4ed8-be66-9129a3ca7df9.png/public"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet"><!-- Google tag (gtag.js) --><script async src="https://www.googletagmanager.com/gtag/js?id=G-JVBY36JPTW"></script><script>
+		  window.dataLayer = window.dataLayer || [];
+		  function gtag(){dataLayer.push(arguments);}
+		  gtag('js', new Date());
+
+		  gtag('config', 'G-JVBY36JPTW');
+		</script><!-- Busuanzi Web Analytics --><script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><style>:root{--bg-dark: #121417;--accent-crimson: #8b0000;--glass-bg: rgba(255, 255, 255, .05);--glass-border: rgba(255, 255, 255, .1)}html{font-family:Noto Sans TC,system-ui,sans-serif;background:var(--bg-dark);color:#fff}body{margin:0;padding:0;min-height:100vh;background:radial-gradient(circle at top right,#1a1e24,#121417)}h1,h2,h3,.serif{font-family:Playfair Display,serif}a{color:inherit;text-decoration:none;transition:all .3s ease}.glass-card{background:var(--glass-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--glass-border);border-radius:16px}
+</style>
+<link rel="stylesheet" href="/_astro/index.C-10nDhg.css"></head> <body>  <nav class="portal-banner glass-card" data-astro-cid-j7pv25f6> <div class="banner-brand" id="banner-brand-btn" style="display: flex; align-items: center; gap: 8px; cursor: pointer;" data-astro-cid-j7pv25f6> <span class="banner-logo" style="font-size: 1.5rem;" data-astro-cid-j7pv25f6>🐈‍⬛</span> <span class="banner-title serif" style="font-weight: bold; font-size: 1.25rem; letter-spacing: 1px; background: linear-gradient(to right, #ffffff, #8b0000); -webkit-background-clip: text; -webkit-text-fill-color: transparent;" data-astro-cid-j7pv25f6>Milkcat Studio Portal</span> </div> <div style="display: flex; align-items: center; gap: 15px;" data-astro-cid-j7pv25f6> <div class="banner-nav" style="display: flex; gap: 8px;" data-astro-cid-j7pv25f6> <button class="nav-item active" data-view="home" data-astro-cid-j7pv25f6>🏠 首頁</button> <button class="nav-item" data-view="frame" data-url="https://leopardcat-tarot.milkcat.org/" data-astro-cid-j7pv25f6>🐾 石虎塔羅</button> <button class="nav-item" data-view="frame" data-url="/dashboard" data-astro-cid-j7pv25f6>📊 專案看板</button> <button class="nav-item" data-view="frame" data-url="/iftv" data-astro-cid-j7pv25f6>🎞️ If TV 電視台</button> <button class="nav-item" data-view="frame" data-url="/hanzi" data-astro-cid-j7pv25f6>🏛️ 漢字基因</button> </div> <div id="banner-auth-container" style="border-left: 1px solid rgba(255,255,255,0.1); padding-left: 15px; display: flex; align-items: center; font-size: 0.9rem;" data-astro-cid-j7pv25f6> <!-- Loaded dynamically --> </div> </div> </nav> <div id="portal-home-view" data-astro-cid-j7pv25f6> <main data-astro-cid-j7pv25f6> <section class="portal-hero" data-astro-cid-j7pv25f6> <h1 class="serif" data-astro-cid-j7pv25f6>Milkcat Studio</h1> <p class="subtitle" data-astro-cid-j7pv25f6>數位文學 • 連載入口 • 創意實驗</p> </section> <section class="serials-panel glass-card" data-astro-cid-j7pv25f6> <div class="serials-header" data-astro-cid-j7pv25f6> <div data-astro-cid-j7pv25f6> <p class="eyebrow" data-astro-cid-j7pv25f6>SERIALS</p> <h2 class="serif" data-astro-cid-j7pv25f6>連載作品</h2> </div> <p class="serials-note" data-astro-cid-j7pv25f6>新作品會在這裡同步露出，方便直接切換不同宇宙。</p> </div> <div class="serials-grid" data-astro-cid-j7pv25f6> <a class="serial-card" href="/tiandao/" data-astro-cid-j7pv25f6> <div class="serial-meta" data-astro-cid-j7pv25f6> <span class="serial-name" data-astro-cid-j7pv25f6>天道敕令：阿賴耶識修真錄</span> <span class="serial-count" data-astro-cid-j7pv25f6>13 章</span> </div> <div class="serial-latest" data-astro-cid-j7pv25f6> <span data-astro-cid-j7pv25f6>最新更新</span> <strong data-astro-cid-j7pv25f6>13</strong> </div> <p class="serial-link" data-astro-cid-j7pv25f6>進入閱讀 →</p> </a> </div> </section> <section class="showcase-panel glass-card animate-fade-in" data-astro-cid-j7pv25f6> <div class="showcase-header" data-astro-cid-j7pv25f6> <div data-astro-cid-j7pv25f6> <p class="eyebrow" style="color: #8b0000; margin: 0 0 8px 0;" data-astro-cid-j7pv25f6>AI AGENT EXPERIMENTS</p> <div style="display: flex; align-items: baseline; gap: 15px; flex-wrap: wrap;" data-astro-cid-j7pv25f6> <h2 class="serif" style="font-size: 2.2rem; margin: 0;" data-astro-cid-j7pv25f6>AI 專案展示與孵化區</h2> <span id="user-status-badge" style="font-size: 0.85rem; color: #888; display: none; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 99px;" data-astro-cid-j7pv25f6></span> </div> </div> <p class="showcase-note" data-astro-cid-j7pv25f6>
+我們正在開發一系列自主運作的 AI 智慧體 (Agents)。點擊「有興趣」表達支持，並可點擊「查看實時進度」進入開發主控台，與我們一同見證 AI 的實時開發軌跡！
+</p> </div> <h3 class="serif" style="font-size: 1.5rem; color: #ffb3b3; margin-bottom: 20px; margin-top: 0;" data-astro-cid-j7pv25f6>🌟 精選 AI 核心專案</h3> <div class="showcase-grid" id="featured-grid" data-astro-cid-j7pv25f6> <!-- Loaded dynamically --> </div> <div style="margin-top: 40px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 30px;" data-astro-cid-j7pv25f6> <h3 class="serif" style="font-size: 1.5rem; color: #a8a29e; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; margin-top: 0;" data-astro-cid-j7pv25f6> <span id="other-projects-title" data-astro-cid-j7pv25f6>📦 其它孵化中專案 (0)</span> <button id="toggle-incubating-btn" style="background: none; border: 1px solid rgba(255,255,255,0.2); color: #ccc; padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; transition: 0.2s;" data-astro-cid-j7pv25f6>展開全部</button> </h3> <div class="showcase-grid" id="incubating-grid" style="display: none;" data-astro-cid-j7pv25f6> <!-- Loaded dynamically --> </div> </div> </section> <script type="module" src="/_astro/index.astro_astro_type_script_index_0_lang.BgNFhV51.js"></script> <section class="projects-grid" data-astro-cid-j7pv25f6> <!-- Project 1: AgentOS Dev Tears --> <div class="project-card glass-card" data-astro-cid-j7pv25f6> <div class="card-image agentos-bg" data-astro-cid-j7pv25f6></div> <div class="card-content" data-astro-cid-j7pv25f6> <h3 class="serif" data-astro-cid-j7pv25f6>AgentOS開發血淚史</h3> <p data-astro-cid-j7pv25f6>雲端主機裡養出來的 Agent 體系紀錄。第 0 章已公開，後續篇章將沿著自己的軌道前進。</p> <a href="/agentos" class="btn-enter btn-agentos" data-astro-cid-j7pv25f6>進入作品集</a> </div> </div> <!-- Project 1: Fragmented Testimony --> <div class="project-card glass-card" data-astro-cid-j7pv25f6> <div class="card-image testimony-bg" data-astro-cid-j7pv25f6></div> <div class="card-content" data-astro-cid-j7pv25f6> <h3 class="serif" data-astro-cid-j7pv25f6>零碎證言</h3> <p data-astro-cid-j7pv25f6>一段被遺忘的歷史，正在此處重組。AI 自動連載小說專案。</p> <a href="/testimony" class="btn-enter" data-astro-cid-j7pv25f6>進入作品集</a> </div> </div> <!-- Project 2: LeopardCat Tarot --> <div class="project-card glass-card" data-astro-cid-j7pv25f6> <div class="card-image tarot-bg" data-astro-cid-j7pv25f6></div> <div class="card-content" data-astro-cid-j7pv25f6> <h3 class="serif" data-astro-cid-j7pv25f6>石虎塔羅</h3> <p data-astro-cid-j7pv25f6>結合台灣石虎與塔羅神祕學的數位藝術實驗。</p> <a href="https://leopardcat-tarot.milkcat.org/" target="_blank" class="btn-enter" data-astro-cid-j7pv25f6>造訪網站</a> </div> </div> <!-- Project 3: The Translator in the Language Labyrinth --> <div class="project-card glass-card" data-astro-cid-j7pv25f6> <div class="card-image translator-bg" data-astro-cid-j7pv25f6></div> <div class="card-content" data-astro-cid-j7pv25f6> <h3 class="serif" data-astro-cid-j7pv25f6>語言迷宮的譯者</h3> <p data-astro-cid-j7pv25f6>邊境碎屑手記。用身體編譯文字，探討語言學習與靈魂分裂的印記。</p> <a href="/translator" class="btn-enter btn-bronze" data-astro-cid-j7pv25f6>進入作品集</a> </div> </div> <!-- Project 4: Language Notes --> <div class="project-card glass-card" data-astro-cid-j7pv25f6> <div class="card-image language-notes-bg" data-astro-cid-j7pv25f6></div> <div class="card-content" data-astro-cid-j7pv25f6> <h3 class="serif" data-astro-cid-j7pv25f6>語言雜記</h3> <p data-astro-cid-j7pv25f6>文字的溫度與重力。細細拆解不同語言間的幽微語感與思維邊界。</p> <a href="/language-notes" class="btn-enter btn-sakura" data-astro-cid-j7pv25f6>進入作品集</a> </div> </div> <!-- Project 5: Tech Notes --> <div class="project-card glass-card" data-astro-cid-j7pv25f6> <div class="card-image tech-notes-bg" data-astro-cid-j7pv25f6></div> <div class="card-content" data-astro-cid-j7pv25f6> <h3 class="serif" data-astro-cid-j7pv25f6>科技雜談</h3> <p data-astro-cid-j7pv25f6>數位荒原的防禦、減法與非人經濟生存戰略。硬核技術架構與商業戰略隨筆。</p> <a href="/tech-notes" class="btn-enter btn-cyan" data-astro-cid-j7pv25f6>進入作品集</a> </div> </div> </section> </main> <footer data-astro-cid-j7pv25f6> <p data-astro-cid-j7pv25f6>&copy; 2026 Milkcat Studio. All Rights Reserved.</p> <p class="site-counter" data-astro-cid-j7pv25f6> <span id="busuanzi_container_site_pv" style="display:none;" data-astro-cid-j7pv25f6>
+👁️ 總瀏覽量 <span id="busuanzi_value_site_pv" data-astro-cid-j7pv25f6>--</span> 次
+</span> <span class="divider" data-astro-cid-j7pv25f6>|</span> <span id="busuanzi_container_site_uv" style="display:none;" data-astro-cid-j7pv25f6>
+👥 訪客總數 <span id="busuanzi_value_site_uv" data-astro-cid-j7pv25f6>--</span> 人
+</span> </p> </footer> </div> <div id="portal-frame-view" style="display: none; width: 100%; height: calc(100vh - 64px); border: none; overflow: hidden;" data-astro-cid-j7pv25f6> <iframe id="portal-iframe" src="" style="width: 100%; height: 100%; border: none;" data-astro-cid-j7pv25f6></iframe> </div> </body></html>=== DNS ===
+161.33.24.170   STREAM studio.milkcat.org
+161.33.24.170   DGRAM  
+161.33.24.170   RAW    
+=== LISTENERS ===
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
+LISTEN 0      4096       127.0.0.1:32911      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:34709      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:34653      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:34305      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:3011       0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:18791      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:18789      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:38117      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:37931      0.0.0.0:*          
+LISTEN 0      5          127.0.0.1:8085       0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:39959      0.0.0.0:*          
+LISTEN 0      4096         0.0.0.0:5678       0.0.0.0:*          
+LISTEN 0      5          127.0.0.1:8765       0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:25181      0.0.0.0:*          
+LISTEN 0      5          127.0.0.1:8775       0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:24852      0.0.0.0:*          
+LISTEN 0      511        127.0.0.1:42311      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:44023      0.0.0.0:*          
+LISTEN 0      511          0.0.0.0:8099       0.0.0.0:*          
+LISTEN 0      2048         0.0.0.0:8090       0.0.0.0:*          
+LISTEN 0      5            0.0.0.0:8088       0.0.0.0:*          
+LISTEN 0      4096         0.0.0.0:8080       0.0.0.0:*          
+LISTEN 0      5            0.0.0.0:8087       0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:11434      0.0.0.0:*          
+LISTEN 0      4096       127.0.0.1:45709      0.0.0.0:*          
+LISTEN 0      50           0.0.0.0:139        0.0.0.0:*          
+LISTEN 0      4096         0.0.0.0:111        0.0.0.0:*          
+LISTEN 0      511          0.0.0.0:80         0.0.0.0:*          
+LISTEN 0      128          0.0.0.0:22         0.0.0.0:*          
+LISTEN 0      511          0.0.0.0:443        0.0.0.0:*          
+LISTEN 0      50           0.0.0.0:445        0.0.0.0:*          
+LISTEN 0      2048         0.0.0.0:4000       0.0.0.0:*          
+LISTEN 0      511          0.0.0.0:3002       0.0.0.0:*          
+LISTEN 0      511          0.0.0.0:3001       0.0.0.0:*          
+LISTEN 0      4096               *:25565            *:*          
+LISTEN 0      4096            [::]:5678          [::]:*          
+LISTEN 0      4096            [::]:8080          [::]:*          
+LISTEN 0      511            [::1]:18789         [::]:*          
+LISTEN 0      50              [::]:139           [::]:*          
+LISTEN 0      4096            [::]:111           [::]:*          
+LISTEN 0      128             [::]:22            [::]:*          
+LISTEN 0      50              [::]:445           [::]:*          
+LISTEN 0      511                *:3020             *:*          
+LISTEN 0      511                *:3010             *:*          
+LISTEN 0      511                *:3000             *:*          
+LISTEN 0      511                *:3005             *:*          
+=== NGINX/SITES ===
+-- /etc/nginx/sites-enabled
+/etc/nginx/sites-enabled/leopard
+/etc/nginx/sites-enabled/n8n
+/etc/nginx/sites-enabled/vault:2:    server_name vault.milkcat.org;
+/etc/nginx/sites-enabled/vault:5:        proxy_pass http://localhost:8080;
+/etc/nginx/sites-enabled/vault:25:    server_name vault.milkcat.org;
+/etc/nginx/sites-enabled/leopard:2:    server_name leopardcat-tarot.milkcat.org leopard.milkcat.org;
+/etc/nginx/sites-enabled/leopard:4:    root /home/ubuntu/leopardcat-tarot/website/dist;
+/etc/nginx/sites-enabled/leopard:9:        proxy_pass http://127.0.0.1:8088;
+/etc/nginx/sites-enabled/leopard:17:        proxy_pass http://127.0.0.1:8088;
+/etc/nginx/sites-enabled/leopard:29:        proxy_pass http://127.0.0.1:8088/api/;
+/etc/nginx/sites-enabled/leopard:65:    server_name leopardcat-tarot.milkcat.org leopard.milkcat.org;
+/etc/nginx/sites-enabled/studio.milkcat.org:3:    server_name studio.milkcat.org;
+/etc/nginx/sites-enabled/studio.milkcat.org:5:    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+/etc/nginx/sites-enabled/studio.milkcat.org:6:    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+/etc/nginx/sites-enabled/studio.milkcat.org:11:        proxy_pass http://localhost:3001;
+/etc/nginx/sites-enabled/studio.milkcat.org:25:    server_name studio.milkcat.org;
+/etc/nginx/sites-enabled/studio.milkcat.org:27:    root /home/ubuntu/prophecy-verifier;
+/etc/nginx/sites-enabled/studio.milkcat.org:37:    server_name studio.milkcat.org;
+/etc/nginx/sites-enabled/studio.milkcat.org:43:    server_name studio.milkcat.org;
+/etc/nginx/sites-enabled/studio.milkcat.org:45:    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+/etc/nginx/sites-enabled/studio.milkcat.org:46:    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+/etc/nginx/sites-enabled/studio.milkcat.org:50:    root /home/ubuntu/zeus-writer/website/dist;
+/etc/nginx/sites-enabled/studio.milkcat.org:64:        proxy_pass http://127.0.0.1:8088/api/cookies;
+/etc/nginx/sites-enabled/studio.milkcat.org:77:        proxy_pass http://localhost:3000;
+/etc/nginx/sites-enabled/studio.milkcat.org:89:        proxy_pass http://127.0.0.1:3002;
+/etc/nginx/sites-enabled/studio.milkcat.org:101:        proxy_pass http://127.0.0.1:3002;
+/etc/nginx/sites-enabled/studio.milkcat.org:130:        proxy_pass http://localhost:3005;
+/etc/nginx/sites-enabled/studio.milkcat.org:142:        proxy_pass http://localhost:3011;
+/etc/nginx/sites-enabled/studio.milkcat.org:165:        proxy_pass http://localhost:3010;
+/etc/nginx/sites-enabled/studio.milkcat.org:177:        proxy_pass http://localhost:3020;
+/etc/nginx/sites-enabled/studio.milkcat.org:190:        proxy_pass http://localhost:8090/;
+/etc/nginx/sites-enabled/test.cat.org:4:    server_name test.cat.org;
+/etc/nginx/sites-enabled/test.cat.org:7:        proxy_pass http://localhost:8888;
+/etc/nginx/sites-enabled/n8n:2:    server_name n8n.milkcat.org;
+/etc/nginx/sites-enabled/n8n:10:        proxy_pass http://127.0.0.1:8765/;
+/etc/nginx/sites-enabled/n8n:22:        proxy_pass http://localhost:5678;
+/etc/nginx/sites-enabled/n8n:46:    server_name n8n.milkcat.org;
+-- /etc/nginx/conf.d
+=== USER SERVICES ===
+=== SYSTEM SERVICES FILTER ===
+  docker.service                                                             loaded    active   running Docker Application Container Engine
+  ip-genome-studio.service                                                   loaded    active   running IP Genome Studio web app
+  kmod-static-nodes.service                                                  loaded    active   exited  Create List of Static Device Nodes
+  nginx.service                                                              loaded    active   running A high performance web server and a reverse proxy server
+  systemd-tmpfiles-setup-dev.service                                         loaded    active   exited  Create Static Device Nodes in /dev
+=== LIKELY WEB ROOTS ===
+-- /var/www
+-- /srv
+-- /opt
+-- /home/ubuntu
+-- /home/agentos-node
+=== GIT REPOS LIKELY WEB ===
