@@ -56,9 +56,10 @@ class Paths:
         self.inbox = self.root / "inbox"
         self.processing = self.root / "processing"
         self.receipts = self.root / "receipts"
+        self.quarantine = self.root / "quarantine"
 
     def ensure(self) -> None:
-        for p in (self.root, self.inbox, self.processing, self.receipts):
+        for p in (self.root, self.inbox, self.processing, self.receipts, self.quarantine):
             p.mkdir(parents=True, exist_ok=True)
             _share(p, directory=True)
 
@@ -94,13 +95,7 @@ def _run(argv: list[str], *, cwd: str | Path, timeout: int = 300) -> dict[str, A
 
 
 def _restart_user_service(unit: str, *, timeout: float = 20.0) -> dict[str, Any]:
-    """Restart a user unit without letting systemctl's job wait pin the relay.
-
-    The Action Relay must always be able to emit a receipt. A blocking
-    `systemctl restart` can wait on a service job and keep a capsule stranded in
-    processing. Submit the restart with --no-block, then poll a read-only state
-    query under a bounded deadline.
-    """
+    """Restart a user unit without letting systemctl's job wait pin the relay."""
     cwd = Path.home()
     restart = _run(["systemctl", "--user", "--no-block", "restart", unit], cwd=cwd, timeout=8)
     observations: list[dict[str, Any]] = []
@@ -142,8 +137,6 @@ def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
 
 def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
-    # The caller is a separate Action Relay service, so restarting Antigravity does
-    # not terminate the action currently producing this receipt.
     return _restart_user_service("agentos-antigravity-relay.service")
 
 
@@ -157,6 +150,50 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
 class ActionRelayWorker:
     """Ubuntu-owned deterministic consumer. It never invokes a shell or LLM."""
     def __init__(self, root: str | Path): self.paths = Paths(root)
+
+    def recover_interrupted(self) -> list[str]:
+        """Terminalize leftover processing capsules without replaying them.
+
+        A capsule left in processing means a previous worker disappeared after
+        taking ownership of execution but before emitting a receipt. The side
+        effect outcome is therefore unknown. Replaying would violate the relay's
+        at-most-once safety boundary, so preserve the original capsule in
+        quarantine and emit an explicit terminal receipt instead.
+        """
+        self.paths.ensure(); recovered: list[str] = []
+        for processing in sorted(self.paths.processing.glob("action-*.json")):
+            capsule_id = processing.stem
+            target = self.paths.receipts / f"{capsule_id}.json"
+            if target.exists():
+                quarantine = self.paths.quarantine / processing.name
+                processing.replace(quarantine); _share(quarantine); recovered.append(capsule_id)
+                continue
+            action = None
+            try:
+                capsule = json.loads(processing.read_text(encoding="utf-8"))
+                action = capsule.get("action")
+                capsule_id = str(capsule.get("capsule_id") or capsule_id)
+            except Exception:
+                pass
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "action": action,
+                "started_at": None,
+                "completed_at": _now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "ok": False,
+                "outcome": "unknown",
+                "replayed": False,
+                "error": "interrupted_before_receipt; capsule quarantined and not replayed",
+            }
+            tmp = target.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(receipt, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            _share(tmp); tmp.replace(target); _share(target)
+            quarantine = self.paths.quarantine / processing.name
+            processing.replace(quarantine); _share(quarantine); recovered.append(capsule_id)
+        return recovered
+
     def process_one(self) -> dict[str, Any] | None:
         self.paths.ensure(); candidates = sorted(self.paths.inbox.glob("action-*.json"))
         if not candidates: return None
@@ -177,7 +214,9 @@ class ActionRelayWorker:
         target = self.paths.receipts / f"{capsule_id}.json"; tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(receipt, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
         _share(tmp); tmp.replace(target); _share(target); processing.unlink(missing_ok=True); return receipt
+
     def serve(self, interval: float = 1.0) -> None:
+        self.recover_interrupted()
         while True:
             if self.process_one() is None: time.sleep(interval)
 
@@ -185,7 +224,9 @@ class ActionRelayWorker:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(); p.add_argument("--root", required=True); p.add_argument("--once", action="store_true")
     args = p.parse_args(argv); worker = ActionRelayWorker(args.root)
-    if args.once: print(json.dumps(worker.process_one() or {"status":"idle"}, indent=2, ensure_ascii=False)); return 0
+    if args.once:
+        recovered = worker.recover_interrupted()
+        print(json.dumps(worker.process_one() or {"status":"idle", "recovered": recovered}, indent=2, ensure_ascii=False)); return 0
     worker.serve(); return 0
 
 if __name__ == "__main__": raise SystemExit(main())
