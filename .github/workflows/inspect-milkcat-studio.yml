@@ -1,0 +1,64 @@
+name: Inspect MilkCat Studio Integration Surface
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-milkcat-studio.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect website and local hosting configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/milkcat-studio-inspection.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo '=== HTTP HEADERS ==='
+            curl -k -sS -I --max-time 15 https://studio.milkcat.org/ || true
+            echo '=== HOMEPAGE SAMPLE ==='
+            curl -k -sS --max-time 20 https://studio.milkcat.org/ | sed -n '1,140p' || true
+            echo '=== DNS ==='
+            getent ahosts studio.milkcat.org || true
+            echo '=== LISTENERS ==='
+            ss -lntp 2>/dev/null | sed -n '1,160p' || ss -lnt | sed -n '1,160p' || true
+            echo '=== NGINX/SITES ==='
+            for d in /etc/nginx/sites-enabled /etc/nginx/conf.d /etc/caddy /etc/apache2/sites-enabled; do
+              [ -d "$d" ] || continue
+              echo "-- $d"
+              find "$d" -maxdepth 2 -type f -print 2>/dev/null | sort
+              grep -RniE 'studio\.milkcat\.org|server_name|root |proxy_pass|reverse_proxy|DocumentRoot' "$d" 2>/dev/null | head -n 240 || true
+            done
+            echo '=== USER SERVICES ==='
+            systemctl --user --no-pager --type=service --all 2>/dev/null | head -n 180 || true
+            echo '=== SYSTEM SERVICES FILTER ==='
+            systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'nginx|caddy|apache|node|studio|milkcat|docker|podman' | head -n 120 || true
+            echo '=== LIKELY WEB ROOTS ==='
+            for d in /var/www /srv /opt /home/ubuntu /home/agentos-node; do
+              [ -d "$d" ] || continue
+              echo "-- $d"
+              find "$d" -maxdepth 3 \( -name package.json -o -name vite.config.* -o -name next.config.* -o -name docker-compose.yml -o -name compose.yml -o -name Caddyfile -o -name nginx.conf \) -print 2>/dev/null | head -n 300 || true
+            done
+            echo '=== GIT REPOS LIKELY WEB ==='
+            find /home/ubuntu /home/agentos-node /var/www /srv -maxdepth 4 -type d -name .git -print 2>/dev/null | sed 's#/.git$##' | head -n 200 || true
+          } 2>&1 | tee "$OUT"
+      - name: Commit inspection evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/milkcat-studio-inspection.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio): inspect milkcat integration surface'
+          git push
