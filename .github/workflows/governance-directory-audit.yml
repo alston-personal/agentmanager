@@ -14,6 +14,19 @@ on:
       - '.agent/SERVICES.md'
       - 'scripts/os_watchdog.py'
       - '.github/workflows/governance-directory-audit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agent_core/governance_directory.py'
+      - 'scripts/governance_directory.py'
+      - 'scripts/core_services/port_manager.py'
+      - 'scripts/drift_guard.py'
+      - '.agent/CONSTITUTION.yaml'
+      - '.agent/governance/**'
+      - '.agent/roles/**'
+      - '.agent/SERVICES.md'
+      - 'scripts/os_watchdog.py'
+      - '.github/workflows/governance-directory-audit.yml'
 
 permissions:
   contents: write
@@ -86,6 +99,7 @@ jobs:
           } 2>&1 | tee "$OUT"
 
       - name: Commit evidence
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           set -euo pipefail
