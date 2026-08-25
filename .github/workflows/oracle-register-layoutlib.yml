@@ -36,40 +36,39 @@ jobs:
 
             ROOT=/home/ubuntu/agentmanager
             DATA=/home/ubuntu/agent-data
-            CODE=/home/ubuntu/layoutlib
+            PHYSICAL=/home/agentos-node/projects
+            CODE="$PHYSICAL/layoutlib"
             BOOT="$PWD/scripts/bootstrap_layoutlib.py"
+            REG="$PWD/scripts/register_project.py"
+            INIT="$PWD/scripts/init_project_yaml.py"
 
-            MODE=direct
-            if ! test -w /home/ubuntu || ! test -w "$DATA" || ! test -w "$ROOT"; then
-              if command -v sudo >/dev/null && sudo -n -u ubuntu true 2>/dev/null; then
-                MODE=sudo
-              else
-                echo "oracle_write_gate=FAIL"
-                stat -c '%n owner=%U group=%G mode=%a' /home/ubuntu "$ROOT" "$DATA" || true
-                exit 2
-              fi
-            fi
-            echo "oracle_write_mode=$MODE"
+            test -w "$DATA" || { echo 'agent-data not writable'; exit 2; }
+            test -w "$ROOT" || { echo 'agentmanager not writable'; exit 2; }
+            mkdir -p "$PHYSICAL"
+            test -w "$PHYSICAL" || { echo 'physical project root not writable'; exit 2; }
+            echo "oracle_write_gate=PASS"
+            echo "physical_projects_root=$PHYSICAL"
 
-            run_owner() {
-              if [ "$MODE" = sudo ]; then sudo -n -u ubuntu "$@"; else "$@"; fi
-            }
+            python3 - "$REG" "$ROOT" "$DATA" "$PHYSICAL" <<'PY'
+          import importlib.util, os, sys
+          from pathlib import Path
+          script, root, data, physical = sys.argv[1:]
+          os.environ['AGENTMANAGER_ROOT']=root
+          os.environ['AGENT_DATA_ROOT']=data
+          spec=importlib.util.spec_from_file_location('layoutlib_register_project',script)
+          mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+          mod.PHYSICAL_PROJECTS_ROOT=Path(physical)
+          print(mod.register_project('layoutlib','LayoutLib','🧪 MVP Validation','🏠','Floor-plan raster -> versioned Spatial IR -> 3D OBJ.'))
+          PY
 
-            test -f "$ROOT/scripts/register_project.py"
-            test -f "$ROOT/scripts/init_project_yaml.py"
-            test -f "$BOOT"
+            env AGENT_DATA_ROOT="$DATA" python3 "$INIT" --project layoutlib || true
+            python3 "$BOOT" --target "$CODE"
 
-            run_owner env AGENTMANAGER_ROOT="$ROOT" AGENT_DATA_ROOT="$DATA" \
-              python3 "$ROOT/scripts/register_project.py" layoutlib \
-              --display-name LayoutLib --status '🧪 MVP Validation' --type-icon '🏠' \
-              --summary 'Floor-plan raster -> versioned Spatial IR -> 3D OBJ.'
-            run_owner env AGENT_DATA_ROOT="$DATA" python3 "$ROOT/scripts/init_project_yaml.py" --project layoutlib || true
-            run_owner python3 "$BOOT" --target "$CODE"
+            echo '=== UNIT + INTEGRATION TESTS ==='
+            env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v
 
-            echo '=== TESTS ==='
-            run_owner env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v
-            run_owner env PYTHONPATH="$CODE/src" python3 "$CODE/examples/generate_demo.py"
-
+            echo '=== END-TO-END DEMO ==='
+            env PYTHONPATH="$CODE/src" python3 "$CODE/examples/generate_demo.py"
             IR="$CODE/examples/demo_room.ir.json"
             OBJ="$CODE/examples/demo_room.obj"
             test -s "$IR"; test -s "$OBJ"
@@ -80,19 +79,20 @@ jobs:
             test "$VERTICES" = 32
             test "$FACES" = 24
 
-            run_owner env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli parse "$CODE/tests/fixtures/demo_room.pgm" --out /tmp/layoutlib-smoke.ir.json --meters-per-pixel 0.02 --min-wall-length-px 30
-            run_owner env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli obj /tmp/layoutlib-smoke.ir.json --out /tmp/layoutlib-smoke.obj
+            echo '=== CLI SMOKE ==='
+            env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli parse "$CODE/tests/fixtures/demo_room.pgm" --out /tmp/layoutlib-smoke.ir.json --meters-per-pixel 0.02 --min-wall-length-px 30
+            env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli obj /tmp/layoutlib-smoke.ir.json --out /tmp/layoutlib-smoke.obj
             test -s /tmp/layoutlib-smoke.ir.json; test -s /tmp/layoutlib-smoke.obj
 
             YAML="$DATA/projects/layoutlib/project.yaml"
             STATUS="$DATA/projects/layoutlib/STATUS.md"
             test -f "$YAML"; test -f "$STATUS"
-            run_owner python3 - "$YAML" <<'PY'
+            python3 - "$YAML" "$CODE" <<'PY'
           import sys, yaml
           from datetime import datetime, timezone
           from pathlib import Path
-          p=Path(sys.argv[1]); d=yaml.safe_load(p.read_text(encoding='utf-8')) or {}; now=datetime.now(timezone.utc).isoformat()
-          d.update({'display_name':'LayoutLib','phase':'active','status':'✅ MVP Validated','actual_code_path':'/home/ubuntu/layoutlib','repo_url':None,'repo_visibility':None,'repository_state':'local-only','repository_state_reason':'MVP validated on Oracle; separate GitHub repository not yet provisioned.','summary':'Validated v0.1: high-contrast orthogonal raster -> Spatial IR JSON -> OBJ.','current_focus':'Real-world benchmark and semantic/opening detection.','next_action':'Benchmark labeled real floor plans before claiming general support.','updated_at':now})
+          p=Path(sys.argv[1]); code=sys.argv[2]; d=yaml.safe_load(p.read_text(encoding='utf-8')) or {}; now=datetime.now(timezone.utc).isoformat()
+          d.update({'display_name':'LayoutLib','phase':'active','status':'✅ MVP Validated','actual_code_path':code,'repo_url':None,'repo_visibility':None,'repository_state':'local-only','repository_state_reason':'MVP validated on Oracle; separate GitHub repository not yet provisioned.','summary':'Validated v0.1: high-contrast orthogonal raster -> Spatial IR JSON -> OBJ.','current_focus':'Real-world benchmark and semantic/opening detection.','next_action':'Benchmark labeled real floor plans before claiming general support.','updated_at':now})
           d['health']={'freshness':'fresh','sync_state':'oracle_mvp_validated','last_verified_at':now}
           p.write_text(yaml.safe_dump(d,allow_unicode=True,sort_keys=False),encoding='utf-8')
           PY
