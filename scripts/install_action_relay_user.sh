@@ -23,9 +23,9 @@ mkdir -p "$(dirname "$RUNTIME_ROOT")" "$UNIT_DIR"
 if [ "${AGENTOS_ACTION_SPOOL_PREPROVISIONED:-0}" = 1 ]; then
   echo "action_relay_spool_preprovisioned=YES"
 else
-  mkdir -p "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
-  chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
-  chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+  mkdir -p "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
+  chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
+  chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
 fi
 
 git -C "$REPO" fetch origin main
@@ -58,15 +58,15 @@ Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
 # Actions such as agentos.antigravity.restart and layoutlab.api.restart call
-# `systemctl --user` from inside the relay worker. Pin them to ubuntu's existing
+# systemctl --user from inside the relay worker. Pin them to ubuntu's existing
 # user manager explicitly; the GitHub runner has a different session/bus.
 Environment=XDG_RUNTIME_DIR=/run/user/1001
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 UMask=0007
-# `sg` is the deliberate supplementary-group bootstrap boundary for this old
+# sg is the deliberate supplementary-group bootstrap boundary for this old
 # ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
 # it prevents the setgid helper from establishing the already-authorized
-# `agentos` group context.
+# agentos group context.
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root $RELAY_ROOT'
 Restart=on-failure
 RestartSec=3
@@ -80,7 +80,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now agentos-action-relay.service
 systemctl --user restart agentos-action-relay.service
 
-# Require stable liveness, not a transient `active` sample immediately before
+# Require stable liveness, not a transient active sample immediately before
 # an auto-restart failure. The worker must remain active for three observations.
 stable=0
 for i in $(seq 1 20); do
