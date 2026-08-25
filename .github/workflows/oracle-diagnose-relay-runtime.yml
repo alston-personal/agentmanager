@@ -1,0 +1,60 @@
+name: Oracle Diagnose Relay Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-diagnose-relay-runtime.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Diagnose relay and deployment authority
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/relay-runtime-diagnostic.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "identity=$(id)"
+            echo '=== PROCESSES ==='
+            ps -eo user,pid,ppid,args | grep -E 'antigravity_relay|action_relay|agentos-action-relay|agentos-antigravity' | grep -v grep || true
+            echo '=== SPOOL ==='
+            for d in /home/ubuntu/agent-data/runtime/antigravity-relay /home/ubuntu/agent-data/runtime/action-relay; do
+              echo "-- $d"; ls -ld "$d" "$d"/inbox "$d"/processing "$d"/receipts 2>&1 || true
+              echo 'inbox:'; ls -lt "$d"/inbox 2>&1 | head -20 || true
+              echo 'processing:'; ls -lt "$d"/processing 2>&1 | head -20 || true
+              echo 'receipts:'; ls -lt "$d"/receipts 2>&1 | head -10 || true
+            done
+            echo '=== PATH AUTHORITY ==='
+            for p in /home/ubuntu/agentmanager /home/ubuntu/zeus-writer /home/ubuntu/zeus-writer/website /home/ubuntu/zeus-writer/website/dist /etc/nginx/sites-enabled/studio.milkcat.org; do
+              ls -ld "$p" 2>&1 || true
+              if [ -w "$p" ]; then echo "writable=yes $p"; else echo "writable=no $p"; fi
+            done
+            echo '=== USER SESSION ==='
+            loginctl show-user ubuntu -p State -p Linger -p RuntimePath 2>&1 || true
+            echo '=== CROSS USER SYSTEMD PROBES ==='
+            systemctl --user --machine=ubuntu@ --no-pager status agentos-antigravity-relay.service 2>&1 | head -60 || true
+            systemctl --user --machine=ubuntu@ --no-pager status agentos-action-relay.service 2>&1 | head -60 || true
+            echo '=== LOCAL SSH PROBE ==='
+            timeout 8 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=4 ubuntu@127.0.0.1 'id; systemctl --user is-active agentos-antigravity-relay.service || true; systemctl --user is-active agentos-action-relay.service || true' 2>&1 || true
+            echo 'diagnostic_complete=YES'
+          } | tee "$OUT"
+      - name: Commit diagnostic evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/relay-runtime-diagnostic.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): relay runtime diagnostic'
+          git push
