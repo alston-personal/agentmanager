@@ -1,8 +1,8 @@
-timestamp_utc=2026-08-25T00:04:40Z
+timestamp_utc=2026-08-25T00:25:56Z
 whoami=agentos-node
 groups=agentos-node agentos
 ref=feature/distributed-agentos-runtime
-head=d26fe8d2929de65e6a69d6cab739a1da9282a6ea
+head=9dabf08646f79129aa78a9c046c1b5c067d66718
 
 === RELAY DIRECTORY BEFORE ===
 drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay
@@ -10,21 +10,13 @@ drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/
 drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/processing
 drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/receipts
 -rw-rw---- ubuntu ubuntu /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-0ffb494c1fb748698e01fe8ef0acb4fc.json
--rw-rw-r-- ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-54306ff022b04c43a048a025bc616cac.json
+-rw-rw---- ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-54306ff022b04c43a048a025bc616cac.json
+-rw-rw---- ubuntu ubuntu /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-871ae05c733849a1ae4c51736377f555.json
 
 === RELAY PROCESS ===
-ubuntu   2800820 python3         /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
-Traceback (most recent call last):
-  File "<stdin>", line 44, in <module>
-  File "/home/agentos-node/runner/_work/agentmanager/agentmanager/agentos_node/antigravity_relay.py", line 117, in receipt
-    payload = json.loads(path.read_text(encoding="utf-8"))
-  File "/usr/lib/python3.10/pathlib.py", line 1134, in read_text
-    with self.open(mode='r', encoding=encoding, errors=errors) as f:
-  File "/usr/lib/python3.10/pathlib.py", line 1119, in open
-    return self._accessor.open(self, mode, buffering, encoding, errors,
-PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-871ae05c733849a1ae4c51736377f555.json'
-submitted_capsule=relay-871ae05c733849a1ae4c51736377f555
-submit_or_wait_exception=true
+ubuntu   3042952 python3         /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+submitted_capsule=relay-4d6493a55f8c48c0bec5202287e0d1ae
+receipt_status=timeout
 
 === RELAY DIRECTORY AFTER ===
 drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay
@@ -32,5 +24,7 @@ drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/
 drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/processing
 drwxrwx--- 770 ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/receipts
 -rw-rw---- ubuntu ubuntu /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-0ffb494c1fb748698e01fe8ef0acb4fc.json
--rw-rw-r-- ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-54306ff022b04c43a048a025bc616cac.json
+-rw-rw---- ubuntu agentos /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-54306ff022b04c43a048a025bc616cac.json
 -rw-rw---- ubuntu ubuntu /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-871ae05c733849a1ae4c51736377f555.json
+-rw-rw---- ubuntu ubuntu /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-4d6493a55f8c48c0bec5202287e0d1ae.json.tmp
+-rw-rw---- agentos-node agentos-node /home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-4d6493a55f8c48c0bec5202287e0d1ae.json
