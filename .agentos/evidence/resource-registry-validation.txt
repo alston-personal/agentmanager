@@ -1,36 +1,6 @@
-timestamp_utc=2026-08-25T06:18:28Z
+timestamp_utc=2026-08-25T06:19:34Z
 hostname=instance-20260129-0852
 === REGISTER ===
-{
-  "id": "site://studio.milkcat.org",
-  "kind": "site",
-  "labels": {},
-  "declared": {
-    "domain": "studio.milkcat.org",
-    "framework": "astro",
-    "repository": "alston-personal/zeus-writer",
-    "branch": "master",
-    "repo_path": "/home/ubuntu/zeus-writer",
-    "source_path": "/home/ubuntu/zeus-writer/website",
-    "dist_path": "/home/ubuntu/zeus-writer/website/dist",
-    "web_server": "nginx",
-    "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
-  },
-  "observed": {},
-  "verification": {
-    "status": "unverified",
-    "last_verified_at": null,
-    "ttl_seconds": 86400,
-    "errors": []
-  },
-  "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:18:28.925816+00:00"
-}
-=== TARGETED VERIFY ===
-fatal: detected dubious ownership in repository at '/home/ubuntu/zeus-writer'
-To add an exception for this directory, call:
-
-	git config --global --add safe.directory /home/ubuntu/zeus-writer
 {
   "id": "site://studio.milkcat.org",
   "kind": "site",
@@ -84,7 +54,66 @@ To add an exception for this directory, call:
     ]
   },
   "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:18:29.373777+00:00",
+  "updated_at": "2026-08-25T06:19:34.757715+00:00"
+}
+=== TARGETED VERIFY ===
+{
+  "id": "site://studio.milkcat.org",
+  "kind": "site",
+  "labels": {},
+  "declared": {
+    "domain": "studio.milkcat.org",
+    "framework": "astro",
+    "repository": "alston-personal/zeus-writer",
+    "branch": "master",
+    "repo_path": "/home/ubuntu/zeus-writer",
+    "source_path": "/home/ubuntu/zeus-writer/website",
+    "dist_path": "/home/ubuntu/zeus-writer/website/dist",
+    "web_server": "nginx",
+    "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
+  },
+  "observed": {
+    "observed_at": "2026-08-25T06:19:34.842305+00:00",
+    "hostname": "instance-20260129-0852",
+    "dns": [
+      "161.33.24.170"
+    ],
+    "http": {
+      "status": 200,
+      "server": "nginx/1.18.0 (Ubuntu)",
+      "content_type": "text/html"
+    },
+    "paths": {
+      "source_path": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      },
+      "dist_path": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      },
+      "nginx_config": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      }
+    },
+    "git": {
+      "commit": "d9387336fe83b1dc0f15f4aac6608793b0483933",
+      "branch": "master",
+      "origin": "https://github.com/alston-personal/zeus-writer.git"
+    }
+  },
+  "verification": {
+    "status": "verified",
+    "last_verified_at": "2026-08-25T06:19:35.124188+00:00",
+    "ttl_seconds": 86400,
+    "errors": []
+  },
+  "registered_at": "2026-08-25T06:18:28.925786+00:00",
+  "updated_at": "2026-08-25T06:19:35.124202+00:00",
   "freshness": {
     "state": "fresh",
     "age_seconds": 0,
@@ -108,7 +137,7 @@ To add an exception for this directory, call:
     "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
   },
   "observed": {
-    "observed_at": "2026-08-25T06:18:29.014938+00:00",
+    "observed_at": "2026-08-25T06:19:34.842305+00:00",
     "hostname": "instance-20260129-0852",
     "dns": [
       "161.33.24.170"
@@ -134,18 +163,21 @@ To add an exception for this directory, call:
         "readable": true,
         "writable": false
       }
+    },
+    "git": {
+      "commit": "d9387336fe83b1dc0f15f4aac6608793b0483933",
+      "branch": "master",
+      "origin": "https://github.com/alston-personal/zeus-writer.git"
     }
   },
   "verification": {
-    "status": "degraded",
-    "last_verified_at": "2026-08-25T06:18:29.373762+00:00",
+    "status": "verified",
+    "last_verified_at": "2026-08-25T06:19:35.124188+00:00",
     "ttl_seconds": 86400,
-    "errors": [
-      "git: Command '['git', '-C', '/home/ubuntu/zeus-writer', 'rev-parse', 'HEAD']' returned non-zero exit status 128."
-    ]
+    "errors": []
   },
   "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:18:29.373777+00:00",
+  "updated_at": "2026-08-25T06:19:35.124202+00:00",
   "freshness": {
     "state": "fresh",
     "age_seconds": 0,
@@ -163,9 +195,9 @@ To add an exception for this directory, call:
   "os_release": "6.8.0-1050-oracle",
   "python_version": "3.10.12",
   "node_version": "0.3.0",
-  "collected_at": "2026-08-25T14:18:29.540973",
+  "collected_at": "2026-08-25T14:19:35.292603",
   "git_info": {
-    "commit": "9e3c4f12f779dfab3244ebf2b30e70a15bcbc0a4",
+    "commit": "9e44089e24333e9215b2527126dbb0230ccc6b61",
     "branch": "main",
     "is_git": true
   },
@@ -190,5 +222,5 @@ To add an exception for this directory, call:
 resource_registry_validation=PASS
 resource_id=site://studio.milkcat.org
 freshness=fresh
-verification=degraded
+verification=verified
 registry=/home/ubuntu/agent-data/resources/registry.json
