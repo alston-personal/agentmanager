@@ -23,8 +23,15 @@ mkdir -p "$ROOT_DIR/.agentos/evidence"
   echo 'production_nginx_mutation=NO'
   echo 'production_service_restart=NO'
 
-  echo '=== VERIFY COMMITTED INPUT ==='
+  echo '=== FETCH COMMITTED INPUT WITHOUT WORKTREE UPDATE ==='
+  git -c safe.directory="$ZEUS" -C "$ZEUS" fetch --no-tags origin master
+  if ! git -c safe.directory="$ZEUS" -C "$ZEUS" cat-file -e "$COMMIT^{commit}"; then
+    git -c safe.directory="$ZEUS" -C "$ZEUS" fetch --no-tags origin "$COMMIT"
+  fi
   git -c safe.directory="$ZEUS" -C "$ZEUS" cat-file -e "$COMMIT^{commit}"
+  echo 'layoutlab_commit_object=PASS'
+
+  echo '=== VERIFY COMMITTED INPUT ==='
   changed=$(git -c safe.directory="$ZEUS" -C "$ZEUS" diff-tree --no-commit-id --name-only -r "$COMMIT")
   printf '%s\n' "$changed"
   test "$changed" = 'website/src/pages/layout-lab/index.astro'
