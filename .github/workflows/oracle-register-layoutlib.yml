@@ -13,8 +13,9 @@ permissions:
 jobs:
   build-test-register:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
-      DEPLOY_HOST: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
@@ -25,8 +26,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$DEPLOY_HOST" || { echo 'Missing deploy host'; exit 1; }
+          test -n "$DEPLOY_HOST_SOURCE" || { echo 'Missing deploy host'; exit 1; }
           test -n "$DEPLOY_USER" || { echo 'Missing deploy user'; exit 1; }
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST" || { echo 'Unable to derive deploy host'; exit 1; }
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
           echo "DEPLOY_PORT=${DEPLOY_PORT:-22}" >> "$GITHUB_ENV"
 
       - name: Start SSH agent
@@ -34,18 +40,11 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Trust Oracle host key
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-
       - name: Copy reproducible LayoutLib bootstrap to Oracle
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "$DEPLOY_PORT" scripts/bootstrap_layoutlib.py "$DEPLOY_USER@$DEPLOY_HOST:/tmp/bootstrap_layoutlib.py"
+          scp -o StrictHostKeyChecking=accept-new -P "$DEPLOY_PORT" scripts/bootstrap_layoutlib.py "$DEPLOY_USER@$DEPLOY_HOST:/tmp/bootstrap_layoutlib.py"
 
       - name: Build, test, document, register, and verify
         shell: bash
@@ -53,7 +52,7 @@ jobs:
           set -euo pipefail
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/layoutlib-validation.txt
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE' | tee "$OUT"
+          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE' | tee "$OUT"
           set -euo pipefail
           PROJECT=layoutlib
           DISPLAY='LayoutLib'
@@ -78,7 +77,6 @@ jobs:
               --summary 'Floor-plan parsing library: raster image -> versioned Spatial IR -> 3D OBJ.'
 
           AGENT_DATA_ROOT="$DATA" python3 scripts/init_project_yaml.py --project "$PROJECT" || true
-
           python3 /tmp/bootstrap_layoutlib.py --target "$CODE"
 
           echo '=== SOURCE TREE ==='
@@ -143,7 +141,8 @@ jobs:
           from pathlib import Path
           p=Path(sys.argv[1]); s=p.read_text(encoding='utf-8')
           stamp=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
-          s=s.replace('| **Last Status** | 🧪 MVP Validation |','| **Last Status** | ✅ MVP Validated |')
+          for old in ('| **Last Status** | 🧪 MVP Validation |','| **Last Status** | 🆕 Registered |'):
+              s=s.replace(old,'| **Last Status** | ✅ MVP Validated |')
           marker='<!-- LOG_START -->'
           entry=f"\n- `{stamp}` ✅ **MVP VALIDATED**: deterministic image -> Spatial IR -> OBJ pipeline passed unit, round-trip, geometry, CLI and end-to-end tests on Oracle."
           if 'MVP VALIDATED' not in s:
