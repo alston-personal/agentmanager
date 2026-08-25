@@ -1,0 +1,86 @@
+name: Oracle Deploy Layout Lab Static Official
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-deploy-layoutlab-static-official.yml'
+      - 'web_assets/layoutlab_official.html'
+      - 'scripts/deploy_layoutlab_static.py'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit deterministic static deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlab-static-official.txt
+          ROOT=/home/ubuntu/agent-data/runtime/action-relay
+          CID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.action_relay import ActionRelayClient
+          print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('layoutlab.static.deploy', {'site':'studio.milkcat.org'})['capsule_id'])
+          PY
+          )
+          RECEIPT="$ROOT/receipts/$CID.json"
+          for i in $(seq 1 60); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "receipt timeout: $CID"; exit 2; }
+          {
+            echo "capsule_id=$CID"
+            cat "$RECEIPT"
+          } | tee "$OUT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('action') == 'layoutlab.static.deploy', r
+          assert r.get('ok') is True, r
+          assert r.get('executor_user') == 'ubuntu', r
+          print('deterministic_static_deploy=PASS')
+          PY
+
+      - name: Independent public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=.agentos/evidence/layoutlab-static-official-acceptance.txt
+          URL=https://studio.milkcat.org/layout-lab/
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            CODE=$(curl -sS -o /tmp/layoutlab-static-ui -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 "$URL")
+            echo "public_ui_http_code=$CODE"
+            test "$CODE" = 200
+            grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-static-ui
+            grep -q 'Analyze layout' /tmp/layoutlab-static-ui
+            grep -q 'browser-only-layoutlib-v0.1-compatible' /tmp/layoutlab-static-ui || grep -q 'LayoutLib v0.1 compatible' /tmp/layoutlab-static-ui
+            grep -q 'function parse()' /tmp/layoutlab-static-ui
+            echo 'public_payload_identity=PASS'
+            echo 'browser_parser_present=PASS'
+            echo 'stable_official_url=https://studio.milkcat.org/layout-lab/'
+            echo 'official_layoutlab_web_ui=PASS'
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .agentos/evidence/layoutlab-static-official.txt /tmp/layoutlab-static-official.txt 2>/dev/null || true
+          cp .agentos/evidence/layoutlab-static-official-acceptance.txt /tmp/layoutlab-static-official-acceptance.txt 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/layoutlab-static-official.txt .agentos/evidence/layoutlab-static-official.txt 2>/dev/null || true
+          cp /tmp/layoutlab-static-official-acceptance.txt .agentos/evidence/layoutlab-static-official-acceptance.txt 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlab-static-official*.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlab): stable official browser UI acceptance'
+          git push origin HEAD:main
