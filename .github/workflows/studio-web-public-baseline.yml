@@ -1,0 +1,83 @@
+name: Studio Web Public Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/studio-web-public-baseline.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture current public route baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/studio-web-public-baseline-current.txt
+          BASE=https://studio.milkcat.org
+          paths=(
+            '/'
+            '/dashboard'
+            '/layout-lab/'
+            '/prophecy/'
+            '/novels/'
+            '/ipgenome'
+            '/iftv'
+            '/echo'
+            '/hanzi'
+            '/acas/'
+            '/echo/chamber-extension.zip'
+            '/echo/README_TEST.md'
+          )
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "base=$BASE"
+            for path in "${paths[@]}"; do
+              tmp=$(mktemp)
+              headers=$(mktemp)
+              code=$(curl -L -sS --retry 3 --retry-all-errors --connect-timeout 5 --max-time 30 -D "$headers" -o "$tmp" -w '%{http_code}' "$BASE$path" || true)
+              bytes=$(wc -c < "$tmp" | tr -d ' ')
+              sha=$(sha256sum "$tmp" | awk '{print $1}')
+              ctype=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/{sub(/\r$/,"",$0); print substr($0,index($0,":")+2); exit}' "$headers")
+              title=$(python3 - "$tmp" <<'PY'
+          import re,sys
+          b=open(sys.argv[1],'rb').read(200000)
+          try:s=b.decode('utf-8','replace')
+          except Exception:s=''
+          m=re.search(r'<title[^>]*>(.*?)</title>',s,re.I|re.S)
+          t=re.sub(r'\s+',' ',m.group(1)).strip() if m else ''
+          print(t[:160])
+          PY
+              )
+              printf 'path=%s status=%s bytes=%s sha256=%s content_type=%q title=%q\n' "$path" "$code" "$bytes" "$sha" "$ctype" "$title"
+              test "$code" = 200
+              rm -f "$tmp" "$headers"
+            done
+            echo '=== IDENTITY GUARDS ==='
+            curl -L -fsS "$BASE/layout-lab/" | grep -Fq 'Layout Lab'
+            curl -L -fsS "$BASE/layout-lab/" | grep -Fq 'Analyze layout'
+            curl -L -fsS "$BASE/prophecy/" | grep -Fq '全球預言驗證中心'
+            curl -L -fsS "$BASE/ipgenome" | grep -Fq 'IP Genome Studio'
+            curl -L -fsS "$BASE/hanzi" | grep -Fq '漢字基因庫'
+            curl -L -fsS "$BASE/acas/" | grep -Fq 'ACAS'
+            echo 'public_identity_guards=PASS'
+            echo 'studio_web_public_baseline=PASS'
+          } 2>&1 | tee "$OUT"
+      - name: Commit baseline evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/studio-web-public-baseline-current.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): capture current public baseline'
+          git pull --rebase origin main
+          git push
