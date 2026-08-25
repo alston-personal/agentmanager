@@ -146,6 +146,37 @@ def _layoutlab_static_deploy(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _ensure_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
+    """Ensure the one allowlisted Studio Web repository exists as private.
+
+    This action deliberately accepts no arbitrary repo name, visibility, command,
+    or shell text. It runs only under the ubuntu Action Relay identity.
+    """
+    if params not in ({}, {"repository": "alston-personal/studio-web"}):
+        raise ValueError("unexpected parameters")
+    repo = "alston-personal/studio-web"
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {"ok": False, "repository": repo, "auth": auth, "created": False, "error": "ubuntu GitHub identity is not authenticated"}
+
+    view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,visibility"], cwd=Path.home(), timeout=20)
+    created = False
+    create = None
+    if view["returncode"] != 0:
+        create = _run([
+            "/usr/bin/gh", "repo", "create", repo,
+            "--private",
+            "--description", "Platform web shell and website-owned integrations for studio.milkcat.org",
+        ], cwd=Path.home(), timeout=30)
+        if create["returncode"] != 0:
+            return {"ok": False, "repository": repo, "auth": auth, "view_before": view, "create": create, "created": False}
+        created = True
+        view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,visibility"], cwd=Path.home(), timeout=20)
+
+    ok = view["returncode"] == 0 and 'alston-personal/studio-web' in (view.get("stdout") or "") and 'PRIVATE' in (view.get("stdout") or "").upper()
+    return {"ok": ok, "repository": repo, "created": created, "auth": auth, "view": view, "create": create}
+
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
     return _restart_user_service("layoutlab-api.service")
@@ -159,6 +190,7 @@ def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "site.sync_build": _site_sync_build,
     "layoutlab.static.deploy": _layoutlab_static_deploy,
+    "github.repo.ensure_studio_web": _ensure_studio_web_remote,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
 }
