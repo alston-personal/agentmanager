@@ -1,0 +1,48 @@
+timestamp_utc=2026-08-25T14:41:19Z
+=== MATCHING PROCESSES ===
+=== DESCENDANTS OF CHRONOS ===
+chronos_pid=472462
+pid=472462 ppid=1027 cmd=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+pid=472463 ppid=472462 cmd=/bin/sh -c python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+pid=472465 ppid=472463 cmd=python3 scripts/pulse.py --agent Architect --task Heartbeat Monitor --status active
+pid=3584939 ppid=472462 cmd=
+pid=3584940 ppid=472462 cmd=
+pid=3584942 ppid=472462 cmd=
+=== TARGET / REQUEST MTIME ===
+  File: /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+  Size: 8874      	Blocks: 24         IO Block: 4096   regular file
+Device: 801h/2049d	Inode: 1848367     Links: 1
+Access: (0775/-rwxrwxr-x)  Uid: ( 1001/  ubuntu)   Gid: ( 1005/ agentos)
+Access: 2026-08-25 22:40:31.418212247 +0800
+Modify: 2026-08-25 22:40:16.893150765 +0800
+Change: 2026-08-25 22:40:16.893150765 +0800
+ Birth: 2026-06-11 16:52:50.101232079 +0800
+  File: /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe/chronos-safe-20260825T143720Z-32860383378.request
+  Size: 42        	Blocks: 8          IO Block: 4096   regular file
+Device: 801h/2049d	Inode: 1061697     Links: 1
+Access: (0660/-rw-rw----)  Uid: ( 1004/agentos-node)   Gid: ( 1005/ agentos)
+Access: 2026-08-25 22:37:20.923405013 +0800
+Modify: 2026-08-25 22:37:20.923405013 +0800
+Change: 2026-08-25 22:37:20.925405021 +0800
+ Birth: 2026-08-25 22:37:20.923405013 +0800
+=== CHRONOS LOG LATEST ===
+2026-08-25 22:38:41,867 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse': python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+2026-08-25 22:38:41,867 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse': python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+2026-08-25 22:38:41,867 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:38:41,867 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:38:41,868 [INFO] (Chronos) 🚀 [Trigger] Launching job 'update-projects-pulse': python3 scripts/update_projects_pulse.py
+2026-08-25 22:38:41,868 [INFO] (Chronos) 🚀 [Trigger] Launching job 'update-projects-pulse': python3 scripts/update_projects_pulse.py
+2026-08-25 22:39:41,927 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse': python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+2026-08-25 22:39:41,927 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse': python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+2026-08-25 22:39:41,927 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:39:41,927 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:39:41,928 [INFO] (Chronos) 🚀 [Trigger] Launching job 'update-projects-pulse': python3 scripts/update_projects_pulse.py
+2026-08-25 22:39:41,928 [INFO] (Chronos) 🚀 [Trigger] Launching job 'update-projects-pulse': python3 scripts/update_projects_pulse.py
+2026-08-25 22:39:41,931 [INFO] (Chronos) 🚀 [Trigger] Launching job 'ecosystem-report': python3 scripts/ecosystem_report.py
+2026-08-25 22:39:41,931 [INFO] (Chronos) 🚀 [Trigger] Launching job 'ecosystem-report': python3 scripts/ecosystem_report.py
+2026-08-25 22:40:41,981 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse': python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+2026-08-25 22:40:41,981 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse': python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+2026-08-25 22:40:41,982 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:40:41,982 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:40:41,982 [INFO] (Chronos) 🚀 [Trigger] Launching job 'update-projects-pulse': python3 scripts/update_projects_pulse.py
+2026-08-25 22:40:41,982 [INFO] (Chronos) 🚀 [Trigger] Launching job 'update-projects-pulse': python3 scripts/update_projects_pulse.py
