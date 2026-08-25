@@ -1,0 +1,79 @@
+timestamp_utc=2026-08-25T15:23:55Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+=== SERVICE STATUS ===
+Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
+=== SERVICE PROPERTIES ===
+Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
+=== PROCESS TREE ===
+root     ubuntu   3620336    1027       02:03 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  3620337 3620336       02:03 sh -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  3620338 3620337       02:03 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+agentos+ agentos+ 3622544 3622537       00:00 grep -E agentos_node.action_relay|[s]g agentos
+=== PROCESS GROUPS ===
+pid=3620336
+Uid:	1001	0	0	0
+Gid:	1001	1001	1001	1001
+Groups:	4 20 24 25 27 29 30 44 46 119 120 1001 
+pid=3620337
+Uid:	1001	1001	1001	1001
+Gid:	1005	1005	1005	1005
+Groups:	4 20 24 25 27 29 30 44 46 119 120 1001 1005 
+pid=3620338
+Uid:	1001	1001	1001	1001
+Gid:	1005	1005	1005	1005
+Groups:	4 20 24 25 27 29 30 44 46 119 120 1001 1005 
+=== SPOOL TREE ===
+agentos-node:agentos 2770 2026-08-25T17:02:44.6242204590 /home/ubuntu/agent-data/runtime/action-relay
+agentos-node:agentos 2770 2026-08-25T17:02:44.6242204590 /home/ubuntu/agent-data/runtime/action-relay/receipts
+agentos-node:agentos 2770 2026-08-25T23:21:49.7536541620 /home/ubuntu/agent-data/runtime/action-relay/inbox
+agentos-node:agentos 2770 2026-08-25T23:21:49.7536541620 /home/ubuntu/agent-data/runtime/action-relay/processing
+agentos-node:agentos 660 2026-08-25T17:02:44.6242204590 /home/ubuntu/agent-data/runtime/action-relay/processing/action-749c21f16c9a4e41a637cb8c76d1baf8.json
+agentos-node:agentos 660 2026-08-25T23:18:49.2318944240 /home/ubuntu/agent-data/runtime/action-relay/processing/action-c921bc5df2d64287a1787e9929ddb0e2.json
+agentos-node:agentos 660 2026-08-25T23:21:49.0126510440 /home/ubuntu/agent-data/runtime/action-relay/processing/action-1c4183d64b974257955cd793056a9794.json
+=== CAPSULE CONTENTS ===
+--- /home/ubuntu/agent-data/runtime/action-relay/processing/action-1c4183d64b974257955cd793056a9794.json ---
+{
+  "action": "agentos.antigravity.restart",
+  "authority": {
+    "arbitrary_shell": false,
+    "source": "agentos-node",
+    "target_user": "ubuntu"
+  },
+  "capsule_id": "action-1c4183d64b974257955cd793056a9794",
+  "created_at": "2026-08-25T15:21:49Z",
+  "digest": "sha256:7f83a424a5c237dcc71473df2a2ff0eef1a81649af247ebeab2efcc98eb2891e",
+  "params": {},
+  "schema": "agentos.action-relay/v1"
+}
+--- /home/ubuntu/agent-data/runtime/action-relay/processing/action-749c21f16c9a4e41a637cb8c76d1baf8.json ---
+{
+  "action": "site.sync_build",
+  "authority": {
+    "arbitrary_shell": false,
+    "source": "agentos-node",
+    "target_user": "ubuntu"
+  },
+  "capsule_id": "action-749c21f16c9a4e41a637cb8c76d1baf8",
+  "created_at": "2026-08-25T09:02:44Z",
+  "digest": "sha256:8ae7801ea78ae205be7e5908f225d36e1db0512e1402b0ef294d972a1cdec4e8",
+  "params": {
+    "site": "studio.milkcat.org"
+  },
+  "schema": "agentos.action-relay/v1"
+}
+--- /home/ubuntu/agent-data/runtime/action-relay/processing/action-c921bc5df2d64287a1787e9929ddb0e2.json ---
+{
+  "action": "agentos.antigravity.restart",
+  "authority": {
+    "arbitrary_shell": false,
+    "source": "agentos-node",
+    "target_user": "ubuntu"
+  },
+  "capsule_id": "action-c921bc5df2d64287a1787e9929ddb0e2",
+  "created_at": "2026-08-25T15:18:49Z",
+  "digest": "sha256:2fd67a4caafca1debbe472ff8703e8be771277dedf8da5e98e77a64abf2a77d8",
+  "params": {},
+  "schema": "agentos.action-relay/v1"
+}
+=== JOURNAL ===
+-- No entries --
