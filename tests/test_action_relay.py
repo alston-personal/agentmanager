@@ -1,4 +1,4 @@
-# CI trigger: governed Action Relay bootstrap validation
+# PR rerun trigger: fixed governed Action Relay bootstrap validation
 import json
 import tempfile
 import unittest
