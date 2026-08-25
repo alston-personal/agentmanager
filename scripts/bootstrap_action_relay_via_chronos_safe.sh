@@ -7,6 +7,7 @@ LOCAL=/home/ubuntu/agentmanager
 TARGET="$LOCAL/scripts/update_scheduler_board.py"
 DATA=/home/ubuntu/agent-data
 BRIDGE="$DATA/runtime/action-relay-bootstrap-safe"
+ACTION_ROOT="$DATA/runtime/action-relay"
 mkdir -p "$BRIDGE"
 chmod 2770 "$BRIDGE"
 REQUEST_ID="chronos-safe-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID:-manual}"
@@ -16,9 +17,6 @@ rm -f "$RECEIPT" "$RECEIPT.tmp"
 
 restore_target() {
   if [ -f "$BACKUP" ]; then
-    # Preserve the ubuntu-owned target inode/owner/mode. The runner has content
-    # write permission but is intentionally not allowed to chown or preserve
-    # ubuntu timestamps.
     cat "$BACKUP" > "$TARGET" || true
   fi
 }
@@ -42,6 +40,16 @@ if age > 180:
     raise SystemExit('Chronos log is stale; refusing to patch a dormant execution surface')
 PY
 
+  echo '=== PREPROVISION SHARED ACTION RELAY SPOOL ==='
+  for d in "$ACTION_ROOT" "$ACTION_ROOT/inbox" "$ACTION_ROOT/processing" "$ACTION_ROOT/receipts"; do
+    mkdir -p "$d"
+    chgrp agentos "$d"
+    chmod 2770 "$d"
+  done
+  echo "action_relay_spool_owner=$(stat -c '%U:%G %a' "$ACTION_ROOT")"
+  test "$(stat -c '%G' "$ACTION_ROOT")" = agentos
+  echo 'action_relay_spool_preprovision=PASS'
+
   echo '=== RECOVER CANCELLED BRIDGE IF PRESENT ==='
   python3 - "$TARGET" "$BRIDGE" <<'PY'
 from pathlib import Path
@@ -57,9 +65,6 @@ if not any(m in current for m in markers):
     print('stale_bridge_present=NO')
     raise SystemExit(0)
 
-# A cancelled run can leave its temporary patch installed because the old
-# cleanup attempted metadata-preserving cp. Find the newest retained backup
-# that is demonstrably marker-free and restore content only.
 candidates=sorted(bridge.glob('*.update_scheduler_board.py'), key=lambda p:p.stat().st_mtime, reverse=True)
 clean=None
 for p in candidates:
@@ -77,12 +82,11 @@ target.write_text(text, encoding='utf-8')
 verify=target.read_text(encoding='utf-8')
 if any(m in verify for m in markers):
     raise SystemExit('stale bridge recovery verification failed')
-print(f'stale_bridge_present=YES')
+print('stale_bridge_present=YES')
 print(f'stale_bridge_recovered_from={source.name}')
 print('stale_bridge_recovery=PASS')
 PY
 
-  # Content backup only. Do not request preservation of ubuntu metadata.
   cat "$TARGET" > "$BACKUP"
 
   python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" <<'PY'
@@ -94,7 +98,7 @@ original=target.read_text(encoding='utf-8')
 marker='# AGENTOS_ONE_TIME_CHRONOS_SAFE_BOOTSTRAP\n'
 if marker in original:
     raise SystemExit('scheduler board already contains safe bridge marker')
-bridge=f'''{marker}import json as _agentos_json\nimport os as _agentos_os\nfrom pathlib import Path as _AgentOSPath\nimport subprocess as _agentos_subprocess\n\n_AGENTOS_REQUEST_ID={request_id!r}\n_AGENTOS_RECEIPT=_AgentOSPath({receipt!r})\nif not _AGENTOS_RECEIPT.exists():\n    _agentos_started=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()\n    _agentos_cmd=["/bin/bash","-lc", "cd /home/ubuntu/agentmanager && git fetch origin main && git show origin/main:scripts/repair_antigravity_relay_user.sh > /tmp/agentos-repair-antigravity-safe.sh && chmod 700 /tmp/agentos-repair-antigravity-safe.sh && AGENTOS_REPO=/home/ubuntu/agentmanager bash /tmp/agentos-repair-antigravity-safe.sh"]\n    _agentos_p=_agentos_subprocess.run(_agentos_cmd, text=True, capture_output=True, timeout=180)\n    _agentos_payload={{\n        "schema":"agentos.one-time-chronos-safe-bootstrap/v1",\n        "request_id":_AGENTOS_REQUEST_ID,\n        "executor_user":_agentos_os.environ.get("USER") or str(_agentos_os.getuid()),\n        "executor_uid":_agentos_os.getuid(),\n        "returncode":_agentos_p.returncode,\n        "ok":_agentos_p.returncode == 0,\n        "stdout":(_agentos_p.stdout or "")[-30000:],\n        "stderr":(_agentos_p.stderr or "")[-10000:],\n        "started_at":_agentos_started,\n        "completed_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),\n    }}\n    _agentos_tmp=_AGENTOS_RECEIPT.with_suffix(".tmp")\n    _agentos_tmp.write_text(_agentos_json.dumps(_agentos_payload,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")\n    _agentos_os.chmod(_agentos_tmp,0o644)\n    _agentos_tmp.replace(_AGENTOS_RECEIPT)\n\n'''
+bridge=f'''{marker}import json as _agentos_json\nimport os as _agentos_os\nfrom pathlib import Path as _AgentOSPath\nimport subprocess as _agentos_subprocess\n\n_AGENTOS_REQUEST_ID={request_id!r}\n_AGENTOS_RECEIPT=_AgentOSPath({receipt!r})\nif not _AGENTOS_RECEIPT.exists():\n    _agentos_started=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()\n    _agentos_cmd=["/bin/bash","-lc", "cd /home/ubuntu/agentmanager && git fetch origin main && git show origin/main:scripts/repair_antigravity_relay_user.sh > /tmp/agentos-repair-antigravity-safe.sh && chmod 700 /tmp/agentos-repair-antigravity-safe.sh && AGENTOS_ACTION_SPOOL_PREPROVISIONED=1 AGENTOS_REPO=/home/ubuntu/agentmanager bash /tmp/agentos-repair-antigravity-safe.sh"]\n    _agentos_p=_agentos_subprocess.run(_agentos_cmd, text=True, capture_output=True, timeout=180)\n    _agentos_payload={{\n        "schema":"agentos.one-time-chronos-safe-bootstrap/v1",\n        "request_id":_AGENTOS_REQUEST_ID,\n        "executor_user":_agentos_os.environ.get("USER") or str(_agentos_os.getuid()),\n        "executor_uid":_agentos_os.getuid(),\n        "returncode":_agentos_p.returncode,\n        "ok":_agentos_p.returncode == 0,\n        "stdout":(_agentos_p.stdout or "")[-30000:],\n        "stderr":(_agentos_p.stderr or "")[-10000:],\n        "started_at":_agentos_started,\n        "completed_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),\n    }}\n    _agentos_tmp=_AGENTOS_RECEIPT.with_suffix(".tmp")\n    _agentos_tmp.write_text(_agentos_json.dumps(_agentos_payload,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")\n    _agentos_os.chmod(_agentos_tmp,0o644)\n    _agentos_tmp.replace(_AGENTOS_RECEIPT)\n\n'''
 target.write_text(bridge+original,encoding='utf-8')
 PY
   echo 'one_time_safe_bridge_installed=YES'
@@ -123,7 +127,6 @@ PY
   grep -q 'AGENTOS_ONE_TIME_CHRONOS_SAFE_BOOTSTRAP' "$TARGET" && { echo 'bridge_cleanup=FAIL'; exit 4; } || true
 
   echo '=== DETERMINISTIC ACTION RELAY PROOF ==='
-  ACTION_ROOT="$DATA/runtime/action-relay"
   RESTART_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
 from agentos_node.action_relay import ActionRelayClient
 print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('agentos.antigravity.restart', {})['capsule_id'])
