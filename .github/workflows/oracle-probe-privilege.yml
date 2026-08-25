@@ -1,0 +1,35 @@
+name: Oracle Probe Privilege Boundary
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-probe-privilege.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe non-interactive privilege paths
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "identity=$(id)"
+          echo '=== sudo list ==='
+          timeout 5 sudo -n -l 2>&1 || true
+          echo '=== sudo as ubuntu ==='
+          timeout 5 sudo -n -u ubuntu id 2>&1 || true
+          echo '=== sudo root ==='
+          timeout 5 sudo -n id 2>&1 || true
+          echo '=== runuser ==='
+          timeout 5 runuser -u ubuntu -- id 2>&1 || true
+          echo '=== su ==='
+          timeout 5 su -s /bin/sh -c id ubuntu 2>&1 || true
+          echo '=== sg agentos ==='
+          timeout 5 sg agentos -c 'id' 2>&1 || true
+          echo 'probe_complete=YES'
