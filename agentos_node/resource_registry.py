@@ -163,10 +163,11 @@ class ResourceRegistry:
         repo_path = declared.get("repo_path")
         if repo_path and Path(repo_path, ".git").exists():
             try:
+                git = ["git", "-c", f"safe.directory={repo_path}", "-C", repo_path]
                 observed["git"] = {
-                    "commit": subprocess.check_output(["git", "-C", repo_path, "rev-parse", "HEAD"], text=True).strip(),
-                    "branch": subprocess.check_output(["git", "-C", repo_path, "branch", "--show-current"], text=True).strip(),
-                    "origin": subprocess.check_output(["git", "-C", repo_path, "remote", "get-url", "origin"], text=True).strip(),
+                    "commit": subprocess.check_output(git + ["rev-parse", "HEAD"], text=True, stderr=subprocess.STDOUT).strip(),
+                    "branch": subprocess.check_output(git + ["branch", "--show-current"], text=True, stderr=subprocess.STDOUT).strip(),
+                    "origin": subprocess.check_output(git + ["remote", "get-url", "origin"], text=True, stderr=subprocess.STDOUT).strip(),
                 }
             except Exception as exc:
                 errors.append(f"git: {exc}")
