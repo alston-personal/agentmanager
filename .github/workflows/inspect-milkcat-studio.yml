@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve port 3000 process
+      - name: Resolve known port 3000 process only
         shell: bash
         run: |
           set -euo pipefail
@@ -27,17 +27,20 @@ jobs:
             echo '=== PORT 3000 ==='
             ss -lntp 'sport = :3000' 2>&1 || true
             PID=$(ss -lntp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
-            if [ -z "$PID" ]; then
-              PID=$(pgrep -f '(^| )[^ ]*(node|npm|next)[^ ]*.*3000|next-server' | head -1 || true)
-            fi
+            if [ -z "$PID" ]; then PID=$(pgrep -f 'next-server' | head -1 || true); fi
             echo "pid=${PID:-unknown}"
             if [ -n "$PID" ] && [ -d "/proc/$PID" ]; then
-              echo "user=$(stat -c %U /proc/$PID)"
-              echo "cwd=$(readlink -f /proc/$PID/cwd 2>/dev/null || true)"
-              printf 'cmdline='; tr '\0' ' ' < /proc/$PID/cmdline 2>/dev/null || true; echo
-              echo "exe=$(readlink -f /proc/$PID/exe 2>/dev/null || true)"
-              echo '--- env hints ---'
-              tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep -E '^(PORT|PWD|NODE_ENV|npm_|NEXT_|AGENTOS_)=' | sed -E 's/(TOKEN|SECRET|KEY|PASSWORD)=.*/\1=[REDACTED]/' || true
+              echo '=== PROCESS ==='
+              ps -o user,pid,ppid,lstart,args -p "$PID" || true
+              PPID1=$(ps -o ppid= -p "$PID" | tr -d ' ' || true)
+              [ -n "$PPID1" ] && ps -o user,pid,ppid,lstart,args -p "$PPID1" || true
+              PPID2=$([ -n "$PPID1" ] && ps -o ppid= -p "$PPID1" | tr -d ' ' || true)
+              [ -n "$PPID2" ] && ps -o user,pid,ppid,lstart,args -p "$PPID2" || true
+              echo '=== CGROUP ==='
+              cat "/proc/$PID/cgroup" 2>&1 || true
+              echo '=== SYSTEMD MATCH ==='
+              systemctl --no-pager --all --type=service 2>/dev/null | grep -Ei 'dashboard|agentos|command|next' | head -n 80 || true
+              systemctl --user --no-pager --all --type=service 2>/dev/null | grep -Ei 'dashboard|agentos|command|next' | head -n 80 || true
             fi
             echo '=== KNOWN ROUTE HEALTH ==='
             curl -sS -o /tmp/dashboard-health.out -w 'http=%{http_code}\n' http://127.0.0.1:3000/dashboard 2>&1 || true
@@ -51,5 +54,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/dashboard-upstream.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(studio): resolve dashboard upstream'
+          git commit -m 'evidence(studio): resolve dashboard process ancestry'
           git push
