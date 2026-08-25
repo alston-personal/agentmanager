@@ -1,6 +1,7 @@
 name: Cancel Superseded Relay Recovery Runs
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/cancel-stale-relay-recovery.yml'
@@ -14,11 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Cancel obsolete self-hosted recovery runs
+      - name: Cancel only explicitly obsolete recovery runs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          KEEP_SAFE_SHA: 1f1aa04fe421ff3b22fefdcd0792fed2ade9332f
         shell: bash
         run: |
           set -euo pipefail
@@ -36,36 +36,29 @@ jobs:
             case "$code" in 202|409) ;; *) return 1 ;; esac
           }
 
-          # Retire historical LLM/owned-carrier attempts. Quarantine contents are
-          # untouched; this only releases CI execution capacity.
+          # Historical attempts only. Never pattern-match or auto-cancel the
+          # safe Chronos bootstrap: doing so can interrupt a valid deterministic
+          # transport recovery while it is waiting for the ubuntu receipt.
           for run_id in 32858420762 32858849735 32858516453 32861439353; do
             cancel_run "$run_id"
           done
 
-          list_active() {
-            local workflow="$1"
-            curl -fsSL \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "https://api.github.com/repos/$GH_REPO/actions/workflows/$workflow/runs?per_page=20"
-          }
-
-          list_active oracle-bootstrap-action-relay-via-chronos.yml | python3 -c '
+          # The original inline Chronos bootstrap is retired. Cancel any active
+          # run from that legacy workflow, but leave the -safe workflow alone.
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos.yml/runs?per_page=20" \
+            | python3 -c '
           import json,sys
           for r in json.load(sys.stdin).get("workflow_runs", []):
               if r.get("status") in {"queued","in_progress","waiting","pending"}:
                   print(r["id"])
           ' > /tmp/old-inline-runs
-          while read -r run_id; do [ -z "$run_id" ] || cancel_run "$run_id"; done < /tmp/old-inline-runs
+          while read -r run_id; do
+            [ -z "$run_id" ] || cancel_run "$run_id"
+          done < /tmp/old-inline-runs
 
-          list_active oracle-bootstrap-action-relay-via-chronos-safe.yml | python3 -c '
-          import json,sys
-          keep=sys.argv[1]
-          for r in json.load(sys.stdin).get("workflow_runs", []):
-              if r.get("status") in {"queued","in_progress","waiting","pending"} and r.get("head_sha") != keep:
-                  print(r["id"])
-          ' "$KEEP_SAFE_SHA" > /tmp/old-safe-runs
-          while read -r run_id; do [ -z "$run_id" ] || cancel_run "$run_id"; done < /tmp/old-safe-runs
-
+          echo 'safe_bootstrap_auto_cancel=DISABLED'
           echo 'superseded_recovery_cancel=PASS'
