@@ -1,0 +1,15 @@
+timestamp_utc=2026-08-25T06:24:00Z
+hostname=instance-20260129-0852
+=== PORT 3000 ===
+State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+LISTEN 0      511                *:3000            *:*          
+pid=183022
+user=ubuntu
+cwd=
+cmdline=next-server (v16.2.9)                                                               
+exe=
+--- env hints ---
+/home/agentos-node/runner/_work/_temp/1d505b55-d000-4fd0-9b0f-3069ec980685.sh: line 20: /proc/183022/environ: Permission denied
+=== KNOWN ROUTE HEALTH ===
+http=200
+<!DOCTYPE html><!--_17kq_xvmdeUiFucYz_P1--><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="/dashboard/_next/static/chunks/b73c66837c9fc287.css" data-precedence="next"/><link rel="preload" as="script" fetch
