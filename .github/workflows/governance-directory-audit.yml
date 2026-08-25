@@ -7,6 +7,9 @@ on:
       - 'agent_core/governance_directory.py'
       - 'scripts/governance_directory.py'
       - 'scripts/core_services/port_manager.py'
+      - 'scripts/drift_guard.py'
+      - '.agent/CONSTITUTION.yaml'
+      - '.agent/governance/**'
       - '.agent/roles/**'
       - '.agent/SERVICES.md'
       - 'scripts/os_watchdog.py'
@@ -35,9 +38,12 @@ jobs:
             export AGENT_DATA_ROOT=/home/ubuntu/agent-data
 
             echo '=== PYTHON COMPILE ==='
-            python3 -m py_compile agent_core/governance_directory.py scripts/governance_directory.py scripts/core_services/port_manager.py
+            python3 -m py_compile agent_core/governance_directory.py scripts/governance_directory.py scripts/core_services/port_manager.py scripts/drift_guard.py
 
-            echo '=== SEED ==='
+            echo '=== CONSTITUTION / ROLE ATTESTATION ==='
+            python3 scripts/drift_guard.py --attestation-out /home/ubuntu/agent-data/governance/policy-attestation.json
+
+            echo '=== DIRECTORY SEED/SYNC ==='
             python3 scripts/governance_directory.py seed
 
             echo '=== RESOLVE PORT OWNER ==='
@@ -46,15 +52,18 @@ jobs:
             echo '=== RESOLVE SPEC STEWARD ==='
             python3 scripts/governance_directory.py resolve capability://governance.spec.audit
 
+            echo '=== RESOLVE RESOURCE CARTOGRAPHER ==='
+            python3 scripts/governance_directory.py resolve capability://resource.query
+
             echo '=== PORT REGISTRY ==='
             python3 scripts/core_services/port_manager.py list --json
 
             echo '=== VERIFY IMPLEMENTED GOVERNORS ==='
             python3 scripts/governance_directory.py verify manager://port
             python3 scripts/governance_directory.py verify service://agentos.watchdog
-            python3 scripts/governance_directory.py verify role://agentos.spec-steward
+            python3 scripts/governance_directory.py verify role://governance.spec_steward
 
-            echo '=== AUDIT ==='
+            echo '=== DIRECTORY DRIFT AUDIT ==='
             python3 scripts/governance_directory.py audit --write
 
             echo '=== ACCEPTANCE ==='
@@ -66,9 +75,12 @@ jobs:
             entities=d['entities']
             assert 'manager://port' in entities
             assert entities['manager://port']['authority']['exclusive'] is True
-            assert 'role://agentos.spec-steward' in entities
+            assert 'role://governance.spec_steward' in entities
+            assert 'role://governance.keeper' in entities
+            assert 'role://system.cartographer' in entities
             assert 'service://agentos.watchdog' in entities
             assert 'policy://discover-before-invent' in entities
+            assert entities['role://instance.agentmanager_paw']['state'] == 'stale'
             print(f"governance_directory=PASS entities={len(entities)}")
             PY
           } 2>&1 | tee "$OUT"
