@@ -1,0 +1,77 @@
+name: Oracle Enable LayoutLib Browser Image Formats
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-enable-layoutlib-images.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  enable-image-formats:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install image adapter and verify PNG/JPEG through public UI API
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlib-browser-images.txt
+          CODE=/home/agentos-node/projects/layoutlib
+          RUNTIME=/home/ubuntu/agent-data/runtime/layoutlib-web
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            python3 -m pip install --user --disable-pip-version-check 'Pillow>=10,<13'
+            python3 - <<'PY'
+          import PIL
+          print('pillow_version='+PIL.__version__)
+          PY
+            PUBLIC_URL=$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$RUNTIME/tunnel.log" | tail -n 1)
+            test -n "$PUBLIC_URL"
+            echo "public_url=$PUBLIC_URL/"
+            python3 - "$PUBLIC_URL" <<'PY'
+          import base64, io, json, sys, time, urllib.request
+          from PIL import Image, ImageDraw
+          base=sys.argv[1].rstrip('/')
+          im=Image.new('RGB',(120,90),'white')
+          d=ImageDraw.Draw(im)
+          # Same rectangular 5px wall fixture, rendered in normal browser formats.
+          d.rectangle((15,12,104,16),fill='black')
+          d.rectangle((15,72,104,76),fill='black')
+          d.rectangle((15,12,19,76),fill='black')
+          d.rectangle((100,12,104,76),fill='black')
+          for fmt,ext in [('PNG','png'),('JPEG','jpg')]:
+              buf=io.BytesIO(); im.save(buf,format=fmt,quality=100)
+              payload=json.dumps({'filename':'room.'+ext,'content_base64':base64.b64encode(buf.getvalue()).decode(),'meters_per_pixel':0.02,'threshold':128,'min_wall_length_px':30}).encode()
+              last=None
+              for _ in range(10):
+                  try:
+                      req=urllib.request.Request(base+'/api/parse',data=payload,headers={'Content-Type':'application/json','User-Agent':'LayoutLib-image-acceptance/1.0'},method='POST')
+                      with urllib.request.urlopen(req,timeout=25) as r: data=json.load(r)
+                      assert data.get('ok') is True, data
+                      assert data.get('wall_count')==4, data
+                      print(f'public_{ext}_parse=PASS walls=4 spatial_ir='+data['ir']['version'])
+                      break
+                  except Exception as exc:
+                      last=exc; time.sleep(1)
+              else: raise SystemExit(f'{ext} parse failed: {last}')
+          PY
+            echo 'browser_image_formats=PNG,JPEG,PGM'
+            echo 'browser_image_acceptance=PASS'
+          } 2>&1 | tee "$OUT"
+      - name: Commit image-format evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .agentos/evidence/layoutlib-browser-images.txt || printf 'image_verification_did_not_create_evidence=YES\n' > .agentos/evidence/layoutlib-browser-images.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-browser-images.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): browser PNG and JPEG acceptance'
+          git push
