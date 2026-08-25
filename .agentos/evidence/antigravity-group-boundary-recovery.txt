@@ -1,0 +1,4 @@
+timestamp_utc=2026-08-25T14:14:14Z
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+processing_before=14
+boundary_recovery=ERROR PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-65847f2d240b4506a25a0a6371e10240.json.tmp'
