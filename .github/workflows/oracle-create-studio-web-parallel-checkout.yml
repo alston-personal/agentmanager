@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - '.agentos/evidence/studio-web-phase1-layoutlab-candidate.txt'
+      - 'scripts/create_studio_web_parallel_checkout.sh'
+      - '.github/workflows/oracle-create-studio-web-parallel-checkout.yml'
 
 permissions:
   contents: write
