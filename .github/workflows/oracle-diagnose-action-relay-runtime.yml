@@ -1,0 +1,64 @@
+name: Diagnose Live Action Relay Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-diagnose-action-relay-runtime.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Action Relay process, journal, and spool without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/action-relay-live-diagnostic.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_identity=$(id)"
+            echo '=== SERVICE STATUS ==='
+            systemctl --user --no-pager --full status agentos-action-relay.service || true
+            echo '=== SERVICE PROPERTIES ==='
+            systemctl --user show agentos-action-relay.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p Environment -p WorkingDirectory || true
+            echo '=== PROCESS TREE ==='
+            ps -eo user,group,pid,ppid,etime,args | grep -E 'agentos_node.action_relay|[s]g agentos' || true
+            echo '=== PROCESS GROUPS ==='
+            for pid in $(pgrep -f 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' || true); do
+              echo "pid=$pid"
+              grep -E '^(Uid|Gid|Groups):' "/proc/$pid/status" || true
+            done
+            echo '=== SPOOL TREE ==='
+            find /home/ubuntu/agent-data/runtime/action-relay -maxdepth 2 -printf '%u:%g %m %TY-%Tm-%TdT%TH:%TM:%TS %p\n' | sort || true
+            echo '=== CAPSULE CONTENTS ==='
+            for f in /home/ubuntu/agent-data/runtime/action-relay/inbox/*.json /home/ubuntu/agent-data/runtime/action-relay/processing/*.json /home/ubuntu/agent-data/runtime/action-relay/receipts/*.json; do
+              [ -f "$f" ] || continue
+              echo "--- $f ---"
+              cat "$f" || true
+            done
+            echo '=== JOURNAL ==='
+            journalctl --user -u agentos-action-relay.service -n 120 --no-pager || true
+          } 2>&1 | tee "$OUT"
+      - name: Commit diagnostic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/action-relay-live-diagnostic.txt
+          cp "$E" /tmp/action-relay-live-diagnostic.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/action-relay-live-diagnostic.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): live Action Relay diagnostic'
+          git push origin HEAD:main
