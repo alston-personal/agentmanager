@@ -1,0 +1,22 @@
+capsule_id=action-5459ba0d8b664a6f9c9eddd5794fc501
+{
+  "action": "layoutlab.static.deploy",
+  "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
+  "capsule_id": "action-5459ba0d8b664a6f9c9eddd5794fc501",
+  "completed_at": "2026-08-25T16:21:06Z",
+  "executor_user": "ubuntu",
+  "mode": "browser-only-layoutlib-v0.1-compatible",
+  "ok": true,
+  "schema": "agentos.action-receipt/v1",
+  "site": "studio.milkcat.org",
+  "started_at": "2026-08-25T16:21:06Z",
+  "step": {
+    "argv": [
+      "/usr/bin/python3",
+      "/home/ubuntu/.local/share/agentos/action-runtime/scripts/deploy_layoutlab_static.py"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "{\"bytes\": 8612, \"mode\": \"browser-only-layoutlib-v0.1-compatible\", \"ok\": true, \"sha256\": \"5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}\n"
+  }
+}
