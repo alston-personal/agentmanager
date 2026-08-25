@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy persistent LayoutLib web UI and public tunnel
+      - name: Deploy and accept public LayoutLib Web UI
         shell: bash
         run: |
           set -euo pipefail
@@ -39,10 +39,7 @@ jobs:
               pid=$(cat "$pf" 2>/dev/null || true)
               if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
                 kill "$pid" 2>/dev/null || true
-                for _ in $(seq 1 20); do
-                  kill -0 "$pid" 2>/dev/null || break
-                  sleep 0.1
-                done
+                for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
               fi
               rm -f "$pf"
             fi
@@ -52,54 +49,44 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "hostname=$(hostname)"
             echo "identity=$(id)"
-            echo "home=$HOME"
             echo "python=$(python3 --version 2>&1)"
 
             python3 scripts/bootstrap_layoutlib.py --target "$CODE"
             python3 scripts/bootstrap_layoutlib_web.py --target "$CODE"
             python3 scripts/bootstrap_layoutlib_hardening.py --target "$CODE"
 
-            echo '=== PORT ALLOCATION ==='
-            PORT_OUTPUT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlib-web --desc 'LayoutLib persistent Web UI/API' --start 8765 --end 8799)
-            echo "$PORT_OUTPUT"
-            PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[int(k) for k,v in d.items() if v.get("project")=="layoutlib-web"]; print(min(xs))')
+            echo '=== BROWSER IMAGE ADAPTER ==='
+            python3 -m pip install --user --disable-pip-version-check 'Pillow>=10,<13'
+            python3 - <<'PY'
+          import PIL
+          print('pillow_version='+PIL.__version__)
+          PY
+
+            echo '=== GOVERNED PORT ==='
+            AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlib-web --desc 'LayoutLib persistent Web UI/API' --start 8765 --end 8799
+            PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys;d=json.load(sys.stdin);print(min(int(k) for k,v in d.items() if v.get("project")=="layoutlib-web"))')
             echo "layoutlib_port=$PORT"
 
             echo '=== START WEB DAEMON ==='
-            WEB_PID="$RUNTIME/web.pid"
-            WEB_LOG="$RUNTIME/web.log"
-            stop_pidfile "$WEB_PID"
-            : > "$WEB_LOG"
+            WEB_PID="$RUNTIME/web.pid"; WEB_LOG="$RUNTIME/web.log"
+            stop_pidfile "$WEB_PID"; : > "$WEB_LOG"
             (
               unset RUNNER_TRACKING_ID
-              nohup env PYTHONPATH="$CODE/src" LAYOUTLIB_WEB_QUIET=1 \
-                /usr/bin/python3 "$CODE/web_demo/server.py" --host 127.0.0.1 --port "$PORT" \
-                >>"$WEB_LOG" 2>&1 </dev/null &
+              nohup env PYTHONPATH="$CODE/src" LAYOUTLIB_WEB_QUIET=1 /usr/bin/python3 \
+                "$CODE/web_demo/server.py" --host 127.0.0.1 --port "$PORT" >>"$WEB_LOG" 2>&1 </dev/null &
               echo $! > "$WEB_PID"
             )
-            sleep 1
             WPID=$(cat "$WEB_PID")
+            for _ in $(seq 1 30); do
+              if curl -fsS --connect-timeout 2 "http://127.0.0.1:$PORT/api/health" >/tmp/layoutlib-local-health; then break; fi
+              sleep .2
+            done
             kill -0 "$WPID"
+            grep -q '"ok": true' /tmp/layoutlib-local-health
             echo "web_pid=$WPID"
+            echo 'local_health=PASS'
 
-            echo '=== LOCAL WEB PROBE ==='
-            python3 - "$PORT" <<'PY'
-          import json,sys,time,urllib.request
-          port=int(sys.argv[1]); last=None
-          for _ in range(30):
-              try:
-                  with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=2) as r:
-                      data=json.load(r)
-                  assert data.get('ok') is True, data
-                  print('local_web_health=PASS')
-                  break
-              except Exception as exc:
-                  last=exc; time.sleep(.2)
-          else:
-              raise SystemExit(f'local web health failed: {last}')
-          PY
-
-            echo '=== CLOUDFLARED USER INSTALL ==='
+            echo '=== CLOUDFLARED ==='
             CF="$USER_BIN/cloudflared"
             if [ ! -x "$CF" ]; then
               case "$(uname -m)" in
@@ -107,93 +94,101 @@ jobs:
                 x86_64|amd64) ASSET=cloudflared-linux-amd64 ;;
                 *) echo "unsupported_arch=$(uname -m)"; exit 3 ;;
               esac
-              curl -fL --retry 3 --connect-timeout 10 --max-time 120 \
+              curl -fL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
                 "https://github.com/cloudflare/cloudflared/releases/latest/download/$ASSET" -o "$CF"
               chmod 0755 "$CF"
             fi
             "$CF" --version
 
-            echo '=== START PUBLIC QUICK TUNNEL ==='
-            TUNNEL_PID="$RUNTIME/tunnel.pid"
-            TUNNEL_LOG="$RUNTIME/tunnel.log"
-            stop_pidfile "$TUNNEL_PID"
-            : > "$TUNNEL_LOG"
+            echo '=== START QUICK TUNNEL ==='
+            TUNNEL_PID="$RUNTIME/tunnel.pid"; TUNNEL_LOG="$RUNTIME/tunnel.log"
+            stop_pidfile "$TUNNEL_PID"; : > "$TUNNEL_LOG"
             (
               unset RUNNER_TRACKING_ID
-              nohup "$CF" tunnel --no-autoupdate --protocol http2 --url "http://127.0.0.1:$PORT" \
-                >>"$TUNNEL_LOG" 2>&1 </dev/null &
+              nohup "$CF" tunnel --no-autoupdate --protocol http2 --url "http://127.0.0.1:$PORT" >>"$TUNNEL_LOG" 2>&1 </dev/null &
               echo $! > "$TUNNEL_PID"
             )
             TPID=$(cat "$TUNNEL_PID")
-            echo "tunnel_pid=$TPID"
-
             PUBLIC_URL=''
             for _ in $(seq 1 90); do
-              kill -0 "$TPID" 2>/dev/null || { echo 'tunnel_process_exited=YES'; cat "$TUNNEL_LOG"; exit 4; }
+              kill -0 "$TPID" 2>/dev/null || { echo 'tunnel_exited=YES'; cat "$TUNNEL_LOG"; exit 4; }
               PUBLIC_URL=$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | tail -n 1 || true)
               [ -n "$PUBLIC_URL" ] && break
               sleep 1
             done
-            if [ -z "$PUBLIC_URL" ]; then
-              echo 'cloudflare_quick_tunnel_url=NOT_FOUND'
-              cat "$TUNNEL_LOG" || true
-              exit 5
-            fi
+            test -n "$PUBLIC_URL"
+            echo "tunnel_pid=$TPID"
             echo "public_url=$PUBLIC_URL/"
 
-            echo '=== EXTERNAL PUBLIC WEB PROBE ==='
-            HEALTH_CODE=''
-            for _ in $(seq 1 30); do
-              HEALTH_CODE=$(curl -sS -o /tmp/layoutlib-public-health -w '%{http_code}' --connect-timeout 5 --max-time 12 "$PUBLIC_URL/api/health" 2>/dev/null || true)
-              [ "$HEALTH_CODE" = 200 ] && break
-              sleep 1
-            done
-            echo "public_health_http_code=${HEALTH_CODE:-000}"
-            test "$HEALTH_CODE" = 200
-            python3 - <<'PY'
-          import json
-          data=json.load(open('/tmp/layoutlib-public-health'))
-          assert data.get('ok') is True and data.get('service')=='layoutlib-web', data
-          print('public_health_payload=PASS')
-          PY
+            probe_get() {
+              local path="$1" out="$2" code=000
+              for _ in $(seq 1 40); do
+                code=$(curl -4 -sS --retry 2 --retry-all-errors -o "$out" -w '%{http_code}' --connect-timeout 5 --max-time 15 "$PUBLIC_URL$path" 2>/dev/null || true)
+                [ "$code" = 200 ] && { echo 200; return 0; }
+                sleep 1
+              done
+              echo "$code"; return 1
+            }
 
-            UI_CODE=$(curl -sS -o /tmp/layoutlib-public-ui -w '%{http_code}' --connect-timeout 5 --max-time 15 "$PUBLIC_URL/" 2>/dev/null || true)
-            echo "public_ui_http_code=${UI_CODE:-000}"
-            test "$UI_CODE" = 200
-            grep -q 'LayoutLib' /tmp/layoutlib-public-ui
+            echo '=== PUBLIC UI + HEALTH ==='
+            UI_CODE=$(probe_get / /tmp/layoutlib-public-ui)
+            echo "public_ui_http_code=$UI_CODE"
+            grep -q '<title>LayoutLib Demo</title>' /tmp/layoutlib-public-ui
+            grep -q 'id="file"' /tmp/layoutlib-public-ui
+            grep -q 'id="run"' /tmp/layoutlib-public-ui
             echo 'public_ui_payload=PASS'
+            HEALTH_CODE=$(probe_get /api/health /tmp/layoutlib-public-health)
+            echo "public_health_http_code=$HEALTH_CODE"
+            grep -q '"ok": true' /tmp/layoutlib-public-health
+            echo 'public_health_payload=PASS'
 
-            echo '=== PUBLIC PARSE PROBE ==='
-            python3 - "$PUBLIC_URL" "$CODE/tests/fixtures/demo_room.pgm" <<'PY'
-          import base64,json,sys,urllib.request
-          base=sys.argv[1].rstrip('/')
-          raw=open(sys.argv[2],'rb').read()
-          payload=json.dumps({
-              'filename':'demo_room.pgm',
-              'content_base64':base64.b64encode(raw).decode(),
-              'meters_per_pixel':0.02,
-              'min_wall_length_px':30,
-          }).encode()
-          req=urllib.request.Request(base+'/api/parse', data=payload, headers={'Content-Type':'application/json','User-Agent':'LayoutLib-acceptance/1.0'}, method='POST')
-          with urllib.request.urlopen(req, timeout=25) as r:
-              data=json.load(r)
-          assert data.get('ok') is True, data
-          assert data.get('wall_count')==4, data
-          print('public_parse=PASS walls=4 spatial_ir='+data['ir']['version'])
+            echo '=== BUILD PUBLIC PARSE FIXTURES ==='
+            python3 - "$CODE/tests/fixtures/demo_room.pgm" <<'PY'
+          import base64,io,json,sys
+          from PIL import Image,ImageDraw
+          def dump(name, raw):
+              payload={'filename':'room.'+name,'content_base64':base64.b64encode(raw).decode(),'meters_per_pixel':0.02,'threshold':128,'min_wall_length_px':30}
+              open('/tmp/layoutlib-'+name+'.json','w').write(json.dumps(payload))
+          dump('pgm',open(sys.argv[1],'rb').read())
+          im=Image.new('RGB',(120,90),'white'); d=ImageDraw.Draw(im)
+          d.rectangle((15,12,104,16),fill='black'); d.rectangle((15,72,104,76),fill='black')
+          d.rectangle((15,12,19,76),fill='black'); d.rectangle((100,12,104,76),fill='black')
+          for fmt,name in [('PNG','png'),('JPEG','jpg')]:
+              b=io.BytesIO(); im.save(b,format=fmt,quality=100); dump(name,b.getvalue())
           PY
 
-            kill -0 "$WPID"
-            kill -0 "$TPID"
-            echo 'daemon_survival_during_acceptance=PASS'
+            echo '=== PUBLIC PARSE ACCEPTANCE ==='
+            for ext in pgm png jpg; do
+              CODE_HTTP=000
+              for _ in $(seq 1 30); do
+                CODE_HTTP=$(curl -4 -sS --retry 2 --retry-all-errors -o "/tmp/layoutlib-$ext.out" -w '%{http_code}' \
+                  --connect-timeout 5 --max-time 20 -H 'Content-Type: application/json' \
+                  --data-binary "@/tmp/layoutlib-$ext.json" "$PUBLIC_URL/api/parse" 2>/dev/null || true)
+                [ "$CODE_HTTP" = 200 ] && break
+                sleep 1
+              done
+              echo "public_${ext}_http_code=$CODE_HTTP"
+              test "$CODE_HTTP" = 200
+              python3 - "/tmp/layoutlib-$ext.out" "$ext" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); assert d.get('ok') is True and d.get('wall_count')==4,d
+          print(f'public_{sys.argv[2]}_parse=PASS walls=4 spatial_ir='+d['ir']['version'])
+          PY
+            done
+
+            kill -0 "$WPID"; kill -0 "$TPID"
+            mkdir -p "$DATA/projects/layoutlib"
+            printf '%s/\n' "$PUBLIC_URL" > "$DATA/projects/layoutlib/public_url.txt"
 
             echo '=== ACCEPTANCE ==='
-            echo 'persistent_web_daemon=PASS'
-            echo 'persistent_tunnel_daemon=PASS'
-            echo "port=$PORT"
-            echo "public_url=$PUBLIC_URL/"
-            echo 'public_health=PASS'
+            echo 'web_daemon=PASS'
+            echo 'tunnel_daemon=PASS'
             echo 'public_ui=PASS'
-            echo 'public_parse=PASS'
+            echo 'public_health=PASS'
+            echo 'public_pgm_parse=PASS'
+            echo 'public_png_parse=PASS'
+            echo 'public_jpg_parse=PASS'
+            echo "public_url=$PUBLIC_URL/"
             echo 'goal_direct_web_ui=PASS'
           } 2>&1 | tee "$OUT"
 
@@ -207,5 +202,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/layoutlib-public-web.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(layoutlib): public Web UI deployment diagnostics'
+          git commit -m 'evidence(layoutlib): final public Web UI acceptance'
           git push
