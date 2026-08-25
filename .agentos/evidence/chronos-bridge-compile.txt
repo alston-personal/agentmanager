@@ -1,0 +1,124 @@
+timestamp_utc=2026-08-25T14:42:57Z
+=== FIRST 120 LINES ===
+#!/usr/bin/env python3
+"""
+scripts/update_scheduler_board.py — Render Swarm Scheduler Dashboard
+Reads schedule.yaml, volatile pulse.json, and chronos.log to dynamically compile
+/home/ubuntu/agent-data/SCHEDULER_BOARD.md.
+"""
+import os
+import json
+import yaml
+import sys
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+
+# Paths
+PROJECT_ROOT = Path(os.environ.get("AGENT_PROJECT_ROOT", Path(__file__).resolve().parents[1])).resolve()
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from agent_core import config
+from agent_core.platform import get_platform_driver
+
+AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
+PLATFORM_DRIVER = get_platform_driver(project_root=PROJECT_ROOT, data_root=AGENT_DATA_ROOT)
+PULSE_FILE = PLATFORM_DRIVER.volatile_state_dir() / "pulse.json"
+PERSISTENT_PULSE = PLATFORM_DRIVER.persistent_state_dir() / "pulse_snapshot.json"
+SCHEDULE_YAML = PROJECT_ROOT / "schedule.yaml"
+CHRONOS_LOG = AGENT_DATA_ROOT / "logs/chronos.log"
+BOARD_MD = AGENT_DATA_ROOT / "SCHEDULER_BOARD.md"
+
+def get_real_time_pulse():
+    pulse_data = {}
+    if PULSE_FILE.exists():
+        try:
+            pulse_data = json.loads(PULSE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if not pulse_data and PERSISTENT_PULSE.exists():
+        try:
+            pulse_data = json.loads(PERSISTENT_PULSE.read_text(encoding="utf-8"))
+            # Restored entries might be marked as idle
+            for entry in pulse_data.values():
+                if "status" not in entry or entry["status"] == "active":
+                    entry["status"] = "idle (restored)"
+        except Exception:
+            pass
+    return pulse_data
+
+def get_scheduled_tasks():
+    schedules = []
+    if SCHEDULE_YAML.exists():
+        try:
+            with open(SCHEDULE_YAML, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                schedules = data.get("schedules", [])
+        except Exception:
+            pass
+    return schedules
+
+def get_recent_chronos_logs():
+    lines = []
+    if CHRONOS_LOG.exists():
+        try:
+            with open(CHRONOS_LOG, "r", encoding="utf-8") as f:
+                # Read last 1500 bytes to be fast
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - 2000), os.SEEK_SET)
+                log_data = f.read()
+                lines = log_data.splitlines()
+        except Exception:
+            pass
+    
+    # Filter logs relating to job execution/trigger
+    parsed_logs = []
+    # Match log format e.g., 2026-05-28 09:00:00,123 [INFO] (Chronos) 🚀 [Trigger] Launching job 'os-pulse'
+    for line in reversed(lines):
+        if "Trigger" in line or "Autonomous" in line or "Self-Pushing" in line or "失敗" in line or "成功" in line:
+            # Clean logging format for visualization
+            clean_line = line.strip()
+            # Truncate long absolute path for aesthetics
+            clean_line = clean_line.replace("/home/ubuntu/", "~/")
+            parsed_logs.append(clean_line)
+            if len(parsed_logs) >= 8:
+                break
+    return parsed_logs
+
+def generate_markdown():
+    timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    
+    pulse_data = get_real_time_pulse()
+    schedules = get_scheduled_tasks()
+    recent_logs = get_recent_chronos_logs()
+    
+    md = []
+    md.append("# 🕹️ AgentOS Swarm Scheduler Board")
+    md.append(f"> **Central Scheduler Status**: 🟢 RUNNING (PID: 1154)  ")
+    md.append(f"> **Last Compiled**: `{timestamp}`  ")
+    md.append("\n---\n")
+    
+    # 1. Swarm Heartbeats
+    md.append("### 📊 1. 實時守護心跳 (Swarm Heartbeats)")
+    md.append(f"Below are the active agents tracked in `{PULSE_FILE.parent}`:")
+    md.append("\n| 助理名稱 (Agent) | 當前任務 (Active Task) | 狀態 (Status) | PID | 最後更新時間 |")
+    md.append("| :--- | :--- | :---: | :---: | :--- |")
+    
+    if pulse_data:
+        for name, data in sorted(pulse_data.items()):
+            task = data.get("task", "Unknown Task")
+            status = data.get("status", "unknown")
+            pid = data.get("pid", "-")
+            ts = data.get("timestamp", "")
+            
+            # Formatting timezone
+            try:
+                dt = datetime.fromisoformat(ts)
+                local_ts = dt.astimezone().strftime("%H:%M:%S")
+            except Exception:
+                local_ts = ts
+                
+            status_emoji = "🟢 active" if "active" in status else "🟡 idle"
+            if "error" in status:
+=== PY_COMPILE ===
+py_compile=PASS
