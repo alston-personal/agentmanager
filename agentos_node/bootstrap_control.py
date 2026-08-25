@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import grp
 import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import subprocess
 from datetime import datetime, timezone
 from typing import Any
@@ -12,8 +12,8 @@ from typing import Any
 SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
-SHARED_GROUP = "agentos"
 MAX_REQUEST_AGE_SECONDS = 900
+REQUEST_OWNER = "agentos-node"
 
 
 def _now() -> str:
@@ -21,31 +21,30 @@ def _now() -> str:
 
 
 def _root() -> Path:
-    data = Path(os.environ.get("AGENT_DATA_ROOT") or (Path.home() / "agent-data"))
-    return data / "runtime" / "bootstrap-control"
+    # Bootstrap transport must not depend on the supplementary `agentos` group:
+    # the long-lived ubuntu Chronos process predates that group grant.  Use a
+    # deliberately narrow, local-only /tmp rendezvous until Action Relay exists.
+    return Path(os.environ.get("AGENTOS_BOOTSTRAP_ROOT") or "/tmp/agentos-bootstrap-control")
 
 
 def _ensure(root: Path) -> tuple[Path, Path, Path]:
-    gid = grp.getgrnam(SHARED_GROUP).gr_gid
     requests = root / "requests"
     receipts = root / "receipts"
     rejected = root / "rejected"
     for p in (root, requests, receipts, rejected):
         p.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chown(p, -1, gid)
-        except PermissionError:
-            pass
-        os.chmod(p, 0o2770)
+        # Sticky + world traverse/write lets agentos-node submit a fixed-schema
+        # request while the ubuntu directory owner retains cleanup authority.
+        os.chmod(p, 0o1777)
     return requests, receipts, rejected
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o660)
+    os.chmod(tmp, 0o644)
     tmp.replace(path)
-    os.chmod(path, 0o660)
+    os.chmod(path, 0o644)
 
 
 def _parse_time(value: str) -> datetime:
@@ -53,6 +52,8 @@ def _parse_time(value: str) -> datetime:
 
 
 def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str]:
+    if path.is_symlink():
+        raise ValueError("request must not be a symlink")
     if payload.get("schema") != SCHEMA:
         raise ValueError("invalid schema")
     request_id = str(payload.get("request_id") or "").strip()
@@ -65,9 +66,18 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str]:
     age = (datetime.now(timezone.utc) - created).total_seconds()
     if age < -60 or age > MAX_REQUEST_AGE_SECONDS:
         raise ValueError(f"request outside freshness window: age={age:.1f}s")
-    mode = path.stat().st_mode & 0o777
-    if mode & 0o007:
-        raise ValueError(f"request must not be world-accessible: mode={mode:o}")
+    stat = path.stat()
+    owner = pwd.getpwuid(stat.st_uid).pw_name
+    if owner != REQUEST_OWNER:
+        raise ValueError(f"request owner must be {REQUEST_OWNER}: owner={owner}")
+    mode = stat.st_mode & 0o777
+    if mode & 0o022:
+        raise ValueError(f"request must not be group/world-writable: mode={mode:o}")
+    authority = payload.get("authority") or {}
+    if authority.get("source") != "github-actions" or authority.get("target_user") != "ubuntu":
+        raise ValueError("invalid authority envelope")
+    if authority.get("arbitrary_shell") is not False:
+        raise ValueError("arbitrary shell is forbidden")
     return request_id, action
 
 
@@ -131,8 +141,9 @@ def _run_repair() -> dict[str, Any]:
 def run_bootstrap_control_plane() -> dict[str, Any] | None:
     """Process at most one fresh, allowlisted request under the ubuntu Chronos identity.
 
-    This is intentionally deterministic: it cannot execute arbitrary shell supplied
-    by a request, and it is dormant when the request spool is empty.
+    This is deterministic and transitional: request data cannot supply shell text,
+    only the fixed transport-repair action is accepted, and the /tmp rendezvous is
+    expected to be retired after Action Relay has been established.
     """
     root = _root()
     requests, receipts, rejected = _ensure(root)
