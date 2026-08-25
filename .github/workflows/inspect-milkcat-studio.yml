@@ -1,4 +1,4 @@
-# inspection trigger 2026-08-25 routing
+# inspection trigger 2026-08-25 nginx-perms
 name: Inspect MilkCat Studio Integration Surface
 
 on:
@@ -27,12 +27,16 @@ jobs:
             echo "hostname=$(hostname)"
             echo '=== HTTP HEADERS ==='
             curl -k -sS -I --max-time 15 https://studio.milkcat.org/ || true
-            echo '=== HOMEPAGE SAMPLE ==='
-            curl -k -sS --max-time 20 https://studio.milkcat.org/ | sed -n '1,80p' || true
             echo '=== EXACT STUDIO NGINX ==='
             sed -n '1,260p' /etc/nginx/sites-enabled/studio.milkcat.org 2>/dev/null || true
+            echo '=== NGINX PERMISSIONS ==='
+            id
+            stat -c '%n owner=%U group=%G mode=%a' /etc/nginx /etc/nginx/sites-enabled /etc/nginx/sites-enabled/studio.milkcat.org 2>/dev/null || true
+            test -w /etc/nginx/sites-enabled/studio.milkcat.org && echo nginx_config_writable=yes || echo nginx_config_writable=no
+            echo '--- sudo -n -l ---'
+            sudo -n -l 2>&1 || true
             echo '=== LISTENERS ==='
-            ss -lntp 2>/dev/null | sed -n '1,220p' || ss -lnt | sed -n '1,220p' || true
+            ss -lnt | sed -n '1,220p' || true
             echo '=== PROCESSES ==='
             ps -eo user,pid,ppid,args --sort=pid | grep -Ei 'node|python|uvicorn|gunicorn|astro|npm|8090|300[0-9]|301[0-9]|3020' | grep -v grep | head -n 260 || true
             echo '=== WEBSITE CHECKOUT ==='
@@ -42,7 +46,6 @@ jobs:
               echo "branch=$(git branch --show-current 2>/dev/null || true)"
               echo "sha=$(git rev-parse HEAD 2>/dev/null || true)"
               echo "status=$(git status --porcelain 2>/dev/null | wc -l)"
-              find website/src/pages -maxdepth 2 -type f -print 2>/dev/null | sort | head -n 200 || true
             fi
           } 2>&1 | tee "$OUT"
       - name: Commit inspection evidence
@@ -53,5 +56,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/milkcat-studio-inspection.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(studio): inspect milkcat routing and backends'
+          git commit -m 'evidence(studio): inspect nginx permissions'
           git push
