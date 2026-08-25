@@ -25,9 +25,11 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "identity=$(id)"
             echo '=== PROCESSES ==='
-            ps -eo user,pid,lstart,ppid,args | grep -E 'antigravity_relay|action_relay|agentos-action-relay|agentos-antigravity' | grep -v grep || true
+            ps -eo user,pid,lstart,ppid,stat,args | grep -E 'antigravity_relay|action_relay|claude|agentos-action-relay|agentos-antigravity' | grep -v grep || true
             echo '=== ANTIGRAVITY RECEIPT TMP ==='
             for f in /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/*.tmp; do [ -e "$f" ] || continue; echo "-- $f"; stat "$f" || true; cat "$f" || true; done
+            echo '=== RECOVERY CAPSULE ==='
+            for f in /home/ubuntu/agent-data/runtime/antigravity-relay/{inbox,processing,receipts}/relay-a3c4a2f747e94991905db3b9ddc5bc7e.json*; do [ -e "$f" ] || continue; echo "-- $f"; stat "$f" || true; cat "$f" || true; done
             echo '=== USER UNIT FILES ==='
             for f in /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service /home/ubuntu/.config/systemd/user/agentos-action-relay.service; do echo "-- $f"; cat "$f" 2>&1 || true; done
             echo '=== RUNTIME VNEXT AUTHORITY ==='
@@ -35,7 +37,6 @@ jobs:
               ls -ld "$p" 2>&1 || true
               if [ -w "$p" ]; then echo "writable=yes $p"; else echo "writable=no $p"; fi
             done
-            git -C /home/ubuntu/.local/share/agentos/runtime-vnext status --short --branch 2>&1 || true
             echo '=== SPOOL ==='
             for d in /home/ubuntu/agent-data/runtime/antigravity-relay /home/ubuntu/agent-data/runtime/action-relay; do
               echo "-- $d"; ls -ld "$d" "$d"/inbox "$d"/processing "$d"/receipts 2>&1 || true
