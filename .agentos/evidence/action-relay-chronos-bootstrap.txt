@@ -1,0 +1,11 @@
+timestamp_utc=2026-08-25T14:30:52Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+request_id=chronos-bootstrap-20260825T143052Z-32859672829
+=== EXISTING UBUNTU EXECUTION SURFACE ===
+ubuntu   ubuntu    472462    1027 48-06:36:56 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+chronos_log_age_seconds=11.0
+2026-08-25 22:29:41,361 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:30:41,415 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+2026-08-25 22:30:41,415 [INFO] (Chronos) 🚀 [Trigger] Launching job 'swarm-board-refresh': python3 scripts/update_scheduler_board.py
+one_time_bridge_installed=YES
+chronos_bootstrap_receipt=TIMEOUT
