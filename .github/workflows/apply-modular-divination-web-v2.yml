@@ -19,6 +19,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo -u ubuntu -H bash <<'OWNER'
+          set -euo pipefail
           REPO=/home/ubuntu/agentmanager/workspace/leopardcat-tarot
           WORK=/tmp/leopardcat-divination-web-v2
           BRANCH=feature/modular-divination-master
@@ -42,3 +44,4 @@ jobs:
             git push origin "HEAD:$BRANCH" --quiet
           fi
           echo oracle_web_patch=passed
+          OWNER
