@@ -1,0 +1,1 @@
+Temporary validation trigger for canonical agentos-node contract. Do not merge.
