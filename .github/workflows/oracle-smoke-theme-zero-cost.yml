@@ -1,0 +1,124 @@
+name: Oracle Smoke Theme + Zero-Cost AI
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/oracle-smoke-theme-zero-cost.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Oracle isolated smoke
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          BASE=/tmp/leopardcat-theme-zero-cost-smoke
+          rm -rf "$BASE"
+          mkdir -p "$BASE"
+          git -c credential.helper= clone -q --depth 1 --branch feature/theme-zero-cost-ai https://github.com/alston-personal/leopardcat-tarot.git "$BASE/repo"
+          cd "$BASE/repo"
+          HEAD=$(git rev-parse HEAD)
+          echo "feature_commit=$HEAD"
+
+          python3 -m py_compile website/fortune_server.py website/divination/*.py
+          if grep -R "CERT_NONE\|check_hostname *= *False" website/fortune_server.py website/divination; then
+            echo insecure_tls_still_present >&2
+            exit 51
+          fi
+
+          PYTHONPATH=website python3 - <<'PY'
+          import tempfile
+          from divination.ai_gateway import ZeroCostGeminiGateway
+          from divination.themes import ThemePublisher, ThemeRegistry
+          p = ZeroCostGeminiGateway('dummy').policy()
+          assert p['cost_policy'] == 'zero-cost-required'
+          assert p['paid_fallback'] is False
+          assert p['model'] == 'gemini-2.5-flash'
+          assert p['billing_state_detectable_by_runtime'] is False
+          with tempfile.TemporaryDirectory() as td:
+              out = ThemePublisher(td).publish({'name':'Oracle Theme','colors':{'background':'#112233','accent':'#abcdef'}})
+              got = ThemeRegistry(td).get(out['theme_id'])
+              assert got['colors']['background'] == '#112233'
+          print('oracle_theme_registry=passed')
+          print('oracle_zero_cost_policy=passed')
+          print('oracle_tls_verification=passed')
+          PY
+
+          cd website
+          cp fortune_server.py /tmp/fortune_theme_server.py
+          sed -i 's/PORT = 8088/PORT = 18089/' /tmp/fortune_theme_server.py
+          cp /tmp/fortune_theme_server.py ./fortune_server.smoke.py
+          mkdir -p data/custom_themes
+          nohup /usr/bin/python3 fortune_server.smoke.py >"$BASE/server.log" 2>&1 &
+          PID=$!
+          trap 'kill $PID >/dev/null 2>&1 || true; rm -f fortune_server.smoke.py' EXIT
+          for _ in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:18089/api/v1/ai-policy >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+          policy=$(curl -fsS http://127.0.0.1:18089/api/v1/ai-policy)
+          themes=$(curl -fsS http://127.0.0.1:18089/api/v1/themes)
+          POLICY="$policy" THEMES="$themes" python3 - <<'PY'
+          import json, os
+          p=json.loads(os.environ['POLICY']); t=json.loads(os.environ['THEMES'])
+          assert p['paid_fallback'] is False and p['model']=='gemini-2.5-flash'
+          ids={x['theme_id'] for x in t['themes']}
+          assert {'leopardcat','midnight','minimal-light'} <= ids
+          print('oracle_http_ai_policy=passed')
+          print('oracle_http_builtin_themes=passed')
+          PY
+
+          created=$(curl -fsS -H 'Content-Type: application/json' --data '{"name":"Oracle Custom Theme","colors":{"background":"#123456","surface":"#111111","accent":"#abcdef","text":"#ffffff"}}' http://127.0.0.1:18089/api/v1/themes)
+          THEME="$created" python3 - <<'PY'
+          import json, os
+          d=json.loads(os.environ['THEME']); assert d['theme_id'].startswith('theme-'); print('oracle_http_custom_theme_publish=passed'); print('custom_theme_id='+d['theme_id'])
+          PY
+          tid=$(THEME="$created" python3 -c 'import json,os; print(json.loads(os.environ["THEME"])["theme_id"])')
+          curl -fsS "http://127.0.0.1:18089/api/v1/themes/$tid" >/dev/null
+          echo oracle_http_custom_theme_get=passed
+
+          # A live provider request is evidence of integration; recognized free quota/provider unavailability is acceptable.
+          code=$(curl -sS -o "$BASE/reading.json" -w '%{http_code}' -H 'Content-Type: application/json' --data '{"method":"tarot","persona":"master","question":"Oracle theme gateway smoke","input":{"spread":"single"},"lang":"zh-TW","seed":"theme-zero-cost-smoke"}' http://127.0.0.1:18089/api/v1/readings || true)
+          echo "live_ai_http_status=$code"
+          if [ "$code" = 200 ]; then
+            echo oracle_live_ai_integration=passed
+          elif [ "$code" = 503 ]; then
+            python3 - <<PY
+import json
+x=json.load(open('$BASE/reading.json'))
+assert x.get('error')=='ai_unavailable'
+assert x.get('code') in ('free_quota_exhausted','provider_busy','provider_timeout','provider_error','not_configured')
+assert x.get('reading_id') and x.get('session_token')
+print('oracle_live_ai_graceful_unavailable=passed')
+print('oracle_reading_preserved_on_ai_failure=passed')
+PY
+          else
+            cat "$BASE/reading.json" >&2 || true
+            exit 52
+          fi
+          REMOTE
