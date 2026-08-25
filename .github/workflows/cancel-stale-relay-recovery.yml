@@ -36,15 +36,16 @@ jobs:
             case "$code" in 202|409) ;; *) return 1 ;; esac
           }
 
-          # Historical attempts only. Never pattern-match or auto-cancel the
-          # safe Chronos bootstrap: doing so can interrupt a valid deterministic
-          # transport recovery while it is waiting for the ubuntu receipt.
-          for run_id in 32858420762 32858849735 32858516453 32861439353; do
+          # Explicit historical/superseded attempts only.  32862880330 used
+          # the pre-/tmp control root and is intentionally cancelled so the
+          # corrected rendezvous run can acquire the single Oracle runner.
+          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330; do
             cancel_run "$run_id"
           done
 
           # The original inline Chronos bootstrap is retired. Cancel any active
-          # run from that legacy workflow, but leave the -safe workflow alone.
+          # run from that legacy workflow, but leave current corrected bootstrap
+          # control-plane runs alone.
           curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
@@ -60,5 +61,5 @@ jobs:
             [ -z "$run_id" ] || cancel_run "$run_id"
           done < /tmp/old-inline-runs
 
-          echo 'safe_bootstrap_auto_cancel=DISABLED'
+          echo 'current_corrected_bootstrap_auto_cancel=DISABLED'
           echo 'superseded_recovery_cancel=PASS'
