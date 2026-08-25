@@ -34,9 +34,6 @@ def _share(path: Path, *, directory: bool = False) -> None:
     try:
         os.chmod(path, 0o2770 if directory else 0o660)
     except PermissionError:
-        # Existing shared directories may be owned by the peer identity. The
-        # installer establishes their mode; producer-owned artifacts remain
-        # strictly normalized below.
         if not directory:
             raise
 
@@ -107,7 +104,20 @@ def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     return {"ok": step["returncode"] == 0, "service": unit, "step": step}
 
 
-ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {"site.sync_build": _site_sync_build,"layoutlab.api.restart": _layoutlab_api_restart}
+def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
+    unit = "agentos-antigravity-relay.service"
+    step = _run(["systemctl", "--user", "restart", unit], cwd=Path.home(), timeout=30)
+    # The caller is a separate Action Relay service, so restarting Antigravity does
+    # not terminate the action currently producing this receipt.
+    return {"ok": step["returncode"] == 0, "service": unit, "step": step}
+
+
+ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    "site.sync_build": _site_sync_build,
+    "layoutlab.api.restart": _layoutlab_api_restart,
+    "agentos.antigravity.restart": _antigravity_restart,
+}
 
 
 class ActionRelayWorker:
