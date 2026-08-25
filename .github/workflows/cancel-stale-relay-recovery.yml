@@ -18,15 +18,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          KEEP_CHRONOS_SHA: 9b7d75ab2fed814a70c229c7a7ed23222973f6c1
+          KEEP_SAFE_SHA: f708d117ab36c191fc9760c9a135da93aebc5ec6
         shell: bash
         run: |
           set -euo pipefail
 
-          # Historical LLM self-repair runs. Cancelling them only releases CI
-          # capacity; quarantined capsules remain untouched.
-          for run_id in 32858420762 32858849735 32858516453; do
-            echo "Cancelling superseded recovery run $run_id"
+          cancel_run() {
+            local run_id="$1"
             code=$(curl -sS -o /tmp/cancel-$run_id.out -w '%{http_code}' \
               -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
@@ -34,39 +32,40 @@ jobs:
               -H 'X-GitHub-Api-Version: 2022-11-28' \
               "https://api.github.com/repos/$GH_REPO/actions/runs/$run_id/cancel")
             cat /tmp/cancel-$run_id.out || true
-            echo "http_code=$code"
-            case "$code" in 202|409) ;; *) exit 1 ;; esac
+            echo "run_id=$run_id http_code=$code"
+            case "$code" in 202|409) ;; *) return 1 ;; esac
+          }
+
+          for run_id in 32858420762 32858849735 32858516453; do
+            cancel_run "$run_id"
           done
 
-          # Keep only the newest production-safe Chronos bootstrap run. This is
-          # executed on GitHub-hosted infrastructure so it does not consume the
-          # single Oracle self-hosted runner we are trying to free.
-          runs=$(curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos.yml/runs?per_page=20")
-          printf '%s' "$runs" | python3 -c '
-          import json,sys
-          keep=sys.argv[1]
-          data=json.load(sys.stdin)
-          for r in data.get("workflow_runs", []):
-              if r.get("status") in {"queued","in_progress","waiting","pending"} and r.get("head_sha") != keep:
-                  print(r["id"])
-          ' "$KEEP_CHRONOS_SHA" > /tmp/stale-chronos-runs
-
-          while read -r run_id; do
-            [ -n "$run_id" ] || continue
-            echo "Cancelling superseded Chronos run $run_id"
-            code=$(curl -sS -o /tmp/cancel-chronos-$run_id.out -w '%{http_code}' \
-              -X POST \
+          list_active() {
+            local workflow="$1"
+            curl -fsSL \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H 'Accept: application/vnd.github+json' \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "https://api.github.com/repos/$GH_REPO/actions/runs/$run_id/cancel")
-            cat /tmp/cancel-chronos-$run_id.out || true
-            echo "http_code=$code"
-            case "$code" in 202|409) ;; *) exit 1 ;; esac
-          done < /tmp/stale-chronos-runs
+              "https://api.github.com/repos/$GH_REPO/actions/workflows/$workflow/runs?per_page=20"
+          }
+
+          # Retire every active run of the old inline bootstrap.
+          list_active oracle-bootstrap-action-relay-via-chronos.yml | python3 -c '
+          import json,sys
+          for r in json.load(sys.stdin).get("workflow_runs", []):
+              if r.get("status") in {"queued","in_progress","waiting","pending"}:
+                  print(r["id"])
+          ' > /tmp/old-inline-runs
+          while read -r run_id; do [ -z "$run_id" ] || cancel_run "$run_id"; done < /tmp/old-inline-runs
+
+          # Keep only the run created from the latest safe-script commit.
+          list_active oracle-bootstrap-action-relay-via-chronos-safe.yml | python3 -c '
+          import json,sys
+          keep=sys.argv[1]
+          for r in json.load(sys.stdin).get("workflow_runs", []):
+              if r.get("status") in {"queued","in_progress","waiting","pending"} and r.get("head_sha") != keep:
+                  print(r["id"])
+          ' "$KEEP_SAFE_SHA" > /tmp/old-safe-runs
+          while read -r run_id; do [ -z "$run_id" ] || cancel_run "$run_id"; done < /tmp/old-safe-runs
 
           echo 'superseded_recovery_cancel=PASS'
