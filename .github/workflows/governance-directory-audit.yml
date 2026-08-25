@@ -1,0 +1,85 @@
+name: AgentOS Governance Directory Audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'agent_core/governance_directory.py'
+      - 'scripts/governance_directory.py'
+      - 'scripts/core_services/port_manager.py'
+      - '.agent/roles/**'
+      - '.agent/SERVICES.md'
+      - 'scripts/os_watchdog.py'
+      - '.github/workflows/governance-directory-audit.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seed directory, resolve owners, and audit drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/governance-directory-audit.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "identity=$(id)"
+            export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+
+            echo '=== PYTHON COMPILE ==='
+            python3 -m py_compile agent_core/governance_directory.py scripts/governance_directory.py scripts/core_services/port_manager.py
+
+            echo '=== SEED ==='
+            python3 scripts/governance_directory.py seed
+
+            echo '=== RESOLVE PORT OWNER ==='
+            python3 scripts/governance_directory.py resolve capability://network.port.allocate
+
+            echo '=== RESOLVE SPEC STEWARD ==='
+            python3 scripts/governance_directory.py resolve capability://governance.spec.audit
+
+            echo '=== PORT REGISTRY ==='
+            python3 scripts/core_services/port_manager.py list --json
+
+            echo '=== VERIFY IMPLEMENTED GOVERNORS ==='
+            python3 scripts/governance_directory.py verify manager://port
+            python3 scripts/governance_directory.py verify service://agentos.watchdog
+            python3 scripts/governance_directory.py verify role://agentos.spec-steward
+
+            echo '=== AUDIT ==='
+            python3 scripts/governance_directory.py audit --write
+
+            echo '=== ACCEPTANCE ==='
+            python3 - <<'PY'
+            import json
+            from pathlib import Path
+            p=Path('/home/ubuntu/agent-data/governance/directory.json')
+            d=json.loads(p.read_text(encoding='utf-8'))
+            entities=d['entities']
+            assert 'manager://port' in entities
+            assert entities['manager://port']['authority']['exclusive'] is True
+            assert 'role://agentos.spec-steward' in entities
+            assert 'service://agentos.watchdog' in entities
+            assert 'policy://discover-before-invent' in entities
+            print(f"governance_directory=PASS entities={len(entities)}")
+            PY
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/governance-directory-audit.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(governance): directory audit on Oracle'
+          git push
