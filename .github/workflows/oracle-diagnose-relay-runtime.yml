@@ -28,12 +28,14 @@ jobs:
             ps -eo user,pid,lstart,ppid,args | grep -E 'antigravity_relay|action_relay|agentos-action-relay|agentos-antigravity' | grep -v grep || true
             echo '=== ANTIGRAVITY RECEIPT TMP ==='
             for f in /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/*.tmp; do [ -e "$f" ] || continue; echo "-- $f"; stat "$f" || true; cat "$f" || true; done
-            echo '=== ANTIGRAVITY PROCESSING SAMPLE ==='
-            for f in $(ls -tr /home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-*.json 2>/dev/null | head -3); do echo "-- $f"; cat "$f"; done
             echo '=== USER UNIT FILES ==='
             for f in /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service /home/ubuntu/.config/systemd/user/agentos-action-relay.service; do echo "-- $f"; cat "$f" 2>&1 || true; done
-            echo '=== JOURNAL UID1001 ==='
-            journalctl --no-pager --since '2026-08-25 08:00:00' _UID=1001 2>&1 | grep -E -i 'antigravity|relay|traceback|permission|error|exception' | tail -160 || true
+            echo '=== RUNTIME VNEXT AUTHORITY ==='
+            for p in /home/ubuntu/.local/share/agentos/runtime-vnext /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay.py /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py; do
+              ls -ld "$p" 2>&1 || true
+              if [ -w "$p" ]; then echo "writable=yes $p"; else echo "writable=no $p"; fi
+            done
+            git -C /home/ubuntu/.local/share/agentos/runtime-vnext status --short --branch 2>&1 || true
             echo '=== SPOOL ==='
             for d in /home/ubuntu/agent-data/runtime/antigravity-relay /home/ubuntu/agent-data/runtime/action-relay; do
               echo "-- $d"; ls -ld "$d" "$d"/inbox "$d"/processing "$d"/receipts 2>&1 || true
@@ -42,7 +44,7 @@ jobs:
               echo 'receipts:'; ls -lt "$d"/receipts 2>&1 | head -10 || true
             done
             echo '=== PATH AUTHORITY ==='
-            for p in /home/ubuntu/agentmanager /home/ubuntu/zeus-writer /home/ubuntu/zeus-writer/website /home/ubuntu/zeus-writer/website/dist /etc/nginx/sites-enabled/studio.milkcat.org /etc/nginx/sites-available/studio.milkcat.org; do
+            for p in /home/ubuntu/agentmanager /home/ubuntu/zeus-writer /home/ubuntu/zeus-writer/website /home/ubuntu/zeus-writer/website/dist /etc/nginx/sites-available/studio.milkcat.org; do
               ls -ld "$p" 2>&1 || true
               if [ -w "$p" ]; then echo "writable=yes $p"; else echo "writable=no $p"; fi
             done
