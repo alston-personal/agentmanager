@@ -32,7 +32,10 @@ jobs:
             echo '=== SERVICE STATUS ==='
             XDG_RUNTIME_DIR=/run/user/1001 systemctl --user --no-pager --full status agentos-action-relay.service 2>&1 || true
             echo '=== JOURNAL ==='
-            XDG_RUNTIME_DIR=/run/user/1001 journalctl --user -u agentos-action-relay.service -n 80 --no-pager 2>&1 || true
+            XDG_RUNTIME_DIR=/run/user/1001 journalctl --user -u agentos-action-relay.service -n 120 --no-pager 2>&1 || true
+            echo '=== DIRECT MODULE PROBE ==='
+            cd /home/ubuntu/.local/share/agentos/action-runtime
+            PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime /usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --help' 2>&1 || true
             echo '=== PROCESS ==='
             ps -eo user,group,pid,ppid,stat,etime,args | grep -F 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' | grep -v grep || true
           } 2>&1 | tee "$OUT"
@@ -49,7 +52,7 @@ jobs:
           mkdir -p .agentos/evidence
           cp /tmp/action-relay-service-diagnostic.txt "$E"
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email '4189826+github-actions[bot]@users.noreply.github.com'
           git add "$E"
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): diagnose Action Relay service'
