@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy persistent LayoutLib web UI and inspect routing
+      - name: Deploy persistent LayoutLib web UI and public tunnel
         shell: bash
         run: |
           set -euo pipefail
@@ -29,7 +29,8 @@ jobs:
           DATA=/home/ubuntu/agent-data
           CODE=/home/agentos-node/projects/layoutlib
           USER_SYSTEMD="$HOME/.config/systemd/user"
-          mkdir -p "$CODE" "$USER_SYSTEMD"
+          USER_BIN="$HOME/.local/bin"
+          mkdir -p "$CODE" "$USER_SYSTEMD" "$USER_BIN"
 
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -59,7 +60,7 @@ jobs:
           WorkingDirectory=$CODE
           Environment=PYTHONPATH=$CODE/src
           Environment=LAYOUTLIB_WEB_QUIET=1
-          ExecStart=/usr/bin/python3 $CODE/web_demo/server.py --host 0.0.0.0 --port $PORT
+          ExecStart=/usr/bin/python3 $CODE/web_demo/server.py --host 127.0.0.1 --port $PORT
           Restart=always
           RestartSec=2
 
@@ -83,53 +84,113 @@ jobs:
           print('local_web_health=PASS')
           PY
 
-            echo '=== LISTENERS ==='
-            ss -ltnp 2>/dev/null | grep -E ":${PORT}\\b|:80\\b|:443\\b" || true
+            echo '=== CLOUDFLARED USER INSTALL ==='
+            CF="$USER_BIN/cloudflared"
+            if [ ! -x "$CF" ]; then
+              ARCH=$(uname -m)
+              case "$ARCH" in
+                aarch64|arm64) ASSET=cloudflared-linux-arm64 ;;
+                x86_64|amd64) ASSET=cloudflared-linux-amd64 ;;
+                *) echo "unsupported_arch=$ARCH"; exit 3 ;;
+              esac
+              curl -fL --retry 3 --connect-timeout 10 --max-time 120 \
+                "https://github.com/cloudflare/cloudflared/releases/latest/download/$ASSET" \
+                -o "$CF"
+              chmod 0755 "$CF"
+            fi
+            "$CF" --version
 
-            echo '=== PUBLIC ADDRESS DISCOVERY ==='
-            PUBLIC_IP=''
-            for endpoint in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
-              PUBLIC_IP=$(curl -fsS --max-time 4 "$endpoint" 2>/dev/null | tr -d '\r\n ' || true)
-              [ -n "$PUBLIC_IP" ] && break
+            TUNNEL_UNIT="$USER_SYSTEMD/layoutlib-tunnel.service"
+            cat > "$TUNNEL_UNIT" <<EOF
+          [Unit]
+          Description=LayoutLib Cloudflare Quick Tunnel
+          After=network-online.target layoutlib-web.service
+          Wants=network-online.target
+          Requires=layoutlib-web.service
+
+          [Service]
+          Type=simple
+          ExecStart=$CF tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$PORT
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+            systemctl --user daemon-reload
+            systemctl --user enable layoutlib-tunnel.service
+            systemctl --user restart layoutlib-tunnel.service
+
+            echo '=== WAIT FOR PUBLIC TUNNEL ==='
+            PUBLIC_URL=''
+            for i in $(seq 1 60); do
+              PUBLIC_URL=$(journalctl --user -u layoutlib-tunnel.service --no-pager -n 120 2>/dev/null \
+                | grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | tail -n 1 || true)
+              [ -n "$PUBLIC_URL" ] && break
+              sleep 1
             done
-            echo "public_ip=${PUBLIC_IP:-UNKNOWN}"
-            if [ -n "$PUBLIC_IP" ]; then
-              echo "candidate_direct_url=http://${PUBLIC_IP}:${PORT}/"
+            if [ -z "$PUBLIC_URL" ]; then
+              echo 'cloudflare_quick_tunnel_url=NOT_FOUND'
+              journalctl --user -u layoutlib-tunnel.service --no-pager -n 120 || true
+              exit 4
             fi
+            echo "public_url=$PUBLIC_URL/"
 
-            echo '=== REVERSE PROXY DISCOVERY ==='
-            command -v nginx >/dev/null 2>&1 && echo "nginx_bin=$(command -v nginx)" || echo 'nginx_bin=NONE'
-            command -v caddy >/dev/null 2>&1 && echo "caddy_bin=$(command -v caddy)" || echo 'caddy_bin=NONE'
-            command -v apache2 >/dev/null 2>&1 && echo "apache2_bin=$(command -v apache2)" || true
-            command -v httpd >/dev/null 2>&1 && echo "httpd_bin=$(command -v httpd)" || true
-            command -v cloudflared >/dev/null 2>&1 && echo "cloudflared_bin=$(command -v cloudflared)" || echo 'cloudflared_bin=NONE'
-            echo "sudo_noninteractive=$(sudo -n true >/dev/null 2>&1 && echo YES || echo NO)"
+            echo '=== EXTERNAL PUBLIC WEB PROBE ==='
+            HEALTH_CODE=''
+            for i in $(seq 1 30); do
+              HEALTH_CODE=$(curl -sS -o /tmp/layoutlib-public-health -w '%{http_code}' --connect-timeout 5 --max-time 10 "$PUBLIC_URL/api/health" 2>/dev/null || true)
+              [ "$HEALTH_CODE" = 200 ] && break
+              sleep 1
+            done
+            echo "public_health_http_code=${HEALTH_CODE:-000}"
+            test "$HEALTH_CODE" = 200
+            python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/layoutlib-public-health'))
+          assert data.get('ok') is True and data.get('service')=='layoutlib-web', data
+          print('public_health_payload=PASS')
+          PY
 
-            if [ -d /etc/nginx ]; then
-              echo '--- nginx readable config hints ---'
-              grep -RhsE 'server_name|proxy_pass|listen 443|listen 80' /etc/nginx 2>/dev/null | head -n 120 || true
-            fi
-            if [ -d /etc/apache2 ]; then
-              echo '--- apache readable config hints ---'
-              grep -RhsE 'ServerName|ProxyPass|VirtualHost' /etc/apache2/sites-enabled /etc/apache2/sites-available 2>/dev/null | head -n 120 || true
-            fi
-            if [ -d /etc/caddy ]; then
-              echo '--- caddy readable config hints ---'
-              grep -RhsE 'reverse_proxy|https?://' /etc/caddy 2>/dev/null | head -n 120 || true
-            fi
+            UI_CODE=$(curl -sS -o /tmp/layoutlib-public-ui -w '%{http_code}' --connect-timeout 5 --max-time 15 "$PUBLIC_URL/" 2>/dev/null || true)
+            echo "public_ui_http_code=${UI_CODE:-000}"
+            test "$UI_CODE" = 200
+            grep -q 'LayoutLib' /tmp/layoutlib-public-ui
+            echo 'public_ui_payload=PASS'
 
-            echo '=== DIRECT PUBLIC PROBE (BEST EFFORT) ==='
-            if [ -n "$PUBLIC_IP" ]; then
-              CODE_HTTP=$(curl -sS -o /tmp/layoutlib-public-body -w '%{http_code}' --connect-timeout 3 --max-time 6 "http://${PUBLIC_IP}:${PORT}/api/health" 2>/dev/null || true)
-              echo "direct_public_http_code=${CODE_HTTP:-000}"
-            fi
+            echo '=== PUBLIC PARSE PROBE ==='
+            python3 - "$PUBLIC_URL" "$CODE/tests/fixtures/demo_room.pgm" <<'PY'
+          import base64,json,sys,urllib.request
+          base=sys.argv[1].rstrip('/')
+          raw=open(sys.argv[2],'rb').read()
+          payload=json.dumps({
+              'filename':'demo_room.pgm',
+              'content_base64':base64.b64encode(raw).decode(),
+              'meters_per_pixel':0.02,
+              'min_wall_length_px':30,
+          }).encode()
+          req=urllib.request.Request(base+'/api/parse', data=payload, headers={'Content-Type':'application/json'}, method='POST')
+          with urllib.request.urlopen(req, timeout=20) as r:
+              data=json.load(r)
+          assert data.get('ok') is True, data
+          assert data.get('wall_count')==4, data
+          print('public_parse=PASS walls=4 spatial_ir='+data['ir']['version'])
+          PY
+
+            echo '=== SERVICE STATE ==='
+            systemctl --user is-active layoutlib-web.service
+            systemctl --user is-active layoutlib-tunnel.service
 
             echo '=== ACCEPTANCE ==='
-            echo 'persistent_service=PASS'
+            echo 'persistent_web_service=PASS'
+            echo 'persistent_tunnel_service=PASS'
             echo "port=$PORT"
-            echo "local_url=http://127.0.0.1:${PORT}/"
-            echo "public_candidate=${PUBLIC_IP:+http://${PUBLIC_IP}:${PORT}/}"
-            echo 'public_route_verified=NO'
+            echo "public_url=$PUBLIC_URL/"
+            echo 'public_health=PASS'
+            echo 'public_ui=PASS'
+            echo 'public_parse=PASS'
+            echo 'goal_direct_web_ui=PASS'
           } 2>&1 | tee "$OUT"
 
       - name: Commit deployment evidence
@@ -140,5 +201,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/layoutlib-public-web.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(layoutlib): persistent web deployment probe'
+          git commit -m 'evidence(layoutlib): public Web UI deployment verified'
           git push
