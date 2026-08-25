@@ -22,6 +22,9 @@ jobs:
           REPO=/home/ubuntu/agentmanager/workspace/leopardcat-tarot
           WORK=/tmp/leopardcat-divination-web-v2
           BRANCH=feature/modular-divination-master
+          git config --global --add safe.directory /home/ubuntu/leopardcat-tarot
+          git config --global --add safe.directory "$REPO"
+          git config --global --add safe.directory "$WORK"
           git -C "$REPO" fetch origin "$BRANCH" --quiet
           rm -rf "$WORK"
           git -C "$REPO" worktree add -B "$BRANCH" "$WORK" "origin/$BRANCH" >/dev/null
