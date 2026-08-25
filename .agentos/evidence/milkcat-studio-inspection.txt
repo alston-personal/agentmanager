@@ -1,9 +1,9 @@
-timestamp_utc=2026-08-25T06:08:46Z
+timestamp_utc=2026-08-25T06:09:39Z
 hostname=instance-20260129-0852
 === HTTP HEADERS ===
 HTTP/1.1 200 OK
 Server: nginx/1.18.0 (Ubuntu)
-Date: Tue, 25 Aug 2026 06:08:46 GMT
+Date: Tue, 25 Aug 2026 06:09:39 GMT
 Content-Type: text/html
 Content-Length: 11733
 Last-Modified: Fri, 21 Aug 2026 12:01:18 GMT
@@ -26,10 +26,213 @@ Accept-Ranges: bytes
 👁️ 總瀏覽量 <span id="busuanzi_value_site_pv" data-astro-cid-j7pv25f6>--</span> 次
 </span> <span class="divider" data-astro-cid-j7pv25f6>|</span> <span id="busuanzi_container_site_uv" style="display:none;" data-astro-cid-j7pv25f6>
 👥 訪客總數 <span id="busuanzi_value_site_uv" data-astro-cid-j7pv25f6>--</span> 人
-</span> </p> </footer> </div> <div id="portal-frame-view" style="display: none; width: 100%; height: calc(100vh - 64px); border: none; overflow: hidden;" data-astro-cid-j7pv25f6> <iframe id="portal-iframe" src="" style="width: 100%; height: 100%; border: none;" data-astro-cid-j7pv25f6></iframe> </div> </body></html>=== DNS ===
-161.33.24.170   STREAM studio.milkcat.org
-161.33.24.170   DGRAM  
-161.33.24.170   RAW    
+</span> </p> </footer> </div> <div id="portal-frame-view" style="display: none; width: 100%; height: calc(100vh - 64px); border: none; overflow: hidden;" data-astro-cid-j7pv25f6> <iframe id="portal-iframe" src="" style="width: 100%; height: 100%; border: none;" data-astro-cid-j7pv25f6></iframe> </div> </body></html>=== EXACT STUDIO NGINX ===
+server {
+    listen 3001 ssl;
+    server_name studio.milkcat.org;
+
+    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+}
+
+server {
+    listen 8099;
+    server_name studio.milkcat.org;
+
+    root /home/ubuntu/prophecy-verifier;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 80;
+    server_name studio.milkcat.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name studio.milkcat.org;
+
+    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /home/ubuntu/zeus-writer/website/dist;
+    index index.html;
+
+
+    location / {
+        try_files $uri $uri/ /index.html;
+      }
+
+    location /prophecy/ {
+        alias /home/ubuntu/prophecy-verifier/;
+        try_files $uri $uri/ /prophecy/index.html;
+    }
+
+    location /api/cookies {
+        proxy_pass http://127.0.0.1:8088/api/cookies;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /novels/ {
+        alias /home/ubuntu/zeus-writer/website/dist/;
+        try_files $uri $uri/ /novels/index.html;
+      }
+
+    location /dashboard {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /ipgenome/api/ {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+      }
+
+    location /ipgenome {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+      }
+
+    location /iftv/renders/ {
+        alias /home/ubuntu/if-tv-station/public/renders/;
+        access_log off;
+    }
+
+    location /iftv/assets/uploads/ {
+        alias /home/ubuntu/if-tv-station/public/assets/uploads/;
+        access_log off;
+    }
+
+    location /iftv/assets/intros/ {
+        alias /home/ubuntu/if-tv-station/public/assets/intros/;
+        access_log off;
+    }
+
+    location /iftv {
+        proxy_pass http://localhost:3005;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /chamber-api {
+        proxy_pass http://localhost:3011;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location = /echo/chamber-extension.zip {
+        alias /home/ubuntu/metashield-protocol/web-feed/public/chamber-extension.zip;
+    }
+
+    location = /echo/README_TEST.md {
+        alias /home/ubuntu/metashield-protocol/web-feed/public/README_TEST.md;
+        default_type text/markdown;
+        charset utf-8;
+        charset_types text/markdown;
+    }
+
+    location /echo {
+        proxy_pass http://localhost:3010;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /hanzi {
+        proxy_pass http://localhost:3020;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+
+    location /acas/ {
+        proxy_pass http://localhost:8090/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location = /acas {
+        return 301 https://$host/acas/;
+    }
+
+    error_page 404 /index.html;
+}
 === LISTENERS ===
 State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
 LISTEN 0      4096       127.0.0.1:32911      0.0.0.0:*          
@@ -78,57 +281,82 @@ LISTEN 0      511                *:3020             *:*
 LISTEN 0      511                *:3010             *:*          
 LISTEN 0      511                *:3000             *:*          
 LISTEN 0      511                *:3005             *:*          
-=== NGINX/SITES ===
--- /etc/nginx/sites-enabled
-/etc/nginx/sites-enabled/leopard
-/etc/nginx/sites-enabled/n8n
-/etc/nginx/sites-enabled/vault:2:    server_name vault.milkcat.org;
-/etc/nginx/sites-enabled/vault:5:        proxy_pass http://localhost:8080;
-/etc/nginx/sites-enabled/vault:25:    server_name vault.milkcat.org;
-/etc/nginx/sites-enabled/leopard:2:    server_name leopardcat-tarot.milkcat.org leopard.milkcat.org;
-/etc/nginx/sites-enabled/leopard:4:    root /home/ubuntu/leopardcat-tarot/website/dist;
-/etc/nginx/sites-enabled/leopard:9:        proxy_pass http://127.0.0.1:8088;
-/etc/nginx/sites-enabled/leopard:17:        proxy_pass http://127.0.0.1:8088;
-/etc/nginx/sites-enabled/leopard:29:        proxy_pass http://127.0.0.1:8088/api/;
-/etc/nginx/sites-enabled/leopard:65:    server_name leopardcat-tarot.milkcat.org leopard.milkcat.org;
-/etc/nginx/sites-enabled/studio.milkcat.org:3:    server_name studio.milkcat.org;
-/etc/nginx/sites-enabled/studio.milkcat.org:5:    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
-/etc/nginx/sites-enabled/studio.milkcat.org:6:    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
-/etc/nginx/sites-enabled/studio.milkcat.org:11:        proxy_pass http://localhost:3001;
-/etc/nginx/sites-enabled/studio.milkcat.org:25:    server_name studio.milkcat.org;
-/etc/nginx/sites-enabled/studio.milkcat.org:27:    root /home/ubuntu/prophecy-verifier;
-/etc/nginx/sites-enabled/studio.milkcat.org:37:    server_name studio.milkcat.org;
-/etc/nginx/sites-enabled/studio.milkcat.org:43:    server_name studio.milkcat.org;
-/etc/nginx/sites-enabled/studio.milkcat.org:45:    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
-/etc/nginx/sites-enabled/studio.milkcat.org:46:    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
-/etc/nginx/sites-enabled/studio.milkcat.org:50:    root /home/ubuntu/zeus-writer/website/dist;
-/etc/nginx/sites-enabled/studio.milkcat.org:64:        proxy_pass http://127.0.0.1:8088/api/cookies;
-/etc/nginx/sites-enabled/studio.milkcat.org:77:        proxy_pass http://localhost:3000;
-/etc/nginx/sites-enabled/studio.milkcat.org:89:        proxy_pass http://127.0.0.1:3002;
-/etc/nginx/sites-enabled/studio.milkcat.org:101:        proxy_pass http://127.0.0.1:3002;
-/etc/nginx/sites-enabled/studio.milkcat.org:130:        proxy_pass http://localhost:3005;
-/etc/nginx/sites-enabled/studio.milkcat.org:142:        proxy_pass http://localhost:3011;
-/etc/nginx/sites-enabled/studio.milkcat.org:165:        proxy_pass http://localhost:3010;
-/etc/nginx/sites-enabled/studio.milkcat.org:177:        proxy_pass http://localhost:3020;
-/etc/nginx/sites-enabled/studio.milkcat.org:190:        proxy_pass http://localhost:8090/;
-/etc/nginx/sites-enabled/test.cat.org:4:    server_name test.cat.org;
-/etc/nginx/sites-enabled/test.cat.org:7:        proxy_pass http://localhost:8888;
-/etc/nginx/sites-enabled/n8n:2:    server_name n8n.milkcat.org;
-/etc/nginx/sites-enabled/n8n:10:        proxy_pass http://127.0.0.1:8765/;
-/etc/nginx/sites-enabled/n8n:22:        proxy_pass http://localhost:5678;
-/etc/nginx/sites-enabled/n8n:46:    server_name n8n.milkcat.org;
--- /etc/nginx/conf.d
-=== USER SERVICES ===
-=== SYSTEM SERVICES FILTER ===
-  docker.service                                                             loaded    active   running Docker Application Container Engine
-  ip-genome-studio.service                                                   loaded    active   running IP Genome Studio web app
-  kmod-static-nodes.service                                                  loaded    active   exited  Create List of Static Device Nodes
-  nginx.service                                                              loaded    active   running A high performance web server and a reverse proxy server
-  systemd-tmpfiles-setup-dev.service                                         loaded    active   exited  Create Static Device Nodes in /dev
-=== LIKELY WEB ROOTS ===
--- /var/www
--- /srv
--- /opt
--- /home/ubuntu
--- /home/agentos-node
-=== GIT REPOS LIKELY WEB ===
+=== PROCESSES ===
+root         836       1 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+root         987       1 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+opc         1881    1732 node /usr/local/bin/n8n
+ubuntu    176130 3815324 python3 /home/ubuntu/acas/run_demo.py
+ubuntu    183009 3815324 npm run start -p 3010
+ubuntu    183021  183009 sh -c next start -p 3010
+opc       233341    1881 node --disallow-code-generation-from-strings --disable-proto=delete /usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+task-runner@file+packages+@n8n+task-runner_@opentelemetry+api@1.9.0_@opentelemetry_c2ea36637674b99f45b42fa0a37672ba/node_modules/@n8n/task-runner/dist/start.js
+ubuntu    384625    1027 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/core_services/session_syncer.py
+ubuntu    472462    1027 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+ubuntu    472463  472462 /bin/sh -c python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+ubuntu    472465  472463 python3 scripts/pulse.py --agent Architect --task Heartbeat Monitor --status active
+ubuntu    560797       1 python3 scripts/server.py
+ubuntu    561151    1027 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/tg_bridge.py
+ubuntu   1065265    1027 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/lobster.py --loop
+ubuntu   1340700    1027 /usr/bin/node /home/ubuntu/openclaw/dist/index.js gateway --port 18789
+ubuntu   1442630       1 /usr/bin/python3 /home/ubuntu/.local/bin/litellm --config ./config.yml --port 4000 --max_tokens 256
+ubuntu   2527463    1027 /home/ubuntu/agentmanager/.venv/bin/python /home/ubuntu/agentmanager/scripts/os_watchdog.py
+ubuntu   2541312 2541305 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/server-main.js --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms
+ubuntu   2541357 2541312 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
+ubuntu   2541364 2541312 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
+ubuntu   2541389 2541357 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-6b7891f61e1c53de75eb.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   2541390 2541357 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-3a5130c03dca555b2485.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   2541403 2541390 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
+ubuntu   2541473 2541312 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=ptyHost --logsPath /home/ubuntu/.antigravity-ide-server/data/logs/20260824T082547
+ubuntu   2541516 2541357 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/antigravity/bin/language_server_linux_arm --enable_lsp --csrf_token 0000b0a9-ca25-48e6-8aa2-e5d1f775e73a --extension_server_port 38117 --extension_server_csrf_token ec7cd454-8431-4f27-a19e-5f6fe003012b --workspace_id file_home_ubuntu_agentmanager --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --subclient_type ide --app_data_dir antigravity-ide --parent_pipe_path /tmp/server_99a5a964f3347bd3
+ubuntu   2541525 2541516 npm exec chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux
+ubuntu   2541682 2541357 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=2541357
+ubuntu   2541688 2541357 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=2541357
+ubuntu   2542123 2541357 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=2541357
+ubuntu   2657527    1027 /usr/bin/python3 scripts/distributed_gateway.py
+ubuntu   2657535    1027 /usr/bin/python3 scripts/provider_bridge.py
+ubuntu   2770188 3815324 npm start
+ubuntu   2770195 3815324 npm start -p 3005
+ubuntu   2770238 2770195 sh -c next start -p 3005
+ubuntu   2770247 3815324 node /home/ubuntu/hanzi-gene-database/server.js
+agentos+ 2790389       1 /bin/bash /home/agentos-node/runner/runsvc.sh
+agentos+ 2790392 2790389 ./externals/node20/bin/node ./bin/RunnerService.js
+agentos+ 2790404 2790392 /home/agentos-node/runner/bin/Runner.Listener run --startuptype service
+ubuntu   2875185    1027 /usr/bin/python3 fortune_server.py
+ubuntu   2986846       1 /usr/bin/node /home/ubuntu/ip-genome-studio/server.mjs
+ubuntu   3036605 2541312 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
+ubuntu   3036616 2541312 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
+ubuntu   3036677 3036605 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/markdown-language-features/dist/serverWorkerMain --node-ipc --clientProcessId=3036605
+ubuntu   3037780 3037749 npm exec chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux
+ubuntu   3037870 3036605 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=3036605
+ubuntu   3037915 3036605 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/8e390915e77f29df6b96/tscancellation-65afaac2814184ea852e.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   3037916 3036605 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/8e390915e77f29df6b96/tscancellation-6229d123100d6b96bf3e.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   3037929 3037916 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
+ubuntu   3037936 3036605 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=3036605
+ubuntu   3037942 3036605 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=3036605
+ubuntu   3107825    1027 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+agentos+ 3240435 2790404 /home/agentos-node/runner/bin/Runner.Worker spawnclient 158 161
+agentos+ 3240631 3240435 /usr/bin/bash --noprofile --norc -e -o pipefail /home/agentos-node/runner/_work/_temp/27621018-438d-4ee4-bada-d39647233bc7.sh
+agentos+ 3240633 3240631 /usr/bin/bash --noprofile --norc -e -o pipefail /home/agentos-node/runner/_work/_temp/27621018-438d-4ee4-bada-d39647233bc7.sh
+ubuntu   3451574 3815324 node /home/ubuntu/metashield-protocol/api/server.js
+=== WEBSITE CHECKOUT ===
+repo=
+branch=
+sha=
+status=0
+website/src/pages/agentos/[id].astro
+website/src/pages/agentos/index.astro
+website/src/pages/aos/[id].astro
+website/src/pages/coming-soon.astro
+website/src/pages/index.astro
+website/src/pages/language-notes/[slug].astro
+website/src/pages/language-notes/index.astro
+website/src/pages/omnirealm/index.astro
+website/src/pages/t/[id].astro
+website/src/pages/td/[id].astro
+website/src/pages/tech-notes/[slug].astro
+website/src/pages/tech-notes/index.astro
+website/src/pages/testimony/[slug].astro
+website/src/pages/testimony/index.astro
+website/src/pages/tiandao/[id].astro
+website/src/pages/tiandao/index.astro
+website/src/pages/translator/[slug].astro
+website/src/pages/translator/index.astro
