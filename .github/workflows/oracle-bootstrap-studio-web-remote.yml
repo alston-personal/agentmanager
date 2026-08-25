@@ -1,0 +1,90 @@
+name: Oracle Bootstrap Studio Web Remote
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-bootstrap-studio-web-remote.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify independent checkout and GitHub authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/studio-web-remote-bootstrap.txt
+          TARGET=/home/agentos-node/projects/studio-web
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_identity=$(id)"
+            echo "target=$TARGET"
+            test -d "$TARGET/.git"
+            git -C "$TARGET" status --short
+            test -z "$(git -C "$TARGET" status --porcelain)"
+            echo "local_head=$(git -C "$TARGET" rev-parse HEAD)"
+            echo 'local_checkout_clean=PASS'
+            echo '=== GH AUTH ==='
+            if ! command -v gh >/dev/null 2>&1; then
+              echo 'gh_cli=MISSING'
+              echo 'remote_bootstrap=NO_GO'
+              exit 30
+            fi
+            echo "gh_cli=$(command -v gh)"
+            gh auth status 2>&1 | sed -E 's/(token:).*/\1 [REDACTED]/I' || true
+            echo '=== REMOTE EXISTENCE ==='
+            if gh repo view alston-personal/studio-web --json nameWithOwner,visibility >/tmp/studio-web-remote.json 2>/tmp/studio-web-remote.err; then
+              cat /tmp/studio-web-remote.json
+              echo 'remote_exists=YES'
+            else
+              echo 'remote_exists=NO'
+              cat /tmp/studio-web-remote.err || true
+              echo '=== CREATE PRIVATE REMOTE ==='
+              if gh repo create alston-personal/studio-web --private --description 'Independent source for studio.milkcat.org platform web shell and website-owned integrations' >/tmp/studio-web-create.out 2>/tmp/studio-web-create.err; then
+                cat /tmp/studio-web-create.out
+                echo 'remote_create=PASS'
+              else
+                cat /tmp/studio-web-create.err || true
+                echo 'remote_create=FAIL'
+                echo 'remote_bootstrap=NO_GO'
+                exit 31
+              fi
+            fi
+            echo '=== PUSH INITIAL INDEPENDENT SOURCE ==='
+            git -C "$TARGET" remote remove origin 2>/dev/null || true
+            git -C "$TARGET" remote add origin https://github.com/alston-personal/studio-web.git
+            if gh auth setup-git >/tmp/studio-web-auth-setup.out 2>/tmp/studio-web-auth-setup.err; then
+              cat /tmp/studio-web-auth-setup.out || true
+            else
+              cat /tmp/studio-web-auth-setup.err || true
+            fi
+            git -C "$TARGET" push -u origin main
+            echo 'initial_push=PASS'
+            echo 'production_cutover=NO'
+            echo 'studio_web_remote_bootstrap=PASS'
+          } 2>&1 | tee "$OUT"
+      - name: Commit bootstrap evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-web-remote-bootstrap.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-web-remote-bootstrap.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-web-remote-bootstrap.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): remote bootstrap capability'
+          git push origin HEAD:main
