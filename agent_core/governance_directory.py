@@ -7,8 +7,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover
+    yaml = None
+
+PROJECT_ROOT = Path(os.environ.get("AGENTMANAGER_ROOT", Path(__file__).resolve().parents[1]))
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
 REGISTRY_PATH = DATA_ROOT / "governance" / "directory.json"
+ROLE_REGISTRY_PATH = PROJECT_ROOT / ".agent" / "roles" / "registry.yaml"
 
 VALID_KINDS = {"role", "capability", "manager", "service", "resource", "policy", "spec", "project", "node"}
 VALID_STATES = {"declared", "implemented", "deployed", "observed", "verified", "stale", "drifted", "superseded", "retired"}
@@ -55,7 +62,9 @@ def load_directory(path: Path = REGISTRY_PATH) -> dict:
 def save_directory(data: dict, path: Path = REGISTRY_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data["updated_at"] = _now()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 def register(entity: GovernanceEntity, *, replace: bool = False, path: Path = REGISTRY_PATH) -> GovernanceEntity:
@@ -65,7 +74,6 @@ def register(entity: GovernanceEntity, *, replace: bool = False, path: Path = RE
     if current and not replace:
         raise ValueError(f"entity already exists: {entity.id}")
 
-    # Enforce exclusive ownership before write.
     if entity.authority.get("exclusive"):
         claimed = set(entity.owns)
         for other_id, other in data["entities"].items():
@@ -75,6 +83,23 @@ def register(entity: GovernanceEntity, *, replace: bool = False, path: Path = RE
                 overlap = sorted(claimed.intersection(other.get("owns", [])))
                 raise ValueError(f"exclusive ownership conflict with {other_id}: {overlap}")
 
+    data["entities"][entity.id] = asdict(entity)
+    save_directory(data, path)
+    return entity
+
+
+def upsert(entity: GovernanceEntity, *, path: Path = REGISTRY_PATH) -> GovernanceEntity:
+    """Replace an entity while preserving runtime verification metadata when compatible."""
+    entity.validate()
+    data = load_directory(path)
+    current = data["entities"].get(entity.id)
+    if current:
+        entity.last_verified_at = current.get("last_verified_at")
+        if current.get("state") in {"verified", "observed", "deployed"} and entity.state not in {"retired", "superseded", "stale"}:
+            entity.state = current["state"]
+        merged_meta = dict(entity.metadata or {})
+        merged_meta.update(current.get("metadata") or {})
+        entity.metadata = merged_meta or None
     data["entities"][entity.id] = asdict(entity)
     save_directory(data, path)
     return entity
@@ -92,10 +117,10 @@ def list_entities(kind: str | None = None, path: Path = REGISTRY_PATH) -> list[d
 
 
 def resolve(capability: str, path: Path = REGISTRY_PATH) -> list[dict]:
-    """Resolve who owns/provides a capability. Active exclusive owners sort first."""
+    """Resolve active owners/providers of a capability; exclusive owners sort first."""
     out = []
     for entity in load_directory(path)["entities"].values():
-        if entity.get("state") in {"retired", "superseded"}:
+        if entity.get("state") in {"retired", "superseded", "stale"}:
             continue
         if capability in entity.get("owns", []) or capability in entity.get("provides", []):
             out.append(entity)
@@ -117,68 +142,80 @@ def mark_verified(entity_id: str, state: str = "verified", *, path: Path = REGIS
     return entity
 
 
+def sync_roles_from_canonical_registry(path: Path = REGISTRY_PATH) -> None:
+    """Mirror canonical role contracts into the query directory.
+
+    `.agent/roles/registry.yaml` remains the source of truth for role semantics.
+    The Governance Directory is a runtime/query index, not a second role authority.
+    """
+    if yaml is None or not ROLE_REGISTRY_PATH.exists():
+        return
+    data = yaml.safe_load(ROLE_REGISTRY_PATH.read_text(encoding="utf-8")) or {}
+    role_set_version = str(data.get("role_set_version") or "unknown")
+    for role in data.get("roles", []) or []:
+        if not isinstance(role, dict) or not role.get("id"):
+            continue
+        rid = str(role["id"])
+        status = str(role.get("status") or "active")
+        state = "declared" if status in {"active", "proposed"} else "retired"
+        if status == "stale":
+            state = "stale"
+        raw_caps = role.get("capabilities") or []
+        provides = [f"capability://{c}" if not str(c).startswith("capability://") else str(c) for c in raw_caps]
+        entity = GovernanceEntity(
+            id=f"role://{rid}",
+            kind="role",
+            name=str(role.get("name") or rid),
+            owns=[],
+            provides=provides,
+            implementation={
+                "canonical_registry": str(ROLE_REGISTRY_PATH.relative_to(PROJECT_ROOT)),
+                "source": role.get("source"),
+            },
+            authority={"exclusive": False, "canonical_role_contract": True},
+            state=state,
+            metadata={
+                "role_status": status,
+                "role_kind": role.get("kind"),
+                "purpose": role.get("purpose"),
+                "role_set_version": role_set_version,
+                "must_obey": role.get("must_obey") or [],
+            },
+        )
+        upsert(entity, path=path)
+
+    for legacy in data.get("legacy_instances", []) or []:
+        if not isinstance(legacy, dict) or not legacy.get("id"):
+            continue
+        entity = GovernanceEntity(
+            id=f"role://{legacy['id']}",
+            kind="role",
+            name=str(legacy["id"]),
+            owns=[],
+            provides=[],
+            implementation={"source": legacy.get("source"), "canonical_registry": str(ROLE_REGISTRY_PATH.relative_to(PROJECT_ROOT))},
+            authority={"exclusive": False, "canonical_role_contract": True},
+            state="stale" if legacy.get("status") == "stale" else "retired",
+            metadata={"reason": legacy.get("reason"), "role_set_version": role_set_version},
+        )
+        upsert(entity, path=path)
+
+
 def seed_core(path: Path = REGISTRY_PATH) -> None:
+    # Roles are mirrored from the canonical versioned role registry, never hand-copied here.
+    sync_roles_from_canonical_registry(path)
+
     core: Iterable[GovernanceEntity] = [
         GovernanceEntity(
             id="manager://port",
             kind="manager",
             name="AgentOS Port Manager",
             owns=["capability://network.port.allocate", "capability://network.port.register", "capability://network.port.release"],
-            provides=[],
+            provides=["capability://network.port.allocate", "capability://network.port.register", "capability://network.port.release"],
             implementation={"repo":"alston-personal/agentmanager", "path":"scripts/core_services/port_manager.py", "state_path":"/home/ubuntu/agent-data/config/port_registry.json"},
             authority={"exclusive": True, "governance_required": True},
             state="implemented",
-            owner="role://agentos.paw",
-        ),
-        GovernanceEntity(
-            id="role://agentos.spec-steward",
-            kind="role",
-            name="AgentOS Spec Steward",
-            owns=["capability://governance.spec.audit", "capability://governance.spec.drift-detect"],
-            provides=["capability://governance.spec.audit"],
-            implementation={"repo":"alston-personal/agentmanager", "path":"scripts/spec_steward.py", "definition":".agent/roles/instances/agentos_spec_steward.md"},
-            authority={"exclusive": True, "governance_required": False},
-            state="implemented",
-        ),
-        GovernanceEntity(
-            id="role://agentos.weaver",
-            kind="role",
-            name="LCS Weaver",
-            owns=["capability://governance.spec.define", "capability://architecture.design"],
-            provides=["capability://governance.spec.define", "capability://architecture.design"],
-            implementation={"definition":".agent/roles/parents/lcs_weaver.md"},
-            authority={"exclusive": False},
-            state="declared",
-        ),
-        GovernanceEntity(
-            id="role://agentos.paw",
-            kind="role",
-            name="LCS The Paw",
-            owns=["capability://implementation.code", "capability://implementation.automation"],
-            provides=["capability://implementation.code", "capability://implementation.automation"],
-            implementation={"definition":".agent/roles/parents/lcs_the_paw.md"},
-            authority={"exclusive": False},
-            state="declared",
-        ),
-        GovernanceEntity(
-            id="role://agentos.claw",
-            kind="role",
-            name="LCS The Claw",
-            owns=["capability://security.audit", "capability://validation.breaking-test"],
-            provides=["capability://security.audit", "capability://validation.breaking-test"],
-            implementation={"definition":".agent/roles/parents/lcs_the_claw.md"},
-            authority={"exclusive": False},
-            state="declared",
-        ),
-        GovernanceEntity(
-            id="role://agentos.whisperer",
-            kind="role",
-            name="LCS Whisperer",
-            owns=["capability://ideation.prototype", "capability://ux.concept"],
-            provides=["capability://ideation.prototype", "capability://ux.concept"],
-            implementation={"definition":".agent/roles/parents/lcs_whisperer.md"},
-            authority={"exclusive": False},
-            state="declared",
+            owner="role://sector.paw",
         ),
         GovernanceEntity(
             id="service://agentos.watchdog",
@@ -189,6 +226,7 @@ def seed_core(path: Path = REGISTRY_PATH) -> None:
             implementation={"repo":"alston-personal/agentmanager", "path":"scripts/os_watchdog.py", "registry":".agent/SERVICES.md"},
             authority={"exclusive": True, "governance_required": True},
             state="implemented",
+            owner="role://governance.keeper",
         ),
         GovernanceEntity(
             id="policy://discover-before-invent",
@@ -199,11 +237,11 @@ def seed_core(path: Path = REGISTRY_PATH) -> None:
             implementation={"rule":"Resolve owner/capability before new implementation; discover and register only when unresolved."},
             authority={"exclusive": False},
             state="declared",
+            owner="role://governance.keeper",
         ),
     ]
     for entity in core:
-        if get(entity.id, path) is None:
-            register(entity, path=path)
+        upsert(entity, path=path)
 
 
 if __name__ == "__main__":
