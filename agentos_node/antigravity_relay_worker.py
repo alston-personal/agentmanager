@@ -1,9 +1,10 @@
 """Ubuntu-owned consumer for AgentOS Antigravity relay capsules.
 
-The worker is intentionally conservative at the cross-user boundary: peer-owned
-capsules may already have the correct shared group/mode even when chown/chmod is
-not permitted to the consumer. Such artifacts are verified rather than rejected.
-Stranded processing capsules are recovered after a restart when they are readable.
+The relay is an execution boundary, not an at-least-once queue. A capsule that
+has already entered ``processing`` may have produced side effects before a
+worker crash, so replaying it automatically is unsafe. New workers consume only
+``inbox`` capsules. Stranded ``processing`` artifacts are forensic evidence and
+must be reconciled/quarantined explicitly before any intentional replay.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import glob
 import json
 import os
 from pathlib import Path
-import stat
+import signal
 import subprocess
 import time
 from typing import Any, Sequence
@@ -63,15 +64,6 @@ def build_prompt(capsule: dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
-def _readable_shared_file(path: Path) -> bool:
-    try:
-        st = path.stat()
-    except OSError:
-        return False
-    mode = stat.S_IMODE(st.st_mode)
-    return path.is_file() and os.access(path, os.R_OK) and bool(mode & 0o040)
-
-
 class AntigravityRelayWorker:
     def __init__(self, root: str | Path, *, executor: Sequence[str] | None = None, timeout: float = 180.0) -> None:
         self.paths = RelayPaths(Path(root).expanduser())
@@ -86,32 +78,60 @@ class AntigravityRelayWorker:
             except PermissionError:
                 pass
 
-    def _next_capsule(self) -> tuple[Path, bool] | None:
+    def _next_capsule(self) -> Path | None:
         inbox = sorted(self.paths.inbox.glob("relay-*.json"))
-        if inbox:
-            return inbox[0], False
-        # Recover capsules stranded after a worker crash. Skip artifacts which the
-        # ubuntu boundary cannot actually read instead of crash-looping forever.
-        for path in sorted(self.paths.processing.glob("relay-*.json")):
-            if _readable_shared_file(path):
-                return path, True
-        return None
+        return inbox[0] if inbox else None
+
+    def _run_executor(self, capsule: dict[str, Any], workspace: Path) -> dict[str, Any]:
+        if not self.executor:
+            raise RuntimeError("no authorized local Antigravity executor discovered")
+        proc = subprocess.Popen(
+            [*self.executor, build_prompt(capsule)],
+            cwd=str(workspace),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        timed_out = False
+        try:
+            stdout, stderr = proc.communicate(timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                stdout, stderr = proc.communicate(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                stdout, stderr = proc.communicate()
+        if timed_out:
+            stderr = (stderr or "") + f"\nAgentOS executor timeout after {self.timeout:.1f}s; process group terminated.\n"
+        return {
+            "returncode": 124 if timed_out else int(proc.returncode or 0),
+            "stdout": (stdout or "")[-100000:],
+            "stderr": (stderr or "")[-20000:],
+            "timed_out": timed_out,
+        }
 
     def process_one(self) -> dict[str, Any] | None:
         self._ensure_shared_spool()
-        chosen = self._next_capsule()
-        if chosen is None:
+        source = self._next_capsule()
+        if source is None:
             return None
-        source, already_processing = chosen
-        processing = source if already_processing else self.paths.processing / source.name
-        if not already_processing:
-            source.replace(processing)
+        processing = self.paths.processing / source.name
+        source.replace(processing)
         try:
             share_relay_path(processing)
         except PermissionError:
             # Moving a peer-owned file preserves its owner. If the artifact is
-            # already group-readable/writable, the ownership operation is not a
-            # validity requirement for consuming it.
+            # already readable/writable by this explicitly authorized boundary,
+            # ownership rewriting is not required for consumption.
             if not (os.access(processing, os.R_OK) and os.access(processing, os.W_OK)):
                 raise
         started = _utc_now()
@@ -126,24 +146,29 @@ class AntigravityRelayWorker:
                 raise ValueError("capsule_id missing")
             if not workspace.is_dir():
                 raise ValueError(f"workspace unavailable: {workspace}")
-            if not self.executor:
-                raise RuntimeError("no authorized local Antigravity executor discovered")
-            completed = subprocess.run(
-                [*self.executor, build_prompt(capsule)], cwd=str(workspace), capture_output=True,
-                text=True, timeout=self.timeout, check=False,
-            )
+            result = self._run_executor(capsule, workspace)
             receipt: dict[str, Any] = {
-                "schema": RECEIPT_SCHEMA, "capsule_id": capsule_id, "started_at": started,
-                "completed_at": _utc_now(), "executor_user": os.environ.get("USER") or str(os.getuid()),
-                "executor": self.executor[0], "returncode": completed.returncode,
-                "ok": completed.returncode == 0, "stdout": completed.stdout[-100000:],
-                "stderr": completed.stderr[-20000:],
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "started_at": started,
+                "completed_at": _utc_now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "executor": self.executor[0] if self.executor else None,
+                "returncode": result["returncode"],
+                "ok": result["returncode"] == 0 and not result["timed_out"],
+                "timed_out": result["timed_out"],
+                "stdout": result["stdout"],
+                "stderr": result["stderr"],
             }
         except Exception as exc:
             receipt = {
-                "schema": RECEIPT_SCHEMA, "capsule_id": capsule_id, "started_at": started,
-                "completed_at": _utc_now(), "executor_user": os.environ.get("USER") or str(os.getuid()),
-                "ok": False, "error": f"{type(exc).__name__}: {exc}",
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "started_at": started,
+                "completed_at": _utc_now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
             }
         target = self.paths.receipts / f"{receipt['capsule_id']}.json"
         tmp = target.with_suffix(target.suffix + ".tmp")
