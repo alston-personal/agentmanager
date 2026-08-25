@@ -1,35 +1,239 @@
-timestamp_utc=2026-08-25T15:23:55Z
+timestamp_utc=2026-08-25T15:42:57Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+=== INSTALLED UNIT ===
+[Unit]
+Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/.local/share/agentos/action-runtime
+Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime
+# Actions such as agentos.antigravity.restart and layoutlab.api.restart call
+#   UNIT                                                                                                      LOAD   ACTIVE     SUB          DESCRIPTION
+  sys-devices-pci0000:00-0000:00:05.7-0000:18:00.0-virtio2-host0-target0:0:0-0:0:0:1-block-sda-sda1.device  loaded active     plugged      BlockVolume cloudimg-rootfs
+  sys-devices-pci0000:00-0000:00:05.7-0000:18:00.0-virtio2-host0-target0:0:0-0:0:0:1-block-sda-sda15.device loaded active     plugged      BlockVolume UEFI
+  sys-devices-pci0000:00-0000:00:05.7-0000:18:00.0-virtio2-host0-target0:0:0-0:0:0:1-block-sda.device       loaded active     plugged      BlockVolume
+  sys-devices-pci0000:00-0000:00:06.0-virtio1-net-enp0s6.device                                             loaded active     plugged      Virtio network device
+  sys-devices-platform-ARMH0011:00-ARMH0011:00:0-ARMH0011:00:0.0-tty-ttyAMA0.device                         loaded active     plugged      /sys/devices/platform/ARMH0011:00/ARMH0011:00:0/ARMH0011:00:0.0/tty/ttyAMA0
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.0-tty-ttyS0.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.0/tty/ttyS0
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.1-tty-ttyS1.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.1/tty/ttyS1
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.10-tty-ttyS10.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.10/tty/ttyS10
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.11-tty-ttyS11.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.11/tty/ttyS11
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.12-tty-ttyS12.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.12/tty/ttyS12
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.13-tty-ttyS13.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.13/tty/ttyS13
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.14-tty-ttyS14.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.14/tty/ttyS14
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.15-tty-ttyS15.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.15/tty/ttyS15
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.16-tty-ttyS16.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.16/tty/ttyS16
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.17-tty-ttyS17.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.17/tty/ttyS17
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.18-tty-ttyS18.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.18/tty/ttyS18
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.19-tty-ttyS19.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.19/tty/ttyS19
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.2-tty-ttyS2.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.2/tty/ttyS2
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.20-tty-ttyS20.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.20/tty/ttyS20
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.21-tty-ttyS21.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.21/tty/ttyS21
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.22-tty-ttyS22.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.22/tty/ttyS22
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.23-tty-ttyS23.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.23/tty/ttyS23
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.24-tty-ttyS24.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.24/tty/ttyS24
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.25-tty-ttyS25.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.25/tty/ttyS25
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.26-tty-ttyS26.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.26/tty/ttyS26
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.27-tty-ttyS27.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.27/tty/ttyS27
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.28-tty-ttyS28.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.28/tty/ttyS28
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.29-tty-ttyS29.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.29/tty/ttyS29
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.3-tty-ttyS3.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.3/tty/ttyS3
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.30-tty-ttyS30.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.30/tty/ttyS30
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.31-tty-ttyS31.device                            loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.31/tty/ttyS31
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.4-tty-ttyS4.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.4/tty/ttyS4
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.5-tty-ttyS5.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.5/tty/ttyS5
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.6-tty-ttyS6.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.6/tty/ttyS6
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.7-tty-ttyS7.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.7/tty/ttyS7
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.8-tty-ttyS8.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.8/tty/ttyS8
+  sys-devices-platform-serial8250-serial8250:0-serial8250:0.9-tty-ttyS9.device                              loaded active     plugged      /sys/devices/platform/serial8250/serial8250:0/serial8250:0.9/tty/ttyS9
+  sys-devices-virtual-block-loop0.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop0
+  sys-devices-virtual-block-loop1.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop1
+  sys-devices-virtual-block-loop11.device                                                                   loaded active     plugged      /sys/devices/virtual/block/loop11
+  sys-devices-virtual-block-loop12.device                                                                   loaded active     plugged      /sys/devices/virtual/block/loop12
+  sys-devices-virtual-block-loop13.device                                                                   loaded active     plugged      /sys/devices/virtual/block/loop13
+  sys-devices-virtual-block-loop2.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop2
+  sys-devices-virtual-block-loop3.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop3
+  sys-devices-virtual-block-loop4.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop4
+  sys-devices-virtual-block-loop5.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop5
+  sys-devices-virtual-block-loop6.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop6
+  sys-devices-virtual-block-loop7.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop7
+  sys-devices-virtual-block-loop8.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop8
+  sys-devices-virtual-block-loop9.device                                                                    loaded active     plugged      /sys/devices/virtual/block/loop9
+  sys-devices-virtual-misc-rfkill.device                                                                    loaded active     plugged      /sys/devices/virtual/misc/rfkill
+  sys-devices-virtual-net-br\x2d05e79770821a.device                                                         loaded active     plugged      /sys/devices/virtual/net/br-05e79770821a
+  sys-devices-virtual-net-docker0.device                                                                    loaded active     plugged      /sys/devices/virtual/net/docker0
+  sys-devices-virtual-net-veth13fce8a.device                                                                loaded active     plugged      /sys/devices/virtual/net/veth13fce8a
+  sys-devices-virtual-net-vethf512907.device                                                                loaded active     plugged      /sys/devices/virtual/net/vethf512907
+  sys-devices-virtual-tty-ttyprintk.device                                                                  loaded active     plugged      /sys/devices/virtual/tty/ttyprintk
+  sys-module-configfs.device                                                                                loaded active     plugged      /sys/module/configfs
+  sys-module-fuse.device                                                                                    loaded active     plugged      /sys/module/fuse
+  sys-subsystem-net-devices-br\x2d05e79770821a.device                                                       loaded active     plugged      /sys/subsystem/net/devices/br-05e79770821a
+  sys-subsystem-net-devices-docker0.device                                                                  loaded active     plugged      /sys/subsystem/net/devices/docker0
+  sys-subsystem-net-devices-enp0s6.device                                                                   loaded active     plugged      Virtio network device
+  sys-subsystem-net-devices-veth13fce8a.device                                                              loaded active     plugged      /sys/subsystem/net/devices/veth13fce8a
+  sys-subsystem-net-devices-vethf512907.device                                                              loaded active     plugged      /sys/subsystem/net/devices/vethf512907
+  -.mount                                                                                                   loaded active     mounted      Root Mount
+  boot-efi.mount                                                                                            loaded active     mounted      /boot/efi
+  dev-hugepages.mount                                                                                       loaded active     mounted      /dev/hugepages
+  dev-mqueue.mount                                                                                          loaded active     mounted      /dev/mqueue
+  proc-sys-fs-binfmt_misc.mount                                                                             loaded active     mounted      /proc/sys/fs/binfmt_misc
+  run-credentials-systemd\x2dsysusers.service.mount                                                         loaded active     mounted      /run/credentials/systemd-sysusers.service
+  run-docker-netns-33b7563efe15.mount                                                                       loaded active     mounted      /run/docker/netns/33b7563efe15
+  run-docker-netns-d786347b1d12.mount                                                                       loaded active     mounted      /run/docker/netns/d786347b1d12
+  run-rpc_pipefs.mount                                                                                      loaded active     mounted      /run/rpc_pipefs
+  run-snapd-ns-lxd.mnt.mount                                                                                loaded active     mounted      /run/snapd/ns/lxd.mnt
+  run-snapd-ns.mount                                                                                        loaded active     mounted      /run/snapd/ns
+  run-user-1001.mount                                                                                       loaded active     mounted      /run/user/1001
+  snap-core18-2983.mount                                                                                    loaded active     mounted      /snap/core18/2983
+  snap-core18-3002.mount                                                                                    loaded active     mounted      /snap/core18/3002
+  snap-core20-2772.mount                                                                                    loaded active     mounted      /snap/core20/2772
+  snap-core20-2870.mount                                                                                    loaded active     mounted      /snap/core20/2870
+  snap-core22-2412.mount                                                                                    loaded active     mounted      /snap/core22/2412
+  snap-core22-2438.mount                                                                                    loaded active     mounted      /snap/core22/2438
+  snap-lxd-40339.mount                                                                                      loaded active     mounted      /snap/lxd/40339
+  snap-lxd-40574.mount                                                                                      loaded active     mounted      /snap/lxd/40574
+  snap-oracle\x2dcloud\x2dagent-107.mount                                                                   loaded active     mounted      /snap/oracle-cloud-agent/107
+  snap-snapd-27595.mount                                                                                    loaded active     mounted      /snap/snapd/27595
+  snap-snapd-27709.mount                                                                                    loaded active     mounted      /snap/snapd/27709
+  sys-fs-fuse-connections.mount                                                                             loaded active     mounted      /sys/fs/fuse/connections
+  sys-kernel-config.mount                                                                                   loaded active     mounted      /sys/kernel/config
+  sys-kernel-debug-tracing.mount                                                                            loaded active     mounted      /sys/kernel/debug/tracing
+  sys-kernel-debug.mount                                                                                    loaded active     mounted      /sys/kernel/debug
+  sys-kernel-tracing.mount                                                                                  loaded active     mounted      /sys/kernel/tracing
+  var-lib-docker-overlay2-af3b5b8b0b225e840a6c351aff2f6baebab14b88a10300f7a6ac61981f97202b-merged.mount     loaded active     mounted      /var/lib/docker/overlay2/af3b5b8b0b225e840a6c351aff2f6baebab14b88a10300f7a6ac61981f97202b/merged
+  var-lib-docker-overlay2-fa593805fd25a018dfc7a58203626e88f22a7a30386a232a4d73c4ec691837b6-merged.mount     loaded active     mounted      /var/lib/docker/overlay2/fa593805fd25a018dfc7a58203626e88f22a7a30386a232a4d73c4ec691837b6/merged
+  var-snap-lxd-common-ns-mntns.mount                                                                        loaded active     mounted      /var/snap/lxd/common/ns/mntns
+  var-snap-lxd-common-ns-shmounts.mount                                                                     loaded active     mounted      /var/snap/lxd/common/ns/shmounts
+  var-snap-lxd-common-ns.mount                                                                              loaded active     mounted      /var/snap/lxd/common/ns
+  init.scope                                                                                                loaded active     running      System and Service Manager
+  agentos-action-relay.service                                                                              loaded active     running      AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
+  agentos-antigravity-relay.service                                                                         loaded active     running      AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
+  agentos-control-plane.service                                                                             loaded active     running      Distributed AgentOS Control Plane and Runtime Dispatcher
+  agentos-provider-bridge.service                                                                           loaded active     running      Distributed AgentOS Provider Bridge
+  at-spi-dbus-bus.service                                                                                   loaded active     running      Accessibility services bus
+  cat-ink-syncer.service                                                                                    loaded active     running      AgentOS Cat-Ink Session Syncer
+  dbus.service                                                                                              loaded active     running      D-Bus User Message Bus
+  leopardcat-tarot.service                                                                                  loaded activating auto-restart LeopardCat Tarot Fortune Server Backend
+  openclaw-gateway.service                                                                                  loaded active     running      OpenClaw Gateway (v2026.5.20)
+  os-chronos.service                                                                                        loaded active     running      AgentOS Central Chronos Scheduler
+  os-lobster.service                                                                                        loaded activating auto-restart AgentOS Lobster Autonomous Task Loop
+  os-watchdog.service                                                                                       loaded active     running      AgentOS Watchdog Event-Driven Daemon
+  tg-commander.service                                                                                      loaded active     running      AgentOS Telegram Command Bridge
+  -.slice                                                                                                   loaded active     active       Root Slice
+  app.slice                                                                                                 loaded active     active       User Application Slice
+  dbus.socket                                                                                               loaded active     running      D-Bus User Message Bus Socket
+  dirmngr.socket                                                                                            loaded active     listening    GnuPG network certificate management daemon
+  gpg-agent-browser.socket                                                                                  loaded active     listening    GnuPG cryptographic agent and passphrase cache (access for web browsers)
+  gpg-agent-extra.socket                                                                                    loaded active     listening    GnuPG cryptographic agent and passphrase cache (restricted)
+  gpg-agent-ssh.socket                                                                                      loaded active     listening    GnuPG cryptographic agent (ssh-agent emulation)
+  gpg-agent.socket                                                                                          loaded active     listening    GnuPG cryptographic agent and passphrase cache
+  pk-debconf-helper.socket                                                                                  loaded active     listening    debconf communication socket
+  snapd.session-agent.socket                                                                                loaded active     listening    REST API socket for snapd user session agent
+  basic.target                                                                                              loaded active     active       Basic System
+  default.target                                                                                            loaded active     active       Main User Target
+  paths.target                                                                                              loaded active     active       Paths
+  sockets.target                                                                                            loaded active     active       Sockets
+  timers.target                                                                                             loaded active     active       Timers
+  agent-maintenance.timer                                                                                   loaded active     waiting      Run AgentOS maintenance every 15 minutes
+
+LOAD   = Reflects whether the unit definition was properly loaded.
+ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
+SUB    = The low-level unit activation state, values depend on unit type.
+126 loaded units listed. Pass --all to see loaded but inactive units, too.
+To show all installed unit files use 'systemctl list-unit-files'. from inside the relay worker. Pin them to ubuntu's existing
+# user manager explicitly; the GitHub runner has a different session/bus.
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+UMask=0007
+#  is the deliberate supplementary-group bootstrap boundary for this old
+# ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
+# it prevents the setgid helper from establishing the already-authorized
+#  group context.
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay'
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
+=== RUNTIME REVISION ===
+fatal: detected dubious ownership in repository at '/home/ubuntu/.local/share/agentos/action-runtime'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/.local/share/agentos/action-runtime
+d36766789f2f039e3b79134ff9145a38e18e9a65f759e0b23655c0134eced950  /home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py
+/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py:84:def _restart_user_service(unit: str, *, timeout: float = 20.0) -> dict[str, Any]:
+/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py:89:    processing. Submit the restart with --no-block, then poll a read-only state
+/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py:93:    restart = _run(["systemctl", "--user", "--no-block", "restart", unit], cwd=cwd, timeout=8)
+/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py:128:    return _restart_user_service("layoutlab-api.service")
+/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py:135:    return _restart_user_service("agentos-antigravity-relay.service")
+/home/ubuntu/.config/systemd/user/agentos-action-relay.service:145:Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 === SERVICE STATUS ===
 Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
 === SERVICE PROPERTIES ===
 Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
 === PROCESS TREE ===
-root     ubuntu   3620336    1027       02:03 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
-ubuntu   agentos  3620337 3620336       02:03 sh -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
-ubuntu   agentos  3620338 3620337       02:03 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
-agentos+ agentos+ 3622544 3622537       00:00 grep -E agentos_node.action_relay|[s]g agentos
-=== PROCESS GROUPS ===
-pid=3620336
+ubuntu   ubuntu   3571553    1027 Ss   -                               01:20:11 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+root     ubuntu   3636347    1027 Ss   -                                  02:04 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  3636348 3636347 S    -                                  02:04 sh -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  3636349 3636348 S    -                                  02:04 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+agentos+ agentos+ 3637880 3637867 S    pipe_read                          00:00 grep -E agentos_node.action_relay|systemctl --user|[s]g agentos|antigravity_relay_worker
+  |-python3,3571553 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+  `-sg,3636347 agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+      `-sh,3636348 -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+          `-python3,3636349 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+=== PROCESS DETAILS ===
+pid=3636347
+Name:	sg
+State:	S (sleeping)
+Pid:	3636347
+PPid:	1027
 Uid:	1001	0	0	0
 Gid:	1001	1001	1001	1001
 Groups:	4 20 24 25 27 29 30 44 46 119 120 1001 
-pid=3620337
+wchan=0
+children:
+3636348 
+safe_env:
+/home/agentos-node/runner/_work/_temp/ee112ed5-6e65-47cb-858f-d235260fe185.sh: line 28: /proc/3636347/environ: Permission denied
+pid=3636348
+Name:	sh
+State:	S (sleeping)
+Pid:	3636348
+PPid:	3636347
 Uid:	1001	1001	1001	1001
 Gid:	1005	1005	1005	1005
 Groups:	4 20 24 25 27 29 30 44 46 119 120 1001 1005 
-pid=3620338
+wchan=0
+children:
+3636349 
+safe_env:
+/home/agentos-node/runner/_work/_temp/ee112ed5-6e65-47cb-858f-d235260fe185.sh: line 28: /proc/3636348/environ: Permission denied
+pid=3636349
+Name:	python3
+State:	S (sleeping)
+Pid:	3636349
+PPid:	3636348
 Uid:	1001	1001	1001	1001
 Gid:	1005	1005	1005	1005
 Groups:	4 20 24 25 27 29 30 44 46 119 120 1001 1005 
+wchan=0
+children:
+
+safe_env:
+/home/agentos-node/runner/_work/_temp/ee112ed5-6e65-47cb-858f-d235260fe185.sh: line 28: /proc/3636349/environ: Permission denied
 === SPOOL TREE ===
 agentos-node:agentos 2770 2026-08-25T17:02:44.6242204590 /home/ubuntu/agent-data/runtime/action-relay
 agentos-node:agentos 2770 2026-08-25T17:02:44.6242204590 /home/ubuntu/agent-data/runtime/action-relay/receipts
-agentos-node:agentos 2770 2026-08-25T23:21:49.7536541620 /home/ubuntu/agent-data/runtime/action-relay/inbox
-agentos-node:agentos 2770 2026-08-25T23:21:49.7536541620 /home/ubuntu/agent-data/runtime/action-relay/processing
+agentos-node:agentos 2770 2026-08-25T23:40:50.6523985650 /home/ubuntu/agent-data/runtime/action-relay/inbox
+agentos-node:agentos 2770 2026-08-25T23:40:50.6523985650 /home/ubuntu/agent-data/runtime/action-relay/processing
 agentos-node:agentos 660 2026-08-25T17:02:44.6242204590 /home/ubuntu/agent-data/runtime/action-relay/processing/action-749c21f16c9a4e41a637cb8c76d1baf8.json
 agentos-node:agentos 660 2026-08-25T23:18:49.2318944240 /home/ubuntu/agent-data/runtime/action-relay/processing/action-c921bc5df2d64287a1787e9929ddb0e2.json
 agentos-node:agentos 660 2026-08-25T23:21:49.0126510440 /home/ubuntu/agent-data/runtime/action-relay/processing/action-1c4183d64b974257955cd793056a9794.json
+agentos-node:agentos 660 2026-08-25T23:35:50.3421754690 /home/ubuntu/agent-data/runtime/action-relay/processing/action-9b0c8be119fd4fe997d66937a310a5e8.json
+agentos-node:agentos 660 2026-08-25T23:40:49.9463956690 /home/ubuntu/agent-data/runtime/action-relay/processing/action-992762c38d9245dd9917e4caa87637af.json
 === CAPSULE CONTENTS ===
 --- /home/ubuntu/agent-data/runtime/action-relay/processing/action-1c4183d64b974257955cd793056a9794.json ---
 {
@@ -59,6 +263,34 @@ agentos-node:agentos 660 2026-08-25T23:21:49.0126510440 /home/ubuntu/agent-data/
   "params": {
     "site": "studio.milkcat.org"
   },
+  "schema": "agentos.action-relay/v1"
+}
+--- /home/ubuntu/agent-data/runtime/action-relay/processing/action-992762c38d9245dd9917e4caa87637af.json ---
+{
+  "action": "agentos.antigravity.restart",
+  "authority": {
+    "arbitrary_shell": false,
+    "source": "agentos-node",
+    "target_user": "ubuntu"
+  },
+  "capsule_id": "action-992762c38d9245dd9917e4caa87637af",
+  "created_at": "2026-08-25T15:40:49Z",
+  "digest": "sha256:3d7d68a20cb60b263d07dda83cddfcfde74db4c5114d1637420f7da8a9150d12",
+  "params": {},
+  "schema": "agentos.action-relay/v1"
+}
+--- /home/ubuntu/agent-data/runtime/action-relay/processing/action-9b0c8be119fd4fe997d66937a310a5e8.json ---
+{
+  "action": "agentos.antigravity.restart",
+  "authority": {
+    "arbitrary_shell": false,
+    "source": "agentos-node",
+    "target_user": "ubuntu"
+  },
+  "capsule_id": "action-9b0c8be119fd4fe997d66937a310a5e8",
+  "created_at": "2026-08-25T15:35:50Z",
+  "digest": "sha256:ffdc997f4882bf332e4120b7bbc9ee18e62d4e028e470c7d315f520fcbf44a89",
+  "params": {},
   "schema": "agentos.action-relay/v1"
 }
 --- /home/ubuntu/agent-data/runtime/action-relay/processing/action-c921bc5df2d64287a1787e9929ddb0e2.json ---
