@@ -1,6 +1,6 @@
 name: Oracle Antigravity Relay Trial
 
-# retrigger marker: 2026-08-24T17:10+08:00 after relay shared-permission rollout
+# retrigger marker: 2026-08-25 diagnostic after relay install
 on:
   workflow_dispatch:
   push:
@@ -17,19 +17,35 @@ jobs:
       - name: Checkout vNext
         uses: actions/checkout@v4
 
-      - name: Submit bounded canonical capsule and wait for ubuntu receipt
+      - name: Submit bounded canonical capsule and persist diagnostics
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
             echo "Refusing experimental relay trial on main" >&2
             exit 2
           fi
           mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/oracle-antigravity-relay-diagnostic.txt
           export PYTHONPATH="$PWD"
           export AGENTOS_RELAY_ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
-          python3 - <<'PY'
-          import json, os, time
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "whoami=$(whoami)"
+            echo "groups=$(id -Gn)"
+            echo "ref=${GITHUB_REF_NAME}"
+            echo "head=$(git rev-parse HEAD)"
+            echo
+            echo "=== RELAY DIRECTORY BEFORE ==="
+            stat -c '%A %a %U %G %n' "$AGENTOS_RELAY_ROOT" "$AGENTOS_RELAY_ROOT/inbox" "$AGENTOS_RELAY_ROOT/processing" "$AGENTOS_RELAY_ROOT/receipts" 2>&1 || true
+            find "$AGENTOS_RELAY_ROOT" -maxdepth 2 -type f -printf '%M %u %g %p\n' 2>&1 | tail -80 || true
+            echo
+            echo "=== RELAY PROCESS ==="
+            ps -eo user=,pid=,comm=,args= | grep -E 'agentos_node.antigravity_relay_worker' | grep -v grep || true
+          } | tee "$OUT"
+
+          python3 - <<'PY' 2>&1 | tee -a "$OUT"
+          import json, os, time, traceback
           from pathlib import Path
           from agentos_node.antigravity_relay import AntigravityRelayClient
 
@@ -61,40 +77,53 @@ jobs:
               '(4) what is VERIFIED vs UNKNOWN, and (5) one governance risk that must remain blocked. '
               'Do not modify any file or system.'
           )
-          capsule = client.submit(
-              project_id='agentmanager',
-              canonical_ir=canonical_ir,
-              instruction=instruction,
-              workspace='/home/ubuntu/agentmanager',
-              executor_hint='antigravity-claude-low',
-          )
-          capsule_id = capsule['capsule_id']
-          Path('.agentos/evidence/oracle-antigravity-relay-capsule.json').write_text(
-              json.dumps(capsule, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8'
-          )
-          deadline = time.monotonic() + 210
-          receipt = None
-          while time.monotonic() < deadline:
-              receipt = client.receipt(capsule_id)
-              if receipt is not None:
-                  break
-              time.sleep(2)
-          if receipt is None:
-              raise SystemExit(f'timed out waiting for receipt: {capsule_id}')
-          Path('.agentos/evidence/oracle-antigravity-relay-receipt.json').write_text(
-              json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8'
-          )
-          print(json.dumps({'capsule_id': capsule_id, 'ok': receipt.get('ok'), 'returncode': receipt.get('returncode')}, ensure_ascii=False))
-          if not receipt.get('ok'):
-              raise SystemExit('executor receipt reported failure')
+          try:
+              capsule = client.submit(
+                  project_id='agentmanager', canonical_ir=canonical_ir, instruction=instruction,
+                  workspace='/home/ubuntu/agentmanager', executor_hint='antigravity-claude-low')
+              capsule_id = capsule['capsule_id']
+              Path('.agentos/evidence/oracle-antigravity-relay-capsule.json').write_text(
+                  json.dumps(capsule, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+              print('submitted_capsule=' + capsule_id)
+              deadline = time.monotonic() + 90
+              receipt = None
+              while time.monotonic() < deadline:
+                  receipt = client.receipt(capsule_id)
+                  if receipt is not None:
+                      break
+                  time.sleep(2)
+              if receipt is None:
+                  print('receipt_status=timeout')
+              else:
+                  Path('.agentos/evidence/oracle-antigravity-relay-receipt.json').write_text(
+                      json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+                  print('receipt_status=received')
+                  print(json.dumps({'ok': receipt.get('ok'), 'returncode': receipt.get('returncode'), 'error': receipt.get('error')}, ensure_ascii=False))
+          except Exception:
+              print('submit_or_wait_exception=true')
+              traceback.print_exc()
           PY
 
-      - name: Commit evidence to explicit source branch
+          {
+            echo
+            echo "=== RELAY DIRECTORY AFTER ==="
+            stat -c '%A %a %U %G %n' "$AGENTOS_RELAY_ROOT" "$AGENTOS_RELAY_ROOT/inbox" "$AGENTOS_RELAY_ROOT/processing" "$AGENTOS_RELAY_ROOT/receipts" 2>&1 || true
+            find "$AGENTOS_RELAY_ROOT" -maxdepth 2 -type f -printf '%M %u %g %p\n' 2>&1 | tail -120 || true
+          } | tee -a "$OUT"
+
+      - name: Commit diagnostic and any receipt to explicit source branch
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "agentos-node"
           git config user.email "agentos-node@users.noreply.github.com"
-          git add .agentos/evidence/oracle-antigravity-relay-capsule.json .agentos/evidence/oracle-antigravity-relay-receipt.json
-          git commit -m "evidence(agentos): first real Antigravity relay receipt" || exit 0
+          git add .agentos/evidence/oracle-antigravity-relay-diagnostic.txt
+          test -f .agentos/evidence/oracle-antigravity-relay-capsule.json && git add .agentos/evidence/oracle-antigravity-relay-capsule.json || true
+          test -f .agentos/evidence/oracle-antigravity-relay-receipt.json && git add .agentos/evidence/oracle-antigravity-relay-receipt.json || true
+          if git diff --cached --quiet; then
+            echo 'No diagnostic change to commit'
+            exit 0
+          fi
+          git commit -m "evidence(agentos): persist Antigravity relay diagnostic"
           git push origin "HEAD:${GITHUB_REF_NAME}"
