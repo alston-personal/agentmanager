@@ -26,13 +26,12 @@ jobs:
           python3 scripts/bootstrap_layoutlib.py --target "$CODE"
           python3 scripts/bootstrap_layoutlib_hardening.py --target "$CODE"
           python3 -m pip install --user 'Pillow>=10,<13'
-          PORT_OUTPUT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlab-api --desc 'Layout Lab official-site API' --start 8800 --end 8899)
-          echo "$PORT_OUTPUT"
-          PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[int(k) for k,v in d.items() if v.get("project")=="layoutlab-api"]; print(min(xs))')
+          AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlab-api --desc 'Layout Lab official-site API' --start 8800 --end 8899
+          PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(min(int(k) for k,v in d.items() if v.get("project")=="layoutlab-api"))')
           echo "$PORT" > /tmp/layoutlab-api-port
           echo "layoutlab_api_port=$PORT"
 
-      - name: Ask AgentOS executor to apply minimal official-site integration
+      - name: Apply minimal official-site integration through Antigravity relay
         shell: bash
         run: |
           set -euo pipefail
@@ -45,36 +44,47 @@ jobs:
           import os
           from agentos_node.antigravity_relay import AntigravityRelayClient
           port=os.environ['PORT']
-          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          instruction=f'''Integrate Layout Lab into the EXISTING official website https://studio.milkcat.org using the actual current deployment on this host. The static page already exists in /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html and its source repo is /home/ubuntu/zeus-writer. The API source is /home/ubuntu/agentmanager/scripts/layoutlab_api.py. LayoutLib is at /home/agentos-node/projects/layoutlib. The governed API port is {port}.
+          instruction = f"""Deploy Layout Lab into the existing studio.milkcat.org site with the smallest possible change.
 
-Do the following carefully and only for Layout Lab:
-1. Inspect the existing site server/config and preserve every unrelated route.
-2. Ensure the official website checkout is clean, fetch/fast-forward master if needed, run npm build in /home/ubuntu/zeus-writer/website, and verify dist/layout-lab/index.html exists.
-3. Create or update an ubuntu-owned user service named layoutlab-api.service to run /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}, with LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib and restart-on-failure. If the user systemd session is unavailable, use the existing safe persistent-process convention already used on this host; do not invent a root service.
-4. Verify locally that http://127.0.0.1:{port}/healthz returns JSON ok=true.
-5. Add the MINIMAL route for /layout-lab/api/ on studio.milkcat.org to reverse proxy to the localhost API while preserving the existing static /layout-lab/ page. Respect path semantics so browser POST /layout-lab/api/parse reaches the API successfully. Reuse the existing web server. Back up only the config file you change. Validate server config before reload. If validation fails, restore the backup and do not reload.
-6. Reload only the affected web server using the site's existing privilege mechanism. Do not change DNS, TLS, firewall, unrelated virtual hosts, or unrelated site files.
-7. Publicly verify from this host: GET https://studio.milkcat.org/layout-lab/ returns 200 and contains Layout Lab; GET https://studio.milkcat.org/layout-lab/api/healthz returns 200 JSON ok=true.
-8. Build a small synthetic PNG floor plan (or use an existing safe fixture), submit it as multipart/form-data exactly like the browser UI does to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel, wall_height_m, threshold, min_wall_length_px, and verify HTTP 200, ok=true, Spatial IR present, walls > 0.
-9. Return exact changed paths, service status, public URLs, HTTP status codes, parse wall count, and any remaining caveats.
+Verified inputs:
+- website checkout: /home/ubuntu/zeus-writer
+- website build root: /home/ubuntu/zeus-writer/website
+- expected static artifact: /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
+- API source: /home/ubuntu/agentmanager/scripts/layoutlab_api.py
+- LayoutLib root: /home/agentos-node/projects/layoutlib
+- governed API port: {port}
 
-You ARE authorized to make only the minimal deployment/config/service changes needed for this Layout Lab integration. Do not modify application logic beyond syncing the already committed repositories. Do not perform unrelated cleanup.'''
-          p=c.submit(
-            project_id='layoutlib',
-            canonical_ir={
-              'goal':'Make LayoutLib directly usable through the existing official Studio Web UI.',
-              'acceptance':['https://studio.milkcat.org/layout-lab/ HTTP 200','same-origin /layout-lab/api/healthz HTTP 200','browser-equivalent multipart PNG parse HTTP 200 with Spatial IR and walls > 0'],
-              'constraints':['Preserve unrelated website routes/config','Use governed localhost API port','No DNS/TLS/firewall changes unless already part of existing site mechanism and strictly unnecessary here']
-            },
-            instruction=instruction,
-            workspace='/home/ubuntu/agentmanager')
-          print(p['capsule_id'])
+Required execution:
+1. Inspect the current site server/config and preserve every unrelated route.
+2. If /home/ubuntu/zeus-writer is clean, fetch and fast-forward its configured branch, then npm build the website. If it is dirty, do not overwrite local changes; report the exact dirty paths and continue only if the existing dist/layout-lab artifact is sufficient.
+3. Create/update ubuntu user service layoutlab-api.service. It must run /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}; set LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib; restart on failure. Use the existing ubuntu user manager, not a root service.
+4. Verify localhost health at http://127.0.0.1:{port}/healthz returns HTTP 200 and JSON ok=true.
+5. Add only the reverse-proxy route needed for /layout-lab/api/ on studio.milkcat.org, preserving the static /layout-lab/ route and all unrelated routes. Back up the one config changed. Validate the web-server configuration before reload. If validation fails, restore the backup and do not reload.
+6. Reload only the affected existing web server via the host's existing privilege mechanism. Do not change DNS, TLS, firewall, or unrelated virtual hosts.
+7. Verify publicly: https://studio.milkcat.org/layout-lab/ is HTTP 200 and contains Layout Lab; https://studio.milkcat.org/layout-lab/api/healthz is HTTP 200 with ok=true.
+8. Build a small synthetic high-contrast PNG and POST it as multipart field image to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel=0.02, wall_height_m=2.7, threshold=128, min_wall_length_px=16. Require HTTP 200, ok=true, Spatial IR and at least one wall.
+9. Return exact changed paths, unit status, web-server validation/reload result, public status codes and parse wall count.
+
+You are authorized only for these Layout Lab deployment changes. Do not perform unrelated cleanup or configuration changes."""
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule=client.submit(
+              project_id='layoutlib',
+              canonical_ir={
+                  'goal':'Make LayoutLib directly usable at the existing official Studio Web UI.',
+                  'constraints':['minimal changes only','preserve unrelated routes','no DNS TLS or firewall changes'],
+              },
+              instruction=instruction,
+              workspace='/home/ubuntu/agentmanager',
+          )
+          print(capsule['capsule_id'])
           PY
           )
           RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
-          for i in $(seq 1 420); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo "receipt timeout: $CAPSULE_ID"; exit 3; }
+          for i in $(seq 1 420); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo "receipt_timeout=$CAPSULE_ID" | tee "$OUT"; exit 3; }
           {
             echo "capsule_id=$CAPSULE_ID"
             echo "governed_port=$PORT"
@@ -85,9 +95,8 @@ You ARE authorized to make only the minimal deployment/config/service changes ne
           r=json.load(open(sys.argv[1]))
           assert r.get('ok') is True, r
           text=(r.get('stdout','')+'\n'+r.get('stderr','')).lower()
-          required=['studio.milkcat.org/layout-lab','health','parse']
-          missing=[x for x in required if x not in text]
-          if missing: raise SystemExit('receipt lacks acceptance evidence: '+','.join(missing))
+          for required in ('studio.milkcat.org/layout-lab','health','parse'):
+              assert required in text, (required, text[-10000:])
           print('executor_integration_receipt=PASS')
           PY
 
@@ -96,13 +105,13 @@ You ARE authorized to make only the minimal deployment/config/service changes ne
         run: |
           set -euo pipefail
           OUT=.agentos/evidence/layoutlab-official-site-acceptance.txt
-          CODE=/home/agentos-node/projects/layoutlib
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             UI_CODE=$(curl -sS -o /tmp/layoutlab-official-ui -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 https://studio.milkcat.org/layout-lab/)
             echo "public_ui_http_code=$UI_CODE"
             test "$UI_CODE" = 200
             grep -q 'Layout Lab' /tmp/layoutlab-official-ui
+
             HEALTH_CODE=$(curl -sS -o /tmp/layoutlab-official-health -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 https://studio.milkcat.org/layout-lab/api/healthz)
             echo "public_health_http_code=$HEALTH_CODE"
             test "$HEALTH_CODE" = 200
@@ -112,10 +121,12 @@ You ARE authorized to make only the minimal deployment/config/service changes ne
           assert d.get('ok') is True, d
           print('public_health_payload=PASS')
           PY
+
             python3 - <<'PY'
           from PIL import Image, ImageDraw
           p='/tmp/layoutlab-official-fixture.png'
-          im=Image.new('L',(320,240),255); d=ImageDraw.Draw(im)
+          im=Image.new('L',(320,240),255)
+          d=ImageDraw.Draw(im)
           d.rectangle((30,30,290,210),outline=0,width=10)
           im.save(p)
           PY
@@ -146,11 +157,16 @@ You ARE authorized to make only the minimal deployment/config/service changes ne
         shell: bash
         run: |
           set -euo pipefail
+          cp .agentos/evidence/layoutlab-official-site-integration.txt /tmp/layoutlab-official-site-integration.txt 2>/dev/null || true
+          cp .agentos/evidence/layoutlab-official-site-acceptance.txt /tmp/layoutlab-official-site-acceptance.txt 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/layoutlab-official-site-integration.txt .agentos/evidence/ 2>/dev/null || true
+          cp /tmp/layoutlab-official-site-acceptance.txt .agentos/evidence/ 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/layoutlab-official-site-integration.txt .agentos/evidence/layoutlab-official-site-acceptance.txt 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlab): official Studio Web UI acceptance'
-          git push
-
-# retrigger: 2026-08-25T16:24+08:00
+          git push origin HEAD:main
