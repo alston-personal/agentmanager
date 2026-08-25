@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-25T08:11:36Z
+timestamp_utc=2026-08-25T08:12:54Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 home=/home/agentos-node
@@ -9,4 +9,21 @@ layoutlib_hardening_bootstrap=ok target=/home/agentos-node/projects/layoutlib fi
 === PORT ALLOCATION ===
 Project 'layoutlib-web' already has port 8766 allocated.
 layoutlib_port=8766
-Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
+=== START WEB DAEMON ===
+web_pid=3328955
+=== LOCAL WEB PROBE ===
+local_web_health=PASS
+=== CLOUDFLARED USER INSTALL ===
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 35.6M  100 35.6M    0     0  50.0M      0 --:--:-- --:--:-- --:--:-- 50.0M
+cloudflared version 2026.8.2 (built 2026-08-14-12:17 UTC)
+=== START PUBLIC QUICK TUNNEL ===
+tunnel_pid=3328978
+public_url=https://during-classification-instruction-combat.trycloudflare.com/
+=== EXTERNAL PUBLIC WEB PROBE ===
+public_health_http_code=200
+public_health_payload=PASS
+public_ui_http_code=000
