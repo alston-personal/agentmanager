@@ -1,0 +1,35 @@
+name: Recover Antigravity Group Boundary Safely
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-recover-antigravity-group-boundary.yml'
+      - 'scripts/recover_antigravity_group_boundary.py'
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Quarantine stale work and restore ubuntu agentos boundary
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 scripts/recover_antigravity_group_boundary.py
+      - name: Commit recovery evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/antigravity-group-boundary-recovery.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): antigravity group boundary recovery'
+          git pull --rebase origin main
+          git push
