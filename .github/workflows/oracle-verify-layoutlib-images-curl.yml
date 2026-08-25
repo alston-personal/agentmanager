@@ -1,0 +1,78 @@
+name: Oracle Verify LayoutLib PNG JPEG Curl
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-verify-layoutlib-images-curl.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-images:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify common browser images locally and publicly
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlib-browser-images-curl.txt
+          RUNTIME=/home/ubuntu/agent-data/runtime/layoutlib-web
+          PORT=$(AGENT_DATA_ROOT=/home/ubuntu/agent-data python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys;d=json.load(sys.stdin);print(min(int(k) for k,v in d.items() if v.get("project")=="layoutlib-web"))')
+          PUBLIC_URL=$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$RUNTIME/tunnel.log" | tail -n 1)
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "port=$PORT"
+            echo "public_url=$PUBLIC_URL/"
+            python3 - <<'PY'
+          import base64,io,json
+          from PIL import Image,ImageDraw
+          im=Image.new('RGB',(120,90),'white'); d=ImageDraw.Draw(im)
+          d.rectangle((15,12,104,16),fill='black'); d.rectangle((15,72,104,76),fill='black')
+          d.rectangle((15,12,19,76),fill='black'); d.rectangle((100,12,104,76),fill='black')
+          for fmt,ext in [('PNG','png'),('JPEG','jpg')]:
+              b=io.BytesIO(); im.save(b,format=fmt,quality=100)
+              payload={'filename':'room.'+ext,'content_base64':base64.b64encode(b.getvalue()).decode(),'meters_per_pixel':0.02,'threshold':128,'min_wall_length_px':30}
+              open('/tmp/layoutlib-'+ext+'.json','w').write(json.dumps(payload))
+          PY
+            for ext in png jpg; do
+              LOCAL_CODE=$(curl -sS --retry 3 --retry-all-errors -o "/tmp/local-$ext.out" -w '%{http_code}' -H 'Content-Type: application/json' --data-binary "@/tmp/layoutlib-$ext.json" "http://127.0.0.1:$PORT/api/parse")
+              echo "local_${ext}_http_code=$LOCAL_CODE"
+              test "$LOCAL_CODE" = 200
+              python3 - "/tmp/local-$ext.out" "$ext" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); assert d.get('ok') is True and d.get('wall_count')==4,d
+          print(f'local_{sys.argv[2]}_parse=PASS walls=4')
+          PY
+              PUBLIC_CODE=000
+              for _ in $(seq 1 20); do
+                PUBLIC_CODE=$(curl -4 -sS --retry 2 --retry-all-errors -o "/tmp/public-$ext.out" -w '%{http_code}' --connect-timeout 5 --max-time 20 -H 'Content-Type: application/json' --data-binary "@/tmp/layoutlib-$ext.json" "$PUBLIC_URL/api/parse" 2>/dev/null || true)
+                [ "$PUBLIC_CODE" = 200 ] && break
+                sleep 1
+              done
+              echo "public_${ext}_http_code=$PUBLIC_CODE"
+              test "$PUBLIC_CODE" = 200
+              python3 - "/tmp/public-$ext.out" "$ext" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); assert d.get('ok') is True and d.get('wall_count')==4,d
+          print(f'public_{sys.argv[2]}_parse=PASS walls=4')
+          PY
+            done
+            echo 'browser_image_acceptance=PASS'
+          } 2>&1 | tee "$OUT"
+      - name: Commit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .agentos/evidence/layoutlib-browser-images-curl.txt || printf 'verification_did_not_create_evidence=YES\n' > .agentos/evidence/layoutlib-browser-images-curl.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-browser-images-curl.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): PNG JPEG public parse acceptance'
+          git push
