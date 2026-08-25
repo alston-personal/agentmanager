@@ -1,0 +1,81 @@
+name: Hotfix LeopardCat Upload JSON
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths: [".github/workflows/hotfix-leopardcat-upload-json.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Raise upload limit and deploy frontend fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          PROD=/home/ubuntu/leopardcat-tarot
+          WEB="$PROD/website"
+          TARGET=cb8ecf0691d051a7815181f8ca83d59aaf5db0a5
+          NGINX=/etc/nginx/sites-enabled/leopard
+
+          echo "old_commit=$(git -C "$PROD" rev-parse HEAD)"
+          sudo cp "$NGINX" /tmp/leopard.nginx.pre-upload-hotfix
+          if ! grep -q 'client_max_body_size 160m;' "$NGINX"; then
+            sudo sed -i '/server_name leopardcat-tarot\.milkcat\.org leopard\.milkcat\.org;/a\    client_max_body_size 160m;' "$NGINX"
+          fi
+          sudo nginx -t
+          sudo systemctl reload nginx
+
+          git -C "$PROD" checkout -- website/dist 2>/dev/null || true
+          git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
+          fetched=$(git -C "$PROD" rev-parse FETCH_HEAD)
+          [ "$fetched" = "$TARGET" ] || { echo "unexpected_main=$fetched" >&2; exit 41; }
+          git -C "$PROD" merge --ff-only FETCH_HEAD
+          cd "$WEB"
+          npm run build
+          test -f dist/creator.js
+          node --check public/creator.js
+
+          python3 - <<'PY'
+          import json, urllib.error, urllib.request
+          body=json.dumps({'name':'large-probe','description':'x'*(2*1024*1024),'cards':[]}).encode()
+          req=urllib.request.Request('https://leopardcat-tarot.milkcat.org/api/v1/decks', data=body, headers={'Content-Type':'application/json'}, method='POST')
+          try:
+              urllib.request.urlopen(req, timeout=20)
+              raise AssertionError('expected validation error')
+          except urllib.error.HTTPError as e:
+              raw=e.read().decode('utf-8','replace')
+              ctype=e.headers.get('Content-Type','')
+              assert e.code == 400, (e.code, raw[:200])
+              assert 'application/json' in ctype.lower(), ctype
+              data=json.loads(raw)
+              assert data.get('error')=='invalid_deck'
+              print('large_public_post_status=400_json')
+              print('nginx_upload_limit_over_2mb=passed')
+          PY
+          curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q '建立我的牌組'
+          echo "deployed_commit=$(git -C "$PROD" rev-parse HEAD)"
+          REMOTE
