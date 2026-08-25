@@ -1,0 +1,144 @@
+name: Oracle Deploy LayoutLib Web UI
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-deploy-layoutlib-web.yml'
+      - 'scripts/bootstrap_layoutlib.py'
+      - 'scripts/bootstrap_layoutlib_web.py'
+      - 'scripts/bootstrap_layoutlib_hardening.py'
+      - 'scripts/core_services/port_manager.py'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-web-ui:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy persistent LayoutLib web UI and inspect routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT="$PWD/.agentos/evidence/layoutlib-public-web.txt"
+          DATA=/home/ubuntu/agent-data
+          CODE=/home/agentos-node/projects/layoutlib
+          USER_SYSTEMD="$HOME/.config/systemd/user"
+          mkdir -p "$CODE" "$USER_SYSTEMD"
+
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "identity=$(id)"
+            echo "home=$HOME"
+            echo "python=$(python3 --version 2>&1)"
+
+            python3 scripts/bootstrap_layoutlib.py --target "$CODE"
+            python3 scripts/bootstrap_layoutlib_web.py --target "$CODE"
+            python3 scripts/bootstrap_layoutlib_hardening.py --target "$CODE"
+
+            echo '=== PORT ALLOCATION ==='
+            PORT_OUTPUT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlib-web --desc 'LayoutLib persistent Web UI/API' --start 8765 --end 8799)
+            echo "$PORT_OUTPUT"
+            PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[int(k) for k,v in d.items() if v.get("project")=="layoutlib-web"]; print(min(xs))')
+            echo "layoutlib_port=$PORT"
+
+            UNIT="$USER_SYSTEMD/layoutlib-web.service"
+            cat > "$UNIT" <<EOF
+          [Unit]
+          Description=LayoutLib Web UI/API
+          After=network.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory=$CODE
+          Environment=PYTHONPATH=$CODE/src
+          Environment=LAYOUTLIB_WEB_QUIET=1
+          ExecStart=/usr/bin/python3 $CODE/web_demo/server.py --host 0.0.0.0 --port $PORT
+          Restart=always
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+            systemctl --user daemon-reload
+            systemctl --user enable --now layoutlib-web.service
+            sleep 1
+            systemctl --user is-active layoutlib-web.service
+            echo "systemd_user_service=PASS"
+
+            echo '=== LOCAL WEB PROBE ==='
+            python3 - "$PORT" <<'PY'
+          import json,sys,urllib.request
+          port=int(sys.argv[1])
+          with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=3) as r:
+              data=json.load(r)
+          assert data.get('ok') is True, data
+          print('local_web_health=PASS')
+          PY
+
+            echo '=== LISTENERS ==='
+            ss -ltnp 2>/dev/null | grep -E ":${PORT}\\b|:80\\b|:443\\b" || true
+
+            echo '=== PUBLIC ADDRESS DISCOVERY ==='
+            PUBLIC_IP=''
+            for endpoint in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+              PUBLIC_IP=$(curl -fsS --max-time 4 "$endpoint" 2>/dev/null | tr -d '\r\n ' || true)
+              [ -n "$PUBLIC_IP" ] && break
+            done
+            echo "public_ip=${PUBLIC_IP:-UNKNOWN}"
+            if [ -n "$PUBLIC_IP" ]; then
+              echo "candidate_direct_url=http://${PUBLIC_IP}:${PORT}/"
+            fi
+
+            echo '=== REVERSE PROXY DISCOVERY ==='
+            command -v nginx >/dev/null 2>&1 && echo "nginx_bin=$(command -v nginx)" || echo 'nginx_bin=NONE'
+            command -v caddy >/dev/null 2>&1 && echo "caddy_bin=$(command -v caddy)" || echo 'caddy_bin=NONE'
+            command -v apache2 >/dev/null 2>&1 && echo "apache2_bin=$(command -v apache2)" || true
+            command -v httpd >/dev/null 2>&1 && echo "httpd_bin=$(command -v httpd)" || true
+            command -v cloudflared >/dev/null 2>&1 && echo "cloudflared_bin=$(command -v cloudflared)" || echo 'cloudflared_bin=NONE'
+            echo "sudo_noninteractive=$(sudo -n true >/dev/null 2>&1 && echo YES || echo NO)"
+
+            if [ -d /etc/nginx ]; then
+              echo '--- nginx readable config hints ---'
+              grep -RhsE 'server_name|proxy_pass|listen 443|listen 80' /etc/nginx 2>/dev/null | head -n 120 || true
+            fi
+            if [ -d /etc/apache2 ]; then
+              echo '--- apache readable config hints ---'
+              grep -RhsE 'ServerName|ProxyPass|VirtualHost' /etc/apache2/sites-enabled /etc/apache2/sites-available 2>/dev/null | head -n 120 || true
+            fi
+            if [ -d /etc/caddy ]; then
+              echo '--- caddy readable config hints ---'
+              grep -RhsE 'reverse_proxy|https?://' /etc/caddy 2>/dev/null | head -n 120 || true
+            fi
+
+            echo '=== DIRECT PUBLIC PROBE (BEST EFFORT) ==='
+            if [ -n "$PUBLIC_IP" ]; then
+              CODE_HTTP=$(curl -sS -o /tmp/layoutlib-public-body -w '%{http_code}' --connect-timeout 3 --max-time 6 "http://${PUBLIC_IP}:${PORT}/api/health" 2>/dev/null || true)
+              echo "direct_public_http_code=${CODE_HTTP:-000}"
+            fi
+
+            echo '=== ACCEPTANCE ==='
+            echo 'persistent_service=PASS'
+            echo "port=$PORT"
+            echo "local_url=http://127.0.0.1:${PORT}/"
+            echo "public_candidate=${PUBLIC_IP:+http://${PUBLIC_IP}:${PORT}/}"
+            echo 'public_route_verified=NO'
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit deployment evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-public-web.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): persistent web deployment probe'
+          git push
