@@ -1,0 +1,77 @@
+name: Diagnose Studio Web Server
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-diagnose-studio-webserver.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect web-server and privilege boundary read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/studio-webserver-diagnostic.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "identity=$(id)"
+            echo '=== LISTENERS ==='
+            ss -ltnp 2>&1 | grep -E ':(80|443|8800)\b' || true
+            echo '=== PROCESSES ==='
+            ps -eo user,group,pid,ppid,args | grep -E '[n]ginx|[a]pache2|[h]ttpd|[c]addy|[t]raefik|[c]loudflared' || true
+            echo '=== COMMANDS ==='
+            for c in nginx apache2 apachectl caddy traefik; do command -v "$c" || true; done
+            echo '=== SYSTEM SERVICES ==='
+            systemctl --no-pager --full --type=service --state=running 2>&1 | grep -E 'nginx|apache|httpd|caddy|traefik|cloudflare' || true
+            echo '=== USER SERVICES ==='
+            XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user --no-pager --full --type=service 2>&1 | grep -E 'layoutlab|nginx|apache|caddy|traefik|cloudflare' || true
+            echo '=== CONFIG LOCATIONS ==='
+            for p in /etc/nginx /etc/apache2 /etc/caddy /home/ubuntu/.config/caddy /home/ubuntu/zeus-writer; do
+              [ -e "$p" ] && { echo "--- $p ---"; stat -c '%U:%G %a %n' "$p"; }
+            done
+            echo '=== STUDIO REFERENCES ==='
+            grep -RIn --exclude='*.log' --exclude-dir=node_modules --exclude-dir=.git 'studio\.milkcat\.org\|layout-lab' /etc/nginx /etc/apache2 /etc/caddy /home/ubuntu/.config /home/ubuntu/zeus-writer 2>/dev/null | head -200 || true
+            echo '=== SUDO CAPABILITY ==='
+            sudo -n -l 2>&1 || true
+            echo '=== LIVE CHECKOUT ==='
+            git -c safe.directory=/home/ubuntu/agentmanager -C /home/ubuntu/agentmanager status --short 2>&1 || true
+            git -c safe.directory=/home/ubuntu/agentmanager -C /home/ubuntu/agentmanager rev-parse HEAD 2>&1 || true
+            echo '=== WEBSITE CHECKOUT ==='
+            git -c safe.directory=/home/ubuntu/zeus-writer -C /home/ubuntu/zeus-writer status --short 2>&1 || true
+            git -c safe.directory=/home/ubuntu/zeus-writer -C /home/ubuntu/zeus-writer rev-parse --abbrev-ref HEAD 2>&1 || true
+            git -c safe.directory=/home/ubuntu/zeus-writer -C /home/ubuntu/zeus-writer rev-parse HEAD 2>&1 || true
+            test -f /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html && echo 'layoutlab_static_artifact=YES' || echo 'layoutlab_static_artifact=NO'
+            echo '=== PUBLIC ==='
+            for u in https://studio.milkcat.org/layout-lab/ https://studio.milkcat.org/layout-lab/api/healthz; do
+              code=$(curl -sS -o /tmp/studio-diag-body -w '%{http_code}' --connect-timeout 5 --max-time 20 "$u" || true)
+              echo "$u http=$code"
+              head -c 500 /tmp/studio-diag-body 2>/dev/null || true; echo
+            done
+          } 2>&1 | tee "$OUT"
+      - name: Commit diagnostic evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-webserver-diagnostic.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-webserver-diagnostic.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-webserver-diagnostic.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlab): Studio web-server diagnostic'
+          git push origin HEAD:main
