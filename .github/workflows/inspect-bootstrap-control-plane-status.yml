@@ -48,3 +48,5 @@ jobs:
           git commit -m 'evidence(agentos): inspect bootstrap control-plane run'
           git pull --rebase origin main
           git push
+
+# refresh: corrected /tmp rendezvous
