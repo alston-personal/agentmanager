@@ -1,0 +1,74 @@
+name: Browser Creator Persona Contract
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths: ['.github/workflows/browser-creator-persona-contract.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+      - name: Verify creator persona flow
+        run: |
+          cat > creator-persona.mjs <<'NODE'
+          import { chromium } from 'playwright';
+          import assert from 'node:assert/strict';
+
+          const base = 'https://leopardcat-tarot.milkcat.org';
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage();
+          await page.goto(base + '/create.html', {waitUntil:'networkidle'});
+
+          await page.waitForFunction(() => document.querySelectorAll('input[name="default-persona"]').length >= 2);
+          const ids = await page.locator('input[name="default-persona"]').evaluateAll(xs => xs.map(x => x.value));
+          assert.ok(ids.includes('master'));
+          assert.ok(ids.includes('leopardcat'));
+          assert.equal(await page.locator('input[name="default-persona"]:checked').inputValue(), 'master');
+          assert.match(await page.locator('#persona-options').innerText(), /通用解牌師/);
+
+          await page.locator('input[name="default-persona"][value="leopardcat"]').check();
+          assert.equal(await page.locator('input[name="default-persona"]:checked').inputValue(), 'leopardcat');
+          assert.match(await page.locator('#persona-status').innerText(), /石虎|LeopardCat|leopardcat/i);
+
+          await page.locator('#deck-name').fill('Browser Persona Contract');
+          const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=', 'base64');
+          await page.locator('#images').setInputFiles({name:'01-test-card.png', mimeType:'image/png', buffer:png});
+          await page.waitForFunction(() => document.querySelectorAll('#cards .item').length === 1);
+          await page.locator('#cards textarea[data-k="upright"]').fill('這是一張用於瀏覽器契約驗證的牌。');
+
+          let payload = null;
+          await page.route('**/api/v1/decks', async route => {
+            if (route.request().method() !== 'POST') return route.continue();
+            payload = JSON.parse(route.request().postData() || '{}');
+            await route.fulfill({status:200, contentType:'application/json', body:JSON.stringify({
+              deck_id:'browser-persona-contract', name:'Browser Persona Contract', card_count:1,
+              reversals:false, default_persona:payload.persona, share_path:'/?deck=browser-persona-contract'
+            })});
+          });
+
+          await page.locator('#publish').click();
+          await page.waitForFunction(() => !document.getElementById('done').classList.contains('hidden'));
+          assert.ok(payload);
+          assert.equal(payload.persona, 'leopardcat');
+          assert.equal(payload.cards.length, 1);
+          assert.equal(payload.name, 'Browser Persona Contract');
+          assert.match(await page.locator('#share-link').getAttribute('href'), /deck=browser-persona-contract/);
+
+          console.log('browser_creator_persona_catalog=passed');
+          console.log('browser_creator_default_master=passed');
+          console.log('browser_creator_persona_switch=passed');
+          console.log('browser_creator_publish_payload=passed');
+          console.log('browser_creator_no_persistent_test_deck=passed');
+          await browser.close();
+          NODE
+          node creator-persona.mjs
