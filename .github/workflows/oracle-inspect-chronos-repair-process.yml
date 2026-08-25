@@ -1,0 +1,71 @@
+name: Oracle Inspect Chronos Repair Process
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-chronos-repair-process.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect repair child process chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/chronos-repair-process.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo '=== MATCHING PROCESSES ==='
+            ps -eo user,group,pid,ppid,stat,etime,wchan:32,args | grep -E 'update_scheduler_board|agentos-repair-antigravity|repair_antigravity_relay_user|install_action_relay_user|git fetch origin main|systemctl --user|action-runtime' | grep -v grep || true
+            echo '=== DESCENDANTS OF CHRONOS ==='
+            CHRONOS=$(pgrep -f '/home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py' | head -1 || true)
+            echo "chronos_pid=$CHRONOS"
+            if [ -n "$CHRONOS" ]; then
+              python3 - "$CHRONOS" <<'PY'
+          import os,sys
+          root=int(sys.argv[1])
+          rows={}
+          for name in os.listdir('/proc'):
+              if not name.isdigit(): continue
+              try:
+                  raw=open(f'/proc/{name}/stat').read(); end=raw.rfind(')')
+                  rest=raw[end+2:].split(); ppid=int(rest[1])
+                  cmd=open(f'/proc/{name}/cmdline','rb').read().replace(b'\0',b' ').decode(errors='replace').strip()
+                  rows[int(name)]=(ppid,cmd)
+              except Exception: pass
+          wanted={root}; changed=True
+          while changed:
+              changed=False
+              for pid,(ppid,cmd) in rows.items():
+                  if ppid in wanted and pid not in wanted:
+                      wanted.add(pid); changed=True
+          for pid in sorted(wanted):
+              ppid,cmd=rows.get(pid,(None,'')); print(f'pid={pid} ppid={ppid} cmd={cmd}')
+          PY
+            fi
+            echo '=== TARGET / REQUEST MTIME ==='
+            stat /home/ubuntu/agentmanager/scripts/update_scheduler_board.py 2>&1 || true
+            stat /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe/*.request 2>&1 || true
+            echo '=== CHRONOS LOG LATEST ==='
+            tail -20 /home/ubuntu/agent-data/logs/chronos.log 2>&1 || true
+          } 2>&1 | tee "$OUT"
+      - name: Commit process evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/chronos-repair-process.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): inspect Chronos repair process'
+          git pull --rebase origin main
+          git push
