@@ -1,0 +1,46 @@
+timestamp_utc=2026-08-25T05:21:58Z
+hostname=instance-20260129-0852
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+python=Python 3.10.12
+oracle_write_gate=PASS
+physical_projects_root=/home/agentos-node/projects
+Registered project: LayoutLib
+Slug: layoutlib
+STATUS: /home/ubuntu/agent-data/projects/layoutlib/STATUS.md
+Workspace: /home/ubuntu/agentmanager/workspace/layoutlib
+Dashboard: /home/ubuntu/agent-data/DASHBOARD.md
+
+--- Summary ---
+Created: 0
+Skipped (already exists): 1
+Errors: 0
+Skipped projects: layoutlib
+layoutlib_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=14
+=== UNIT + INTEGRATION TESTS ===
+test_cli_end_to_end (test_layoutlib.LayoutLibTests) ... ok
+test_ir_roundtrip (test_layoutlib.LayoutLibTests) ... ok
+test_obj_has_geometry (test_layoutlib.LayoutLibTests) ... ok
+test_parse_rectangle_finds_four_primary_walls (test_layoutlib.LayoutLibTests) ... ok
+test_rejects_invalid_scale (test_layoutlib.LayoutLibTests) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.082s
+
+OK
+walls=4 out=/tmp/tmp2may6elg/ir.json
+walls=4 out=/tmp/tmp2may6elg/model.obj
+=== END-TO-END DEMO ===
+generated 4 walls
+=== CLI SMOKE ===
+walls=4 out=/tmp/layoutlib-smoke.ir.json
+walls=4 out=/tmp/layoutlib-smoke.obj
+=== ACCEPTANCE ===
+layoutlib_validation=PASS
+unit_tests=5_passed
+demo_walls=4
+obj_vertices=32
+obj_faces=24
+library=/home/agentos-node/projects/layoutlib/src/layoutlib
+readme=/home/agentos-node/projects/layoutlib/README.md
+docs=/home/agentos-node/projects/layoutlib/docs
+metadata=/home/ubuntu/agent-data/projects/layoutlib/project.yaml
