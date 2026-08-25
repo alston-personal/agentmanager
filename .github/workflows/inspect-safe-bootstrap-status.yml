@@ -1,0 +1,58 @@
+name: Inspect Safe Bootstrap Status
+
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-safe-bootstrap-status.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read latest safe bootstrap run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          API="https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml/runs?per_page=5"
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$API" > /tmp/safe-runs.json
+          python3 - <<'PY' > .agentos/evidence/safe-bootstrap-status.txt
+          import json
+          d=json.load(open('/tmp/safe-runs.json'))
+          runs=d.get('workflow_runs',[])
+          print('total_count='+str(d.get('total_count',0)))
+          for r in runs:
+              print('run_id='+str(r.get('id')))
+              print('status='+str(r.get('status')))
+              print('conclusion='+str(r.get('conclusion')))
+              print('event='+str(r.get('event')))
+              print('head_sha='+str(r.get('head_sha')))
+              print('created_at='+str(r.get('created_at')))
+              print('updated_at='+str(r.get('updated_at')))
+              print('---')
+          PY
+          cat .agentos/evidence/safe-bootstrap-status.txt
+      - name: Commit status evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/safe-bootstrap-status.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): inspect safe bootstrap run'
+          git pull --rebase origin main
+          git push
