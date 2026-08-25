@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import time
 import uuid
@@ -85,14 +84,23 @@ def quarantine_stale_spool(report: list[str]) -> Path:
             'goal': (data.get('canonical_ir') or {}).get('goal') if isinstance(data.get('canonical_ir'), dict) else None,
         })
 
+    # Old failed publishers can leave ubuntu:ubuntu 0660 tmp files. The runner is
+    # deliberately unable to read them. Preserve them by directory rename only;
+    # reading their payload is unnecessary for safe quarantine.
     for source in sorted((ROOT / 'receipts').glob('relay-*.json.tmp')):
-        raw = source.read_bytes()
+        st = source.stat()
         target = q_tmp / source.name
         source.replace(target)
         manifest.append({
             'source': 'receipt-tmp',
             'file': source.name,
-            'sha256': hashlib.sha256(raw).hexdigest(),
+            'sha256': None,
+            'hash_status': 'unavailable-by-design-peer-owned',
+            'uid': st.st_uid,
+            'gid': st.st_gid,
+            'mode': oct(st.st_mode & 0o777),
+            'size': st.st_size,
+            'mtime_ns': st.st_mtime_ns,
         })
 
     (qroot / 'manifest.json').write_text(json.dumps({
@@ -103,6 +111,8 @@ def quarantine_stale_spool(report: list[str]) -> Path:
     }, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     report.append(f'quarantine={qroot}')
     report.append(f'quarantined_items={len(manifest)}')
+    all_q = sorted((ROOT / 'quarantine').glob('boundary-recovery-*'))
+    report.append('quarantine_roots=' + ','.join(str(p) for p in all_q))
     return qroot
 
 
