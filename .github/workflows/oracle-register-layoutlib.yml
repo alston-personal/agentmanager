@@ -7,8 +7,7 @@ on:
       - '.github/workflows/oracle-register-layoutlib.yml'
       - 'scripts/bootstrap_layoutlib.py'
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
       - '.github/workflows/oracle-register-layoutlib.yml'
       - 'scripts/bootstrap_layoutlib.py'
@@ -18,173 +17,106 @@ permissions:
 
 jobs:
   build-test-register:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 15
-    env:
-      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Validate SSH configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$DEPLOY_HOST_SOURCE" || { echo 'Missing deploy host'; exit 1; }
-          test -n "$DEPLOY_USER" || { echo 'Missing deploy user'; exit 1; }
-          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
-          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
-          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-          test -n "$DEPLOY_HOST" || { echo 'Unable to derive deploy host'; exit 1; }
-          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
-          echo "DEPLOY_PORT=${DEPLOY_PORT:-22}" >> "$GITHUB_ENV"
-
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Copy reproducible LayoutLib bootstrap to Oracle
-        shell: bash
-        run: |
-          set -euo pipefail
-          scp -o StrictHostKeyChecking=accept-new -P "$DEPLOY_PORT" scripts/bootstrap_layoutlib.py "$DEPLOY_USER@$DEPLOY_HOST:/tmp/bootstrap_layoutlib.py"
-
-      - name: Build, test, document, register, and verify
+      - name: Build, test, document, register, and verify on Oracle
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/layoutlib-validation.txt
-          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE' | tee "$OUT"
-          set -euo pipefail
-          PROJECT=layoutlib
-          DISPLAY='LayoutLib'
-          ROOT=/home/ubuntu/agentmanager
-          DATA=/home/ubuntu/agent-data
-          CODE=/home/ubuntu/layoutlib
+          OUT="$PWD/.agentos/evidence/layoutlib-validation.txt"
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "identity=$(id)"
+            echo "python=$(python3 --version 2>&1)"
 
-          echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "hostname=$(hostname)"
-          echo "python=$(python3 --version 2>&1)"
+            ROOT=/home/ubuntu/agentmanager
+            DATA=/home/ubuntu/agent-data
+            CODE=/home/ubuntu/layoutlib
+            BOOT="$PWD/scripts/bootstrap_layoutlib.py"
 
-          test -f "$ROOT/scripts/register_project.py" || { echo "register_project.py missing"; exit 1; }
-          test -f "$ROOT/scripts/init_project_yaml.py" || { echo "init_project_yaml.py missing"; exit 1; }
-          test -f /tmp/bootstrap_layoutlib.py || { echo "bootstrap missing"; exit 1; }
+            MODE=direct
+            if ! test -w /home/ubuntu || ! test -w "$DATA" || ! test -w "$ROOT"; then
+              if command -v sudo >/dev/null && sudo -n -u ubuntu true 2>/dev/null; then
+                MODE=sudo
+              else
+                echo "oracle_write_gate=FAIL"
+                stat -c '%n owner=%U group=%G mode=%a' /home/ubuntu "$ROOT" "$DATA" || true
+                exit 2
+              fi
+            fi
+            echo "oracle_write_mode=$MODE"
 
-          cd "$ROOT"
-          AGENTMANAGER_ROOT="$ROOT" AGENT_DATA_ROOT="$DATA" \
-            python3 scripts/register_project.py "$PROJECT" \
-              --display-name "$DISPLAY" \
-              --status '🧪 MVP Validation' \
-              --type-icon '🏠' \
-              --summary 'Floor-plan parsing library: raster image -> versioned Spatial IR -> 3D OBJ.'
+            run_owner() {
+              if [ "$MODE" = sudo ]; then sudo -n -u ubuntu "$@"; else "$@"; fi
+            }
 
-          AGENT_DATA_ROOT="$DATA" python3 scripts/init_project_yaml.py --project "$PROJECT" || true
-          python3 /tmp/bootstrap_layoutlib.py --target "$CODE"
+            test -f "$ROOT/scripts/register_project.py"
+            test -f "$ROOT/scripts/init_project_yaml.py"
+            test -f "$BOOT"
 
-          echo '=== SOURCE TREE ==='
-          find "$CODE" -maxdepth 3 -type f -print | sort
+            run_owner env AGENTMANAGER_ROOT="$ROOT" AGENT_DATA_ROOT="$DATA" \
+              python3 "$ROOT/scripts/register_project.py" layoutlib \
+              --display-name LayoutLib --status '🧪 MVP Validation' --type-icon '🏠' \
+              --summary 'Floor-plan raster -> versioned Spatial IR -> 3D OBJ.'
+            run_owner env AGENT_DATA_ROOT="$DATA" python3 "$ROOT/scripts/init_project_yaml.py" --project layoutlib || true
+            run_owner python3 "$BOOT" --target "$CODE"
 
-          echo '=== UNIT + INTEGRATION TESTS ==='
-          cd "$CODE"
-          PYTHONPATH=src python3 -m unittest discover -s tests -v
+            echo '=== TESTS ==='
+            run_owner env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v
+            run_owner env PYTHONPATH="$CODE/src" python3 "$CODE/examples/generate_demo.py"
 
-          echo '=== END-TO-END DEMO ==='
-          PYTHONPATH=src python3 examples/generate_demo.py
-          test -s examples/demo_room.ir.json
-          test -s examples/demo_room.obj
-          WALLS=$(python3 - <<'PY'
-          import json
-          with open('examples/demo_room.ir.json', encoding='utf-8') as f:
-              print(len(json.load(f)['walls']))
-          PY
-          )
-          test "$WALLS" = "4"
-          VERTICES=$(grep -c '^v ' examples/demo_room.obj)
-          FACES=$(grep -c '^f ' examples/demo_room.obj)
-          test "$VERTICES" = "32"
-          test "$FACES" = "24"
+            IR="$CODE/examples/demo_room.ir.json"
+            OBJ="$CODE/examples/demo_room.obj"
+            test -s "$IR"; test -s "$OBJ"
+            WALLS=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["walls"]))' "$IR")
+            VERTICES=$(grep -c '^v ' "$OBJ")
+            FACES=$(grep -c '^f ' "$OBJ")
+            test "$WALLS" = 4
+            test "$VERTICES" = 32
+            test "$FACES" = 24
 
-          echo '=== PACKAGE/CLI SMOKE ==='
-          PYTHONPATH=src python3 -m layoutlib.cli parse tests/fixtures/demo_room.pgm --out /tmp/layoutlib-smoke.ir.json --meters-per-pixel 0.02 --min-wall-length-px 30
-          PYTHONPATH=src python3 -m layoutlib.cli obj /tmp/layoutlib-smoke.ir.json --out /tmp/layoutlib-smoke.obj
-          test -s /tmp/layoutlib-smoke.ir.json
-          test -s /tmp/layoutlib-smoke.obj
+            run_owner env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli parse "$CODE/tests/fixtures/demo_room.pgm" --out /tmp/layoutlib-smoke.ir.json --meters-per-pixel 0.02 --min-wall-length-px 30
+            run_owner env PYTHONPATH="$CODE/src" python3 -m layoutlib.cli obj /tmp/layoutlib-smoke.ir.json --out /tmp/layoutlib-smoke.obj
+            test -s /tmp/layoutlib-smoke.ir.json; test -s /tmp/layoutlib-smoke.obj
 
-          YAML="$DATA/projects/$PROJECT/project.yaml"
-          test -f "$YAML" || { echo "project.yaml missing after registration"; exit 1; }
-          python3 - "$YAML" <<'PY'
+            YAML="$DATA/projects/layoutlib/project.yaml"
+            STATUS="$DATA/projects/layoutlib/STATUS.md"
+            test -f "$YAML"; test -f "$STATUS"
+            run_owner python3 - "$YAML" <<'PY'
           import sys, yaml
           from datetime import datetime, timezone
           from pathlib import Path
-          p=Path(sys.argv[1]); d=yaml.safe_load(p.read_text(encoding='utf-8')) or {}
-          now=datetime.now(timezone.utc).isoformat()
-          d.update({
-              'display_name':'LayoutLib',
-              'phase':'active',
-              'status':'✅ MVP Validated',
-              'actual_code_path':'/home/ubuntu/layoutlib',
-              'repo_url':None,
-              'repo_visibility':None,
-              'repository_state':'local-only',
-              'repository_state_reason':'MVP validated on Oracle; separate GitHub repository has not yet been provisioned.',
-              'summary':'Validated v0.1 library: high-contrast orthogonal raster floor plan -> Spatial IR JSON -> OBJ.',
-              'current_focus':'Real-world benchmark and semantic/opening detection after MVP feasibility gate.',
-              'next_action':'Benchmark against labeled real floor plans before claiming general architectural-plan support.',
-              'updated_at':now,
-          })
+          p=Path(sys.argv[1]); d=yaml.safe_load(p.read_text(encoding='utf-8')) or {}; now=datetime.now(timezone.utc).isoformat()
+          d.update({'display_name':'LayoutLib','phase':'active','status':'✅ MVP Validated','actual_code_path':'/home/ubuntu/layoutlib','repo_url':None,'repo_visibility':None,'repository_state':'local-only','repository_state_reason':'MVP validated on Oracle; separate GitHub repository not yet provisioned.','summary':'Validated v0.1: high-contrast orthogonal raster -> Spatial IR JSON -> OBJ.','current_focus':'Real-world benchmark and semantic/opening detection.','next_action':'Benchmark labeled real floor plans before claiming general support.','updated_at':now})
           d['health']={'freshness':'fresh','sync_state':'oracle_mvp_validated','last_verified_at':now}
-          p.write_text(yaml.safe_dump(d, allow_unicode=True, sort_keys=False), encoding='utf-8')
+          p.write_text(yaml.safe_dump(d,allow_unicode=True,sort_keys=False),encoding='utf-8')
           PY
 
-          STATUS="$DATA/projects/$PROJECT/STATUS.md"
-          python3 - "$STATUS" <<'PY'
-          import sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-          p=Path(sys.argv[1]); s=p.read_text(encoding='utf-8')
-          stamp=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')
-          for old in ('| **Last Status** | 🧪 MVP Validation |','| **Last Status** | 🆕 Registered |'):
-              s=s.replace(old,'| **Last Status** | ✅ MVP Validated |')
-          marker='<!-- LOG_START -->'
-          entry=f"\n- `{stamp}` ✅ **MVP VALIDATED**: deterministic image -> Spatial IR -> OBJ pipeline passed unit, round-trip, geometry, CLI and end-to-end tests on Oracle."
-          if 'MVP VALIDATED' not in s:
-              s=s.replace(marker, marker+entry)
-          p.write_text(s,encoding='utf-8')
-          PY
+            echo '=== ACCEPTANCE ==='
+            echo "layoutlib_validation=PASS"
+            echo "unit_tests=5_passed"
+            echo "demo_walls=$WALLS"
+            echo "obj_vertices=$VERTICES"
+            echo "obj_faces=$FACES"
+            echo "library=$CODE/src/layoutlib"
+            echo "readme=$CODE/README.md"
+            echo "docs=$CODE/docs"
+            echo "metadata=$YAML"
+          } 2>&1 | tee "$OUT"
 
-          echo '=== ACCEPTANCE EVIDENCE ==='
-          echo "layoutlib_validation=PASS"
-          echo "unit_tests=5_passed"
-          echo "demo_walls=$WALLS"
-          echo "obj_vertices=$VERTICES"
-          echo "obj_faces=$FACES"
-          echo "code_path=$CODE"
-          echo "readme=$CODE/README.md"
-          echo "architecture_doc=$CODE/docs/ARCHITECTURE.md"
-          echo "spatial_ir_doc=$CODE/docs/SPATIAL_IR.md"
-          echo "validation_doc=$CODE/docs/VALIDATION.md"
-          echo "library_package=$CODE/src/layoutlib"
-          echo "status_path=$STATUS"
-          echo "metadata_path=$YAML"
-          echo '--- project.yaml ---'
-          sed -n '1,140p' "$YAML"
-          REMOTE
-
-      - name: Commit validation evidence
+      - name: Upload validation evidence to branch
         if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/layoutlib-validation.txt
-          if git diff --cached --quiet; then
-            echo "No evidence change to commit"
-            exit 0
-          fi
-          git commit -m "evidence(layoutlib): Oracle MVP validation"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): Oracle MVP validation'
           git push
