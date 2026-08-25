@@ -81,6 +81,31 @@ def _run(argv: list[str], *, cwd: str | Path, timeout: int = 300) -> dict[str, A
     return {"argv": argv, "returncode": completed.returncode, "stdout": completed.stdout[-30000:], "stderr": completed.stderr[-10000:]}
 
 
+def _restart_user_service(unit: str, *, timeout: float = 20.0) -> dict[str, Any]:
+    """Restart a user unit without letting systemctl's job wait pin the relay.
+
+    The Action Relay must always be able to emit a receipt. A blocking
+    `systemctl restart` can wait on a service job and keep a capsule stranded in
+    processing. Submit the restart with --no-block, then poll a read-only state
+    query under a bounded deadline.
+    """
+    cwd = Path.home()
+    restart = _run(["systemctl", "--user", "--no-block", "restart", unit], cwd=cwd, timeout=8)
+    observations: list[dict[str, Any]] = []
+    if restart["returncode"] != 0:
+        return {"ok": False, "service": unit, "restart": restart, "observations": observations}
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        probe = _run(["systemctl", "--user", "is-active", unit], cwd=cwd, timeout=5)
+        state = (probe.get("stdout") or "").strip()
+        observations.append({"returncode": probe["returncode"], "state": state, "stderr": probe.get("stderr", "")[-2000:]})
+        if probe["returncode"] == 0 and state == "active":
+            return {"ok": True, "service": unit, "restart": restart, "observations": observations}
+        time.sleep(0.5)
+    return {"ok": False, "service": unit, "restart": restart, "observations": observations, "error": "service did not become active before deadline"}
+
+
 def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
     site = params.get("site")
     if site != "studio.milkcat.org": raise ValueError("site is not allowlisted")
@@ -100,17 +125,14 @@ def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
 
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
-    unit = "layoutlab-api.service"; step = _run(["systemctl", "--user", "restart", unit], cwd=Path.home(), timeout=30)
-    return {"ok": step["returncode"] == 0, "service": unit, "step": step}
+    return _restart_user_service("layoutlab-api.service")
 
 
 def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
-    unit = "agentos-antigravity-relay.service"
-    step = _run(["systemctl", "--user", "restart", unit], cwd=Path.home(), timeout=30)
     # The caller is a separate Action Relay service, so restarting Antigravity does
     # not terminate the action currently producing this receipt.
-    return {"ok": step["returncode"] == 0, "service": unit, "step": step}
+    return _restart_user_service("agentos-antigravity-relay.service")
 
 
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
