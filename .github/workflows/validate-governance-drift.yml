@@ -1,0 +1,39 @@
+name: Validate AgentOS Governance Drift
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - '.agent/CONSTITUTION.yaml'
+      - '.agent/roles/**'
+      - '.agent/governance/**'
+      - '.agent/AGENT_RULES.md'
+      - '.agent/rules/**'
+      - 'scripts/drift_guard.py'
+      - 'scripts/spec_steward.py'
+      - 'tests/test_drift_guard.py'
+      - '.github/workflows/validate-governance-drift.yml'
+  workflow_dispatch:
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install parser dependency
+        run: python -m pip install pyyaml
+      - name: Run drift guard tests
+        run: python -m unittest tests.test_drift_guard -v
+      - name: Validate current policy contract
+        run: python scripts/drift_guard.py --json --attestation-out .agentos/policy-attestation.json
+      - name: Upload policy attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentos-policy-attestation
+          path: .agentos/policy-attestation.json
