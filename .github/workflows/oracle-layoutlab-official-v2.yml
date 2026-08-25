@@ -1,0 +1,48 @@
+name: Oracle Layout Lab Official V2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-layoutlab-official-v2.yml'
+      - 'scripts/deploy_layoutlab_official_v2.py'
+      - 'scripts/layoutlab_api.py'
+      - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare image support
+        shell: bash
+        run: python3 -m pip install --user 'Pillow>=10,<13'
+
+      - name: Deploy and independently accept official Layout Lab
+        shell: bash
+        run: python3 scripts/deploy_layoutlab_official_v2.py
+
+      - name: Commit deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/layoutlab-official-v2.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/layoutlab-official-v2.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/layoutlab-official-v2.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlab): official v2 deployment acceptance'
+          git push origin HEAD:main
