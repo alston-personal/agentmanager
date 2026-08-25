@@ -1,15 +1,15 @@
-capsule_id=action-c85995c3a2f84a3e938cbea6c1fe7ead
+capsule_id=action-1a6634da3e4441c0a8ea09a3e796d27c
 {
   "action": "layoutlab.static.deploy",
   "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
-  "capsule_id": "action-c85995c3a2f84a3e938cbea6c1fe7ead",
-  "completed_at": "2026-08-25T16:22:13Z",
+  "capsule_id": "action-1a6634da3e4441c0a8ea09a3e796d27c",
+  "completed_at": "2026-08-25T16:24:39Z",
   "executor_user": "ubuntu",
   "mode": "browser-only-layoutlib-v0.1-compatible",
   "ok": true,
   "schema": "agentos.action-receipt/v1",
   "site": "studio.milkcat.org",
-  "started_at": "2026-08-25T16:22:12Z",
+  "started_at": "2026-08-25T16:24:39Z",
   "step": {
     "argv": [
       "/usr/bin/python3",
@@ -17,6 +17,6 @@ capsule_id=action-c85995c3a2f84a3e938cbea6c1fe7ead
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "{\"bytes\": 8612, \"mode\": \"browser-only-layoutlib-v0.1-compatible\", \"ok\": true, \"sha256\": \"5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}\n"
+    "stdout": "{\"bytes\": 8612, \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"browser-only-layoutlib-v0.1-compatible\", \"ok\": true, \"sha256\": \"5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}\n"
   }
 }
