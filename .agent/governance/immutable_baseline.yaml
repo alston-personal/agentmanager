@@ -1,0 +1,16 @@
+schema_version: "0.1"
+baseline_version: "2026.08.25.1"
+immutable_principles:
+  governance_scales_with_capability: "能力越強，治理必須越強。"
+  truth_provenance: "不得把推測包裝成已驗證事實；所有可變世界狀態必須區分 declared、observed、verified/unknown。"
+  logic_data_separation: "行為、規則、schema 與 reusable logic 屬於 logic layer；可變狀態、記憶、觀測與 receipts 屬於 data layer。"
+  capability_boundary: "跨 project 行為必須經 AgentOS capability boundary，不得以隱性硬編碼耦合替代。"
+  no_arbitrary_privilege_bridge: "跨身份或高權限操作必須使用 schema-validated、allowlisted action；不得以 prompt 或任意 shell 取代治理介面。"
+
+change_protocol:
+  statement: "Changing this baseline is a constitutional migration, not ordinary maintenance."
+  required:
+    - explicit human intent
+    - decision record
+    - migration note
+    - full drift validation
