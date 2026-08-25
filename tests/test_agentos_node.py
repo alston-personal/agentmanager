@@ -1,26 +1,30 @@
 from __future__ import annotations
 
 import json
-import os
+import tempfile
+import unittest
 from pathlib import Path
 
 from agent_core.governance_directory import seed_core
-from scripts.agentos_node import harvest, main
+from scripts.agentos_node import harvest
 
 
-def test_harvest_advertises_governance_and_resource_capabilities(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("AGENT_DATA_ROOT", str(tmp_path))
-    ids = {item["id"] for item in harvest()["capabilities"]}
-    assert "governance.resolve" in ids
-    assert "resource.query" in ids
-    assert "resource.verify.site" in ids
+class AgentOSNodeTests(unittest.TestCase):
+    def test_harvest_advertises_governance_and_resource_capabilities(self):
+        ids = {item["id"] for item in harvest()["capabilities"]}
+        self.assertIn("governance.resolve", ids)
+        self.assertIn("resource.query", ids)
+        self.assertIn("resource.verify.site", ids)
+
+    def test_directory_resolves_existing_port_manager_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            directory = Path(td) / "governance" / "directory.json"
+            seed_core(directory)
+            data = json.loads(directory.read_text(encoding="utf-8"))
+            manager = data["entities"]["manager://port"]
+            self.assertIs(manager["authority"]["exclusive"], True)
+            self.assertIn("capability://network.port.allocate", manager["owns"])
 
 
-def test_node_resolves_existing_port_manager(tmp_path: Path, monkeypatch, capsys):
-    # Core directory implementation accepts explicit temp paths; CLI acceptance is
-    # validated on Oracle where the canonical AGENT_DATA_ROOT exists.
-    directory = tmp_path / "governance" / "directory.json"
-    seed_core(directory)
-    data = json.loads(directory.read_text(encoding="utf-8"))
-    assert data["entities"]["manager://port"]["authority"]["exclusive"] is True
-    assert "capability://network.port.allocate" in data["entities"]["manager://port"]["owns"]
+if __name__ == "__main__":
+    unittest.main()
