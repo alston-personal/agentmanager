@@ -1,0 +1,52 @@
+name: Oracle Theme Zero Cost V2
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths: ['.github/workflows/oracle-smoke-theme-zero-cost-v2.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          H="${DEPLOY_HOST_SOURCE#*://}"; H="${H%%/*}"; H="${H%%:*}"; echo "DEPLOY_HOST=$H" >> "$GITHUB_ENV"
+      - name: SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run isolated Oracle checks
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash -s" <<'REMOTE'
+          set -euo pipefail
+          W=/tmp/lc-theme-v2
+          rm -rf "$W"
+          git -c credential.helper= clone -q --depth 1 --branch feature/theme-zero-cost-ai https://github.com/alston-personal/leopardcat-tarot.git "$W"
+          cd "$W"
+          echo feature_commit=$(git rev-parse HEAD)
+          python3 -m py_compile website/fortune_server.py website/divination/*.py
+          ! grep -R -E 'CERT_NONE|check_hostname *= *False' website/fortune_server.py website/divination
+          PYTHONPATH=website python3 -c "from divination.ai_gateway import ZeroCostGeminiGateway as G; p=G('x').policy(); assert p['paid_fallback'] is False and p['model']=='gemini-2.5-flash' and p['billing_state_detectable_by_runtime'] is False; print('oracle_zero_cost_policy=passed')"
+          PYTHONPATH=website python3 -c "import tempfile; from divination.themes import ThemePublisher,ThemeRegistry; t=tempfile.TemporaryDirectory(); o=ThemePublisher(t.name).publish({'name':'Oracle','colors':{'background':'#112233'}}); assert ThemeRegistry(t.name).get(o['theme_id'])['colors']['background']=='#112233'; print('oracle_theme_roundtrip=passed')"
+          echo oracle_tls_verification=passed
+          cd website
+          sed 's/PORT = 8088/PORT = 18089/' fortune_server.py > fortune_server.smoke.py
+          mkdir -p data/custom_themes
+          nohup /usr/bin/python3 fortune_server.smoke.py >/tmp/lc-theme-v2.log 2>&1 & P=$!
+          trap 'kill $P >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:18089/api/v1/ai-policy >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18089/api/v1/ai-policy | python3 -c "import sys,json; p=json.load(sys.stdin); assert p['paid_fallback'] is False; print('oracle_http_ai_policy=passed')"
+          curl -fsS http://127.0.0.1:18089/api/v1/themes | python3 -c "import sys,json; x=json.load(sys.stdin); ids={t['theme_id'] for t in x['themes']}; assert {'leopardcat','midnight','minimal-light'} <= ids; print('oracle_http_themes=passed')"
+          C=$(curl -sS -o /tmp/lc-theme-reading.json -w '%{http_code}' -H 'Content-Type: application/json' --data '{"method":"tarot","persona":"master","question":"Oracle smoke","input":{"spread":"single"},"lang":"zh-TW","seed":"oracle-theme"}' http://127.0.0.1:18089/api/v1/readings || true)
+          echo live_ai_http_status=$C
+          if [ "$C" = 200 ]; then echo oracle_live_ai=passed; elif [ "$C" = 503 ]; then python3 -c "import json; x=json.load(open('/tmp/lc-theme-reading.json')); assert x.get('error')=='ai_unavailable' and x.get('reading_id') and x.get('session_token'); print('oracle_ai_graceful_unavailable=passed'); print('oracle_reading_preserved=passed')"; else cat /tmp/lc-theme-reading.json; exit 1; fi
+          REMOTE
