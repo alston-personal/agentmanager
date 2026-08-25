@@ -21,10 +21,6 @@ test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 mkdir -p "$(dirname "$RUNTIME_ROOT")" "$UNIT_DIR"
 
 if [ "${AGENTOS_ACTION_SPOOL_PREPROVISIONED:-0}" = 1 ]; then
-  # The long-running ubuntu Chronos carrier can predate the supplementary-group
-  # grant and therefore cannot traverse the shared agent-data boundary itself.
-  # In the safe bootstrap path, agentos-node provisions this spool first; the
-  # newly started Action Relay later enters it through explicit `sg agentos`.
   echo "action_relay_spool_preprovisioned=YES"
 else
   mkdir -p "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
@@ -52,9 +48,6 @@ print('actions='+','.join(sorted(ACTIONS)))
 PY
 )
 
-# The ubuntu user manager can predate the agentos supplementary-group grant.
-# Starting the worker through `sg agentos` makes the shared-boundary group
-# explicit on every service start instead of depending on stale session groups.
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
@@ -78,8 +71,23 @@ EOF
 systemctl --user daemon-reload
 systemctl --user enable --now agentos-action-relay.service
 systemctl --user restart agentos-action-relay.service
-sleep 1
-systemctl --user --no-pager --full status agentos-action-relay.service
+
+active=0
+for i in $(seq 1 12); do
+  if systemctl --user is-active --quiet agentos-action-relay.service; then
+    active=1
+    break
+  fi
+  sleep 1
+done
+
+systemctl --user --no-pager --full status agentos-action-relay.service || true
+if [ "$active" != 1 ]; then
+  echo '=== ACTION RELAY STARTUP JOURNAL ===' >&2
+  journalctl --user -u agentos-action-relay.service -n 80 --no-pager >&2 || true
+  echo 'action_relay_install=FAIL' >&2
+  exit 4
+fi
 
 echo "action_relay_install=PASS"
 echo "action_relay_group_context=agentos"
