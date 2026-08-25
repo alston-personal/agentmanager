@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect-tarot:
@@ -18,8 +18,14 @@ jobs:
       DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      PROJECT_ROOT: /home/ubuntu/agentmanager/workspace/leopardcat-tarot
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/distributed-agentos-runtime
+
       - name: Resolve Oracle target
         shell: bash
         run: |
@@ -35,24 +41,57 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Locate tarot project and inspect candidate structure
+      - name: Inspect actual LeopardCat Tarot project
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          mkdir -p artifacts/oracle-inspection
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$PROJECT_ROOT" > artifacts/oracle-inspection/leopardcat-tarot.txt <<'REMOTE'
           set -euo pipefail
-          echo '=== host ==='
+          ROOT="$1"
+          echo '=== HOST ==='
           hostname
-          echo '=== candidate paths ==='
-          find "$HOME" /opt /srv /var/www -maxdepth 6 \
-            \( -iname '*tarot*' -o -iname '*石虎*' -o -iname '*leopard*' \) \
-            -print 2>/dev/null | head -n 200
+          echo "root=$ROOT"
+          echo "exists=$(test -d "$ROOT" && echo yes || echo no)"
+          test -d "$ROOT"
 
-          echo '=== likely project roots ==='
-          find "$HOME" /opt /srv /var/www -maxdepth 6 -type f \
-            \( -name 'package.json' -o -name 'pyproject.toml' -o -name 'requirements.txt' -o -name 'docker-compose.yml' -o -name 'compose.yml' -o -name 'README.md' \) \
-            -print 2>/dev/null | grep -Ei 'tarot|石虎|leopard' | head -n 200 || true
+          echo '=== GIT ==='
+          git -C "$ROOT" remote -v 2>/dev/null || true
+          git -C "$ROOT" branch --show-current 2>/dev/null || true
+          git -C "$ROOT" log -1 --oneline 2>/dev/null || true
 
-          echo '=== textual references ==='
-          grep -RIlE '石虎.{0,20}塔羅|塔羅.{0,20}石虎|tarot' "$HOME"/projects "$HOME"/workspace "$HOME"/agent-data "$HOME"/agentmanager 2>/dev/null | head -n 200 || true
+          echo '=== TOP LEVEL ==='
+          find "$ROOT" -maxdepth 2 -mindepth 1 -printf '%P\n' 2>/dev/null | sort | head -n 300
+
+          echo '=== DIVINATION / READING / REVERSAL REFERENCES ==='
+          grep -RInE --exclude-dir=.git --exclude='*.png' --exclude='*.jpg' --exclude='*.jpeg' --exclude='*.webp' \
+            'divination|reading|spread|shuffle|draw|upright|revers|正位|逆位|占卜|抽牌|牌陣|clarif|orientation|telegram|line bot|webhook|FastAPI|Flask|Express' \
+            "$ROOT" 2>/dev/null | head -n 800 || true
+
+          echo '=== LIKELY ENGINE / SERVICE FILES ==='
+          find "$ROOT" -maxdepth 5 -type f \
+            \( -iname '*divin*' -o -iname '*read*' -o -iname '*tarot*' -o -iname '*spread*' -o -iname '*bot*' -o -iname '*api*' -o -iname '*service*' \) \
+            -printf '%P\n' 2>/dev/null | sort | head -n 400
+
+          echo '=== PACKAGE / PYTHON MANIFESTS ==='
+          for f in package.json pyproject.toml requirements.txt README.md; do
+            if [ -f "$ROOT/$f" ]; then
+              echo "--- $f ---"
+              sed -n '1,220p' "$ROOT/$f"
+            fi
+          done
           REMOTE
+
+      - name: Commit inspection receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add artifacts/oracle-inspection/leopardcat-tarot.txt
+          if git diff --cached --quiet; then
+            echo 'inspection_receipt=unchanged'
+          else
+            git commit -m 'chore(agentos): record Oracle LeopardCat Tarot inspection'
+            git push origin HEAD:feature/distributed-agentos-runtime
+          fi
