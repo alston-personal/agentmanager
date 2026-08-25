@@ -1,5 +1,5 @@
 schema_version: "0.1"
-role_set_version: "2026.08.25.1"
+role_set_version: "2026.08.25.2"
 
 roles:
   - id: core.root
@@ -12,6 +12,7 @@ roles:
       - governance_scales_with_capability
       - truth_provenance
       - logic_data_separation
+      - responsibility_resolution
       - executor_independence
     may:
       - read_global_rules
@@ -29,6 +30,7 @@ roles:
     purpose: "將已核准的規格轉化為可驗證實作。"
     must_obey:
       - capability_boundary
+      - responsibility_resolution
       - receipts_over_claims
       - no_arbitrary_privilege_bridge
     upstream_roles:
@@ -62,6 +64,7 @@ roles:
     must_obey:
       - specification_closure
       - capability_boundary
+      - responsibility_resolution
       - evolution_without_erasure
     outputs:
       - canonical_ir
@@ -91,6 +94,7 @@ roles:
     purpose: "持續追蹤正式規格是否有 owner、target、implementation evidence 與 closure。"
     must_obey:
       - specification_closure
+      - responsibility_resolution
       - evolution_without_erasure
     capabilities:
       - governance.spec.audit
@@ -107,6 +111,7 @@ roles:
     purpose: "守護 AgentOS constitution、角色契約與 runtime policy attestation，阻止核心原則靜默漂移。"
     must_obey:
       - governance_scales_with_capability
+      - responsibility_resolution
       - evolution_without_erasure
       - executor_independence
     capabilities:
@@ -126,6 +131,7 @@ roles:
     must_obey:
       - truth_provenance
       - query_before_discovery
+      - responsibility_resolution
       - logic_data_separation
     capabilities:
       - resource.query
