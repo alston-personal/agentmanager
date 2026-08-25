@@ -1,0 +1,38 @@
+timestamp_utc=2026-08-25T07:34:36Z
+hostname=instance-20260129-0852
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+python=Python 3.10.12
+layoutlib_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=14
+layoutlib_web_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=3
+layoutlib_hardening_bootstrap=ok target=/home/agentos-node/projects/layoutlib files=6
+=== HARDENED UNIT + INTEGRATION TESTS ===
+test_false_positive_reduces_precision (test_benchmark.BenchmarkTests) ... ok
+test_perfect_match (test_benchmark.BenchmarkTests) ... ok
+test_p2_dependency_free (test_imageio_formats.ImageIOFormatTests) ... ok
+test_p5_16bit_scales_to_8bit (test_imageio_formats.ImageIOFormatTests) ... ok
+test_p5_dependency_free_preserves_whitespace_pixel (test_imageio_formats.ImageIOFormatTests) ... ok
+test_cli_end_to_end (test_layoutlib.LayoutLibTests) ... ok
+test_ir_roundtrip (test_layoutlib.LayoutLibTests) ... ok
+test_obj_has_geometry (test_layoutlib.LayoutLibTests) ... ok
+test_parse_rectangle_finds_four_primary_walls (test_layoutlib.LayoutLibTests) ... ok
+test_rejects_invalid_scale (test_layoutlib.LayoutLibTests) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.082s
+
+OK
+walls=4 out=/tmp/tmp8rlptsuy/ir.json
+walls=4 out=/tmp/tmp8rlptsuy/model.obj
+=== P5 CORE INGESTION SMOKE ===
+p5_dependency_free=PASS
+=== BENCHMARK HARNESS SMOKE ===
+benchmark_harness=PASS wall_f1=1.0
+=== ACCEPTANCE ===
+layoutlib_hardening=PASS
+unit_tests=10_passed
+p5_dependency_free=PASS
+benchmark_harness=PASS
+real_world_measured=NO
+library=/home/agentos-node/projects/layoutlib/src/layoutlib
+benchmark_docs=/home/agentos-node/projects/layoutlib/docs/BENCHMARK.md
+benchmark_manifest=/home/agentos-node/projects/layoutlib/benchmarks/manifest.example.json
