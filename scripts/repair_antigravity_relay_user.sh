@@ -21,30 +21,28 @@ git -C "$REPO" merge --ff-only origin/main
 install -m 0664 "$REPO/agentos_node/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
 install -m 0664 "$REPO/agentos_node/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
 
-# The shared spool must remain group-owned and group-writable. Do not recursively
-# chown peer artifacts: producer ownership is part of the cross-user boundary.
 for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
   mkdir -p "$d"
   chgrp agentos "$d"
   chmod 2770 "$d"
 done
 
-# Remove the one stale incomplete receipt created by the old worker; it is not a
-# valid committed receipt and otherwise blocks atomic replacement semantics.
-find "$SPOOL/receipts" -maxdepth 1 -type f -name '*.json.tmp' -user ubuntu -delete
-
+# Do NOT restart the Antigravity service here. This script runs as a child of
+# that service; restarting it here kills the worker before it can atomically
+# publish the repair receipt. A separate deterministic Action Relay action does
+# the restart only after this capsule has completed and its receipt is durable.
 systemctl --user daemon-reload
-systemctl --user restart agentos-antigravity-relay.service
-sleep 1
-systemctl --user is-active --quiet agentos-antigravity-relay.service
 PYTHONPATH="$RUNTIME" python3 - <<'PY'
 from agentos_node.antigravity_relay import AntigravityRelayClient
 from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
 print('antigravity_runtime_import=PASS')
 PY
 
+bash "$REPO/scripts/install_action_relay_user.sh"
+systemctl --user is-active --quiet agentos-action-relay.service
+
 echo "antigravity_repair=PASS"
+echo "antigravity_restart_pending=YES"
+echo "action_relay_install=PASS"
 echo "runtime=$RUNTIME"
 echo "spool=$SPOOL"
-
-bash "$REPO/scripts/install_action_relay_user.sh"
