@@ -30,14 +30,14 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=e0e126e8bdfbab076077261ece410285af66b68b
+          TARGET=83d0c97f46c5e3554982a19509da588562fdcebb
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
           dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' | grep -v '^ M website/dist/' | grep -v '^?? website/data/' || true)
           if [ -n "$dirty" ]; then echo 'unexpected production changes:' >&2; echo "$dirty" >&2; exit 40; fi
           cp "$WEB/stats.json" /tmp/lc-stats.pre-persona-creator.json
-          mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
+          mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes" "$WEB/data/custom_personas"
           git -C "$PROD" checkout -- website/dist 2>/dev/null || true
           stop_server() {
             for p in $(pgrep -f 'python3 fortune_server.py' || true); do
@@ -55,6 +55,7 @@ jobs:
             stop_server
             git -C "$PROD" reset --hard "$OLD"
             cp /tmp/lc-stats.pre-persona-creator.json "$WEB/stats.json"
+            mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes" "$WEB/data/custom_personas"
             cd "$WEB"; npm run build; start_server
             echo rollback_commit=$OLD >&2
           }
@@ -63,26 +64,49 @@ jobs:
           F=$(git -C "$PROD" rev-parse FETCH_HEAD); [ "$F" = "$TARGET" ] || { echo unexpected_main=$F >&2; exit 41; }
           git -C "$PROD" merge --ff-only FETCH_HEAD
           cp /tmp/lc-stats.pre-persona-creator.json "$WEB/stats.json"
-          mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
+          mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes" "$WEB/data/custom_personas"
           cd "$WEB"
           npm run build
           python3 -m py_compile fortune_server.py divination/*.py
           node --check public/creator.js
           grep -q 'id="persona-options"' public/create.html
-          grep -q '選擇預設解牌風格' public/create.html
-          grep -q "fetch('/api/v1/personas?deck=leopardcat'" public/creator.js
-          grep -q 'persona: selectedPersonaId' public/creator.js
-          grep -q 'persona_id: data.default_persona || selectedPersonaId' public/creator.js
-          grep -q 'display_name' divination/personas.py
-          grep -q 'display_role' divination/personas.py
+          grep -q '建立我的解牌師' public/create.html
+          grep -q 'id="persona-name"' public/create.html
+          grep -q "fetch('/api/v1/personas'" public/creator.js
+          grep -q 'selectedPersonaId = data.persona_id' public/creator.js
+          grep -q "self.path == '/api/v1/personas'" fortune_server.py
+          grep -q "path.startswith('/api/v1/personas/')" fortune_server.py
+          grep -q 'custom_personas' divination/__init__.py
+          python3 - <<'PY'
+          import tempfile
+          from divination.persona_publishing import PersonaPublisher
+          from divination.personas import ConfigurablePersona
+          with tempfile.TemporaryDirectory() as td:
+              pub = PersonaPublisher(td)
+              out = pub.publish({
+                  'name':'部署驗證引路人',
+                  'role':'只存在暫存目錄的部署驗證 Persona',
+                  'voice':'簡潔\n溫和',
+                  'principles':'忠實解讀既有牌面\n不改變抽牌結果',
+              })
+              p = ConfigurablePersona(pub.pack_path(out['persona_id']))
+              assert p.public_info()['source'] == 'custom'
+              prompt = p.build_prompt(method_result={'cards':[{'id':'x'}]}, question='測試', lang='zh-TW')
+              assert 'PLATFORM RULES' in prompt and 'FINAL PLATFORM REMINDER' in prompt
+          print('persona_creator_temp_publish=passed')
+          PY
           stop_server; start_server
-          curl -fsS http://127.0.0.1:8088/create.html | grep -q 'persona-options'
-          curl -fsS http://127.0.0.1:8088/creator.js | grep -q 'persona: selectedPersonaId'
-          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); by={x['persona_id']:x for x in d['personas']}; assert {'master','leopardcat'} <= set(by); assert '石虎' in by['leopardcat']['name']; assert '淺山' in by['leopardcat']['role']; print('creator_persona_catalog_localized=passed')"
-          curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q 'persona-options'
+          curl -fsS http://127.0.0.1:8088/create.html | grep -q '建立我的解牌師'
+          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); by={x['persona_id']:x for x in d['personas']}; assert {'master','leopardcat'} <= set(by); assert '石虎' in by['leopardcat']['name']; print('creator_persona_catalog_localized=passed')"
+          code=$(curl -sS -o /tmp/persona-invalid-local.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8088/api/v1/personas)
+          [ "$code" = 400 ]
+          python3 -c "import json; d=json.load(open('/tmp/persona-invalid-local.json')); assert d['error']=='invalid_persona'; print('persona_creator_local_endpoint=passed')"
+          curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q '建立我的解牌師'
           curl -fsS 'https://leopardcat-tarot.milkcat.org/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); by={x['persona_id']:x for x in d['personas']}; assert '石虎' in by['leopardcat']['name']; print('public_persona_localization=passed')"
-          echo public_creator_persona_ui=passed
-          echo production_creator_persona=passed
+          code=$(curl -sS -o /tmp/persona-invalid-public.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' https://leopardcat-tarot.milkcat.org/api/v1/personas)
+          [ "$code" = 400 ]
+          echo public_persona_creator_endpoint=passed
+          echo production_persona_creator=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
