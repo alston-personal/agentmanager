@@ -1,6 +1,6 @@
 name: Oracle Antigravity Relay Trial
 
-# retrigger marker: 2026-08-25T08:25+08:00 after receipt group fix deployment
+# retrigger marker: 2026-08-25T09:47+08:00 after shared artifact fix deployment
 on:
   workflow_dispatch:
   push:
