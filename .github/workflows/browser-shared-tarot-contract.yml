@@ -30,15 +30,18 @@ jobs:
           assert.equal(api.status, 200);
           const deck = await api.json();
           assert.equal(deck.cards.length, 5);
+          assert.equal(deck.default_persona, 'master');
           const first = deck.cards[0];
 
           const browser = await chromium.launch({headless:true});
           const page = await browser.newPage();
           await page.goto(base + '?deck=test-2cfe3b&theme=minimal-light', {waitUntil:'networkidle'});
-          await page.waitForFunction(() => window.activeDeckId === 'test-2cfe3b' && Array.isArray(window.cardData) && window.cardData.length === 5 && window.activeBrand?.brand_id === 'deck:test-2cfe3b');
+          await page.waitForFunction(() => window.activeDeckId === 'test-2cfe3b' && Array.isArray(window.cardData) && window.cardData.length === 5 && window.activeBrand?.brand_id === 'deck:test-2cfe3b' && window.activePersonaId === 'master');
           assert.equal(await page.locator('.custom-deck-gallery .card-wrapper').count(), 5);
           assert.equal(await page.evaluate(() => window.activeDeckId), 'test-2cfe3b');
           assert.equal(await page.evaluate(() => window.activeThemeId), 'minimal-light');
+          assert.equal(await page.evaluate(() => window.defaultPersonaId), 'master');
+          assert.equal(await page.locator('#persona-switcher-select').inputValue(), 'master');
 
           const branding = await page.evaluate(() => ({
             brand: window.activeBrand,
@@ -61,19 +64,29 @@ jobs:
           assert.doesNotMatch(brandingText, /石虎/);
           assert.doesNotMatch(brandingText, /LeopardCat/);
 
+          await page.locator('#persona-switcher-select').selectOption('leopardcat');
+          await page.waitForFunction(() => window.activePersonaId === 'leopardcat' && new URL(location.href).searchParams.get('persona') === 'leopardcat');
+          assert.equal(await page.evaluate(() => window.activePersonaId), 'leopardcat');
+          assert.match(page.url(), /persona=leopardcat/);
+
+          let capturedRequest = null;
           await page.route('**/api/v1/readings', async route => {
+            capturedRequest = JSON.parse(route.request().postData() || '{}');
             await route.fulfill({status:200, contentType:'application/json', body: JSON.stringify({
               reading_id:'rd_browser_contract', session_token:'browser-contract-token',
-              method:'tarot', persona:'master',
+              method:'tarot', persona:'leopardcat',
               method_result:{spread:'single', cards:[{card_id:first.id, orientation:'reversed', position:'focus', position_label:'核心'}]},
               reading:'測試解讀'
             })});
           });
 
           await page.evaluate(() => window.getModularReading('browser contract'));
+          assert.equal(capturedRequest.persona, 'leopardcat');
+          assert.equal(capturedRequest.input.deck_id, 'test-2cfe3b');
           const state = await page.evaluate(() => window.currentReadingState);
           assert.equal(state.deck_id, 'test-2cfe3b');
           assert.equal(state.theme_id, 'minimal-light');
+          assert.equal(state.persona_id, 'leopardcat');
           assert.equal(state.card_id, first.id);
           assert.equal(state.orientation, 'reversed');
 
@@ -99,6 +112,7 @@ jobs:
           assert.equal(share.src, first.image);
           assert.match(share.url, /deck=test-2cfe3b/);
           assert.match(share.url, /theme=minimal-light/);
+          assert.match(share.url, /persona=leopardcat/);
           assert.match(share.url, /orientation=reversed/);
           assert.match(share.url, new RegExp('card=' + encodeURIComponent(first.id)));
           assert.doesNotMatch(JSON.stringify(share), /石虎|LeopardCat/);
@@ -112,17 +126,23 @@ jobs:
 
           const leopard = await browser.newPage();
           await leopard.goto(base, {waitUntil:'networkidle'});
-          await leopard.waitForFunction(() => window.activeDeckId === 'leopardcat' && window.activeThemeId === 'leopardcat' && window.activeBrand?.brand_id === 'leopardcat');
+          await leopard.waitForFunction(() => window.activeDeckId === 'leopardcat' && window.activeThemeId === 'leopardcat' && window.activeBrand?.brand_id === 'leopardcat' && window.activePersonaId === 'leopardcat');
           assert.equal(await leopard.evaluate(() => window.activeDeckId), 'leopardcat');
           assert.equal(await leopard.evaluate(() => window.activeThemeId), 'leopardcat');
           assert.equal(await leopard.evaluate(() => window.activeBrand.brand_id), 'leopardcat');
+          assert.equal(await leopard.evaluate(() => window.defaultPersonaId), 'leopardcat');
+          assert.equal(await leopard.locator('#persona-switcher-select').inputValue(), 'leopardcat');
 
           console.log('browser_custom_gallery=passed');
           console.log('browser_custom_brand_pack=passed');
           console.log('browser_custom_brand_no_leak=passed');
+          console.log('browser_custom_persona_default=passed');
+          console.log('browser_persona_switcher=passed');
+          console.log('browser_persona_request=passed');
+          console.log('browser_persona_reading_state=passed');
+          console.log('browser_persona_deep_link=passed');
           console.log('browser_reversed_reading_state=passed');
           console.log('browser_reversed_share_card=passed');
-          console.log('browser_deep_link_contract=passed');
           console.log('browser_custom_og_brand=passed');
           console.log('browser_leopardcat_defaults=passed');
           await browser.close();
