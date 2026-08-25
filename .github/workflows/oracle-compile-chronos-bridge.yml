@@ -1,0 +1,45 @@
+name: Oracle Compile Chronos Bridge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-compile-chronos-bridge.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile live scheduler bridge without executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/chronos-bridge-compile.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo '=== FIRST 120 LINES ==='
+            sed -n '1,120p' /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+            echo '=== PY_COMPILE ==='
+            TMP=$(mktemp -d)
+            PYTHONPYCACHEPREFIX="$TMP" python3 -m py_compile /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+            echo 'py_compile=PASS'
+            rm -rf "$TMP"
+          } 2>&1 | tee "$OUT"
+      - name: Commit compile evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/chronos-bridge-compile.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): compile Chronos bridge'
+          git pull --rebase origin main
+          git push
