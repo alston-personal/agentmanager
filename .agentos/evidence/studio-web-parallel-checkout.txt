@@ -1,0 +1,622 @@
+timestamp_utc=2026-08-25T23:11:50Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+source=/home/ubuntu/zeus-writer/website
+target=/home/agentos-node/projects/studio-web
+stable_layoutlab_source=/home/agentos-node/runner/_work/agentmanager/agentmanager/web_assets/layoutlab_official.html
+expected_layoutlab_sha256=5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414
+=== GATE ===
+candidate_gate=PASS
+=== SAFETY ===
+nginx_mutation=NO
+resource_registry_mutation=NO
+action_relay_site_owner_mutation=NO
+production_service_restart=NO
+production_cutover=NO
+=== VERIFY WEBSITE-OWNED LAYOUT LAB INPUT ===
+stable_layoutlab_source_sha256=5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414
+stable_layoutlab_source_identity=PASS
+=== TARGET PRECONDITION ===
+=== SNAPSHOT LIVE PLATFORM SOURCE ===
+=== NORMALIZE LAYOUT LAB INTO WEBSITE SOURCE OWNERSHIP ===
+staged_legacy_layoutlab_route=NO
+website_owned_layoutlab_source_sha256=5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414
+=== INDEPENDENCE SCAN ===
+independent_runtime_dependency_scan=PASS
+=== PROVENANCE ===
+=== INDEPENDENT GIT INIT ===
+Initialized empty Git repository in /home/agentos-node/projects/studio-web.tmp/.git/
+[main (root-commit) e243f9b] chore: extract Studio Web platform source
+ 106 files changed, 22743 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 .vscode/extensions.json
+ create mode 100644 .vscode/launch.json
+ create mode 100644 README.md
+ create mode 100644 STUDIO_WEB_PROVENANCE.md
+ create mode 100644 astro.config.mjs
+ create mode 100644 package-lock.json
+ create mode 100644 package.json
+ create mode 100644 pnpm-lock.yaml
+ create mode 100644 public/covers/language_notes_ch01.png
+ create mode 100644 public/covers/tech_notes_ch01.png
+ create mode 100644 public/covers/translator_ch01.png
+ create mode 100644 public/covers/translator_ch02.png
+ create mode 100644 public/covers/translator_ch03.png
+ create mode 100644 public/covers/translator_ch04.png
+ create mode 100644 public/covers/translator_ch05.png
+ create mode 100644 public/favicon.ico
+ create mode 100644 public/favicon.svg
+ create mode 100644 public/layout-lab/index.html
+ create mode 100644 public/omnirealm/css/battle.css
+ create mode 100644 public/omnirealm/css/card.css
+ create mode 100644 public/omnirealm/css/main.css
+ create mode 100644 public/omnirealm/index.html
+ create mode 100644 public/omnirealm/js/ai.js
+ create mode 100644 public/omnirealm/js/app.js
+ create mode 100644 public/omnirealm/js/audio.js
+ create mode 100644 public/omnirealm/js/cards.js
+ create mode 100644 public/omnirealm/js/combat.js
+ create mode 100644 public/omnirealm/js/dna_engine.js
+ create mode 100644 public/omnirealm/js/realms.js
+ create mode 100644 public/robots.txt
+ create mode 100644 src/content.config.ts
+ create mode 100644 "src/content/language_notes/ch01_\346\227\245\346\234\254\343\201\253\347\225\231\345\255\246\343\201\227\343\201\237\343\201\204\345\205\266\345\257\246\344\270\215\345\217\252\344\270\200\347\250\256\346\204\217\346\200\235.md"
+ create mode 100644 "src/content/language_notes/ch02_\346\227\245\346\226\207\347\232\204\346\210\221\344\270\215\346\230\257\344\273\243\345\220\215\350\251\236\346\230\257\344\272\272\346\240\274\346\270\254\351\251\227.md"
+ create mode 100644 "src/content/published_chapters/01_\347\254\254\344\270\200\347\253\240_\346\267\267\346\262\214\351\220\265\350\203\216\345\210\235\350\246\272\351\206\222.md"
+ create mode 100644 "src/content/published_chapters/02_\347\254\254\344\272\214\347\253\240_\345\255\237\345\251\206\346\226\267\351\255\202\350\231\233\351\200\243\350\231\271\346\251\213\345\274\225\347\245\236\350\255\230.md"
+ create mode 100644 "src/content/published_chapters/03_\347\254\254\344\270\211\347\253\240_\345\257\222\345\206\260\345\260\201\351\216\226\350\220\254\350\261\241\346\261\240\344\270\255\346\226\254\346\231\202\346\262\263.md"
+ create mode 100644 "src/content/published_chapters/04_\347\254\254\345\233\233\347\253\240_\345\244\251\346\251\237\346\232\264\350\265\260\347\237\263\350\231\216\351\235\210\350\260\267\347\211\214\346\255\270\344\275\215.md"
+ create mode 100644 "src/content/published_chapters/05_\347\254\254\344\272\224\347\253\240_\347\266\223\350\204\210\345\217\227\351\230\273\350\255\267\350\204\210\350\207\252\347\231\222\347\245\236\347\215\222\351\231\215\344\270\226.md"
+ create mode 100644 "src/content/published_chapters/06_\347\254\254\345\205\255\347\253\240_\347\231\276\350\220\254\345\214\226\350\272\253\345\244\251\351\201\223\347\234\213\346\235\277\346\274\224\350\220\254\346\263\225.md"
+ create mode 100644 "src/content/published_chapters/07_\347\254\254\344\270\203\347\253\240_\347\201\260\350\211\262\346\257\222\347\230\264\346\216\222\351\231\244\346\263\225\347\225\214\347\245\236\350\255\230\351\226\213.md"
+ create mode 100644 "src/content/published_chapters/08_\347\254\254\345\205\253\347\253\240_\345\212\237\345\276\267\346\255\270\346\252\224\351\207\221\347\217\240\347\236\254\345\213\225\345\276\271\346\263\225\347\225\214.md"
+ create mode 100644 "src/content/published_chapters/09_\347\254\254\344\271\235\347\253\240_\345\244\251\347\254\246\351\230\262\346\274\217\345\244\251\346\251\237\347\247\230\351\221\260\345\260\201\345\257\206\345\214\243.md"
+ create mode 100644 "src/content/published_chapters/10_\347\254\254\345\215\201\347\253\240_\347\245\236\347\215\222\351\200\232\351\235\210\351\200\200\351\201\277\345\214\226\350\247\243\345\217\215\345\231\254\347\201\276.md"
+ create mode 100644 "src/content/published_chapters/11_\347\254\254\345\215\201\344\270\200\347\253\240_\351\235\222\351\263\245\351\212\234\346\233\270\345\215\203\345\261\261\350\220\254\346\260\264\345\202\263\344\273\231\351\237\263.md"
+ create mode 100644 "src/content/published_chapters/12_\347\254\254\345\215\201\344\272\214\347\253\240_\346\260\243\346\265\267\344\271\276\346\266\270\347\245\236\347\215\222\347\213\202\345\220\240\351\201\277\351\207\215\350\274\211.md"
+ create mode 100644 "src/content/published_chapters/13_\347\254\254\345\215\201\344\270\211\347\253\240_\345\244\247\345\215\203\344\270\226\347\225\214\347\204\241\347\233\241\351\200\243\350\274\211\350\255\211\345\244\251\351\201\223.md"
+ create mode 100644 "src/content/published_chapters/ch00_\345\272\217\347\253\240_\347\202\272\344\273\200\351\272\274\350\246\201\345\234\250\351\233\262\347\253\257\344\270\273\346\251\237\350\243\241\351\244\212ai.md"
+ create mode 100644 "src/content/published_chapters/ch01_\347\224\246\351\206\222\344\271\213\346\231\202.md"
+ create mode 100644 "src/content/published_chapters/ch02_\351\201\272\347\225\231\344\271\213\347\211\251.md"
+ create mode 100644 "src/content/published_chapters/ch03_\347\234\276\350\201\262\347\232\204\350\243\202\347\270\253.md"
+ create mode 100644 "src/content/published_chapters/ch04_\345\244\242\344\270\255\347\232\204\350\241\200\350\211\262.md"
+ create mode 100644 "src/content/published_chapters/ch05_\350\250\230\346\206\266\347\232\204\344\275\216\350\252\236.md"
+ create mode 100644 "src/content/published_chapters/ch06_\350\241\227\350\247\222\347\232\204\346\256\230\345\275\261.md"
+ create mode 100644 "src/content/published_chapters/ch07_\346\240\270\345\277\203\350\246\272\351\206\222.md"
+ create mode 100644 "src/content/published_chapters/ch07_\351\232\261\350\227\217\347\232\204\350\201\262\351\201\223.md"
+ create mode 100644 "src/content/published_chapters/ch08_\345\256\271\351\207\217\344\271\213\347\201\275.md"
+ create mode 100644 "src/content/published_chapters/ch08_\351\206\253\351\231\242\347\232\204\351\231\260\345\275\261.md"
+ create mode 100644 "src/content/published_chapters/ch09_\350\241\200\350\211\262\347\232\204\351\207\215\351\200\242.md"
+ create mode 100644 "src/content/published_chapters/ch10_\346\257\200\346\273\205\347\232\204\345\205\261\346\214\257.md"
+ create mode 100644 "src/content/published_chapters/ch11_\345\244\251\347\234\274\347\232\204\345\205\245\345\240\264\345\210\270.md"
+ create mode 100644 "src/content/published_chapters/ch12_\351\217\241\347\233\270\344\271\213\350\254\216.md"
+ create mode 100644 "src/content/published_chapters/ch13_\345\264\251\346\275\260\347\232\204\344\277\241\344\273\273.md"
+ create mode 100644 "src/content/published_chapters/ch14_\351\233\250\345\244\234\347\232\204\351\207\215\347\217\276.md"
+ create mode 100644 "src/content/published_chapters/ch15_\346\255\273\344\272\241\347\232\204\345\205\261\350\254\200.md"
+ create mode 100644 "src/content/published_chapters/ch16_\347\201\260\350\211\262\347\232\204\346\255\243\347\276\251.md"
+ create mode 100644 "src/content/published_chapters/ch17_\351\233\266\347\242\216\347\232\204\351\244\230\351\234\207.md"
+ create mode 100644 "src/content/tech_notes/ch01_\350\253\276\344\272\236\350\250\210\345\212\203\357\274\232\346\225\270\344\275\215\345\216\237\350\263\252\344\277\235\350\255\267\350\210\207\351\235\236\344\272\272\347\266\223\346\277\237\346\274\224\345\214\226\345\274\225\346\223\216.md"
+ create mode 100644 "src/content/translator_notes/ch01_\347\254\254\344\270\200\344\272\272\347\250\261\347\232\204\345\271\275\351\235\210.md"
+ create mode 100644 "src/content/translator_notes/ch02_\344\270\215\345\217\257\350\255\257\347\232\204\350\261\241\351\231\220.md"
+ create mode 100644 "src/content/translator_notes/ch03_\350\252\236\351\237\263\347\232\204\351\252\250\351\252\274\350\210\207\350\241\200\350\202\211.md"
+ create mode 100644 "src/content/translator_notes/ch04_\350\252\236\346\263\225\347\232\204\347\237\251\351\231\243.md"
+ create mode 100644 "src/content/translator_notes/ch05_\345\267\264\345\210\245\345\241\224\347\232\204\346\256\230\345\215\267.md"
+ create mode 100644 "src/content/translator_notes_empty/ch02_\344\270\215\345\217\257\350\255\257\347\232\204\350\261\241\351\231\220.md"
+ create mode 100644 "src/content/translator_notes_empty/ch03_\350\252\236\351\237\263\347\232\204\351\252\250\351\252\274\350\210\207\350\241\200\350\202\211.md"
+ create mode 100644 "src/content/translator_notes_empty/ch04_\350\252\236\346\263\225\347\232\204\347\237\251\351\231\243.md"
+ create mode 100644 "src/content/translator_notes_empty/ch05_\345\267\264\345\210\245\345\241\224\347\232\204\346\256\230\345\215\267.md"
+ create mode 100644 src/layouts/Layout.astro
+ create mode 100644 src/pages/agentos/[id].astro
+ create mode 100644 src/pages/agentos/[id]/[platform].astro
+ create mode 100644 src/pages/agentos/index.astro
+ create mode 100644 src/pages/aos/[id].astro
+ create mode 100644 src/pages/aos/[id]/[platform].astro
+ create mode 100644 src/pages/coming-soon.astro
+ create mode 100644 src/pages/index.astro
+ create mode 100644 src/pages/language-notes/[slug].astro
+ create mode 100644 src/pages/language-notes/[slug]/[platform].astro
+ create mode 100644 src/pages/language-notes/index.astro
+ create mode 100644 src/pages/omnirealm/index.astro
+ create mode 100644 src/pages/t/[id].astro
+ create mode 100644 src/pages/t/[id]/[platform].astro
+ create mode 100644 src/pages/td/[id].astro
+ create mode 100644 src/pages/td/[id]/[platform].astro
+ create mode 100644 src/pages/tech-notes/[slug].astro
+ create mode 100644 src/pages/tech-notes/[slug]/[platform].astro
+ create mode 100644 src/pages/tech-notes/index.astro
+ create mode 100644 src/pages/testimony/[chapter]/[platform].astro
+ create mode 100644 src/pages/testimony/[slug].astro
+ create mode 100644 src/pages/testimony/index.astro
+ create mode 100644 src/pages/tiandao/[id].astro
+ create mode 100644 src/pages/tiandao/[id]/[platform].astro
+ create mode 100644 src/pages/tiandao/index.astro
+ create mode 100644 src/pages/translator/[slug].astro
+ create mode 100644 src/pages/translator/[slug]/[platform].astro
+ create mode 100644 src/pages/translator/index.astro
+ create mode 100644 tsconfig.json
+studio_web_initial_sha=e243f9b83aad7a11a8e1d0cfe6886b35fe856b43
+=== CLEAN BUILD ACCEPTANCE ===
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +264
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 264, reused 264, downloaded 0, added 264, done
+
+dependencies:
++ @astrojs/sitemap 3.7.2
++ astro 6.3.5
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: esbuild, sharp.                                     │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Done in 1.2s using pnpm v10.23.0
+
+> website@0.0.1 build /home/agentos-node/projects/studio-web
+> astro build
+
+[2m07:11:54[22m [34m[content][39m Syncing content
+[2m07:11:55[22m [34m[content][39m Synced content
+[2m07:11:55[22m [34m[types][39m Generated [2m1.58s[22m
+[2m07:11:55[22m [34m[build][39m output: [34m"static"[39m
+[2m07:11:55[22m [34m[build][39m mode: [34m"static"[39m
+[2m07:11:55[22m [34m[build][39m directory: [34m/home/agentos-node/projects/studio-web/dist/[39m
+[2m07:11:55[22m [34m[build][39m Collecting build info...
+[2m07:11:55[22m [34m[build][39m [32m✓ Completed in 1.65s.[39m
+[2m07:11:55[22m [34m[build][39m Building static entrypoints...
+[2m07:11:58[22m [34m[vite][39m [32m✓ built in 2.92s[39m
+[2m07:11:58[22m [34m[vite][39m [32m✓ built in 54ms[39m
+[2m07:11:58[22m [34m[build][39m Rearranging server assets...
+
+[42m[30m generating static routes [39m[49m
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/7/fb` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/7/ig` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/7/threads` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/7/matters` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/7/blogger` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/8/fb` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/8/ig` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/8/threads` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/8/matters` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/8/blogger` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/7` from route `/t/[id]` as it conflicts with higher priority route `/t/[id]`.
+[33m[1m07:11:58[22m [WARN] [build][39m Could not render `/t/8` from route `/t/[id]` as it conflicts with higher priority route `/t/[id]`.
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/0/fb/index.html[22m [2m(+11ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/0/ig/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/0/threads/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/0/matters/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/0/blogger/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/0/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/agentos/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/aos/0/fb/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/aos/0/ig/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/aos/0/threads/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/aos/0/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/aos/0/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/aos/0/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/coming-soon/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch01_日本に留学したい其實不只一種意思/fb/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch01_日本に留学したい其實不只一種意思/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch01_日本に留学したい其實不只一種意思/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch01_日本に留学したい其實不只一種意思/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch01_日本に留学したい其實不只一種意思/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch02_日文的我不是代名詞是人格測驗/fb/index.html[22m [2m(+5ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch02_日文的我不是代名詞是人格測驗/ig/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch02_日文的我不是代名詞是人格測驗/threads/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch02_日文的我不是代名詞是人格測驗/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch02_日文的我不是代名詞是人格測驗/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch01_日本に留学したい其實不只一種意思/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/ch02_日文的我不是代名詞是人格測驗/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/language-notes/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/omnirealm/index.html[22m[33m[1m07:11:58[22m [WARN] [build][39m Skipping src/pages/omnirealm/index.astro because a file with the same name exists in the public folder: omnirealm/index.html
+ [2m(+2ms)[22m [33m(file not created, response body was empty)[39m
+[2m07:11:58[22m   [34m├─[39m [2m/t/0/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/0/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/0/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/0/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/0/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/1/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/1/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/1/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/1/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/1/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/2/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/2/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/2/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/2/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/2/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/3/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/3/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/3/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/3/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/3/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/4/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/4/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/4/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/4/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/4/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/5/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/5/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/5/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/5/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/5/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/6/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/6/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/6/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/6/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/6/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/7/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/7/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/7/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/7/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/7/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/8/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/8/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/8/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/8/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/8/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/9/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/9/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/9/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/9/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/9/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/10/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/10/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/10/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/10/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/10/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/11/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/11/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/11/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/11/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/11/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/12/fb/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/12/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/12/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/12/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/12/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/13/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/13/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/13/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/13/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/13/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/14/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/14/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/14/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/14/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/14/blogger/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/15/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/15/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/15/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/15/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/15/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/16/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/16/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/16/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/16/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/16/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/17/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/17/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/17/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/17/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/17/blogger/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/0/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/1/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/2/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/3/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/4/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/5/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/6/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/7/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/8/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/9/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/10/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/11/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/12/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/13/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/14/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/15/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/16/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/t/17/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/1/fb/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/1/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/1/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/1/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/1/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/2/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/2/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/2/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/2/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/2/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/3/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/3/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/3/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/3/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/3/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/4/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/4/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/4/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/4/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/4/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/5/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/5/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/5/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/5/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/5/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/6/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/6/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/6/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/6/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/6/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/7/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/7/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/7/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/7/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/7/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/8/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/8/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/8/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/8/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/8/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/9/fb/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/9/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/9/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/9/matters/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/9/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/10/fb/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/10/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/10/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/10/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/10/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/11/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/11/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/11/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/11/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/11/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/12/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/12/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/12/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/12/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/12/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/13/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/13/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/13/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/13/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/13/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/1/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/2/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/3/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/4/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/5/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/6/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/7/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/8/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/9/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/10/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/11/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/12/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/td/13/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/fb/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tech-notes/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch01_甦醒之時/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch01_甦醒之時/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch01_甦醒之時/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch01_甦醒之時/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch01_甦醒之時/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch02_遺留之物/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch02_遺留之物/ig/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch02_遺留之物/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch02_遺留之物/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch02_遺留之物/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch03_眾聲的裂縫/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch03_眾聲的裂縫/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch03_眾聲的裂縫/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch03_眾聲的裂縫/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch03_眾聲的裂縫/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch06_街角的殘影/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch06_街角的殘影/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch06_街角的殘影/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch06_街角的殘影/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch06_街角的殘影/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch07_隱藏的聲道/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch07_隱藏的聲道/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch07_隱藏的聲道/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch07_隱藏的聲道/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch07_隱藏的聲道/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch08_醫院的陰影/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch08_醫院的陰影/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch08_醫院的陰影/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch08_醫院的陰影/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch08_醫院的陰影/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch09_血色的重逢/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch09_血色的重逢/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch09_血色的重逢/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch09_血色的重逢/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch09_血色的重逢/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch10_毀滅的共振/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch10_毀滅的共振/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch10_毀滅的共振/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch10_毀滅的共振/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch10_毀滅的共振/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch11_天眼的入場券/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch11_天眼的入場券/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch11_天眼的入場券/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch11_天眼的入場券/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch11_天眼的入場券/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch12_鏡相之謎/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch12_鏡相之謎/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch12_鏡相之謎/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch12_鏡相之謎/matters/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch12_鏡相之謎/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch13_崩潰的信任/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch13_崩潰的信任/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch13_崩潰的信任/threads/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch13_崩潰的信任/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch13_崩潰的信任/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch14_雨夜的重現/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch14_雨夜的重現/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch14_雨夜的重現/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch14_雨夜的重現/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch14_雨夜的重現/blogger/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch15_死亡的共謀/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch15_死亡的共謀/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch15_死亡的共謀/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch15_死亡的共謀/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch15_死亡的共謀/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch16_灰色的正義/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch16_灰色的正義/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch16_灰色的正義/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch16_灰色的正義/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch16_灰色的正義/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch17_零碎的餘震/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch17_零碎的餘震/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch17_零碎的餘震/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch17_零碎的餘震/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch17_零碎的餘震/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch01_甦醒之時/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch02_遺留之物/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch03_眾聲的裂縫/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch06_街角的殘影/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch07_隱藏的聲道/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch08_醫院的陰影/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch09_血色的重逢/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch10_毀滅的共振/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch11_天眼的入場券/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch12_鏡相之謎/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch13_崩潰的信任/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch14_雨夜的重現/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch15_死亡的共謀/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch16_灰色的正義/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/ch17_零碎的餘震/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/testimony/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/1/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/1/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/1/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/1/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/1/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/2/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/2/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/2/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/2/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/2/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/3/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/3/ig/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/3/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/3/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/3/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/4/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/4/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/4/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/4/matters/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/4/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/5/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/5/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/5/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/5/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/5/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/6/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/6/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/6/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/6/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/6/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/7/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/7/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/7/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/7/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/7/blogger/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/8/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/8/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/8/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/8/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/8/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/9/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/9/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/9/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/9/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/9/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/10/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/10/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/10/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/10/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/10/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/11/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/11/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/11/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/11/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/11/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/12/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/12/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/12/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/12/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/12/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/13/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/13/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/13/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/13/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/13/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/1/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/2/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/3/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/4/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/5/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/6/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/7/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/8/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/9/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/10/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/11/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/12/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/13/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/tiandao/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch01_第一人稱的幽靈/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch01_第一人稱的幽靈/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch01_第一人稱的幽靈/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch01_第一人稱的幽靈/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch01_第一人稱的幽靈/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch02_不可譯的象限/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch02_不可譯的象限/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch02_不可譯的象限/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch02_不可譯的象限/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch02_不可譯的象限/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch03_語音的骨骼與血肉/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch03_語音的骨骼與血肉/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch03_語音的骨骼與血肉/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch03_語音的骨骼與血肉/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch03_語音的骨骼與血肉/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch04_語法的矩陣/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch04_語法的矩陣/ig/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch04_語法的矩陣/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch04_語法的矩陣/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch04_語法的矩陣/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch05_巴別塔的殘卷/fb/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch05_巴別塔的殘卷/ig/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch05_巴別塔的殘卷/threads/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch05_巴別塔的殘卷/matters/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch05_巴別塔的殘卷/blogger/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch01_第一人稱的幽靈/index.html[22m [2m(+2ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch02_不可譯的象限/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch03_語音的骨骼與血肉/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch04_語法的矩陣/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/ch05_巴別塔的殘卷/index.html[22m [2m(+1ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/translator/index.html[22m [2m(+3ms)[22m 
+[2m07:11:58[22m   [34m├─[39m [2m/index.html[22m [2m(+4ms)[22m 
+[2m07:11:58[22m [32m✓ Completed in 554ms.
+[39m
+[2m07:11:58[22m [34m[build][39m [32m✓ Completed in 3.60s.[39m
+[2m07:11:59[22m [34m[@astrojs/sitemap][39m `sitemap-index.xml` created at `dist`
+[2m07:11:59[22m [34m[build][39m 423 page(s) built in [1m5.30s[22m
+[2m07:11:59[22m [34m[build][39m [1mComplete![22m
+parallel_layoutlab_sha256=5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414
+parallel_home_sha256=dc3acf9e7d446cb1a4a00e21011ab2d57d69a64ad7bc72bfeacc4d46040377c8
+parallel_checkout_clean_build=PASS
+layoutlab_website_owned=PASS
+production_cutover=NO
+studio_web_parallel_checkout=PASS
