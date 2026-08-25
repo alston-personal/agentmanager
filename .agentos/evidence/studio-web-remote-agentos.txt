@@ -1,0 +1,16 @@
+capsule_id=relay-514954d7627b4f9492cbbc137d6898c4
+{
+  "capsule_id": "relay-514954d7627b4f9492cbbc137d6898c4",
+  "completed_at": "2026-08-25T23:21:44Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.243-linux-arm64/resources/native-binary/claude",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "returncode": 124,
+  "schema": "agentos.antigravity-receipt/v1",
+  "started_at": "2026-08-25T23:18:43Z",
+  "stderr": "\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+  "stdout": "",
+  "timed_out": true
+}
+agentos_receipt_ok=false
+studio_web_remote_agentos=NO_GO
