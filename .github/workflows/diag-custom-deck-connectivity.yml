@@ -1,0 +1,69 @@
+name: Diagnose Custom Deck Connectivity
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/diag-custom-deck-connectivity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect latest custom decks and GET route
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          WEB=/home/ubuntu/leopardcat-tarot/website
+          echo '=== commit ==='
+          git -C /home/ubuntu/leopardcat-tarot rev-parse HEAD
+          echo '=== latest deck dirs ==='
+          find "$WEB/data/custom_decks" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' 2>/dev/null | sort -nr | head -10 || true
+          latest=$(find "$WEB/data/custom_decks" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' 2>/dev/null | sort -nr | awk 'NR==1{print $2}')
+          echo "latest_deck_id=${latest:-none}"
+          if [ -n "${latest:-}" ]; then
+            echo '=== manifest ==='
+            python3 - <<PY
+import json, pathlib
+p=pathlib.Path('$WEB/data/custom_decks')/'$latest'/'deck.json'
+print('exists=',p.exists())
+if p.exists():
+    d=json.loads(p.read_text())
+    print('name=',d.get('name'))
+    print('card_count=',d.get('card_count'))
+    print('first_image=',(d.get('cards') or [{}])[0].get('image'))
+PY
+            echo '=== local GET ==='
+            curl -sS -D /tmp/local.h -o /tmp/local.b "http://127.0.0.1:8088/api/v1/decks/$latest" || true
+            head -20 /tmp/local.h || true
+            head -c 500 /tmp/local.b || true; echo
+            echo '=== public GET ==='
+            curl -sS -D /tmp/public.h -o /tmp/public.b "https://leopardcat-tarot.milkcat.org/api/v1/decks/$latest" || true
+            head -20 /tmp/public.h || true
+            head -c 500 /tmp/public.b || true; echo
+          fi
+          echo '=== server log tail ==='
+          tail -100 /tmp/fortune_server.log 2>/dev/null || true
+          REMOTE
