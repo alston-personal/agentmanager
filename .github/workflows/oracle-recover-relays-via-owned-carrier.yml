@@ -7,6 +7,7 @@ on:
       - '.github/workflows/oracle-recover-relays-via-owned-carrier.yml'
       - 'agentos_node/antigravity_relay.py'
       - 'agentos_node/antigravity_relay_worker.py'
+      - 'agentos_node/action_relay.py'
       - 'scripts/repair_antigravity_relay_user.sh'
 
 permissions:
@@ -15,7 +16,7 @@ permissions:
 jobs:
   recover:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 12
+    timeout-minutes: 14
     steps:
       - uses: actions/checkout@v4
 
@@ -26,10 +27,17 @@ jobs:
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/relay-recovery.txt
           ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
+          ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
-            CARRIER=$(find "$ROOT/receipts" -maxdepth 1 -type f -name '*.json.tmp' -user ubuntu -group agentos -perm -g=w | head -1)
+            # Prefer the ubuntu-owned processing artifact from the previous
+            # bootstrap attempt. It is group-writable by the authorized agentos
+            # boundary and preserves ubuntu ownership when moved back to inbox.
+            CARRIER=$(find "$ROOT/processing" -maxdepth 1 -type f -name '*.json' -user ubuntu -group agentos -perm -g=w | head -1)
+            if [ -z "$CARRIER" ]; then
+              CARRIER=$(find "$ROOT/receipts" -maxdepth 1 -type f -name '*.json.tmp' -user ubuntu -group agentos -perm -g=w | head -1)
+            fi
             test -n "$CARRIER" || { echo 'ubuntu_owned_carrier=NOT_FOUND'; exit 2; }
             echo "carrier=$CARRIER"
             CAPSULE_ID=$(python3 - "$CARRIER" "$ROOT/inbox" <<'PY'
@@ -38,26 +46,18 @@ jobs:
           carrier=sys.argv[1]; inbox=sys.argv[2]
           cid='relay-'+uuid.uuid4().hex
           payload={
-            'schema':'agentos.antigravity-relay/v1',
-            'capsule_id':cid,
+            'schema':'agentos.antigravity-relay/v1','capsule_id':cid,
             'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-            'project_id':'agentmanager',
-            'workspace':'/home/ubuntu/agentmanager',
-            'executor_hint':'antigravity',
+            'project_id':'agentmanager','workspace':'/home/ubuntu/agentmanager','executor_hint':'antigravity',
             'instruction':'Execute exactly: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/repair_antigravity_relay_user.sh . Return stdout/stderr and exit status. Do not perform any other changes.',
-            'canonical_ir':{
-              'goal':'Repair the governed AgentOS relay boundary so deterministic actions can execute again.',
-              'constraints':['Use only the trusted repair script from canonical main.','Do not use sudo.','Do not modify unrelated services or projects.']
-            },
+            'canonical_ir':{'goal':'Repair the governed AgentOS relay boundary so deterministic actions can execute again.','constraints':['Use only the trusted repair script from canonical main.','Do not use sudo.','Do not modify unrelated services or projects.']},
             'authority':{'source':'agentos-node','desktop_user':'ubuntu','direct_session_impersonation':False},
           }
           raw=json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
           payload['digest']='sha256:'+hashlib.sha256(raw).hexdigest()
           with open(carrier,'w',encoding='utf-8') as f:
               json.dump(payload,f,ensure_ascii=False,indent=2,sort_keys=True); f.write('\n')
-          target=os.path.join(inbox,cid+'.json')
-          os.replace(carrier,target)
-          print(cid)
+          target=os.path.join(inbox,cid+'.json'); os.replace(carrier,target); print(cid)
           PY
           )
             echo "recovery_capsule=$CAPSULE_ID"
@@ -67,33 +67,45 @@ jobs:
             cat "$RECEIPT"
             python3 - "$RECEIPT" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('ok') is True, r
+          r=json.load(open(sys.argv[1])); assert r.get('ok') is True, r
           text=(r.get('stdout','')+'\n'+r.get('stderr',''))
           assert 'antigravity_repair=PASS' in text, text[-10000:]
           assert 'action_relay_install=PASS' in text, text[-10000:]
           print('relay_repair_receipt=PASS')
           PY
 
-            echo '=== ACTION RELAY PROBE ==='
-            ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
-            ACTION_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+            echo '=== RESTART ANTIGRAVITY THROUGH DETERMINISTIC ACTION RELAY ==='
+            RESTART_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
           from agentos_node.action_relay import ActionRelayClient
-          p=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('site.sync_build', {'site':'studio.milkcat.org'})
-          print(p['capsule_id'])
+          print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('agentos.antigravity.restart', {})['capsule_id'])
           PY
           )
-            echo "action_capsule=$ACTION_ID"
+            RESTART_RECEIPT="$ACTION_ROOT/receipts/$RESTART_ID.json"
+            for i in $(seq 1 120); do [ -f "$RESTART_RECEIPT" ] && break; sleep 1; done
+            test -f "$RESTART_RECEIPT" || { echo 'antigravity_restart_receipt=TIMEOUT'; exit 4; }
+            cat "$RESTART_RECEIPT"
+            python3 - "$RESTART_RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1])); assert r.get('ok') is True, r
+          assert r.get('action') == 'agentos.antigravity.restart', r
+          print('antigravity_restart=PASS')
+          PY
+            sleep 2
+
+            echo '=== ACTION RELAY SITE SYNC ==='
+            ACTION_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.action_relay import ActionRelayClient
+          print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('site.sync_build', {'site':'studio.milkcat.org'})['capsule_id'])
+          PY
+          )
             ACTION_RECEIPT="$ACTION_ROOT/receipts/$ACTION_ID.json"
             for i in $(seq 1 300); do [ -f "$ACTION_RECEIPT" ] && break; sleep 1; done
-            test -f "$ACTION_RECEIPT" || { echo 'action_receipt=TIMEOUT'; exit 4; }
+            test -f "$ACTION_RECEIPT" || { echo 'action_receipt=TIMEOUT'; exit 5; }
             cat "$ACTION_RECEIPT"
             python3 - "$ACTION_RECEIPT" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('executor_user') == 'ubuntu', r
-          assert r.get('action') == 'site.sync_build', r
-          assert r.get('ok') is True, r
+          r=json.load(open(sys.argv[1])); assert r.get('executor_user') == 'ubuntu', r
+          assert r.get('action') == 'site.sync_build' and r.get('ok') is True, r
           print('site_sync_build=PASS')
           PY
             test -s /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
