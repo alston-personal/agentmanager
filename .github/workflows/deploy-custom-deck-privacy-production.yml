@@ -1,0 +1,152 @@
+name: Deploy Custom Deck + Privacy Production
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/deploy-custom-deck-privacy-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy with runtime-data preservation and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          PROD=/home/ubuntu/leopardcat-tarot
+          WEB="$PROD/website"
+          TARGET=322cc5ed19a7234004c8cc49beb69b95cabaca45
+          OLD=$(git -C "$PROD" rev-parse HEAD)
+          echo "old_commit=$OLD"
+          echo "target_commit=$TARGET"
+
+          dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' || true)
+          if [ -n "$dirty" ]; then
+            echo 'Unexpected tracked production changes; refusing deployment:' >&2
+            echo "$dirty" >&2
+            exit 40
+          fi
+          cp "$WEB/stats.json" /tmp/leopardcat-stats.pre-custom-decks.json
+          mkdir -p "$WEB/data/custom_decks"
+
+          stop_server() {
+            for pid in $(pgrep -f 'python3 fortune_server.py' || true); do
+              cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+              if [ "$cwd" = "$WEB" ]; then
+                kill "$pid" >/dev/null 2>&1 || true
+                for _ in $(seq 1 20); do
+                  kill -0 "$pid" >/dev/null 2>&1 || break
+                  sleep 0.25
+                done
+                kill -9 "$pid" >/dev/null 2>&1 || true
+              fi
+            done
+          }
+          start_server() {
+            cd "$WEB"
+            nohup /usr/bin/python3 fortune_server.py >/tmp/fortune_server.log 2>&1 &
+            echo $! >/tmp/fortune_server.pid
+            for _ in $(seq 1 30); do
+              curl -fsS http://127.0.0.1:8088/api/stats >/dev/null 2>&1 && return 0
+              sleep 1
+            done
+            tail -80 /tmp/fortune_server.log >&2 || true
+            return 1
+          }
+          rollback() {
+            echo 'deployment_failed=rolling_back_code_only' >&2
+            stop_server
+            git -C "$PROD" reset --hard "$OLD"
+            cp /tmp/leopardcat-stats.pre-custom-decks.json "$WEB/stats.json"
+            cd "$WEB"
+            npm run build
+            start_server
+            echo "rollback_commit=$OLD" >&2
+          }
+          trap 'rc=$?; if [ $rc -ne 0 ]; then rollback || true; fi; exit $rc' EXIT
+
+          git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
+          fetched=$(git -C "$PROD" rev-parse FETCH_HEAD)
+          [ "$fetched" = "$TARGET" ] || { echo "Unexpected main commit: $fetched" >&2; exit 41; }
+          git -C "$PROD" merge --ff-only FETCH_HEAD
+          cp /tmp/leopardcat-stats.pre-custom-decks.json "$WEB/stats.json"
+          mkdir -p "$WEB/data/custom_decks"
+
+          cd "$WEB"
+          npm run build
+          test -f dist/create.html
+          test -f dist/creator.js
+          grep -q 'reading-privacy-note' dist/index.html
+          python3 -m py_compile fortune_server.py divination/*.py
+          stop_server
+          start_server
+
+          python3 - <<'PY'
+          import json, os, shutil, sqlite3, urllib.request
+          base='http://127.0.0.1:8088'
+          pixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl8sAAAAASUVORK5CYII='
+          def post(path, body):
+              req=urllib.request.Request(base+path, data=json.dumps(body,ensure_ascii=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
+              with urllib.request.urlopen(req, timeout=50) as r:
+                  return json.loads(r.read().decode())
+          cards=[{'title':f'部署測試 {i}','upright':f'測試牌義 {i}','image':'data:image/png;base64,'+pixel} for i in range(1,4)]
+          created=post('/api/v1/decks', {'name':'production-smoke-temporary','creator':'deployment','reversals':False,'cards':cards})
+          deck_id=created['deck_id']
+          try:
+              assert created['card_count']==3
+              with urllib.request.urlopen(base+'/api/v1/decks/'+deck_id, timeout=10) as r:
+                  info=json.loads(r.read().decode())
+              assert info['card_count']==3
+              secret='PRODUCTION_PRIVACY_SMOKE_DO_NOT_PERSIST'
+              reading=post('/api/v1/readings', {
+                  'method':'tarot','persona':'master','question':secret,
+                  'input':{'deck_id':deck_id,'spread':'three_card'},'lang':'zh-TW','seed':'prod-custom-smoke'
+              })
+              assert len(reading['method_result']['cards'])==3
+              assert all(c['orientation']=='upright' for c in reading['method_result']['cards'])
+              follow=post('/api/v1/readings', {
+                  'readingId':reading['reading_id'],'sessionToken':reading['session_token'],
+                  'question':'沿用剛才牌局繼續','lang':'zh-TW'
+              })
+              assert follow['method_result']==reading['method_result']
+              raw=open('data/reading_sessions.sqlite3','rb').read()
+              assert secret.encode() not in raw
+              assert reading['session_token'].encode() not in raw
+              print('production_custom_deck_smoke=passed')
+              print('production_followup_same_result=true')
+              print('production_privacy_question_persisted=false')
+          finally:
+              shutil.rmtree(os.path.join('data','custom_decks',deck_id), ignore_errors=True)
+          PY
+
+          curl -fsS https://leopardcat-tarot.milkcat.org/ >/dev/null
+          curl -fsS https://leopardcat-tarot.milkcat.org/create.html >/dev/null
+          curl -fsS https://leopardcat-tarot.milkcat.org/api/stats >/dev/null
+          echo 'public_creator_page_smoke=passed'
+          echo "deployed_commit=$(git -C "$PROD" rev-parse HEAD)"
+          trap - EXIT
+          REMOTE
