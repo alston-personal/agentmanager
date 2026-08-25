@@ -35,10 +35,31 @@ jobs:
           const browser = await chromium.launch({headless:true});
           const page = await browser.newPage();
           await page.goto(base + '?deck=test-2cfe3b&theme=minimal-light', {waitUntil:'networkidle'});
-          await page.waitForFunction(() => window.activeDeckId === 'test-2cfe3b' && Array.isArray(window.cardData) && window.cardData.length === 5);
+          await page.waitForFunction(() => window.activeDeckId === 'test-2cfe3b' && Array.isArray(window.cardData) && window.cardData.length === 5 && window.activeBrand?.brand_id === 'deck:test-2cfe3b');
           assert.equal(await page.locator('.custom-deck-gallery .card-wrapper').count(), 5);
           assert.equal(await page.evaluate(() => window.activeDeckId), 'test-2cfe3b');
           assert.equal(await page.evaluate(() => window.activeThemeId), 'minimal-light');
+
+          const branding = await page.evaluate(() => ({
+            brand: window.activeBrand,
+            title: document.title,
+            nav: document.querySelector('.nav-logo')?.textContent || '',
+            hero: document.querySelector('#hero h1')?.textContent || '',
+            subtitle: document.querySelector('#hero .subtitle')?.textContent || '',
+            fortune: document.querySelector('#fortune .section-title h2')?.textContent || '',
+            shareMemo: document.getElementById('share-memo-title')?.textContent || '',
+            shareTag: document.getElementById('share-site-tag')?.textContent || ''
+          }));
+          assert.equal(branding.brand.app_name, 'TEST');
+          assert.match(branding.title, /TEST/);
+          assert.match(branding.nav, /TEST/);
+          assert.match(branding.hero, /TEST/);
+          assert.match(branding.fortune, /TEST/);
+          assert.match(branding.shareMemo, /TEST/);
+          assert.match(branding.shareTag, /AAA/);
+          const brandingText = JSON.stringify(branding);
+          assert.doesNotMatch(brandingText, /石虎/);
+          assert.doesNotMatch(brandingText, /LeopardCat/);
 
           await page.route('**/api/v1/readings', async route => {
             await route.fulfill({status:200, contentType:'application/json', body: JSON.stringify({
@@ -65,28 +86,45 @@ jobs:
           const share = await page.evaluate(() => ({
             transform: document.getElementById('share-card-img')?.style.transform || '',
             title: document.getElementById('share-card-title')?.innerText || '',
+            memo: document.getElementById('share-memo-title')?.innerText || '',
+            tag: document.getElementById('share-site-tag')?.innerText || '',
             src: document.getElementById('share-card-img')?.getAttribute('src') || '',
-            url: window.shareUrl || ''
+            url: window.shareUrl || '',
+            text: window.lastShareText || ''
           }));
           assert.match(share.transform, /180deg/);
           assert.match(share.title, /逆位|Reversed/);
+          assert.match(share.memo, /TEST/);
+          assert.match(share.tag, /AAA/);
           assert.equal(share.src, first.image);
           assert.match(share.url, /deck=test-2cfe3b/);
           assert.match(share.url, /theme=minimal-light/);
           assert.match(share.url, /orientation=reversed/);
           assert.match(share.url, new RegExp('card=' + encodeURIComponent(first.id)));
+          assert.doesNotMatch(JSON.stringify(share), /石虎|LeopardCat/);
+
+          const ogResp = await fetch(base + '?deck=test-2cfe3b&card=' + encodeURIComponent(first.id));
+          assert.equal(ogResp.status, 200);
+          const ogHtml = await ogResp.text();
+          assert.match(ogHtml, /<meta property="og:title" content="[^"]*TEST/);
+          assert.ok(ogHtml.includes(first.image));
+          assert.doesNotMatch(ogHtml, /我在石虎塔羅抽到了/);
 
           const leopard = await browser.newPage();
           await leopard.goto(base, {waitUntil:'networkidle'});
-          await leopard.waitForFunction(() => window.activeDeckId === 'leopardcat' && window.activeThemeId === 'leopardcat');
+          await leopard.waitForFunction(() => window.activeDeckId === 'leopardcat' && window.activeThemeId === 'leopardcat' && window.activeBrand?.brand_id === 'leopardcat');
           assert.equal(await leopard.evaluate(() => window.activeDeckId), 'leopardcat');
           assert.equal(await leopard.evaluate(() => window.activeThemeId), 'leopardcat');
+          assert.equal(await leopard.evaluate(() => window.activeBrand.brand_id), 'leopardcat');
 
           console.log('browser_custom_gallery=passed');
+          console.log('browser_custom_brand_pack=passed');
+          console.log('browser_custom_brand_no_leak=passed');
           console.log('browser_reversed_reading_state=passed');
           console.log('browser_reversed_share_card=passed');
           console.log('browser_deep_link_contract=passed');
-          console.log('browser_leopardcat_theme_default=passed');
+          console.log('browser_custom_og_brand=passed');
+          console.log('browser_leopardcat_defaults=passed');
           await browser.close();
           NODE
           node shared-contract.mjs
