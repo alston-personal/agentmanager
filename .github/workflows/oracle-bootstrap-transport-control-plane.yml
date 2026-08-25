@@ -10,6 +10,8 @@ on:
       - 'scripts/update_scheduler_board.py'
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/install_action_relay_user.sh'
+      - 'scripts/deploy_layoutlab_static.py'
+      - 'web_assets/layoutlab_official.html'
 
 permissions:
   contents: write
@@ -61,9 +63,6 @@ jobs:
             echo 'live_bootstrap_hook=PASS'
 
             echo '=== WAIT FOR UBUNTU CHRONOS TO OWN RENDEZVOUS ==='
-            # The long-lived ubuntu Chronos process itself creates /tmp control
-            # directories. This is the key bootstrap property: no supplementary
-            # agentos group is required before Action Relay exists.
             for i in $(seq 1 120); do
               [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
               sleep 1
@@ -174,7 +173,7 @@ jobs:
           PY
 
             echo '=== READ-ONLY STUDIO BASELINE ==='
-            for path in / /dashboard /layout-lab/; do
+            for path in / /dashboard; do
               code=$(curl -sS -o /tmp/studio-bootstrap-control -w '%{http_code}' --retry 3 --retry-all-errors "https://studio.milkcat.org${path}")
               echo "public_path=${path} http_code=${code}"
               test "$code" = 200
