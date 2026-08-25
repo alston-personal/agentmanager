@@ -18,9 +18,19 @@ for user in ubuntu agentos-node; do
 done
 
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
-mkdir -p "$(dirname "$RUNTIME_ROOT")" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$UNIT_DIR"
-chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
-chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+mkdir -p "$(dirname "$RUNTIME_ROOT")" "$UNIT_DIR"
+
+if [ "${AGENTOS_ACTION_SPOOL_PREPROVISIONED:-0}" = 1 ]; then
+  # The long-running ubuntu Chronos carrier can predate the supplementary-group
+  # grant and therefore cannot traverse the shared agent-data boundary itself.
+  # In the safe bootstrap path, agentos-node provisions this spool first; the
+  # newly started Action Relay later enters it through explicit `sg agentos`.
+  echo "action_relay_spool_preprovisioned=YES"
+else
+  mkdir -p "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+  chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+  chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+fi
 
 git -C "$REPO" fetch origin main
 if [ -e "$RUNTIME_ROOT/.git" ]; then
@@ -33,11 +43,14 @@ else
   git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" origin/main
 fi
 
-PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
+(
+  cd "$RUNTIME_ROOT"
+  PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
 from agentos_node.action_relay import ACTIONS
 print('action_runtime_import=ok')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
+)
 
 # The ubuntu user manager can predate the agentos supplementary-group grant.
 # Starting the worker through `sg agentos` makes the shared-boundary group
