@@ -28,7 +28,7 @@ jobs:
           OUT=.agentos/evidence/bootstrap-control-plane.txt
           LIVE=/home/ubuntu/agentmanager
           DATA=/home/ubuntu/agent-data
-          ROOT="$DATA/runtime/bootstrap-control"
+          ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
           REQUEST_ID="transport-repair-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -59,12 +59,24 @@ jobs:
             grep -q 'run_bootstrap_control_plane' "$LIVE/scripts/update_scheduler_board.py"
             echo 'live_bootstrap_hook=PASS'
 
-            echo '=== CREATE GOVERNED REQUEST ==='
-            for d in "$ROOT" "$REQUESTS" "$RECEIPTS" "$ROOT/rejected"; do
-              mkdir -p "$d"
-              chgrp agentos "$d" 2>/dev/null || true
-              chmod 2770 "$d"
+            echo '=== WAIT FOR UBUNTU CHRONOS TO OWN RENDEZVOUS ==='
+            # The long-lived ubuntu Chronos process itself creates /tmp control
+            # directories.  This is the key bootstrap property: no supplementary
+            # agentos group is required before Action Relay exists.
+            for i in $(seq 1 120); do
+              [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+              sleep 1
             done
+            test -d "$REQUESTS"
+            test -d "$RECEIPTS"
+            echo "root_stat=$(stat -c '%U:%G %a %n' "$ROOT")"
+            echo "requests_stat=$(stat -c '%U:%G %a %n' "$REQUESTS")"
+            test "$(stat -c '%U' "$ROOT")" = ubuntu
+            test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+            test "$(stat -c '%a' "$REQUESTS")" = 1777
+            echo 'ubuntu_owned_rendezvous=PASS'
+
+            echo '=== CREATE GOVERNED REQUEST ==='
             python3 - "$REQUEST" "$REQUEST_ID" <<'PY'
           import json,os,sys
           from datetime import datetime,timezone
@@ -79,12 +91,19 @@ jobs:
           }
           tmp=p.with_suffix(p.suffix+'.tmp')
           tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o660)
+          os.chmod(tmp,0o644)
           tmp.replace(p)
-          os.chmod(p,0o660)
+          os.chmod(p,0o644)
           print(json.dumps(payload,ensure_ascii=False))
           PY
             echo "request_stat=$(stat -c '%U:%G %a %n' "$REQUEST")"
+            test "$(stat -c '%U' "$REQUEST")" = agentos-node
+            python3 - "$REQUEST" <<'PY'
+          import os,sys
+          mode=os.stat(sys.argv[1]).st_mode & 0o777
+          assert not (mode & 0o022), oct(mode)
+          print('request_write_protection=PASS')
+          PY
 
             echo '=== WAIT FOR UBUNTU CHRONOS RECEIPT ==='
             for i in $(seq 1 300); do
@@ -114,7 +133,7 @@ jobs:
           from agentos_node.action_relay import ActionRelayClient
           print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('agentos.antigravity.restart', {})['capsule_id'])
           PY
-            )
+          )
             RESTART_RECEIPT="$ACTION_ROOT/receipts/$RESTART_ID.json"
             for i in $(seq 1 120); do
               [ -f "$RESTART_RECEIPT" ] && break
