@@ -1,5 +1,5 @@
 schema_version: "0.1"
-constitution_version: "2026.08.25.1"
+constitution_version: "2026.08.25.2"
 name: AgentOS Constitution
 
 principles:
@@ -24,6 +24,9 @@ principles:
   - id: query_before_discovery
     level: core
     statement: "已知環境先查 registry；只有資訊缺失或 stale 才做 targeted verification，不重複盲目 discovery。"
+  - id: responsibility_resolution
+    level: core
+    statement: "實作 reusable 或跨 project 能力前必須先解析既有 owner、manager、provider 與 policy；若已有有效責任歸屬，必須 reuse/extend，不得平行重造。"
   - id: executor_independence
     level: core
     statement: "AgentOS 的治理、IR、角色契約與可驗證行為不得依賴單一模型或單一 executor 才成立。"
@@ -40,6 +43,7 @@ protected_artifacts:
   - .agent/AGENT_RULES.md
   - .agent/rules/LOGIC_DATA_SEPARATION.md
   - docs/RESOURCE_REGISTRY.md
+  - docs/governance/GOVERNANCE_DIRECTORY.md
 
 governance:
   constitution_keeper: governance.keeper
