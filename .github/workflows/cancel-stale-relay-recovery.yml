@@ -36,10 +36,11 @@ jobs:
             case "$code" in 202|409) ;; *) return 1 ;; esac
           }
 
-          # Explicit historical/superseded attempts only. The safe-v2 path is
-          # now superseded by the canonical bootstrap control plane. Cancel both
-          # its in-progress and queued runs triggered by the relay installer fix.
-          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864566296 32864607057; do
+          # Explicit historical/superseded attempts only. The canonical
+          # bootstrap control plane is now the sole migration path. Cancel the
+          # old safe-v2 and owned-carrier recovery attempts so they cannot take
+          # the single Oracle runner ahead of the current control-plane run.
+          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864566296 32864607057 32864607021; do
             cancel_run "$run_id"
           done
 
@@ -61,5 +62,5 @@ jobs:
             [ -z "$run_id" ] || cancel_run "$run_id"
           done < /tmp/old-inline-runs
 
-          echo 'current_corrected_bootstrap_auto_cancel=DISABLED'
+          echo 'canonical_bootstrap_control_plane=ONLY_ACTIVE_MIGRATION_PATH'
           echo 'superseded_recovery_cancel=PASS'
