@@ -1,0 +1,66 @@
+name: Diagnose Stalled Studio Audit Capsule
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-diagnose-studio-audit-capsule.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect relay spool and worker state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/studio-audit-relay-diagnostic.txt
+          ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
+          ID=relay-21e1f5b65d2e4eb580332e624967675c
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_identity=$(id)"
+            echo "target_capsule=$ID"
+            echo '=== SERVICE ==='
+            systemctl --user status agentos-antigravity-relay.service --no-pager 2>&1 || true
+            echo '=== WORKER PROCESS ==='
+            ps -ef | grep '[a]ntigravity_relay_worker' || true
+            echo '=== QUEUE COUNTS ==='
+            printf 'inbox='; find "$ROOT/inbox" -maxdepth 1 -type f -name 'relay-*.json' 2>/dev/null | wc -l
+            printf 'processing='; find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' 2>/dev/null | wc -l
+            printf 'receipts='; find "$ROOT/receipts" -maxdepth 1 -type f -name 'relay-*.json' 2>/dev/null | wc -l
+            echo '=== TARGET LOCATIONS ==='
+            for d in inbox processing receipts; do
+              p="$ROOT/$d/$ID.json"
+              if [ -e "$p" ]; then
+                echo "$d=FOUND"
+                stat -c '%n owner=%U group=%G mode=%a size=%s mtime=%y' "$p" 2>&1 || true
+                if [ "$d" = receipts ]; then cat "$p" 2>&1 || true; fi
+              else
+                echo "$d=ABSENT"
+              fi
+            done
+            echo '=== OLDEST INBOX ==='
+            find "$ROOT/inbox" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | head -20 || true
+            echo '=== PROCESSING ==='
+            find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | head -20 || true
+            echo '=== RECENT RECEIPTS ==='
+            find "$ROOT/receipts" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -10 || true
+          } 2>&1 | tee "$OUT"
+      - name: Commit diagnostic evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/studio-audit-relay-diagnostic.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): stalled audit relay diagnosis'
+          git push
