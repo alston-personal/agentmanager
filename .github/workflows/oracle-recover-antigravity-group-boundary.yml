@@ -1,5 +1,6 @@
 name: Recover Antigravity Group Boundary Safely
 
+# revision: tmp-receipt quarantine without peer read
 on:
   workflow_dispatch:
   push:
