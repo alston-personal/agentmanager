@@ -1,0 +1,122 @@
+name: Smoke Custom Deck + Privacy
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/smoke-custom-deck-privacy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run isolated creator and privacy smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/home/ubuntu/agentmanager/workspace/leopardcat-tarot
+          WORK=/tmp/leopardcat-custom-deck-smoke
+          BRANCH=feature/privacy-custom-decks
+          PORT=18089
+          git -C "$REPO" fetch origin "$BRANCH" --quiet
+          rm -rf "$WORK"
+          git -C "$REPO" worktree add --detach "$WORK" "origin/$BRANCH" >/dev/null
+          cleanup() {
+            if [ -f /tmp/leopardcat-custom-deck-smoke.pid ]; then
+              kill "$(cat /tmp/leopardcat-custom-deck-smoke.pid)" >/dev/null 2>&1 || true
+              rm -f /tmp/leopardcat-custom-deck-smoke.pid
+            fi
+            git -C "$REPO" worktree remove --force "$WORK" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cd "$WORK"
+          python3 tools/patch_privacy_custom_decks.py
+          python3 tools/patch_custom_deck_branding.py
+          python3 -m unittest -v tests/test_divination_engine.py tests/test_privacy_custom_decks.py
+          cd website
+          sed -i "s/^PORT = 8088$/PORT = $PORT/" fortune_server.py
+          python3 -m py_compile fortune_server.py divination/*.py
+          nohup python3 fortune_server.py >/tmp/leopardcat-custom-deck-smoke.log 2>&1 &
+          echo $! >/tmp/leopardcat-custom-deck-smoke.pid
+          for i in $(seq 1 25); do
+            curl -fsS "http://127.0.0.1:$PORT/api/stats" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          python3 - <<'PY'
+          import json, sqlite3, urllib.request
+          base='http://127.0.0.1:18089'
+          pixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl8sAAAAASUVORK5CYII='
+          cards=[{
+              'title': f'創作者牌 {i}',
+              'upright': f'第 {i} 張牌的主要牌義',
+              'reversed': f'第 {i} 張牌的逆位牌義',
+              'image': 'data:image/png;base64,'+pixel,
+          } for i in range(1,23)]
+          def post(path, body):
+              req=urllib.request.Request(base+path, data=json.dumps(body,ensure_ascii=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
+              with urllib.request.urlopen(req, timeout=50) as r:
+                  return json.loads(r.read().decode())
+          created=post('/api/v1/decks', {
+              'name':'二十二張測試牌','creator':'完全不懂程式的創作者','description':'驗證上傳後直接有自己的占卜頁','reversals':True,'cards':cards
+          })
+          assert created['card_count']==22
+          deck_id=created['deck_id']
+          with urllib.request.urlopen(base+'/api/v1/decks/'+deck_id, timeout=10) as r:
+              info=json.loads(r.read().decode())
+          assert info['card_count']==22 and info['creator']=='完全不懂程式的創作者'
+          with urllib.request.urlopen(base+f'/api/v1/decks/{deck_id}/images/card-001.png', timeout=10) as r:
+              assert len(r.read()) > 20
+          secret='PRIVACY_SECRET_20260825_DO_NOT_STORE'
+          first=post('/api/v1/readings', {
+              'method':'tarot','persona':'master','question':secret,
+              'input':{'deck_id':deck_id,'spread':'three_card'},'lang':'zh-TW','seed':'creator-e2e'
+          })
+          assert first['method_result']['deck']['card_count']==22
+          assert first['method_result']['deck']['deck_id']==deck_id
+          assert len(first['method_result']['cards'])==3
+          assert len({x['card_id'] for x in first['method_result']['cards']})==3
+          assert first['privacy']['question_stored'] is False
+          assert first['privacy']['answer_stored'] is False
+          token=first['session_token']; rid=first['reading_id']
+          second=post('/api/v1/readings', {
+              'readingId':rid,'sessionToken':token,'question':'請沿用同一副牌繼續說明','lang':'zh-TW'
+          })
+          assert second['method_result']==first['method_result']
+          db='data/reading_sessions.sqlite3'
+          raw=open(db,'rb').read()
+          assert secret.encode() not in raw
+          assert token.encode() not in raw
+          assert first['reading'].encode() not in raw
+          con=sqlite3.connect(db)
+          cols=[r[1] for r in con.execute('pragma table_info(reading_sessions)')]
+          assert 'question' not in cols and 'answer' not in cols
+          print('custom_deck_e2e=passed')
+          print('custom_deck_card_count=22')
+          print('followup_same_result=true')
+          print('privacy_question_persisted=false')
+          print('privacy_answer_persisted=false')
+          PY
+          REMOTE
