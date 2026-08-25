@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=ff3ef92c5ce4ade8a58d15e7d533fe62bf60c437
+          TARGET=1e86c271e2267903d42a7c244a0d5ff8d48addb7
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
@@ -77,14 +77,28 @@ jobs:
           grep -q "shareU.searchParams.set('orientation', 'reversed')" main.js
           grep -q 'Bootstrap exactly one Deck Module' main.js
           grep -q 'Custom deck bootstrap is owned by initAllSystems' main.js
+          grep -q 'BrandRegistry' fortune_server.py
+          grep -q '/api/v1/brands/' fortune_server.py
+          grep -q 'window.activeBrand' main.js
+          grep -q "window.brandText('share_title'" main.js
           stop_server; start_server
           curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('cards',[])) == 5; assert all(c.get('image') for c in d['cards']); print('custom_deck_shared_contract=passed')"
           curl -fsS http://127.0.0.1:8088/api/v1/themes/leopardcat | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('theme_id') == 'leopardcat'; print('leopardcat_theme_contract=passed')"
+          curl -fsS http://127.0.0.1:8088/api/v1/brands/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); s=json.dumps(d,ensure_ascii=False); assert d.get('app_name') == 'TEST'; assert d.get('brand_id') == 'deck:test-2cfe3b'; assert 'AAA' in d.get('share_site_tag',{}).get('zh',''); assert '石虎' not in s; assert 'LeopardCat' not in s; print('custom_brand_pack=passed')"
+          CARD_ID=$(curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['cards'][0]['id'])")
+          CARD_IMG=$(curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['cards'][0]['image'])")
+          curl -fsS "http://127.0.0.1:8088/?deck=test-2cfe3b&card=${CARD_ID}" > /tmp/custom-brand.html
+          grep -q 'TEST' /tmp/custom-brand.html
+          grep -Fq "$CARD_IMG" /tmp/custom-brand.html
+          ! grep -q '我在石虎塔羅抽到了' /tmp/custom-brand.html
+          echo production_custom_og_brand=passed
           JS=$(find dist/assets -name 'index-*.js' | head -1)
           test -s "$JS"
           curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") >/dev/null
+          curl -fsS https://leopardcat-tarot.milkcat.org/api/v1/brands/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); s=json.dumps(d,ensure_ascii=False); assert d.get('app_name') == 'TEST'; assert '石虎' not in s; print('public_custom_brand_pack=passed')"
           echo production_shared_experience=passed
           echo production_exclusive_deck_bootstrap=passed
+          echo production_brand_pack=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
