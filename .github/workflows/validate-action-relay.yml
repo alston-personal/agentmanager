@@ -46,7 +46,7 @@ jobs:
             echo "runner_identity=$(id)"
             test -f "$RUNTIME/agentos_node/antigravity_relay.py"
             echo '=== BOOTSTRAP CAPSULE ==='
-            CAPSULE_ID=$(PYTHONPATH="$RUNTIME" python3 - <<'PY'
+            CAPSULE_ID=$(cd /tmp && PYTHONPATH="$RUNTIME" python3 - <<'PY'
           from agentos_node.antigravity_relay import AntigravityRelayClient
           c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
           p=c.submit(project_id='agentmanager', canonical_ir={'goal':'Install the governed AgentOS Action Relay exactly from the trusted repository installer.','constraints':['Execute only the named installer.','Do not edit source files.','Do not use sudo.']}, instruction='Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.', workspace='/home/ubuntu/agentmanager')
