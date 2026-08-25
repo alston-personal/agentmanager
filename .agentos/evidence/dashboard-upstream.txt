@@ -1,19 +1,12 @@
-timestamp_utc=2026-08-25T06:25:14Z
+timestamp_utc=2026-08-25T06:26:38Z
 hostname=instance-20260129-0852
 === PORT 3000 ===
 State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
 LISTEN 0      511                *:3000            *:*          
-pid=183022
-=== PROCESS ===
-USER         PID    PPID                  STARTED COMMAND
-ubuntu    183022  183021 Thu Aug 20 16:26:11 2026 next-server (v16.2.9)
-USER         PID    PPID                  STARTED COMMAND
-ubuntu    183021  183009 Thu Aug 20 16:26:11 2026 sh -c next start -p 3010
-USER         PID    PPID                  STARTED COMMAND
-ubuntu    183009 3815324 Thu Aug 20 16:26:11 2026 npm run start -p 3010
-=== CGROUP ===
-0::/user.slice/user-1001.slice/session-2.scope
-=== SYSTEMD MATCH ===
+=== FUSER ===
+=== LSOF ===
+socket_pid=unknown
+process_identity=unresolved_due_to_permissions
 === KNOWN ROUTE HEALTH ===
 http=200
 <!DOCTYPE html><!--_17kq_xvmdeUiFucYz_P1--><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="/dashboard/_next/static/chunks/b73c66837c9fc287.css" data-precedence="next"/><link rel="preload" as="script" fetch
