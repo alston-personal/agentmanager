@@ -1,6 +1,6 @@
 name: Oracle Antigravity Relay Trial
 
-# retrigger marker: 2026-08-25T09:47+08:00 after shared artifact fix deployment
+# retrigger marker: 2026-08-25T10:17+08:00 recheck after executor timeout window
 on:
   workflow_dispatch:
   push:
@@ -85,7 +85,7 @@ jobs:
               Path('.agentos/evidence/oracle-antigravity-relay-capsule.json').write_text(
                   json.dumps(capsule, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
               print('submitted_capsule=' + capsule_id)
-              deadline = time.monotonic() + 90
+              deadline = time.monotonic() + 210
               receipt = None
               while time.monotonic() < deadline:
                   receipt = client.receipt(capsule_id)
