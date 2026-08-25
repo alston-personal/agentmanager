@@ -1,0 +1,96 @@
+name: Smoke Modular Divination API
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/smoke-modular-divination-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Run isolated HTTP smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/home/ubuntu/agentmanager/workspace/leopardcat-tarot
+          WORK=/tmp/leopardcat-divination-smoke
+          BRANCH=feature/modular-divination-master
+          PORT=18088
+          git -C "$REPO" fetch origin "$BRANCH" --quiet
+          rm -rf "$WORK"
+          git -C "$REPO" worktree add --detach "$WORK" "origin/$BRANCH" >/dev/null
+          cleanup() {
+            if [ -f /tmp/leopardcat-divination-smoke.pid ]; then
+              kill "$(cat /tmp/leopardcat-divination-smoke.pid)" >/dev/null 2>&1 || true
+              rm -f /tmp/leopardcat-divination-smoke.pid
+            fi
+            git -C "$REPO" worktree remove --force "$WORK" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cd "$WORK/website"
+          sed -i "s/^PORT = 8088$/PORT = $PORT/" fortune_server.py
+          python3 -m py_compile fortune_server.py divination/*.py
+          nohup python3 fortune_server.py >/tmp/leopardcat-divination-smoke.log 2>&1 &
+          echo $! >/tmp/leopardcat-divination-smoke.pid
+          for i in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:$PORT/api/stats" >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          python3 - <<'PY'
+          import json, urllib.request
+          base='http://127.0.0.1:18088'
+          def post(body):
+              req=urllib.request.Request(base+'/api/v1/readings', data=json.dumps(body, ensure_ascii=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
+              with urllib.request.urlopen(req, timeout=45) as r:
+                  return json.loads(r.read().decode())
+          first=post({
+              'method':'tarot','persona':'leopardcat','question':'我今天適合專心完成手上的工作嗎？',
+              'input':{'spread':'single'},'lang':'zh-TW','seed':'oracle-http-smoke'
+          })
+          assert first['reading_id'].startswith('rd_')
+          assert first['method']=='tarot'
+          assert first['persona']=='leopardcat'
+          cards=first['method_result']['cards']
+          assert len(cards)==1
+          assert cards[0]['orientation'] in ('upright','reversed')
+          assert len(first.get('reading','').strip()) > 20
+          second=post({
+              'method':'tarot','persona':'leopardcat','readingId':first['reading_id'],
+              'question':'那我最需要避免什麼？','methodResult':first['method_result'],
+              'lang':'zh-TW','history':[{'role':'user','content':'我今天適合專心完成手上的工作嗎？'},{'role':'assistant','content':first['reading']}]
+          })
+          assert second['method_result']==first['method_result']
+          assert len(second.get('reading','').strip()) > 20
+          print('http_smoke=passed')
+          print('reading_id='+first['reading_id'])
+          print('orientation='+cards[0]['orientation'])
+          print('followup_same_result=true')
+          PY
+          REMOTE
