@@ -84,3 +84,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlab): stable official browser UI acceptance'
           git push origin HEAD:main
+
+# retrigger after runtime refresh and nginx-readable artifact permission fix
