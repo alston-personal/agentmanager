@@ -1,0 +1,7 @@
+timestamp_utc=2026-08-25T14:37:20Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+request_id=chronos-safe-20260825T143720Z-32860383378
+=== VERIFY EXISTING UBUNTU CHRONOS ===
+ubuntu   ubuntu    472462    1027 48-06:43:24 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+chronos_log_age_seconds=39.2
+one_time_safe_bridge_installed=YES
