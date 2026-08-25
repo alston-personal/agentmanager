@@ -30,13 +30,13 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=b99abcac5e1b2b18348a99df1afb8cbb478c0545
+          TARGET=d8bd19b186e11e3de2bc48c0ecdeec572fe34606
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
           dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' | grep -v '^ M website/dist/' | grep -v '^?? website/data/' || true)
           if [ -n "$dirty" ]; then echo 'unexpected production changes:' >&2; echo "$dirty" >&2; exit 40; fi
-          cp "$WEB/stats.json" /tmp/lc-stats.pre-wheel-boundary.json
+          cp "$WEB/stats.json" /tmp/lc-stats.pre-custom-gallery.json
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           git -C "$PROD" checkout -- website/dist 2>/dev/null || true
           stop_server() {
@@ -54,7 +54,7 @@ jobs:
             echo deployment_failed_rolling_back >&2
             stop_server
             git -C "$PROD" reset --hard "$OLD"
-            cp /tmp/lc-stats.pre-wheel-boundary.json "$WEB/stats.json"
+            cp /tmp/lc-stats.pre-custom-gallery.json "$WEB/stats.json"
             cd "$WEB"; npm run build; start_server
             echo rollback_commit=$OLD >&2
           }
@@ -62,26 +62,20 @@ jobs:
           git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
           F=$(git -C "$PROD" rev-parse FETCH_HEAD); [ "$F" = "$TARGET" ] || { echo unexpected_main=$F >&2; exit 41; }
           git -C "$PROD" merge --ff-only FETCH_HEAD
-          cp /tmp/lc-stats.pre-wheel-boundary.json "$WEB/stats.json"
+          cp /tmp/lc-stats.pre-custom-gallery.json "$WEB/stats.json"
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           cd "$WEB"
           npm run build
           python3 -m py_compile fortune_server.py divination/*.py
           node --check main.js
-          python3 - <<'PY'
-          from pathlib import Path
-          s=Path('main.js').read_text()
-          i=s.index('const panelCanConsume')
-          j=s.index('}, { passive: false });', i)
-          b=s[i:j]
-          assert b.index('if (panelCanConsume)') < b.index('e.stopPropagation()')
-          print('wheel_boundary_release_source=passed')
-          PY
+          grep -q 'renderCustomDeckGallery' main.js
+          grep -q '牌卡展示' main.js
           stop_server; start_server
+          curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('cards',[])) == 5; print('custom_gallery_deck_data=passed')"
           JS=$(find dist/assets -name 'index-*.js' | head -1)
           test -s "$JS"
           curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") >/dev/null
-          echo production_card_wheel_boundary_release=passed
+          echo production_custom_deck_gallery=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
