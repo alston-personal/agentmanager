@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect Action Relay process, journal, and spool without mutation
+      - name: Inspect Action Relay process, journal, spool, and wait state without mutation
         shell: bash
         run: |
           set -euo pipefail
@@ -24,16 +24,28 @@ jobs:
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
+            echo '=== INSTALLED UNIT ==='
+            cat /home/ubuntu/.config/systemd/user/agentos-action-relay.service || true
+            echo '=== RUNTIME REVISION ==='
+            git -C /home/ubuntu/.local/share/agentos/action-runtime rev-parse HEAD 2>&1 || true
+            sha256sum /home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py 2>&1 || true
+            grep -n '_restart_user_service\|--no-block\|DBUS_SESSION_BUS_ADDRESS' /home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py /home/ubuntu/.config/systemd/user/agentos-action-relay.service 2>&1 || true
             echo '=== SERVICE STATUS ==='
             systemctl --user --no-pager --full status agentos-action-relay.service || true
             echo '=== SERVICE PROPERTIES ==='
             systemctl --user show agentos-action-relay.service -p ActiveState -p SubState -p MainPID -p NRestarts -p ExecMainStatus -p Environment -p WorkingDirectory || true
             echo '=== PROCESS TREE ==='
-            ps -eo user,group,pid,ppid,etime,args | grep -E 'agentos_node.action_relay|[s]g agentos' || true
-            echo '=== PROCESS GROUPS ==='
+            ps -eo user,group,pid,ppid,stat,wchan:28,etime,args | grep -E 'agentos_node.action_relay|systemctl --user|[s]g agentos|antigravity_relay_worker' || true
+            command -v pstree >/dev/null && pstree -ap 1027 2>&1 | grep -E 'action_relay|systemctl|antigravity|sg' || true
+            echo '=== PROCESS DETAILS ==='
             for pid in $(pgrep -f 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' || true); do
               echo "pid=$pid"
-              grep -E '^(Uid|Gid|Groups):' "/proc/$pid/status" || true
+              grep -E '^(Name|State|Pid|PPid|Uid|Gid|Groups):' "/proc/$pid/status" || true
+              echo -n 'wchan='; cat "/proc/$pid/wchan" 2>/dev/null || true; echo
+              echo 'children:'
+              cat "/proc/$pid/task/$pid/children" 2>/dev/null || true; echo
+              echo 'safe_env:'
+              tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -E '^(USER|HOME|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|PYTHONPATH)=' || true
             done
             echo '=== SPOOL TREE ==='
             find /home/ubuntu/agent-data/runtime/action-relay -maxdepth 2 -printf '%u:%g %m %TY-%Tm-%TdT%TH:%TM:%TS %p\n' | sort || true
@@ -60,5 +72,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$E"
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): live Action Relay diagnostic'
+          git commit -m 'evidence(agentos): live Action Relay wait-state diagnostic'
           git push origin HEAD:main
