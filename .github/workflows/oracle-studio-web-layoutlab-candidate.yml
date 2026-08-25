@@ -1,0 +1,41 @@
+name: Oracle Studio Web Layout Lab Candidate
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-studio-web-layoutlab-candidate.yml'
+      - 'scripts/studio_web_phase1_layoutlab_candidate.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  candidate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build live-site plus committed Layout Lab candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/studio_web_phase1_layoutlab_candidate.sh
+      - name: Commit candidate evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-web-phase1-layoutlab-candidate.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-web-phase1-layoutlab-candidate.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-web-phase1-layoutlab-candidate.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): Layout Lab candidate mirror'
+          git push origin HEAD:main
