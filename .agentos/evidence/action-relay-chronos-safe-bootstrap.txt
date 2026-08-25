@@ -1,25 +1,25 @@
-timestamp_utc=2026-08-25T14:44:11Z
+timestamp_utc=2026-08-25T14:44:59Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-request_id=chronos-safe-20260825T144411Z-32861351261
+request_id=chronos-safe-20260825T144459Z-32861439316
 === VERIFY EXISTING UBUNTU CHRONOS ===
-ubuntu   ubuntu    472462    1027 48-06:50:15 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
-chronos_log_age_seconds=29.0
+ubuntu   ubuntu    472462    1027 48-06:51:03 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+chronos_log_age_seconds=17.2
 === RECOVER CANCELLED BRIDGE IF PRESENT ===
 stale_bridge_present=NO
 one_time_safe_bridge_installed=YES
 chronos_receipt_owner=ubuntu:ubuntu 644
 {
   "schema": "agentos.one-time-chronos-safe-bootstrap/v1",
-  "request_id": "chronos-safe-20260825T144411Z-32861351261",
+  "request_id": "chronos-safe-20260825T144459Z-32861439316",
   "executor_user": "ubuntu",
   "executor_uid": 1001,
   "returncode": 1,
   "ok": false,
   "stdout": "antigravity_runtime_import=PASS\n",
-  "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   462a76d..93dfcc6  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\n",
-  "started_at": "2026-08-25T14:44:42.235276+00:00",
-  "completed_at": "2026-08-25T14:44:43.739103+00:00"
+  "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   93dfcc6..1f1aa04  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\n",
+  "started_at": "2026-08-25T14:45:42.298971+00:00",
+  "completed_at": "2026-08-25T14:45:43.670574+00:00"
 }
 Traceback (most recent call last):
   File "<stdin>", line 3, in <module>
-AssertionError: {'schema': 'agentos.one-time-chronos-safe-bootstrap/v1', 'request_id': 'chronos-safe-20260825T144411Z-32861351261', 'executor_user': 'ubuntu', 'executor_uid': 1001, 'returncode': 1, 'ok': False, 'stdout': 'antigravity_runtime_import=PASS\n', 'stderr': 'From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   462a76d..93dfcc6  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\n', 'started_at': '2026-08-25T14:44:42.235276+00:00', 'completed_at': '2026-08-25T14:44:43.739103+00:00'}
+AssertionError: {'schema': 'agentos.one-time-chronos-safe-bootstrap/v1', 'request_id': 'chronos-safe-20260825T144459Z-32861439316', 'executor_user': 'ubuntu', 'executor_uid': 1001, 'returncode': 1, 'ok': False, 'stdout': 'antigravity_runtime_import=PASS\n', 'stderr': 'From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   93dfcc6..1f1aa04  main       -> origin/main\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\nmkdir: cannot create directory ‘/home/ubuntu/agent-data/runtime/action-relay’: Permission denied\n', 'started_at': '2026-08-25T14:45:42.298971+00:00', 'completed_at': '2026-08-25T14:45:43.670574+00:00'}
