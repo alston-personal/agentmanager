@@ -8,17 +8,18 @@ import subprocess
 import sys
 import time
 
-REPO = Path('/home/ubuntu/agentmanager')
+CHECKOUT = Path(__file__).resolve().parents[1]
+LIVE_REPO = Path('/home/ubuntu/agentmanager')
 DATA = Path('/home/ubuntu/agent-data')
 LAYOUTLIB = Path('/home/agentos-node/projects/layoutlib')
 ANTIGRAVITY_RUNTIME = Path('/home/ubuntu/.local/share/agentos/runtime-vnext')
 ANTIGRAVITY_RELAY = DATA / 'runtime/antigravity-relay'
-EVIDENCE = REPO / '.agentos/evidence/layoutlab-official-v2.txt'
+EVIDENCE = CHECKOUT / '.agentos/evidence/layoutlab-official-v2.txt'
 BASE_URL = 'https://studio.milkcat.org/layout-lab/'
 
 
 def run(argv: list[str], *, cwd: Path | None = None, check: bool = True, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    p = subprocess.run(argv, cwd=str(cwd or REPO), text=True, capture_output=True, timeout=timeout)
+    p = subprocess.run(argv, cwd=str(cwd or CHECKOUT), text=True, capture_output=True, timeout=timeout)
     if check and p.returncode != 0:
         raise RuntimeError(f"command failed ({p.returncode}): {' '.join(argv)}\nstdout={p.stdout[-12000:]}\nstderr={p.stderr[-12000:]}")
     return p
@@ -37,10 +38,10 @@ def allocate_port() -> int:
     subprocess.run([
         sys.executable, 'scripts/core_services/port_manager.py', 'allocate', 'layoutlab-api',
         '--desc', 'Layout Lab official-site API', '--start', '8800', '--end', '8899'
-    ], cwd=str(REPO), env=env, text=True, check=True)
+    ], cwd=str(CHECKOUT), env=env, text=True, check=True)
     p = subprocess.run([
         sys.executable, 'scripts/core_services/port_manager.py', 'list', '--json'
-    ], cwd=str(REPO), env=env, text=True, capture_output=True, check=True)
+    ], cwd=str(CHECKOUT), env=env, text=True, capture_output=True, check=True)
     registry = json.loads(p.stdout)
     ports = sorted(int(port) for port, meta in registry.items() if meta.get('project') == 'layoutlab-api')
     if not ports:
@@ -65,18 +66,19 @@ Verified inputs:
 - canonical API service name: layoutlab-api.service
 
 Perform the deployment, not just an explanation:
-1. Inspect the ACTUAL current HTTP server / reverse-proxy configuration serving studio.milkcat.org. Preserve unrelated configuration and routes.
-2. Sync /home/ubuntu/zeus-writer safely: refuse destructive reset of user work. If clean, fetch and fast-forward the intended branch, then run the existing website build. Verify dist/layout-lab/index.html exists. If already current, do not rewrite unrelated source.
-3. Create/update an ubuntu user systemd unit layoutlab-api.service that runs:
+1. First sync /home/ubuntu/agentmanager to canonical origin/main safely with git fetch + ff-only merge so scripts/layoutlab_api.py is current. Refuse destructive reset if dirty work would be lost.
+2. Inspect the ACTUAL current HTTP server / reverse-proxy configuration serving studio.milkcat.org. Preserve unrelated configuration and routes.
+3. Sync /home/ubuntu/zeus-writer safely: refuse destructive reset of user work. If clean, fetch and fast-forward the intended branch, then run the existing website build. Verify dist/layout-lab/index.html exists. If already current, do not rewrite unrelated source.
+4. Create/update an ubuntu user systemd unit layoutlab-api.service that runs:
    /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}
    with LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib and PYTHONPATH as needed, Restart=on-failure. Use ubuntu's existing user manager (/run/user/1001/bus) if environment variables are needed.
-4. Enable/restart that unit and prove GET http://127.0.0.1:{port}/healthz returns HTTP 200 JSON ok=true.
-5. Add ONLY the minimal same-origin reverse-proxy mapping required so /layout-lab/api/ reaches 127.0.0.1:{port}, while /layout-lab/ continues serving the static page. Handle path stripping/preservation consistently with layoutlab_api.py, which accepts both /healthz,/parse and /layout-lab/api/healthz,/layout-lab/api/parse.
-6. Before any web-server reload, back up only the config file(s) you modify and run the server's native config validation. If validation fails, restore and do not reload.
-7. Reload only the affected existing HTTP server through the host's already configured privilege mechanism. Do not alter DNS, TLS certificates, firewall, unrelated vhosts, or unrelated applications.
-8. Verify publicly from the host: UI HTTP 200, API health HTTP 200 JSON ok=true.
-9. Create a small synthetic PNG floor plan and POST it as browser-equivalent multipart/form-data to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel=0.02, wall_height_m=2.7, threshold=128, min_wall_length_px=16. Require HTTP 200, ok=true, Spatial IR, and at least one wall.
-10. Return exact changed paths, unit state, web-server config validation/reload result, public status codes, parse wall count, and any caveat. Do not claim PASS unless actually verified.'''
+5. Enable/restart that unit and prove GET http://127.0.0.1:{port}/healthz returns HTTP 200 JSON ok=true.
+6. Add ONLY the minimal same-origin reverse-proxy mapping required so /layout-lab/api/ reaches 127.0.0.1:{port}, while /layout-lab/ continues serving the static page. Handle path stripping/preservation consistently with layoutlab_api.py, which accepts both /healthz,/parse and /layout-lab/api/healthz,/layout-lab/api/parse.
+7. Before any web-server reload, back up only the config file(s) you modify and run the server's native config validation. If validation fails, restore and do not reload.
+8. Reload only the affected existing HTTP server through the host's already configured privilege mechanism. Do not alter DNS, TLS certificates, firewall, unrelated vhosts, or unrelated applications.
+9. Verify publicly from the host: UI HTTP 200, API health HTTP 200 JSON ok=true.
+10. Create a small synthetic PNG floor plan and POST it as browser-equivalent multipart/form-data to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel=0.02, wall_height_m=2.7, threshold=128, min_wall_length_px=16. Require HTTP 200, ok=true, Spatial IR, and at least one wall.
+11. Return exact changed paths, unit state, web-server config validation/reload result, public status codes, parse wall count, and any caveat. Do not claim PASS unless actually verified.'''
 
     client = AntigravityRelayClient(ANTIGRAVITY_RELAY)
     capsule = client.submit(
@@ -96,7 +98,7 @@ Perform the deployment, not just an explanation:
             ],
         },
         instruction=instruction,
-        workspace=str(REPO),
+        workspace=str(LIVE_REPO),
     )
     cid = capsule['capsule_id']
     return cid, ANTIGRAVITY_RELAY / 'receipts' / f'{cid}.json'
