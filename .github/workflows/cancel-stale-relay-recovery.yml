@@ -36,10 +36,11 @@ jobs:
             case "$code" in 202|409) ;; *) return 1 ;; esac
           }
 
-          # Explicit historical/superseded attempts only.  32863178952 was
-          # triggered after the control module changed but before the matching
-          # workflow changed to the ubuntu-owned /tmp rendezvous contract.
-          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952; do
+          # Explicit historical/superseded attempts only. The safe-v2 path is
+          # now superseded by the canonical bootstrap control plane; cancel its
+          # run triggered by the relay installer fix so only one Oracle repair
+          # attempt owns the runner.
+          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864607057; do
             cancel_run "$run_id"
           done
 
