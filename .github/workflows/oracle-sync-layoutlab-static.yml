@@ -1,0 +1,58 @@
+name: Oracle Sync Layout Lab Static Page
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-sync-layoutlab-static.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync official site through governed Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlab-static-sync.txt
+          ROOT=/home/ubuntu/agent-data/runtime/action-relay
+          ACTION_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.action_relay import ActionRelayClient
+          p=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('site.sync_build', {'site':'studio.milkcat.org'})
+          print(p['capsule_id'])
+          PY
+          )
+          RECEIPT="$ROOT/receipts/$ACTION_ID.json"
+          for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "receipt timeout: $ACTION_ID"; exit 3; }
+          cat "$RECEIPT" | tee "$OUT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('ok') is True, r
+          print('site_sync_build=PASS')
+          PY
+          test -s /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
+          CODE=$(curl -sS -o /tmp/layoutlab-page -w '%{http_code}' --retry 5 --retry-all-errors https://studio.milkcat.org/layout-lab/)
+          echo "public_ui_http_code=$CODE" | tee -a "$OUT"
+          test "$CODE" = 200
+          grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-page
+          grep -q 'Analyze layout' /tmp/layoutlab-page
+          echo 'layoutlab_static_public=PASS' | tee -a "$OUT"
+      - name: Commit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlab-static-sync.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlab): official static page sync'
+          git push
