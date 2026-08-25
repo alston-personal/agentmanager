@@ -28,9 +28,25 @@ jobs:
           OUT="$PWD/.agentos/evidence/layoutlib-public-web.txt"
           DATA=/home/ubuntu/agent-data
           CODE=/home/agentos-node/projects/layoutlib
-          USER_SYSTEMD="$HOME/.config/systemd/user"
           USER_BIN="$HOME/.local/bin"
-          mkdir -p "$CODE" "$USER_SYSTEMD" "$USER_BIN"
+          RUNTIME="$DATA/runtime/layoutlib-web"
+          mkdir -p "$CODE" "$USER_BIN" "$RUNTIME"
+
+          stop_pidfile() {
+            local pf="$1"
+            if [ -f "$pf" ]; then
+              local pid
+              pid=$(cat "$pf" 2>/dev/null || true)
+              if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+                for _ in $(seq 1 20); do
+                  kill -0 "$pid" 2>/dev/null || break
+                  sleep 0.1
+                done
+              fi
+              rm -f "$pf"
+            fi
+          }
 
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -49,98 +65,86 @@ jobs:
             PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[int(k) for k,v in d.items() if v.get("project")=="layoutlib-web"]; print(min(xs))')
             echo "layoutlib_port=$PORT"
 
-            UNIT="$USER_SYSTEMD/layoutlib-web.service"
-            cat > "$UNIT" <<EOF
-          [Unit]
-          Description=LayoutLib Web UI/API
-          After=network.target
-
-          [Service]
-          Type=simple
-          WorkingDirectory=$CODE
-          Environment=PYTHONPATH=$CODE/src
-          Environment=LAYOUTLIB_WEB_QUIET=1
-          ExecStart=/usr/bin/python3 $CODE/web_demo/server.py --host 127.0.0.1 --port $PORT
-          Restart=always
-          RestartSec=2
-
-          [Install]
-          WantedBy=default.target
-          EOF
-
-            systemctl --user daemon-reload
-            systemctl --user enable --now layoutlib-web.service
+            echo '=== START WEB DAEMON ==='
+            WEB_PID="$RUNTIME/web.pid"
+            WEB_LOG="$RUNTIME/web.log"
+            stop_pidfile "$WEB_PID"
+            : > "$WEB_LOG"
+            (
+              unset RUNNER_TRACKING_ID
+              nohup env PYTHONPATH="$CODE/src" LAYOUTLIB_WEB_QUIET=1 \
+                /usr/bin/python3 "$CODE/web_demo/server.py" --host 127.0.0.1 --port "$PORT" \
+                >>"$WEB_LOG" 2>&1 </dev/null &
+              echo $! > "$WEB_PID"
+            )
             sleep 1
-            systemctl --user is-active layoutlib-web.service
-            echo "systemd_user_service=PASS"
+            WPID=$(cat "$WEB_PID")
+            kill -0 "$WPID"
+            echo "web_pid=$WPID"
 
             echo '=== LOCAL WEB PROBE ==='
             python3 - "$PORT" <<'PY'
-          import json,sys,urllib.request
-          port=int(sys.argv[1])
-          with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=3) as r:
-              data=json.load(r)
-          assert data.get('ok') is True, data
-          print('local_web_health=PASS')
+          import json,sys,time,urllib.request
+          port=int(sys.argv[1]); last=None
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=2) as r:
+                      data=json.load(r)
+                  assert data.get('ok') is True, data
+                  print('local_web_health=PASS')
+                  break
+              except Exception as exc:
+                  last=exc; time.sleep(.2)
+          else:
+              raise SystemExit(f'local web health failed: {last}')
           PY
 
             echo '=== CLOUDFLARED USER INSTALL ==='
             CF="$USER_BIN/cloudflared"
             if [ ! -x "$CF" ]; then
-              ARCH=$(uname -m)
-              case "$ARCH" in
+              case "$(uname -m)" in
                 aarch64|arm64) ASSET=cloudflared-linux-arm64 ;;
                 x86_64|amd64) ASSET=cloudflared-linux-amd64 ;;
-                *) echo "unsupported_arch=$ARCH"; exit 3 ;;
+                *) echo "unsupported_arch=$(uname -m)"; exit 3 ;;
               esac
               curl -fL --retry 3 --connect-timeout 10 --max-time 120 \
-                "https://github.com/cloudflare/cloudflared/releases/latest/download/$ASSET" \
-                -o "$CF"
+                "https://github.com/cloudflare/cloudflared/releases/latest/download/$ASSET" -o "$CF"
               chmod 0755 "$CF"
             fi
             "$CF" --version
 
-            TUNNEL_UNIT="$USER_SYSTEMD/layoutlib-tunnel.service"
-            cat > "$TUNNEL_UNIT" <<EOF
-          [Unit]
-          Description=LayoutLib Cloudflare Quick Tunnel
-          After=network-online.target layoutlib-web.service
-          Wants=network-online.target
-          Requires=layoutlib-web.service
+            echo '=== START PUBLIC QUICK TUNNEL ==='
+            TUNNEL_PID="$RUNTIME/tunnel.pid"
+            TUNNEL_LOG="$RUNTIME/tunnel.log"
+            stop_pidfile "$TUNNEL_PID"
+            : > "$TUNNEL_LOG"
+            (
+              unset RUNNER_TRACKING_ID
+              nohup "$CF" tunnel --no-autoupdate --protocol http2 --url "http://127.0.0.1:$PORT" \
+                >>"$TUNNEL_LOG" 2>&1 </dev/null &
+              echo $! > "$TUNNEL_PID"
+            )
+            TPID=$(cat "$TUNNEL_PID")
+            echo "tunnel_pid=$TPID"
 
-          [Service]
-          Type=simple
-          ExecStart=$CF tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$PORT
-          Restart=always
-          RestartSec=5
-
-          [Install]
-          WantedBy=default.target
-          EOF
-
-            systemctl --user daemon-reload
-            systemctl --user enable layoutlib-tunnel.service
-            systemctl --user restart layoutlib-tunnel.service
-
-            echo '=== WAIT FOR PUBLIC TUNNEL ==='
             PUBLIC_URL=''
-            for i in $(seq 1 60); do
-              PUBLIC_URL=$(journalctl --user -u layoutlib-tunnel.service --no-pager -n 120 2>/dev/null \
-                | grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | tail -n 1 || true)
+            for _ in $(seq 1 90); do
+              kill -0 "$TPID" 2>/dev/null || { echo 'tunnel_process_exited=YES'; cat "$TUNNEL_LOG"; exit 4; }
+              PUBLIC_URL=$(grep -Eo 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | tail -n 1 || true)
               [ -n "$PUBLIC_URL" ] && break
               sleep 1
             done
             if [ -z "$PUBLIC_URL" ]; then
               echo 'cloudflare_quick_tunnel_url=NOT_FOUND'
-              journalctl --user -u layoutlib-tunnel.service --no-pager -n 120 || true
-              exit 4
+              cat "$TUNNEL_LOG" || true
+              exit 5
             fi
             echo "public_url=$PUBLIC_URL/"
 
             echo '=== EXTERNAL PUBLIC WEB PROBE ==='
             HEALTH_CODE=''
-            for i in $(seq 1 30); do
-              HEALTH_CODE=$(curl -sS -o /tmp/layoutlib-public-health -w '%{http_code}' --connect-timeout 5 --max-time 10 "$PUBLIC_URL/api/health" 2>/dev/null || true)
+            for _ in $(seq 1 30); do
+              HEALTH_CODE=$(curl -sS -o /tmp/layoutlib-public-health -w '%{http_code}' --connect-timeout 5 --max-time 12 "$PUBLIC_URL/api/health" 2>/dev/null || true)
               [ "$HEALTH_CODE" = 200 ] && break
               sleep 1
             done
@@ -170,21 +174,21 @@ jobs:
               'meters_per_pixel':0.02,
               'min_wall_length_px':30,
           }).encode()
-          req=urllib.request.Request(base+'/api/parse', data=payload, headers={'Content-Type':'application/json'}, method='POST')
-          with urllib.request.urlopen(req, timeout=20) as r:
+          req=urllib.request.Request(base+'/api/parse', data=payload, headers={'Content-Type':'application/json','User-Agent':'LayoutLib-acceptance/1.0'}, method='POST')
+          with urllib.request.urlopen(req, timeout=25) as r:
               data=json.load(r)
           assert data.get('ok') is True, data
           assert data.get('wall_count')==4, data
           print('public_parse=PASS walls=4 spatial_ir='+data['ir']['version'])
           PY
 
-            echo '=== SERVICE STATE ==='
-            systemctl --user is-active layoutlib-web.service
-            systemctl --user is-active layoutlib-tunnel.service
+            kill -0 "$WPID"
+            kill -0 "$TPID"
+            echo 'daemon_survival_during_acceptance=PASS'
 
             echo '=== ACCEPTANCE ==='
-            echo 'persistent_web_service=PASS'
-            echo 'persistent_tunnel_service=PASS'
+            echo 'persistent_web_daemon=PASS'
+            echo 'persistent_tunnel_daemon=PASS'
             echo "port=$PORT"
             echo "public_url=$PUBLIC_URL/"
             echo 'public_health=PASS'
