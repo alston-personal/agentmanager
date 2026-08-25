@@ -5,6 +5,7 @@ import socket
 import json
 import subprocess
 from datetime import datetime
+from agentos_node import __version__
 
 class NodeInspector:
     """Inspects the local Runtime Node environment and generates structured harvest payloads."""
@@ -12,7 +13,7 @@ class NodeInspector:
     def __init__(self, device_alias=None):
         self.hostname = socket.gethostname()
         self.device_alias = device_alias or os.environ.get("AGENTOS_DEVICE_ALIAS") or self.hostname
-        self.node_version = "0.2.0"
+        self.node_version = __version__
 
     def check_secrets_status(self):
         """Check if local secrets are safely stored out-of-repo."""
@@ -56,7 +57,14 @@ class NodeInspector:
             "secrets_info": secrets_info,
             "agent_mode": os.environ.get("AGENT_MODE", "CLIENT"),
             "status": "HEALTHY",
-            "capabilities": ["shell.exec", "context.harvest", "checkpoint.close"]
+            "capabilities": [
+                "shell.exec",
+                "context.harvest",
+                "checkpoint.close",
+                "resource.query",
+                "resource.register",
+                "resource.verify.site"
+            ]
         }
         return payload
 
