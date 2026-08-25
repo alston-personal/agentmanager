@@ -1,0 +1,68 @@
+name: Oracle Inspect Chronos Safe Bootstrap Aftermath
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-chronos-safe-bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect read-only bootstrap aftermath
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/chronos-safe-bootstrap-aftermath.txt
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_identity=$(id)"
+            echo '=== BRIDGE DIRECTORY ==='
+            ls -la /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe 2>&1 || true
+            echo '=== REQUEST / RECEIPT CONTENT ==='
+            find /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe -maxdepth 1 -type f -printf '%f owner=%u group=%g mode=%m size=%s mtime=%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>&1 | sort || true
+            for f in /home/ubuntu/agent-data/runtime/action-relay-bootstrap-safe/*.receipt.json; do
+              [ -e "$f" ] || continue
+              echo "--- $f"
+              cat "$f" 2>&1 || true
+            done
+            echo '=== LIVE UNITS ==='
+            for u in /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service /home/ubuntu/.config/systemd/user/agentos-action-relay.service; do
+              echo "--- $u"
+              if [ -r "$u" ]; then grep -E '^(Description|ExecStart|WorkingDirectory|Environment|UMask)=' "$u" || true; else echo unreadable_or_missing; fi
+            done
+            echo '=== LIVE PROCESSES ==='
+            ps -eo user,group,pid,ppid,etime,args | grep -E 'agentos_node\.(antigravity_relay_worker|action_relay)' | grep -v grep || true
+            echo '=== PROCESS GROUPS ==='
+            for pid in $(pgrep -f 'agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay' || true); do
+              echo "antigravity_pid=$pid"
+              grep '^Groups:' "/proc/$pid/status" 2>&1 || true
+            done
+            for pid in $(pgrep -f 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' || true); do
+              echo "action_relay_pid=$pid"
+              grep '^Groups:' "/proc/$pid/status" 2>&1 || true
+            done
+            echo '=== LIVE TARGET MARKER ==='
+            grep -n 'AGENTOS_ONE_TIME_CHRONOS_SAFE_BOOTSTRAP' /home/ubuntu/agentmanager/scripts/update_scheduler_board.py 2>&1 || echo marker_absent
+            echo '=== CHRONOS LOG TAIL ==='
+            tail -80 /home/ubuntu/agent-data/logs/chronos.log 2>&1 || true
+          } 2>&1 | tee "$OUT"
+      - name: Commit aftermath evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/chronos-safe-bootstrap-aftermath.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): inspect Chronos safe bootstrap aftermath'
+          git pull --rebase origin main
+          git push
