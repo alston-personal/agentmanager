@@ -1,0 +1,44 @@
+name: Diagnose LeopardCat Upload Limit
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths: [".github/workflows/diag-leopardcat-upload-limit.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect nginx upload limits
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -u
+          echo '=== nginx relevant config ==='
+          grep -RniE 'server_name.*leopardcat|client_max_body_size|proxy_pass.*8088' /etc/nginx 2>/dev/null | head -100 || true
+          echo '=== public POST tiny ==='
+          curl -sS -o /tmp/tiny.out -w 'status=%{http_code} type=%{content_type}\n' -H 'Content-Type: application/json' --data '{}' https://leopardcat-tarot.milkcat.org/api/v1/decks || true
+          head -c 300 /tmp/tiny.out 2>/dev/null || true
+          echo
+          REMOTE
