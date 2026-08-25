@@ -18,7 +18,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          KEEP_SAFE_SHA: f708d117ab36c191fc9760c9a135da93aebc5ec6
+          KEEP_SAFE_SHA: 1f1aa04fe421ff3b22fefdcd0792fed2ade9332f
         shell: bash
         run: |
           set -euo pipefail
@@ -36,7 +36,9 @@ jobs:
             case "$code" in 202|409) ;; *) return 1 ;; esac
           }
 
-          for run_id in 32858420762 32858849735 32858516453; do
+          # Retire historical LLM/owned-carrier attempts. Quarantine contents are
+          # untouched; this only releases CI execution capacity.
+          for run_id in 32858420762 32858849735 32858516453 32861439353; do
             cancel_run "$run_id"
           done
 
@@ -49,7 +51,6 @@ jobs:
               "https://api.github.com/repos/$GH_REPO/actions/workflows/$workflow/runs?per_page=20"
           }
 
-          # Retire every active run of the old inline bootstrap.
           list_active oracle-bootstrap-action-relay-via-chronos.yml | python3 -c '
           import json,sys
           for r in json.load(sys.stdin).get("workflow_runs", []):
@@ -58,7 +59,6 @@ jobs:
           ' > /tmp/old-inline-runs
           while read -r run_id; do [ -z "$run_id" ] || cancel_run "$run_id"; done < /tmp/old-inline-runs
 
-          # Keep only the run created from the latest safe-script commit.
           list_active oracle-bootstrap-action-relay-via-chronos-safe.yml | python3 -c '
           import json,sys
           keep=sys.argv[1]
