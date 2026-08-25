@@ -32,4 +32,10 @@ jobs:
           timeout 5 su -s /bin/sh -c id ubuntu 2>&1 || true
           echo '=== sg agentos ==='
           timeout 5 sg agentos -c 'id' 2>&1 || true
+          echo '=== ubuntu user manager via --machine ==='
+          timeout 8 systemctl --user --machine=ubuntu@.host is-active agentos-antigravity-relay.service 2>&1 || true
+          echo '=== ubuntu transient user unit via --machine ==='
+          timeout 8 systemd-run --user --machine=ubuntu@.host --wait --pipe /usr/bin/id 2>&1 || true
+          echo '=== ubuntu user bus direct ==='
+          timeout 8 env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user is-active agentos-antigravity-relay.service 2>&1 || true
           echo 'probe_complete=YES'
