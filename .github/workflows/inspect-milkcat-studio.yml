@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve known port 3000 process only
+      - name: Resolve TCP 3000 owner without fallback guessing
         shell: bash
         run: |
           set -euo pipefail
@@ -26,21 +26,22 @@ jobs:
             echo "hostname=$(hostname)"
             echo '=== PORT 3000 ==='
             ss -lntp 'sport = :3000' 2>&1 || true
-            PID=$(ss -lntp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
-            if [ -z "$PID" ]; then PID=$(pgrep -f 'next-server' | head -1 || true); fi
-            echo "pid=${PID:-unknown}"
+            echo '=== FUSER ==='
+            fuser -v 3000/tcp 2>&1 || true
+            echo '=== LSOF ==='
+            lsof -nP -iTCP:3000 -sTCP:LISTEN 2>&1 || true
+            PID=$(fuser 3000/tcp 2>/dev/null | tr -cd '0-9 ' | awk '{print $1}' || true)
+            echo "socket_pid=${PID:-unknown}"
             if [ -n "$PID" ] && [ -d "/proc/$PID" ]; then
-              echo '=== PROCESS ==='
+              echo '=== VERIFIED PROCESS ==='
               ps -o user,pid,ppid,lstart,args -p "$PID" || true
-              PPID1=$(ps -o ppid= -p "$PID" | tr -d ' ' || true)
-              [ -n "$PPID1" ] && ps -o user,pid,ppid,lstart,args -p "$PPID1" || true
-              PPID2=$([ -n "$PPID1" ] && ps -o ppid= -p "$PPID1" | tr -d ' ' || true)
-              [ -n "$PPID2" ] && ps -o user,pid,ppid,lstart,args -p "$PPID2" || true
-              echo '=== CGROUP ==='
-              cat "/proc/$PID/cgroup" 2>&1 || true
-              echo '=== SYSTEMD MATCH ==='
-              systemctl --no-pager --all --type=service 2>/dev/null | grep -Ei 'dashboard|agentos|command|next' | head -n 80 || true
-              systemctl --user --no-pager --all --type=service 2>/dev/null | grep -Ei 'dashboard|agentos|command|next' | head -n 80 || true
+              P1=$(ps -o ppid= -p "$PID" | tr -d ' ' || true)
+              [ -n "$P1" ] && ps -o user,pid,ppid,lstart,args -p "$P1" || true
+              P2=$([ -n "$P1" ] && ps -o ppid= -p "$P1" | tr -d ' ' || true)
+              [ -n "$P2" ] && ps -o user,pid,ppid,lstart,args -p "$P2" || true
+              echo '=== CGROUP ==='; cat "/proc/$PID/cgroup" 2>&1 || true
+            else
+              echo 'process_identity=unresolved_due_to_permissions'
             fi
             echo '=== KNOWN ROUTE HEALTH ==='
             curl -sS -o /tmp/dashboard-health.out -w 'http=%{http_code}\n' http://127.0.0.1:3000/dashboard 2>&1 || true
@@ -54,5 +55,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/dashboard-upstream.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(studio): resolve dashboard process ancestry'
+          git commit -m 'evidence(studio): verify dashboard socket owner'
           git push
