@@ -1,5 +1,5 @@
-timestamp_utc=2026-08-25T09:28:44Z
+timestamp_utc=2026-08-25T09:41:14Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-carrier=/home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-4d6493a55f8c48c0bec5202287e0d1ae.json.tmp
-recovery_capsule=relay-a3c4a2f747e94991905db3b9ddc5bc7e
+carrier=/home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-a3c4a2f747e94991905db3b9ddc5bc7e.json
+recovery_capsule=relay-83243f5320114172875fe7dde587c2dc
 recovery_receipt=TIMEOUT
