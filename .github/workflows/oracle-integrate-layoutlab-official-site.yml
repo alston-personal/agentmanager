@@ -152,3 +152,5 @@ You ARE authorized to make only the minimal deployment/config/service changes ne
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlab): official Studio Web UI acceptance'
           git push
+
+# retrigger: 2026-08-25T16:24+08:00
