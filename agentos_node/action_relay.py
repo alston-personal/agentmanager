@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import time
 from typing import Any, Callable
@@ -26,15 +27,26 @@ def _canonical(payload: dict[str, Any]) -> bytes:
 
 
 def _share(path: Path, *, directory: bool = False) -> None:
+    """Normalize a relay path or accept an already-secure cross-owner handoff.
+
+    Producers and the ubuntu worker share the `agentos` group but intentionally
+    keep distinct owners. After a producer-owned capsule is atomically renamed
+    into `processing`, ubuntu is allowed to continue if the inherited group and
+    mode are already exactly the governed values; group membership alone does
+    not grant chmod/chown of another user's file.
+    """
     gid = grp.getgrnam(SHARED_GROUP).gr_gid
+    desired_mode = 0o2770 if directory else 0o660
     try:
         os.chown(path, -1, gid)
     except PermissionError:
-        pass
+        if path.stat().st_gid != gid:
+            raise
     try:
-        os.chmod(path, 0o2770 if directory else 0o660)
+        os.chmod(path, desired_mode)
     except PermissionError:
-        if not directory:
+        current = path.stat()
+        if current.st_gid != gid or stat.S_IMODE(current.st_mode) != desired_mode:
             raise
 
 
