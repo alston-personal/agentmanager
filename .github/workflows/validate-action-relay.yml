@@ -8,6 +8,13 @@ on:
       - 'tests/test_action_relay.py'
       - 'scripts/install_action_relay_user.sh'
       - '.github/workflows/validate-action-relay.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agentos_node/action_relay.py'
+      - 'tests/test_action_relay.py'
+      - 'scripts/install_action_relay_user.sh'
+      - '.github/workflows/validate-action-relay.yml'
 
 permissions:
   contents: write
@@ -87,6 +94,7 @@ jobs:
           } 2>&1 | tee "$OUT"
 
       - name: Commit evidence
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           set -euo pipefail
