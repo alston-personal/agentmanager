@@ -6,6 +6,12 @@ on:
     paths:
       - '.github/workflows/oracle-register-layoutlib.yml'
       - 'scripts/bootstrap_layoutlib.py'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/oracle-register-layoutlib.yml'
+      - 'scripts/bootstrap_layoutlib.py'
 
 permissions:
   contents: write
@@ -169,6 +175,7 @@ jobs:
           REMOTE
 
       - name: Commit validation evidence
+        if: ${{ github.event_name != 'pull_request' }}
         shell: bash
         run: |
           set -euo pipefail
