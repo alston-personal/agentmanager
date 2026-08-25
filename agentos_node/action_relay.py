@@ -31,7 +31,14 @@ def _share(path: Path, *, directory: bool = False) -> None:
         os.chown(path, -1, gid)
     except PermissionError:
         pass
-    os.chmod(path, 0o2770 if directory else 0o660)
+    try:
+        os.chmod(path, 0o2770 if directory else 0o660)
+    except PermissionError:
+        # Existing shared directories may be owned by the peer identity. The
+        # installer establishes their mode; producer-owned artifacts remain
+        # strictly normalized below.
+        if not directory:
+            raise
 
 
 class Paths:
@@ -50,28 +57,16 @@ class Paths:
 class ActionRelayClient:
     """Producer API. No command/shell text exists in the capsule contract."""
 
-    def __init__(self, root: str | Path):
-        self.paths = Paths(root)
+    def __init__(self, root: str | Path): self.paths = Paths(root)
 
     def submit(self, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         action = str(action or "").strip()
-        if not action or not isinstance(params or {}, dict):
-            raise ValueError("action and object params are required")
-        if action not in ACTIONS:
-            raise ValueError(f"unsupported action: {action}")
-        self.paths.ensure()
-        capsule_id = f"action-{uuid.uuid4().hex}"
-        payload: dict[str, Any] = {
-            "schema": ACTION_SCHEMA,
-            "capsule_id": capsule_id,
-            "created_at": _now(),
-            "action": action,
-            "params": params or {},
-            "authority": {"source": "agentos-node", "target_user": "ubuntu", "arbitrary_shell": False},
-        }
+        if not action or not isinstance(params or {}, dict): raise ValueError("action and object params are required")
+        if action not in ACTIONS: raise ValueError(f"unsupported action: {action}")
+        self.paths.ensure(); capsule_id = f"action-{uuid.uuid4().hex}"
+        payload: dict[str, Any] = {"schema": ACTION_SCHEMA,"capsule_id": capsule_id,"created_at": _now(),"action": action,"params": params or {},"authority": {"source": "agentos-node", "target_user": "ubuntu", "arbitrary_shell": False}}
         payload["digest"] = "sha256:" + hashlib.sha256(_canonical(payload)).hexdigest()
-        tmp = self.paths.inbox / f"{capsule_id}.json.tmp"
-        target = self.paths.inbox / f"{capsule_id}.json"
+        tmp = self.paths.inbox / f"{capsule_id}.json.tmp"; target = self.paths.inbox / f"{capsule_id}.json"
         tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
         _share(tmp); tmp.replace(target); _share(target)
         return payload
@@ -92,14 +87,12 @@ def _run(argv: list[str], *, cwd: str | Path, timeout: int = 300) -> dict[str, A
 def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
     site = params.get("site")
     if site != "studio.milkcat.org": raise ValueError("site is not allowlisted")
-    repo = Path("/home/ubuntu/zeus-writer")
-    website = repo / "website"
+    repo = Path("/home/ubuntu/zeus-writer"); website = repo / "website"
     if not (repo / ".git").exists() or not (website / "package.json").exists(): raise RuntimeError("allowlisted site checkout unavailable")
     git = ["git", "-c", f"safe.directory={repo}", "-C", str(repo)]
     dirty = subprocess.check_output(git + ["status", "--porcelain"], text=True).strip()
     if dirty: raise RuntimeError("site checkout is dirty; refusing automated sync")
-    steps = []
-    steps.append(_run(git + ["fetch", "origin", "master"], cwd=repo))
+    steps = [_run(git + ["fetch", "origin", "master"], cwd=repo)]
     if steps[-1]["returncode"] != 0: return {"ok": False, "steps": steps}
     steps.append(_run(git + ["merge", "--ff-only", "origin/master"], cwd=repo))
     if steps[-1]["returncode"] != 0: return {"ok": False, "steps": steps}
@@ -110,49 +103,36 @@ def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
 
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
-    unit = "layoutlab-api.service"
-    step = _run(["systemctl", "--user", "restart", unit], cwd=Path.home(), timeout=30)
+    unit = "layoutlab-api.service"; step = _run(["systemctl", "--user", "restart", unit], cwd=Path.home(), timeout=30)
     return {"ok": step["returncode"] == 0, "service": unit, "step": step}
 
 
-ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    "site.sync_build": _site_sync_build,
-    "layoutlab.api.restart": _layoutlab_api_restart,
-}
+ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {"site.sync_build": _site_sync_build,"layoutlab.api.restart": _layoutlab_api_restart}
 
 
 class ActionRelayWorker:
     """Ubuntu-owned deterministic consumer. It never invokes a shell or LLM."""
-
     def __init__(self, root: str | Path): self.paths = Paths(root)
-
     def process_one(self) -> dict[str, Any] | None:
-        self.paths.ensure()
-        candidates = sorted(self.paths.inbox.glob("action-*.json"))
+        self.paths.ensure(); candidates = sorted(self.paths.inbox.glob("action-*.json"))
         if not candidates: return None
-        source = candidates[0]; processing = self.paths.processing / source.name
-        source.replace(processing); _share(processing)
+        source = candidates[0]; processing = self.paths.processing / source.name; source.replace(processing); _share(processing)
         started = _now(); capsule_id = processing.stem
         try:
             capsule = json.loads(processing.read_text(encoding="utf-8"))
             if capsule.get("schema") != ACTION_SCHEMA: raise ValueError("invalid action schema")
-            capsule_id = str(capsule.get("capsule_id") or "")
-            action = str(capsule.get("action") or "")
-            params = capsule.get("params")
+            capsule_id = str(capsule.get("capsule_id") or ""); action = str(capsule.get("action") or ""); params = capsule.get("params")
             if not capsule_id or action not in ACTIONS or not isinstance(params, dict): raise ValueError("invalid action capsule")
-            supplied = str(capsule.get("digest") or "")
-            unsigned = dict(capsule); unsigned.pop("digest", None)
+            supplied = str(capsule.get("digest") or ""); unsigned = dict(capsule); unsigned.pop("digest", None)
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
             result = ACTIONS[action](params)
-            receipt = {"schema": RECEIPT_SCHEMA, "capsule_id": capsule_id, "action": action, "started_at": started, "completed_at": _now(), "executor_user": os.environ.get("USER") or str(os.getuid()), **result}
+            receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"action": action,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),**result}
         except Exception as exc:
-            receipt = {"schema": RECEIPT_SCHEMA, "capsule_id": capsule_id, "started_at": started, "completed_at": _now(), "executor_user": os.environ.get("USER") or str(os.getuid()), "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),"ok": False,"error": f"{type(exc).__name__}: {exc}"}
         target = self.paths.receipts / f"{capsule_id}.json"; tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(receipt, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-        _share(tmp); tmp.replace(target); _share(target); processing.unlink(missing_ok=True)
-        return receipt
-
+        _share(tmp); tmp.replace(target); _share(target); processing.unlink(missing_ok=True); return receipt
     def serve(self, interval: float = 1.0) -> None:
         while True:
             if self.process_one() is None: time.sleep(interval)
@@ -161,8 +141,7 @@ class ActionRelayWorker:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(); p.add_argument("--root", required=True); p.add_argument("--once", action="store_true")
     args = p.parse_args(argv); worker = ActionRelayWorker(args.root)
-    if args.once:
-        print(json.dumps(worker.process_one() or {"status":"idle"}, indent=2, ensure_ascii=False)); return 0
+    if args.once: print(json.dumps(worker.process_one() or {"status":"idle"}, indent=2, ensure_ascii=False)); return 0
     worker.serve(); return 0
 
 if __name__ == "__main__": raise SystemExit(main())
