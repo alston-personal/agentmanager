@@ -30,13 +30,13 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=009199c68af5e4c9e6873f0a769b7b310aaeb302
+          TARGET=48cd9bcb2c31343d27ee7b9cb094cf53f6f84ef9
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
           dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' | grep -v '^ M website/dist/' | grep -v '^?? website/data/' || true)
           if [ -n "$dirty" ]; then echo 'unexpected production changes:' >&2; echo "$dirty" >&2; exit 40; fi
-          cp "$WEB/stats.json" /tmp/lc-stats.pre-custom-gallery.json
+          cp "$WEB/stats.json" /tmp/lc-stats.pre-shared-experience.json
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           git -C "$PROD" checkout -- website/dist 2>/dev/null || true
           stop_server() {
@@ -54,7 +54,7 @@ jobs:
             echo deployment_failed_rolling_back >&2
             stop_server
             git -C "$PROD" reset --hard "$OLD"
-            cp /tmp/lc-stats.pre-custom-gallery.json "$WEB/stats.json"
+            cp /tmp/lc-stats.pre-shared-experience.json "$WEB/stats.json"
             cd "$WEB"; npm run build; start_server
             echo rollback_commit=$OLD >&2
           }
@@ -62,20 +62,26 @@ jobs:
           git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
           F=$(git -C "$PROD" rev-parse FETCH_HEAD); [ "$F" = "$TARGET" ] || { echo unexpected_main=$F >&2; exit 41; }
           git -C "$PROD" merge --ff-only FETCH_HEAD
-          cp /tmp/lc-stats.pre-custom-gallery.json "$WEB/stats.json"
+          cp /tmp/lc-stats.pre-shared-experience.json "$WEB/stats.json"
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           cd "$WEB"
           npm run build
           python3 -m py_compile fortune_server.py divination/*.py
           node --check main.js
           grep -q 'renderCustomDeckGallery' main.js
-          grep -q '牌卡展示' main.js
+          grep -q 'window.currentReadingState' main.js
+          grep -q "shareImgEl.style.transform = shareOrientation === 'reversed' ? 'rotate(180deg)' : ''" main.js
+          grep -q 'currentDrawnCard.image ||' main.js
+          grep -q "shareU.searchParams.set('deck', window.activeDeckId)" main.js
+          grep -q "shareU.searchParams.set('theme', window.activeThemeId)" main.js
+          grep -q "shareU.searchParams.set('orientation', 'reversed')" main.js
           stop_server; start_server
-          curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('cards',[])) == 5; print('custom_gallery_deck_data=passed')"
+          curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d.get('cards',[])) == 5; assert all(c.get('image') for c in d['cards']); print('custom_deck_shared_contract=passed')"
+          curl -fsS http://127.0.0.1:8088/api/v1/themes/leopardcat | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('theme_id') == 'leopardcat'; print('leopardcat_theme_contract=passed')"
           JS=$(find dist/assets -name 'index-*.js' | head -1)
           test -s "$JS"
           curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") >/dev/null
-          echo production_custom_deck_gallery=passed
+          echo production_shared_experience=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
