@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 from agent_core import config
 from agent_core.platform import get_platform_driver
+from agentos_node.bootstrap_control import run_bootstrap_control_plane
 
 AGENT_DATA_ROOT = config.AGENT_DATA_ROOT
 PLATFORM_DRIVER = get_platform_driver(project_root=PROJECT_ROOT, data_root=AGENT_DATA_ROOT)
@@ -170,6 +171,20 @@ def generate_markdown():
     return "\n".join(md)
 
 def main():
+    # Deterministic break-glass hook. Dormant unless a fresh, allowlisted
+    # request exists in agent-data/runtime/bootstrap-control/requests.
+    try:
+        bootstrap_receipt = run_bootstrap_control_plane()
+        if bootstrap_receipt is not None:
+            print(
+                "AgentOS bootstrap request processed: "
+                f"{bootstrap_receipt.get('request_id')} ok={bootstrap_receipt.get('ok')}"
+            )
+    except Exception as e:
+        # Scheduler Board rendering must remain available even when a bootstrap
+        # request is malformed or the repair path fails unexpectedly.
+        print(f"⚠️ AgentOS bootstrap control plane error: {e}", file=sys.stderr)
+
     try:
         md_content = generate_markdown()
         BOARD_MD.write_text(md_content, encoding="utf-8")
