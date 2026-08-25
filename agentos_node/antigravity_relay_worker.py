@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import glob
-import grp
 import json
 import os
 from pathlib import Path
@@ -18,25 +17,16 @@ import subprocess
 import time
 from typing import Any, Sequence
 
-from .antigravity_relay import RELAY_SCHEMA, RECEIPT_SCHEMA, RelayPaths
+from .antigravity_relay import (
+    RELAY_SCHEMA,
+    RECEIPT_SCHEMA,
+    RelayPaths,
+    share_relay_path,
+)
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _agentos_gid() -> int | None:
-    try:
-        return grp.getgrnam("agentos").gr_gid
-    except KeyError:
-        return None
-
-
-def _share_path(path: Path, *, directory: bool = False) -> None:
-    gid = _agentos_gid()
-    if gid is not None:
-        os.chown(path, -1, gid)
-    os.chmod(path, 0o2770 if directory else 0o660)
 
 
 def discover_executor() -> list[str] | None:
@@ -87,12 +77,16 @@ class AntigravityRelayWorker:
     def _ensure_shared_spool(self) -> None:
         self.paths.ensure()
         for path in (self.paths.root, self.paths.inbox, self.paths.processing, self.paths.receipts):
-            _share_path(path, directory=True)
-        for receipt in self.paths.receipts.glob("relay-*.json"):
             try:
-                _share_path(receipt)
-            except OSError:
+                share_relay_path(path, directory=True)
+            except PermissionError:
                 pass
+        for pattern_dir in (self.paths.inbox, self.paths.processing, self.paths.receipts):
+            for artifact in pattern_dir.glob("relay-*.json*"):
+                try:
+                    share_relay_path(artifact)
+                except OSError:
+                    pass
 
     def process_one(self) -> dict[str, Any] | None:
         self._ensure_shared_spool()
@@ -102,6 +96,7 @@ class AntigravityRelayWorker:
         source = candidates[0]
         processing = self.paths.processing / source.name
         source.replace(processing)
+        share_relay_path(processing)
         started = _utc_now()
         try:
             capsule = json.loads(processing.read_text(encoding="utf-8"))
@@ -150,9 +145,9 @@ class AntigravityRelayWorker:
         target = self.paths.receipts / f"{receipt['capsule_id']}.json"
         tmp = target.with_suffix(target.suffix + ".tmp")
         tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        _share_path(tmp)
+        share_relay_path(tmp)
         tmp.replace(target)
-        _share_path(target)
+        share_relay_path(target)
         processing.unlink(missing_ok=True)
         return receipt
 
