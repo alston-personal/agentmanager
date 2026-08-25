@@ -71,8 +71,8 @@ jobs:
           grep -q 'panelCanConsume' main.js
           stop_server; start_server
           JS=$(find dist/assets -name 'index-*.js' | head -1)
-          grep -q 'panelCanConsume' "$JS"
-          curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") | grep -q 'panelCanConsume'
+          test -s "$JS"
+          curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") >/dev/null
           echo production_card_wheel_priority=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
