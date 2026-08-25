@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=b4959f2f7349ffcfd1f1d779d832c8b04f9d7e91
+          TARGET=e0e126e8bdfbab076077261ece410285af66b68b
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
@@ -73,15 +73,14 @@ jobs:
           grep -q "fetch('/api/v1/personas?deck=leopardcat'" public/creator.js
           grep -q 'persona: selectedPersonaId' public/creator.js
           grep -q 'persona_id: data.default_persona || selectedPersonaId' public/creator.js
-          grep -q 'default_persona' divination/decks.py
-          grep -q '/api/v1/personas' fortune_server.py
-          ! grep -q "activeDeckId === 'leopardcat' ? 'leopardcat' : 'master'" main.js
+          grep -q 'display_name' divination/personas.py
+          grep -q 'display_role' divination/personas.py
           stop_server; start_server
           curl -fsS http://127.0.0.1:8088/create.html | grep -q 'persona-options'
           curl -fsS http://127.0.0.1:8088/creator.js | grep -q 'persona: selectedPersonaId'
-          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); ids={x['persona_id'] for x in d['personas']}; assert {'master','leopardcat'} <= ids; print('creator_persona_catalog=passed')"
+          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); by={x['persona_id']:x for x in d['personas']}; assert {'master','leopardcat'} <= set(by); assert '石虎' in by['leopardcat']['name']; assert '淺山' in by['leopardcat']['role']; print('creator_persona_catalog_localized=passed')"
           curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q 'persona-options'
-          curl -fsS https://leopardcat-tarot.milkcat.org/creator.js | grep -q 'persona: selectedPersonaId'
+          curl -fsS 'https://leopardcat-tarot.milkcat.org/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); by={x['persona_id']:x for x in d['personas']}; assert '石虎' in by['leopardcat']['name']; print('public_persona_localization=passed')"
           echo public_creator_persona_ui=passed
           echo production_creator_persona=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
