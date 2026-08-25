@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml'
       - 'scripts/bootstrap_action_relay_via_chronos_safe.sh'
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'scripts/install_action_relay_user.sh'
 
 permissions:
   contents: write
