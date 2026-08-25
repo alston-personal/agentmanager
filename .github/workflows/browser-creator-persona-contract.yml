@@ -25,50 +25,87 @@ jobs:
           import assert from 'node:assert/strict';
 
           const base = 'https://leopardcat-tarot.milkcat.org';
+          const customPersonaId = 'persona-browser-moon-guide';
+          let personaPayload = null;
+          let deckPayload = null;
+
           const browser = await chromium.launch({headless:true});
           const page = await browser.newPage();
-          await page.goto(base + '/create.html', {waitUntil:'networkidle'});
 
+          await page.route('**/api/v1/personas', async route => {
+            if (route.request().method() !== 'POST') return route.continue();
+            personaPayload = JSON.parse(route.request().postData() || '{}');
+            await route.fulfill({status:201, contentType:'application/json', body:JSON.stringify({
+              persona_id:customPersonaId,
+              name:'月光園丁',
+              role:'溫柔但不逃避現實的夜間引路人',
+              source:'custom',
+              methods:['tarot']
+            })});
+          });
+          await page.route('**/api/v1/decks', async route => {
+            if (route.request().method() !== 'POST') return route.continue();
+            deckPayload = JSON.parse(route.request().postData() || '{}');
+            await route.fulfill({status:200, contentType:'application/json', body:JSON.stringify({
+              deck_id:'browser-persona-contract', name:'Browser Persona Contract', card_count:1,
+              reversals:false, default_persona:deckPayload.persona, share_path:'/?deck=browser-persona-contract'
+            })});
+          });
+
+          await page.goto(base + '/create.html', {waitUntil:'networkidle'});
           await page.waitForFunction(() => document.querySelectorAll('input[name="default-persona"]').length >= 2);
+
           const ids = await page.locator('input[name="default-persona"]').evaluateAll(xs => xs.map(x => x.value));
           assert.ok(ids.includes('master'));
           assert.ok(ids.includes('leopardcat'));
           assert.equal(await page.locator('input[name="default-persona"]:checked').inputValue(), 'master');
           assert.match(await page.locator('#persona-options').innerText(), /通用解牌師/);
+          console.log('browser_creator_persona_catalog=passed');
+          console.log('browser_creator_default_master=passed');
 
-          await page.locator('input[name="default-persona"][value="leopardcat"]').check();
-          assert.equal(await page.locator('input[name="default-persona"]:checked').inputValue(), 'leopardcat');
-          assert.match(await page.locator('#persona-status').innerText(), /石虎|LeopardCat|leopardcat/i);
+          const builder = page.locator('#custom-persona-builder');
+          await builder.evaluate(el => { el.open = true; });
+          await page.locator('#persona-name').fill('月光園丁');
+          await page.locator('#persona-role').fill('溫柔但不逃避現實的夜間引路人');
+          await page.locator('#persona-voice').fill('溫柔、簡潔\n先同理，再指出盲點');
+          await page.locator('#persona-principles').fill('先讀牌面，再連回提問\n最後給一個今天能做的行動');
+          await page.locator('#persona-worldview').fill('熟悉植物、季節循環與園藝隱喻');
+          await page.locator('#persona-closing').fill('最後留下一句短短的月光提醒');
+          await page.locator('#create-persona').click();
+
+          await page.waitForFunction(id => !!document.querySelector(`input[name="default-persona"][value="${id}"]`), customPersonaId);
+          assert.ok(personaPayload);
+          assert.deepEqual(Object.keys(personaPayload).sort(), ['closing','name','principles','role','voice','worldview']);
+          assert.equal(personaPayload.name, '月光園丁');
+          assert.equal(personaPayload.role, '溫柔但不逃避現實的夜間引路人');
+          assert.ok(!('prompt' in personaPayload));
+          assert.ok(!('system_prompt' in personaPayload));
+          assert.ok(!('system_instruction' in personaPayload));
+          assert.equal(await page.locator('input[name="default-persona"]:checked').inputValue(), customPersonaId);
+          assert.match(await page.locator('#persona-create-status').innerText(), /已建立.*月光園丁/);
+          console.log('browser_custom_persona_builder=passed');
+          console.log('browser_custom_persona_structured_payload=passed');
+          console.log('browser_custom_persona_no_raw_prompt=passed');
+          console.log('browser_custom_persona_auto_selected=passed');
 
           await page.locator('#deck-name').fill('Browser Persona Contract');
           const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=', 'base64');
           await page.locator('#images').setInputFiles({name:'01-test-card.png', mimeType:'image/png', buffer:png});
           await page.waitForFunction(() => document.querySelectorAll('#cards .item').length === 1);
           await page.locator('#cards textarea[data-k="upright"]').fill('這是一張用於瀏覽器契約驗證的牌。');
-
-          let payload = null;
-          await page.route('**/api/v1/decks', async route => {
-            if (route.request().method() !== 'POST') return route.continue();
-            payload = JSON.parse(route.request().postData() || '{}');
-            await route.fulfill({status:200, contentType:'application/json', body:JSON.stringify({
-              deck_id:'browser-persona-contract', name:'Browser Persona Contract', card_count:1,
-              reversals:false, default_persona:payload.persona, share_path:'/?deck=browser-persona-contract'
-            })});
-          });
-
           await page.locator('#publish').click();
           await page.waitForFunction(() => !document.getElementById('done').classList.contains('hidden'));
-          assert.ok(payload);
-          assert.equal(payload.persona, 'leopardcat');
-          assert.equal(payload.cards.length, 1);
-          assert.equal(payload.name, 'Browser Persona Contract');
-          assert.match(await page.locator('#share-link').getAttribute('href'), /deck=browser-persona-contract/);
 
-          console.log('browser_creator_persona_catalog=passed');
-          console.log('browser_creator_default_master=passed');
-          console.log('browser_creator_persona_switch=passed');
+          assert.ok(deckPayload);
+          assert.equal(deckPayload.persona, customPersonaId);
+          assert.equal(deckPayload.cards.length, 1);
+          assert.equal(deckPayload.name, 'Browser Persona Contract');
+          assert.match(await page.locator('#share-link').getAttribute('href'), /deck=browser-persona-contract/);
+          console.log('browser_custom_persona_deck_binding=passed');
           console.log('browser_creator_publish_payload=passed');
+          console.log('browser_creator_no_persistent_test_persona=passed');
           console.log('browser_creator_no_persistent_test_deck=passed');
+
           await browser.close();
           NODE
           node creator-persona.mjs
