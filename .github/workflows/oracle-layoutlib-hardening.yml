@@ -1,0 +1,131 @@
+name: Oracle Validate LayoutLib Hardening
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-layoutlib-hardening.yml'
+      - 'scripts/bootstrap_layoutlib.py'
+      - 'scripts/bootstrap_layoutlib_web.py'
+      - 'scripts/bootstrap_layoutlib_hardening.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-layoutlib-hardening.yml'
+      - 'scripts/bootstrap_layoutlib.py'
+      - 'scripts/bootstrap_layoutlib_web.py'
+      - 'scripts/bootstrap_layoutlib_hardening.py'
+
+permissions:
+  contents: write
+
+jobs:
+  harden-and-benchmark:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy hardened LayoutLib and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT="$PWD/.agentos/evidence/layoutlib-hardening.txt"
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "identity=$(id)"
+            echo "python=$(python3 --version 2>&1)"
+
+            DATA=/home/ubuntu/agent-data
+            CODE=/home/agentos-node/projects/layoutlib
+            test -d "$CODE" || mkdir -p "$CODE"
+            test -w "$(dirname "$CODE")" || { echo 'physical project root not writable'; exit 2; }
+
+            python3 scripts/bootstrap_layoutlib.py --target "$CODE"
+            python3 scripts/bootstrap_layoutlib_web.py --target "$CODE"
+            python3 scripts/bootstrap_layoutlib_hardening.py --target "$CODE"
+
+            echo '=== HARDENED UNIT + INTEGRATION TESTS ==='
+            TEST_LOG=$(mktemp)
+            env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v 2>&1 | tee "$TEST_LOG"
+            TEST_COUNT=$(grep -E '^Ran [0-9]+ tests? in ' "$TEST_LOG" | awk '{print $2}')
+            test "${TEST_COUNT:-0}" -ge 10
+
+            echo '=== P5 CORE INGESTION SMOKE ==='
+            env PYTHONPATH="$CODE/src" python3 - <<'PY'
+          import tempfile
+          from pathlib import Path
+          from layoutlib.imageio import load_grayscale
+          with tempfile.TemporaryDirectory() as td:
+              p=Path(td)/'probe.pgm'
+              p.write_bytes(b'P5\n3 1\n255\n'+bytes([10,0,255]))
+              w,h,px=load_grayscale(p)
+              assert (w,h)==(3,1)
+              assert px[0]==[10,0,255], px
+          print('p5_dependency_free=PASS')
+          PY
+
+            echo '=== BENCHMARK HARNESS SMOKE ==='
+            env PYTHONPATH="$CODE/src" python3 - <<'PY'
+          from layoutlib import Point, Wall, SpatialIR
+          from layoutlib.benchmark import evaluate_walls
+          def W(i,x1,y1,x2,y2): return Wall(i,Point(x1,y1),Point(x2,y2),.12,2.7,1.0)
+          truth=SpatialIR('0.1','m',100,100,.02,[W('a',0,0,2,0),W('b',2,0,2,2)])
+          pred=SpatialIR('0.1','m',100,100,.02,[W('x',0,.02,2,.02),W('y',2.03,0,2.03,2)])
+          m=evaluate_walls(pred,truth)
+          assert m.matched==2 and m.f1==1.0, m
+          print('benchmark_harness=PASS wall_f1=1.0')
+          PY
+
+            test -s "$CODE/docs/BENCHMARK.md"
+            test -s "$CODE/benchmarks/manifest.example.json"
+
+            YAML="$DATA/projects/layoutlib/project.yaml"
+            if [ -f "$YAML" ]; then
+              python3 - "$YAML" "$CODE" <<'PY'
+          import sys, yaml
+          from datetime import datetime, timezone
+          from pathlib import Path
+          p=Path(sys.argv[1]); code=sys.argv[2]
+          d=yaml.safe_load(p.read_text(encoding='utf-8')) or {}
+          now=datetime.now(timezone.utc).isoformat()
+          d.update({
+              'display_name':'LayoutLib',
+              'phase':'active',
+              'status':'✅ Core + Web + Format Hardening Validated',
+              'actual_code_path':code,
+              'repository_state':'local-only',
+              'summary':'Validated deterministic core, web/API adapter, dependency-free P2/P5 ingestion, and labeled-wall benchmark harness.',
+              'current_focus':'Run a labeled real-world floor-plan corpus; then add openings and room topology.',
+              'next_action':'Collect licensed/user-provided plans with scale and truth wall centerlines and publish precision/recall/F1.',
+              'updated_at':now,
+          })
+          d['health']={'freshness':'fresh','sync_state':'oracle_format_hardened','last_verified_at':now}
+          p.write_text(yaml.safe_dump(d,allow_unicode=True,sort_keys=False),encoding='utf-8')
+          PY
+            fi
+
+            echo '=== ACCEPTANCE ==='
+            echo 'layoutlib_hardening=PASS'
+            echo "unit_tests=${TEST_COUNT}_passed"
+            echo 'p5_dependency_free=PASS'
+            echo 'benchmark_harness=PASS'
+            echo 'real_world_measured=NO'
+            echo "library=$CODE/src/layoutlib"
+            echo "benchmark_docs=$CODE/docs/BENCHMARK.md"
+            echo "benchmark_manifest=$CODE/benchmarks/manifest.example.json"
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit hardening evidence
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-hardening.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): Oracle format hardening and benchmark harness'
+          git push
