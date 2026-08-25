@@ -27,14 +27,28 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
             echo "target_capsule=$ID"
-            echo '=== SERVICE ==='
-            systemctl --user status agentos-antigravity-relay.service --no-pager 2>&1 || true
+            echo '=== CURRENT UNIT ==='
+            cat /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service 2>&1 || true
             echo '=== WORKER PROCESS ==='
-            ps -ef | grep '[a]ntigravity_relay_worker' || true
+            ps -eo user,group,pid,ppid,lstart,etime,stat,args | grep '[a]ntigravity_relay_worker' || true
+            WPID=$(pgrep -u ubuntu -f 'agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay' | head -1 || true)
+            echo "worker_pid=${WPID:-unknown}"
+            if [ -n "$WPID" ] && [ -r "/proc/$WPID/status" ]; then
+              echo '=== WORKER STATUS ==='
+              grep -E '^(Name|State|Pid|PPid|Uid|Gid|Groups|Threads|Sig)' "/proc/$WPID/status" || true
+              printf 'worker_wchan='; cat "/proc/$WPID/wchan" 2>/dev/null || true; echo
+              echo '=== DIRECT CHILDREN ==='
+              ps -eo user,group,pid,ppid,lstart,etime,stat,args | awk -v p="$WPID" '$4==p {print}' || true
+              echo '=== PSTREE ==='
+              pstree -ap "$WPID" 2>&1 || true
+            fi
+            echo '=== CLAUDE EXECUTORS ==='
+            ps -eo user,group,pid,ppid,lstart,etime,stat,args | grep '/resources/native-binary/claude' | grep -v grep || true
             echo '=== QUEUE COUNTS ==='
             printf 'inbox='; find "$ROOT/inbox" -maxdepth 1 -type f -name 'relay-*.json' 2>/dev/null | wc -l
             printf 'processing='; find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' 2>/dev/null | wc -l
             printf 'receipts='; find "$ROOT/receipts" -maxdepth 1 -type f -name 'relay-*.json' 2>/dev/null | wc -l
+            printf 'receipt_tmp='; find "$ROOT/receipts" -maxdepth 1 -type f -name 'relay-*.json.tmp' 2>/dev/null | wc -l
             echo '=== TARGET LOCATIONS ==='
             for d in inbox processing receipts; do
               p="$ROOT/$d/$ID.json"
@@ -46,10 +60,13 @@ jobs:
                 echo "$d=ABSENT"
               fi
             done
-            echo '=== OLDEST INBOX ==='
-            find "$ROOT/inbox" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | head -20 || true
+            echo '=== RECEIPT TMPS ==='
+            for p in "$ROOT"/receipts/relay-*.json.tmp; do
+              [ -e "$p" ] || continue
+              stat -c '%n owner=%U group=%G mode=%a size=%s mtime=%y' "$p" || true
+            done
             echo '=== PROCESSING ==='
-            find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | head -20 || true
+            find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -n | head -30 || true
             echo '=== RECENT RECEIPTS ==='
             find "$ROOT/receipts" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -10 || true
           } 2>&1 | tee "$OUT"
@@ -63,4 +80,5 @@ jobs:
           git add .agentos/evidence/studio-audit-relay-diagnostic.txt 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(studio-web): stalled audit relay diagnosis'
+          git pull --rebase origin main
           git push
