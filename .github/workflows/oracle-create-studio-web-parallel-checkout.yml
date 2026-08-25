@@ -1,0 +1,40 @@
+name: Oracle Create Studio Web Parallel Checkout
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.agentos/evidence/studio-web-phase1-layoutlab-candidate.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create gated independent Studio Web checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/create_studio_web_parallel_checkout.sh
+      - name: Commit parallel checkout evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-web-parallel-checkout.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-web-parallel-checkout.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-web-parallel-checkout.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): independent parallel checkout'
+          git push origin HEAD:main
