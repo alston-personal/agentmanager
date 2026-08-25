@@ -1,0 +1,82 @@
+name: Validate AgentOS Resource Registry
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'agentos_node/resource_registry.py'
+      - 'agentos_node/cli.py'
+      - 'agentos_node/inspector.py'
+      - 'agentos_node/__init__.py'
+      - 'tests/test_resource_registry.py'
+      - 'docs/RESOURCE_REGISTRY.md'
+      - '.github/workflows/validate-resource-registry.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test registry logic
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_resource_registry -v
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_node_runtime -v
+
+      - name: Register and verify Milkcat Studio
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/resource-registry-validation.txt
+          DECLARED='{"domain":"studio.milkcat.org","framework":"astro","repository":"alston-personal/zeus-writer","branch":"master","repo_path":"/home/ubuntu/zeus-writer","source_path":"/home/ubuntu/zeus-writer/website","dist_path":"/home/ubuntu/zeus-writer/website/dist","web_server":"nginx","nginx_config":"/etc/nginx/sites-enabled/studio.milkcat.org"}'
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo '=== REGISTER ==='
+            PYTHONPATH="$PWD" python3 -m agentos_node.cli resource register site://studio.milkcat.org --kind site --ttl 86400 --declared-json "$DECLARED"
+            echo '=== TARGETED VERIFY ==='
+            PYTHONPATH="$PWD" python3 -m agentos_node.cli resource verify-site site://studio.milkcat.org
+            echo '=== QUERY-FIRST GET (NO DISCOVERY SCAN) ==='
+            PYTHONPATH="$PWD" python3 -m agentos_node.cli resource get site://studio.milkcat.org
+            echo '=== NODE CAPABILITIES ==='
+            PYTHONPATH="$PWD" python3 -m agentos_node.cli harvest --json
+            echo '=== ACCEPTANCE ==='
+            PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.resource_registry import ResourceRegistry
+          r=ResourceRegistry()
+          e=r.describe('site://studio.milkcat.org')
+          assert e is not None
+          assert e['kind']=='site'
+          assert e['declared']['framework']=='astro'
+          assert e['declared']['repository']=='alston-personal/zeus-writer'
+          assert e['freshness']['state']=='fresh'
+          assert e['verification']['status'] in ('verified','degraded')
+          assert e['observed'].get('http',{}).get('status')==200
+          assert e['observed'].get('paths',{}).get('dist_path',{}).get('exists') is True
+          print('resource_registry_validation=PASS')
+          print('resource_id='+e['id'])
+          print('freshness='+e['freshness']['state'])
+          print('verification='+e['verification']['status'])
+          print('registry=/home/ubuntu/agent-data/resources/registry.json')
+          PY
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit validation evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/resource-registry-validation.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): validate Oracle Resource Registry'
+          git push
