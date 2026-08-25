@@ -1,11 +1,12 @@
-timestamp_utc=2026-08-25T15:14:43Z
+timestamp_utc=2026-08-25T15:28:56Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-request_id=chronos-safe-v2-20260825T151443Z-32864566296
+request_id=chronos-safe-v2-20260825T152856Z-32866024441
 === VERIFY EXISTING UBUNTU CHRONOS ===
-ubuntu   ubuntu    472462    1027 48-07:20:46 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
-chronos_log_age_seconds=59.2
+ubuntu   ubuntu    472462    1027 48-07:35:00 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+chronos_log_age_seconds=12.0
 === PREPROVISION SHARED ACTION RELAY SPOOL ===
 action_relay_spool=agentos-node:agentos 2770
 === RECOVER ANY STALE INJECTED TARGET ===
 stale_bridge_present=NO
 one_time_safe_bridge_v2_installed=YES
+chronos_safe_v2_receipt=TIMEOUT_NO_RECEIPT
