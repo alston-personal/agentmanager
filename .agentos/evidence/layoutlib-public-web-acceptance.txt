@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-25T08:14:16Z
+timestamp_utc=2026-08-25T08:17:14Z
 web_pid_survived=3328955
 tunnel_pid_survived=3328978
 public_url=https://during-classification-instruction-combat.trycloudflare.com/
@@ -6,12 +6,9 @@ public_url=https://during-classification-instruction-combat.trycloudflare.com/
 public_ui_http_code=200
 public_ui_payload=PASS
 === HEALTH GET ===
-public_health_http_code=200
-=== PARSE POST ===
-public_parse=PASS walls=4 spatial_ir=0.1
-=== ACCEPTANCE ===
-post_job_daemon_survival=PASS
-public_ui=PASS
-public_health=PASS
-public_parse=PASS
-goal_direct_web_ui=PASS
+curl: (6) Could not resolve host: during-classification-instruction-combat.trycloudflare.com
+curl: (7) Couldn't connect to server
+curl: (7) Couldn't connect to server
+curl: (7) Couldn't connect to server
+curl: (7) Couldn't connect to server
+curl: (7) Couldn't connect to server
