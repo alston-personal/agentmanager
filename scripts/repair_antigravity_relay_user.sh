@@ -26,10 +26,12 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # the fetched Git object. This preserves local checkout state while making the repair
 # deterministic and rollback-friendly.
 git -C "$REPO" fetch origin main
+git -C "$REPO" show origin/main:agentos_node/__init__.py > "$TMPDIR/__init__.py"
 git -C "$REPO" show origin/main:agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
 git -C "$REPO" show origin/main:agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 git -C "$REPO" show origin/main:scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
 
+install -m 0664 "$TMPDIR/__init__.py" "$RUNTIME/agentos_node/__init__.py"
 install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
 install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
 
@@ -65,11 +67,14 @@ EOF
 # Do NOT restart Antigravity from inside its own request. Reload the unit only;
 # Action Relay performs the restart after the repair side effects are observed.
 systemctl --user daemon-reload
-PYTHONPATH="$RUNTIME" python3 - <<'PY'
+(
+  cd "$RUNTIME"
+  PYTHONPATH="$RUNTIME" python3 - <<'PY'
 from agentos_node.antigravity_relay import AntigravityRelayClient
 from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
 print('antigravity_runtime_import=PASS')
 PY
+)
 
 AGENTOS_REPO="$REPO" bash "$TMPDIR/install_action_relay_user.sh"
 systemctl --user is-active --quiet agentos-action-relay.service
