@@ -1,0 +1,19 @@
+timestamp_utc=2026-08-25T23:13:00Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+target=/home/agentos-node/projects/studio-web
+local_head=e243f9b83aad7a11a8e1d0cfe6886b35fe856b43
+local_checkout_clean=PASS
+=== GH AUTH ===
+gh_cli=/usr/bin/gh
+You are not logged into any GitHub hosts. Run gh auth login to authenticate.
+=== REMOTE EXISTENCE ===
+remote_exists=NO
+Welcome to GitHub CLI!
+
+To authenticate, please run `gh auth login`.
+=== CREATE PRIVATE REMOTE ===
+Welcome to GitHub CLI!
+
+To authenticate, please run `gh auth login`.
+remote_create=FAIL
+remote_bootstrap=NO_GO
