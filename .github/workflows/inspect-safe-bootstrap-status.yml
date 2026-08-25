@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          echo 'status_refresh=v3'
+          echo 'status_refresh=v4'
           headers=(-H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28')
           curl -fsSL "${headers[@]}" \
             "https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml/runs?per_page=8" \
@@ -68,7 +68,7 @@ jobs:
           for r in runners.get('runners',[]):
               print('runner_id='+str(r.get('id')))
               print('runner_name='+str(r.get('name')))
-              print('runner_os='+str(r.get('os'))) 
+              print('runner_os='+str(r.get('os')))
               print('runner_status='+str(r.get('status')))
               print('runner_busy='+str(r.get('busy')))
               print('runner_labels='+','.join(x.get('name','') for x in r.get('labels',[])))
