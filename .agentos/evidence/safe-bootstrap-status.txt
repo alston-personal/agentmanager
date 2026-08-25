@@ -1,5 +1,50 @@
 === SAFE BOOTSTRAP ===
-total_count=2
+total_count=7
+id=32861511363
+name=Oracle Safe Chronos Transport Bootstrap
+status=in_progress
+conclusion=None
+event=push
+head_sha=1f1aa04fe421ff3b22fefdcd0792fed2ade9332f
+created_at=2026-08-25T14:45:31Z
+updated_at=2026-08-25T14:45:54Z
+---
+id=32861439316
+name=Oracle Safe Chronos Transport Bootstrap
+status=completed
+conclusion=failure
+event=push
+head_sha=d8ca013692cbc35d1551a7b7c3704a9d0a30364d
+created_at=2026-08-25T14:44:52Z
+updated_at=2026-08-25T14:45:52Z
+---
+id=32861351261
+name=Oracle Safe Chronos Transport Bootstrap
+status=completed
+conclusion=failure
+event=push
+head_sha=93dfcc682b7fa012ee9b94dd51cb896464e85b19
+created_at=2026-08-25T14:44:03Z
+updated_at=2026-08-25T14:44:52Z
+---
+id=32861172143
+name=Oracle Safe Chronos Transport Bootstrap
+status=completed
+conclusion=failure
+event=push
+head_sha=a4983c8d0c0db86c5dd8a2a0f01341c3c1820354
+created_at=2026-08-25T14:42:21Z
+updated_at=2026-08-25T14:43:52Z
+---
+id=32861145703
+name=Oracle Safe Chronos Transport Bootstrap
+status=completed
+conclusion=failure
+event=push
+head_sha=fc4eb86b0efc368ddd1c9e300f86a50dcc6ab2a9
+created_at=2026-08-25T14:42:06Z
+updated_at=2026-08-25T14:42:51Z
+---
 id=32860753203
 name=Oracle Safe Chronos Transport Bootstrap
 status=completed
@@ -19,13 +64,27 @@ created_at=2026-08-25T14:34:49Z
 updated_at=2026-08-25T14:39:19Z
 ---
 === ACTIVE REPOSITORY RUNS ===
-active_count=1
-run_id=32861000256
+active_count=3
+run_id=32861567751
 name=Inspect Safe Bootstrap Status
 status=in_progress
 event=push
-head_sha=29c2f9e26416fc491441d8d57b7932afd5539441
-created_at=2026-08-25T14:40:41Z
+head_sha=0df9459d433a2935546e840ee42456ef0c0d6513
+created_at=2026-08-25T14:46:03Z
+---
+run_id=32861511363
+name=Oracle Safe Chronos Transport Bootstrap
+status=in_progress
+event=push
+head_sha=1f1aa04fe421ff3b22fefdcd0792fed2ade9332f
+created_at=2026-08-25T14:45:31Z
+---
+run_id=32861439353
+name=Oracle Recover AgentOS Relays Via Owned Carrier
+status=queued
+event=push
+head_sha=d8ca013692cbc35d1551a7b7c3704a9d0a30364d
+created_at=2026-08-25T14:44:52Z
 ---
 === REPOSITORY SELF-HOSTED RUNNERS ===
 runner_api_ok=0
