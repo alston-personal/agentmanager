@@ -44,6 +44,8 @@ done
 # The ubuntu user manager was started before the agentos supplementary-group
 # grant, so its children may not inherit agentos even though /etc/group is
 # correct. Pin the boundary explicitly with `sg agentos` on every service start.
+# Do not set NoNewPrivileges here: it blocks the setgid helper used to establish
+# this already-authorized group context in the legacy user-manager session.
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
@@ -57,7 +59,6 @@ UMask=0007
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.antigravity_relay_worker --root $SPOOL'
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
 PrivateTmp=true
 
 [Install]
