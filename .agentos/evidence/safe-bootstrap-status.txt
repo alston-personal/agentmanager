@@ -1,36 +1,31 @@
 === SAFE BOOTSTRAP ===
-total_count=1
+total_count=2
+id=32860753203
+name=Oracle Safe Chronos Transport Bootstrap
+status=completed
+conclusion=failure
+event=push
+head_sha=f708d117ab36c191fc9760c9a135da93aebc5ec6
+created_at=2026-08-25T14:38:20Z
+updated_at=2026-08-25T14:40:25Z
+---
 id=32860383378
 name=Oracle Safe Chronos Transport Bootstrap
-status=in_progress
-conclusion=None
+status=completed
+conclusion=cancelled
 event=push
 head_sha=62a6a3d025048e3f097e6debd978ef6819bcca0a
 created_at=2026-08-25T14:34:49Z
-updated_at=2026-08-25T14:37:16Z
+updated_at=2026-08-25T14:39:19Z
 ---
 === ACTIVE REPOSITORY RUNS ===
-active_count=3
-run_id=32860658774
+active_count=1
+run_id=32861000256
 name=Inspect Safe Bootstrap Status
 status=in_progress
 event=push
-head_sha=d8f8a8c65a328e7235a3d51b768f3da0ca73b05b
-created_at=2026-08-25T14:37:26Z
----
-run_id=32860548163
-name=Oracle Bootstrap Action Relay Via Existing Chronos
-status=queued
-event=push
-head_sha=9b7d75ab2fed814a70c229c7a7ed23222973f6c1
-created_at=2026-08-25T14:36:22Z
----
-run_id=32860383378
-name=Oracle Safe Chronos Transport Bootstrap
-status=in_progress
-event=push
-head_sha=62a6a3d025048e3f097e6debd978ef6819bcca0a
-created_at=2026-08-25T14:34:49Z
+head_sha=29c2f9e26416fc491441d8d57b7932afd5539441
+created_at=2026-08-25T14:40:41Z
 ---
 === REPOSITORY SELF-HOSTED RUNNERS ===
 runner_api_ok=0
