@@ -1,3 +1,4 @@
+# Validation trigger: writable project root
 name: Oracle Build and Verify LayoutLib
 
 on:
