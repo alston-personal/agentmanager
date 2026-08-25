@@ -1,3 +1,4 @@
+# validation trigger: canonical agentos-node
 name: AgentOS Governance Directory Audit
 
 on:
