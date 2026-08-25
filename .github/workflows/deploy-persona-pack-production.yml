@@ -23,20 +23,20 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy Persona Pack with rollback
+      - name: Deploy Persona Creator with rollback
         shell: bash
         run: |
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash -s" <<'REMOTE'
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=8591556e9f159acf01b407736efb63c3178b380d
+          TARGET=b4959f2f7349ffcfd1f1d779d832c8b04f9d7e91
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
           dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' | grep -v '^ M website/dist/' | grep -v '^?? website/data/' || true)
           if [ -n "$dirty" ]; then echo 'unexpected production changes:' >&2; echo "$dirty" >&2; exit 40; fi
-          cp "$WEB/stats.json" /tmp/lc-stats.pre-persona.json
+          cp "$WEB/stats.json" /tmp/lc-stats.pre-persona-creator.json
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           git -C "$PROD" checkout -- website/dist 2>/dev/null || true
           stop_server() {
@@ -54,7 +54,7 @@ jobs:
             echo deployment_failed_rolling_back >&2
             stop_server
             git -C "$PROD" reset --hard "$OLD"
-            cp /tmp/lc-stats.pre-persona.json "$WEB/stats.json"
+            cp /tmp/lc-stats.pre-persona-creator.json "$WEB/stats.json"
             cd "$WEB"; npm run build; start_server
             echo rollback_commit=$OLD >&2
           }
@@ -62,46 +62,28 @@ jobs:
           git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
           F=$(git -C "$PROD" rev-parse FETCH_HEAD); [ "$F" = "$TARGET" ] || { echo unexpected_main=$F >&2; exit 41; }
           git -C "$PROD" merge --ff-only FETCH_HEAD
-          cp /tmp/lc-stats.pre-persona.json "$WEB/stats.json"
+          cp /tmp/lc-stats.pre-persona-creator.json "$WEB/stats.json"
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           cd "$WEB"
           npm run build
           python3 -m py_compile fortune_server.py divination/*.py
-          node --check main.js
+          node --check public/creator.js
+          grep -q 'id="persona-options"' public/create.html
+          grep -q '選擇預設解牌風格' public/create.html
+          grep -q "fetch('/api/v1/personas?deck=leopardcat'" public/creator.js
+          grep -q 'persona: selectedPersonaId' public/creator.js
+          grep -q 'persona_id: data.default_persona || selectedPersonaId' public/creator.js
           grep -q 'default_persona' divination/decks.py
           grep -q '/api/v1/personas' fortune_server.py
-          grep -q "persona_id = saved\['persona'\]" fortune_server.py
-          grep -q 'window.activePersonaId' main.js
-          grep -q 'persona_id: window.activePersonaId' main.js
-          grep -q "shareU.searchParams.set('persona', window.activePersonaId)" main.js
           ! grep -q "activeDeckId === 'leopardcat' ? 'leopardcat' : 'master'" main.js
           stop_server; start_server
-          curl -fsS http://127.0.0.1:8088/api/v1/decks/test-2cfe3b | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('default_persona') == 'master'; print('custom_deck_default_persona=passed')"
-          curl -fsS http://127.0.0.1:8088/api/v1/decks/leopardcat | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('default_persona') == 'leopardcat'; print('leopardcat_default_persona=passed')"
-          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=test-2cfe3b' | python3 -c "import sys,json; d=json.load(sys.stdin); ids={x['persona_id'] for x in d['personas']}; assert d['default_persona']=='master'; assert {'master','leopardcat'} <= ids; print('custom_persona_catalog=passed')"
-          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['default_persona']=='leopardcat'; print('leopardcat_persona_catalog=passed')"
-          python3 - <<'PY'
-          import os, tempfile
-          from divination.sessions import ReadingSessionStore
-          fd, path = tempfile.mkstemp(prefix='persona-session-', suffix='.sqlite3')
-          os.close(fd)
-          try:
-              s = ReadingSessionStore(path, ttl_seconds=60)
-              issued = s.create(reading_id='rd_persona_contract', method='tarot', persona='leopardcat', deck_id='test-2cfe3b', method_result={'deck':{'deck_id':'test-2cfe3b'},'cards':[{'card_id':'card-001','orientation':'upright'}]})
-              restored = s.get('rd_persona_contract', issued['session_token'])
-              assert restored['persona'] == 'leopardcat'
-              assert restored['deck_id'] == 'test-2cfe3b'
-              print('persona_session_lock=passed')
-          finally:
-              try: os.unlink(path)
-              except FileNotFoundError: pass
-          PY
-          JS=$(find dist/assets -name 'index-*.js' | head -1)
-          test -s "$JS"
-          curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") >/dev/null
-          curl -fsS 'https://leopardcat-tarot.milkcat.org/api/v1/personas?deck=test-2cfe3b' | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['default_persona']=='master'; print('public_custom_persona_catalog=passed')"
-          curl -fsS 'https://leopardcat-tarot.milkcat.org/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['default_persona']=='leopardcat'; print('public_leopardcat_persona_catalog=passed')"
-          echo production_persona_pack=passed
+          curl -fsS http://127.0.0.1:8088/create.html | grep -q 'persona-options'
+          curl -fsS http://127.0.0.1:8088/creator.js | grep -q 'persona: selectedPersonaId'
+          curl -fsS 'http://127.0.0.1:8088/api/v1/personas?deck=leopardcat' | python3 -c "import sys,json; d=json.load(sys.stdin); ids={x['persona_id'] for x in d['personas']}; assert {'master','leopardcat'} <= ids; print('creator_persona_catalog=passed')"
+          curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q 'persona-options'
+          curl -fsS https://leopardcat-tarot.milkcat.org/creator.js | grep -q 'persona: selectedPersonaId'
+          echo public_creator_persona_ui=passed
+          echo production_creator_persona=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
