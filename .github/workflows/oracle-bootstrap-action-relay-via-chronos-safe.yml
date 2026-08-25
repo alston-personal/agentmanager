@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml'
-      - 'scripts/bootstrap_action_relay_via_chronos_safe.sh'
+      - 'scripts/bootstrap_action_relay_via_chronos_safe_v2.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/install_action_relay_user.sh'
 
@@ -15,7 +15,7 @@ permissions:
 jobs:
   bootstrap:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -23,23 +23,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/bootstrap_action_relay_via_chronos_safe.sh
+          bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
 
       - name: Commit safe bootstrap evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          E=.agentos/evidence/action-relay-chronos-safe-bootstrap.txt
+          E=.agentos/evidence/action-relay-chronos-safe-bootstrap-v2.txt
           test -f "$E" || exit 0
-          cp "$E" /tmp/action-relay-chronos-safe-bootstrap.txt
+          cp "$E" /tmp/action-relay-chronos-safe-bootstrap-v2.txt
           git fetch origin main
           git reset --hard origin/main
           mkdir -p .agentos/evidence
-          cp /tmp/action-relay-chronos-safe-bootstrap.txt "$E"
+          cp /tmp/action-relay-chronos-safe-bootstrap-v2.txt "$E"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$E"
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): safe Chronos transport bootstrap'
+          git commit -m 'evidence(agentos): safe Chronos transport bootstrap v2'
           git push origin HEAD:main
