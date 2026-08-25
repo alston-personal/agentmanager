@@ -1,0 +1,63 @@
+name: Oracle Inspect Layout Lab Site Routing
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-layoutlab-site.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask AgentOS executor for read-only site routing facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlab-site-inspection.txt
+          RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
+          RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
+          CAPSULE_ID=$(PYTHONPATH="$RUNTIME" python3 - <<'PY'
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          p=c.submit(
+            project_id='layoutlib',
+            canonical_ir={
+              'goal':'Discover the exact existing studio.milkcat.org deployment/routing so Layout Lab can be integrated without asking the user for information already known to AgentOS.',
+              'constraints':['READ ONLY. Do not modify files, services, processes, DNS, firewall, or repositories.','Inspect only the existing website deployment and relevant Layout Lab/API service facts.','Return exact paths and commands/output needed for a later deterministic change.']
+            },
+            instruction='READ-ONLY inspection. Determine how https://studio.milkcat.org is served on this Oracle host. Report: (1) active web server/process and service identity, (2) exact config file(s) and server/vhost block for studio.milkcat.org, (3) document root/static directory and how /home/ubuntu/zeus-writer/website/dist is published, (4) whether /layout-lab/ currently returns the built page, (5) any existing proxy rules relevant to /layout-lab/api/, (6) current listener/port for layoutlab-api if any, including service unit/process owner, (7) the minimum safe config change required to proxy /layout-lab/api/* to a localhost service while preserving /layout-lab/ static content. You may run only read-only commands such as ps, ss, systemctl status/cat, nginx -T, apachectl -S, caddy adapt/show config if read-only, cat/grep/find/stat/readlink, curl GET/HEAD, git status/log. Do NOT restart/reload/edit/install anything.',
+            workspace='/home/ubuntu/agentmanager')
+          print(p['capsule_id'])
+          PY
+          )
+          RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
+          for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "receipt timeout: $CAPSULE_ID"; exit 3; }
+          {
+            echo "capsule_id=$CAPSULE_ID"
+            cat "$RECEIPT"
+          } | tee "$OUT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('ok') is True, r
+          print('layoutlab_site_inspection=PASS')
+          PY
+      - name: Commit inspection receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlab-site-inspection.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlab): official site routing inspection'
+          git push
