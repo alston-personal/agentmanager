@@ -57,6 +57,11 @@ After=default.target
 Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
+# Actions such as agentos.antigravity.restart and layoutlab.api.restart call
+# `systemctl --user` from inside the relay worker. Pin them to ubuntu's existing
+# user manager explicitly; the GitHub runner has a different session/bus.
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 UMask=0007
 # `sg` is the deliberate supplementary-group bootstrap boundary for this old
 # ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
@@ -98,6 +103,7 @@ fi
 
 echo "action_relay_install=PASS"
 echo "action_relay_group_context=agentos"
+echo "action_relay_user_bus=ubuntu:/run/user/1001/bus"
 echo "action_relay_stable_liveness=PASS"
 echo "runtime=$RUNTIME_ROOT"
 echo "spool=$RELAY_ROOT"
