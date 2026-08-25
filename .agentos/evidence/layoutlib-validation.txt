@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-25T05:21:58Z
+timestamp_utc=2026-08-25T05:22:12Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 python=Python 3.10.12
@@ -24,11 +24,11 @@ test_parse_rectangle_finds_four_primary_walls (test_layoutlib.LayoutLibTests) ..
 test_rejects_invalid_scale (test_layoutlib.LayoutLibTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 5 tests in 0.082s
+Ran 5 tests in 0.081s
 
 OK
-walls=4 out=/tmp/tmp2may6elg/ir.json
-walls=4 out=/tmp/tmp2may6elg/model.obj
+walls=4 out=/tmp/tmpn_lq6d8y/ir.json
+walls=4 out=/tmp/tmpn_lq6d8y/model.obj
 === END-TO-END DEMO ===
 generated 4 walls
 === CLI SMOKE ===
