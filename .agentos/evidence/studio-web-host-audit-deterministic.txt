@@ -1,0 +1,521 @@
+timestamp_utc=2026-08-25T14:57:07Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+hostname=instance-20260129-0852
+=== ACTIVE WEB CONFIG ===
+--- FILE /etc/nginx/sites-enabled/studio.milkcat.org
+server {
+    listen 3001 ssl;
+    server_name studio.milkcat.org;
+
+    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+}
+
+server {
+    listen 8099;
+    server_name studio.milkcat.org;
+
+    root /home/ubuntu/prophecy-verifier;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 80;
+    server_name studio.milkcat.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name studio.milkcat.org;
+
+    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /home/ubuntu/zeus-writer/website/dist;
+    index index.html;
+
+
+    location / {
+        try_files $uri $uri/ /index.html;
+      }
+
+    location /prophecy/ {
+        alias /home/ubuntu/prophecy-verifier/;
+        try_files $uri $uri/ /prophecy/index.html;
+    }
+
+    location /api/cookies {
+        proxy_pass http://127.0.0.1:8088/api/cookies;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /novels/ {
+        alias /home/ubuntu/zeus-writer/website/dist/;
+        try_files $uri $uri/ /novels/index.html;
+      }
+
+    location /dashboard {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /ipgenome/api/ {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+      }
+
+    location /ipgenome {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+      }
+
+    location /iftv/renders/ {
+        alias /home/ubuntu/if-tv-station/public/renders/;
+        access_log off;
+    }
+
+    location /iftv/assets/uploads/ {
+        alias /home/ubuntu/if-tv-station/public/assets/uploads/;
+        access_log off;
+    }
+
+    location /iftv/assets/intros/ {
+        alias /home/ubuntu/if-tv-station/public/assets/intros/;
+        access_log off;
+    }
+
+    location /iftv {
+        proxy_pass http://localhost:3005;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /chamber-api {
+        proxy_pass http://localhost:3011;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location = /echo/chamber-extension.zip {
+        alias /home/ubuntu/metashield-protocol/web-feed/public/chamber-extension.zip;
+    }
+
+    location = /echo/README_TEST.md {
+        alias /home/ubuntu/metashield-protocol/web-feed/public/README_TEST.md;
+        default_type text/markdown;
+        charset utf-8;
+        charset_types text/markdown;
+    }
+
+    location /echo {
+        proxy_pass http://localhost:3010;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /hanzi {
+        proxy_pass http://localhost:3020;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+
+    location /acas/ {
+        proxy_pass http://localhost:8090/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location = /acas {
+        return 301 https://$host/acas/;
+    }
+
+    error_page 404 /index.html;
+}
+=== WEBSITE SOURCE / BUILD OWNERSHIP ===
+ubuntu:ubuntu 775 directory /home/ubuntu/zeus-writer
+ubuntu:ubuntu 775 directory /home/ubuntu/zeus-writer/website
+ubuntu:ubuntu 775 directory /home/ubuntu/zeus-writer/website/dist
+/home/ubuntu/zeus-writer
+master
+d9387336fe83b1dc0f15f4aac6608793b0483933
+ M scripts/project_routes.json
+ M scripts/publish_master.py
+ M "website/src/content/published_chapters/01_\347\254\254\344\270\200\347\253\240_\346\267\267\346\262\214\351\220\265\350\203\216\345\210\235\350\246\272\351\206\222.md"
+ M "\345\244\251\351\201\223\346\225\225\344\273\244_\351\230\277\350\263\264\350\200\266\350\255\230\344\277\256\347\234\237\351\214\204/publication_state.json"
+ M "\345\244\251\351\201\223\346\225\225\344\273\244_\351\230\277\350\263\264\350\200\266\350\255\230\344\277\256\347\234\237\351\214\204/\350\275\211\350\255\257/social_links_template.md"
+ M "\347\247\221\346\212\200\351\233\234\350\253\207/\350\275\211\350\255\257/social_links_template.md"
+ M "\350\252\236\350\250\200\350\277\267\345\256\256\347\232\204\350\255\257\350\200\205/\350\275\211\350\255\257/social_links_template.md"
+ M "\350\252\236\350\250\200\351\233\234\350\250\230/\350\275\211\350\255\257/social_links_template.md"
+ M "\351\233\266\347\242\216\350\255\211\350\250\200/\350\275\211\350\255\257/social_links_template.md"
+?? .claude/
+?? "website/src/content/published_chapters/06_\347\254\254\345\205\255\347\253\240_\347\231\276\350\220\254\345\214\226\350\272\253\345\244\251\351\201\223\347\234\213\346\235\277\346\274\224\350\220\254\346\263\225.md"
+?? "website/src/content/published_chapters/07_\347\254\254\344\270\203\347\253\240_\347\201\260\350\211\262\346\257\222\347\230\264\346\216\222\351\231\244\346\263\225\347\225\214\347\245\236\350\255\230\351\226\213.md"
+?? "website/src/content/published_chapters/08_\347\254\254\345\205\253\347\253\240_\345\212\237\345\276\267\346\255\270\346\252\224\351\207\221\347\217\240\347\236\254\345\213\225\345\276\271\346\263\225\347\225\214.md"
+?? "website/src/content/published_chapters/09_\347\254\254\344\271\235\347\253\240_\345\244\251\347\254\246\351\230\262\346\274\217\345\244\251\346\251\237\347\247\230\351\221\260\345\260\201\345\257\206\345\214\243.md"
+?? "website/src/content/published_chapters/10_\347\254\254\345\215\201\347\253\240_\347\245\236\347\215\222\351\200\232\351\235\210\351\200\200\351\201\277\345\214\226\350\247\243\345\217\215\345\231\254\347\201\276.md"
+?? "website/src/content/published_chapters/11_\347\254\254\345\215\201\344\270\200\347\253\240_\351\235\222\351\263\245\351\212\234\346\233\270\345\215\203\345\261\261\350\220\254\346\260\264\345\202\263\344\273\231\351\237\263.md"
+?? "website/src/content/published_chapters/12_\347\254\254\345\215\201\344\272\214\347\253\240_\346\260\243\346\265\267\344\271\276\346\266\270\347\245\236\347\215\222\347\213\202\345\220\240\351\201\277\351\207\215\350\274\211.md"
+?? "website/src/content/published_chapters/13_\347\254\254\345\215\201\344\270\211\347\253\240_\345\244\247\345\215\203\344\270\226\347\225\214\347\204\241\347\233\241\351\200\243\350\274\211\350\255\211\345\244\251\351\201\223.md"
+?? website/src/pages/aos/
+--- package.json
+{
+  "name": "website",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.2",
+    "astro": "^6.1.9"
+  }
+}=== WEBSITE COUPLING SCAN ===
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/esbuild -> ../esbuild/bin/esbuild
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/is-docker -> ../is-docker/cli.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/is-inside-container -> ../is-inside-container/cli.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/js-yaml -> ../js-yaml/bin/js-yaml.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/nanoid -> ../nanoid/bin/nanoid.cjs
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/parser -> ../@babel/parser/bin/babel-parser.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/semver -> ../semver/bin/semver.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/svgo -> ../svgo/bin/svgo.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/.bin/tsconfck -> ../tsconfck/bin/tsconfck.js
+symlink /home/ubuntu/zeus-writer/website/node_modules/@astrojs/sitemap -> ../.pnpm/@astrojs+sitemap@3.7.2/node_modules/@astrojs/sitemap
+symlink /home/ubuntu/zeus-writer/website/node_modules/astro -> .pnpm/astro@6.3.5_@types+node@24.12.4_rollup@4.60.4/node_modules/astro
+/home/ubuntu/zeus-writer/website/README.md:35:| `npm run dev`             | Starts local dev server at `localhost:4321`      |
+/home/ubuntu/zeus-writer/website/src/pages/agentos/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/agentos/[id].astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/tiandao/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/tiandao/[id].astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/testimony/[slug].astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/testimony/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/translator/[slug].astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/translator/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/coming-soon.astro:2:import Layout from '../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/index.astro:2:import Layout from '../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/language-notes/[slug].astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/language-notes/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/omnirealm/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/tech-notes/[slug].astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/src/pages/tech-notes/index.astro:2:import Layout from '../../layouts/Layout.astro';
+/home/ubuntu/zeus-writer/website/.astro/content.d.ts:185:	export type ContentConfig = typeof import("../src/content.config.js");
+=== LISTENERS ===
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                                   
+LISTEN 0      4096       127.0.0.1:32911      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:34709      0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:34653      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:34305      0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:3011       0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:18791      0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:18789      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:20241      0.0.0.0:*    users:(("cloudflared",pid=3335408,fd=11))
+LISTEN 0      511        127.0.0.1:38117      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:37931      0.0.0.0:*                                             
+LISTEN 0      5          127.0.0.1:8085       0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:39959      0.0.0.0:*                                             
+LISTEN 0      4096         0.0.0.0:5678       0.0.0.0:*                                             
+LISTEN 0      5          127.0.0.1:8766       0.0.0.0:*    users:(("python3",pid=3335386,fd=3))     
+LISTEN 0      5          127.0.0.1:8765       0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:25181      0.0.0.0:*                                             
+LISTEN 0      5          127.0.0.1:8775       0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:24852      0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:42311      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:44023      0.0.0.0:*                                             
+LISTEN 0      511          0.0.0.0:8099       0.0.0.0:*                                             
+LISTEN 0      2048         0.0.0.0:8090       0.0.0.0:*                                             
+LISTEN 0      5            0.0.0.0:8088       0.0.0.0:*                                             
+LISTEN 0      4096         0.0.0.0:8080       0.0.0.0:*                                             
+LISTEN 0      5            0.0.0.0:8087       0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:11434      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:45709      0.0.0.0:*                                             
+LISTEN 0      50           0.0.0.0:139        0.0.0.0:*                                             
+LISTEN 0      4096         0.0.0.0:111        0.0.0.0:*                                             
+LISTEN 0      511          0.0.0.0:80         0.0.0.0:*                                             
+LISTEN 0      128          0.0.0.0:22         0.0.0.0:*                                             
+LISTEN 0      511          0.0.0.0:443        0.0.0.0:*                                             
+LISTEN 0      50           0.0.0.0:445        0.0.0.0:*                                             
+LISTEN 0      2048         0.0.0.0:4000       0.0.0.0:*                                             
+LISTEN 0      511          0.0.0.0:3002       0.0.0.0:*                                             
+LISTEN 0      511          0.0.0.0:3001       0.0.0.0:*                                             
+LISTEN 0      4096               *:25565            *:*                                             
+LISTEN 0      4096            [::]:5678          [::]:*                                             
+LISTEN 0      4096            [::]:8080          [::]:*                                             
+LISTEN 0      511            [::1]:18789         [::]:*                                             
+LISTEN 0      50              [::]:139           [::]:*                                             
+LISTEN 0      4096            [::]:111           [::]:*                                             
+LISTEN 0      128             [::]:22            [::]:*                                             
+LISTEN 0      50              [::]:445           [::]:*                                             
+LISTEN 0      511                *:3020             *:*                                             
+LISTEN 0      511                *:3010             *:*                                             
+LISTEN 0      511                *:3000             *:*                                             
+LISTEN 0      511                *:3005             *:*                                             
+=== RELEVANT PROCESSES ===
+agentos+ agentos+ 2790389       1  1-06:21:12 /bin/bash /home/agentos-node/runner/runsvc.sh
+agentos+ agentos+ 2790392 2790389  1-06:21:12 ./externals/node20/bin/node ./bin/RunnerService.js
+agentos+ agentos+ 2790404 2790392  1-06:21:12 /home/agentos-node/runner/bin/Runner.Listener run --startuptype service
+agentos+ agentos+ 3335386       1    06:37:39 /usr/bin/python3 /home/agentos-node/projects/layoutlib/web_demo/server.py --host 127.0.0.1 --port 8766
+agentos+ agentos+ 3335408       1    06:37:39 /home/agentos-node/.local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8766
+agentos+ agentos+ 3600914 2790404       00:03 /home/agentos-node/runner/bin/Runner.Worker spawnclient 156 159
+agentos+ agentos+ 3601122 3600914       00:00 /usr/bin/bash --noprofile --norc -e -o pipefail /home/agentos-node/runner/_work/_temp/e207e47e-38fe-45c1-9ca6-bf4e4beecd0f.sh
+opc      opc         1881    1732 95-13:35:31 node /usr/local/bin/n8n
+opc      opc       233341    1881 55-14:28:33 node --disallow-code-generation-from-strings --disable-proto=delete /usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+task-runner@file+packages+@n8n+task-runner_@opentelemetry+api@1.9.0_@opentelemetry_c2ea36637674b99f45b42fa0a37672ba/node_modules/@n8n/task-runner/dist/start.js
+root     root         836       1 95-13:35:45 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+root     root         987       1 95-13:35:44 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+ubuntu   ubuntu    176130 3815324  5-06:42:02 python3 /home/ubuntu/acas/run_demo.py
+ubuntu   ubuntu    183021  183009  5-06:30:56 sh -c next start -p 3010
+ubuntu   ubuntu    183022  183021  5-06:30:56 next-server (v16.2.9)
+ubuntu   ubuntu    384625    1027 75-13:02:04 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/core_services/session_syncer.py
+ubuntu   ubuntu    472462    1027 48-07:03:11 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+ubuntu   ubuntu    472463  472462 48-07:03:11 /bin/sh -c python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+ubuntu   ubuntu    472465  472463 48-07:03:11 python3 scripts/pulse.py --agent Architect --task Heartbeat Monitor --status active
+ubuntu   ubuntu    560797       1 91-11:34:37 python3 scripts/server.py
+ubuntu   ubuntu    561151    1027 55-06:30:00 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/tg_bridge.py
+ubuntu   ubuntu   1340700    1027 77-07:17:41 /usr/bin/node /home/ubuntu/openclaw/dist/index.js gateway --port 18789
+ubuntu   ubuntu   1442630       1 54-10:00:28 /usr/bin/python3 /home/ubuntu/.local/bin/litellm --config ./config.yml --port 4000 --max_tokens 256
+ubuntu   ubuntu   2527463    1027 74-14:06:32 /home/ubuntu/agentmanager/.venv/bin/python /home/ubuntu/agentmanager/scripts/os_watchdog.py
+ubuntu   ubuntu   2541312 2541305  1-14:31:20 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/server-main.js --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms
+ubuntu   ubuntu   2541357 2541312  1-14:31:19 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
+ubuntu   ubuntu   2541364 2541312  1-14:31:19 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
+ubuntu   ubuntu   2541389 2541357  1-14:31:17 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-6b7891f61e1c53de75eb.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   ubuntu   2541390 2541357  1-14:31:17 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-3a5130c03dca555b2485.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   ubuntu   2541403 2541390  1-14:31:17 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
+ubuntu   ubuntu   2541473 2541312  1-14:31:15 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=ptyHost --logsPath /home/ubuntu/.antigravity-ide-server/data/logs/20260824T082547
+ubuntu   ubuntu   2541682 2541357  1-14:31:07 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=2541357
+ubuntu   ubuntu   2541688 2541357  1-14:31:07 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=2541357
+ubuntu   ubuntu   2542123 2541357  1-14:29:58 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=2541357
+ubuntu   ubuntu   2657527    1027  1-07:09:29 /usr/bin/python3 scripts/distributed_gateway.py
+ubuntu   ubuntu   2657535    1027  1-07:09:29 /usr/bin/python3 scripts/provider_bridge.py
+ubuntu   ubuntu   2770227 2770188  7-06:37:19 sh -c next start
+ubuntu   ubuntu   2770228 2770227  7-06:37:19 next-server (v16.1.6)
+ubuntu   ubuntu   2770238 2770195  7-06:37:19 sh -c next start -p 3005
+ubuntu   ubuntu   2770239 2770238  7-06:37:19 next-server (v16.1.5)
+ubuntu   ubuntu   2770247 3815324  7-06:37:19 node /home/ubuntu/hanzi-gene-database/server.js
+ubuntu   ubuntu   2986846       1 32-11:08:21 /usr/bin/node /home/ubuntu/ip-genome-studio/server.mjs
+ubuntu   ubuntu   3036605 2541312    14:43:14 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
+ubuntu   ubuntu   3036616 2541312    14:43:14 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
+ubuntu   ubuntu   3036677 3036605    14:43:12 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/markdown-language-features/dist/serverWorkerMain --node-ipc --clientProcessId=3036605
+ubuntu   ubuntu   3037870 3036605    14:42:57 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=3036605
+ubuntu   ubuntu   3037915 3036605    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/8e390915e77f29df6b96/tscancellation-65afaac2814184ea852e.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   ubuntu   3037916 3036605    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/8e390915e77f29df6b96/tscancellation-6229d123100d6b96bf3e.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   ubuntu   3037929 3037916    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
+ubuntu   ubuntu   3037936 3036605    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=3036605
+ubuntu   ubuntu   3037942 3036605    14:42:51 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=3036605
+ubuntu   ubuntu   3451574 3815324  6-10:31:08 node /home/ubuntu/metashield-protocol/api/server.js
+ubuntu   ubuntu   3571553    1027       34:21 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+ubuntu   ubuntu   3573857       1       30:48 /usr/bin/python3 fortune_server.py
+=== USER SYSTEMD UNITS ===
+--- UNIT /home/ubuntu/.config/systemd/user/agent-maintenance.service
+Description=AgentOS Periodic Maintenance and Watchdog
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/maintenance.py
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-action-relay.service
+Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
+WorkingDirectory=/home/ubuntu/.local/share/agentos/action-runtime
+Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime
+UMask=0007
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay'
+Restart=on-failure
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service
+Description=AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
+WorkingDirectory=/home/ubuntu/.local/share/agentos/runtime-vnext
+Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext
+UMask=0007
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay'
+Restart=on-failure
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-control-plane.service
+Description=Distributed AgentOS Control Plane and Runtime Dispatcher
+WorkingDirectory=/home/ubuntu/agentos-distributed
+Environment=AGENT_PROJECT_ROOT=/home/ubuntu/agentos-distributed
+Environment=PYTHONPATH=/home/ubuntu/agentos-distributed
+EnvironmentFile=-/home/ubuntu/agentmanager/.env
+EnvironmentFile=-/home/ubuntu/.config/agentos/distributed.env
+EnvironmentFile=-/home/ubuntu/.agentos.secrets
+ExecStart=/usr/bin/python3 scripts/distributed_gateway.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-provider-bridge.service
+Description=Distributed AgentOS Provider Bridge
+WorkingDirectory=/home/ubuntu/agentos-distributed
+Environment=AGENT_PROJECT_ROOT=/home/ubuntu/agentos-distributed
+Environment=PYTHONPATH=/home/ubuntu/agentos-distributed
+EnvironmentFile=-/home/ubuntu/agentmanager/.env
+EnvironmentFile=-/home/ubuntu/.config/agentos/distributed.env
+EnvironmentFile=-/home/ubuntu/.agentos.secrets
+ExecStart=/usr/bin/python3 scripts/provider_bridge.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/cat-ink-syncer.service
+Description=AgentOS Cat-Ink Session Syncer
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/core_services/session_syncer.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/leopardcat-tarot.service
+Description=LeopardCat Tarot Fortune Server Backend
+WorkingDirectory=/home/ubuntu/leopardcat-tarot/website
+ExecStart=/usr/bin/python3 fortune_server.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/lobster-engine.service
+Description=🦞 AgentOS Lobster Engine - Autonomous Task Loop
+WorkingDirectory=/home/ubuntu/agentmanager
+ExecStart=/usr/bin/python3 /home/ubuntu/agentmanager/scripts/lobster.py --loop --cool-down 60
+Restart=on-failure
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+--- UNIT /home/ubuntu/.config/systemd/user/openclaw-gateway.service
+Description=OpenClaw Gateway (v2026.5.20)
+ExecStart="/usr/bin/node" "/home/ubuntu/openclaw/dist/index.js" gateway --port 18789
+Restart=always
+Environment=HOME=/home/ubuntu
+Environment="PATH=/home/ubuntu/.local/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/bin:/home/ubuntu/.nvm/current/bin:/home/ubuntu/.fnm/current/bin:/home/ubuntu/.volta/bin:/home/ubuntu/.asdf/shims:/home/ubuntu/.local/share/pnpm:/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+Environment=OPENCLAW_GATEWAY_PORT=18789
+Environment=OPENCLAW_GATEWAY_TOKEN=6c3b7e4f49a7df48f04bdc42357ffe365ef64b3f4e0cc9e9
+Environment="OPENCLAW_SYSTEMD_UNIT=openclaw-gateway.service"
+Environment=OPENCLAW_SERVICE_MARKER=openclaw
+Environment=OPENCLAW_SERVICE_KIND=gateway
+Environment=OPENCLAW_SERVICE_VERSION=2026.5.20
+--- UNIT /home/ubuntu/.config/systemd/user/os-chronos.service
+Description=AgentOS Central Chronos Scheduler
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/os-lobster.service
+Description=AgentOS Lobster Autonomous Task Loop
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/lobster.py --loop
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/os-pulse.service
+Description=AgentOS Heartbeat Pulse Monitor
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/pulse.py --agent Architect --task "Heartbeat Monitor" --status active --watch
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/os-watchdog.service
+Description=AgentOS Watchdog Event-Driven Daemon
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python /home/ubuntu/agentmanager/scripts/os_watchdog.py
+WorkingDirectory=/home/ubuntu/agentmanager
+Restart=always
+Environment="PATH=/home/ubuntu/agentmanager/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+--- UNIT /home/ubuntu/.config/systemd/user/teams-commander.service
+Description=AgentOS Teams Command Bridge
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/teams_bridge.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/tg-commander.service
+Description=AgentOS Telegram Command Bridge
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/tg_bridge.py
+Restart=always
+=== AGENTOS WORKFLOW / DEPLOYMENT COUPLING ===
+=== PUBLIC BASELINE ===
+path=/ status=200 bytes=11733 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\>\ \<head\>\<meta\ charset=\"UTF-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\"\>\<link\ rel=\"icon\"\ type=\"image/svg+xml\"\ href=\"/favicon.svg\"\>\<link\ re
+path=/dashboard status=200 bytes=6979 marker=\<\!DOCTYPE\ html\>\<\!--_17kq_xvmdeUiFucYz_P1--\>\<html\ lang=\"en\"\>\<head\>\<meta\ charSet=\"utf-8\"/\>\<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1\"/\>\<link\ rel=\"stylesheet\"\ 
+path=/layout-lab/ status=200 bytes=11733 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\>\ \<head\>\<meta\ charset=\"UTF-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\"\>\<link\ rel=\"icon\"\ type=\"image/svg+xml\"\ href=\"/favicon.svg\"\>\<link\ re
+path=/prophecy/ status=200 bytes=13414 marker=\<\!DOCTYPE\ html\>\ \<html\ lang=\"zh-TW\"\>\ \<head\>\ \<meta\ charset=\"UTF-8\"\>\ \<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1.0\"\>\ \<title\>全球預言驗證中心\ \|\ Prophecy\ 
+path=/novels/ status=200 bytes=11733 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\>\ \<head\>\<meta\ charset=\"UTF-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\"\>\<link\ rel=\"icon\"\ type=\"image/svg+xml\"\ href=\"/favicon.svg\"\>\<link\ re
+path=/ipgenome status=200 bytes=26639 marker=\<\!doctype\ html\>\ \<html\ lang=\"zh-Hant\"\>\ \<head\>\ \<meta\ charset=\"utf-8\"\ /\>\ \<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1\"\ /\>\ \<title\>IP\ Genome\ Studio\</title\>\ \<style\>
+path=/iftv status=200 bytes=15664 marker=\<\!DOCTYPE\ html\>\<\!--VxYwfZx4b81Hm9__FwKqF--\>\<html\ lang=\"zh-Hant\"\>\<head\>\<meta\ charSet=\"utf-8\"/\>\<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1\"/\>\<link\ rel=\"preload
+path=/echo status=200 bytes=17147 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\ class=\"geist_a71539c9-module__T19VSG__variable\ geist_mono_8d43a2aa-module__8Li5zG__variable\ h-full\ antialiased\"\>\<head\>\<meta\ charSet=\"utf-8\"/\>\<meta
+path=/hanzi status=200 bytes=11694 marker=\<\!DOCTYPE\ html\>\ \<html\ lang=\"zh-TW\"\>\ \<head\>\ \<meta\ charset=\"UTF-8\"\ /\>\ \<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1.0\"\ /\>\ \<title\>漢字基因庫\ \|\ Hanzi\ Gene\ Dat
+path=/acas/ status=200 bytes=15254 marker=\<\!DOCTYPE\ html\>\ \<html\ lang=\"zh-TW\"\>\ \<head\>\ \<meta\ charset=\"UTF-8\"\>\ \<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1.0\"\>\ \<title\>ACAS\ -\ Universal\ Communication\ IR\ Le
+=== LOCAL BACKEND BASELINE ===
+port=3000 root_http=404
+port=3002 root_http=200
+port=3005 root_http=404
+port=3010 root_http=404
+port=3011 root_http=404
+port=3020 root_http=200
+port=8088 root_http=200
+port=8090 root_http=200
+=== AUDIT SAFETY ===
+mutation=NONE
+nginx_reload=NO
+service_restart=NO
+repository_write=NO
+studio_host_audit=PASS
