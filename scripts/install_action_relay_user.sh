@@ -39,9 +39,12 @@ print('action_runtime_import=ok')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
 
+# The ubuntu user manager can predate the agentos supplementary-group grant.
+# Starting the worker through `sg agentos` makes the shared-boundary group
+# explicit on every service start instead of depending on stale session groups.
 cat > "$UNIT" <<EOF
 [Unit]
-Description=AgentOS Governed Action Relay (ubuntu identity)
+Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
 After=default.target
 
 [Service]
@@ -49,7 +52,7 @@ Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
 UMask=0007
-ExecStart=/usr/bin/python3 -m agentos_node.action_relay --root $RELAY_ROOT
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root $RELAY_ROOT'
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
@@ -66,6 +69,7 @@ sleep 1
 systemctl --user --no-pager --full status agentos-action-relay.service
 
 echo "action_relay_install=PASS"
+echo "action_relay_group_context=agentos"
 echo "runtime=$RUNTIME_ROOT"
 echo "spool=$RELAY_ROOT"
 echo "unit=$UNIT"
