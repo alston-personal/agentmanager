@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-bootstrap-studio-web-remote-via-agentos.yml'
+      - 'scripts/bootstrap_studio_web_remote_via_agentos.py'
 
 permissions:
   contents: write
@@ -15,60 +16,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Ask ubuntu AgentOS executor to create remote when authorized
+      - name: Ask ubuntu AgentOS executor to establish remote repository boundary
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/studio-web-remote-agentos.txt
-          RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
-          RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
-          CAPSULE_ID=$(PYTHONPATH="$RUNTIME" python3 - <<'PY'
-          from agentos_node.antigravity_relay import AntigravityRelayClient
-          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          instruction='''Use the ubuntu execution identity on this Oracle host to bootstrap the independent GitHub remote for Studio Web.
-
-Goal: create private repository alston-personal/studio-web if, and only if, the existing ubuntu GitHub credential is already authenticated and authorized to do so.
-
-Rules:
-1. First run a non-secret authentication check such as `gh auth status`. Never print or expose tokens, credentials, environment secrets, or config file contents containing secrets.
-2. Check whether alston-personal/studio-web already exists. If it exists, do not recreate or alter settings; report it as existing.
-3. If it does not exist and the current ubuntu GitHub identity is authorized, create it as a PRIVATE repository with a concise description indicating it owns the studio.milkcat.org platform web shell and website-owned integrations.
-4. Do NOT modify nginx, DNS, TLS, any running service, any production website file, Zeus Writer, LayoutLib, or any other product repository.
-5. Do NOT push source yet. This step establishes only the remote repository boundary.
-6. Verify the repository can be viewed after creation and report: authenticated GitHub login if safe to show, whether repo existed or was created, visibility, exact repo name, and any authorization failure.
-7. If no authenticated/authorized ubuntu GitHub credential exists, make no changes and return a clear NO_GO reason.
-
-This is a governed repository-boundary operation, not a production deployment.'''
-          p=c.submit(
-            project_id='studio-web-migration',
-            canonical_ir={
-              'goal':'Establish an independent private GitHub repository boundary for Studio Web without production changes.',
-              'acceptance':['alston-personal/studio-web exists','repository visibility is private','no production mutation'],
-              'constraints':['never expose credentials','no nginx/DNS/TLS/service/product-repo changes','do not push source in this step']
-            },
-            instruction=instruction,
-            workspace='/home/ubuntu/agentmanager')
-          print(p['capsule_id'])
-          PY
-          )
-          RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
-          for i in $(seq 1 420); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo "receipt timeout: $CAPSULE_ID"; exit 3; }
-          {
-            echo "capsule_id=$CAPSULE_ID"
-            cat "$RECEIPT"
-          } | tee "$OUT"
-          python3 - "$RECEIPT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]))
-          print('agentos_receipt_ok='+str(bool(r.get('ok'))).lower())
-          text=((r.get('stdout') or '')+'\n'+(r.get('stderr') or '')).lower()
-          if r.get('ok') is True and 'alston-personal/studio-web' in text:
-              print('studio_web_remote_agentos=PASS')
-          else:
-              print('studio_web_remote_agentos=NO_GO')
-          PY
+          PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext \
+            python3 scripts/bootstrap_studio_web_remote_via_agentos.py
       - name: Commit AgentOS bootstrap evidence
         if: always()
         shell: bash
