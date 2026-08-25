@@ -19,11 +19,31 @@ if [ ! -d "$REPO/.git" ]; then
   exit 2
 fi
 
+# The relay protocol depends on both OS identities being members of the same
+# dedicated group. Directory ownership alone is insufficient because capsules
+# and receipts are created by different users.
+if ! id -Gn ubuntu | tr ' ' '\n' | grep -qx agentos; then
+  echo "ERROR: ubuntu is not a member of the required shared group: agentos" >&2
+  echo "Run: sudo usermod -aG agentos ubuntu" >&2
+  echo "Then start a fresh login/session (or reboot) before rerunning this installer." >&2
+  exit 3
+fi
+if ! id -Gn agentos-node | tr ' ' '\n' | grep -qx agentos; then
+  echo "ERROR: agentos-node is not a member of the required shared group: agentos" >&2
+  echo "Run: sudo usermod -aG agentos agentos-node" >&2
+  echo "Then restart the runner service/session before rerunning this installer." >&2
+  exit 3
+fi
+
 mkdir -p "$(dirname "$RUNTIME_ROOT")" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$UNIT_DIR"
-# Relay is deliberately shared by ubuntu and agentos-node through group agentos.
-# Normalize the existing spool now; setgid preserves the group on future files.
 chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
 chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts"
+
+# Normalize existing spool artifacts where ubuntu owns them. Old producer-owned
+# files are left alone; the next producer/worker revision will enforce group
+# assignment explicitly for all new artifacts.
+find "$RELAY_ROOT/receipts" -maxdepth 1 -type f -user ubuntu -name 'relay-*.json*' -exec chgrp agentos {} + 2>/dev/null || true
+find "$RELAY_ROOT/receipts" -maxdepth 1 -type f -user ubuntu -name 'relay-*.json*' -exec chmod 660 {} + 2>/dev/null || true
 
 # The human workspace may intentionally remain on main and may be dirty. Never
 # switch/reset it just to run the relay. Keep a dedicated detached worktree that
@@ -78,6 +98,8 @@ sleep 1
 systemctl --user --no-pager --full status agentos-antigravity-relay.service || true
 
 echo
+echo "ubuntu_groups=$(id -Gn ubuntu)"
+echo "agentos_node_groups=$(id -Gn agentos-node)"
 echo "runtime_root=$RUNTIME_ROOT"
 echo "runtime_branch=$BRANCH"
 echo "relay_root=$RELAY_ROOT"
