@@ -58,10 +58,13 @@ Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
 UMask=0007
+# `sg` is the deliberate supplementary-group bootstrap boundary for this old
+# ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
+# it prevents the setgid helper from establishing the already-authorized
+# `agentos` group context.
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root $RELAY_ROOT'
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
 PrivateTmp=true
 
 [Install]
@@ -72,17 +75,21 @@ systemctl --user daemon-reload
 systemctl --user enable --now agentos-action-relay.service
 systemctl --user restart agentos-action-relay.service
 
-active=0
-for i in $(seq 1 12); do
+# Require stable liveness, not a transient `active` sample immediately before
+# an auto-restart failure. The worker must remain active for three observations.
+stable=0
+for i in $(seq 1 20); do
   if systemctl --user is-active --quiet agentos-action-relay.service; then
-    active=1
-    break
+    stable=$((stable + 1))
+    if [ "$stable" -ge 3 ]; then break; fi
+  else
+    stable=0
   fi
   sleep 1
 done
 
 systemctl --user --no-pager --full status agentos-action-relay.service || true
-if [ "$active" != 1 ]; then
+if [ "$stable" -lt 3 ]; then
   echo '=== ACTION RELAY STARTUP JOURNAL ===' >&2
   journalctl --user -u agentos-action-relay.service -n 80 --no-pager >&2 || true
   echo 'action_relay_install=FAIL' >&2
@@ -91,6 +98,7 @@ fi
 
 echo "action_relay_install=PASS"
 echo "action_relay_group_context=agentos"
+echo "action_relay_stable_liveness=PASS"
 echo "runtime=$RUNTIME_ROOT"
 echo "spool=$RELAY_ROOT"
 echo "unit=$UNIT"
