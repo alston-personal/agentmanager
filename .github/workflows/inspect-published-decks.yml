@@ -1,0 +1,46 @@
+name: Inspect Published Decks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths: [.github/workflows/inspect-published-decks.yml]
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.DEPLOY_HOST_SOURCE }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: H="${DEPLOY_HOST_SOURCE#*://}"; H="${H%%/*}"; H="${H%%:*}"; echo "DEPLOY_HOST=$H" >> "$GITHUB_ENV"
+      - name: SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: List published decks
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "python3 - <<'PY'
+          import json, pathlib, datetime
+          root=pathlib.Path('/home/ubuntu/leopardcat-tarot/website/data/custom_decks')
+          rows=[]
+          for p in sorted(root.glob('*/deck.json')):
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+                  ts=p.stat().st_mtime
+                  rows.append({
+                    'deck_id': d.get('deck_id') or p.parent.name,
+                    'name': d.get('name',''),
+                    'creator': d.get('creator',''),
+                    'card_count': d.get('card_count',0),
+                    'published_at': datetime.datetime.fromtimestamp(ts, datetime.timezone(datetime.timedelta(hours=8))).isoformat(timespec='seconds'),
+                    'url': 'https://leopardcat-tarot.milkcat.org/?deck=' + (d.get('deck_id') or p.parent.name)
+                  })
+              except Exception as e:
+                  rows.append({'deck_id':p.parent.name,'error':str(e)})
+          print(json.dumps(rows, ensure_ascii=False, indent=2))
+          PY"
