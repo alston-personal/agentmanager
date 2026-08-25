@@ -16,7 +16,10 @@ rm -f "$RECEIPT" "$RECEIPT.tmp"
 
 restore_target() {
   if [ -f "$BACKUP" ]; then
-    cp -p "$BACKUP" "$TARGET" || true
+    # Preserve the ubuntu-owned target inode/owner/mode. The runner has content
+    # write permission but is intentionally not allowed to chown or preserve
+    # ubuntu timestamps.
+    cat "$BACKUP" > "$TARGET" || true
   fi
 }
 trap restore_target EXIT
@@ -39,7 +42,48 @@ if age > 180:
     raise SystemExit('Chronos log is stale; refusing to patch a dormant execution surface')
 PY
 
-  cp -p "$TARGET" "$BACKUP"
+  echo '=== RECOVER CANCELLED BRIDGE IF PRESENT ==='
+  python3 - "$TARGET" "$BRIDGE" <<'PY'
+from pathlib import Path
+import sys
+
+target=Path(sys.argv[1]); bridge=Path(sys.argv[2])
+markers=(
+    '# AGENTOS_ONE_TIME_CHRONOS_SAFE_BOOTSTRAP\n',
+    '# AGENTOS_ONE_TIME_CHRONOS_BOOTSTRAP\n',
+)
+current=target.read_text(encoding='utf-8')
+if not any(m in current for m in markers):
+    print('stale_bridge_present=NO')
+    raise SystemExit(0)
+
+# A cancelled run can leave its temporary patch installed because the old
+# cleanup attempted metadata-preserving cp. Find the newest retained backup
+# that is demonstrably marker-free and restore content only.
+candidates=sorted(bridge.glob('*.update_scheduler_board.py'), key=lambda p:p.stat().st_mtime, reverse=True)
+clean=None
+for p in candidates:
+    try:
+        text=p.read_text(encoding='utf-8')
+    except Exception:
+        continue
+    if not any(m in text for m in markers):
+        clean=(p,text)
+        break
+if clean is None:
+    raise SystemExit('stale bridge detected but no marker-free backup is available; refusing destructive repair')
+source,text=clean
+target.write_text(text, encoding='utf-8')
+verify=target.read_text(encoding='utf-8')
+if any(m in verify for m in markers):
+    raise SystemExit('stale bridge recovery verification failed')
+print(f'stale_bridge_present=YES')
+print(f'stale_bridge_recovered_from={source.name}')
+print('stale_bridge_recovery=PASS')
+PY
+
+  # Content backup only. Do not request preservation of ubuntu metadata.
+  cat "$TARGET" > "$BACKUP"
 
   python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" <<'PY'
 from pathlib import Path
