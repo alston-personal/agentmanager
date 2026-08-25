@@ -1,4 +1,17 @@
-timestamp_utc=2026-08-25T14:14:14Z
+timestamp_utc=2026-08-25T14:15:26Z
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-processing_before=14
-boundary_recovery=ERROR PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-65847f2d240b4506a25a0a6371e10240.json.tmp'
+processing_before=0
+quarantine=/home/ubuntu/agent-data/runtime/antigravity-relay/quarantine/boundary-recovery-20260825T141526Z-2b9cd494
+quarantined_items=4
+quarantine_roots=/home/ubuntu/agent-data/runtime/antigravity-relay/quarantine/boundary-recovery-20260825T141414Z-3281d54a,/home/ubuntu/agent-data/runtime/antigravity-relay/quarantine/boundary-recovery-20260825T141526Z-2b9cd494
+bootstrap_capsule=relay-98895fc7c3844f199f3fc13922d783dc
+bootstrap_mode=666_inside_private_2770_spool
+antigravity_unit_sg_agentos=FAIL
+antigravity_worker_agentos_group=FAIL
+worker_detail=ubuntu   ubuntu   3566709    1027       06:54 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+bootstrap_receipt=MISSING
+action_relay_unit_sg_agentos=FAIL
+action_relay_processes=
+processing_after=1
+quarantine_preserved=PASS
+boundary_recovery=FAIL
