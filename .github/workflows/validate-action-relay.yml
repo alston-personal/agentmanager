@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'agentos_node/action_relay.py'
+      - 'agentos_node/antigravity_relay.py'
       - 'tests/test_action_relay.py'
       - 'scripts/install_action_relay_user.sh'
       - '.github/workflows/validate-action-relay.yml'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'agentos_node/action_relay.py'
+      - 'agentos_node/antigravity_relay.py'
       - 'tests/test_action_relay.py'
       - 'scripts/install_action_relay_user.sh'
       - '.github/workflows/validate-action-relay.yml'
@@ -31,6 +33,10 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH="$PWD" python3 -m unittest tests.test_action_relay -v
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          print('antigravity_relay_client_import=PASS')
+          PY
 
       - name: Bootstrap ubuntu action worker through existing executor relay
         shell: bash
@@ -38,24 +44,26 @@ jobs:
           set -euo pipefail
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/action-relay-validation.txt
-          RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
           ANTIGRAVITY_ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
           ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
-            test -f "$RUNTIME/agentos_node/antigravity_relay.py"
             echo '=== BOOTSTRAP CAPSULE ==='
-            CAPSULE_ID=$(cd /tmp && PYTHONPATH="$RUNTIME" python3 - <<'PY'
+            CAPSULE_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
           from agentos_node.antigravity_relay import AntigravityRelayClient
           c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          p=c.submit(project_id='agentmanager', canonical_ir={'goal':'Install the governed AgentOS Action Relay exactly from the trusted repository installer.','constraints':['Execute only the named installer.','Do not edit source files.','Do not use sudo.']}, instruction='Execute exactly: bash /home/ubuntu/agentmanager/scripts/install_action_relay_user.sh . Return its stdout/stderr and exit status. Do not perform any other changes.', workspace='/home/ubuntu/agentmanager')
+          p=c.submit(
+              project_id='agentmanager',
+              canonical_ir={'goal':'Install or repair the governed AgentOS Action Relay from canonical main.','constraints':['Execute only the trusted installer.','Do not edit source files.','Do not use sudo.']},
+              instruction='Execute exactly: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/install_action_relay_user.sh . Return stdout/stderr and exit status. Do not perform any other changes.',
+              workspace='/home/ubuntu/agentmanager')
           print(p['capsule_id'])
           PY
           )
             echo "bootstrap_capsule=$CAPSULE_ID"
             RECEIPT="$ANTIGRAVITY_ROOT/receipts/$CAPSULE_ID.json"
-            for i in $(seq 1 180); do [ -f "$RECEIPT" ] && break; sleep 1; done
+            for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
             test -f "$RECEIPT" || { echo 'bootstrap_receipt=TIMEOUT'; exit 3; }
             cat "$RECEIPT"
             python3 - "$RECEIPT" <<'PY'
@@ -63,7 +71,7 @@ jobs:
           r=json.load(open(sys.argv[1]))
           assert r.get('ok') is True, r
           text=(r.get('stdout','')+'\n'+r.get('stderr',''))
-          assert 'action_relay_install=PASS' in text, text[-4000:]
+          assert 'action_relay_install=PASS' in text, text[-6000:]
           print('bootstrap=PASS')
           PY
 
@@ -76,7 +84,7 @@ jobs:
           )
             echo "action_capsule=$ACTION_ID"
             ACTION_RECEIPT="$ACTION_ROOT/receipts/$ACTION_ID.json"
-            for i in $(seq 1 180); do [ -f "$ACTION_RECEIPT" ] && break; sleep 1; done
+            for i in $(seq 1 240); do [ -f "$ACTION_RECEIPT" ] && break; sleep 1; done
             test -f "$ACTION_RECEIPT" || { echo 'action_receipt=TIMEOUT'; exit 4; }
             cat "$ACTION_RECEIPT"
             python3 - "$ACTION_RECEIPT" <<'PY'
