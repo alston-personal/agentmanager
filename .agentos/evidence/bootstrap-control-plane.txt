@@ -1,0 +1,12 @@
+timestamp_utc=2026-08-25T14:58:44Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+request_id=transport-repair-32862880330-20260825T145844Z
+=== COMPILE CANONICAL HOOK ===
+canonical_py_compile=PASS
+=== INSTALL CANONICAL HOOK INTO LIVE CHECKOUT ===
+chmod: changing permissions of '/home/ubuntu/agentmanager/scripts/update_scheduler_board.py': Operation not permitted
+live_bootstrap_hook=PASS
+=== CREATE GOVERNED REQUEST ===
+{"schema": "agentos.bootstrap-request/v1", "request_id": "transport-repair-32862880330-20260825T145844Z", "action": "agentos.transport.repair", "created_at": "2026-08-25T14:58:44Z", "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": false}}
+request_stat=agentos-node:agentos 660 /home/ubuntu/agent-data/runtime/bootstrap-control/requests/transport-repair-32862880330-20260825T145844Z.request.json
+=== WAIT FOR UBUNTU CHRONOS RECEIPT ===
