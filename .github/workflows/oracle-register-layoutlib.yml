@@ -7,7 +7,7 @@ on:
       - '.github/workflows/oracle-register-layoutlib.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   register:
@@ -17,6 +17,9 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate SSH configuration
         shell: bash
         run: |
@@ -37,11 +40,13 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Create and register layoutlib
+      - name: Create, register, and verify layoutlib
         shell: bash
         run: |
           set -euo pipefail
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlib-registration.txt
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE' | tee "$OUT"
           set -euo pipefail
           PROJECT=layoutlib
           DISPLAY='LayoutLib'
@@ -89,8 +94,26 @@ jobs:
           test -L "$ROOT/workspace/$PROJECT"
           grep -q 'LayoutLib' "$DATA/DASHBOARD.md"
           grep -q 'repository_state: local-only' "$YAML"
-          echo "layoutlib registration verified"
+          echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "hostname=$(hostname)"
+          echo "layoutlib_registration=verified"
           echo "code_path=/home/ubuntu/layoutlib"
           echo "status_path=$DATA/projects/$PROJECT/STATUS.md"
           echo "metadata_path=$YAML"
+          echo '--- project.yaml ---'
+          sed -n '1,120p' "$YAML"
           REMOTE
+
+      - name: Commit verification evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .agentos/evidence/layoutlib-registration.txt
+          if git diff --cached --quiet; then
+            echo "No evidence change to commit"
+            exit 0
+          fi
+          git commit -m "evidence: verify layoutlib Oracle registration"
+          git push
