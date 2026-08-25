@@ -1,0 +1,70 @@
+name: Validate Modular Divination On Oracle
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/validate-modular-divination-oracle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+
+    steps:
+      - name: Resolve Oracle target
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Validate branch in isolated worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          REPO=/home/ubuntu/agentmanager/workspace/leopardcat-tarot
+          WORK=/tmp/leopardcat-divination-validation
+          test -d "$REPO/.git"
+          git -C "$REPO" fetch origin feature/modular-divination-master --quiet
+          rm -rf "$WORK"
+          git -C "$REPO" worktree add --detach "$WORK" origin/feature/modular-divination-master >/dev/null
+          trap 'git -C "$REPO" worktree remove --force "$WORK" >/dev/null 2>&1 || true' EXIT
+          cd "$WORK"
+          python3 -m unittest -v tests/test_divination_engine.py
+          cd website
+          python3 - <<'PY'
+          from divination import ReadingRequest, build_default_engine
+          from pathlib import Path
+          engine = build_default_engine(Path('.'))
+          env = engine.prepare(ReadingRequest(method='tarot', persona='leopardcat', question='我該不該換工作？', input={'spread':'auto','reversal_rate':1.0}, seed='oracle-proof'))
+          result = env.to_dict()
+          cards = result['method_result']['cards']
+          assert result['method_result']['spread'] == 'decision'
+          assert len(cards) == 3
+          assert len({c['card_id'] for c in cards}) == 3
+          assert all(c['orientation'] == 'reversed' for c in cards)
+          assert 'Hill Spirit Master' in result['master_prompt']
+          print('oracle_validation=passed')
+          print('spread=' + result['method_result']['spread'])
+          print('orientations=' + ','.join(c['orientation'] for c in cards))
+          print('cards=' + ','.join(c['card_id'] for c in cards))
+          PY
+          REMOTE
