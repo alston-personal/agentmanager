@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import grp
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ import uuid
 
 RELAY_SCHEMA = "agentos.antigravity-relay/v1"
 RECEIPT_SCHEMA = "agentos.antigravity-receipt/v1"
+SHARED_GROUP = "agentos"
 SHARED_DIR_MODE = 0o2770
 SHARED_FILE_MODE = 0o660
 
@@ -30,6 +32,30 @@ def _utc_now() -> str:
 
 def _canonical_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _shared_gid() -> int:
+    try:
+        return grp.getgrnam(SHARED_GROUP).gr_gid
+    except KeyError as exc:
+        raise RuntimeError(f"required relay group does not exist: {SHARED_GROUP}") from exc
+
+
+def share_relay_path(path: Path, *, directory: bool = False) -> None:
+    """Make one relay artifact readable/writable by both relay identities.
+
+    Both ubuntu and agentos-node are expected to be members of the dedicated
+    ``agentos`` group. Failing explicitly is safer than silently producing a
+    capsule/receipt that the peer cannot consume.
+    """
+    try:
+        os.chown(path, -1, _shared_gid())
+    except PermissionError as exc:
+        raise PermissionError(
+            f"cannot assign {path} to shared group {SHARED_GROUP}; "
+            f"ensure the current OS user is a member of {SHARED_GROUP}"
+        ) from exc
+    os.chmod(path, SHARED_DIR_MODE if directory else SHARED_FILE_MODE)
 
 
 @dataclass(frozen=True)
@@ -49,15 +75,14 @@ class RelayPaths:
         return self.root / "receipts"
 
     def ensure(self) -> None:
-        # This spool is intentionally cross-user (ubuntu <-> agentos-node), so
-        # directories must remain group-writable and inherit the shared group.
-        # chmod may fail for a non-owner if an installer has not yet normalized
-        # ownership/mode; in that case the caller will fail naturally on write.
         for path in (self.root, self.inbox, self.processing, self.receipts):
             path.mkdir(parents=True, exist_ok=True)
             try:
-                path.chmod(SHARED_DIR_MODE)
+                share_relay_path(path, directory=True)
             except PermissionError:
+                # A non-owner peer may not be allowed to chgrp/chmod a directory
+                # that is already correctly shared. Actual artifact creation below
+                # still enforces the file-level contract and fails if it is broken.
                 pass
 
 
@@ -103,8 +128,9 @@ class AntigravityRelayClient:
         target = self.paths.inbox / f"{capsule_id}.json"
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.chmod(tmp, SHARED_FILE_MODE)
+        share_relay_path(tmp)
         tmp.replace(target)
+        share_relay_path(target)
         return payload
 
     def receipt(self, capsule_id: str) -> dict[str, Any] | None:
