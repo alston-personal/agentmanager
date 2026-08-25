@@ -30,13 +30,13 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=1e50efc0a12c678876cbf04bc3be710f907546eb
+          TARGET=fc1171f102f793532a34a696c56a9871a81b0475
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo old_commit=$OLD
           echo target_commit=$TARGET
           dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' | grep -v '^ M website/dist/' | grep -v '^?? website/data/' || true)
           if [ -n "$dirty" ]; then echo 'unexpected production changes:' >&2; echo "$dirty" >&2; exit 40; fi
-          cp "$WEB/stats.json" /tmp/lc-stats.pre-slug.json
+          cp "$WEB/stats.json" /tmp/lc-stats.pre-wheel.json
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           git -C "$PROD" checkout -- website/dist 2>/dev/null || true
           stop_server() {
@@ -54,7 +54,7 @@ jobs:
             echo deployment_failed_rolling_back >&2
             stop_server
             git -C "$PROD" reset --hard "$OLD"
-            cp /tmp/lc-stats.pre-slug.json "$WEB/stats.json"
+            cp /tmp/lc-stats.pre-wheel.json "$WEB/stats.json"
             cd "$WEB"; npm run build; start_server
             echo rollback_commit=$OLD >&2
           }
@@ -62,16 +62,18 @@ jobs:
           git -c credential.helper= -C "$PROD" fetch https://github.com/alston-personal/leopardcat-tarot.git main
           F=$(git -C "$PROD" rev-parse FETCH_HEAD); [ "$F" = "$TARGET" ] || { echo unexpected_main=$F >&2; exit 41; }
           git -C "$PROD" merge --ff-only FETCH_HEAD
-          cp /tmp/lc-stats.pre-slug.json "$WEB/stats.json"
+          cp /tmp/lc-stats.pre-wheel.json "$WEB/stats.json"
           mkdir -p "$WEB/data/custom_decks" "$WEB/data/custom_themes"
           cd "$WEB"
           npm run build
           python3 -m py_compile fortune_server.py divination/*.py
+          node --check main.js
+          grep -q 'panelCanConsume' main.js
           stop_server; start_server
-          curl -fsS http://127.0.0.1:8088/api/v1/deck-slugs/moon-garden | python3 -c "import sys,json; x=json.load(sys.stdin); assert x['slug']=='moon-garden'; print('slug_check_route=passed')"
-          curl -fsS http://127.0.0.1:8088/api/v1/deck-slugs/test-2cfe3b | python3 -c "import sys,json; x=json.load(sys.stdin); assert x['available'] is False; print('existing_slug_collision=passed')"
-          curl -fsS https://leopardcat-tarot.milkcat.org/create.html | grep -q '你的專屬網址名稱'
-          curl -fsS https://leopardcat-tarot.milkcat.org/api/v1/deck-slugs/test-2cfe3b | python3 -c "import sys,json; assert json.load(sys.stdin)['available'] is False; print('public_slug_check=passed')"
+          JS=$(find dist/assets -name 'index-*.js' | head -1)
+          grep -q 'panelCanConsume' "$JS"
+          curl -fsS https://leopardcat-tarot.milkcat.org/assets/$(basename "$JS") | grep -q 'panelCanConsume'
+          echo production_card_wheel_priority=passed
           echo deployed_commit=$(git -C "$PROD" rev-parse HEAD)
           trap - EXIT
           REMOTE
