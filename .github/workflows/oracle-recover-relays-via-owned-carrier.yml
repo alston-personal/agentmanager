@@ -1,15 +1,10 @@
 name: Oracle Recover AgentOS Relays Via Owned Carrier
 
+# Emergency-only historical recovery path. The canonical Chronos bootstrap plus
+# deterministic Action Relay is now proven, so normal pushes must never invoke
+# this carrier-mutation workflow again.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-recover-relays-via-owned-carrier.yml'
-      - 'agentos_node/antigravity_relay.py'
-      - 'agentos_node/antigravity_relay_worker.py'
-      - 'agentos_node/action_relay.py'
-      - 'scripts/repair_antigravity_relay_user.sh'
-      - 'scripts/install_action_relay_user.sh'
 
 permissions:
   contents: write
@@ -33,6 +28,7 @@ jobs:
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
+            echo 'emergency_manual_invocation=YES'
             CARRIER=$(find "$ROOT/processing" -maxdepth 1 -type f -name '*.json' -user ubuntu -group agentos -perm -g=w | head -1)
             if [ -z "$CARRIER" ]; then
               CARRIER=$(find "$ROOT/receipts" -maxdepth 1 -type f -name '*.json.tmp' -user ubuntu -group agentos -perm -g=w | head -1)
@@ -60,11 +56,6 @@ jobs:
           PY
           )
             echo "recovery_capsule=$CAPSULE_ID"
-
-            # The old worker may fail while publishing its receipt because its
-            # user-manager process predates the agentos group grant. The repair
-            # side effects are authoritative here: once the deterministic Action
-            # Relay exists and is running under `sg agentos`, bootstrap succeeded.
             for i in $(seq 1 240); do
               if [ -s "$ACTION_UNIT" ] && ps -eo args | grep -F 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' | grep -v grep >/dev/null; then
                 break
