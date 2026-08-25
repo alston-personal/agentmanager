@@ -130,6 +130,22 @@ def _site_sync_build(params: dict[str, Any]) -> dict[str, Any]:
     return {"ok": ok, "site": site, "artifact": str(website / "dist" / "layout-lab" / "index.html"), "steps": steps}
 
 
+def _layoutlab_static_deploy(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({}, {"site": "studio.milkcat.org"}): raise ValueError("unexpected parameters")
+    runtime_root = Path(__file__).resolve().parents[1]
+    script = runtime_root / "scripts/deploy_layoutlab_static.py"
+    if not script.is_file(): raise RuntimeError(f"static deploy script missing: {script}")
+    step = _run(["/usr/bin/python3", str(script)], cwd=runtime_root, timeout=30)
+    ok = step["returncode"] == 0
+    return {
+        "ok": ok,
+        "site": "studio.milkcat.org",
+        "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
+        "mode": "browser-only-layoutlib-v0.1-compatible",
+        "step": step,
+    }
+
+
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
     return _restart_user_service("layoutlab-api.service")
@@ -142,6 +158,7 @@ def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
 
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "site.sync_build": _site_sync_build,
+    "layoutlab.static.deploy": _layoutlab_static_deploy,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
 }
