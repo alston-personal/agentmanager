@@ -1,13 +1,10 @@
 name: Oracle Safe Chronos Transport Bootstrap
 
+# Emergency/manual fallback only. The canonical deterministic Chronos bootstrap
+# and Action Relay path is now proven end-to-end, so normal source changes must
+# not launch this legacy bridge injector.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-bootstrap-action-relay-via-chronos-safe.yml'
-      - 'scripts/bootstrap_action_relay_via_chronos_safe_v2.sh'
-      - 'scripts/repair_antigravity_relay_user.sh'
-      - 'scripts/install_action_relay_user.sh'
 
 permissions:
   contents: write
@@ -23,6 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo 'emergency_manual_invocation=YES'
           bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
 
       - name: Commit safe bootstrap evidence
