@@ -46,14 +46,14 @@ jobs:
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             "https://api.github.com/repos/$GH_REPO/actions/workflows/oracle-bootstrap-action-relay-via-chronos.yml/runs?per_page=20")
-          python3 - "$KEEP_CHRONOS_SHA" > /tmp/stale-chronos-runs <<'PY' <<<"$runs"
+          printf '%s' "$runs" | python3 -c '
           import json,sys
           keep=sys.argv[1]
           data=json.load(sys.stdin)
-          for r in data.get('workflow_runs', []):
-              if r.get('status') in {'queued','in_progress','waiting','pending'} and r.get('head_sha') != keep:
-                  print(r['id'])
-          PY
+          for r in data.get("workflow_runs", []):
+              if r.get("status") in {"queued","in_progress","waiting","pending"} and r.get("head_sha") != keep:
+                  print(r["id"])
+          ' "$KEEP_CHRONOS_SHA" > /tmp/stale-chronos-runs
 
           while read -r run_id; do
             [ -n "$run_id" ] || continue
