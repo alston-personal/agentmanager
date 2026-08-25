@@ -1,4 +1,4 @@
-name: Validate AgentOS Action Relay
+name: Validate AgentOS Relay Contracts
 
 on:
   workflow_dispatch:
@@ -6,109 +6,51 @@ on:
     paths:
       - 'agentos_node/action_relay.py'
       - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
       - 'tests/test_action_relay.py'
-      - 'scripts/install_action_relay_user.sh'
+      - 'tests/test_antigravity_relay_worker.py'
       - '.github/workflows/validate-action-relay.yml'
   pull_request:
     branches: [main]
     paths:
       - 'agentos_node/action_relay.py'
       - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
       - 'tests/test_action_relay.py'
-      - 'scripts/install_action_relay_user.sh'
+      - 'tests/test_antigravity_relay_worker.py'
       - '.github/workflows/validate-action-relay.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  validate:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 12
+  validate-contracts:
+    # Contract CI must never mutate Oracle runtime state or consume the single
+    # self-hosted deployment runner. Runtime migration/acceptance is handled by
+    # explicit Oracle recovery workflows.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Unit test action relay contract
+      - name: Unit test deterministic Action Relay
         shell: bash
         run: |
           set -euo pipefail
           PYTHONPATH="$PWD" python3 -m unittest tests.test_action_relay -v
+      - name: Unit test Antigravity no-replay and timeout semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_antigravity_relay_worker -v
+      - name: Import relay contracts
+        shell: bash
+        run: |
+          set -euo pipefail
           PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.action_relay import ACTIONS
           from agentos_node.antigravity_relay import AntigravityRelayClient
-          print('antigravity_relay_client_import=PASS')
+          from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+          assert 'site.sync_build' in ACTIONS
+          assert 'agentos.antigravity.restart' in ACTIONS
+          print('relay_contract_import=PASS')
           PY
-
-      - name: Bootstrap ubuntu action worker through existing executor relay
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/action-relay-validation.txt
-          ANTIGRAVITY_ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
-          ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
-          {
-            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "runner_identity=$(id)"
-            echo '=== BOOTSTRAP CAPSULE ==='
-            CAPSULE_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
-          from agentos_node.antigravity_relay import AntigravityRelayClient
-          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          p=c.submit(
-              project_id='agentmanager',
-              canonical_ir={'goal':'Install or repair the governed AgentOS Action Relay from canonical main.','constraints':['Execute only the trusted installer.','Do not edit source files.','Do not use sudo.']},
-              instruction='Execute exactly: cd /home/ubuntu/agentmanager && git fetch origin main && git merge --ff-only origin/main && bash scripts/install_action_relay_user.sh . Return stdout/stderr and exit status. Do not perform any other changes.',
-              workspace='/home/ubuntu/agentmanager')
-          print(p['capsule_id'])
-          PY
-          )
-            echo "bootstrap_capsule=$CAPSULE_ID"
-            RECEIPT="$ANTIGRAVITY_ROOT/receipts/$CAPSULE_ID.json"
-            for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
-            test -f "$RECEIPT" || { echo 'bootstrap_receipt=TIMEOUT'; exit 3; }
-            cat "$RECEIPT"
-            python3 - "$RECEIPT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('ok') is True, r
-          text=(r.get('stdout','')+'\n'+r.get('stderr',''))
-          assert 'action_relay_install=PASS' in text, text[-6000:]
-          print('bootstrap=PASS')
-          PY
-
-            echo '=== DETERMINISTIC ACTION ==='
-            ACTION_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
-          from agentos_node.action_relay import ActionRelayClient
-          p=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('site.sync_build', {'site':'studio.milkcat.org'})
-          print(p['capsule_id'])
-          PY
-          )
-            echo "action_capsule=$ACTION_ID"
-            ACTION_RECEIPT="$ACTION_ROOT/receipts/$ACTION_ID.json"
-            for i in $(seq 1 240); do [ -f "$ACTION_RECEIPT" ] && break; sleep 1; done
-            test -f "$ACTION_RECEIPT" || { echo 'action_receipt=TIMEOUT'; exit 4; }
-            cat "$ACTION_RECEIPT"
-            python3 - "$ACTION_RECEIPT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('executor_user') == 'ubuntu', r
-          assert r.get('action') == 'site.sync_build', r
-          assert r.get('ok') is True, r
-          print('action_relay_validation=PASS')
-          print('site_sync_build=PASS')
-          PY
-            test -s /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
-            curl -fsS https://studio.milkcat.org/layout-lab/ | grep -q 'Layout Lab'
-            echo 'layout_lab_static_public=PASS'
-          } 2>&1 | tee "$OUT"
-
-      - name: Commit evidence
-        if: ${{ github.event_name != 'pull_request' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/action-relay-validation.txt
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): validate governed Action Relay'
-          git push
