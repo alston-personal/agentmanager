@@ -1,0 +1,41 @@
+name: Apply Modular Divination Web V2
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - ".github/workflows/apply-modular-divination-web-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - name: Patch LeopardCat feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO=/home/ubuntu/agentmanager/workspace/leopardcat-tarot
+          WORK=/tmp/leopardcat-divination-web-v2
+          BRANCH=feature/modular-divination-master
+          git -C "$REPO" fetch origin "$BRANCH" --quiet
+          rm -rf "$WORK"
+          git -C "$REPO" worktree add -B "$BRANCH" "$WORK" "origin/$BRANCH" >/dev/null
+          trap 'git -C "$REPO" worktree remove --force "$WORK" >/dev/null 2>&1 || true' EXIT
+          cd "$WORK"
+          python3 tools/patch_modular_web.py
+          python3 -m unittest -v tests/test_divination_engine.py
+          python3 -m py_compile website/fortune_server.py website/divination/*.py
+          node --check website/main.js
+          git add website/fortune_server.py website/main.js tools/patch_modular_web.py
+          if git diff --cached --quiet; then
+            echo no_changes=true
+          else
+            git -c user.name='AgentOS' -c user.email='agentos@localhost' commit -m 'feat(divination): connect web UI to modular reading API'
+            git push origin "HEAD:$BRANCH" --quiet
+          fi
+          echo oracle_web_patch=passed
