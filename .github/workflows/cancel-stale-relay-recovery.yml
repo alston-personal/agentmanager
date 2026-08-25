@@ -37,10 +37,9 @@ jobs:
           }
 
           # Explicit historical/superseded attempts only. The safe-v2 path is
-          # now superseded by the canonical bootstrap control plane; cancel its
-          # run triggered by the relay installer fix so only one Oracle repair
-          # attempt owns the runner.
-          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864607057; do
+          # now superseded by the canonical bootstrap control plane. Cancel both
+          # its in-progress and queued runs triggered by the relay installer fix.
+          for run_id in 32858420762 32858849735 32858516453 32861439353 32862880330 32863178952 32864566296 32864607057; do
             cancel_run "$run_id"
           done
 
