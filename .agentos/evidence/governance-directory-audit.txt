@@ -1,0 +1,162 @@
+timestamp_utc=2026-08-25T07:03:27Z
+hostname=instance-20260129-0852
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+agentos_node=/home/agentos-node/.local/bin/agentos-node
+=== HARVEST ===
+{
+  "node_contract": "agentos-node/0.1",
+  "version": "0.1",
+  "identity": "instance-20260129-0852",
+  "capabilities": [
+    {
+      "id": "governance.resolve",
+      "mode": "read",
+      "description": "Resolve capability responsibility/provider."
+    },
+    {
+      "id": "governance.get",
+      "mode": "read",
+      "description": "Read one governance entity."
+    },
+    {
+      "id": "governance.list",
+      "mode": "read",
+      "description": "List governance entities."
+    },
+    {
+      "id": "resource.query",
+      "mode": "read",
+      "description": "Read/list registered world resources."
+    },
+    {
+      "id": "resource.register",
+      "mode": "write",
+      "description": "Register declared resource state."
+    },
+    {
+      "id": "resource.verify.site",
+      "mode": "observe",
+      "description": "Targeted site verification."
+    }
+  ],
+  "authorities": {
+    "governance_roles": ".agent/roles/registry.yaml",
+    "governance_directory": "/home/ubuntu/agent-data/governance/directory.json",
+    "resource_registry": "/home/ubuntu/agent-data/resources/registry.json",
+    "port_manager": "manager://port"
+  },
+  "invariant": "Node query/dispatch does not grant execution authority."
+}
+=== PORT OWNER ===
+[
+  {
+    "id": "manager://port",
+    "kind": "manager",
+    "name": "AgentOS Port Manager",
+    "owns": [
+      "capability://network.port.allocate",
+      "capability://network.port.register",
+      "capability://network.port.release"
+    ],
+    "provides": [
+      "capability://network.port.allocate",
+      "capability://network.port.register",
+      "capability://network.port.release"
+    ],
+    "implementation": {
+      "repo": "alston-personal/agentmanager",
+      "path": "scripts/core_services/port_manager.py",
+      "state_path": "/home/ubuntu/agent-data/config/port_registry.json"
+    },
+    "authority": {
+      "exclusive": true,
+      "governance_required": true
+    },
+    "state": "implemented",
+    "owner": "role://sector.paw",
+    "supersedes": null,
+    "last_verified_at": null,
+    "metadata": null
+  }
+]
+=== RESOURCE ===
+{
+  "id": "site://studio.milkcat.org",
+  "kind": "site",
+  "labels": {},
+  "declared": {
+    "domain": "studio.milkcat.org",
+    "framework": "astro",
+    "repository": "alston-personal/zeus-writer",
+    "branch": "master",
+    "repo_path": "/home/ubuntu/zeus-writer",
+    "source_path": "/home/ubuntu/zeus-writer/website",
+    "dist_path": "/home/ubuntu/zeus-writer/website/dist",
+    "web_server": "nginx",
+    "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
+  },
+  "observed": {
+    "observed_at": "2026-08-25T06:19:34.842305+00:00",
+    "hostname": "instance-20260129-0852",
+    "dns": [
+      "161.33.24.170"
+    ],
+    "http": {
+      "status": 200,
+      "server": "nginx/1.18.0 (Ubuntu)",
+      "content_type": "text/html"
+    },
+    "paths": {
+      "source_path": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      },
+      "dist_path": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      },
+      "nginx_config": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      }
+    },
+    "git": {
+      "commit": "d9387336fe83b1dc0f15f4aac6608793b0483933",
+      "branch": "master",
+      "origin": "https://github.com/alston-personal/zeus-writer.git"
+    }
+  },
+  "verification": {
+    "status": "verified",
+    "last_verified_at": "2026-08-25T06:19:35.124188+00:00",
+    "ttl_seconds": 86400,
+    "errors": []
+  },
+  "registered_at": "2026-08-25T06:18:28.925786+00:00",
+  "updated_at": "2026-08-25T06:19:35.124202+00:00"
+}
+=== DIRECTORY AUDIT ===
+# AgentOS Governance Directory Audit
+
+- Generated: `2026-08-25T07:03:28.025485+00:00`
+- Entities: **14**
+- Errors: **0**
+- Warnings: **4**
+
+| Severity | Code | Subject | Detail |
+|---|---|---|---|
+| warning | `declared_service_not_monitored` | `moltbot-gateway.service` | SERVICES.md declares it but watchdog source does not reference it |
+| warning | `monitored_service_not_declared` | `os-lobster.service` | watchdog source references it but SERVICES.md does not declare it |
+| warning | `never_verified` | `manager://port` | no last_verified_at |
+| warning | `never_verified` | `service://agentos.watchdog` | no last_verified_at |
+
+## Operating Rule
+Before implementing a new cross-project/system capability: resolve it in the Governance Directory. If an active owner exists, reuse or extend that owner. Discovery is allowed only when resolution fails; newly discovered reusable capabilities must be registered.
+
+Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20260825_070328.md
+=== ACCEPTANCE ===
+governance_directory=PASS entities=14
+agentos_node_contract=PASS
