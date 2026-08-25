@@ -1,0 +1,154 @@
+name: Oracle Integrate Layout Lab Into Official Site
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
+      - 'scripts/layoutlab_api.py'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare LayoutLib runtime and governed API port
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE=/home/agentos-node/projects/layoutlib
+          DATA=/home/ubuntu/agent-data
+          python3 scripts/bootstrap_layoutlib.py --target "$CODE"
+          python3 scripts/bootstrap_layoutlib_hardening.py --target "$CODE"
+          python3 -m pip install --user 'Pillow>=10,<13'
+          PORT_OUTPUT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlab-api --desc 'Layout Lab official-site API' --start 8800 --end 8899)
+          echo "$PORT_OUTPUT"
+          PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); xs=[int(k) for k,v in d.items() if v.get("project")=="layoutlab-api"]; print(min(xs))')
+          echo "$PORT" > /tmp/layoutlab-api-port
+          echo "layoutlab_api_port=$PORT"
+
+      - name: Ask AgentOS executor to apply minimal official-site integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/layoutlab-official-site-integration.txt
+          RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
+          RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
+          PORT=$(cat /tmp/layoutlab-api-port)
+          CAPSULE_ID=$(PYTHONPATH="$RUNTIME" PORT="$PORT" python3 - <<'PY'
+          import os
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          port=os.environ['PORT']
+          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          instruction=f'''Integrate Layout Lab into the EXISTING official website https://studio.milkcat.org using the actual current deployment on this host. The static page already exists in /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html and its source repo is /home/ubuntu/zeus-writer. The API source is /home/ubuntu/agentmanager/scripts/layoutlab_api.py. LayoutLib is at /home/agentos-node/projects/layoutlib. The governed API port is {port}.
+
+Do the following carefully and only for Layout Lab:
+1. Inspect the existing site server/config and preserve every unrelated route.
+2. Ensure the official website checkout is clean, fetch/fast-forward master if needed, run npm build in /home/ubuntu/zeus-writer/website, and verify dist/layout-lab/index.html exists.
+3. Create or update an ubuntu-owned user service named layoutlab-api.service to run /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}, with LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib and restart-on-failure. If the user systemd session is unavailable, use the existing safe persistent-process convention already used on this host; do not invent a root service.
+4. Verify locally that http://127.0.0.1:{port}/healthz returns JSON ok=true.
+5. Add the MINIMAL route for /layout-lab/api/ on studio.milkcat.org to reverse proxy to the localhost API while preserving the existing static /layout-lab/ page. Respect path semantics so browser POST /layout-lab/api/parse reaches the API successfully. Reuse the existing web server. Back up only the config file you change. Validate server config before reload. If validation fails, restore the backup and do not reload.
+6. Reload only the affected web server using the site's existing privilege mechanism. Do not change DNS, TLS, firewall, unrelated virtual hosts, or unrelated site files.
+7. Publicly verify from this host: GET https://studio.milkcat.org/layout-lab/ returns 200 and contains Layout Lab; GET https://studio.milkcat.org/layout-lab/api/healthz returns 200 JSON ok=true.
+8. Build a small synthetic PNG floor plan (or use an existing safe fixture), submit it as multipart/form-data exactly like the browser UI does to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel, wall_height_m, threshold, min_wall_length_px, and verify HTTP 200, ok=true, Spatial IR present, walls > 0.
+9. Return exact changed paths, service status, public URLs, HTTP status codes, parse wall count, and any remaining caveats.
+
+You ARE authorized to make only the minimal deployment/config/service changes needed for this Layout Lab integration. Do not modify application logic beyond syncing the already committed repositories. Do not perform unrelated cleanup.'''
+          p=c.submit(
+            project_id='layoutlib',
+            canonical_ir={
+              'goal':'Make LayoutLib directly usable through the existing official Studio Web UI.',
+              'acceptance':['https://studio.milkcat.org/layout-lab/ HTTP 200','same-origin /layout-lab/api/healthz HTTP 200','browser-equivalent multipart PNG parse HTTP 200 with Spatial IR and walls > 0'],
+              'constraints':['Preserve unrelated website routes/config','Use governed localhost API port','No DNS/TLS/firewall changes unless already part of existing site mechanism and strictly unnecessary here']
+            },
+            instruction=instruction,
+            workspace='/home/ubuntu/agentmanager')
+          print(p['capsule_id'])
+          PY
+          )
+          RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
+          for i in $(seq 1 420); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "receipt timeout: $CAPSULE_ID"; exit 3; }
+          {
+            echo "capsule_id=$CAPSULE_ID"
+            echo "governed_port=$PORT"
+            cat "$RECEIPT"
+          } | tee "$OUT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('ok') is True, r
+          text=(r.get('stdout','')+'\n'+r.get('stderr','')).lower()
+          required=['studio.milkcat.org/layout-lab','health','parse']
+          missing=[x for x in required if x not in text]
+          if missing: raise SystemExit('receipt lacks acceptance evidence: '+','.join(missing))
+          print('executor_integration_receipt=PASS')
+          PY
+
+      - name: Independent public acceptance from runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=.agentos/evidence/layoutlab-official-site-acceptance.txt
+          CODE=/home/agentos-node/projects/layoutlib
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            UI_CODE=$(curl -sS -o /tmp/layoutlab-official-ui -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 https://studio.milkcat.org/layout-lab/)
+            echo "public_ui_http_code=$UI_CODE"
+            test "$UI_CODE" = 200
+            grep -q 'Layout Lab' /tmp/layoutlab-official-ui
+            HEALTH_CODE=$(curl -sS -o /tmp/layoutlab-official-health -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 https://studio.milkcat.org/layout-lab/api/healthz)
+            echo "public_health_http_code=$HEALTH_CODE"
+            test "$HEALTH_CODE" = 200
+            python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/layoutlab-official-health'))
+          assert d.get('ok') is True, d
+          print('public_health_payload=PASS')
+          PY
+            python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          p='/tmp/layoutlab-official-fixture.png'
+          im=Image.new('L',(320,240),255); d=ImageDraw.Draw(im)
+          d.rectangle((30,30,290,210),outline=0,width=10)
+          im.save(p)
+          PY
+            PARSE_CODE=$(curl -sS -o /tmp/layoutlab-official-parse -w '%{http_code}' --retry 3 --retry-all-errors --connect-timeout 5 --max-time 30 \
+              -F image=@/tmp/layoutlab-official-fixture.png \
+              -F meters_per_pixel=0.02 \
+              -F wall_height_m=2.7 \
+              -F threshold=128 \
+              -F min_wall_length_px=16 \
+              https://studio.milkcat.org/layout-lab/api/parse)
+            echo "public_parse_http_code=$PARSE_CODE"
+            test "$PARSE_CODE" = 200
+            python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/layoutlab-official-parse'))
+          assert d.get('ok') is True, d
+          ir=d.get('ir') or {}
+          walls=ir.get('walls') or []
+          assert walls, d
+          print(f'public_parse=PASS walls={len(walls)} spatial_ir={ir.get("version")}')
+          PY
+            echo 'official_layoutlab_goal=PASS'
+            echo 'official_url=https://studio.milkcat.org/layout-lab/'
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit integration evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlab-official-site-integration.txt .agentos/evidence/layoutlab-official-site-acceptance.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlab): official Studio Web UI acceptance'
+          git push
