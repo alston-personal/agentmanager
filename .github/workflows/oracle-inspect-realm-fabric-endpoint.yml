@@ -19,11 +19,16 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect current Core listener and HTTPS routing surface
+      - name: Inspect current Core listener and Realm Fabric authority
         shell: bash
         run: |
           set -euo pipefail
           echo "identity=$(id)"
+          echo "home=$HOME"
+          echo "agent_data_root_meta=$(stat -c '%U:%G %a' /home/ubuntu/agent-data 2>/dev/null || echo missing)"
+          if [ -w /home/ubuntu/agent-data ]; then echo 'agent_data_root_writable=true'; else echo 'agent_data_root_writable=false'; fi
+          echo '=== USER SYSTEMD ==='
+          systemctl --user is-system-running || true
           echo '=== LISTENERS ==='
           ss -ltn || true
           echo '=== CONTROL PLANE ==='
