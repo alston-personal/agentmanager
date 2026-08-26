@@ -80,7 +80,7 @@ jobs:
           assert.match(await page.locator('#reading .golden-quote').innerText(),/離開不是失去/);
           assert.ok(await page.locator('#followup').isVisible());
           assert.equal(await page.locator('#handoff-details').getAttribute('open'),null);
-          assert.match(await page.locator('#handoff summary').innerText(),/備援|進階/);
+          assert.match(await page.locator('#handoff-details > summary').innerText(),/備援|進階/);
           console.log('production_hidden_html_sanitized=passed');
           console.log('production_external_ai_is_backup=passed');
 
