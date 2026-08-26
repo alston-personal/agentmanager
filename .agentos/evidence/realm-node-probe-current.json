@@ -1,0 +1,47 @@
+{
+  "node": {
+    "benchmark": null,
+    "capabilities": [
+      "context.harvest",
+      "filesystem.read",
+      "filesystem.write",
+      "process.inspect",
+      "shell.exec",
+      "tool.presence"
+    ],
+    "first_seen_at": "2026-08-26T06:21:49Z",
+    "hostname": "VOPC5750",
+    "last_heartbeat_at": "2026-08-26T06:26:40Z",
+    "last_manifest_at": "2026-08-26T06:20:17Z",
+    "node_id": "vopc5750",
+    "platform": "Windows",
+    "platform_release": "11",
+    "role": "client",
+    "status": "online",
+    "tool_presence": {
+      "code": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+      "git": "C:\\Program Files\\Git\\cmd\\git.EXE",
+      "node": "C:\\Program Files\\nodejs\\node.EXE",
+      "npm": "C:\\Program Files\\nodejs\\npm.CMD",
+      "powershell": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "python": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.EXE",
+      "python3": "C:\\Users\\alston.huang\\AppData\\Local\\Microsoft\\WindowsApps\\python3.EXE"
+    },
+    "uptime_seconds": 0
+  },
+  "ok": true,
+  "queued_task": {
+    "action": "shell.exec",
+    "argv": [
+      "-c",
+      "import json,platform,socket; print(json.dumps({\"hostname\":socket.gethostname(),\"platform\":platform.system(),\"python\":platform.python_version()}))"
+    ],
+    "cognition_ids_used": [],
+    "cwd": "C:\\Users\\alston.huang\\AgentOS",
+    "executable": "python",
+    "queued_at": "2026-08-26T06:29:51Z",
+    "schema": "agentos.node-task/v0.1",
+    "task_id": "probe-vopc5750-1787725791",
+    "timeout_seconds": 15
+  }
+}
