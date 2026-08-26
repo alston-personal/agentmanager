@@ -6,12 +6,12 @@ if [ "$(id -un)" != "ubuntu" ]; then
   exit 2
 fi
 
-REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
-RUNTIME="${AGENTOS_RUNTIME_VNEXT:-$HOME/.local/share/agentos/runtime-vnext}"
-REALM_RUNTIME="$HOME/.local/share/agentos/realm-fabric/current"
-DATA_ROOT="${AGENT_DATA_ROOT:-$HOME/agent-data}"
+REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
+RUNTIME="${AGENTOS_RUNTIME_VNEXT:-/home/ubuntu/.local/share/agentos/runtime-vnext}"
+REALM_RUNTIME="/home/ubuntu/.local/share/agentos/realm-fabric/current"
+DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 SPOOL="$DATA_ROOT/runtime/antigravity-relay"
-UNIT_DIR="$HOME/.config/systemd/user"
+UNIT_DIR="/home/ubuntu/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
 REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
 
@@ -33,8 +33,8 @@ git -C "$REPO" show origin/main:agentos_node/antigravity_relay.py > "$TMPDIR/ant
 git -C "$REPO" show origin/main:agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 git -C "$REPO" show origin/main:scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
 
-# Realm Fabric is intentionally tiny and stdlib-only. Materialize only its four
-# canonical modules rather than merging or cleaning the live checkout.
+# Realm Fabric is intentionally tiny and stdlib-only. Materialize only its canonical
+# modules rather than merging or cleaning the live checkout.
 git -C "$REPO" show origin/main:agent_core/__init__.py > "$TMPDIR/agent_core_init.py"
 git -C "$REPO" show origin/main:agent_core/node_registry.py > "$TMPDIR/node_registry.py"
 git -C "$REPO" show origin/main:agent_core/realm_fabric.py > "$TMPDIR/realm_fabric.py"
@@ -49,6 +49,7 @@ install -m 0664 "$TMPDIR/node_registry.py" "$REALM_RUNTIME/agent_core/node_regis
 install -m 0664 "$TMPDIR/realm_fabric.py" "$REALM_RUNTIME/agent_core/realm_fabric.py"
 install -m 0664 "$TMPDIR/realm_server.py" "$REALM_RUNTIME/agent_core/realm_server.py"
 install -m 0664 "$TMPDIR/realm_cli.py" "$REALM_RUNTIME/agent_core/realm_cli.py"
+test -f "$REALM_RUNTIME/agent_core/realm_cli.py"
 
 for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
   mkdir -p "$d"
@@ -79,9 +80,11 @@ WantedBy=default.target
 EOF
 
 # Install ONE Realm Fabric as a separate localhost-only Core service. It has no
-# public route here; first-node bootstrap will use an SSH tunnel until HTTPS/QR
-# enrollment is promoted in a later version.
-AGENT_DATA_ROOT="$DATA_ROOT" PYTHONPATH="$REALM_RUNTIME" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
+# public route here; first-node bootstrap uses an SSH tunnel until HTTPS/QR enrollment.
+(
+  cd "$REALM_RUNTIME"
+  AGENT_DATA_ROOT="$DATA_ROOT" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
+)
 cat > "$REALM_UNIT" <<EOF
 [Unit]
 Description=AgentOS ONE Realm Fabric (ubuntu Core identity)
