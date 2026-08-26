@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Queue governed open-url task and wait for receipt
+      - name: Queue governed desktop open-url task and wait for receipt
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -30,7 +30,7 @@ jobs:
           CMD=.agentos/commands/realm-node-open-url.json
           OUT=/tmp/realm-node-open-url-result.json
           python3 - "$CMD" "$OUT" <<'PY'
-          import json,re,sys,time
+          import json,sys,time
           from pathlib import Path
           from agent_core.realm_fabric import RealmFabricStore
           from agent_core.node_registry import NodeRegistry
@@ -47,20 +47,17 @@ jobs:
           node=next((n for n in registry['nodes'] if n.get('node_id') == node_id), None)
           assert node is not None and node.get('status') == 'online', node
 
-          task_id='open-url-'+node_id+'-'+str(int(time.time()))
+          task_id='desktop-open-url-'+node_id+'-'+str(int(time.time()))
           task={
             'schema':'agentos.node-task/v0.1',
             'task_id':task_id,
-            'action':'shell.exec',
-            'executable':'powershell',
-            'argv':['-NoProfile','-NonInteractive','-Command',f"Start-Process '{url}'"],
-            'cwd':r'C:\Users\alston.huang\AgentOS',
-            'timeout_seconds':15,
+            'action':'desktop.open_url',
+            'url':url,
             'cognition_ids_used':[],
           }
           fabric=RealmFabricStore()
           queued=fabric.queue_task(node_id,task)
-          deadline=time.time()+90
+          deadline=time.time()+60
           receipt=None
           while time.time()<deadline:
             receipt=fabric.get_receipt(task_id)
@@ -71,7 +68,8 @@ jobs:
           Path(sys.argv[2]).write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           assert receipt is not None, f'no receipt for {task_id}'
           assert receipt.get('ok') is True, receipt
-          print('realm_node_open_url=PASS')
+          assert receipt.get('session',{}).get('interactive') is True, receipt
+          print('realm_desktop_open_url=PASS')
           print('task_id='+task_id)
           PY
 
@@ -87,5 +85,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/realm-node-open-url-current.json
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record direct Windows browser control'
+          git commit -m 'evidence(agentos): record interactive Windows browser control'
+          git pull --rebase origin main
           git push origin HEAD:main
