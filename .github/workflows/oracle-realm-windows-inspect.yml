@@ -1,0 +1,63 @@
+name: Oracle Realm Windows Inspect
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-windows-inspect.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-realm-windows-inspect
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Queue window inspection and collect receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/realm-windows-inspect.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.desktop.windows.inspect'
+          node_id=str(cmd.get('node_id') or '')
+          assert node_id=='vopc5750'
+          task_id='desktop-windows-inspect-'+node_id+'-'+str(int(time.time()))
+          task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'desktop.windows.inspect','cognition_ids_used':[]}
+          fabric=RealmFabricStore(); fabric.queue_task(node_id,task)
+          deadline=time.time()+90; receipt=None
+          while time.time()<deadline:
+              receipt=fabric.get_receipt(task_id)
+              if receipt: break
+              time.sleep(2)
+          assert receipt is not None, f'no receipt for {task_id}'
+          assert receipt.get('ok') is True, receipt
+          Path('/tmp/realm-windows-inspect.json').write_text(json.dumps(receipt,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          print('desktop_windows_inspect=PASS')
+          print('task_id='+task_id)
+          PY
+      - name: Publish non-sensitive window metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-windows-inspect.json .agentos/evidence/realm-windows-inspect-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-windows-inspect-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): record Windows visible windows'
+          git push origin HEAD:main
