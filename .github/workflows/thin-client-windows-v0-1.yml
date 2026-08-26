@@ -1,0 +1,37 @@
+name: Thin Client Windows v0.1
+
+on:
+  push:
+    paths:
+      - 'agentos_node/thin_client.py'
+      - 'agentos_node/thin_client_transport.py'
+      - 'agentos_node/client_cli.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - '.github/workflows/thin-client-windows-v0-1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-bootstrap:
+    runs-on: windows-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install from canonical public bootstrap
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'AgentOS'
+          $workspace = Join-Path $env:RUNNER_TEMP 'AgentOS-Workspace'
+          & ./scripts/install_thin_client_windows.ps1 -InstallRoot $root -WorkspaceRoot $workspace
+          Test-Path (Join-Path $root 'agentos-client.cmd') | Should -BeTrue
+          Test-Path (Join-Path $root 'state\policy.json') | Should -BeTrue
+          & (Join-Path $root 'agentos-client.cmd') --help
+      - name: Verify local capability runtime
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'AgentOS'
+          $env:PYTHONPATH = $root
+          $env:AGENTOS_CLIENT_HOME = Join-Path $root 'state'
+          python -c "from agentos_node.thin_client import ThinClient,ThinClientPolicy,NodeIdentity; from pathlib import Path; p=ThinClientPolicy(allowed_executables={'python'},readable_roots=(Path(r'$env:RUNNER_TEMP'),)); c=ThinClient(NodeIdentity('test-realm','windows-ci'),p); m=c.capability_manifest(); assert m['platform']=='Windows'; assert 'shell.exec' in m['capabilities']; print('windows_thin_client=PASS')"
