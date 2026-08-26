@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-26T07:36:28Z
+timestamp_utc=2026-08-26T14:54:09Z
 public_ui_http_code=200
 public_library_http_code=200
 public_payload_identity=PASS
@@ -7,4 +7,7 @@ erase_preview_highlight=PASS
 draft_committed_state=PASS
 generalized_profile_learning=PASS
 learning_not_image_fingerprint=PASS
+pre_analysis_editing=PASS
+box_selection_delete=PASS
+plan_aligned_reset=PASS
 official_layoutlab_web_ui=PASS
