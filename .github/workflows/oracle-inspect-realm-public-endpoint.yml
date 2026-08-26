@@ -19,22 +19,30 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Identify dashboard supervisor without mutation
+      - name: Identify PM2 dashboard identity without mutation
         shell: bash
         run: |
           set -euo pipefail
           echo "identity=$(id)"
-          echo '=== DASHBOARD PROCESS TREE ==='
-          ps -eo user:20,pid,ppid,lstart,cmd --sort=pid | grep -E '2770188|2770227|2770228|[p]m2|[s]ystemd.*dashboard|[n]ext start' || true
-          for pid in 2770188 2770227 2770228; do
-            [ -d "/proc/$pid" ] || continue
-            echo "--- pid=$pid"
-            echo -n 'cmd='; tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true; echo
-            echo -n 'cwd='; readlink "/proc/$pid/cwd" 2>/dev/null || true
-            cat "/proc/$pid/cgroup" 2>/dev/null || true
-          done
-          echo '=== UBUNTU USER UNITS ==='
-          XDG_RUNTIME_DIR=/run/user/1001 sudo -u ubuntu systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'dashboard|agent|next|studio' || true
-          echo '=== PM2 ==='
-          sudo -u ubuntu env HOME=/home/ubuntu pm2 list 2>/dev/null || true
+          echo '=== PM2 DUMP SUMMARY ==='
+          if [ -r /home/ubuntu/.pm2/dump.pm2 ]; then
+            python3 - <<'PY'
+import json
+p='/home/ubuntu/.pm2/dump.pm2'
+data=json.load(open(p))
+for item in data:
+    env=item.get('pm2_env') or item
+    print({
+      'name': env.get('name'),
+      'pm_id': env.get('pm_id'),
+      'pm_cwd': env.get('pm_cwd'),
+      'script': env.get('pm_exec_path'),
+      'args': env.get('args'),
+      'status': env.get('status'),
+    })
+PY
+          else
+            echo 'dump_unreadable=true'
+            stat -c '%U:%G %a %n' /home/ubuntu/.pm2 /home/ubuntu/.pm2/dump.pm2 2>/dev/null || true
+          fi
           echo 'mutation=NONE'
