@@ -1,0 +1,68 @@
+name: Oracle Realm Desktop Inspect
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-desktop-inspect.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-realm-desktop-inspect
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Queue desktop session inspect and collect receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/realm-desktop-inspect.json',encoding='utf-8'))
+          assert cmd.get('schema') == 'agentos.realm-command/v0.1', cmd
+          assert cmd.get('action') == 'realm.desktop.inspect', cmd
+          node_id=str(cmd.get('node_id') or '')
+          assert node_id == 'vopc5750', node_id
+          task_id='desktop-inspect-'+node_id+'-'+str(int(time.time()))
+          task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'desktop.session.inspect','cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node_id,task)
+          deadline=time.time()+45
+          while time.time()<deadline:
+              r=RealmFabricStore().get_receipt(task_id)
+              if r:
+                  Path('/tmp/realm-desktop-inspect-result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+                  assert r.get('ok') is True, r
+                  print('desktop_session_inspect=PASS')
+                  print(json.dumps(r,sort_keys=True))
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise TimeoutError(task_id)
+          PY
+
+      - name: Publish non-sensitive session evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/realm-desktop-inspect-result.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-desktop-inspect-result.json .agentos/evidence/realm-desktop-inspect-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-desktop-inspect-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): record desktop session inspection'
+          git pull --rebase origin main
+          git push origin HEAD:main
