@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.self_update_desktop_v01",
   "node_id": "vopc5750",
-  "nonce": "desktop-v01-bootstrap-20260826"
+  "nonce": "desktop-v01-shell-execute-refresh-20260826"
 }
