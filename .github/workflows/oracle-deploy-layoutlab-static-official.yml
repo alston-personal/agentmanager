@@ -69,7 +69,7 @@ jobs:
           assert r.get('ok') is True, r
           assert r.get('executor_user') == 'ubuntu', r
           text=(r.get('step') or {}).get('stdout','')
-          assert 'layoutlib-v0.6-generalized-profile-learning' in text, r
+          assert 'layoutlib-v0.6-demo-hotfix' in text, r
           print('deterministic_static_deploy=PASS')
           PY
 
@@ -94,6 +94,12 @@ jobs:
             grep -q '黃色反白' /tmp/layoutlab-static-ui
             grep -q 'layoutlib.profile.samples.v1' /tmp/layoutlab-static-ui
             grep -q '泛化建議' /tmp/layoutlab-static-ui
+            grep -q 'createEditableDocument' /tmp/layoutlab-static-ui
+            grep -q 'selectWallsInRectPx' /tmp/layoutlab-static-ui
+            grep -q 'deleteWallsById' /tmp/layoutlab-static-ui
+            grep -q '▭ 選取' /tmp/layoutlab-static-ui
+            grep -q '刪除選取' /tmp/layoutlab-static-ui
+            grep -q 'view={yaw:0,pitch:0,zoom:1}' /tmp/layoutlab-static-ui
             grep -q "version:'0.6.0'" /tmp/layoutlab-lib
             grep -q 'previewEraseStrokePx' /tmp/layoutlab-lib
             grep -q 'extractProfileFeatures' /tmp/layoutlab-lib
@@ -106,6 +112,9 @@ jobs:
             echo 'draft_committed_state=PASS'
             echo 'generalized_profile_learning=PASS'
             echo 'learning_not_image_fingerprint=PASS'
+            echo 'pre_analysis_editing=PASS'
+            echo 'box_selection_delete=PASS'
+            echo 'plan_aligned_reset=PASS'
             echo 'official_layoutlab_web_ui=PASS'
           } 2>&1 | tee "$OUT"
 
