@@ -16,6 +16,14 @@ LOCAL='http://127.0.0.1:8780/v1/health'
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
 
+PM2_BIN=""
+for candidate in "$(command -v pm2 2>/dev/null || true)" /usr/local/bin/pm2 /usr/bin/pm2 /home/ubuntu/.local/bin/pm2; do
+  [ -n "$candidate" ] || continue
+  if [ -x "$candidate" ]; then PM2_BIN="$candidate"; break; fi
+done
+[ -n "$PM2_BIN" ] || { echo "ERROR: canonical PM2 executable not found" >&2; exit 3; }
+echo "pm2_bin=$PM2_BIN"
+
 TMP=$(mktemp -d)
 BACKUP="$TMP/route.backup"
 HAD_ROUTE=0
@@ -37,7 +45,7 @@ rollback() {
   fi
   (cd "$DASH" && npm run build >/tmp/agentos-realm-gateway-rollback-build.log 2>&1)
   if [ -n "${PM2_ID:-}" ]; then
-    pm2 restart "$PM2_ID" --update-env >/tmp/agentos-realm-gateway-rollback-pm2.log 2>&1
+    "$PM2_BIN" restart "$PM2_ID" --update-env >/tmp/agentos-realm-gateway-rollback-pm2.log 2>&1
   fi
   set -e
 }
@@ -67,12 +75,10 @@ printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1'
 printf '%s' "$LOCAL_BODY" | grep -q 'realm-alston'
 echo "local_realm_health=PASS"
 
-# Build the exact live dashboard after installing only the canonical gateway route.
 (cd "$DASH" && npm run build)
 echo "dashboard_build=PASS"
 
-# Resolve exactly one PM2 process by its governed working directory; never accept a caller-supplied app name.
-PM2_ID=$(pm2 jlist | python3 -c '
+PM2_ID=$("$PM2_BIN" jlist | python3 -c '
 import json,sys
 items=json.load(sys.stdin)
 hits=[]
@@ -85,7 +91,7 @@ if len(hits) != 1:
 print(hits[0])
 ')
 echo "dashboard_pm2_id=$PM2_ID"
-pm2 restart "$PM2_ID" --update-env
+"$PM2_BIN" restart "$PM2_ID" --update-env
 
 for i in $(seq 1 30); do
   if curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null; then break; fi
