@@ -1,0 +1,28 @@
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+=== DASHBOARD PROCESS TREE ===
+USER         PID    PPID    PGID     SID                  STARTED CMD
+ubuntu    144787 3815324  144787  144787 Wed Aug 26 14:03:41 2026 npm start
+ubuntu    144802  144787  144787  144787 Wed Aug 26 14:03:41 2026 sh -c next start
+ubuntu    144803  144802  144787  144787 Wed Aug 26 14:03:41 2026 node /home/ubuntu/agentmanager/dashboard/node_modules/.bin/next start
+agentos+  144828  144824 2790389 2790389 Wed Aug 26 14:03:41 2026 grep -E (^USER|npm start|next-server|next start|PM2)
+ubuntu    183021  183009  183009  183009 Thu Aug 20 16:26:11 2026 sh -c next start -p 3010
+ubuntu    183022  183021  183009  183009 Thu Aug 20 16:26:11 2026 next-server (v16.2.9)
+ubuntu   2770195 3815324 2770195 2770195 Tue Aug 18 16:19:47 2026 npm start -p 3005
+ubuntu   2770228       1 2770188 2770188 Tue Aug 18 16:19:48 2026 next-server (v16.1.6)
+ubuntu   2770238 2770195 2770195 2770195 Tue Aug 18 16:19:48 2026 sh -c next start -p 3005
+ubuntu   2770239 2770238 2770195 2770195 Tue Aug 18 16:19:48 2026 next-server (v16.1.5)
+ubuntu   3815324       1 3815324 3815324 Mon May 25 14:27:26 2026 PM2 v7.0.1: God Daemon (/home/ubuntu/.pm2)
+=== LISTENER 3000 ===
+State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+LISTEN 0      511                *:3000            *:*          
+=== CWD / STAT ===
+pid=144787 cwd= stat=144787 (npm start) S 3815324 144787 144787 0 -1 4194304 6030 0 0 0 15 3 0 0 20 0 11 0 831134514 872464384 16331 18446744073709551615 1 1 0 0 0 0 0 16781312 83458 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=npm start                                                                                                
+pid=144802 cwd= stat=144802 (sh) S 144787 144787 144787 0 -1 4194304 95 0 0 0 0 0 0 0 20 0 1 0 831134531 2387968 320 18446744073709551615 1 1 0 0 0 0 0 0 65538 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=sh -c next start 
+pid=144803 cwd= stat=144803 (node) R 144802 144787 144787 0 -1 4194304 6485 0 0 0 16 2 0 0 20 0 7 0 831134532 771829760 15955 18446744073709551615 1 1 0 0 0 0 0 16781312 17922 0 0 0 17 2 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=node /home/ubuntu/agentmanager/dashboard/node_modules/.bin/next start 
+pid=183021 cwd= stat=183021 (sh) S 183009 183009 183009 0 -1 4194304 96 0 0 0 0 0 0 0 20 0 1 0 780149596 2387968 288 18446744073709551615 1 1 0 0 0 0 0 0 65538 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=sh -c next start -p 3010 
+pid=183022 cwd= stat=183022 (next-server (v1) S 183021 183009 183009 0 -1 4194304 19233 0 0 0 180 31 0 0 20 0 15 0 780149596 13337829376 26006 18446744073709551615 1 1 0 0 0 0 0 16781312 17922 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=next-server (v16.2.9)                                                               
+pid=2770195 cwd= stat=2770195 (npm start -p 30) S 3815324 2770195 2770195 0 -1 4194304 16289 0 897 0 67537 6061 0 0 20 0 11 0 762831193 878948352 9761 18446744073709551615 1 1 0 0 0 0 0 16781312 83458 0 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=npm start -p 3005                                                                                                   
+pid=2770228 cwd= stat=2770228 (next-server (v1) S 1 2770188 2770188 0 -1 4194304 117458 209924 706 0 1005 262 1369 449 20 0 15 0 762831212 13377732608 43772 18446744073709551615 1 1 0 0 0 0 0 16781312 17922 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=next-server (v16.1.6)                                                 
+pid=2770238 cwd= stat=2770238 (sh) S 2770195 2770195 2770195 0 -1 4194304 96 0 0 0 0 0 0 0 20 0 1 0 762831213 2387968 64 18446744073709551615 1 1 0 0 0 0 0 0 65538 0 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=sh -c next start -p 3005 
+pid=2770239 cwd= stat=2770239 (next-server (v1) S 2770238 2770195 2770195 0 -1 4194304 43111 0 695 0 234 111 0 0 20 0 15 0 762831213 13365587968 29486 18446744073709551615 1 1 0 0 0 0 0 16781312 17922 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0 cmd=next-server (v16.1.5)                                                
+mutation=NONE
