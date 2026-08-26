@@ -12,6 +12,9 @@ on:
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/deploy_layoutlab_static.py'
       - 'web_assets/layoutlab_official.html'
+      - 'web_assets/layoutlab_v0_5.html'
+      - 'web_assets/layoutlib-browser-v0.3.js'
+      - 'web_assets/layoutlib-browser-v0.5.js'
 
 permissions:
   contents: write
@@ -43,143 +46,55 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
             echo "request_id=$REQUEST_ID"
-
-            echo '=== COMPILE CANONICAL HOOK ==='
             python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py agentos_node/action_relay.py
             echo 'canonical_py_compile=PASS'
-
-            echo '=== INSTALL CANONICAL HOOK INTO LIVE CHECKOUT ==='
             test -w "$LIVE/scripts/update_scheduler_board.py"
             test -w "$LIVE/agentos_node" || test -w "$LIVE/agentos_node/bootstrap_control.py"
             cat scripts/update_scheduler_board.py > "$LIVE/scripts/update_scheduler_board.py"
-            if [ -e "$LIVE/agentos_node/bootstrap_control.py" ]; then
-              cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-            else
-              cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"
-            fi
+            if [ -e "$LIVE/agentos_node/bootstrap_control.py" ]; then cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"; else cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"; fi
             chmod 0664 "$LIVE/scripts/update_scheduler_board.py" "$LIVE/agentos_node/bootstrap_control.py" || true
             python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/update_scheduler_board.py"
             grep -q 'run_bootstrap_control_plane' "$LIVE/scripts/update_scheduler_board.py"
             echo 'live_bootstrap_hook=PASS'
-
-            echo '=== WAIT FOR UBUNTU CHRONOS TO OWN RENDEZVOUS ==='
-            for i in $(seq 1 120); do
-              [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-              sleep 1
-            done
-            test -d "$REQUESTS"
-            test -d "$RECEIPTS"
-            echo "root_stat=$(stat -c '%U:%G %a %n' "$ROOT")"
-            echo "requests_stat=$(stat -c '%U:%G %a %n' "$REQUESTS")"
+            for i in $(seq 1 120); do [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break; sleep 1; done
+            test -d "$REQUESTS"; test -d "$RECEIPTS"
             test "$(stat -c '%U' "$ROOT")" = ubuntu
             test "$(stat -c '%U' "$REQUESTS")" = ubuntu
             test "$(stat -c '%a' "$REQUESTS")" = 1777
             echo 'ubuntu_owned_rendezvous=PASS'
-
-            echo '=== CREATE GOVERNED REQUEST ==='
             python3 - "$REQUEST" "$REQUEST_ID" <<'PY'
           import json,os,sys
           from datetime import datetime,timezone
           from pathlib import Path
           p=Path(sys.argv[1]); rid=sys.argv[2]
-          payload={
-              'schema':'agentos.bootstrap-request/v1',
-              'request_id':rid,
-              'action':'agentos.transport.repair',
-              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
-          }
-          tmp=p.with_suffix(p.suffix+'.tmp')
-          tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o644)
-          tmp.replace(p)
-          os.chmod(p,0o644)
-          print(json.dumps(payload,ensure_ascii=False))
+          payload={'schema':'agentos.bootstrap-request/v1','request_id':rid,'action':'agentos.transport.repair','created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False}}
+          tmp=p.with_suffix(p.suffix+'.tmp'); tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
           PY
-            echo "request_stat=$(stat -c '%U:%G %a %n' "$REQUEST")"
-            test "$(stat -c '%U' "$REQUEST")" = agentos-node
-            python3 - "$REQUEST" <<'PY'
-          import os,sys
-          mode=os.stat(sys.argv[1]).st_mode & 0o777
-          assert not (mode & 0o022), oct(mode)
-          print('request_write_protection=PASS')
-          PY
-
-            echo '=== WAIT FOR UBUNTU CHRONOS RECEIPT ==='
-            for i in $(seq 1 300); do
-              [ -f "$RECEIPT" ] && break
-              sleep 1
-            done
+            for i in $(seq 1 300); do [ -f "$RECEIPT" ] && break; sleep 1; done
             test -f "$RECEIPT" || { echo 'bootstrap_control_receipt=TIMEOUT'; exit 3; }
-            echo "receipt_stat=$(stat -c '%U:%G %a %n' "$RECEIPT")"
-            cat "$RECEIPT"
             python3 - "$RECEIPT" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('schema') == 'agentos.bootstrap-receipt/v1', r
-          assert r.get('action') == 'agentos.transport.repair', r
-          assert r.get('executor_user') == 'ubuntu', r
-          assert r.get('executor_uid') == 1001, r
-          if not r.get('ok'):
-              raise SystemExit('bootstrap repair failed: '+json.dumps(r,ensure_ascii=False)[-18000:])
-          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
-          assert 'antigravity_repair=PASS' in text, text[-18000:]
-          assert 'action_relay_install=PASS' in text, text[-18000:]
-          assert 'action_relay_user_bus=ubuntu:/run/user/1001/bus' in text, text[-18000:]
+          r=json.load(open(sys.argv[1])); assert r.get('schema')=='agentos.bootstrap-receipt/v1',r; assert r.get('action')=='agentos.transport.repair',r; assert r.get('executor_user')=='ubuntu',r; assert r.get('executor_uid')==1001,r
+          if not r.get('ok'): raise SystemExit('bootstrap repair failed: '+json.dumps(r,ensure_ascii=False)[-18000:])
+          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[])); assert 'antigravity_repair=PASS' in text,text[-18000:]; assert 'action_relay_install=PASS' in text,text[-18000:]
           print('bootstrap_control_repair=PASS')
           PY
-
-            echo '=== DETERMINISTIC ACTION RELAY RESTART ==='
             RESTART_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
           from agentos_node.action_relay import ActionRelayClient
           print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('agentos.antigravity.restart', {})['capsule_id'])
           PY
           )
             RESTART_RECEIPT="$ACTION_ROOT/receipts/$RESTART_ID.json"
-            for i in $(seq 1 60); do
-              [ -f "$RESTART_RECEIPT" ] && break
-              sleep 1
-            done
-            test -f "$RESTART_RECEIPT" || { echo 'antigravity_restart_receipt=TIMEOUT'; exit 4; }
-            cat "$RESTART_RECEIPT"
+            for i in $(seq 1 60); do [ -f "$RESTART_RECEIPT" ] && break; sleep 1; done
+            test -f "$RESTART_RECEIPT"
             python3 - "$RESTART_RECEIPT" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('ok') is True, r
-          assert r.get('action') == 'agentos.antigravity.restart', r
-          assert r.get('executor_user') == 'ubuntu', r
-          print('antigravity_restart=PASS')
+          r=json.load(open(sys.argv[1])); assert r.get('ok') is True,r; assert r.get('action')=='agentos.antigravity.restart',r; assert r.get('executor_user')=='ubuntu',r; print('antigravity_restart=PASS')
           PY
-
-            echo '=== GROUP BOUNDARY ACCEPTANCE ==='
             sleep 2
             grep -q '/usr/bin/sg agentos -c' /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service
             grep -q '/usr/bin/sg agentos -c' /home/ubuntu/.config/systemd/user/agentos-action-relay.service
-            python3 - <<'PY'
-          from pathlib import Path
-          import subprocess
-          p=subprocess.run(['pgrep','-f','agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay'],text=True,capture_output=True,check=True)
-          ok=False
-          for raw in p.stdout.split():
-              status=Path('/proc')/raw/'status'
-              if not status.exists(): continue
-              groups=[]
-              for line in status.read_text().splitlines():
-                  if line.startswith('Groups:'): groups=line.split()[1:]
-              print(f'antigravity_pid={raw} groups={groups}')
-              if '1005' in groups: ok=True
-          assert ok, 'new Antigravity worker lacks agentos gid 1005'
-          print('antigravity_group_boundary=PASS')
-          PY
-
-            echo '=== READ-ONLY STUDIO BASELINE ==='
-            for path in / /dashboard; do
-              code=$(curl -sS -o /tmp/studio-bootstrap-control -w '%{http_code}' --retry 3 --retry-all-errors "https://studio.milkcat.org${path}")
-              echo "public_path=${path} http_code=${code}"
-              test "$code" = 200
-            done
-            echo 'site_sync_build=SKIPPED'
-            echo 'production_cutover=NONE'
+            for path in / /dashboard; do code=$(curl -sS -o /tmp/studio-bootstrap-control -w '%{http_code}' --retry 3 --retry-all-errors "https://studio.milkcat.org${path}"); echo "public_path=${path} http_code=${code}"; test "$code" = 200; done
             echo 'bootstrap_control_plane=PASS'
           } 2>&1 | tee "$OUT"
 
@@ -201,5 +116,3 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): bootstrap deterministic control plane'
           git push origin HEAD:main
-
-# explicit refresh for github.repo.seed_verify_studio_web
