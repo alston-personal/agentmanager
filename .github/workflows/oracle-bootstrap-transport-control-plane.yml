@@ -201,3 +201,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(agentos): bootstrap deterministic control plane'
           git push origin HEAD:main
+
+# explicit refresh for github.repo.seed_verify_studio_web
