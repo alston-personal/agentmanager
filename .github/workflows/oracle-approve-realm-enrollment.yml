@@ -1,0 +1,73 @@
+name: Oracle Approve Realm Enrollment
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-enrollment-approval.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-realm-enrollment-approval
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate and execute fixed Realm command
+        shell: bash
+        run: |
+          set -euo pipefail
+          CMD=.agentos/commands/realm-enrollment-approval.json
+          OUT=/tmp/realm-enrollment-approval-result.json
+          ACTION=$(python3 - "$CMD" <<'PY'
+          import json,re,sys
+          data=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert data.get('schema') == 'agentos.realm-command/v0.1', data
+          action=data.get('action')
+          assert action in {'noop','realm.enrollment.approve'}, action
+          if action == 'realm.enrollment.approve':
+              code=str(data.get('user_code') or '').upper()
+              assert re.fullmatch(r'[A-Z2-9]{4}-[A-Z2-9]{4}', code), code
+              print(action+' '+code)
+          else:
+              print('noop')
+          PY
+          )
+          if [ "$ACTION" = noop ]; then
+            echo '{"ok":true,"action":"noop"}' > "$OUT"
+            exit 0
+          fi
+          CODE="${ACTION#realm.enrollment.approve }"
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$PWD" \
+            python3 -m agent_core.realm_cli approve --code "$CODE" > "$OUT"
+          python3 - "$OUT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('ok') is True, r
+          assert r.get('schema') == 'agentos.join-approval/v0.1', r
+          print('realm_enrollment_approval=PASS')
+          print('node_id='+str(r.get('node_id')))
+          print('user_code='+str(r.get('user_code')))
+          PY
+
+      - name: Publish non-secret approval evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/realm-enrollment-approval-result.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-enrollment-approval-result.json .agentos/evidence/realm-enrollment-approval-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-enrollment-approval-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): record Realm enrollment approval'
+          git push origin HEAD:main
