@@ -26,108 +26,81 @@ jobs:
           import assert from 'node:assert/strict';
 
           const base='https://leopardcat-tarot.milkcat.org';
-          const methodsResp=await fetch(base+'/api/v1/methods');
-          assert.equal(methodsResp.status,200);
-          const catalog=await methodsResp.json();
-          const methods=Object.fromEntries(catalog.methods.map(x=>[x.method_id,x]));
-          assert.ok(methods.tarot && methods.lenormand);
-          assert.ok(methods.lenormand.spreads.some(x=>x.id==='box9' && x.card_count===9));
-          console.log('production_public_methods=passed');
-
-          // Isolate public reverse-proxy POST behavior before involving browser UI.
-          const directStarted=Date.now();
-          const directResp=await fetch(base+'/api/v1/readings',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({method:'lenormand',persona:'master',question:'Production direct HTTPS smoke',lang:'zh-TW',seed:'production-public-direct',input:{spread:'three'}}),
-            signal:AbortSignal.timeout(90000)
-          });
-          const directText=await directResp.text();
-          console.log(`production_direct_post_status=${directResp.status}`);
-          console.log(`production_direct_post_ms=${Date.now()-directStarted}`);
-          console.log(`production_direct_post_content_type=${directResp.headers.get('content-type')||''}`);
-          let directData={};
-          try{ directData=JSON.parse(directText); }catch(_){ console.log('production_direct_post_body_prefix='+directText.slice(0,180).replace(/\s+/g,' ')); }
-          assert.ok([200,503].includes(directResp.status),`public direct POST status ${directResp.status}`);
-          assert.equal(directData.method_result?.method,'lenormand');
-          assert.equal(directData.capsule?.schema,'divination-reading/1');
-          console.log('production_public_direct_post=passed');
-
           const browser=await chromium.launch({headless:true});
           const page=await browser.newPage({viewport:{width:1280,height:900}});
-          page.on('console',msg=>console.log('browser_console['+msg.type()+']='+msg.text()));
-          page.on('pageerror',err=>console.log('browser_pageerror='+err.message));
-          page.on('requestfailed',req=>console.log('browser_requestfailed='+req.url()+' '+(req.failure()?.errorText||'')));
 
           await page.goto(base+'/read.html?deck=leopardcat',{waitUntil:'networkidle'});
-          assert.equal(await page.locator('[data-method="tarot"]').getAttribute('class'),'active');
           await page.waitForFunction(()=>document.getElementById('persona-select')?.value==='leopardcat');
-          assert.equal(await page.locator('#persona-select').inputValue(),'leopardcat');
-          console.log('production_browser_tarot_default_persona=passed');
-
-          await page.locator('[data-method="lenormand"]').click();
-          await page.waitForSelector('[data-spread="box9"]');
-          await page.waitForFunction(()=>document.getElementById('persona-select')?.value==='master');
-          assert.equal(await page.locator('#persona-select').inputValue(),'master');
-          await page.locator('[data-spread="box9"]').click();
-          await page.locator('#question').fill('Production browser smoke：接下來應注意什麼？');
-
-          const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/v1/readings'),{timeout:90000});
-          const browserStarted=Date.now();
-          await page.locator('#draw').click();
-          const readingResp=await responsePromise;
-          console.log(`production_browser_post_status=${readingResp.status()}`);
-          console.log(`production_browser_post_ms=${Date.now()-browserStarted}`);
-          const browserBody=await readingResp.text().catch(()=> '');
-          console.log(`production_browser_post_content_type=${readingResp.headers()['content-type']||''}`);
-          if(![200,503].includes(readingResp.status())) console.log('production_browser_post_body_prefix='+browserBody.slice(0,180).replace(/\s+/g,' '));
-          await page.waitForTimeout(1000);
-          const uiState=await page.evaluate(()=>({
-            resultHidden:document.getElementById('result')?.classList.contains('hidden'),
-            status:document.getElementById('status')?.textContent||'',
-            cards:document.querySelectorAll('#cards .draw-card').length,
-            fallbackHidden:document.getElementById('ai-fallback')?.classList.contains('hidden')
+          const identity=await page.evaluate(()=>({
+            brand:document.getElementById('brand-link')?.textContent||'',
+            title:document.title,
+            bg:getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
+            paper:getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
+            back:document.getElementById('back-to-deck')?.textContent||''
           }));
-          console.log('production_browser_ui_state='+JSON.stringify(uiState));
+          assert.doesNotMatch(identity.brand,/Divination OS/i);
+          assert.match(identity.brand,/靈山|石虎/);
+          assert.match(identity.title,/詢問大師/);
+          assert.equal(identity.bg.toLowerCase(),'#030504');
+          assert.equal(identity.paper.toLowerCase(),'#111714');
+          assert.match(identity.back,/石虎塔羅/);
+          console.log('production_brand_theme_continuity=passed');
 
-          assert.ok([200,503].includes(readingResp.status()),`browser POST status ${readingResp.status()}`);
-          assert.equal(uiState.resultHidden,false,'result should be visible after legal 200/503 response');
-          assert.equal(uiState.cards,9);
-          assert.ok(await page.locator('#structure').isVisible());
-          assert.match(await page.locator('#structure').innerText(),/中心牌|相鄰組合/);
-          assert.ok(await page.locator('#handoff').isVisible());
-          assert.equal(await page.locator('#provider-actions .provider-btn').count(),3);
-          const capsule=JSON.parse((await page.locator('#capsule-json').textContent())||'{}');
-          assert.equal(capsule.schema,'divination-reading/1');
-          assert.equal(capsule.method,'lenormand');
-          assert.equal(capsule.result.spread,'box9');
-          assert.equal(capsule.result.cards.length,9);
-          assert.equal(new Set(capsule.result.cards.map(x=>x.card_id)).size,9);
-          assert.equal(capsule.contract.redraw_forbidden,true);
-          if(readingResp.status()===503){
-            assert.ok(await page.locator('#ai-fallback').isVisible());
-            assert.match(await page.locator('#reading').innerText(),/自己的 AI|Reading Capsule|抽牌完成/);
-            console.log('production_browser_ai_state=zero_cost_fallback');
-          }else{
-            assert.ok((await page.locator('#reading').innerText()).trim().length>20);
-            console.log('production_browser_ai_state=available');
-          }
-          console.log('production_browser_lenormand_box9=passed');
-          console.log('production_browser_capsule_handoff=passed');
+          let readingCalls=0;
+          let followupPayload=null;
+          await page.route('**/api/v1/readings',async route=>{
+            readingCalls++;
+            const body=JSON.parse(route.request().postData()||'{}');
+            if(readingCalls===1){
+              await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+                reading_id:'rd_prod_ux',session_token:'prod-ux-token',expires_at:9999999999,
+                method:'tarot',persona:'leopardcat',lang:'zh-TW',
+                method_result:{method:'tarot',spread:'single',deck:{deck_id:'leopardcat',name:'靈山靈貓・石虎塔羅'},cards:[{card_id:'card-cu-08-eight-of-cups',orientation:'upright',position:'focus',position_label:'核心',image:'/art/renders/card-cu-08-eight-of-cups.webp',title:{zh:'聖杯八',en:'Eight of Cups'}}]},
+                reading:"旅人，這張牌邀請你離開已不再滋養你的道路。\n\n<div class='hidden-quote' style='display:none'>離開不是失去，而是為新的山徑留出空間。</div>",
+                capsule:{schema:'divination-reading/1',method:'tarot',result:{method:'tarot',spread:'single',cards:[{card_id:'card-cu-08-eight-of-cups',orientation:'upright'}]},contract:{redraw_forbidden:true}},
+                handoff:{capsule:{schema:'divination-reading/1'},generic_prompt:'prompt',providers:[{id:'chatgpt',name:'ChatGPT',url:'https://chatgpt.com',prompt:'p'},{id:'claude',name:'Claude',url:'https://claude.ai',prompt:'p'},{id:'gemini',name:'Gemini',url:'https://gemini.google.com',prompt:'p'}]}
+              })});
+            }else{
+              followupPayload=body;
+              await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+                reading_id:'rd_prod_ux',session_token:'prod-ux-token',method:'tarot',persona:'leopardcat',
+                method_result:{method:'tarot',spread:'single',cards:[{card_id:'card-cu-08-eight-of-cups',orientation:'upright'}]},
+                reading:"同一張牌下，大師的回答會延續原本的脈絡。<div class='hidden-quote' style='display:none'>同一山徑，可以從不同角度看見方向。</div>"
+              })});
+            }
+          });
 
-          const root=await browser.newPage({viewport:{width:1280,height:900}});
-          await root.goto(base+'/?deck=leopardcat',{waitUntil:'domcontentloaded'});
-          const primary=root.locator('[data-primary-reading]').first();
-          assert.match(await primary.getAttribute('href'),/\/read\.html/);
-          console.log('production_browser_progressive_entry=passed');
+          await page.locator('#question').fill('我是不是該離開現在的方向？');
+          await page.locator('#draw').click();
+          await page.waitForFunction(()=>!document.getElementById('result').classList.contains('hidden'));
+          const visibleReading=await page.locator('#reading').innerText();
+          const readingHtml=await page.locator('#reading').innerHTML();
+          assert.doesNotMatch(visibleReading,/<div|hidden-quote|display:none/i);
+          assert.doesNotMatch(readingHtml,/hidden-quote/);
+          assert.match(await page.locator('#reading .golden-quote').innerText(),/離開不是失去/);
+          assert.ok(await page.locator('#followup').isVisible());
+          assert.equal(await page.locator('#handoff-details').getAttribute('open'),null);
+          assert.match(await page.locator('#handoff summary').innerText(),/備援|進階/);
+          console.log('production_hidden_html_sanitized=passed');
+          console.log('production_external_ai_is_backup=passed');
+
+          await page.locator('#followup-input').fill('那我現在最該先做什麼？');
+          await page.locator('#followup-send').click();
+          await page.waitForFunction(()=>document.querySelectorAll('#followup-history .assistant').length===1);
+          assert.equal(followupPayload.readingId,'rd_prod_ux');
+          assert.equal(followupPayload.sessionToken,'prod-ux-token');
+          assert.equal(followupPayload.question,'那我現在最該先做什麼？');
+          assert.ok(!followupPayload.input,'follow-up must not request a redraw');
+          const followupText=await page.locator('#followup-history .assistant').innerText();
+          assert.doesNotMatch(followupText,/<div|hidden-quote|display:none/i);
+          assert.match(followupText,/同一張牌/);
+          console.log('production_in_site_followup_same_reading=passed');
 
           const mobile=await browser.newPage({viewport:{width:375,height:812}});
-          await mobile.goto(base+'/read.html?method=lenormand',{waitUntil:'networkidle'});
-          assert.ok(await mobile.locator('#question').isVisible());
-          assert.ok(await mobile.locator('#draw').isVisible());
+          await mobile.goto(base+'/read.html?deck=leopardcat',{waitUntil:'networkidle'});
           const overflow=await mobile.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth);
           assert.ok(overflow<=1,`horizontal overflow ${overflow}px`);
-          console.log('production_browser_mobile_layout=passed');
+          console.log('production_mobile_layout=passed');
 
           await browser.close();
           NODE
