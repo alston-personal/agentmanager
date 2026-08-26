@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "node_id": "vopc5750",
+  "target": "C:\\Users\\alston.huang\\AgentOS\\one-control-test.txt",
+  "tasks": [
+    {
+      "schema": "agentos.node-task/v0.1",
+      "task_id": "control-write-1787726520",
+      "action": "filesystem.write",
+      "path": "C:\\Users\\alston.huang\\AgentOS\\one-control-test.txt",
+      "content_utf8": "AgentOS ONE controlled this Windows node successfully.\nnode_id=vopc5750\ncontrol_test=1787726520\n",
+      "cognition_ids_used": [],
+      "queued_at": "2026-08-26T06:42:00Z"
+    },
+    {
+      "schema": "agentos.node-task/v0.1",
+      "task_id": "control-read-1787726520",
+      "action": "filesystem.read",
+      "path": "C:\\Users\\alston.huang\\AgentOS\\one-control-test.txt",
+      "max_bytes": 4096,
+      "cognition_ids_used": [],
+      "queued_at": "2026-08-26T06:42:00Z"
+    }
+  ]
+}
