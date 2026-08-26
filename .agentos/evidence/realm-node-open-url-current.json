@@ -11,7 +11,7 @@
     ],
     "first_seen_at": "2026-08-26T06:21:49Z",
     "hostname": "VOPC5750",
-    "last_heartbeat_at": "2026-08-26T06:47:11Z",
+    "last_heartbeat_at": "2026-08-26T07:00:53Z",
     "last_manifest_at": "2026-08-26T06:20:17Z",
     "node_id": "vopc5750",
     "platform": "Windows",
@@ -27,49 +27,37 @@
       "python": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.EXE",
       "python3": "C:\\Users\\alston.huang\\AppData\\Local\\Microsoft\\WindowsApps\\python3.EXE"
     },
-    "uptime_seconds": 155
+    "uptime_seconds": 194
   },
   "ok": true,
   "queued_task": {
-    "action": "shell.exec",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "Start-Process 'https://www.google.com/search?q=agentos'"
-    ],
+    "action": "desktop.open_url",
     "cognition_ids_used": [],
-    "cwd": "C:\\Users\\alston.huang\\AgentOS",
-    "executable": "powershell",
-    "queued_at": "2026-08-26T06:47:12Z",
+    "queued_at": "2026-08-26T07:00:56Z",
     "schema": "agentos.node-task/v0.1",
-    "task_id": "open-url-vopc5750-1787726832",
-    "timeout_seconds": 15
+    "task_id": "desktop-open-url-vopc5750-1787727656",
+    "url": "https://www.google.com/search?q=agentos"
   },
   "receipt": {
-    "action": "shell.exec",
+    "action": "desktop.open_url",
     "cognition_ids_used": [],
-    "completed_at": "2026-08-26T06:47:18Z",
-    "execution": {
-      "argv": [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Start-Process 'https://www.google.com/search?q=agentos'"
-      ],
-      "cwd": "C:\\Users\\alston.huang\\AgentOS",
-      "executable": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
-      "timeout_seconds": 15
-    },
+    "completed_at": "2026-08-26T07:00:59Z",
+    "launched": true,
     "node_id": "vopc5750",
     "ok": true,
     "realm_id": "realm-alston",
-    "received_at": "2026-08-26T06:47:18Z",
-    "returncode": 0,
+    "received_at": "2026-08-26T07:00:59Z",
     "schema": "agentos.node-receipt/v0.1",
-    "started_at": "2026-08-26T06:47:17Z",
-    "stderr": "",
-    "stdout": "",
-    "task_id": "open-url-vopc5750-1787726832"
+    "session": {
+      "active_console_session_id": 1,
+      "interactive": true,
+      "pid": 72048,
+      "process_session_id": 1,
+      "session_name": null,
+      "username": "alston.huang"
+    },
+    "started_at": "2026-08-26T07:00:59Z",
+    "task_id": "desktop-open-url-vopc5750-1787727656",
+    "url": "https://www.google.com/search?q=agentos"
   }
 }
