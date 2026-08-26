@@ -11,7 +11,7 @@
     ],
     "first_seen_at": "2026-08-26T06:21:49Z",
     "hostname": "VOPC5750",
-    "last_heartbeat_at": "2026-08-26T07:00:53Z",
+    "last_heartbeat_at": "2026-08-26T07:09:34Z",
     "last_manifest_at": "2026-08-26T06:20:17Z",
     "node_id": "vopc5750",
     "platform": "Windows",
@@ -27,37 +27,16 @@
       "python": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.EXE",
       "python3": "C:\\Users\\alston.huang\\AppData\\Local\\Microsoft\\WindowsApps\\python3.EXE"
     },
-    "uptime_seconds": 194
+    "uptime_seconds": 715
   },
-  "ok": true,
+  "ok": false,
   "queued_task": {
     "action": "desktop.open_url",
     "cognition_ids_used": [],
-    "queued_at": "2026-08-26T07:00:56Z",
+    "queued_at": "2026-08-26T07:10:10Z",
     "schema": "agentos.node-task/v0.1",
-    "task_id": "desktop-open-url-vopc5750-1787727656",
+    "task_id": "desktop-open-url-vopc5750-1787728210",
     "url": "https://www.google.com/search?q=agentos"
   },
-  "receipt": {
-    "action": "desktop.open_url",
-    "cognition_ids_used": [],
-    "completed_at": "2026-08-26T07:00:59Z",
-    "launched": true,
-    "node_id": "vopc5750",
-    "ok": true,
-    "realm_id": "realm-alston",
-    "received_at": "2026-08-26T07:00:59Z",
-    "schema": "agentos.node-receipt/v0.1",
-    "session": {
-      "active_console_session_id": 1,
-      "interactive": true,
-      "pid": 72048,
-      "process_session_id": 1,
-      "session_name": null,
-      "username": "alston.huang"
-    },
-    "started_at": "2026-08-26T07:00:59Z",
-    "task_id": "desktop-open-url-vopc5750-1787727656",
-    "url": "https://www.google.com/search?q=agentos"
-  }
+  "receipt": null
 }
