@@ -34,7 +34,8 @@ git -C "$REPO" show origin/main:agentos_node/antigravity_relay_worker.py > "$TMP
 git -C "$REPO" show origin/main:scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
 
 # Realm Fabric is intentionally tiny and stdlib-only. Materialize only its canonical
-# modules rather than merging or cleaning the live checkout.
+# modules rather than merging or cleaning the live checkout. Device enrollment uses
+# request -> human approval -> claim, so no enrollment secret enters GitHub control.
 git -C "$REPO" show origin/main:agent_core/__init__.py > "$TMPDIR/agent_core_init.py"
 git -C "$REPO" show origin/main:agent_core/node_registry.py > "$TMPDIR/node_registry.py"
 git -C "$REPO" show origin/main:agent_core/realm_fabric.py > "$TMPDIR/realm_fabric.py"
@@ -80,7 +81,7 @@ WantedBy=default.target
 EOF
 
 # Install ONE Realm Fabric as a separate localhost-only Core service. It has no
-# public route here; first-node bootstrap uses an SSH tunnel until HTTPS/QR enrollment.
+# public route here; first-node bootstrap uses a private tunnel until HTTPS/QR enrollment.
 (
   cd "$REALM_RUNTIME"
   AGENT_DATA_ROOT="$DATA_ROOT" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
@@ -108,7 +109,8 @@ EOF
 # Do NOT restart Antigravity from inside its own request. Reload the unit only;
 # Action Relay performs that restart after repair side effects are observed.
 systemctl --user daemon-reload
-systemctl --user enable --now agentos-realm-fabric.service
+systemctl --user restart agentos-realm-fabric.service
+systemctl --user enable agentos-realm-fabric.service >/dev/null
 (
   cd "$RUNTIME"
   PYTHONPATH="$RUNTIME" python3 - <<'PY'
@@ -135,6 +137,7 @@ echo "antigravity_group_context=agentos"
 echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
 echo "realm_fabric_install=PASS"
+echo "realm_fabric_device_flow=PASS"
 echo "realm_fabric_port=8780"
 echo "realm_fabric_public_route=NONE"
 echo "runtime=$RUNTIME"
