@@ -19,30 +19,33 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Identify PM2 dashboard identity without mutation
+      - name: Inspect dashboard process tree without mutation
         shell: bash
         run: |
           set -euo pipefail
           echo "identity=$(id)"
-          echo '=== PM2 DUMP SUMMARY ==='
-          if [ -r /home/ubuntu/.pm2/dump.pm2 ]; then
-            python3 - <<'PY'
-import json
-p='/home/ubuntu/.pm2/dump.pm2'
-data=json.load(open(p))
-for item in data:
-    env=item.get('pm2_env') or item
-    print({
-      'name': env.get('name'),
-      'pm_id': env.get('pm_id'),
-      'pm_cwd': env.get('pm_cwd'),
-      'script': env.get('pm_exec_path'),
-      'args': env.get('args'),
-      'status': env.get('status'),
-    })
+          echo '=== DASHBOARD PROCESS TREE ==='
+          ps -eo user,pid,ppid,pgid,sid,lstart,cmd --sort=pid | grep -E '(^USER|/home/ubuntu/agentmanager/dashboard|npm start|next-server|next start|PM2)' || true
+          echo '=== LISTENER 3000 ==='
+          ss -ltnp 'sport = :3000' 2>&1 || true
+          echo '=== /PROC CWD FOR UBUNTU NPM/NEXT ==='
+          python3 - <<'PY'
+from pathlib import Path
+import os
+for e in Path('/proc').iterdir():
+    if not e.name.isdigit():
+        continue
+    try:
+        st=e.stat()
+        if st.st_uid != 1001:
+            continue
+        cmd=(e/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+        if not any(x in cmd for x in ('npm start','next-server','next start')):
+            continue
+        cwd=str((e/'cwd').resolve())
+        stat=(e/'stat').read_text().split()
+        print({'pid':int(e.name),'ppid':int(stat[3]),'pgid':int(stat[4]),'sid':int(stat[5]),'cwd':cwd,'cmd':cmd})
+    except Exception as exc:
+        print({'pid':e.name,'error':str(exc)})
 PY
-          else
-            echo 'dump_unreadable=true'
-            stat -c '%U:%G %a %n' /home/ubuntu/.pm2 /home/ubuntu/.pm2/dump.pm2 2>/dev/null || true
-          fi
           echo 'mutation=NONE'
