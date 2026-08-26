@@ -17,11 +17,11 @@ LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
 
-find_dashboard_pid() {
+find_dashboard_runtime() {
   python3 - "$DASH" <<'PY'
 from pathlib import Path
 import os,sys
-root=Path('/proc'); target=str(Path(sys.argv[1]).resolve()); hits=[]
+root=Path('/proc'); target=str(Path(sys.argv[1]).resolve()); rows=[]
 for entry in root.iterdir():
     if not entry.name.isdigit(): continue
     try:
@@ -29,29 +29,65 @@ for entry in root.iterdir():
         if st.st_uid != os.getuid(): continue
         cwd=str((entry/'cwd').resolve())
         raw=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+        stat=(entry/'stat').read_text().split()
     except (OSError, PermissionError):
         continue
-    if cwd == target and raw.startswith('npm start'):
-        hits.append(entry.name)
-if len(hits) != 1:
-    raise SystemExit(f'expected exactly one dashboard npm start process, got {hits}')
-print(hits[0])
+    if cwd != target: continue
+    if raw.startswith('npm start') or 'next start' in raw or raw.startswith('next-server'):
+        rows.append((int(entry.name), int(stat[3]), int(stat[4]), raw))
+for pid,ppid,pgid,raw in sorted(rows):
+    print(f'{pid}\t{ppid}\t{pgid}\t{raw}')
 PY
 }
 
+find_dashboard_npm_pid() {
+  find_dashboard_runtime | awk -F '\t' '$4 ~ /^npm start/ {print $1}'
+}
+
 restart_dashboard() {
-  local old_pid new_pid
-  old_pid=$(find_dashboard_pid)
-  echo "dashboard_old_pid=$old_pid"
-  kill -TERM "$old_pid"
-  new_pid=""
+  local before groups old_npm new_npm
+  before=$(find_dashboard_runtime)
+  [ -n "$before" ] || { echo "ERROR: no dashboard runtime found" >&2; return 4; }
+  echo 'dashboard_runtime_before:'
+  printf '%s\n' "$before"
+
+  old_npm=$(printf '%s\n' "$before" | awk -F '\t' '$4 ~ /^npm start/ {print $1}')
+  [ "$(printf '%s\n' "$old_npm" | sed '/^$/d' | wc -l)" -eq 1 ] || {
+    echo "ERROR: expected exactly one dashboard npm start before restart, got: $old_npm" >&2
+    return 4
+  }
+
+  groups=$(printf '%s\n' "$before" | awk -F '\t' '{print $3}' | sort -nu)
+  [ -n "$groups" ] || { echo "ERROR: no dashboard process groups found" >&2; return 4; }
+  for pgid in $groups; do
+    [ "$pgid" != "$(ps -o pgid= -p $$ | tr -d ' ')" ] || { echo "ERROR: refusing own process group" >&2; return 4; }
+    echo "dashboard_term_pgid=$pgid"
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+  done
+
   for i in $(seq 1 30); do
     sleep 1
-    if new_pid=$(find_dashboard_pid 2>/dev/null) && [ "$new_pid" != "$old_pid" ]; then break; fi
-    new_pid=""
+    new_npm=$(find_dashboard_npm_pid 2>/dev/null || true)
+    if [ -n "$new_npm" ] && [ "$new_npm" != "$old_npm" ]; then
+      break
+    fi
   done
-  [ -n "$new_pid" ] || { echo "ERROR: dashboard supervisor did not restart npm start" >&2; return 4; }
-  echo "dashboard_new_pid=$new_pid"
+  [ -n "${new_npm:-}" ] && [ "$new_npm" != "$old_npm" ] || {
+    echo "ERROR: dashboard supervisor did not restart npm start" >&2
+    return 4
+  }
+  echo "dashboard_old_pid=$old_npm"
+  echo "dashboard_new_pid=$new_npm"
+
+  # The old orphaned process groups must be gone; only the new runtime may remain.
+  for pgid in $groups; do
+    if ps -eo pgid= | awk '{print $1}' | grep -qx "$pgid"; then
+      echo "ERROR: old dashboard process group still alive: $pgid" >&2
+      return 4
+    fi
+  done
+  echo 'dashboard_runtime_after:'
+  find_dashboard_runtime
 }
 
 TMP=$(mktemp -d)
