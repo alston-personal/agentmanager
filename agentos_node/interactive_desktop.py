@@ -6,7 +6,6 @@ import hashlib
 import os
 import platform
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -44,8 +43,12 @@ def open_url(url: str) -> dict[str, Any]:
     info = session_info()
     if not info['interactive']:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
-    os.startfile(url)  # type: ignore[attr-defined]
-    return {'url': url, 'session': info, 'launched': True}
+    # Use the Windows shell association directly instead of cmd.exe / Start-Process.
+    # ShellExecuteW returns >32 on success and an error code <=32 on failure.
+    rc = int(ctypes.windll.shell32.ShellExecuteW(None, 'open', url, None, None, 1))
+    if rc <= 32:
+        raise RuntimeError(f'ShellExecuteW failed with code {rc}')
+    return {'url': url, 'session': info, 'launched': True, 'shell_execute_code': rc}
 
 
 def screenshot(workspace: Path, *, quality: int = 55) -> dict[str, Any]:
@@ -74,7 +77,7 @@ Write-Output ($bounds.Width.ToString()+','+$bounds.Height.ToString())
     env = os.environ.copy()
     env['AGENTOS_SCREENSHOT_PATH'] = str(target)
     env['AGENTOS_JPEG_QUALITY'] = str(quality)
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=20, env=env, check=False)
+    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], text=True, capture_output=True, timeout=20, env=env, check=False)
     if cp.returncode != 0 or not target.is_file():
         raise RuntimeError(f'screenshot failed rc={cp.returncode}: {cp.stderr[-2000:]}')
     raw = target.read_bytes()
@@ -133,10 +136,9 @@ def keyboard(task: dict[str, Any]) -> dict[str, Any]:
     text = str(task.get('text') or '')
     if not text or len(text) > 1000:
         raise ValueError('text must contain 1..1000 characters')
-    # Use PowerShell SendKeys only inside the already-validated interactive user session.
     escaped = text.replace("'", "''")
     script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=10, check=False)
+    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], text=True, capture_output=True, timeout=10, check=False)
     if cp.returncode != 0:
         raise RuntimeError(f'keyboard input failed rc={cp.returncode}: {cp.stderr[-2000:]}')
     return {'operation': op, 'characters': len(text), 'session': info}
