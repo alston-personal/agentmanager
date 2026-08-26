@@ -1,0 +1,42 @@
+name: Oracle Inspect Realm Public Endpoint
+
+on:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-realm-public-endpoint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-core-inspection
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect HTTPS routing authority without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "identity=$(id)"
+          echo "realm_health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)"
+          echo '=== SUDO NONINTERACTIVE ==='
+          if sudo -n true 2>/dev/null; then echo 'sudo_noninteractive=true'; else echo 'sudo_noninteractive=false'; fi
+          echo '=== NGINX CONFIG PATHS ==='
+          for p in /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*; do
+            [ -e "$p" ] || continue
+            stat -c '%U:%G %a %n' "$p" || true
+          done
+          echo '=== RELEVANT NGINX SURFACE ==='
+          nginx -T 2>/dev/null | grep -E 'server_name|listen 443|studio\.milkcat\.org|location .*agentos|proxy_pass.*87(65|66|80)' || true
+          echo '=== EXISTING PUBLIC HEALTH CANDIDATES ==='
+          for u in https://studio.milkcat.org/agentos/one/v1/health https://studio.milkcat.org/agentos/v1/health; do
+            code=$(curl -sS -o /tmp/agentos-public-probe -w '%{http_code}' --max-time 5 "$u" || true)
+            echo "$u http=$code"
+          done
+          echo 'mutation=NONE'
