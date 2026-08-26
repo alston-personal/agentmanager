@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: layoutlab-production
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
