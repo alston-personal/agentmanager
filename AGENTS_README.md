@@ -1,35 +1,39 @@
-# 🐱 石虎 AgentOS (LeopardCat AgentOS) - 跨代理記憶協議 (LAMP)
+# AgentOS — Cross-Agent Continuity Guide
 
-## 📖 這是什麼？ (Inter-Agent Memory Layer)
-這份手冊是給所有進入本開發環境的 **AI Agent (Antigravity, Codex, Gemini Code Assistant, Cursor, etc.)** 看的。
-為了避免「Session 遺失」與「跨工具斷層」，本系統強制要求所有 Agent 遵循 **「物理記憶層」** 機制。
+> **Current architecture:** read `README.md`, `docs/CURRENT_STATE.md`, and `AGENTS.md` first.
 
----
+This file used to describe the early LAMP / pulse / brain-dump architecture as if it were the whole AgentOS. That is no longer accurate. Those mechanisms are historical continuity techniques; current AgentOS also contains explicit continuation-state reconciliation, a persistent control plane, governance/resource resolution, Realm cross-node execution, platform drivers, and evidence-first validation.
 
-## 🚀 Agent 入籍程序 (Onboarding Protocol)
-當你（AI Agent）第一次進入任何專案目錄時，**必須**執行以下動作：
+## Agent entry protocol
 
-1.  **讀取脈搏 (Read Pulse)**：優先開啟 `.agent/pulse/last_brain_dump.md` 與 `STATUS.md`。那裡有上一個 Agent 留下的「靈魂記憶」，而非僅依賴你的 Chat History。
-2.  **主動回報 (Heartbeat Update)**：在每一輪對話的核心決策完成後，將 **`Thought`** 與 **`Next Steps`** append 到 `.agent/pulse/live_thoughts.log`。
-3.  **結案備份 (Handover Handshake)**：對話結束前，務必執行 `python3 /home/ubuntu/agentmanager/scripts/handover.py` 生成對接手冊。
+When an AI agent enters this repository:
 
----
+1. Read `docs/CURRENT_STATE.md` to learn what is actually implemented vs. still research.
+2. Read `AGENTS.md` for current repository constraints.
+3. For system/cross-project changes, use the `agentos-node` responsibility/resource flow from `docs/AGENTOS_NODE.md`.
+4. Inspect tests and `.agentos/evidence/` when validating a capability claim.
+5. Do not infer the current architecture from old pulse files, brain dumps, or a single historical handoff document.
 
-## 📂 記憶目錄結構 (Structure)
-每個專案邏輯層 (Logic Repo) 必須包含：
-*   `.agent/pulse/`
-    *   `last_brain_dump.md`：核心思維與當前難點快照。
-    *   `live_thoughts.log`：[重要] 防止 Session 消失的實時紀錄。
-    *   `context.json`：結構化的任務變數。
-*   `STATUS.md` -> (Link) 指向 Data Layer (真相中心)。
+## Continuity principle
 
----
+The system is moving from "remember the previous conversation" toward "preserve enough durable working state that another executor can continue." A newer user goal/correction must survive stale tool results, compaction, replay, and executor changes.
 
-## 🚫 禁忌與底線 (The Forbidden Laws)
-*   **禁止覆蓋 `STATUS.md` 軟連結**：它是鏈向 `/home/ubuntu/agent-data` 的唯一通道。
-*   **禁止自作主張簡化腳本**：嚴禁刪除 `scripts/core_services/` 下的監控腳本。
-*   **物理存檔優先**：不要相信對話索引（Index），只相信你寫入磁碟的內容。
-*   **高價值提問 (Value-Driven Questions)**：問問題時絕對不要只單純丟出問題。必須提出至少兩個以上的可行解決方案，給出你的推薦選項與理由，最後再讓使用者決定。單純反問只是轉嫁問題，無法展現你的價值。
+The model-independent **Cognitive IR** layer is an active research direction, not a completed feature. Do not claim arbitrary ChatGPT/Gemini/Claude switching is solved unless a repeatable benchmark proves it.
 
----
-*「Agent 會離開，但石虎的記憶會留下來。」*
+## Persistent state
+
+Logic/Data separation remains mandatory:
+
+- runtime logic, tests, workflows, and contracts live in `agentmanager`;
+- mutable project state, memory, handoffs, and registries live under the configured `AGENT_DATA_ROOT`;
+- absolute paths such as `/home/ubuntu/...` are deployment examples, not universal protocol requirements.
+
+## Documentation rule
+
+If architecture-sensitive implementation changes, update an authoritative document in the same change set and run:
+
+```bash
+python3 scripts/documentation_reality_guard.py
+```
+
+Do not let this file become a second competing source of truth. `docs/CURRENT_STATE.md` is the canonical public implementation-reality map.
