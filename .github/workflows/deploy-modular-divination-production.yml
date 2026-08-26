@@ -33,7 +33,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Deploy with automatic rollback
+      - name: Deploy Divination OS v1 with automatic rollback
         shell: bash
         run: |
           set -euo pipefail
@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=38889cb6749ef3a90d7bec897b2ed81149aae313
+          TARGET=fba6a56fcab4357ad3b7fab45e9de2be4f91b76a
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo "old_commit=$OLD"
           echo "target_commit=$TARGET"
@@ -52,7 +52,7 @@ jobs:
             echo "$dirty" >&2
             exit 40
           fi
-          cp "$WEB/stats.json" /tmp/leopardcat-stats.pre-modular.json
+          cp "$WEB/stats.json" /tmp/leopardcat-stats.pre-divination-v1.json
 
           stop_server() {
             for pid in $(pgrep -f 'python3 fortune_server.py' || true); do
@@ -73,11 +73,11 @@ jobs:
             nohup /usr/bin/python3 fortune_server.py >/tmp/fortune_server.log 2>&1 &
             echo $! >/tmp/fortune_server.pid
             for _ in $(seq 1 30); do
-              if curl -fsS http://127.0.0.1:8088/api/stats >/dev/null 2>&1; then return 0; fi
+              if curl -fsS http://127.0.0.1:8088/api/v1/methods >/dev/null 2>&1; then return 0; fi
               sleep 1
             done
             echo 'fortune server failed to become ready' >&2
-            tail -80 /tmp/fortune_server.log >&2 || true
+            tail -100 /tmp/fortune_server.log >&2 || true
             return 1
           }
 
@@ -85,7 +85,7 @@ jobs:
             echo 'deployment_smoke_failed=rolling_back' >&2
             stop_server
             git -C "$PROD" reset --hard "$OLD"
-            cp /tmp/leopardcat-stats.pre-modular.json "$WEB/stats.json"
+            cp /tmp/leopardcat-stats.pre-divination-v1.json "$WEB/stats.json"
             cd "$WEB"
             npm run build
             start_server
@@ -102,39 +102,74 @@ jobs:
             exit 41
           fi
           git -C "$PROD" merge --ff-only FETCH_HEAD
-          cp /tmp/leopardcat-stats.pre-modular.json "$WEB/stats.json"
+          cp /tmp/leopardcat-stats.pre-divination-v1.json "$WEB/stats.json"
 
           cd "$WEB"
           npm run build
-          grep -R -q '/api/v1/readings' dist || { echo 'built frontend lacks modular API reference' >&2; exit 42; }
+          grep -R -q '/api/v1/readings' dist || { echo 'built frontend lacks readings API reference' >&2; exit 42; }
+          test -f dist/read.html || { echo 'focused reading UI missing from build' >&2; exit 43; }
+          test -f dist/manage.html || { echo 'creator management UI missing from build' >&2; exit 44; }
           python3 -m py_compile fortune_server.py divination/*.py
           stop_server
           start_server
 
           python3 - <<'PY'
-          import json, urllib.request
-          url='http://127.0.0.1:8088/api/v1/readings'
+          import json, urllib.request, urllib.error
+
+          base='http://127.0.0.1:8088'
+          with urllib.request.urlopen(base+'/api/v1/methods', timeout=10) as r:
+              catalog=json.loads(r.read().decode())
+          methods={m['method_id']:m for m in catalog['methods']}
+          assert {'tarot','lenormand'} <= set(methods)
+          assert any(s['id']=='box9' and s['card_count']==9 for s in methods['lenormand']['spreads'])
+          print('production_methods_contract=passed')
+
           body={
-              'method':'tarot', 'persona':'leopardcat',
-              'question':'部署驗證：請給我一句今日提醒。',
-              'input':{'spread':'single'}, 'lang':'zh-TW', 'seed':'production-release-smoke'
+              'method':'lenormand', 'persona':'master',
+              'question':'部署驗證：接下來應注意什麼？',
+              'input':{'spread':'box9'}, 'lang':'zh-TW', 'seed':'production-v1-smoke'
           }
-          req=urllib.request.Request(url, data=json.dumps(body, ensure_ascii=False).encode(), headers={'Content-Type':'application/json'}, method='POST')
-          with urllib.request.urlopen(req, timeout=45) as r:
-              data=json.loads(r.read().decode())
+          req=urllib.request.Request(
+              base+'/api/v1/readings',
+              data=json.dumps(body, ensure_ascii=False).encode(),
+              headers={'Content-Type':'application/json'}, method='POST'
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=45) as r:
+                  status=r.status; data=json.loads(r.read().decode())
+          except urllib.error.HTTPError as e:
+              status=e.code; data=json.loads(e.read().decode())
+
+          assert status in (200,503), status
           assert data['reading_id'].startswith('rd_')
-          assert data['method']=='tarot'
-          assert data['persona']=='leopardcat'
-          assert len(data['method_result']['cards']) == 1
-          assert data['method_result']['cards'][0]['orientation'] in ('upright','reversed')
-          assert len(data.get('reading','').strip()) > 20
-          print('local_production_api_smoke=passed')
-          print('orientation='+data['method_result']['cards'][0]['orientation'])
+          assert data['method']=='lenormand'
+          assert data['persona']=='master'
+          assert data['method_result']['method']=='lenormand'
+          assert data['method_result']['spread']=='box9'
+          assert len(data['method_result']['cards'])==9
+          assert data['capsule']['schema']=='divination-reading/1'
+          assert data['capsule']['contract']['redraw_forbidden'] is True
+          assert {x['id'] for x in data['handoff']['providers']}=={'chatgpt','claude','gemini'}
+          if status == 200:
+              assert len((data.get('reading') or '').strip()) > 20
+              print('production_ai_state=available')
+          else:
+              assert data['error']=='ai_unavailable'
+              assert data.get('reading') is None
+              print('production_ai_state=zero_cost_fallback')
+          print('local_production_divination_v1_smoke=passed')
           PY
 
           curl -fsS https://leopardcat-tarot.milkcat.org/ >/dev/null
-          curl -fsS https://leopardcat-tarot.milkcat.org/api/stats >/dev/null
-          echo 'public_http_smoke=passed'
+          curl -fsS https://leopardcat-tarot.milkcat.org/read.html >/dev/null
+          curl -fsS https://leopardcat-tarot.milkcat.org/manage.html >/dev/null
+          curl -fsS https://leopardcat-tarot.milkcat.org/api/v1/methods >/tmp/public-methods.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/public-methods.json'))
+          assert {'tarot','lenormand'} <= {x['method_id'] for x in d['methods']}
+          print('public_divination_v1_http_smoke=passed')
+          PY
           echo "deployed_commit=$(git -C "$PROD" rev-parse HEAD)"
           trap - EXIT
           REMOTE
