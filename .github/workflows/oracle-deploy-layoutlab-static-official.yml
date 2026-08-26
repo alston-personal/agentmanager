@@ -33,13 +33,13 @@ jobs:
               RUN_LIB=$(sha256sum "$RUNTIME/web_assets/layoutlib-browser-v0.5.js" | awk '{print $1}')
               RUN_DEPLOY=$(sha256sum "$RUNTIME/scripts/deploy_layoutlab_static.py" | awk '{print $1}')
               if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ] && [ "$SRC_DEPLOY" = "$RUN_DEPLOY" ]; then
-                echo 'runtime_v0_5_refresh=PASS'
+                echo 'runtime_v0_6_refresh=PASS'
                 exit 0
               fi
             fi
             sleep 1
           done
-          echo 'runtime_v0_5_refresh=TIMEOUT'
+          echo 'runtime_v0_6_refresh=TIMEOUT'
           exit 3
 
       - name: Submit deterministic static deployment
@@ -64,6 +64,8 @@ jobs:
           assert r.get('action') == 'layoutlab.static.deploy', r
           assert r.get('ok') is True, r
           assert r.get('executor_user') == 'ubuntu', r
+          text=(r.get('step') or {}).get('stdout','')
+          assert 'layoutlib-v0.6-generalized-profile-learning' in text, r
           print('deterministic_static_deploy=PASS')
           PY
 
@@ -83,21 +85,23 @@ jobs:
             test "$CODE" = 200
             test "$LIBCODE" = 200
             grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-static-ui
-            grep -q 'LayoutLib Browser Adapter v0.5' /tmp/layoutlab-static-ui
-            grep -q '分析 / 重新分析' /tmp/layoutlab-static-ui
-            grep -q 'wallThickness' /tmp/layoutlab-static-ui
-            grep -q '＋ 補牆' /tmp/layoutlab-static-ui
-            grep -q '⌫ 擦牆' /tmp/layoutlab-static-ui
-            grep -q "version:'0.5.0'" /tmp/layoutlab-lib
-            grep -q 'addWallPx' /tmp/layoutlab-lib
-            grep -q 'eraseStrokePx' /tmp/layoutlab-lib
-            grep -q 'setGeometry' /tmp/layoutlab-lib
-            grep -q 'createScaleCalibration' /tmp/layoutlab-lib
+            grep -q 'LayoutLib Browser Adapter v0.6' /tmp/layoutlab-static-ui
+            grep -q '3D 即時對照' /tmp/layoutlab-static-ui
+            grep -q '黃色反白' /tmp/layoutlab-static-ui
+            grep -q 'layoutlib.profile.samples.v1' /tmp/layoutlab-static-ui
+            grep -q '泛化建議' /tmp/layoutlab-static-ui
+            grep -q "version:'0.6.0'" /tmp/layoutlab-lib
+            grep -q 'previewEraseStrokePx' /tmp/layoutlab-lib
+            grep -q 'extractProfileFeatures' /tmp/layoutlab-lib
+            grep -q 'predictProfileParameters' /tmp/layoutlab-lib
+            grep -q 'makeLearningObservation' /tmp/layoutlab-lib
+            grep -q 'replayEdits' /tmp/layoutlab-lib
             echo 'public_payload_identity=PASS'
-            echo 'unified_editor_state=PASS'
-            echo 'manual_wall_editor=PASS'
-            echo 'wall_height_thickness_floor=PASS'
-            echo 'manual_scale_calibration=PASS'
+            echo 'dual_2d_3d_workspace=PASS'
+            echo 'erase_preview_highlight=PASS'
+            echo 'draft_committed_state=PASS'
+            echo 'generalized_profile_learning=PASS'
+            echo 'learning_not_image_fingerprint=PASS'
             echo 'official_layoutlab_web_ui=PASS'
           } 2>&1 | tee "$OUT"
 
