@@ -1,0 +1,62 @@
+name: AgentOS Clean Next Probe
+
+on:
+  push:
+    paths:
+      - '.github/workflows/agentos-clean-next-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Build and probe
+        working-directory: dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm start >/tmp/agentos-next.log 2>&1 &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1 && break
+            sleep 1
+          done
+          OUT="$GITHUB_WORKSPACE/.agentos/evidence/realm-clean-next-probe.txt"
+          mkdir -p "$(dirname "$OUT")"
+          : > "$OUT"
+          echo "commit=$GITHUB_SHA" >> "$OUT"
+          echo "node=$(node --version)" >> "$OUT"
+          for path in /api/agentos/v1/health /dashboard/api/agentos/v1/health; do
+            headers=/tmp/agentos-h; body=/tmp/agentos-b
+            code=$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' --max-time 4 "http://127.0.0.1:3000$path" || true)
+            marker=false
+            grep -qi '^x-agentos-realm-gateway: v0.1' "$headers" 2>/dev/null && marker=true
+            prefix=$(head -c 180 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ')
+            echo "path=$path http=$code gateway_identity=$marker prefix=$prefix" >> "$OUT"
+          done
+          cat "$OUT"
+      - name: Commit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'AgentOS Evidence Bot'
+          git config user.email 'agentos-evidence@users.noreply.github.com'
+          git add .agentos/evidence/realm-clean-next-probe.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): record clean Next route matrix'
+          git push origin HEAD:main
