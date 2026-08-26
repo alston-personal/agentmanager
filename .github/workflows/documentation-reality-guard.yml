@@ -36,9 +36,10 @@ jobs:
             python3 scripts/documentation_reality_guard.py --base "$BASE"
           fi
 
-      - name: Continuation contract smoke test
+      - name: Test documentation guard and continuation contracts
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m unittest tests.test_documentation_reality_guard -v
           python3 scripts/continuation_state.py --self-test
           python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
