@@ -1,0 +1,34 @@
+name: Patch Action Relay Studio Web Seed
+
+on:
+  push:
+    paths:
+      - 'scripts/patch_action_relay_studio_web_seed.py'
+      - '.github/workflows/patch-action-relay-studio-web-seed.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch canonical Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_action_relay_studio_web_seed.py
+          python3 -m py_compile agentos_node/action_relay.py
+          grep -q 'github.repo.seed_verify_studio_web' agentos_node/action_relay.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(agentos): add governed Studio Web seed verification action'
+          git pull --rebase origin main
+          git push origin HEAD:main
