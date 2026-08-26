@@ -32,13 +32,32 @@ jobs:
           const methods=Object.fromEntries(catalog.methods.map(x=>[x.method_id,x]));
           assert.ok(methods.tarot && methods.lenormand);
           assert.ok(methods.lenormand.spreads.some(x=>x.id==='box9' && x.card_count===9));
+          console.log('production_public_methods=passed');
+
+          // Isolate public reverse-proxy POST behavior before involving browser UI.
+          const directStarted=Date.now();
+          const directResp=await fetch(base+'/api/v1/readings',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({method:'lenormand',persona:'master',question:'Production direct HTTPS smoke',lang:'zh-TW',seed:'production-public-direct',input:{spread:'three'}}),
+            signal:AbortSignal.timeout(90000)
+          });
+          const directText=await directResp.text();
+          console.log(`production_direct_post_status=${directResp.status}`);
+          console.log(`production_direct_post_ms=${Date.now()-directStarted}`);
+          console.log(`production_direct_post_content_type=${directResp.headers.get('content-type')||''}`);
+          let directData={};
+          try{ directData=JSON.parse(directText); }catch(_){ console.log('production_direct_post_body_prefix='+directText.slice(0,180).replace(/\s+/g,' ')); }
+          assert.ok([200,503].includes(directResp.status),`public direct POST status ${directResp.status}`);
+          assert.equal(directData.method_result?.method,'lenormand');
+          assert.equal(directData.capsule?.schema,'divination-reading/1');
+          console.log('production_public_direct_post=passed');
 
           const browser=await chromium.launch({headless:true});
           const page=await browser.newPage({viewport:{width:1280,height:900}});
-          const readingResponses=[];
-          page.on('response',async resp=>{
-            if(resp.url().endsWith('/api/v1/readings')) readingResponses.push(resp.status());
-          });
+          page.on('console',msg=>console.log('browser_console['+msg.type()+']='+msg.text()));
+          page.on('pageerror',err=>console.log('browser_pageerror='+err.message));
+          page.on('requestfailed',req=>console.log('browser_requestfailed='+req.url()+' '+(req.failure()?.errorText||'')));
 
           await page.goto(base+'/read.html?deck=leopardcat',{waitUntil:'networkidle'});
           assert.equal(await page.locator('[data-method="tarot"]').getAttribute('class'),'active');
@@ -52,11 +71,28 @@ jobs:
           assert.equal(await page.locator('#persona-select').inputValue(),'master');
           await page.locator('[data-spread="box9"]').click();
           await page.locator('#question').fill('Production browser smoke：接下來應注意什麼？');
-          await page.locator('#draw').click();
-          await page.waitForFunction(()=>!document.getElementById('result').classList.contains('hidden'),null,{timeout:65000});
 
-          assert.ok(readingResponses.some(x=>x===200 || x===503));
-          assert.equal(await page.locator('#cards .draw-card').count(),9);
+          const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/v1/readings'),{timeout:90000});
+          const browserStarted=Date.now();
+          await page.locator('#draw').click();
+          const readingResp=await responsePromise;
+          console.log(`production_browser_post_status=${readingResp.status()}`);
+          console.log(`production_browser_post_ms=${Date.now()-browserStarted}`);
+          const browserBody=await readingResp.text().catch(()=> '');
+          console.log(`production_browser_post_content_type=${readingResp.headers()['content-type']||''}`);
+          if(![200,503].includes(readingResp.status())) console.log('production_browser_post_body_prefix='+browserBody.slice(0,180).replace(/\s+/g,' '));
+          await page.waitForTimeout(1000);
+          const uiState=await page.evaluate(()=>({
+            resultHidden:document.getElementById('result')?.classList.contains('hidden'),
+            status:document.getElementById('status')?.textContent||'',
+            cards:document.querySelectorAll('#cards .draw-card').length,
+            fallbackHidden:document.getElementById('ai-fallback')?.classList.contains('hidden')
+          }));
+          console.log('production_browser_ui_state='+JSON.stringify(uiState));
+
+          assert.ok([200,503].includes(readingResp.status()),`browser POST status ${readingResp.status()}`);
+          assert.equal(uiState.resultHidden,false,'result should be visible after legal 200/503 response');
+          assert.equal(uiState.cards,9);
           assert.ok(await page.locator('#structure').isVisible());
           assert.match(await page.locator('#structure').innerText(),/中心牌|相鄰組合/);
           assert.ok(await page.locator('#handoff').isVisible());
@@ -68,8 +104,7 @@ jobs:
           assert.equal(capsule.result.cards.length,9);
           assert.equal(new Set(capsule.result.cards.map(x=>x.card_id)).size,9);
           assert.equal(capsule.contract.redraw_forbidden,true);
-          const latestStatus=readingResponses.at(-1);
-          if(latestStatus===503){
+          if(readingResp.status()===503){
             assert.ok(await page.locator('#ai-fallback').isVisible());
             assert.match(await page.locator('#reading').innerText(),/自己的 AI|Reading Capsule|抽牌完成/);
             console.log('production_browser_ai_state=zero_cost_fallback');
