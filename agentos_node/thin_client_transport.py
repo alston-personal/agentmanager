@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy
 
@@ -60,6 +60,103 @@ class ThinClientTransport:
         if not isinstance(payload, dict):
             raise RuntimeError('ONE response must be a JSON object')
         return payload
+
+    @classmethod
+    def request_enrollment(
+        cls,
+        *,
+        one_url: str,
+        node_id: str,
+        policy: ThinClientPolicy,
+        expires_minutes: int = 10,
+    ) -> dict[str, Any]:
+        normalized = one_url.rstrip('/')
+        provisional = ThinClient(NodeIdentity(realm_id='pending', node_id=node_id), policy)
+        manifest = provisional.capability_manifest()
+        manifest['realm_id'] = ''
+        result = cls._request(
+            normalized + '/v1/join/request',
+            method='POST',
+            body={'manifest': manifest, 'expires_minutes': max(1, min(int(expires_minutes), 30))},
+        )
+        if not result.get('ok'):
+            raise RuntimeError(f'enrollment request failed: {result}')
+        return result
+
+    @classmethod
+    def wait_for_approval(
+        cls,
+        *,
+        one_url: str,
+        request_id: str,
+        claim_secret: str,
+        config_path: str | Path,
+        poll_seconds: float = 2.0,
+        timeout_seconds: int = 600,
+        on_status: Callable[[dict[str, Any]], None] | None = None,
+    ) -> ClientConfig:
+        normalized = one_url.rstrip('/')
+        deadline = time.monotonic() + max(10, int(timeout_seconds))
+        last_status = None
+        while time.monotonic() < deadline:
+            status = cls._request(
+                normalized + '/v1/join/status',
+                method='POST',
+                body={'request_id': request_id, 'claim_secret': claim_secret},
+            )
+            if status.get('status') != last_status and on_status:
+                on_status(status)
+            last_status = status.get('status')
+            if status.get('status') in {'denied', 'expired', 'claimed'}:
+                raise RuntimeError(f'enrollment ended with status={status.get("status")}')
+            if status.get('status') == 'approved':
+                result = cls._request(
+                    normalized + '/v1/join/claim',
+                    method='POST',
+                    body={'request_id': request_id, 'claim_secret': claim_secret},
+                )
+                if result.get('status') == 'enrolled' and result.get('node_token'):
+                    config = ClientConfig(
+                        one_url=normalized,
+                        realm_id=str(result['realm_id']),
+                        node_id=str(result['node_id']),
+                        node_token=str(result['node_token']),
+                    )
+                    config.save(config_path)
+                    return config
+            time.sleep(max(1.0, float(poll_seconds)))
+        raise TimeoutError('enrollment approval timed out')
+
+    @classmethod
+    def enroll_device(
+        cls,
+        *,
+        one_url: str,
+        node_id: str,
+        policy: ThinClientPolicy,
+        config_path: str | Path,
+        expires_minutes: int = 10,
+        timeout_seconds: int = 600,
+        on_request: Callable[[dict[str, Any]], None] | None = None,
+        on_status: Callable[[dict[str, Any]], None] | None = None,
+    ) -> ClientConfig:
+        request = cls.request_enrollment(
+            one_url=one_url,
+            node_id=node_id,
+            policy=policy,
+            expires_minutes=expires_minutes,
+        )
+        if on_request:
+            # claim_secret remains process-local; callers should display user_code only.
+            on_request({k: v for k, v in request.items() if k != 'claim_secret'})
+        return cls.wait_for_approval(
+            one_url=one_url,
+            request_id=str(request['request_id']),
+            claim_secret=str(request['claim_secret']),
+            config_path=config_path,
+            timeout_seconds=timeout_seconds,
+            on_status=on_status,
+        )
 
     @classmethod
     def enroll(
