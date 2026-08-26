@@ -30,6 +30,7 @@ if ($major -lt 3) { throw "Python 3 is required; found $version" }
 $files = @(
   'agentos_node/__init__.py',
   'agentos_node/thin_client.py',
+  'agentos_node/interactive_desktop.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py'
 )
@@ -43,6 +44,9 @@ $clientCli = Join-Path $Pkg 'client_cli.py'
 $clientCliText = Get-Content -Raw $clientCli
 if ($clientCliText -notmatch "encoding='utf-8-sig'") {
   throw "Downloaded client_cli.py failed BOM-compatibility guard (ref=$Ref)"
+}
+if (-not (Test-Path (Join-Path $Pkg 'interactive_desktop.py'))) {
+  throw "Interactive Desktop Adapter missing (ref=$Ref)"
 }
 
 $policy = @{
@@ -81,6 +85,7 @@ Write-Host "Source commit: $Ref"
 Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
 Write-Host "Launcher: $launcherPath"
+Write-Host "Interactive Desktop Adapter: installed"
 Write-Host ''
 Write-Host 'Next command:'
 Write-Host "  & '$launcherPath' join --one https://studio.milkcat.org/dashboard/api/agentos"
