@@ -1,15 +1,15 @@
-capsule_id=action-a9aba08e278b4d3ebcff2791de0b576c
+capsule_id=action-e8559388129148cb908fcb7e567c0525
 {
   "action": "layoutlab.static.deploy",
   "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
-  "capsule_id": "action-a9aba08e278b4d3ebcff2791de0b576c",
-  "completed_at": "2026-08-26T03:57:13Z",
+  "capsule_id": "action-e8559388129148cb908fcb7e567c0525",
+  "completed_at": "2026-08-26T03:58:48Z",
   "executor_user": "ubuntu",
   "mode": "browser-only-layoutlib-v0.1-compatible",
   "ok": true,
   "schema": "agentos.action-receipt/v1",
   "site": "studio.milkcat.org",
-  "started_at": "2026-08-26T03:57:13Z",
+  "started_at": "2026-08-26T03:58:48Z",
   "step": {
     "argv": [
       "/usr/bin/python3",
@@ -17,6 +17,6 @@ capsule_id=action-a9aba08e278b4d3ebcff2791de0b576c
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "{\"bytes\": 18959, \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"browser-only-layoutlib-v0.1-compatible\", \"ok\": true, \"sha256\": \"fc69ba9a0c02b5c97830d295b077b39805cb3a17e0c12976f8c77cbf2b87894a\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}\n"
+    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 13653, \"sha256\": \"d78abf4a0e77ca117ca1804f8cef00cdcc298d09c5a4e3521253ec7331c6aae7\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlib-browser-v0.3.js\": {\"bytes\": 4920, \"sha256\": \"3d1f2588b3646c8863b9d9326097fbd457de8676cec8fca29963768ab0c14499\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.3.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.3.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.3-anchored-browser-adapter\", \"ok\": true}\n"
   }
 }
