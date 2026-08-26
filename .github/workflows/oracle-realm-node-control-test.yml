@@ -1,0 +1,67 @@
+name: Oracle Realm Node Control Test
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-node-control-test.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-realm-node-control-test
+  cancel-in-progress: false
+
+jobs:
+  queue:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Queue fixed reversible Windows control test
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+          cmd=json.load(open('.agentos/commands/realm-node-control-test.json',encoding='utf-8'))
+          assert cmd.get('schema') == 'agentos.realm-command/v0.1'
+          assert cmd.get('action') == 'realm.node.control-test'
+          node_id=str(cmd.get('node_id') or '')
+          assert node_id == 'vopc5750'
+          node=next(n for n in NodeRegistry().node_map()['nodes'] if n.get('node_id')==node_id)
+          assert node.get('status') == 'online'
+          stamp=str(int(time.time()))
+          target=r'C:\Users\alston.huang\AgentOS\one-control-test.txt'
+          content='AgentOS ONE controlled this Windows node successfully.\nnode_id=vopc5750\ncontrol_test='+stamp+'\n'
+          fabric=RealmFabricStore()
+          t1={'schema':'agentos.node-task/v0.1','task_id':'control-write-'+stamp,'action':'filesystem.write','path':target,'content_utf8':content,'cognition_ids_used':[]}
+          t2={'schema':'agentos.node-task/v0.1','task_id':'control-read-'+stamp,'action':'filesystem.read','path':target,'max_bytes':4096,'cognition_ids_used':[]}
+          q1=fabric.queue_task(node_id,t1); q2=fabric.queue_task(node_id,t2)
+          out={'ok':True,'node_id':node_id,'target':target,'tasks':[q1,q2]}
+          Path('/tmp/realm-node-control-test.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print('realm_node_control_test_queued=PASS')
+          print('write_task='+t1['task_id'])
+          print('read_task='+t2['task_id'])
+          PY
+      - name: Publish non-secret control-test evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/realm-node-control-test.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-node-control-test.json .agentos/evidence/realm-node-control-test-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-node-control-test-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): queue Windows control test'
+          git push origin HEAD:main
