@@ -1,0 +1,44 @@
+timestamp_utc=2026-08-26T02:22:41Z
+hostname=instance-20260129-0852
+identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+layoutlib_coordinate_frame_upgrade=ok target=/home/agentos-node/projects/layoutlib files=5
+=== COORDINATE FRAME TESTS ===
+test_detected_wall_maps_back_to_original_source_pixels (test_coordinate_frame.CoordinateFrameTests) ... ok
+test_roi_anchor_is_bound_to_world_origin (test_coordinate_frame.CoordinateFrameTests) ... ok
+test_round_trip_source_world_source (test_coordinate_frame.CoordinateFrameTests) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.014s
+
+OK
+=== FULL REGRESSION ===
+test_false_positive_reduces_precision (test_benchmark.BenchmarkTests) ... ok
+test_perfect_match (test_benchmark.BenchmarkTests) ... ok
+test_detected_wall_maps_back_to_original_source_pixels (test_coordinate_frame.CoordinateFrameTests) ... ok
+test_roi_anchor_is_bound_to_world_origin (test_coordinate_frame.CoordinateFrameTests) ... ok
+test_round_trip_source_world_source (test_coordinate_frame.CoordinateFrameTests) ... ok
+test_p2_dependency_free (test_imageio_formats.ImageIOFormatTests) ... ok
+test_p5_16bit_scales_to_8bit (test_imageio_formats.ImageIOFormatTests) ... ok
+test_p5_dependency_free_preserves_whitespace_pixel (test_imageio_formats.ImageIOFormatTests) ... ok
+test_cli_end_to_end (test_layoutlib.LayoutLibTests) ... ok
+test_ir_roundtrip (test_layoutlib.LayoutLibTests) ... ok
+test_obj_has_geometry (test_layoutlib.LayoutLibTests) ... ok
+test_parse_rectangle_finds_four_primary_walls (test_layoutlib.LayoutLibTests) ... ok
+test_rejects_invalid_scale (test_layoutlib.LayoutLibTests) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.098s
+
+OK
+walls=4 out=/tmp/tmpfd_aupeu/ir.json
+walls=4 out=/tmp/tmpfd_aupeu/model.obj
+=== IR INVARIANT SMOKE ===
+coordinate_frame_roundtrip=PASS
+ir_version=0.3
+anchor_px=10,8
+walls=4
+=== ACCEPTANCE ===
+layoutlib_coordinate_frame=PASS
+source_image_anchor=EXPLICIT
+source_world_source_roundtrip=PASS
+roi_anchor_semantics=PASS
