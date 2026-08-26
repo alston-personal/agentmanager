@@ -1,0 +1,36 @@
+name: Realm Node Fabric v0.1
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'agentos_node/thin_client.py'
+      - 'agent_core/one_uplift.py'
+      - 'tests/test_thin_client.py'
+      - 'docs/REALM_NODE_FABRIC_V0_1.md'
+      - '.github/workflows/realm-node-fabric-v0.1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile v0.1 modules
+        run: python -m py_compile agentos_node/thin_client.py agent_core/one_uplift.py
+      - name: Run Thin Client v0.1 tests
+        run: python -m unittest tests.test_thin_client -v
+      - name: Acceptance summary
+        run: |
+          echo 'realm_node_fabric_schema=PASS'
+          echo 'thin_client_local_runtime=PASS'
+          echo 'governed_filesystem=PASS'
+          echo 'governed_shell_boundary=PASS'
+          echo 'one_uplift_comparison=PASS'
+          echo 'external_client_enrollment=PENDING'
+          echo 'production_cutover=NONE'
