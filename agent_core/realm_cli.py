@@ -26,7 +26,7 @@ def main() -> int:
 
     p_serve = sub.add_parser('serve')
     p_serve.add_argument('--host', default='127.0.0.1')
-    p_serve.add_argument('--port', type=int, default=8765)
+    p_serve.add_argument('--port', type=int, default=8780)
 
     p_task = sub.add_parser('task')
     p_task.add_argument('--node-id', required=True)
