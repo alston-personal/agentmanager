@@ -34,8 +34,6 @@ class NodeIdentity:
 
 @dataclass
 class ThinClientPolicy:
-    """Local enforcement boundary for v0.1 generic execution."""
-
     allowed_executables: set[str] = field(default_factory=set)
     readable_roots: tuple[Path, ...] = field(default_factory=tuple)
     writable_roots: tuple[Path, ...] = field(default_factory=tuple)
@@ -65,8 +63,6 @@ class ThinClientPolicy:
 
 
 class ThinClient:
-    """Protocol-first AgentOS Thin Client v0.1."""
-
     COMMON_TOOLS = (
         'git', 'python', 'python3', 'node', 'npm', 'pnpm', 'docker', 'podman',
         'powershell', 'pwsh', 'ffmpeg', 'adb', 'xcodebuild', 'unity', 'Unity',
@@ -99,6 +95,7 @@ class ThinClient:
         if platform.system() == 'Windows':
             caps.extend([
                 'desktop.session.inspect',
+                'desktop.windows.inspect',
                 'desktop.screenshot',
                 'desktop.open_url',
                 'desktop.mouse',
@@ -159,6 +156,8 @@ class ThinClient:
                 result = self._write_file(task)
             elif action == 'desktop.session.inspect':
                 result = {'desktop': interactive_desktop.session_info()}
+            elif action == 'desktop.windows.inspect':
+                result = interactive_desktop.inspect_windows()
             elif action == 'desktop.open_url':
                 result = interactive_desktop.open_url(str(task.get('url') or ''))
             elif action == 'desktop.screenshot':
