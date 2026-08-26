@@ -1,0 +1,83 @@
+name: Oracle Realm Node Probe
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-node-probe.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-realm-node-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate heartbeat and queue fixed read-only probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          CMD=.agentos/commands/realm-node-probe.json
+          OUT=/tmp/realm-node-probe-result.json
+          python3 - "$CMD" "$OUT" <<'PY'
+          import json,re,sys,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          cmd=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert cmd.get('schema') == 'agentos.realm-command/v0.1', cmd
+          assert cmd.get('action') == 'realm.node.probe', cmd
+          node_id=str(cmd.get('node_id') or '')
+          assert re.fullmatch(r'[A-Za-z0-9._-]{1,64}', node_id), node_id
+          assert node_id == 'vopc5750', 'v0.1 acceptance probe is pinned to first Windows node'
+
+          registry=NodeRegistry().node_map()
+          node=next((n for n in registry['nodes'] if n.get('node_id') == node_id), None)
+          assert node is not None, node_id
+          assert node.get('status') == 'online', node
+          assert node.get('last_heartbeat_at'), node
+
+          task_id='probe-'+node_id+'-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'shell.exec',
+            'executable':'python',
+            'argv':['-c','import json,platform,socket; print(json.dumps({"hostname":socket.gethostname(),"platform":platform.system(),"python":platform.python_version()}))'],
+            'cwd':r'C:\Users\alston.huang\AgentOS',
+            'timeout_seconds':15,
+            'cognition_ids_used':[],
+          }
+          queued=RealmFabricStore().queue_task(node_id,task)
+          result={'ok':True,'node':node,'queued_task':queued}
+          Path(sys.argv[2]).write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('realm_node_heartbeat=PASS')
+          print('node_id='+node_id)
+          print('task_id='+task_id)
+          PY
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Publish non-secret probe evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/realm-node-probe-result.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-node-probe-result.json .agentos/evidence/realm-node-probe-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-node-probe-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): queue first Windows node probe'
+          git push origin HEAD:main
