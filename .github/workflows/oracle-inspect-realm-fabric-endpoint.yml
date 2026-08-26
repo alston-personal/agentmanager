@@ -1,0 +1,42 @@
+name: Oracle Inspect Realm Fabric Endpoint
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-realm-fabric-endpoint.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-core-inspection
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect current Core listener and HTTPS routing surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "identity=$(id)"
+          echo '=== LISTENERS ==='
+          ss -ltn || true
+          echo '=== CONTROL PLANE ==='
+          curl -fsS --max-time 3 http://127.0.0.1:8765/health || true
+          echo
+          echo '=== LIVE CHECKOUT ==='
+          LIVE=/home/ubuntu/agentmanager
+          test -d "$LIVE/.git" && git -C "$LIVE" rev-parse HEAD || true
+          echo '=== PUBLIC URL CONFIG (non-secret only) ==='
+          if [ -f "$LIVE/.env" ]; then
+            grep -E '^(AGENTOS_CONTROL_PLANE_PUBLIC_URL|AGENT_DATA_ROOT|AGENT_MODE)=' "$LIVE/.env" || true
+          fi
+          echo '=== NGINX SITES ==='
+          if command -v nginx >/dev/null 2>&1; then
+            nginx -T 2>/dev/null | grep -E 'server_name|listen 443|location .*agentos|proxy_pass.*8765|proxy_pass.*8766' || true
+          fi
