@@ -1,45 +1,75 @@
-# 🐱 石虎 AgentOS 使用者指南 (USER_GUIDE.md)
+# AgentOS User Guide
 
-這是一份給「系統管理員」（你，Alston）看的運作指南。
+AgentOS is an evolving AI-agent runtime/control-plane project whose continuity goal is simple:
 
----
+> Switch session, model, executor, or machine without manually rebuilding the work from raw chat history.
 
-## 🏗️ 物理架構：邏輯與資料
-1.  **邏輯層 (Logic Repos)**：例如 `/home/ubuntu/agentmanager`、`/home/ubuntu/leopardcat-tarot`。
-2.  **資料層 (Data Layer)**：`/home/ubuntu/agent-data` (或 `/home/ubuntu/agent-data`)。
-3.  **橋樑 (Symlink)**：專案啟動後，所有的 `STATUS.md` 本質上都是存在 `/agent-data/projects/` 底下的同名文件。
+For the current implementation boundary, always read [`CURRENT_STATE.md`](CURRENT_STATE.md). It distinguishes **Implemented**, **Verified**, and **Research** capabilities.
 
----
+## Core architecture
 
-## 🛠️ 常見情境操作
+AgentOS keeps durable state outside a single model/session. The current repository includes explicit continuation reconciliation, persistent coordination, session handoff records, governance/resource discovery, cross-node Realm surfaces, platform drivers, and committed operational evidence.
 
-### 💡 情境 A：開啟新對話
-當你開啟一個新的 Chat Session 時，Agent 可能處於「無知」狀態。
-*   **指令**：輸入 `/work-on [專案名稱]`。
-*   **發生什麼？**：Agent 會自動開啟 `.agent/pulse/last_brain_dump.md`，瞬間「覺醒」歷史記憶。
+Logic/Data separation remains foundational:
 
-### 📡 情境 B：防止對話失蹤 (Session Lost)
-如果發現對話欄不穩。
-*   **機制**：`cat-ink-syncer.service` 已經在背景後勤監控你的 JSON 變化，每 60 秒一次備份。
-*   **手動加強**：對話到一半，可以輸入 `/report` 強迫 Agent 寫入 `STATUS.md`。
+- **Logic:** code, runtime semantics, workflows, tests, governance contracts (`agentmanager`).
+- **Data/State:** mutable project state, memory, handoffs, registries, and records (`AGENT_DATA_ROOT`).
 
-### 🧘 情境 C：查看系統健康
-*   **指令**：`/status`。
-*   **輸出**：你會看到全專案（21 個）的健康表格。
-*   **如果紅燈**：檢查 `watchdog.py` 輸出的系統日誌。
+## Common operations
 
-### 🐾 情境 D：更換開發工具 (Antigravity -> Cursor)
-如果你想換成用 Cursor 作為 Agent。
-*   **步驟**：在 Cursor 進場後，請他在專案根目錄執行 `cat AGENTS_README.md`。
-*   **成效**：他會自動認領並遵循 `LAMP` 協議。
+### Verify continuity semantics
 
----
+```bash
+python3 scripts/continuation_state.py --self-test
+python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
+```
 
-## 🐯 維生服務管理
-石虎系統有幾個背景守護進程，可以用以下指令查看：
-*   `sudo systemctl status cat-ink-syncer` (對話同步)
-*   `sudo systemctl status agent-maintenance` (資源檢查)
-*   `crontab -l` (看 00:00 禪定貓啟動紀錄)
+The current continuation reconciler protects an important invariant: newer user goals/corrections must not be rolled back by stale replay or old tool results.
 
----
-*「指令只是工具，你的 Vibe 才是靈魂。」*
+### Inspect node capabilities / responsibility
+
+For a configured AgentOS node:
+
+```bash
+agentos-node harvest
+agentos-node governance resolve capability://network.port.allocate
+agentos-node resource list --kind site
+```
+
+See `docs/AGENTOS_NODE.md` for the current node contract.
+
+### Check documentation reality
+
+```bash
+python3 scripts/documentation_reality_guard.py
+```
+
+Architecture-sensitive changes are also checked in GitHub Actions. Documentation drift is treated as a regression.
+
+### Check runtime/platform setup
+
+See:
+
+- `docs/PLATFORM_DRIVERS.md`
+- `docs/RESTORE_NEW_MACHINE.md`
+- `scripts/platform_runtime.py`
+- `scripts/install_services.py`
+
+Do not assume a Linux `/home/ubuntu/...` path is universal; deployment paths are environment-specific.
+
+## Evidence and truth hierarchy
+
+When a prose document conflicts with the repository:
+
+1. executable implementation;
+2. tests and committed operational evidence;
+3. `docs/CURRENT_STATE.md`;
+4. other narrative/history documents.
+
+The mismatch must then be corrected rather than preserved indefinitely.
+
+## Research: cross-model Cognitive IR
+
+AgentOS does **not** currently claim that hidden model activations can be copied between arbitrary models. The active research question is whether a model-independent working-state representation can preserve enough position, intent, constraints, decisions, rejected paths, and next direction that another model can functionally continue from a relative instruction such as `continue`.
+
+Until repeatable cross-model experiments prove that layer, treat it as research rather than a shipping capability.
