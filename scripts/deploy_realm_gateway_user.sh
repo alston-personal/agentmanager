@@ -12,6 +12,7 @@ ROUTE_REL='dashboard/app/agentos/one/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/agentos/one/v1/health'
 LOCAL='http://127.0.0.1:8780/v1/health'
+LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/agentos/one/v1/health'
 
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
@@ -112,6 +113,14 @@ for i in $(seq 1 30); do
 done
 curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null
 echo "dashboard_local=PASS"
+
+LG_BODY=/tmp/agentos-realm-local-gateway
+LG_CODE=$(curl -sS -o "$LG_BODY" -w '%{http_code}' --max-time 5 "$LOCAL_GATEWAY" || true)
+echo "local_gateway_http=$LG_CODE prefix=$(head -c 240 "$LG_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$LG_CODE" = 200 ]
+grep -q 'agentos.one-health/v0.1' "$LG_BODY"
+grep -q 'realm-alston' "$LG_BODY"
+echo "realm_gateway_local=PASS"
 
 for i in $(seq 1 30); do
   BODY=$(curl -fsS --max-time 5 "$PUBLIC" 2>/dev/null || true)
