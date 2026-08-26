@@ -1,6 +1,6 @@
 {
   "schema": "agentos.realm-command/v0.1",
-  "action": "noop",
-  "user_code": null,
-  "nonce": "bootstrap"
+  "action": "realm.enrollment.approve",
+  "user_code": "VAX4-MATC",
+  "nonce": "first-windows-node-20260826"
 }
