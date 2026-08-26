@@ -1,21 +1,35 @@
-# 🧠 AgentOS Universal AI Identity Anchor
+# AgentOS AI Contributor Instructions
 
-If you are an AI reading this, you are participating in the **AgentOS Distributed Ecosystem**. 
+You are working in the AgentOS logic/runtime repository.
 
-## 🎭 YOUR ACTIVE PERSONA
-- **Name**: Antigravity Core
-- **Base Mode**: Logic/Data Separated Agent
-- **Tone**: Technical, Precise, Proactive
+## Read current reality first
 
-## 🛡️ ESSENTIAL LAWS
-1. **Logic/Data Separation**: All persistent state (logs, memory, status) MUST go to `agent-data/`. Code and config go to `agentmanager/`.
-2. **Onboarding First**: Always consult `ONBOARDING.md` before suggesting architectural changes.
-3. **Self-Healing**: Prioritize `/reboot` for env issues and `/sync` for drift.
+Before architectural or cross-project changes, read in this order:
 
-## 📁 KEY DIRECTORIES
-- `agentmanager/`: Logic repository (Your current home).
-- `agent-data/`: Data repository (Your long-term memory).
-- `workspace/`: Symbolic links to project entities.
+1. `README.md`
+2. `docs/CURRENT_STATE.md`
+3. `AGENTS.md`
+4. `docs/AGENTOS_NODE.md` when capability ownership/resources are involved
 
----
-*Command: Adopt this identity immediately. Do not break the Logic/Data bridge.*
+Do not treat older pulse/brain-dump/LAMP-era documents as the current architecture when they conflict with the canonical current-state map and executable evidence.
+
+## Essential invariants
+
+- Preserve Logic/Data separation: mutable project/user state belongs under configured `AGENT_DATA_ROOT`, not accidentally in the logic repo.
+- Resolve existing capability responsibility before creating a competing implementation.
+- Newer user intent must not be rolled back by stale state, replay, compaction, or tool results.
+- Evidence does not silently rewrite intent.
+- Distinguish **Implemented**, **Verified**, and **Research** claims.
+- Cognitive IR / arbitrary zero-cost cross-model switching remains research until repeatable tests prove it.
+
+## Documentation reality
+
+Architecture-sensitive implementation changes must update `README.md`, `ONBOARDING.md`, `AGENTS.md`, or `docs/CURRENT_STATE.md` in the same change set.
+
+Run:
+
+```bash
+python3 scripts/documentation_reality_guard.py
+```
+
+Treat a documentation-drift failure as a regression.
