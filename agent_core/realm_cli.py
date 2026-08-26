@@ -24,6 +24,9 @@ def main() -> int:
     p_invite.add_argument('--minutes', type=int, default=10)
     p_invite.add_argument('--label')
 
+    p_approve = sub.add_parser('approve')
+    p_approve.add_argument('--code', required=True, help='device enrollment user code, e.g. ABCD-2345')
+
     p_serve = sub.add_parser('serve')
     p_serve.add_argument('--host', default='127.0.0.1')
     p_serve.add_argument('--port', type=int, default=8780)
@@ -44,6 +47,8 @@ def main() -> int:
         _print(fabric.initialize_realm(args.realm_id))
     elif args.command == 'invite':
         _print(fabric.create_invite(expires_minutes=args.minutes, label=args.label))
+    elif args.command == 'approve':
+        _print(fabric.approve_join(args.code))
     elif args.command == 'serve':
         serve(host=args.host, port=args.port, fabric=fabric)
     elif args.command == 'task':
