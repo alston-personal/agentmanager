@@ -16,13 +16,42 @@ LOCAL='http://127.0.0.1:8780/v1/health'
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
 
-PM2_BIN=""
-for candidate in "$(command -v pm2 2>/dev/null || true)" /usr/local/bin/pm2 /usr/bin/pm2 /home/ubuntu/.local/bin/pm2; do
-  [ -n "$candidate" ] || continue
-  if [ -x "$candidate" ]; then PM2_BIN="$candidate"; break; fi
-done
-[ -n "$PM2_BIN" ] || { echo "ERROR: canonical PM2 executable not found" >&2; exit 3; }
-echo "pm2_bin=$PM2_BIN"
+find_dashboard_pid() {
+  python3 - "$DASH" <<'PY'
+from pathlib import Path
+import os,sys
+root=Path('/proc'); target=str(Path(sys.argv[1]).resolve()); hits=[]
+for entry in root.iterdir():
+    if not entry.name.isdigit(): continue
+    try:
+        st=entry.stat()
+        if st.st_uid != os.getuid(): continue
+        cwd=str((entry/'cwd').resolve())
+        raw=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+    except (OSError, PermissionError):
+        continue
+    if cwd == target and raw.startswith('npm start'):
+        hits.append(entry.name)
+if len(hits) != 1:
+    raise SystemExit(f'expected exactly one dashboard npm start process, got {hits}')
+print(hits[0])
+PY
+}
+
+restart_dashboard() {
+  local old_pid new_pid
+  old_pid=$(find_dashboard_pid)
+  echo "dashboard_old_pid=$old_pid"
+  kill -TERM "$old_pid"
+  new_pid=""
+  for i in $(seq 1 30); do
+    sleep 1
+    if new_pid=$(find_dashboard_pid 2>/dev/null) && [ "$new_pid" != "$old_pid" ]; then break; fi
+    new_pid=""
+  done
+  [ -n "$new_pid" ] || { echo "ERROR: dashboard supervisor did not restart npm start" >&2; return 4; }
+  echo "dashboard_new_pid=$new_pid"
+}
 
 TMP=$(mktemp -d)
 BACKUP="$TMP/route.backup"
@@ -44,9 +73,7 @@ rollback() {
     rm -f "$ROUTE"
   fi
   (cd "$DASH" && npm run build >/tmp/agentos-realm-gateway-rollback-build.log 2>&1)
-  if [ -n "${PM2_ID:-}" ]; then
-    "$PM2_BIN" restart "$PM2_ID" --update-env >/tmp/agentos-realm-gateway-rollback-pm2.log 2>&1
-  fi
+  restart_dashboard >/tmp/agentos-realm-gateway-rollback-restart.log 2>&1 || true
   set -e
 }
 
@@ -77,21 +104,7 @@ echo "local_realm_health=PASS"
 
 (cd "$DASH" && npm run build)
 echo "dashboard_build=PASS"
-
-PM2_ID=$("$PM2_BIN" jlist | python3 -c '
-import json,sys
-items=json.load(sys.stdin)
-hits=[]
-for item in items:
-    env=item.get("pm2_env") or {}
-    if env.get("pm_cwd") == "/home/ubuntu/agentmanager/dashboard":
-        hits.append(str(env.get("pm_id", item.get("pm_id"))))
-if len(hits) != 1:
-    raise SystemExit("expected exactly one dashboard PM2 app, got %r" % hits)
-print(hits[0])
-')
-echo "dashboard_pm2_id=$PM2_ID"
-"$PM2_BIN" restart "$PM2_ID" --update-env
+restart_dashboard
 
 for i in $(seq 1 30); do
   if curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null; then break; fi
