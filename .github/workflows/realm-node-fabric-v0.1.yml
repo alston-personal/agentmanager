@@ -6,7 +6,9 @@ on:
     paths:
       - 'agentos_node/thin_client.py'
       - 'agent_core/one_uplift.py'
+      - 'agent_core/node_registry.py'
       - 'tests/test_thin_client.py'
+      - 'tests/test_node_registry_v01.py'
       - 'docs/REALM_NODE_FABRIC_V0_1.md'
       - '.github/workflows/realm-node-fabric-v0.1.yml'
 
@@ -22,15 +24,16 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile v0.1 modules
-        run: python -m py_compile agentos_node/thin_client.py agent_core/one_uplift.py
-      - name: Run Thin Client v0.1 tests
-        run: python -m unittest tests.test_thin_client -v
+        run: python -m py_compile agentos_node/thin_client.py agent_core/one_uplift.py agent_core/node_registry.py
+      - name: Run Realm Node Fabric v0.1 tests
+        run: python -m unittest tests.test_thin_client tests.test_node_registry_v01 -v
       - name: Acceptance summary
         run: |
           echo 'realm_node_fabric_schema=PASS'
           echo 'thin_client_local_runtime=PASS'
           echo 'governed_filesystem=PASS'
           echo 'governed_shell_boundary=PASS'
+          echo 'one_node_map_registry=PASS'
           echo 'one_uplift_comparison=PASS'
           echo 'external_client_enrollment=PENDING'
           echo 'production_cutover=NONE'
