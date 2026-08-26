@@ -1,22 +1,22 @@
-capsule_id=action-83b8ed47a2fa499ba55e7c89626ce387
+capsule_id=action-c391ac2ab77847719cb7780096b678b9
 {
   "action": "layoutlab.static.deploy",
   "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
-  "capsule_id": "action-83b8ed47a2fa499ba55e7c89626ce387",
-  "completed_at": "2026-08-26T04:45:16Z",
+  "capsule_id": "action-c391ac2ab77847719cb7780096b678b9",
+  "completed_at": "2026-08-26T04:55:51Z",
   "executor_user": "ubuntu",
   "mode": "browser-only-layoutlib-v0.1-compatible",
-  "ok": true,
+  "ok": false,
   "schema": "agentos.action-receipt/v1",
   "site": "studio.milkcat.org",
-  "started_at": "2026-08-26T04:45:16Z",
+  "started_at": "2026-08-26T04:55:51Z",
   "step": {
     "argv": [
       "/usr/bin/python3",
       "/home/ubuntu/.local/share/agentos/action-runtime/scripts/deploy_layoutlab_static.py"
     ],
-    "returncode": 0,
-    "stderr": "",
-    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 14264, \"sha256\": \"dc61b15b33d8295828ec60150a0e907d70a9aaf52c9f58c04daedb60e36570e0\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlib-browser-v0.3.js\": {\"bytes\": 4920, \"sha256\": \"3d1f2588b3646c8863b9d9326097fbd457de8676cec8fca29963768ab0c14499\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.3.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.3.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.3-anchored-browser-adapter\", \"ok\": true}\n"
+    "returncode": 1,
+    "stderr": "html source asset failed identity check\n",
+    "stdout": ""
   }
 }
