@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.desktop.inspect",
   "node_id": "vopc5750",
-  "nonce": "desktop-session-inspect-20260826"
+  "nonce": "desktop-session-inspect-after-update-20260826"
 }
