@@ -1,0 +1,113 @@
+name: Oracle Deploy Realm Gateway
+
+on:
+  push:
+    paths:
+      - 'dashboard/app/agentos/one/**'
+      - 'scripts/deploy_realm_gateway_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+      - '.github/workflows/oracle-deploy-realm-gateway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-realm-gateway-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  deploy:
+    needs: build-check
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install canonical bootstrap hook and request fixed Realm gateway deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="realm-gateway-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          test -w "$LIVE/agentos_node/bootstrap_control.py"
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS" && test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          p=Path(sys.argv[1]); rid=sys.argv[2]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':rid,
+            'action':'agentos.realm_gateway.deploy',
+            'params':{},
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=p.with_suffix(p.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
+          PY
+
+          for i in $(seq 1 360); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'realm_gateway_receipt=TIMEOUT'; exit 3; }
+          cat "$RECEIPT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('schema') == 'agentos.bootstrap-receipt/v1', r
+          assert r.get('action') == 'agentos.realm_gateway.deploy', r
+          assert r.get('executor_user') == 'ubuntu', r
+          assert r.get('executor_uid') == 1001, r
+          assert r.get('ok') is True, r
+          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
+          assert 'dashboard_build=PASS' in text, text[-12000:]
+          assert 'realm_gateway_public=PASS' in text, text[-12000:]
+          assert 'nginx_mutation=NONE' in text, text[-12000:]
+          print('realm_gateway_deploy=PASS')
+          PY
+
+      - name: Verify public ONE identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://studio.milkcat.org/dashboard/agentos/one/v1/health'
+          BODY=$(curl -fsS --max-time 8 "$URL")
+          printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
+          printf '%s' "$BODY" | grep -q 'realm-alston'
+          echo "realm_gateway_url=https://studio.milkcat.org/dashboard/agentos/one"
+          echo "public_identity=PASS"
