@@ -54,6 +54,7 @@ jobs:
           DATA=/home/ubuntu/agent-data
           ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
           RELEASE="$ROOT/releases/${REF//\//_}"
+          CURRENT="$ROOT/current"
           UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
           BACKUP="$UNIT.pre-realm-fabric"
           LIVE_ENV=/home/ubuntu/agentmanager/.env
@@ -101,13 +102,18 @@ jobs:
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-realm-fabric.service
           for i in $(seq 1 20); do
-            if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health; then echo; break; fi
+            if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then break; fi
             sleep 1
           done
           curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
           echo
           systemctl --user is-active agentos-realm-fabric.service
+
+          # Publish stable operator path only after the new service is healthy.
+          ln -sfn "$RELEASE" "$CURRENT"
+          test -x "$CURRENT/venv/bin/agentos-one"
           echo "realm_fabric_release=$RELEASE"
+          echo "realm_fabric_current=$CURRENT"
           echo "realm_fabric_port=8780"
           echo "public_route_configured=false"
           trap - EXIT
