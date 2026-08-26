@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-08-26  
+**Status date:** 2026-08-27  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
 This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
@@ -27,8 +27,9 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
+| Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
 | Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows |
-| Documentation Reality Guard | Implemented on this branch | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml` |
+| Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
 | Model-independent Cognitive IR | Research | schema/experiments not yet canonical | requires cross-model continuity experiment |
 | Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on future portable working-state layer | continuity benchmark still required |
 
@@ -41,6 +42,10 @@ Compaction, replay, stale tool results, or executor switching must not replace a
 ### Evidence is not intent
 
 Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal.
+
+### Capability does not imply authority
+
+The presence of a mutation tool, a mergeable pull request, or passing CI does not authorize a protected-branch mutation. Agents must stop at `AWAITING_HUMAN_APPROVAL` until an explicit human authorization exists. See `.agent/governance/protected_branches.yaml` and `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`.
 
 ### Discover before invent
 
@@ -59,7 +64,7 @@ Early documentation centered on:
 - manual `/report` handoff;
 - Logic/Data separation as the main architectural idea.
 
-Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, and committed execution evidence.
+Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, and explicit authority boundaries for protected mutations.
 
 Old documents that describe only the memory/pulse era must be treated as historical unless they link back to this file.
 
