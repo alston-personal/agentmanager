@@ -24,17 +24,13 @@ jobs:
         run: |
           set -euo pipefail
           echo "identity=$(id)"
-          local_health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)
-          echo "realm_health=$local_health"
-          echo '=== SUDO NONINTERACTIVE ==='
-          if sudo -n true 2>/dev/null; then echo 'sudo_noninteractive=true'; else echo 'sudo_noninteractive=false'; fi
-          echo '=== NGINX CONFIG PATHS ==='
-          for p in /etc/nginx/nginx.conf /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*; do
-            [ -e "$p" ] || continue
-            stat -c '%U:%G %a %n' "$p" || true
-          done
-          echo '=== RELEVANT NGINX SURFACE ==='
-          nginx -T 2>/dev/null | grep -E 'server_name|listen 443|studio\.milkcat\.org|location .*agentos|proxy_pass.*87(65|66|80)' || true
+          echo "realm_health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)"
+          echo '=== STUDIO SERVER BLOCK ==='
+          sed -n '1,260p' /etc/nginx/sites-enabled/studio.milkcat.org || true
+          echo '=== NGINX MASTER / RELOAD AUTHORITY ==='
+          ps -eo user,pid,ppid,cmd | grep '[n]ginx: master process' || true
+          nginx -t 2>&1 || true
+          nginx -s reload 2>&1 || true
           echo '=== EXISTING PUBLIC HEALTH CANDIDATES ==='
           for u in https://studio.milkcat.org/agentos/one/v1/health https://studio.milkcat.org/agentos/v1/health; do
             body=/tmp/agentos-public-probe
@@ -42,7 +38,7 @@ jobs:
             bytes=$(wc -c < "$body" 2>/dev/null || echo 0)
             marker=false
             if grep -q 'agentos.one-health/v0.1' "$body" 2>/dev/null && grep -q 'realm-alston' "$body" 2>/dev/null; then marker=true; fi
-            prefix=$(head -c 220 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)
+            prefix=$(head -c 180 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)
             echo "$u http=$code bytes=$bytes one_identity=$marker prefix=$prefix"
           done
           echo 'mutation=NONE'
