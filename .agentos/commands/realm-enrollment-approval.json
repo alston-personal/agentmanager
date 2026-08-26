@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "noop",
+  "user_code": null,
+  "nonce": "bootstrap"
+}
