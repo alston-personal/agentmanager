@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agentos_node import interactive_desktop
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
@@ -32,12 +34,7 @@ class NodeIdentity:
 
 @dataclass
 class ThinClientPolicy:
-    """Local enforcement boundary for v0.1 generic execution.
-
-    This is intentionally conservative. ONE may request an operation, but the
-    client remains responsible for validating executable, working directory and
-    path scope before any side effect occurs.
-    """
+    """Local enforcement boundary for v0.1 generic execution."""
 
     allowed_executables: set[str] = field(default_factory=set)
     readable_roots: tuple[Path, ...] = field(default_factory=tuple)
@@ -68,12 +65,7 @@ class ThinClientPolicy:
 
 
 class ThinClient:
-    """Protocol-first AgentOS Thin Client v0.1.
-
-    Networking/enrollment transport is deliberately not embedded here yet.
-    This class defines the local Node contract that a service wrapper can host:
-    identity, discovery, governed execution and receipts.
-    """
+    """Protocol-first AgentOS Thin Client v0.1."""
 
     COMMON_TOOLS = (
         'git', 'python', 'python3', 'node', 'npm', 'pnpm', 'docker', 'podman',
@@ -104,6 +96,14 @@ class ThinClient:
             caps.append('filesystem.read')
         if self.policy.writable_roots:
             caps.append('filesystem.write')
+        if platform.system() == 'Windows':
+            caps.extend([
+                'desktop.session.inspect',
+                'desktop.screenshot',
+                'desktop.open_url',
+                'desktop.mouse',
+                'desktop.keyboard',
+            ])
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -116,6 +116,10 @@ class ThinClient:
             'observed_at': _utc_now(),
             'capabilities': sorted(caps),
             'tool_presence': tools,
+            'workspace_roots': {
+                'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
+                'writable': [str(p.expanduser().resolve()) for p in self.policy.writable_roots],
+            },
         }
 
     def heartbeat(self) -> dict[str, Any]:
@@ -153,6 +157,17 @@ class ThinClient:
                 result = self._read_file(task)
             elif action == 'filesystem.write':
                 result = self._write_file(task)
+            elif action == 'desktop.session.inspect':
+                result = {'desktop': interactive_desktop.session_info()}
+            elif action == 'desktop.open_url':
+                result = interactive_desktop.open_url(str(task.get('url') or ''))
+            elif action == 'desktop.screenshot':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
+                result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
+            elif action == 'desktop.mouse':
+                result = interactive_desktop.mouse(task)
+            elif action == 'desktop.keyboard':
+                result = interactive_desktop.keyboard(task)
             else:
                 raise ValueError(f'unsupported action: {action}')
             receipt.update(result)
