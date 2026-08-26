@@ -7,33 +7,50 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'web_assets/layoutlab_official.html'
-TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html')
+SOURCES = {
+    'index.html': ROOT / 'web_assets/layoutlab_official.html',
+    'layoutlib-browser-v0.3.js': ROOT / 'web_assets/layoutlib-browser-v0.3.js',
+}
+TARGET_DIR = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
+
+
+def _identity(name: str, data: bytes) -> None:
+    if name == 'index.html':
+        if b'<title>Layout Lab | Milkcat Studio</title>' not in data or b'LayoutLib Browser Adapter v0.3' not in data:
+            raise SystemExit('html source asset failed identity check')
+    elif name.endswith('.js'):
+        if b'LayoutLib Browser Adapter v0.3.0' not in data or b'worldToSourcePx' not in data:
+            raise SystemExit('browser library asset failed identity check')
 
 
 def main() -> int:
-    if not SOURCE.is_file():
-        raise SystemExit(f'missing source asset: {SOURCE}')
-    data = SOURCE.read_bytes()
-    if b'<title>Layout Lab | Milkcat Studio</title>' not in data or b'Analyze layout' not in data:
-        raise SystemExit('source asset failed identity check')
-    TARGET.parent.mkdir(parents=True, exist_ok=True)
-    os.chmod(TARGET.parent, 0o755)
-    tmp = TARGET.with_suffix('.html.tmp')
-    tmp.write_bytes(data)
-    os.chmod(tmp, 0o644)
-    tmp.replace(TARGET)
-    os.chmod(TARGET, 0o644)
-    digest = hashlib.sha256(data).hexdigest()
+    TARGET_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(TARGET_DIR, 0o755)
+    artifacts = {}
+    for name, source in SOURCES.items():
+        if not source.is_file():
+            raise SystemExit(f'missing source asset: {source}')
+        data = source.read_bytes()
+        _identity(name, data)
+        target = TARGET_DIR / name
+        tmp = target.with_suffix(target.suffix + '.tmp')
+        tmp.write_bytes(data)
+        os.chmod(tmp, 0o644)
+        tmp.replace(target)
+        os.chmod(target, 0o644)
+        artifacts[name] = {
+            'source': str(source),
+            'target': str(target),
+            'bytes': len(data),
+            'sha256': hashlib.sha256(data).hexdigest(),
+        }
     result = {
         'ok': True,
-        'source': str(SOURCE),
-        'target': str(TARGET),
+        'directory': str(TARGET_DIR),
         'directory_mode': '0755',
         'file_mode': '0644',
-        'bytes': len(data),
-        'sha256': digest,
-        'mode': 'browser-only-layoutlib-v0.1-compatible',
+        'mode': 'layoutlib-v0.3-anchored-browser-adapter',
+        'artifacts': artifacts,
     }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
@@ -41,5 +58,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
-# trigger: refresh governed Action Relay runtime for Studio Web remote action
