@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/oracle-deploy-layoutlab-static-official.yml'
       - 'web_assets/layoutlab_official.html'
+      - 'web_assets/layoutlib-browser-v0.3.js'
       - 'scripts/deploy_layoutlab_static.py'
 
 permissions:
@@ -14,9 +15,31 @@ permissions:
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
+
+      - name: Wait for governed runtime refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime/web_assets
+          SRC_HTML=$(sha256sum web_assets/layoutlab_official.html | awk '{print $1}')
+          SRC_LIB=$(sha256sum web_assets/layoutlib-browser-v0.3.js | awk '{print $1}')
+          for i in $(seq 1 120); do
+            if [ -f "$RUNTIME/layoutlab_official.html" ] && [ -f "$RUNTIME/layoutlib-browser-v0.3.js" ]; then
+              RUN_HTML=$(sha256sum "$RUNTIME/layoutlab_official.html" | awk '{print $1}')
+              RUN_LIB=$(sha256sum "$RUNTIME/layoutlib-browser-v0.3.js" | awk '{print $1}')
+              if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ]; then
+                echo "runtime_asset_refresh=PASS"
+                exit 0
+              fi
+            fi
+            sleep 1
+          done
+          echo "runtime_asset_refresh=TIMEOUT"
+          exit 3
+
       - name: Submit deterministic static deployment
         shell: bash
         run: |
@@ -32,10 +55,7 @@ jobs:
           RECEIPT="$ROOT/receipts/$CID.json"
           for i in $(seq 1 60); do [ -f "$RECEIPT" ] && break; sleep 1; done
           test -f "$RECEIPT" || { echo "receipt timeout: $CID"; exit 2; }
-          {
-            echo "capsule_id=$CID"
-            cat "$RECEIPT"
-          } | tee "$OUT"
+          { echo "capsule_id=$CID"; cat "$RECEIPT"; } | tee "$OUT"
           python3 - "$RECEIPT" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1]))
@@ -51,17 +71,24 @@ jobs:
           set -euo pipefail
           OUT=.agentos/evidence/layoutlab-static-official-acceptance.txt
           URL=https://studio.milkcat.org/layout-lab/
+          LIB=https://studio.milkcat.org/layout-lab/layoutlib-browser-v0.3.js
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             CODE=$(curl -sS -o /tmp/layoutlab-static-ui -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 "$URL")
+            LIBCODE=$(curl -sS -o /tmp/layoutlab-lib -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 "$LIB")
             echo "public_ui_http_code=$CODE"
+            echo "public_library_http_code=$LIBCODE"
             test "$CODE" = 200
+            test "$LIBCODE" = 200
             grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-static-ui
-            grep -q 'Analyze layout' /tmp/layoutlab-static-ui
-            grep -q 'browser-only-layoutlib-v0.1-compatible' /tmp/layoutlab-static-ui || grep -q 'LayoutLib v0.1 compatible' /tmp/layoutlab-static-ui
-            grep -q 'function parse()' /tmp/layoutlab-static-ui
+            grep -q 'LayoutLib Browser Adapter v0.4' /tmp/layoutlab-static-ui
+            grep -q '＋ 補牆' /tmp/layoutlab-static-ui
+            grep -q '⌫ 擦牆' /tmp/layoutlab-static-ui
+            grep -q "version:'0.4.0'" /tmp/layoutlab-lib
+            grep -q 'eraseStrokePx' /tmp/layoutlab-lib
+            grep -q 'calibrateMetersPerPixelFromReference' /tmp/layoutlab-lib
             echo 'public_payload_identity=PASS'
-            echo 'browser_parser_present=PASS'
+            echo 'layoutlib_editor_capabilities=PASS'
             echo 'stable_official_url=https://studio.milkcat.org/layout-lab/'
             echo 'official_layoutlab_web_ui=PASS'
           } 2>&1 | tee "$OUT"
@@ -84,5 +111,3 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(layoutlab): stable official browser UI acceptance'
           git push origin HEAD:main
-
-# retrigger after runtime refresh and nginx-readable artifact permission fix
