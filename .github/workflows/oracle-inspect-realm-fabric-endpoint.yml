@@ -29,14 +29,17 @@ jobs:
           echo '=== CONTROL PLANE ==='
           curl -fsS --max-time 3 http://127.0.0.1:8765/health || true
           echo
+          echo '=== REALM FABRIC ==='
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health || true
+          echo
           echo '=== LIVE CHECKOUT ==='
           LIVE=/home/ubuntu/agentmanager
           test -d "$LIVE/.git" && git -C "$LIVE" rev-parse HEAD || true
           echo '=== PUBLIC URL CONFIG (non-secret only) ==='
           if [ -f "$LIVE/.env" ]; then
-            grep -E '^(AGENTOS_CONTROL_PLANE_PUBLIC_URL|AGENT_DATA_ROOT|AGENT_MODE)=' "$LIVE/.env" || true
+            grep -E '^(AGENTOS_CONTROL_PLANE_PUBLIC_URL|AGENTOS_REALM_ID|AGENT_DATA_ROOT|AGENT_MODE)=' "$LIVE/.env" || true
           fi
           echo '=== NGINX SITES ==='
           if command -v nginx >/dev/null 2>&1; then
-            nginx -T 2>/dev/null | grep -E 'server_name|listen 443|location .*agentos|proxy_pass.*8765|proxy_pass.*8766' || true
+            nginx -T 2>/dev/null | grep -E 'server_name|listen 443|location .*agentos|proxy_pass.*8765|proxy_pass.*8766|proxy_pass.*8780' || true
           fi
