@@ -77,6 +77,30 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         try:
+            if self.path == '/v1/join/request':
+                body = self._json_body()
+                result = self.fabric.request_join(
+                    manifest=dict(body.get('manifest') or {}),
+                    expires_minutes=int(body.get('expires_minutes') or 10),
+                )
+                self._send(200, {'ok': True, **result})
+                return
+            if self.path == '/v1/join/status':
+                body = self._json_body()
+                result = self.fabric.join_status(
+                    request_id=str(body.get('request_id') or ''),
+                    claim_secret=str(body.get('claim_secret') or ''),
+                )
+                self._send(200, {'ok': True, **result})
+                return
+            if self.path == '/v1/join/claim':
+                body = self._json_body()
+                result = self.fabric.claim_join(
+                    request_id=str(body.get('request_id') or ''),
+                    claim_secret=str(body.get('claim_secret') or ''),
+                )
+                self._send(200, {'ok': True, **result})
+                return
             if self.path == '/v1/enroll':
                 body = self._json_body()
                 result = self.fabric.enroll(
