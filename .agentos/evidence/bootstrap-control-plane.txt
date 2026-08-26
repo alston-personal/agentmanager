@@ -1,6 +1,6 @@
-timestamp_utc=2026-08-26T04:15:18Z
+timestamp_utc=2026-08-26T04:16:25Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-request_id=transport-repair-32929511434-20260826T041518Z
+request_id=transport-repair-32929587792-20260826T041625Z
 === COMPILE CANONICAL HOOK ===
 canonical_py_compile=PASS
 === INSTALL CANONICAL HOOK INTO LIVE CHECKOUT ===
@@ -11,25 +11,25 @@ root_stat=ubuntu:ubuntu 1777 /tmp/agentos-bootstrap-control
 requests_stat=ubuntu:ubuntu 1777 /tmp/agentos-bootstrap-control/requests
 ubuntu_owned_rendezvous=PASS
 === CREATE GOVERNED REQUEST ===
-{"schema": "agentos.bootstrap-request/v1", "request_id": "transport-repair-32929511434-20260826T041518Z", "action": "agentos.transport.repair", "created_at": "2026-08-26T04:15:18Z", "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": false}}
-request_stat=agentos-node:agentos-node 644 /tmp/agentos-bootstrap-control/requests/transport-repair-32929511434-20260826T041518Z.request.json
+{"schema": "agentos.bootstrap-request/v1", "request_id": "transport-repair-32929587792-20260826T041625Z", "action": "agentos.transport.repair", "created_at": "2026-08-26T04:16:25Z", "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": false}}
+request_stat=agentos-node:agentos-node 644 /tmp/agentos-bootstrap-control/requests/transport-repair-32929587792-20260826T041625Z.request.json
 request_write_protection=PASS
 === WAIT FOR UBUNTU CHRONOS RECEIPT ===
-receipt_stat=ubuntu:ubuntu 644 /tmp/agentos-bootstrap-control/receipts/transport-repair-32929511434-20260826T041518Z.json
+receipt_stat=ubuntu:ubuntu 644 /tmp/agentos-bootstrap-control/receipts/transport-repair-32929587792-20260826T041625Z.json
 {
   "action": "agentos.transport.repair",
-  "completed_at": "2026-08-26T04:15:27Z",
+  "completed_at": "2026-08-26T04:16:31Z",
   "executor_uid": 1001,
   "executor_user": "ubuntu",
-  "ok": false,
-  "repair_sha256": "ba72ae20d727a9d8d3a7c704bdb23b98c0c8873f14b03df72f24b1cf4790d2f0",
-  "request_id": "transport-repair-32929511434-20260826T041518Z",
+  "ok": true,
+  "repair_sha256": "1f8505d4b76c22c5804600199b4af49d458deb025a3dc19d84de611d54e13605",
+  "request_id": "transport-repair-32929587792-20260826T041625Z",
   "schema": "agentos.bootstrap-receipt/v1",
-  "started_at": "2026-08-26T04:15:26Z",
+  "started_at": "2026-08-26T04:16:26Z",
   "steps": [
     {
       "returncode": 0,
-      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   dbf960e..ed34f90  main       -> origin/main\n",
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   ed34f90..a762702  main       -> origin/main\n",
       "stdout": "",
       "step": "git_fetch"
     },
@@ -39,11 +39,53 @@ receipt_stat=ubuntu:ubuntu 644 /tmp/agentos-bootstrap-control/receipts/transport
       "step": "git_show_repair"
     },
     {
-      "returncode": 1,
-      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n/usr/bin/python3: No module named agent_core.realm_cli\n",
-      "stdout": "",
+      "returncode": 0,
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nCreated symlink /home/ubuntu/.config/systemd/user/default.target.wants/agentos-realm-fabric.service → /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service.\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n",
+      "stdout": "antigravity_runtime_import=PASS\naction_relay_spool_preprovisioned=YES\nHEAD is now at a762702 fix(agentos): launch Realm Fabric from deterministic ubuntu runtime\naction_runtime_import=ok\nactions=agentos.antigravity.restart,github.repo.ensure_studio_web,github.repo.seed_verify_studio_web,layoutlab.api.restart,layoutlab.static.deploy,site.sync_build\n● agentos-action-relay.service - AgentOS Governed Action Relay (ubuntu identity, agentos boundary)\n     Loaded: loaded (/home/ubuntu/.config/systemd/user/agentos-action-relay.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-08-26 12:16:28 CST; 2s ago\n   Main PID: 4106165 (sg)\n      Tasks: 3 (limit: 28686)\n     Memory: 7.5M\n        CPU: 45ms\n     CGroup: /user.slice/user-1001.slice/user@1001.service/app.slice/agentos-action-relay.service\n             ├─4106165 /usr/bin/sg agentos -c \"/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\"\n             ├─4106167 sh -c \"/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\"\n             └─4106169 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\n\nAug 26 12:16:28 instance-20260129-0852 systemd[1027]: Started AgentOS Governed Action Relay (ubuntu identity, agentos boundary).\nAug 26 12:16:28 instance-20260129-0852 sg[4106165]: user 'ubuntu' (login 'ubuntu' on ???) switched to group 'agentos'\naction_relay_install=PASS\naction_relay_group_context=agentos\naction_relay_user_bus=ubuntu:/run/user/1001/bus\naction_relay_stable_liveness=PASS\nruntime=/home/ubuntu/.local/share/agentos/action-runtime\nspool=/home/ubuntu/agent-data/runtime/action-relay\nunit=/home/ubuntu/.config/systemd/user/agentos-action-relay.service\nrealm_fabric_health={\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}\nantigravity_repair=PASS\nantigravity_source=origin/main\nantigravity_checkout_merge=SKIPPED\nantigravity_group_context=agentos\nantigravity_restart_pending=YES\naction_relay_install=PASS\nrealm_fabric_install=PASS\nrealm_fabric_port=8780\nrealm_fabric_public_route=NONE\nruntime=/home/ubuntu/.local/share/agentos/runtime-vnext\nrealm_runtime=/home/ubuntu/.local/share/agentos/realm-fabric/current\nspool=/home/ubuntu/agent-data/runtime/antigravity-relay\nunit=/home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service\nrealm_unit=/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service\n",
       "step": "repair_transport"
     }
   ]
 }
-bootstrap repair failed: {"action": "agentos.transport.repair", "completed_at": "2026-08-26T04:15:27Z", "executor_uid": 1001, "executor_user": "ubuntu", "ok": false, "repair_sha256": "ba72ae20d727a9d8d3a7c704bdb23b98c0c8873f14b03df72f24b1cf4790d2f0", "request_id": "transport-repair-32929511434-20260826T041518Z", "schema": "agentos.bootstrap-receipt/v1", "started_at": "2026-08-26T04:15:26Z", "steps": [{"returncode": 0, "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   dbf960e..ed34f90  main       -> origin/main\n", "stdout": "", "step": "git_fetch"}, {"returncode": 0, "stderr": "", "step": "git_show_repair"}, {"returncode": 1, "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n/usr/bin/python3: No module named agent_core.realm_cli\n", "stdout": "", "step": "repair_transport"}]}
+bootstrap_control_repair=PASS
+=== DETERMINISTIC ACTION RELAY RESTART ===
+{
+  "action": "agentos.antigravity.restart",
+  "capsule_id": "action-fb5b2a804f994971bea225797301dee3",
+  "completed_at": "2026-08-26T04:16:32Z",
+  "executor_user": "ubuntu",
+  "observations": [
+    {
+      "returncode": 0,
+      "state": "active",
+      "stderr": ""
+    }
+  ],
+  "ok": true,
+  "restart": {
+    "argv": [
+      "systemctl",
+      "--user",
+      "--no-block",
+      "restart",
+      "agentos-antigravity-relay.service"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": ""
+  },
+  "schema": "agentos.action-receipt/v1",
+  "service": "agentos-antigravity-relay.service",
+  "started_at": "2026-08-26T04:16:32Z"
+}
+antigravity_restart=PASS
+=== GROUP BOUNDARY ACCEPTANCE ===
+antigravity_pid=4106244 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001']
+antigravity_pid=4106245 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001', '1005']
+antigravity_pid=4106246 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001', '1005']
+antigravity_group_boundary=PASS
+=== READ-ONLY STUDIO BASELINE ===
+public_path=/ http_code=200
+public_path=/dashboard http_code=200
+site_sync_build=SKIPPED
+production_cutover=NONE
+bootstrap_control_plane=PASS
