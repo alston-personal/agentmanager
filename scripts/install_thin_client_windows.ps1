@@ -67,4 +67,4 @@ Write-Host "Policy workspace: $WorkspaceRoot"
 Write-Host "Launcher: $launcherPath"
 Write-Host ''
 Write-Host 'Next command:'
-Write-Host "  & '$launcherPath' join --one https://studio.milkcat.org/dashboard/agentos/one"
+Write-Host "  & '$launcherPath' join --one https://studio.milkcat.org/dashboard/api/agentos"
