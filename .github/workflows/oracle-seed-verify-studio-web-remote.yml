@@ -1,0 +1,90 @@
+name: Oracle Seed Verify Studio Web Remote
+
+on:
+  push:
+    paths:
+      - '.github/workflows/oracle-seed-verify-studio-web-remote.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seed-verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Seed remote and prove fresh clone build through governed Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/studio-web-remote-seed-verify.txt
+          ROOT=/home/ubuntu/agent-data/runtime/action-relay
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_identity=$(id)"
+            for i in $(seq 1 120); do
+              if PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime python3 - <<'PY' >/dev/null 2>&1
+          from agentos_node.action_relay import ACTIONS
+          assert 'github.repo.seed_verify_studio_web' in ACTIONS
+          PY
+              then
+                echo 'seed_action_runtime_ready=PASS'
+                break
+              fi
+              sleep 1
+            done
+            PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime python3 - <<'PY'
+          from agentos_node.action_relay import ACTIONS
+          assert 'github.repo.seed_verify_studio_web' in ACTIONS
+          PY
+            CAPSULE_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
+          from agentos_node.action_relay import ActionRelayClient
+          print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('github.repo.seed_verify_studio_web', {})['capsule_id'])
+          PY
+            )
+            echo "capsule_id=$CAPSULE_ID"
+            RECEIPT="$ROOT/receipts/$CAPSULE_ID.json"
+            for i in $(seq 1 900); do
+              [ -f "$RECEIPT" ] && break
+              sleep 1
+            done
+            test -f "$RECEIPT" || { echo 'seed_verify_receipt=TIMEOUT'; exit 3; }
+            cat "$RECEIPT"
+            python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('schema') == 'agentos.action-receipt/v1', r
+          assert r.get('action') == 'github.repo.seed_verify_studio_web', r
+          assert r.get('executor_user') == 'ubuntu', r
+          assert r.get('ok') is True, r
+          assert r.get('repository') == 'alston-personal/studio-web', r
+          assert r.get('source_head') == r.get('remote_head'), r
+          assert r.get('fresh_clone_build') is True, r
+          assert r.get('layoutlab_website_owned') is True, r
+          assert r.get('production_cutover') is False, r
+          print('studio_web_remote_seed=PASS')
+          print('studio_web_fresh_clone_build=PASS')
+          print('studio_web_remote_boundary=PASS')
+          print('production_cutover=NO')
+          PY
+          } 2>&1 | tee "$OUT"
+      - name: Commit final boundary evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/studio-web-remote-seed-verify.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/studio-web-remote-seed-verify.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/studio-web-remote-seed-verify.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(studio-web): remote seed and fresh clone verification'
+          git push origin HEAD:main
