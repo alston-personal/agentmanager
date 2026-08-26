@@ -1,0 +1,20 @@
+{
+  "action": "desktop.session.inspect",
+  "cognition_ids_used": [],
+  "completed_at": "2026-08-26T06:59:02Z",
+  "desktop": {
+    "active_console_session_id": 1,
+    "interactive": true,
+    "pid": 72048,
+    "process_session_id": 1,
+    "session_name": null,
+    "username": "alston.huang"
+  },
+  "node_id": "vopc5750",
+  "ok": true,
+  "realm_id": "realm-alston",
+  "received_at": "2026-08-26T06:59:02Z",
+  "schema": "agentos.node-receipt/v0.1",
+  "started_at": "2026-08-26T06:59:02Z",
+  "task_id": "desktop-inspect-vopc5750-1787727538"
+}
