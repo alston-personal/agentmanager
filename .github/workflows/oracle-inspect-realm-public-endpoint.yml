@@ -19,27 +19,21 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect existing HTTPS gateway without mutation
+      - name: Identify existing dashboard runtime without mutation
         shell: bash
         run: |
           set -euo pipefail
           echo "identity=$(id)"
           echo "realm_health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)"
-          echo '=== PORT 3000 LISTENER ==='
-          ss -ltnp 2>/dev/null | grep ':3000 ' || true
-          pid=$(ss -ltnp 2>/dev/null | sed -n 's/.*:3000 .*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
-          if [ -n "${pid:-}" ] && [ -r "/proc/$pid/cmdline" ]; then
-            echo "pid=$pid"
-            echo -n 'cmd='; tr '\0' ' ' < "/proc/$pid/cmdline"; echo
-            echo -n 'cwd='; readlink "/proc/$pid/cwd" || true
-            echo -n 'exe='; readlink "/proc/$pid/exe" || true
-          fi
-          echo '=== USER SERVICES MATCHING DASHBOARD / 3000 ==='
-          systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'dashboard|studio|3000|agentos' || true
-          echo '=== LOCAL DASHBOARD PROBES ==='
-          for u in http://127.0.0.1:3000/ http://127.0.0.1:3000/dashboard http://127.0.0.1:3000/dashboard/health; do
-            body=/tmp/dashboard-probe
-            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 3 "$u" || true)
-            echo "$u http=$code bytes=$(wc -c < "$body" 2>/dev/null || echo 0) prefix=$(head -c 160 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+          echo '=== PORT 3000 / NODE PROCESSES ==='
+          ss -ltn 2>/dev/null | grep ':3000 ' || true
+          ps -eo user:20,pid,ppid,cmd --sort=pid | grep -E '[n]ext|[n]ode|3000|dashboard' | tail -80 || true
+          echo '=== LIKELY DASHBOARD DIRECTORIES ==='
+          for p in /home/ubuntu/*dashboard* /home/ubuntu/*studio* /home/ubuntu/agentmanager/dashboard /home/ubuntu/agentmanager/web /home/agentos-node/*dashboard*; do
+            [ -e "$p" ] || continue
+            stat -c '%U:%G %a %n' "$p" || true
+            [ -f "$p/package.json" ] && { echo "--- $p/package.json"; head -80 "$p/package.json"; }
           done
+          echo '=== LOCAL RESPONSE HEADERS ==='
+          curl -sS -D - -o /dev/null --max-time 3 http://127.0.0.1:3000/dashboard | head -40 || true
           echo 'mutation=NONE'
