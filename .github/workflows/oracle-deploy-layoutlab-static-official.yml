@@ -23,21 +23,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime/web_assets
+          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
           SRC_HTML=$(sha256sum web_assets/layoutlab_official.html | awk '{print $1}')
           SRC_LIB=$(sha256sum web_assets/layoutlib-browser-v0.3.js | awk '{print $1}')
+          SRC_DEPLOY=$(sha256sum scripts/deploy_layoutlab_static.py | awk '{print $1}')
           for i in $(seq 1 120); do
-            if [ -f "$RUNTIME/layoutlab_official.html" ] && [ -f "$RUNTIME/layoutlib-browser-v0.3.js" ]; then
-              RUN_HTML=$(sha256sum "$RUNTIME/layoutlab_official.html" | awk '{print $1}')
-              RUN_LIB=$(sha256sum "$RUNTIME/layoutlib-browser-v0.3.js" | awk '{print $1}')
-              if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ]; then
+            if [ -f "$RUNTIME/web_assets/layoutlab_official.html" ] && \
+               [ -f "$RUNTIME/web_assets/layoutlib-browser-v0.3.js" ] && \
+               [ -f "$RUNTIME/scripts/deploy_layoutlab_static.py" ]; then
+              RUN_HTML=$(sha256sum "$RUNTIME/web_assets/layoutlab_official.html" | awk '{print $1}')
+              RUN_LIB=$(sha256sum "$RUNTIME/web_assets/layoutlib-browser-v0.3.js" | awk '{print $1}')
+              RUN_DEPLOY=$(sha256sum "$RUNTIME/scripts/deploy_layoutlab_static.py" | awk '{print $1}')
+              if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ] && [ "$SRC_DEPLOY" = "$RUN_DEPLOY" ]; then
                 echo "runtime_asset_refresh=PASS"
+                echo "runtime_deploy_script_refresh=PASS"
                 exit 0
               fi
             fi
             sleep 1
           done
-          echo "runtime_asset_refresh=TIMEOUT"
+          echo "runtime_refresh=TIMEOUT"
           exit 3
 
       - name: Submit deterministic static deployment
@@ -81,14 +86,16 @@ jobs:
             test "$CODE" = 200
             test "$LIBCODE" = 200
             grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-static-ui
-            grep -q 'LayoutLib Browser Adapter v0.4' /tmp/layoutlab-static-ui
+            grep -q 'LayoutLib Browser Adapter v0.4.1' /tmp/layoutlab-static-ui
             grep -q '＋ 補牆' /tmp/layoutlab-static-ui
             grep -q '⌫ 擦牆' /tmp/layoutlab-static-ui
-            grep -q "version:'0.4.0'" /tmp/layoutlab-lib
+            grep -q '拉一段已知長度' /tmp/layoutlab-static-ui
+            grep -q "version:'0.4.1'" /tmp/layoutlab-lib
             grep -q 'eraseStrokePx' /tmp/layoutlab-lib
-            grep -q 'calibrateMetersPerPixelFromReference' /tmp/layoutlab-lib
+            grep -q 'createScaleCalibration' /tmp/layoutlab-lib
             echo 'public_payload_identity=PASS'
             echo 'layoutlib_editor_capabilities=PASS'
+            echo 'layoutlib_manual_scale_calibration=PASS'
             echo 'stable_official_url=https://studio.milkcat.org/layout-lab/'
             echo 'official_layoutlab_web_ui=PASS'
           } 2>&1 | tee "$OUT"
