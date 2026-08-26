@@ -43,12 +43,61 @@ def open_url(url: str) -> dict[str, Any]:
     info = session_info()
     if not info['interactive']:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
-    # Use the Windows shell association directly instead of cmd.exe / Start-Process.
-    # ShellExecuteW returns >32 on success and an error code <=32 on failure.
-    rc = int(ctypes.windll.shell32.ShellExecuteW(None, 'open', url, None, None, 1))
-    if rc <= 32:
-        raise RuntimeError(f'ShellExecuteW failed with code {rc}')
-    return {'url': url, 'session': info, 'launched': True, 'shell_execute_code': rc}
+    rc = ctypes.windll.shell32.ShellExecuteW(None, 'open', url, None, None, 1)
+    if int(rc) <= 32:
+        raise ctypes.WinError(int(rc))
+    return {'url': url, 'session': info, 'launched': True, 'shell_execute_result': int(rc)}
+
+
+def inspect_windows() -> dict[str, Any]:
+    _require_windows()
+    info = session_info()
+    if not info['interactive']:
+        raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    windows: list[dict[str, Any]] = []
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def callback(hwnd: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = int(user32.GetWindowTextLengthW(hwnd))
+        if length <= 0:
+            return True
+        title_buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, title_buf, length + 1)
+        title = title_buf.value.strip()
+        if not title:
+            return True
+        pid = ctypes.c_uint32()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        process_name = None
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if handle:
+            try:
+                size = ctypes.c_uint32(32768)
+                path_buf = ctypes.create_unicode_buffer(size.value)
+                if kernel32.QueryFullProcessImageNameW(handle, 0, path_buf, ctypes.byref(size)):
+                    process_name = Path(path_buf.value).name
+            finally:
+                kernel32.CloseHandle(handle)
+        windows.append({
+            'hwnd': int(hwnd),
+            'title': title[:500],
+            'pid': int(pid.value),
+            'process_name': process_name,
+        })
+        return len(windows) < 100
+
+    proc = EnumWindowsProc(callback)
+    if not user32.EnumWindows(proc, 0):
+        err = kernel32.GetLastError()
+        if err:
+            raise ctypes.WinError(err)
+    return {'session': info, 'windows': windows, 'window_count': len(windows)}
 
 
 def screenshot(workspace: Path, *, quality: int = 55) -> dict[str, Any]:
@@ -77,7 +126,8 @@ Write-Output ($bounds.Width.ToString()+','+$bounds.Height.ToString())
     env = os.environ.copy()
     env['AGENTOS_SCREENSHOT_PATH'] = str(target)
     env['AGENTOS_JPEG_QUALITY'] = str(quality)
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], text=True, capture_output=True, timeout=20, env=env, check=False)
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=20, env=env, check=False, creationflags=flags)
     if cp.returncode != 0 or not target.is_file():
         raise RuntimeError(f'screenshot failed rc={cp.returncode}: {cp.stderr[-2000:]}')
     raw = target.read_bytes()
@@ -138,7 +188,8 @@ def keyboard(task: dict[str, Any]) -> dict[str, Any]:
         raise ValueError('text must contain 1..1000 characters')
     escaped = text.replace("'", "''")
     script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], text=True, capture_output=True, timeout=10, check=False)
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=10, check=False, creationflags=flags)
     if cp.returncode != 0:
         raise RuntimeError(f'keyboard input failed rc={cp.returncode}: {cp.stderr[-2000:]}')
     return {'operation': op, 'characters': len(text), 'session': info}
