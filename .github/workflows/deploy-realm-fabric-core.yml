@@ -1,0 +1,114 @@
+name: Deploy Realm Fabric Core
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: Git ref to install
+        required: true
+        default: main
+        type: string
+  push:
+    paths:
+      - '.github/workflows/deploy-realm-fabric-core.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: realm-fabric-core-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.sha }}
+    steps:
+      - name: Validate deployment settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install versioned Realm Fabric release and service
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$DEPLOY_REF" <<'REMOTE'
+          set -euo pipefail
+          REF="$1"
+          DATA=/home/ubuntu/agent-data
+          ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
+          RELEASE="$ROOT/releases/${REF//\//_}"
+          UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
+          BACKUP="$UNIT.pre-realm-fabric"
+          LIVE_ENV=/home/ubuntu/agentmanager/.env
+          mkdir -p "$RELEASE" "$HOME/.config/systemd/user" "$DATA/logs"
+
+          if [ -f "$UNIT" ]; then cp "$UNIT" "$BACKUP"; fi
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Realm Fabric deployment failed; restoring previous unit" >&2
+              if [ -f "$BACKUP" ]; then cp "$BACKUP" "$UNIT"; systemctl --user daemon-reload; systemctl --user restart agentos-realm-fabric.service || true; else rm -f "$UNIT"; systemctl --user daemon-reload; fi
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          python3 -m venv "$RELEASE/venv"
+          "$RELEASE/venv/bin/python" -m pip install --upgrade pip >/dev/null
+          "$RELEASE/venv/bin/python" -m pip install "git+https://github.com/alston-personal/agentmanager.git@$REF"
+
+          REALM_ID=realm-alston
+          if [ -f "$LIVE_ENV" ]; then
+            configured=$(grep -E '^AGENTOS_REALM_ID=' "$LIVE_ENV" | tail -n1 | cut -d= -f2- || true)
+            [ -n "$configured" ] && REALM_ID="$configured"
+          fi
+          AGENT_DATA_ROOT="$DATA" "$RELEASE/venv/bin/agentos-one" init --realm-id "$REALM_ID"
+
+          cat > "$UNIT" <<EOF
+          [Unit]
+          Description=AgentOS ONE Realm Fabric
+          After=network.target
+
+          [Service]
+          Type=simple
+          Environment=AGENT_DATA_ROOT=$DATA
+          ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
+          Restart=always
+          RestartSec=5
+          StandardOutput=append:$DATA/logs/realm-fabric.log
+          StandardError=append:$DATA/logs/realm-fabric.log
+
+          [Install]
+          WantedBy=default.target
+          EOF
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-realm-fabric.service
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health; then echo; break; fi
+            sleep 1
+          done
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
+          echo
+          systemctl --user is-active agentos-realm-fabric.service
+          echo "realm_fabric_release=$RELEASE"
+          echo "realm_fabric_port=8780"
+          echo "public_route_configured=false"
+          trap - EXIT
+          REMOTE
