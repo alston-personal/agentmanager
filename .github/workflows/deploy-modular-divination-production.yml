@@ -41,17 +41,26 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=fba6a56fcab4357ad3b7fab45e9de2be4f91b76a
+          TARGET=8f5d1ea97563bf32727910e649d6f33a98d304e2
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo "old_commit=$OLD"
           echo "target_commit=$TARGET"
 
-          dirty=$(git -C "$PROD" status --porcelain | grep -v '^ M website/stats.json$' || true)
+          # Only generated build state and persistent runtime state may differ on production.
+          # Any other source/config modification still blocks deployment.
+          dirty=$(git -C "$PROD" status --porcelain | grep -v -E '^.. website/(stats\.json$|dist/|data/)' || true)
           if [ -n "$dirty" ]; then
             echo 'Unexpected production changes; refusing deployment:' >&2
             echo "$dirty" >&2
             exit 40
           fi
+          echo 'production_dirty_state=generated_or_runtime_only'
+
+          RUNTIME_FILES_BEFORE=0
+          if [ -d "$WEB/data" ]; then
+            RUNTIME_FILES_BEFORE=$(find "$WEB/data" -type f | wc -l | tr -d ' ')
+          fi
+          echo "runtime_files_before=$RUNTIME_FILES_BEFORE"
           cp "$WEB/stats.json" /tmp/leopardcat-stats.pre-divination-v1.json
 
           stop_server() {
@@ -84,6 +93,7 @@ jobs:
           rollback() {
             echo 'deployment_smoke_failed=rolling_back' >&2
             stop_server
+            # reset touches tracked code only; persistent website/data is ignored and never cleaned.
             git -C "$PROD" reset --hard "$OLD"
             cp /tmp/leopardcat-stats.pre-divination-v1.json "$WEB/stats.json"
             cd "$WEB"
@@ -159,6 +169,17 @@ jobs:
               print('production_ai_state=zero_cost_fallback')
           print('local_production_divination_v1_smoke=passed')
           PY
+
+          RUNTIME_FILES_AFTER=0
+          if [ -d "$WEB/data" ]; then
+            RUNTIME_FILES_AFTER=$(find "$WEB/data" -type f | wc -l | tr -d ' ')
+          fi
+          echo "runtime_files_after=$RUNTIME_FILES_AFTER"
+          if [ "$RUNTIME_FILES_AFTER" -lt "$RUNTIME_FILES_BEFORE" ]; then
+            echo 'Runtime data file count decreased during deployment' >&2
+            exit 45
+          fi
+          echo 'runtime_data_preservation=passed'
 
           curl -fsS https://leopardcat-tarot.milkcat.org/ >/dev/null
           curl -fsS https://leopardcat-tarot.milkcat.org/read.html >/dev/null
