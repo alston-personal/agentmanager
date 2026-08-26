@@ -1,6 +1,6 @@
-timestamp_utc=2026-08-25T23:38:43Z
+timestamp_utc=2026-08-26T01:32:23Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-request_id=transport-repair-32911679225-20260825T233843Z
+request_id=transport-repair-32919345862-20260826T013223Z
 === COMPILE CANONICAL HOOK ===
 canonical_py_compile=PASS
 === INSTALL CANONICAL HOOK INTO LIVE CHECKOUT ===
@@ -11,25 +11,25 @@ root_stat=ubuntu:ubuntu 1777 /tmp/agentos-bootstrap-control
 requests_stat=ubuntu:ubuntu 1777 /tmp/agentos-bootstrap-control/requests
 ubuntu_owned_rendezvous=PASS
 === CREATE GOVERNED REQUEST ===
-{"schema": "agentos.bootstrap-request/v1", "request_id": "transport-repair-32911679225-20260825T233843Z", "action": "agentos.transport.repair", "created_at": "2026-08-25T23:38:43Z", "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": false}}
-request_stat=agentos-node:agentos-node 644 /tmp/agentos-bootstrap-control/requests/transport-repair-32911679225-20260825T233843Z.request.json
+{"schema": "agentos.bootstrap-request/v1", "request_id": "transport-repair-32919345862-20260826T013223Z", "action": "agentos.transport.repair", "created_at": "2026-08-26T01:32:23Z", "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": false}}
+request_stat=agentos-node:agentos-node 644 /tmp/agentos-bootstrap-control/requests/transport-repair-32919345862-20260826T013223Z.request.json
 request_write_protection=PASS
 === WAIT FOR UBUNTU CHRONOS RECEIPT ===
-receipt_stat=ubuntu:ubuntu 644 /tmp/agentos-bootstrap-control/receipts/transport-repair-32911679225-20260825T233843Z.json
+receipt_stat=ubuntu:ubuntu 644 /tmp/agentos-bootstrap-control/receipts/transport-repair-32919345862-20260826T013223Z.json
 {
   "action": "agentos.transport.repair",
-  "completed_at": "2026-08-25T23:39:15Z",
+  "completed_at": "2026-08-26T01:33:21Z",
   "executor_uid": 1001,
   "executor_user": "ubuntu",
   "ok": true,
   "repair_sha256": "a9a5e2ae0b97865329891612c1622aa5131433bb090f6dca91eabbd3fcbe2447",
-  "request_id": "transport-repair-32911679225-20260825T233843Z",
+  "request_id": "transport-repair-32919345862-20260826T013223Z",
   "schema": "agentos.bootstrap-receipt/v1",
-  "started_at": "2026-08-25T23:39:11Z",
+  "started_at": "2026-08-26T01:33:17Z",
   "steps": [
     {
       "returncode": 0,
-      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   ef15267..e82eb7b  main       -> origin/main\n",
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   e82eb7b..55061b7  main       -> origin/main\n",
       "stdout": "",
       "step": "git_fetch"
     },
@@ -41,7 +41,7 @@ receipt_stat=ubuntu:ubuntu 644 /tmp/agentos-bootstrap-control/receipts/transport
     {
       "returncode": 0,
       "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n",
-      "stdout": "antigravity_runtime_import=PASS\naction_relay_spool_preprovisioned=YES\nHEAD is now at e82eb7b feat(layoutlab): add live threshold preview and ROI selection\naction_runtime_import=ok\nactions=agentos.antigravity.restart,github.repo.ensure_studio_web,layoutlab.api.restart,layoutlab.static.deploy,site.sync_build\n● agentos-action-relay.service - AgentOS Governed Action Relay (ubuntu identity, agentos boundary)\n     Loaded: loaded (/home/ubuntu/.config/systemd/user/agentos-action-relay.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-08-26 07:39:13 CST; 2s ago\n   Main PID: 3936428 (sg)\n      Tasks: 3 (limit: 28686)\n     Memory: 7.4M\n        CPU: 47ms\n     CGroup: /user.slice/user-1001.slice/user@1001.service/app.slice/agentos-action-relay.service\n             ├─3936428 /usr/bin/sg agentos -c \"/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\"\n             ├─3936430 sh -c \"/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\"\n             └─3936431 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\n\nAug 26 07:39:13 instance-20260129-0852 systemd[1027]: Started AgentOS Governed Action Relay (ubuntu identity, agentos boundary).\nAug 26 07:39:13 instance-20260129-0852 sg[3936428]: user 'ubuntu' (login 'ubuntu' on ???) switched to group 'agentos'\naction_relay_install=PASS\naction_relay_group_context=agentos\naction_relay_user_bus=ubuntu:/run/user/1001/bus\naction_relay_stable_liveness=PASS\nruntime=/home/ubuntu/.local/share/agentos/action-runtime\nspool=/home/ubuntu/agent-data/runtime/action-relay\nunit=/home/ubuntu/.config/systemd/user/agentos-action-relay.service\nantigravity_repair=PASS\nantigravity_source=origin/main\nantigravity_checkout_merge=SKIPPED\nantigravity_group_context=agentos\nantigravity_restart_pending=YES\naction_relay_install=PASS\nruntime=/home/ubuntu/.local/share/agentos/runtime-vnext\nspool=/home/ubuntu/agent-data/runtime/antigravity-relay\nunit=/home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service\n",
+      "stdout": "antigravity_runtime_import=PASS\naction_relay_spool_preprovisioned=YES\nHEAD is now at 55061b7 ci(agentos): refresh runtime for Studio Web seed action\naction_runtime_import=ok\nactions=agentos.antigravity.restart,github.repo.ensure_studio_web,github.repo.seed_verify_studio_web,layoutlab.api.restart,layoutlab.static.deploy,site.sync_build\n● agentos-action-relay.service - AgentOS Governed Action Relay (ubuntu identity, agentos boundary)\n     Loaded: loaded (/home/ubuntu/.config/systemd/user/agentos-action-relay.service; enabled; vendor preset: enabled)\n     Active: active (running) since Wed 2026-08-26 09:33:19 CST; 2s ago\n   Main PID: 4005105 (sg)\n      Tasks: 3 (limit: 28686)\n     Memory: 7.5M\n        CPU: 44ms\n     CGroup: /user.slice/user-1001.slice/user@1001.service/app.slice/agentos-action-relay.service\n             ├─4005105 /usr/bin/sg agentos -c \"/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\"\n             ├─4005107 sh -c \"/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\"\n             └─4005109 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\n\nAug 26 09:33:19 instance-20260129-0852 systemd[1027]: Started AgentOS Governed Action Relay (ubuntu identity, agentos boundary).\nAug 26 09:33:19 instance-20260129-0852 sg[4005105]: user 'ubuntu' (login 'ubuntu' on ???) switched to group 'agentos'\naction_relay_install=PASS\naction_relay_group_context=agentos\naction_relay_user_bus=ubuntu:/run/user/1001/bus\naction_relay_stable_liveness=PASS\nruntime=/home/ubuntu/.local/share/agentos/action-runtime\nspool=/home/ubuntu/agent-data/runtime/action-relay\nunit=/home/ubuntu/.config/systemd/user/agentos-action-relay.service\nantigravity_repair=PASS\nantigravity_source=origin/main\nantigravity_checkout_merge=SKIPPED\nantigravity_group_context=agentos\nantigravity_restart_pending=YES\naction_relay_install=PASS\nruntime=/home/ubuntu/.local/share/agentos/runtime-vnext\nspool=/home/ubuntu/agent-data/runtime/antigravity-relay\nunit=/home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service\n",
       "step": "repair_transport"
     }
   ]
@@ -50,8 +50,8 @@ bootstrap_control_repair=PASS
 === DETERMINISTIC ACTION RELAY RESTART ===
 {
   "action": "agentos.antigravity.restart",
-  "capsule_id": "action-ff9b00907b34434eb403b4dc28ed347c",
-  "completed_at": "2026-08-25T23:39:16Z",
+  "capsule_id": "action-5ec1e5eb31dc434786fab68495adbc59",
+  "completed_at": "2026-08-26T01:33:22Z",
   "executor_user": "ubuntu",
   "observations": [
     {
@@ -75,13 +75,13 @@ bootstrap_control_repair=PASS
   },
   "schema": "agentos.action-receipt/v1",
   "service": "agentos-antigravity-relay.service",
-  "started_at": "2026-08-25T23:39:16Z"
+  "started_at": "2026-08-26T01:33:22Z"
 }
 antigravity_restart=PASS
 === GROUP BOUNDARY ACCEPTANCE ===
-antigravity_pid=3936509 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001']
-antigravity_pid=3936510 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001', '1005']
-antigravity_pid=3936511 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001', '1005']
+antigravity_pid=4005177 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001']
+antigravity_pid=4005178 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001', '1005']
+antigravity_pid=4005179 groups=['4', '20', '24', '25', '27', '29', '30', '44', '46', '119', '120', '1001', '1005']
 antigravity_group_boundary=PASS
 === READ-ONLY STUDIO BASELINE ===
 public_path=/ http_code=200
