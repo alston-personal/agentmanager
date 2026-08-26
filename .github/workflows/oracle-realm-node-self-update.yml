@@ -1,0 +1,112 @@
+name: Oracle Realm Node Self Update
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-node-self-update.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-realm-node-self-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Queue fixed first-node desktop adapter update
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          CMD=.agentos/commands/realm-node-self-update.json
+          OUT=/tmp/realm-node-self-update-result.json
+          python3 - "$CMD" "$OUT" "$GITHUB_SHA" <<'PY'
+          import json,re,sys,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+
+          cmd=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert cmd.get('schema') == 'agentos.realm-command/v0.1', cmd
+          assert cmd.get('action') == 'realm.node.self_update_desktop_v01', cmd
+          node_id=str(cmd.get('node_id') or '')
+          assert node_id == 'vopc5750', node_id
+          ref=sys.argv[3]
+          assert re.fullmatch(r'[0-9a-f]{40}', ref), ref
+
+          script = r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $pkg=Join-Path $install 'agentos_node'
+          $base='https://raw.githubusercontent.com/alston-personal/agentmanager/REF'
+          $files=@('agentos_node/thin_client.py','agentos_node/interactive_desktop.py','agentos_node/thin_client_transport.py','agentos_node/client_cli.py')
+          foreach($rel in $files){
+            $dest=Join-Path $install ($rel -replace '/','\')
+            Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
+          }
+          $launcher=Join-Path $install 'agentos-client.cmd'
+          $taskName='AgentOS Thin Client'
+          $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$launcher`" run" -WorkingDirectory $install
+          $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+          $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+          Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
+          Start-ScheduledTask -TaskName $taskName
+          $parentPid=(Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',"Start-Sleep -Seconds 6; Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue")
+          Write-Output ('desktop_adapter_ref=REF')
+          '''.replace('REF',ref)
+          task_id='self-update-desktop-'+node_id+'-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':60,'cognition_ids_used':[]}
+          queued=RealmFabricStore().queue_task(node_id,task)
+          Path(sys.argv[2]).write_text(json.dumps({'ok':True,'node_id':node_id,'ref':ref,'task':queued},indent=2)+'\n',encoding='utf-8')
+          print('self_update_task_id='+task_id)
+          PY
+
+      - name: Wait for update receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(python3 -c "import json; print(json.load(open('/tmp/realm-node-self-update-result.json'))['task']['task_id'])")
+          for i in $(seq 1 20); do
+            python3 - "$TASK" <<'PY' && exit 0 || true
+          import sys
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if r and r.get('ok') is True:
+              print('self_update_receipt=PASS')
+              print(r)
+              raise SystemExit(0)
+          raise SystemExit(1)
+          PY
+            sleep 2
+          done
+          echo 'self update receipt timeout' >&2
+          exit 1
+
+      - name: Publish non-secret evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/realm-node-self-update-result.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-node-self-update-result.json .agentos/evidence/realm-node-self-update-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-node-self-update-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): record first-node desktop self update'
+          git push origin HEAD:main
