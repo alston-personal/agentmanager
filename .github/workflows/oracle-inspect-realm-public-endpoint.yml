@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: oracle-core-inspection
@@ -19,19 +19,23 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Inspect dashboard process tree without mutation
         shell: bash
         run: |
           set -euo pipefail
-          echo "identity=$(id)"
-          echo '=== DASHBOARD PROCESS TREE ==='
-          ps -eo user,pid,ppid,pgid,sid,lstart,cmd --sort=pid | grep -E '(^USER|/home/ubuntu/agentmanager/dashboard|npm start|next-server|next start|PM2)' || true
-          echo '=== LISTENER 3000 ==='
-          ss -ltnp 'sport = :3000' 2>&1 || true
-          echo '=== /PROC CWD FOR UBUNTU NPM/NEXT ==='
-          python3 - <<'PY'
+          OUT=.agentos/evidence/dashboard-process-tree.txt
+          mkdir -p "$(dirname "$OUT")"
+          {
+            echo "identity=$(id)"
+            echo '=== DASHBOARD PROCESS TREE ==='
+            ps -eo user,pid,ppid,pgid,sid,lstart,cmd --sort=pid | grep -E '(^USER|/home/ubuntu/agentmanager/dashboard|npm start|next-server|next start|PM2)' || true
+            echo '=== LISTENER 3000 ==='
+            ss -ltnp 'sport = :3000' 2>&1 || true
+            echo '=== /PROC CWD FOR UBUNTU NPM/NEXT ==='
+            python3 - <<'PY'
 from pathlib import Path
-import os
 for e in Path('/proc').iterdir():
     if not e.name.isdigit():
         continue
@@ -48,4 +52,15 @@ for e in Path('/proc').iterdir():
     except Exception as exc:
         print({'pid':e.name,'error':str(exc)})
 PY
-          echo 'mutation=NONE'
+            echo 'mutation=NONE'
+          } | tee "$OUT"
+      - name: Commit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'AgentOS Evidence Bot'
+          git config user.email 'agentos-evidence@users.noreply.github.com'
+          git add .agentos/evidence/dashboard-process-tree.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): record dashboard process tree'
+          git push origin HEAD:main
