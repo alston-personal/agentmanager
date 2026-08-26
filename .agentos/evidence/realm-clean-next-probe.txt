@@ -1,0 +1,4 @@
+commit=431723e1dd15206bc8ca3b5c0cf0b771534e1cb5
+node=v22.23.2
+path=/api/agentos/v1/health http=404 gateway_identity=false prefix=<!DOCTYPE html><!--c6J3tUhZ4D3z1nN1NdmEn--><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" 
+path=/dashboard/api/agentos/v1/health http=502 gateway_identity=true prefix={"ok":false,"error":"Realm upstream unavailable: fetch failed"}
