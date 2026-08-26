@@ -59,8 +59,14 @@ def main() -> int:
     p_policy = sub.add_parser('policy-init', help='create a conservative local execution policy')
     p_policy.add_argument('--root', help='workspace root ONE may read/write')
 
-    p_enroll = sub.add_parser('enroll', help='join a Realm using a one-time invitation')
-    p_enroll.add_argument('--one', required=True, help='ONE HTTPS base URL, e.g. https://example/agentos')
+    p_join = sub.add_parser('join', help='request Realm membership and wait for human approval')
+    p_join.add_argument('--one', required=True, help='ONE base URL')
+    p_join.add_argument('--node-id', default=socket.gethostname().lower())
+    p_join.add_argument('--expires-minutes', type=int, default=10)
+    p_join.add_argument('--timeout-seconds', type=int, default=600)
+
+    p_enroll = sub.add_parser('enroll', help='legacy one-time invitation enrollment')
+    p_enroll.add_argument('--one', required=True, help='ONE base URL')
     p_enroll.add_argument('--invite-id', required=True)
     p_enroll.add_argument('--code', required=True)
     p_enroll.add_argument('--node-id', default=socket.gethostname().lower())
@@ -77,6 +83,30 @@ def main() -> int:
         return 0
 
     policy = _load_policy(args.policy)
+
+    if args.command == 'join':
+        def show_request(payload: dict[str, object]) -> None:
+            print('AgentOS enrollment approval required')
+            print(f'Node: {payload.get("node_id")}')
+            print(f'Code: {payload.get("user_code")}')
+            print(f'Expires: {payload.get("expires_at")}')
+            print('Tell your Realm administrator or AgentOS assistant to approve this code.')
+
+        def show_status(payload: dict[str, object]) -> None:
+            print(f'[agentos-client] enrollment status: {payload.get("status")}', flush=True)
+
+        config = ThinClientTransport.enroll_device(
+            one_url=args.one,
+            node_id=args.node_id,
+            policy=policy,
+            config_path=args.config,
+            expires_minutes=args.expires_minutes,
+            timeout_seconds=args.timeout_seconds,
+            on_request=show_request,
+            on_status=show_status,
+        )
+        print(render_json({'ok': True, 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config)}))
+        return 0
 
     if args.command == 'enroll':
         config = ThinClientTransport.enroll(
