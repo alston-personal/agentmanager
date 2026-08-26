@@ -1,2 +1,8 @@
-timestamp_utc=2026-08-26T04:45:17Z
+timestamp_utc=2026-08-26T06:24:22Z
 public_ui_http_code=200
+public_library_http_code=200
+public_payload_identity=PASS
+layoutlib_editor_capabilities=PASS
+layoutlib_manual_scale_calibration=PASS
+stable_official_url=https://studio.milkcat.org/layout-lab/
+official_layoutlab_web_ui=PASS
