@@ -1,3 +1,9 @@
-timestamp_utc=2026-08-26T06:56:58Z
+timestamp_utc=2026-08-26T06:57:14Z
 public_ui_http_code=200
 public_library_http_code=200
+public_payload_identity=PASS
+unified_editor_state=PASS
+manual_wall_editor=PASS
+wall_height_thickness_floor=PASS
+manual_scale_calibration=PASS
+official_layoutlab_web_ui=PASS
