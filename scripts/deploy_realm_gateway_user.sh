@@ -8,11 +8,11 @@ fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 DASH="$REPO/dashboard"
-ROUTE_REL='dashboard/app/agentos/one/[...path]/route.ts'
+ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
-PUBLIC='https://studio.milkcat.org/dashboard/agentos/one/v1/health'
+PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
 LOCAL='http://127.0.0.1:8780/v1/health'
-LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/agentos/one/v1/health'
+LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
 
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
@@ -131,6 +131,6 @@ BODY=$(curl -fsS --max-time 5 "$PUBLIC")
 printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
 printf '%s' "$BODY" | grep -q 'realm-alston'
 echo "realm_gateway_public=PASS"
-echo "realm_gateway_url=https://studio.milkcat.org/dashboard/agentos/one"
+echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
 echo "nginx_mutation=NONE"
 echo "root_privilege=NONE"
