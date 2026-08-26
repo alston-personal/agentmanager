@@ -1,15 +1,15 @@
-capsule_id=action-1d3ec4a79370460187c3a9a77072e7d9
+capsule_id=action-8626e1484b10409ca7b1ef1cc8b37c6d
 {
   "action": "layoutlab.static.deploy",
   "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
-  "capsule_id": "action-1d3ec4a79370460187c3a9a77072e7d9",
-  "completed_at": "2026-08-26T04:30:39Z",
+  "capsule_id": "action-8626e1484b10409ca7b1ef1cc8b37c6d",
+  "completed_at": "2026-08-26T04:39:20Z",
   "executor_user": "ubuntu",
   "mode": "browser-only-layoutlib-v0.1-compatible",
   "ok": true,
   "schema": "agentos.action-receipt/v1",
   "site": "studio.milkcat.org",
-  "started_at": "2026-08-26T04:30:39Z",
+  "started_at": "2026-08-26T04:39:20Z",
   "step": {
     "argv": [
       "/usr/bin/python3",
@@ -17,6 +17,6 @@ capsule_id=action-1d3ec4a79370460187c3a9a77072e7d9
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 13653, \"sha256\": \"d78abf4a0e77ca117ca1804f8cef00cdcc298d09c5a4e3521253ec7331c6aae7\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlib-browser-v0.3.js\": {\"bytes\": 4920, \"sha256\": \"3d1f2588b3646c8863b9d9326097fbd457de8676cec8fca29963768ab0c14499\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.3.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.3.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.3-anchored-browser-adapter\", \"ok\": true}\n"
+    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 13874, \"sha256\": \"b22f37cb9e87e157334b5de446dea1d6734c2522e3cdd2b2c4773dda8de38595\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_official.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlib-browser-v0.3.js\": {\"bytes\": 4920, \"sha256\": \"3d1f2588b3646c8863b9d9326097fbd457de8676cec8fca29963768ab0c14499\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.3.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.3.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.3-anchored-browser-adapter\", \"ok\": true}\n"
   }
 }
