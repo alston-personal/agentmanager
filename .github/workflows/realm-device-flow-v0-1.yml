@@ -1,0 +1,87 @@
+name: Realm Device Flow v0.1
+
+on:
+  push:
+    paths:
+      - 'agent_core/realm_fabric.py'
+      - 'agent_core/realm_server.py'
+      - 'agent_core/realm_cli.py'
+      - 'agentos_node/thin_client.py'
+      - 'agentos_node/thin_client_transport.py'
+      - 'agentos_node/client_cli.py'
+      - '.github/workflows/realm-device-flow-v0-1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  device-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify request approve claim and heartbeat
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import tempfile
+          import threading
+          from pathlib import Path
+
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.realm_server import RealmHTTPServer
+          from agentos_node.thin_client import ThinClientPolicy
+          from agentos_node.thin_client_transport import ThinClientTransport, build_client
+
+          root=Path(tempfile.mkdtemp(prefix='agentos-device-flow-'))
+          registry=NodeRegistry(root/'nodes.json')
+          fabric=RealmFabricStore(root/'fabric.json', node_registry=registry)
+          fabric.initialize_realm('realm-test')
+          server=RealmHTTPServer(('127.0.0.1',0),fabric)
+          thread=threading.Thread(target=server.serve_forever,daemon=True)
+          thread.start()
+          base=f'http://127.0.0.1:{server.server_address[1]}'
+          policy=ThinClientPolicy(
+              allowed_executables={'python3'},
+              readable_roots=(root,),
+              writable_roots=(root,),
+          )
+          request=ThinClientTransport.request_enrollment(
+              one_url=base,
+              node_id='client-test-01',
+              policy=policy,
+              expires_minutes=10,
+          )
+          assert request['status']=='pending', request
+          assert request['user_code'] and request['claim_secret'], request
+          persisted=json.loads((root/'fabric.json').read_text())
+          raw=(root/'fabric.json').read_text()
+          assert request['claim_secret'] not in raw, 'claim secret persisted in Core store'
+          approval=fabric.approve_join(request['user_code'])
+          assert approval['ok'] is True, approval
+          config=ThinClientTransport.wait_for_approval(
+              one_url=base,
+              request_id=request['request_id'],
+              claim_secret=request['claim_secret'],
+              config_path=root/'client.json',
+              poll_seconds=0.01,
+              timeout_seconds=10,
+          )
+          assert config.realm_id=='realm-test', config
+          assert config.node_id=='client-test-01', config
+          transport=build_client(config,policy)
+          hb=transport.heartbeat()
+          assert hb['ok'] is True, hb
+          node_map=registry.node_map()
+          assert node_map['node_count']==1, node_map
+          assert node_map['nodes'][0]['status']=='online', node_map
+          server.shutdown(); server.server_close()
+          print('realm_device_flow=PASS')
+          print('claim_secret_persisted=false')
+          print('request_approve_claim=PASS')
+          print('heartbeat=PASS')
+          PY
