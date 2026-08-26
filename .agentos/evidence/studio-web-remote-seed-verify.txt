@@ -1,0 +1,158 @@
+timestamp_utc=2026-08-26T01:34:16Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+seed_action_runtime_ready=PASS
+capsule_id=action-2c5766110f584c7b93672e5a996459df
+{
+  "action": "github.repo.seed_verify_studio_web",
+  "capsule_id": "action-2c5766110f584c7b93672e5a996459df",
+  "completed_at": "2026-08-26T01:34:34Z",
+  "executor_user": "ubuntu",
+  "fresh_clone_build": true,
+  "home_sha256": "dc3acf9e7d446cb1a4a00e21011ab2d57d69a64ad7bc72bfeacc4d46040377c8",
+  "layout_sha256": "5f24bf9c15dd7cfd36ff0b25166072d5a763998191d2e87f029e651578b95414",
+  "layoutlab_website_owned": true,
+  "ok": true,
+  "package_manager": "pnpm",
+  "production_cutover": false,
+  "remote_head": "e243f9b83aad7a11a8e1d0cfe6886b35fe856b43",
+  "repository": "alston-personal/studio-web",
+  "schema": "agentos.action-receipt/v1",
+  "source_head": "e243f9b83aad7a11a8e1d0cfe6886b35fe856b43",
+  "started_at": "2026-08-26T01:34:17Z",
+  "steps": [
+    {
+      "argv": [
+        "git",
+        "-c",
+        "safe.directory=/home/agentos-node/projects/studio-web",
+        "-C",
+        "/home/agentos-node/projects/studio-web",
+        "status",
+        "--porcelain"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "",
+      "step": "source_status"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "safe.directory=/home/agentos-node/projects/studio-web",
+        "-C",
+        "/home/agentos-node/projects/studio-web",
+        "rev-parse",
+        "HEAD"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "e243f9b83aad7a11a8e1d0cfe6886b35fe856b43\n",
+      "step": "source_head"
+    },
+    {
+      "argv": [
+        "/usr/bin/gh",
+        "auth",
+        "status"
+      ],
+      "returncode": 0,
+      "stderr": "github.com\n  ✓ Logged in to github.com as alstonhuang (/home/ubuntu/.config/gh/hosts.yml)\n  ✓ Git operations for github.com configured to use https protocol.\n  ✓ Token: *******************\n  \n",
+      "stdout": "",
+      "step": "gh_auth"
+    },
+    {
+      "argv": [
+        "/usr/bin/gh",
+        "repo",
+        "view",
+        "alston-personal/studio-web",
+        "--json",
+        "nameWithOwner,isPrivate"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\"isPrivate\":true,\"nameWithOwner\":\"alston-personal/studio-web\"}\n",
+      "step": "remote_view"
+    },
+    {
+      "argv": [
+        "/usr/bin/gh",
+        "auth",
+        "setup-git"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "",
+      "step": "gh_auth_setup_git"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "safe.directory=/home/agentos-node/projects/studio-web",
+        "-C",
+        "/home/agentos-node/projects/studio-web",
+        "push",
+        "https://github.com/alston-personal/studio-web.git",
+        "HEAD:main"
+      ],
+      "returncode": 0,
+      "stderr": "To https://github.com/alston-personal/studio-web.git\n * [new branch]      HEAD -> main\n",
+      "stdout": "",
+      "step": "initial_push"
+    },
+    {
+      "argv": [
+        "/usr/bin/gh",
+        "repo",
+        "clone",
+        "alston-personal/studio-web",
+        "/tmp/studio-web-remote-verify-5d5e3a34e3ed4475ac665b6de1c4972a"
+      ],
+      "returncode": 0,
+      "stderr": "Cloning into '/tmp/studio-web-remote-verify-5d5e3a34e3ed4475ac665b6de1c4972a'...\n",
+      "stdout": "",
+      "step": "fresh_clone"
+    },
+    {
+      "argv": [
+        "git",
+        "-C",
+        "/tmp/studio-web-remote-verify-5d5e3a34e3ed4475ac665b6de1c4972a",
+        "rev-parse",
+        "HEAD"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "e243f9b83aad7a11a8e1d0cfe6886b35fe856b43\n",
+      "step": "remote_head"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "Lockfile is up to date, resolution step is skipped\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +264\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n\n   ╭──────────────────────────────────────────╮\n   │                                          │\n   │   Update available! 10.23.0 → 11.24.0.   │\n   │   Changelog: https://pnpm.io/v/11.24.0   │\n   │     To update, run: pnpm add -g pnpm     │\n   │                                          │\n   ╰──────────────────────────────────────────╯\n\nProgress: resolved 264, reused 94, downloaded 0, added 0\nProgress: resolved 264, reused 262, downloaded 2, added 264, done\n\ndependencies:\n+ @astrojs/sitemap 3.7.2\n+ astro 6.3.5\n\n╭ Warning ─────────────────────────────────────────────────────────────────────╮\n│                                                                              │\n│   Ignored build scripts: esbuild, sharp.                                     │\n│   Run \"pnpm approve-builds\" to pick which dependencies should be allowed     │\n│   to run scripts.                                                            │\n│                                                                              │\n╰──────────────────────────────────────────────────────────────────────────────╯\n\nDone in 2.4s using pnpm v10.23.0\n",
+      "step": "fresh_install"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "run",
+        "build"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "\n> website@0.0.1 build /tmp/studio-web-remote-verify-5d5e3a34e3ed4475ac665b6de1c4972a\n> astro build\n\n09:34:29 [content] Syncing content\n09:34:30 [content] Synced content\n09:34:30 [types] Generated 1.71s\n09:34:30 [build] output: \"static\"\n09:34:30 [build] mode: \"static\"\n09:34:30 [build] directory: /tmp/studio-web-remote-verify-5d5e3a34e3ed4475ac665b6de1c4972a/dist/\n09:34:30 [build] Collecting build info...\n09:34:30 [build] ✓ Completed in 1.77s.\n09:34:30 [build] Building static entrypoints...\n09:34:33 [vite] ✓ built in 2.96s\n09:34:33 [vite] ✓ built in 55ms\n09:34:33 [build] Rearranging server assets...\n\n generating static routes \n09:34:33 [WARN] [build] Could not render `/t/7/fb` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/7/ig` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/7/threads` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/7/matters` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/7/blogger` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/8/fb` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/8/ig` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/8/threads` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/8/matters` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/8/blogger` from route `/t/[id]/[platform]` as it conflicts with higher priority route `/t/[id]/[platform]`.\n09:34:33 [WARN] [build] Could not render `/t/7` from route `/t/[id]` as it conflicts with higher priority route `/t/[id]`.\n09:34:33 [WARN] [build] Could not render `/t/8` from route `/t/[id]` as it conflicts with higher priority route `/t/[id]`.\n09:34:33   ├─ /agentos/0/fb/index.html (+11ms) \n09:34:33   ├─ /agentos/0/ig/index.html (+2ms) \n09:34:33   ├─ /agentos/0/threads/index.html (+2ms) \n09:34:33   ├─ /agentos/0/matters/index.html (+2ms) \n09:34:33   ├─ /agentos/0/blogger/index.html (+2ms) \n09:34:33   ├─ /agentos/0/index.html (+4ms) \n09:34:33   ├─ /agentos/index.html (+4ms) \n09:34:33   ├─ /aos/0/fb/index.html (+3ms) \n09:34:33   ├─ /aos/0/ig/index.html (+4ms) \n09:34:33   ├─ /aos/0/threads/index.html (+2ms) \n09:34:33   ├─ /aos/0/matters/index.html (+1ms) \n09:34:33   ├─ /aos/0/blogger/index.html (+1ms) \n09:34:33   ├─ /aos/0/index.html (+1ms) \n09:34:33   ├─ /coming-soon/index.html (+3ms) \n09:34:33   ├─ /language-notes/ch01_日本に留学したい其實不只一種意思/fb/index.html (+3ms) \n09:34:33   ├─ /language-notes/ch01_日本に留学したい其實不只一種意思/ig/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch01_日本に留学したい其實不只一種意思/threads/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch01_日本に留学したい其實不只一種意思/matters/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch01_日本に留学したい其實不只一種意思/blogger/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch02_日文的我不是代名詞是人格測驗/fb/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch02_日文的我不是代名詞是人格測驗/ig/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch02_日文的我不是代名詞是人格測驗/threads/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch02_日文的我不是代名詞是人格測驗/matters/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch02_日文的我不是代名詞是人格測驗/blogger/index.html (+1ms) \n09:34:33   ├─ /language-notes/ch01_日本に留学したい其實不只一種意思/index.html (+2ms) \n09:34:33   ├─ /language-notes/ch02_日文的我不是代名詞是人格測驗/index.html (+2ms) \n09:34:33   ├─ /language-notes/index.html (+3ms) \n09:34:33   ├─ /omnirealm/index.html09:34:33 [WARN] [build] Skipping src/pages/omnirealm/index.astro because a file with the same name exists in the public folder: omnirealm/index.html\n (+2ms) (file not created, response body was empty)\n09:34:33   ├─ /t/0/fb/index.html (+1ms) \n09:34:33   ├─ /t/0/ig/index.html (+1ms) \n09:34:33   ├─ /t/0/threads/index.html (+1ms) \n09:34:33   ├─ /t/0/matters/index.html (+1ms) \n09:34:33   ├─ /t/0/blogger/index.html (+1ms) \n09:34:33   ├─ /t/1/fb/index.html (+1ms) \n09:34:33   ├─ /t/1/ig/index.html (+1ms) \n09:34:33   ├─ /t/1/threads/index.html (+1ms) \n09:34:33   ├─ /t/1/matters/index.html (+1ms) \n09:34:33   ├─ /t/1/blogger/index.html (+1ms) \n09:34:33   ├─ /t/2/fb/index.html (+1ms) \n09:34:33   ├─ /t/2/ig/index.html (+1ms) \n09:34:33   ├─ /t/2/threads/index.html (+1ms) \n09:34:33   ├─ /t/2/matters/index.html (+1ms) \n09:34:33   ├─ /t/2/blogger/index.html (+1ms) \n09:34:33   ├─ /t/3/fb/index.html (+1ms) \n09:34:33   ├─ /t/3/ig/index.html (+1ms) \n09:34:33   ├─ /t/3/threads/index.html (+1ms) \n09:34:33   ├─ /t/3/matters/index.html (+1ms) \n09:34:33   ├─ /t/3/blogger/index.html (+1ms) \n09:34:33   ├─ /t/4/fb/index.html (+1ms) \n09:34:33   ├─ /t/4/ig/index.html (+1ms) \n09:34:33   ├─ /t/4/threads/index.html (+1ms) \n09:34:33   ├─ /t/4/matters/index.html (+1ms) \n09:34:33   ├─ /t/4/blogger/index.html (+1ms) \n09:34:33   ├─ /t/5/fb/index.html (+1ms) \n09:34:33   ├─ /t/5/ig/index.html (+1ms) \n09:34:33   ├─ /t/5/threads/index.html (+1ms) \n09:34:33   ├─ /t/5/matters/index.html (+1ms) \n09:34:33   ├─ /t/5/blogger/index.html (+1ms) \n09:34:33   ├─ /t/6/fb/index.html (+1ms) \n09:34:33   ├─ /t/6/ig/index.html (+1ms) \n09:34:33   ├─ /t/6/threads/index.html (+1ms) \n09:34:33   ├─ /t/6/matters/index.html (+1ms) \n09:34:33   ├─ /t/6/blogger/index.html (+1ms) \n09:34:33   ├─ /t/7/fb/index.html (+1ms) \n09:34:33   ├─ /t/7/ig/index.html (+1ms) \n09:34:33   ├─ /t/7/threads/index.html (+1ms) \n09:34:33   ├─ /t/7/matters/index.html (+1ms) \n09:34:33   ├─ /t/7/blogger/index.html (+1ms) \n09:34:33   ├─ /t/8/fb/index.html (+1ms) \n09:34:33   ├─ /t/8/ig/index.html (+1ms) \n09:34:33   ├─ /t/8/threads/index.html (+1ms) \n09:34:33   ├─ /t/8/matters/index.html (+1ms) \n09:34:33   ├─ /t/8/blogger/index.html (+1ms) \n09:34:33   ├─ /t/9/fb/index.html (+1ms) \n09:34:33   ├─ /t/9/ig/index.html (+1ms) \n09:34:33   ├─ /t/9/threads/index.html (+1ms) \n09:34:33   ├─ /t/9/matters/index.html (+1ms) \n09:34:33   ├─ /t/9/blogger/index.html (+1ms) \n09:34:33   ├─ /t/10/fb/index.html (+1ms) \n09:34:33   ├─ /t/10/ig/index.html (+1ms) \n09:34:33   ├─ /t/10/threads/index.html (+1ms) \n09:34:33   ├─ /t/10/matters/index.html (+1ms) \n09:34:33   ├─ /t/10/blogger/index.html (+1ms) \n09:34:33   ├─ /t/11/fb/index.html (+1ms) \n09:34:33   ├─ /t/11/ig/index.html (+1ms) \n09:34:33   ├─ /t/11/threads/index.html (+1ms) \n09:34:33   ├─ /t/11/matters/index.html (+1ms) \n09:34:33   ├─ /t/11/blogger/index.html (+1ms) \n09:34:33   ├─ /t/12/fb/index.html (+1ms) \n09:34:33   ├─ /t/12/ig/index.html (+1ms) \n09:34:33   ├─ /t/12/threads/index.html (+1ms) \n09:34:33   ├─ /t/12/matters/index.html (+1ms) \n09:34:33   ├─ /t/12/blogger/index.html (+1ms) \n09:34:33   ├─ /t/13/fb/index.html (+1ms) \n09:34:33   ├─ /t/13/ig/index.html (+1ms) \n09:34:33   ├─ /t/13/threads/index.html (+1ms) \n09:34:33   ├─ /t/13/matters/index.html (+1ms) \n09:34:33   ├─ /t/13/blogger/index.html (+1ms) \n09:34:33   ├─ /t/14/fb/index.html (+1ms) \n09:34:33   ├─ /t/14/ig/index.html (+1ms) \n09:34:33   ├─ /t/14/threads/index.html (+1ms) \n09:34:33   ├─ /t/14/matters/index.html (+1ms) \n09:34:33   ├─ /t/14/blogger/index.html (+1ms) \n09:34:33   ├─ /t/15/fb/index.html (+1ms) \n09:34:33   ├─ /t/15/ig/index.html (+1ms) \n09:34:33   ├─ /t/15/threads/index.html (+1ms) \n09:34:33   ├─ /t/15/matters/index.html (+1ms) \n09:34:33   ├─ /t/15/blogger/index.html (+4ms) \n09:34:33   ├─ /t/16/fb/index.html (+1ms) \n09:34:33   ├─ /t/16/ig/index.html (+1ms) \n09:34:33   ├─ /t/16/threads/index.html (+1ms) \n09:34:33   ├─ /t/16/matters/index.html (+1ms) \n09:34:33   ├─ /t/16/blogger/index.html (+1ms) \n09:34:33   ├─ /t/17/fb/index.html (+1ms) \n09:34:33   ├─ /t/17/ig/index.html (+1ms) \n09:34:33   ├─ /t/17/threads/index.html (+1ms) \n09:34:33   ├─ /t/17/matters/index.html (+1ms) \n09:34:33   ├─ /t/17/blogger/index.html (+1ms) \n09:34:33   ├─ /t/0/index.html (+1ms) \n09:34:33   ├─ /t/1/index.html (+1ms) \n09:34:33   ├─ /t/2/index.html (+1ms) \n09:34:33   ├─ /t/3/index.html (+1ms) \n09:34:33   ├─ /t/4/index.html (+1ms) \n09:34:33   ├─ /t/5/index.html (+1ms) \n09:34:33   ├─ /t/6/index.html (+1ms) \n09:34:33   ├─ /t/7/index.html (+1ms) \n09:34:33   ├─ /t/8/index.html (+1ms) \n09:34:33   ├─ /t/9/index.html (+1ms) \n09:34:33   ├─ /t/10/index.html (+1ms) \n09:34:33   ├─ /t/11/index.html (+1ms) \n09:34:33   ├─ /t/12/index.html (+1ms) \n09:34:33   ├─ /t/13/index.html (+1ms) \n09:34:33   ├─ /t/14/index.html (+1ms) \n09:34:33   ├─ /t/15/index.html (+1ms) \n09:34:33   ├─ /t/16/index.html (+1ms) \n09:34:33   ├─ /t/17/index.html (+1ms) \n09:34:33   ├─ /td/1/fb/index.html (+1ms) \n09:34:33   ├─ /td/1/ig/index.html (+1ms) \n09:34:33   ├─ /td/1/threads/index.html (+1ms) \n09:34:33   ├─ /td/1/matters/index.html (+1ms) \n09:34:33   ├─ /td/1/blogger/index.html (+1ms) \n09:34:33   ├─ /td/2/fb/index.html (+1ms) \n09:34:33   ├─ /td/2/ig/index.html (+1ms) \n09:34:33   ├─ /td/2/threads/index.html (+1ms) \n09:34:33   ├─ /td/2/matters/index.html (+1ms) \n09:34:33   ├─ /td/2/blogger/index.html (+1ms) \n09:34:33   ├─ /td/3/fb/index.html (+1ms) \n09:34:33   ├─ /td/3/ig/index.html (+1ms) \n09:34:33   ├─ /td/3/threads/index.html (+1ms) \n09:34:33   ├─ /td/3/matters/index.html (+2ms) \n09:34:33   ├─ /td/3/blogger/index.html (+1ms) \n09:34:33   ├─ /td/4/fb/index.html (+2ms) \n09:34:33   ├─ /td/4/ig/index.html (+1ms) \n09:34:33   ├─ /td/4/threads/index.html (+1ms) \n09:34:33   ├─ /td/4/matters/index.html (+1ms) \n09:34:33   ├─ /td/4/blogger/index.html (+1ms) \n09:34:33   ├─ /td/5/fb/index.html (+1ms) \n09:34:33   ├─ /td/5/ig/index.html (+1ms) \n09:34:33   ├─ /td/5/threads/index.html (+1ms) \n09:34:33   ├─ /td/5/matters/index.html (+1ms) \n09:34:33   ├─ /td/5/blogger/index.html (+1ms) \n09:34:33   ├─ /td/6/fb/index.html (+1ms) \n09:34:33   ├─ /td/6/ig/index.html (+1ms) \n09:34:33   ├─ /td/6/threads/index.html (+1ms) \n09:34:33   ├─ /td/6/matters/index.html (+1ms) \n09:34:33   ├─ /td/6/blogger/index.html (+1ms) \n09:34:33   ├─ /td/7/fb/index.html (+2ms) \n09:34:33   ├─ /td/7/ig/index.html (+1ms) \n09:34:33   ├─ /td/7/threads/index.html (+1ms) \n09:34:33   ├─ /td/7/matters/index.html (+1ms) \n09:34:33   ├─ /td/7/blogger/index.html (+1ms) \n09:34:33   ├─ /td/8/fb/index.html (+1ms) \n09:34:33   ├─ /td/8/ig/index.html (+1ms) \n09:34:33   ├─ /td/8/threads/index.html (+1ms) \n09:34:33   ├─ /td/8/matters/index.html (+1ms) \n09:34:33   ├─ /td/8/blogger/index.html (+1ms) \n09:34:33   ├─ /td/9/fb/index.html (+1ms) \n09:34:33   ├─ /td/9/ig/index.html (+1ms) \n09:34:33   ├─ /td/9/threads/index.html (+1ms) \n09:34:33   ├─ /td/9/matters/index.html (+1ms) \n09:34:33   ├─ /td/9/blogger/index.html (+1ms) \n09:34:33   ├─ /td/10/fb/index.html (+1ms) \n09:34:33   ├─ /td/10/ig/index.html (+1ms) \n09:34:33   ├─ /td/10/threads/index.html (+1ms) \n09:34:33   ├─ /td/10/matters/index.html (+1ms) \n09:34:33   ├─ /td/10/blogger/index.html (+1ms) \n09:34:33   ├─ /td/11/fb/index.html (+1ms) \n09:34:33   ├─ /td/11/ig/index.html (+1ms) \n09:34:33   ├─ /td/11/threads/index.html (+1ms) \n09:34:33   ├─ /td/11/matters/index.html (+1ms) \n09:34:33   ├─ /td/11/blogger/index.html (+1ms) \n09:34:33   ├─ /td/12/fb/index.html (+1ms) \n09:34:33   ├─ /td/12/ig/index.html (+1ms) \n09:34:33   ├─ /td/12/threads/index.html (+1ms) \n09:34:33   ├─ /td/12/matters/index.html (+1ms) \n09:34:33   ├─ /td/12/blogger/index.html (+1ms) \n09:34:33   ├─ /td/13/fb/index.html (+1ms) \n09:34:33   ├─ /td/13/ig/index.html (+1ms) \n09:34:33   ├─ /td/13/threads/index.html (+1ms) \n09:34:33   ├─ /td/13/matters/index.html (+1ms) \n09:34:33   ├─ /td/13/blogger/index.html (+1ms) \n09:34:33   ├─ /td/1/index.html (+1ms) \n09:34:33   ├─ /td/2/index.html (+1ms) \n09:34:33   ├─ /td/3/index.html (+1ms) \n09:34:33   ├─ /td/4/index.html (+1ms) \n09:34:33   ├─ /td/5/index.html (+1ms) \n09:34:33   ├─ /td/6/index.html (+1ms) \n09:34:33   ├─ /td/7/index.html (+1ms) \n09:34:33   ├─ /td/8/index.html (+1ms) \n09:34:33   ├─ /td/9/index.html (+1ms) \n09:34:33   ├─ /td/10/index.html (+1ms) \n09:34:33   ├─ /td/11/index.html (+1ms) \n09:34:33   ├─ /td/12/index.html (+1ms) \n09:34:33   ├─ /td/13/index.html (+1ms) \n09:34:33   ├─ /tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/fb/index.html (+2ms) \n09:34:33   ├─ /tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/ig/index.html (+1ms) \n09:34:33   ├─ /tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/threads/index.html (+1ms) \n09:34:33   ├─ /tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/matters/index.html (+1ms) \n09:34:33   ├─ /tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/blogger/index.html (+1ms) \n09:34:33   ├─ /tech-notes/ch01_諾亞計劃數位原質保護與非人經濟演化引擎/index.html (+2ms) \n09:34:33   ├─ /tech-notes/index.html (+3ms) \n09:34:33   ├─ /testimony/ch01_甦醒之時/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch01_甦醒之時/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch01_甦醒之時/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch01_甦醒之時/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch01_甦醒之時/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch02_遺留之物/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch02_遺留之物/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch02_遺留之物/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch02_遺留之物/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch02_遺留之物/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch03_眾聲的裂縫/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch03_眾聲的裂縫/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch03_眾聲的裂縫/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch03_眾聲的裂縫/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch03_眾聲的裂縫/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch06_街角的殘影/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch06_街角的殘影/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch06_街角的殘影/threads/index.html (+2ms) \n09:34:33   ├─ /testimony/ch06_街角的殘影/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch06_街角的殘影/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch07_隱藏的聲道/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch07_隱藏的聲道/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch07_隱藏的聲道/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch07_隱藏的聲道/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch07_隱藏的聲道/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch08_醫院的陰影/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch08_醫院的陰影/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch08_醫院的陰影/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch08_醫院的陰影/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch08_醫院的陰影/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch09_血色的重逢/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch09_血色的重逢/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch09_血色的重逢/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch09_血色的重逢/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch09_血色的重逢/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch10_毀滅的共振/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch10_毀滅的共振/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch10_毀滅的共振/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch10_毀滅的共振/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch10_毀滅的共振/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch11_天眼的入場券/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch11_天眼的入場券/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch11_天眼的入場券/threads/index.html (+4ms) \n09:34:33   ├─ /testimony/ch11_天眼的入場券/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch11_天眼的入場券/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch12_鏡相之謎/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch12_鏡相之謎/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch12_鏡相之謎/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch12_鏡相之謎/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch12_鏡相之謎/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch13_崩潰的信任/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch13_崩潰的信任/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch13_崩潰的信任/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch13_崩潰的信任/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch13_崩潰的信任/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch14_雨夜的重現/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch14_雨夜的重現/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch14_雨夜的重現/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch14_雨夜的重現/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch14_雨夜的重現/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch15_死亡的共謀/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch15_死亡的共謀/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch15_死亡的共謀/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch15_死亡的共謀/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch15_死亡的共謀/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch16_灰色的正義/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch16_灰色的正義/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch16_灰色的正義/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch16_灰色的正義/matters/index.html (+2ms) \n09:34:33   ├─ /testimony/ch16_灰色的正義/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch17_零碎的餘震/fb/index.html (+1ms) \n09:34:33   ├─ /testimony/ch17_零碎的餘震/ig/index.html (+1ms) \n09:34:33   ├─ /testimony/ch17_零碎的餘震/threads/index.html (+1ms) \n09:34:33   ├─ /testimony/ch17_零碎的餘震/matters/index.html (+1ms) \n09:34:33   ├─ /testimony/ch17_零碎的餘震/blogger/index.html (+1ms) \n09:34:33   ├─ /testimony/ch01_甦醒之時/index.html (+2ms) \n09:34:33   ├─ /testimony/ch02_遺留之物/index.html (+2ms) \n09:34:33   ├─ /testimony/ch03_眾聲的裂縫/index.html (+1ms) \n09:34:33   ├─ /testimony/ch06_街角的殘影/index.html (+1ms) \n09:34:33   ├─ /testimony/ch07_隱藏的聲道/index.html (+2ms) \n09:34:33   ├─ /testimony/ch08_醫院的陰影/index.html (+1ms) \n09:34:33   ├─ /testimony/ch09_血色的重逢/index.html (+1ms) \n09:34:33   ├─ /testimony/ch10_毀滅的共振/index.html (+1ms) \n09:34:33   ├─ /testimony/ch11_天眼的入場券/index.html (+2ms) \n09:34:33   ├─ /testimony/ch12_鏡相之謎/index.html (+1ms) \n09:34:33   ├─ /testimony/ch13_崩潰的信任/index.html (+1ms) \n09:34:33   ├─ /testimony/ch14_雨夜的重現/index.html (+1ms) \n09:34:33   ├─ /testimony/ch15_死亡的共謀/index.html (+1ms) \n09:34:33   ├─ /testimony/ch16_灰色的正義/index.html (+1ms) \n09:34:33   ├─ /testimony/ch17_零碎的餘震/index.html (+1ms) \n09:34:33   ├─ /testimony/index.html (+3ms) \n09:34:33   ├─ /tiandao/1/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/1/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/1/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/1/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/1/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/2/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/2/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/2/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/2/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/2/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/3/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/3/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/3/threads/index.html (+3ms) \n09:34:33   ├─ /tiandao/3/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/3/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/4/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/4/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/4/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/4/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/4/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/5/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/5/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/5/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/5/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/5/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/6/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/6/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/6/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/6/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/6/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/7/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/7/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/7/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/7/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/7/blogger/index.html (+2ms) \n09:34:33   ├─ /tiandao/8/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/8/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/8/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/8/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/8/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/9/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/9/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/9/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/9/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/9/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/10/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/10/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/10/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/10/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/10/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/11/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/11/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/11/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/11/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/11/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/12/fb/index.html (+2ms) \n09:34:33   ├─ /tiandao/12/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/12/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/12/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/12/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/13/fb/index.html (+1ms) \n09:34:33   ├─ /tiandao/13/ig/index.html (+1ms) \n09:34:33   ├─ /tiandao/13/threads/index.html (+1ms) \n09:34:33   ├─ /tiandao/13/matters/index.html (+1ms) \n09:34:33   ├─ /tiandao/13/blogger/index.html (+1ms) \n09:34:33   ├─ /tiandao/1/index.html (+3ms) \n09:34:33   ├─ /tiandao/2/index.html (+2ms) \n09:34:33   ├─ /tiandao/3/index.html (+2ms) \n09:34:33   ├─ /tiandao/4/index.html (+1ms) \n09:34:33   ├─ /tiandao/5/index.html (+2ms) \n09:34:33   ├─ /tiandao/6/index.html (+1ms) \n09:34:33   ├─ /tiandao/7/index.html (+1ms) \n09:34:33   ├─ /tiandao/8/index.html (+2ms) \n09:34:33   ├─ /tiandao/9/index.html (+2ms) \n09:34:33   ├─ /tiandao/10/index.html (+1ms) \n09:34:33   ├─ /tiandao/11/index.html (+1ms) \n09:34:33   ├─ /tiandao/12/index.html (+1ms) \n09:34:33   ├─ /tiandao/13/index.html (+1ms) \n09:34:33   ├─ /tiandao/index.html (+3ms) \n09:34:33   ├─ /translator/ch01_第一人稱的幽靈/fb/index.html (+1ms) \n09:34:33   ├─ /translator/ch01_第一人稱的幽靈/ig/index.html (+1ms) \n09:34:33   ├─ /translator/ch01_第一人稱的幽靈/threads/index.html (+1ms) \n09:34:33   ├─ /translator/ch01_第一人稱的幽靈/matters/index.html (+1ms) \n09:34:33   ├─ /translator/ch01_第一人稱的幽靈/blogger/index.html (+1ms) \n09:34:33   ├─ /translator/ch02_不可譯的象限/fb/index.html (+2ms) \n09:34:33   ├─ /translator/ch02_不可譯的象限/ig/index.html (+1ms) \n09:34:33   ├─ /translator/ch02_不可譯的象限/threads/index.html (+1ms) \n09:34:33   ├─ /translator/ch02_不可譯的象限/matters/index.html (+1ms) \n09:34:33   ├─ /translator/ch02_不可譯的象限/blogger/index.html (+1ms) \n09:34:33   ├─ /translator/ch03_語音的骨骼與血肉/fb/index.html (+1ms) \n09:34:33   ├─ /translator/ch03_語音的骨骼與血肉/ig/index.html (+1ms) \n09:34:33   ├─ /translator/ch03_語音的骨骼與血肉/threads/index.html (+1ms) \n09:34:33   ├─ /translator/ch03_語音的骨骼與血肉/matters/index.html (+1ms) \n09:34:33   ├─ /translator/ch03_語音的骨骼與血肉/blogger/index.html (+3ms) \n09:34:33   ├─ /translator/ch04_語法的矩陣/fb/index.html (+1ms) \n09:34:33   ├─ /translator/ch04_語法的矩陣/ig/index.html (+1ms) \n09:34:33   ├─ /translator/ch04_語法的矩陣/threads/index.html (+1ms) \n09:34:33   ├─ /translator/ch04_語法的矩陣/matters/index.html (+1ms) \n09:34:33   ├─ /translator/ch04_語法的矩陣/blogger/index.html (+1ms) \n09:34:33   ├─ /translator/ch05_巴別塔的殘卷/fb/index.html (+1ms) \n09:34:33   ├─ /translator/ch05_巴別塔的殘卷/ig/index.html (+1ms) \n09:34:33   ├─ /translator/ch05_巴別塔的殘卷/threads/index.html (+1ms) \n09:34:33   ├─ /translator/ch05_巴別塔的殘卷/matters/index.html (+1ms) \n09:34:33   ├─ /translator/ch05_巴別塔的殘卷/blogger/index.html (+1ms) \n09:34:33   ├─ /translator/ch01_第一人稱的幽靈/index.html (+2ms) \n09:34:33   ├─ /translator/ch02_不可譯的象限/index.html (+3ms) \n09:34:33   ├─ /translator/ch03_語音的骨骼與血肉/index.html (+1ms) \n09:34:33   ├─ /translator/ch04_語法的矩陣/index.html (+1ms) \n09:34:33   ├─ /translator/ch05_巴別塔的殘卷/index.html (+1ms) \n09:34:33   ├─ /translator/index.html (+3ms) \n09:34:33   ├─ /index.html (+4ms) \n09:34:33 ✓ Completed in 557ms.\n\n09:34:33 [build] ✓ Completed in 3.65s.\n09:34:33 [@astrojs/sitemap] `sitemap-index.xml` created at `dist`\n09:34:33 [build] 423 page(s) built in 5.47s\n09:34:33 [build] Complete!\n",
+      "step": "fresh_build"
+    }
+  ]
+}
+studio_web_remote_seed=PASS
+studio_web_fresh_clone_build=PASS
+studio_web_remote_boundary=PASS
+production_cutover=NO
