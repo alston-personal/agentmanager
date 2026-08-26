@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.desktop.windows.inspect",
+  "node_id": "vopc5750",
+  "nonce": "windows-inspect-after-restart-20260826"
+}
