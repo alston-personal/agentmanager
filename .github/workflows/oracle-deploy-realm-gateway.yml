@@ -3,7 +3,7 @@ name: Oracle Deploy Realm Gateway
 on:
   push:
     paths:
-      - 'dashboard/app/agentos/one/**'
+      - 'dashboard/app/api/agentos/**'
       - 'scripts/deploy_realm_gateway_user.sh'
       - 'agentos_node/bootstrap_control.py'
       - '.github/workflows/oracle-deploy-realm-gateway.yml'
@@ -32,6 +32,28 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Prove route identity on a clean Next server
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm start >/tmp/agentos-next.log 2>&1 &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1 && break
+            sleep 1
+          done
+          for path in /api/agentos/v1/health /dashboard/api/agentos/v1/health; do
+            headers=/tmp/agentos-h; body=/tmp/agentos-b
+            code=$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' --max-time 4 "http://127.0.0.1:3000$path" || true)
+            marker=false
+            grep -qi '^x-agentos-realm-gateway: v0.1' "$headers" 2>/dev/null && marker=true
+            echo "clean_next_path=$path http=$code gateway_identity=$marker prefix=$(head -c 180 "$body" | tr '\n' ' ' | tr '\r' ' ')"
+          done
+          code=$(curl -sS -D /tmp/agentos-h -o /tmp/agentos-b -w '%{http_code}' --max-time 4 http://127.0.0.1:3000/dashboard/api/agentos/v1/health || true)
+          grep -qi '^x-agentos-realm-gateway: v0.1' /tmp/agentos-h
+          test "$code" = 502
+          echo 'clean_next_gateway_route=PASS'
 
   deploy:
     needs: build-check
@@ -105,9 +127,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          URL='https://studio.milkcat.org/dashboard/agentos/one/v1/health'
+          URL='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
           BODY=$(curl -fsS --max-time 8 "$URL")
           printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
           printf '%s' "$BODY" | grep -q 'realm-alston'
-          echo "realm_gateway_url=https://studio.milkcat.org/dashboard/agentos/one"
+          echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
           echo "public_identity=PASS"
