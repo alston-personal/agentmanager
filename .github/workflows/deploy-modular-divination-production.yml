@@ -41,13 +41,11 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=567c5df7502d7457312231386ceff817acbc3b26
+          TARGET=f44db405678cd54ce42b944e71a37de033ed8234
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo "old_commit=$OLD"
           echo "target_commit=$TARGET"
 
-          # Only generated build state and persistent runtime state may differ on production.
-          # Any other source/config modification still blocks deployment.
           dirty=$(git -C "$PROD" status --porcelain | grep -v -E '^.. website/(stats\.json$|dist/|data/)' || true)
           if [ -n "$dirty" ]; then
             echo 'Unexpected production changes; refusing deployment:' >&2
@@ -93,7 +91,6 @@ jobs:
           rollback() {
             echo 'deployment_smoke_failed=rolling_back' >&2
             stop_server
-            # reset touches tracked code only; persistent website/data is ignored and never cleaned.
             git -C "$PROD" reset --hard "$OLD"
             cp /tmp/leopardcat-stats.pre-divination-v1.json "$WEB/stats.json"
             cd "$WEB"
@@ -115,6 +112,11 @@ jobs:
           cp /tmp/leopardcat-stats.pre-divination-v1.json "$WEB/stats.json"
 
           cd "$WEB"
+          python3 -m pip install --user -q pytest >/dev/null 2>&1 || true
+          python3 -m pytest -q tests/test_single_reading_flow.py
+          node --check main.js
+          echo single_reading_flow_contract=passed
+
           npm run build
           grep -R -q '/api/v1/readings' dist || { echo 'built frontend lacks readings API reference' >&2; exit 42; }
           test -f dist/read.html || { echo 'focused reading UI missing from build' >&2; exit 43; }
