@@ -19,21 +19,22 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Identify existing dashboard runtime without mutation
+      - name: Identify dashboard supervisor without mutation
         shell: bash
         run: |
           set -euo pipefail
           echo "identity=$(id)"
-          echo "realm_health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)"
-          echo '=== PORT 3000 / NODE PROCESSES ==='
-          ss -ltn 2>/dev/null | grep ':3000 ' || true
-          ps -eo user:20,pid,ppid,cmd --sort=pid | grep -E '[n]ext|[n]ode|3000|dashboard' | tail -80 || true
-          echo '=== LIKELY DASHBOARD DIRECTORIES ==='
-          for p in /home/ubuntu/*dashboard* /home/ubuntu/*studio* /home/ubuntu/agentmanager/dashboard /home/ubuntu/agentmanager/web /home/agentos-node/*dashboard*; do
-            [ -e "$p" ] || continue
-            stat -c '%U:%G %a %n' "$p" || true
-            [ -f "$p/package.json" ] && { echo "--- $p/package.json"; head -80 "$p/package.json"; }
+          echo '=== DASHBOARD PROCESS TREE ==='
+          ps -eo user:20,pid,ppid,lstart,cmd --sort=pid | grep -E '2770188|2770227|2770228|[p]m2|[s]ystemd.*dashboard|[n]ext start' || true
+          for pid in 2770188 2770227 2770228; do
+            [ -d "/proc/$pid" ] || continue
+            echo "--- pid=$pid"
+            echo -n 'cmd='; tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true; echo
+            echo -n 'cwd='; readlink "/proc/$pid/cwd" 2>/dev/null || true
+            cat "/proc/$pid/cgroup" 2>/dev/null || true
           done
-          echo '=== LOCAL RESPONSE HEADERS ==='
-          curl -sS -D - -o /dev/null --max-time 3 http://127.0.0.1:3000/dashboard | head -40 || true
+          echo '=== UBUNTU USER UNITS ==='
+          XDG_RUNTIME_DIR=/run/user/1001 sudo -u ubuntu systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'dashboard|agent|next|studio' || true
+          echo '=== PM2 ==='
+          sudo -u ubuntu env HOME=/home/ubuntu pm2 list 2>/dev/null || true
           echo 'mutation=NONE'
