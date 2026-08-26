@@ -19,26 +19,27 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect HTTPS routing authority without mutation
+      - name: Inspect existing HTTPS gateway without mutation
         shell: bash
         run: |
           set -euo pipefail
           echo "identity=$(id)"
           echo "realm_health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)"
-          echo '=== STUDIO SERVER BLOCK ==='
-          sed -n '1,260p' /etc/nginx/sites-enabled/studio.milkcat.org || true
-          echo '=== NGINX MASTER / RELOAD AUTHORITY ==='
-          ps -eo user,pid,ppid,cmd | grep '[n]ginx: master process' || true
-          nginx -t 2>&1 || true
-          nginx -s reload 2>&1 || true
-          echo '=== EXISTING PUBLIC HEALTH CANDIDATES ==='
-          for u in https://studio.milkcat.org/agentos/one/v1/health https://studio.milkcat.org/agentos/v1/health; do
-            body=/tmp/agentos-public-probe
-            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 5 "$u" || true)
-            bytes=$(wc -c < "$body" 2>/dev/null || echo 0)
-            marker=false
-            if grep -q 'agentos.one-health/v0.1' "$body" 2>/dev/null && grep -q 'realm-alston' "$body" 2>/dev/null; then marker=true; fi
-            prefix=$(head -c 180 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)
-            echo "$u http=$code bytes=$bytes one_identity=$marker prefix=$prefix"
+          echo '=== PORT 3000 LISTENER ==='
+          ss -ltnp 2>/dev/null | grep ':3000 ' || true
+          pid=$(ss -ltnp 2>/dev/null | sed -n 's/.*:3000 .*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
+          if [ -n "${pid:-}" ] && [ -r "/proc/$pid/cmdline" ]; then
+            echo "pid=$pid"
+            echo -n 'cmd='; tr '\0' ' ' < "/proc/$pid/cmdline"; echo
+            echo -n 'cwd='; readlink "/proc/$pid/cwd" || true
+            echo -n 'exe='; readlink "/proc/$pid/exe" || true
+          fi
+          echo '=== USER SERVICES MATCHING DASHBOARD / 3000 ==='
+          systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'dashboard|studio|3000|agentos' || true
+          echo '=== LOCAL DASHBOARD PROBES ==='
+          for u in http://127.0.0.1:3000/ http://127.0.0.1:3000/dashboard http://127.0.0.1:3000/dashboard/health; do
+            body=/tmp/dashboard-probe
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 3 "$u" || true)
+            echo "$u http=$code bytes=$(wc -c < "$body" 2>/dev/null || echo 0) prefix=$(head -c 160 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
           done
           echo 'mutation=NONE'
