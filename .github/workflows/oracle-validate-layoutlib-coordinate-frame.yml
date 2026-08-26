@@ -1,0 +1,92 @@
+name: Oracle Validate LayoutLib Coordinate Frame
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-validate-layoutlib-coordinate-frame.yml'
+      - 'scripts/upgrade_layoutlib_coordinate_frame.py'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-coordinate-frame:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upgrade LayoutLib and validate source image alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT="$PWD/.agentos/evidence/layoutlib-coordinate-frame-validation.txt"
+          CODE=/home/agentos-node/projects/layoutlib
+          UPGRADE="$PWD/scripts/upgrade_layoutlib_coordinate_frame.py"
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "hostname=$(hostname)"
+            echo "identity=$(id)"
+            test -d "$CODE"
+            test -w "$CODE"
+            test -f "$UPGRADE"
+
+            python3 "$UPGRADE" --target "$CODE"
+
+            echo '=== COORDINATE FRAME TESTS ==='
+            env PYTHONPATH="$CODE/src" python3 -m unittest "$CODE/tests/test_coordinate_frame.py" -v
+
+            echo '=== FULL REGRESSION ==='
+            env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v
+
+            echo '=== IR INVARIANT SMOKE ==='
+            env PYTHONPATH="$CODE/src" python3 - "$CODE" <<'PY'
+          import json, math, sys, tempfile
+          from pathlib import Path
+          from layoutlib import PixelPoint, parse_floorplan
+
+          code=Path(sys.argv[1])
+          img=code/'tests/fixtures/demo_room.pgm'
+          ir=parse_floorplan(img, meters_per_pixel=.02, min_wall_length_px=30,
+                             analysis_region_px={'x':10,'y':8,'width':100,'height':70})
+          assert ir.version == '0.3', ir.version
+          assert ir.coordinate_frame.anchor_px.x == 10
+          assert ir.coordinate_frame.anchor_px.y == 8
+          assert ir.coordinate_frame.anchor_world_m.x == 0
+          assert ir.coordinate_frame.anchor_world_m.y == 0
+          for wall in ir.walls:
+              for p in (wall.start, wall.end):
+                  px=ir.world_to_source_px(p)
+                  p2=ir.source_px_to_world(px.x, px.y)
+                  assert math.isclose(p.x,p2.x,abs_tol=1e-9)
+                  assert math.isclose(p.y,p2.y,abs_tol=1e-9)
+          d=ir.to_dict()
+          assert 'coordinate_frame' in d
+          assert 'analysis_region_px' in d
+          print('coordinate_frame_roundtrip=PASS')
+          print('ir_version=0.3')
+          print('anchor_px=10,8')
+          print(f'walls={len(ir.walls)}')
+          PY
+
+            echo '=== ACCEPTANCE ==='
+            echo 'layoutlib_coordinate_frame=PASS'
+            echo 'source_image_anchor=EXPLICIT'
+            echo 'source_world_source_roundtrip=PASS'
+            echo 'roi_anchor_semantics=PASS'
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit validation evidence
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-coordinate-frame-validation.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): validate source-image coordinate frame'
+          git pull --rebase origin main
+          git push
