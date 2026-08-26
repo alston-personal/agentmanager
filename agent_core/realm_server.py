@@ -109,7 +109,7 @@ class RealmHTTPServer(ThreadingHTTPServer):
         self.fabric = fabric
 
 
-def serve(*, host: str = '127.0.0.1', port: int = 8765, fabric: RealmFabricStore | None = None) -> None:
+def serve(*, host: str = '127.0.0.1', port: int = 8780, fabric: RealmFabricStore | None = None) -> None:
     server = RealmHTTPServer((host, port), fabric or RealmFabricStore())
     try:
         server.serve_forever(poll_interval=0.5)
