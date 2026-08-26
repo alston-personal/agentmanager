@@ -1,0 +1,45 @@
+name: Realm Node Fabric CI
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric
+    paths:
+      - 'agent_core/capability_governance.py'
+      - 'agent_core/durable_test_run.py'
+      - 'agentos_node/recovery_watchdog.py'
+      - 'tests/test_capability_governance.py'
+      - 'tests/test_durable_test_run.py'
+      - 'tests/test_recovery_watchdog.py'
+      - '.github/workflows/realm-node-fabric-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'agent_core/capability_governance.py'
+      - 'agent_core/durable_test_run.py'
+      - 'agentos_node/recovery_watchdog.py'
+      - 'tests/test_capability_governance.py'
+      - 'tests/test_durable_test_run.py'
+      - 'tests/test_recovery_watchdog.py'
+
+permissions:
+  contents: read
+
+jobs:
+  governance-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run Realm Node Fabric governance tests
+        run: >-
+          python -m pytest -q
+          tests/test_capability_governance.py
+          tests/test_durable_test_run.py
+          tests/test_recovery_watchdog.py
