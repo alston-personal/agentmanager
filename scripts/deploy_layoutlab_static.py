@@ -16,10 +16,10 @@ TARGET_DIR = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 
 def _identity(name: str, data: bytes) -> None:
     if name == 'index.html':
-        if b'<title>Layout Lab | Milkcat Studio</title>' not in data or b'LayoutLib Browser Adapter v0.3' not in data:
+        if b'<title>Layout Lab | Milkcat Studio</title>' not in data or b'LayoutLib Browser Adapter v0.4' not in data:
             raise SystemExit('html source asset failed identity check')
     elif name.endswith('.js'):
-        if b'LayoutLib Browser Adapter v0.3.0' not in data or b'worldToSourcePx' not in data:
+        if b'LayoutLib Browser Adapter v0.4.1' not in data or b'worldToSourcePx' not in data or b'createScaleCalibration' not in data:
             raise SystemExit('browser library asset failed identity check')
 
 
@@ -49,7 +49,7 @@ def main() -> int:
         'directory': str(TARGET_DIR),
         'directory_mode': '0755',
         'file_mode': '0644',
-        'mode': 'layoutlib-v0.3-anchored-browser-adapter',
+        'mode': 'layoutlib-v0.4.1-reference-app',
         'artifacts': artifacts,
     }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
