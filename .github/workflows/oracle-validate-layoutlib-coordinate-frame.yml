@@ -36,16 +36,16 @@ jobs:
             python3 "$UPGRADE" --target "$CODE"
 
             echo '=== COORDINATE FRAME TESTS ==='
-            env PYTHONPATH="$CODE/src" python3 -m unittest "$CODE/tests/test_coordinate_frame.py" -v
+            env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -p 'test_coordinate_frame.py' -v
 
             echo '=== FULL REGRESSION ==='
             env PYTHONPATH="$CODE/src" python3 -m unittest discover -s "$CODE/tests" -v
 
             echo '=== IR INVARIANT SMOKE ==='
             env PYTHONPATH="$CODE/src" python3 - "$CODE" <<'PY'
-          import json, math, sys, tempfile
+          import math, sys
           from pathlib import Path
-          from layoutlib import PixelPoint, parse_floorplan
+          from layoutlib import parse_floorplan
 
           code=Path(sys.argv[1])
           img=code/'tests/fixtures/demo_room.pgm'
