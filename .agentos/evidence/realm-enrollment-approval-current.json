@@ -1,1 +1,8 @@
-{"ok":true,"action":"noop"}
+{
+  "approved_at": "2026-08-26T06:21:48Z",
+  "node_id": "vopc5750",
+  "ok": true,
+  "request_id": "join_b3c0b5c84118bf02d459",
+  "schema": "agentos.join-approval/v0.1",
+  "user_code": "VAX4-MATC"
+}
