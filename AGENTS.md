@@ -35,6 +35,28 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 - Newer user intent must never be rolled back by stale snapshots, replay, or tool results.
 - Evidence and tool results do not silently rewrite user intent.
 - Claims in documentation must be backed by implementation paths; verified claims also need tests/evidence.
+- **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
+
+## Protected Branch Authority Rule
+
+For `main`, `master`, and `release/*`:
+
+1. agents may create branches, commits, tests, reviews, and pull requests;
+2. agents may report a PR as `READY_FOR_MERGE`;
+3. agents MUST then stop at `AWAITING_HUMAN_APPROVAL`;
+4. CI success, mergeability, positive review, or a generic `continue` instruction are not merge authorization;
+5. do not merge or directly push to a protected branch without a separate explicit human authorization event.
+
+Evaluate the executable policy with:
+
+```bash
+python3 scripts/protected_branch_authority.py \
+  --branch main \
+  --actor-kind agent \
+  --via-pull-request
+```
+
+The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL` and a non-zero exit status.
 
 ## Documentation Reality Rule
 
@@ -58,6 +80,7 @@ CI enforces the same rule. Treat a documentation-drift failure as an architectur
 ```bash
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
+python3 -m unittest tests.test_protected_branch_authority -v
 python3 scripts/documentation_reality_guard.py
 ```
 
