@@ -27,7 +27,8 @@ def _default_policy() -> Path:
 def _load_policy(path: Path) -> ThinClientPolicy:
     if not path.exists():
         raise FileNotFoundError(f'policy file not found: {path}; run `agentos-client policy-init` first')
-    data = json.loads(path.read_text(encoding='utf-8'))
+    # Windows PowerShell may emit UTF-8 with BOM. utf-8-sig accepts both BOM and BOM-less UTF-8.
+    data = json.loads(path.read_text(encoding='utf-8-sig'))
     return ThinClientPolicy(
         allowed_executables=set(data.get('allowed_executables') or []),
         readable_roots=tuple(Path(p) for p in (data.get('readable_roots') or [])),
