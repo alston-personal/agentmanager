@@ -24,17 +24,22 @@ import os,sys
 root=Path('/proc'); target=str(Path(sys.argv[1]).resolve()); rows=[]
 for entry in root.iterdir():
     if not entry.name.isdigit(): continue
+    pid=int(entry.name)
     try:
         st=entry.stat()
         if st.st_uid != os.getuid(): continue
         cwd=str((entry/'cwd').resolve())
         raw=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
-        stat=(entry/'stat').read_text().split()
-    except (OSError, PermissionError):
+        ppid=None
+        for line in (entry/'status').read_text().splitlines():
+            if line.startswith('PPid:'):
+                ppid=int(line.split()[1]); break
+        pgid=os.getpgid(pid)
+    except (OSError, PermissionError, ProcessLookupError):
         continue
     if cwd != target: continue
     if raw.startswith('npm start') or 'next start' in raw or raw.startswith('next-server'):
-        rows.append((int(entry.name), int(stat[3]), int(stat[4]), raw))
+        rows.append((pid, ppid if ppid is not None else -1, pgid, raw))
 for pid,ppid,pgid,raw in sorted(rows):
     print(f'{pid}\t{ppid}\t{pgid}\t{raw}')
 PY
@@ -45,7 +50,7 @@ find_dashboard_npm_pid() {
 }
 
 restart_dashboard() {
-  local before groups old_npm new_npm
+  local before groups old_npm new_npm own_pgid
   before=$(find_dashboard_runtime)
   [ -n "$before" ] || { echo "ERROR: no dashboard runtime found" >&2; return 4; }
   echo 'dashboard_runtime_before:'
@@ -59,8 +64,9 @@ restart_dashboard() {
 
   groups=$(printf '%s\n' "$before" | awk -F '\t' '{print $3}' | sort -nu)
   [ -n "$groups" ] || { echo "ERROR: no dashboard process groups found" >&2; return 4; }
+  own_pgid=$(ps -o pgid= -p $$ | tr -d ' ')
   for pgid in $groups; do
-    [ "$pgid" != "$(ps -o pgid= -p $$ | tr -d ' ')" ] || { echo "ERROR: refusing own process group" >&2; return 4; }
+    [ "$pgid" != "$own_pgid" ] || { echo "ERROR: refusing own process group" >&2; return 4; }
     echo "dashboard_term_pgid=$pgid"
     kill -TERM -- "-$pgid" 2>/dev/null || true
   done
@@ -79,7 +85,6 @@ restart_dashboard() {
   echo "dashboard_old_pid=$old_npm"
   echo "dashboard_new_pid=$new_npm"
 
-  # The old orphaned process groups must be gone; only the new runtime may remain.
   for pgid in $groups; do
     if ps -eo pgid= | awk '{print $1}' | grep -qx "$pgid"; then
       echo "ERROR: old dashboard process group still alive: $pgid" >&2
