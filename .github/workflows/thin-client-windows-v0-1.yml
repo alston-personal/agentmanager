@@ -25,8 +25,8 @@ jobs:
           $root = Join-Path $env:RUNNER_TEMP 'AgentOS'
           $workspace = Join-Path $env:RUNNER_TEMP 'AgentOS-Workspace'
           & ./scripts/install_thin_client_windows.ps1 -InstallRoot $root -WorkspaceRoot $workspace
-          Test-Path (Join-Path $root 'agentos-client.cmd') | Should -BeTrue
-          Test-Path (Join-Path $root 'state\policy.json') | Should -BeTrue
+          if (-not (Test-Path (Join-Path $root 'agentos-client.cmd'))) { throw 'launcher missing' }
+          if (-not (Test-Path (Join-Path $root 'state\policy.json'))) { throw 'policy missing' }
           & (Join-Path $root 'agentos-client.cmd') --help
       - name: Verify local capability runtime
         shell: powershell
