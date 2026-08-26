@@ -1,21 +1,21 @@
 {
   "ok": true,
   "node_id": "vopc5750",
-  "ref": "a7daef1798b291ee85e66d16fba9cdb676ece864",
+  "ref": "4a3cf5708be2cee477ff32fef4358fd56e18663a",
   "task": {
     "schema": "agentos.node-task/v0.1",
-    "task_id": "self-update-desktop-vopc5750-1787728152",
+    "task_id": "self-update-desktop-vopc5750-1787728640",
     "action": "shell.exec",
     "executable": "powershell",
     "argv": [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$ErrorActionPreference='Stop'\n$install=Join-Path $env:LOCALAPPDATA 'AgentOS'\n$pkg=Join-Path $install 'agentos_node'\n$base='https://raw.githubusercontent.com/alston-personal/agentmanager/a7daef1798b291ee85e66d16fba9cdb676ece864'\n$files=@('agentos_node/thin_client.py','agentos_node/interactive_desktop.py','agentos_node/thin_client_transport.py','agentos_node/client_cli.py')\nforeach($rel in $files){\n  $dest=Join-Path $install ($rel -replace '/','\\')\n  Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri \"$base/$rel\" -OutFile $dest\n}\n$launcher=Join-Path $install 'agentos-client.cmd'\n$taskName='AgentOS Thin Client'\n$action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument \"/d /c `\"$launcher`\" run\" -WorkingDirectory $install\n$trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME\n$settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)\nRegister-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null\nStart-ScheduledTask -TaskName $taskName\n$parentPid=(Get-CimInstance Win32_Process -Filter \"ProcessId=$PID\").ParentProcessId\nStart-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',\"Start-Sleep -Seconds 6; Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue\")\nWrite-Output ('desktop_adapter_ref=a7daef1798b291ee85e66d16fba9cdb676ece864')\n"
+      "$ErrorActionPreference='Stop'\n$install=Join-Path $env:LOCALAPPDATA 'AgentOS'\n$pkg=Join-Path $install 'agentos_node'\n$base='https://raw.githubusercontent.com/alston-personal/agentmanager/4a3cf5708be2cee477ff32fef4358fd56e18663a'\n$files=@('agentos_node/thin_client.py','agentos_node/interactive_desktop.py','agentos_node/thin_client_transport.py','agentos_node/client_cli.py')\nforeach($rel in $files){\n  $dest=Join-Path $install ($rel -replace '/','\\')\n  Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri \"$base/$rel\" -OutFile $dest\n}\n$launcher=Join-Path $install 'agentos-client.cmd'\n$taskName='AgentOS Thin Client'\n$action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument \"/d /c `\"$launcher`\" run\" -WorkingDirectory $install\n$trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME\n$settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)\nRegister-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null\nStart-ScheduledTask -TaskName $taskName\n$parentPid=(Get-CimInstance Win32_Process -Filter \"ProcessId=$PID\").ParentProcessId\nStart-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',\"Start-Sleep -Seconds 6; Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue\")\nWrite-Output ('desktop_adapter_ref=4a3cf5708be2cee477ff32fef4358fd56e18663a')\n"
     ],
     "cwd": "C:\\Users\\alston.huang\\AgentOS",
     "timeout_seconds": 60,
     "cognition_ids_used": [],
-    "queued_at": "2026-08-26T07:09:12Z"
+    "queued_at": "2026-08-26T07:17:20Z"
   }
 }
