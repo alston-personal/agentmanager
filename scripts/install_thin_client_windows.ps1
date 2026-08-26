@@ -5,7 +5,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Base = 'https://raw.githubusercontent.com/alston-personal/agentmanager/main'
+$Repo = 'alston-personal/agentmanager'
+$apiHeaders = @{
+  'Accept' = 'application/vnd.github+json'
+  'User-Agent' = 'AgentOS-ThinClient-Installer/0.1'
+  'Cache-Control' = 'no-cache'
+}
+$head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/main?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+$Ref = [string]$head.sha
+if ($Ref -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve immutable main commit SHA: $Ref" }
+$Base = "https://raw.githubusercontent.com/$Repo/$Ref"
 $Pkg = Join-Path $InstallRoot 'agentos_node'
 $State = Join-Path $InstallRoot 'state'
 New-Item -ItemType Directory -Force -Path $Pkg, $State, $WorkspaceRoot | Out-Null
@@ -27,7 +36,13 @@ $files = @(
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')
   New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
-  Invoke-WebRequest -UseBasicParsing -Uri "$Base/$rel" -OutFile $dest
+  Invoke-WebRequest -UseBasicParsing -Headers @{ 'Cache-Control'='no-cache' } -Uri "$Base/$rel" -OutFile $dest
+}
+
+$clientCli = Join-Path $Pkg 'client_cli.py'
+$clientCliText = Get-Content -Raw $clientCli
+if ($clientCliText -notmatch "encoding='utf-8-sig'") {
+  throw "Downloaded client_cli.py failed BOM-compatibility guard (ref=$Ref)"
 }
 
 $policy = @{
@@ -62,6 +77,7 @@ if ($EnableAutostart) {
 }
 
 Write-Host "AgentOS Thin Client installed: $InstallRoot"
+Write-Host "Source commit: $Ref"
 Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
 Write-Host "Launcher: $launcherPath"
