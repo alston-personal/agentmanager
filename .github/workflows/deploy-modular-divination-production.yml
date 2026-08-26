@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           PROD=/home/ubuntu/leopardcat-tarot
           WEB="$PROD/website"
-          TARGET=94915efc235b37c4a75ea4642d000cbab6b35fa0
+          TARGET=567c5df7502d7457312231386ceff817acbc3b26
           OLD=$(git -C "$PROD" rev-parse HEAD)
           echo "old_commit=$OLD"
           echo "target_commit=$TARGET"
