@@ -30,28 +30,16 @@ jobs:
           {
             echo "identity=$(id)"
             echo '=== DASHBOARD PROCESS TREE ==='
-            ps -eo user,pid,ppid,pgid,sid,lstart,cmd --sort=pid | grep -E '(^USER|/home/ubuntu/agentmanager/dashboard|npm start|next-server|next start|PM2)' || true
+            ps -eo user,pid,ppid,pgid,sid,lstart,cmd --sort=pid | grep -E '(^USER|npm start|next-server|next start|PM2)' || true
             echo '=== LISTENER 3000 ==='
             ss -ltnp 'sport = :3000' 2>&1 || true
-            echo '=== /PROC CWD FOR UBUNTU NPM/NEXT ==='
-            python3 - <<'PY'
-from pathlib import Path
-for e in Path('/proc').iterdir():
-    if not e.name.isdigit():
-        continue
-    try:
-        st=e.stat()
-        if st.st_uid != 1001:
-            continue
-        cmd=(e/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
-        if not any(x in cmd for x in ('npm start','next-server','next start')):
-            continue
-        cwd=str((e/'cwd').resolve())
-        stat=(e/'stat').read_text().split()
-        print({'pid':int(e.name),'ppid':int(stat[3]),'pgid':int(stat[4]),'sid':int(stat[5]),'cwd':cwd,'cmd':cmd})
-    except Exception as exc:
-        print({'pid':e.name,'error':str(exc)})
-PY
+            echo '=== CWD / STAT ==='
+            for p in $(pgrep -u ubuntu -f 'npm start|next-server|next start' || true); do
+              cwd=$(readlink -f "/proc/$p/cwd" 2>/dev/null || true)
+              stat=$(cat "/proc/$p/stat" 2>/dev/null || true)
+              cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)
+              echo "pid=$p cwd=$cwd stat=$stat cmd=$cmd"
+            done
             echo 'mutation=NONE'
           } | tee "$OUT"
       - name: Commit evidence
