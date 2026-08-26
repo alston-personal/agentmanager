@@ -16,13 +16,27 @@ TARGET_DIR = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 
 def _identity(name: str, data: bytes) -> None:
     if name == 'index.html':
-        required = [b'<title>Layout Lab | Milkcat Studio</title>', b'LayoutLib Browser Adapter v0.5', b'wallThickness', b'\xe5\x88\x86\xe6\x9e\x90 / \xe9\x87\x8d\xe6\x96\xb0\xe5\x88\x86\xe6\x9e\x90']
+        required = [
+            b'<title>Layout Lab | Milkcat Studio</title>',
+            b'LayoutLib Browser Adapter v0.6',
+            b'3D \xe5\x8d\xb3\xe6\x99\x82\xe5\xb0\x8d\xe7\x85\xa7',
+            b'layoutlib.profile.samples.v1',
+            b'previewEraseStrokePx',
+        ]
         if not all(x in data for x in required):
-            raise SystemExit('html source asset failed v0.5 identity check')
+            raise SystemExit('html source asset failed v0.6 identity check')
     elif name.endswith('.js'):
-        required = [b'LayoutLib Browser Adapter v0.5.0', b"version:'0.5.0'", b'addWallPx', b'eraseStrokePx', b'setGeometry', b'createScaleCalibration']
+        required = [
+            b'LayoutLib Browser Adapter v0.6.0',
+            b"version:'0.6.0'",
+            b'previewEraseStrokePx',
+            b'extractProfileFeatures',
+            b'predictProfileParameters',
+            b'makeLearningObservation',
+            b'replayEdits',
+        ]
         if not all(x in data for x in required):
-            raise SystemExit('browser library asset failed v0.5 identity check')
+            raise SystemExit('browser library asset failed v0.6 identity check')
 
 
 def main() -> int:
@@ -40,8 +54,20 @@ def main() -> int:
         os.chmod(tmp, 0o644)
         tmp.replace(target)
         os.chmod(target, 0o644)
-        artifacts[name] = {'source': str(source), 'target': str(target), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
-    print(json.dumps({'ok': True, 'directory': str(TARGET_DIR), 'directory_mode': '0755', 'file_mode': '0644', 'mode': 'layoutlib-v0.5-unified-editor', 'artifacts': artifacts}, ensure_ascii=False, sort_keys=True))
+        artifacts[name] = {
+            'source': str(source),
+            'target': str(target),
+            'bytes': len(data),
+            'sha256': hashlib.sha256(data).hexdigest(),
+        }
+    print(json.dumps({
+        'ok': True,
+        'directory': str(TARGET_DIR),
+        'directory_mode': '0755',
+        'file_mode': '0644',
+        'mode': 'layoutlib-v0.6-generalized-profile-learning',
+        'artifacts': artifacts,
+    }, ensure_ascii=False, sort_keys=True))
     return 0
 
 
