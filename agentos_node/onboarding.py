@@ -10,7 +10,10 @@ def build_join_regression_report(
     before_manifest: dict[str, Any],
     after_manifest: dict[str, Any],
     bootstrap: dict[str, Any],
+    report_kind: str = 'join-regression',
 ) -> dict[str, Any]:
+    if report_kind not in {'join-regression', 'readiness-regression'}:
+        raise ValueError('invalid regression report kind')
     before_caps = set(before_manifest.get('capabilities') or [])
     after_caps = set(after_manifest.get('capabilities') or [])
     lost_caps = sorted(before_caps - after_caps)
@@ -18,8 +21,6 @@ def build_join_regression_report(
     canonical = list(bootstrap.get('canonical_capabilities') or [])
     canonical_ids = sorted({str(item.get('capability_id')) for item in canonical if isinstance(item, dict) and item.get('capability_id')})
 
-    # Map deterministic join checks into the existing ONE uplift dimensions.
-    # This is a bootstrap regression, not a replacement for task-level T0/T2 benchmarks.
     before = {
         'task_success': 1.0,
         'repeated_errors': 0,
@@ -52,7 +53,7 @@ def build_join_regression_report(
     ready = not lost_caps and bootstrap.get('schema') == 'agentos.node-bootstrap/v0.1'
     return {
         'schema': 'agentos.one-uplift-report/v0.1',
-        'report_kind': 'join-regression',
+        'report_kind': report_kind,
         'realm_id': realm_id,
         'node_id': node_id,
         'before': before,

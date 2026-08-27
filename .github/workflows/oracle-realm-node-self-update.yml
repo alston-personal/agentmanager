@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Queue fixed first-node desktop adapter update
+      - name: Queue first-node AgentOS runtime update
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -44,11 +44,20 @@ jobs:
 
           script = r'''$ErrorActionPreference='Stop'
           $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
-          $pkg=Join-Path $install 'agentos_node'
           $base='https://raw.githubusercontent.com/alston-personal/agentmanager/REF'
-          $files=@('agentos_node/thin_client.py','agentos_node/interactive_desktop.py','agentos_node/thin_client_transport.py','agentos_node/client_cli.py')
+          $files=@(
+            'agentos_node/thin_client.py',
+            'agentos_node/interactive_desktop.py',
+            'agentos_node/thin_client_transport.py',
+            'agentos_node/client_cli.py',
+            'agentos_node/agent_surfaces.py',
+            'agentos_node/session_bridge.py',
+            'agentos_node/onboarding.py'
+          )
           foreach($rel in $files){
             $dest=Join-Path $install ($rel -replace '/','\')
+            $parent=Split-Path -Parent $dest
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
             Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
           }
           $launcher=Join-Path $install 'agentos-client.cmd'
@@ -60,9 +69,9 @@ jobs:
           Start-ScheduledTask -TaskName $taskName
           $parentPid=(Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
           Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',"Start-Sleep -Seconds 6; Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue")
-          Write-Output ('desktop_adapter_ref=REF')
+          Write-Output ('agentos_runtime_ref=REF')
           '''.replace('REF',ref)
-          task_id='self-update-desktop-'+node_id+'-'+str(int(time.time()))
+          task_id='self-update-runtime-'+node_id+'-'+str(int(time.time()))
           task={
             'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
             'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
@@ -108,5 +117,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/realm-node-self-update-current.json
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record first-node desktop self update'
+          git commit -m 'evidence(agentos): record first-node runtime self update'
           git push origin HEAD:main

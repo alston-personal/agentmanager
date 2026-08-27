@@ -7,14 +7,20 @@ on:
       - 'agentos_node/thin_client.py'
       - 'agentos_node/thin_client_transport.py'
       - 'agentos_node/client_cli.py'
+      - 'agentos_node/agent_surfaces.py'
+      - 'agentos_node/session_bridge.py'
+      - 'agentos_node/onboarding.py'
       - 'agent_core/one_uplift.py'
       - 'agent_core/node_registry.py'
+      - 'agent_core/node_bootstrap.py'
       - 'agent_core/realm_fabric.py'
       - 'agent_core/realm_server.py'
       - 'agent_core/realm_cli.py'
       - 'tests/test_thin_client.py'
       - 'tests/test_node_registry_v01.py'
       - 'tests/test_realm_fabric.py'
+      - 'tests/test_agent_surface_discovery.py'
+      - 'tests/test_join_completion.py'
       - 'pyproject.toml'
       - 'docs/REALM_NODE_FABRIC_V0_1.md'
       - '.github/workflows/realm-node-fabric-v0.1.yml'
@@ -30,19 +36,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compile v0.1 modules
+      - name: Compile Node Fabric modules
         run: >-
           python -m py_compile
           agentos_node/thin_client.py
           agentos_node/thin_client_transport.py
           agentos_node/client_cli.py
+          agentos_node/agent_surfaces.py
+          agentos_node/session_bridge.py
+          agentos_node/onboarding.py
           agent_core/one_uplift.py
           agent_core/node_registry.py
+          agent_core/node_bootstrap.py
           agent_core/realm_fabric.py
           agent_core/realm_server.py
           agent_core/realm_cli.py
-      - name: Run Realm Node Fabric v0.1 tests
-        run: python -m unittest tests.test_thin_client tests.test_node_registry_v01 tests.test_realm_fabric -v
+      - name: Install test runtime
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run Realm Node Fabric tests
+        run: >-
+          python -m pytest -q
+          tests/test_thin_client.py
+          tests/test_node_registry_v01.py
+          tests/test_realm_fabric.py
+          tests/test_agent_surface_discovery.py
+          tests/test_join_completion.py
       - name: Validate package entry points
         run: |
           python -m pip install --no-deps .
@@ -57,8 +75,10 @@ jobs:
           echo 'one_node_map_registry=PASS'
           echo 'one_uplift_comparison=PASS'
           echo 'one_time_enrollment=PASS'
-          echo 'heartbeat_transport=PASS'
-          echo 'task_pull_transport=PASS'
-          echo 'receipt_return_transport=PASS'
+          echo 'heartbeat_manifest_refresh=PASS'
+          echo 'agent_surface_discovery=PASS'
+          echo 'session_bridge_contract=PASS'
+          echo 'canonical_bootstrap=PASS'
+          echo 'join_regression=PASS'
+          echo 'enrolled_node_readiness=PASS'
           echo 'external_client_enrollment=READY_FOR_REAL_NODE'
-          echo 'production_cutover=NONE'
