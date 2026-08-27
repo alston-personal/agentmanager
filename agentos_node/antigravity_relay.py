@@ -55,14 +55,25 @@ def _shared_gid() -> int:
 
 
 def share_relay_path(path: Path, *, directory: bool = False) -> None:
-    """Make one relay artifact readable/writable by both relay identities."""
-    try:
-        os.chown(path, -1, _shared_gid())
-    except PermissionError as exc:
-        raise PermissionError(
-            f"cannot assign {path} to shared group {SHARED_GROUP}; "
-            f"ensure the current OS user is a member of {SHARED_GROUP}"
-        ) from exc
+    """Make one relay artifact readable/writable by both relay identities.
+
+    Relay directories are setgid, so newly-created artifacts normally inherit
+    the ``agentos`` group already. Avoid an unnecessary chown in that case:
+    unprivileged user services may chmod their own files but cannot always issue
+    chown(2), even when the requested gid is already correct. If the artifact
+    does not have the shared gid, retain the fail-closed chown requirement.
+    """
+    shared_gid = _shared_gid()
+    current_gid = path.stat().st_gid
+    if current_gid != shared_gid:
+        try:
+            os.chown(path, -1, shared_gid)
+        except PermissionError as exc:
+            raise PermissionError(
+                f"cannot assign {path} to shared group {SHARED_GROUP}; "
+                f"ensure the artifact is created inside a setgid {SHARED_GROUP} relay directory "
+                f"or the current OS process can change its group"
+            ) from exc
     os.chmod(path, SHARED_DIR_MODE if directory else SHARED_FILE_MODE)
 
 
