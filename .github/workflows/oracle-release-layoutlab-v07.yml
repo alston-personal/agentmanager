@@ -5,7 +5,10 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-release-layoutlab-v07.yml'
+      - 'web_assets/layoutlib-editor-v0.7.js'
+      - 'web_assets/layoutlab-editor-ui-v0.7.js'
       - 'web_assets/layoutlab-v0.7-release-fix.js'
+      - 'scripts/deploy_layoutlab_static.py'
       - 'scripts/deploy_layoutlab_v07_release.py'
 
 permissions:
@@ -26,6 +29,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Enforce LayoutLib semantic ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIB=web_assets/layoutlib-editor-v0.7.js
+          UI=web_assets/layoutlab-editor-ui-v0.7.js
+          OVERLAY=web_assets/layoutlab-v0.7-release-fix.js
+          DEPLOY=scripts/deploy_layoutlab_static.py
+          grep -q 'deleteWallsById' "$LIB"
+          grep -q 'moveWallPx' "$LIB"
+          grep -q 'matchWallByEvidence' "$LIB"
+          grep -q 'replayCorrections' "$LIB"
+          grep -q 'createCorrectionSession' "$LIB"
+          grep -q 'LayoutLibEditor' "$UI"
+          ! grep -q 'function removeByEvidence' "$UI"
+          ! grep -q 'deleteWallsById=' "$UI"
+          ! grep -q 'MANUAL_OPS=' "$UI"
+          ! grep -q 'function removeByEvidence' "$OVERLAY"
+          ! grep -q 'deleteWallsById=' "$OVERLAY"
+          ! grep -q 'MANUAL_OPS=' "$OVERLAY"
+          ! grep -q '^HOTFIX' "$DEPLOY"
+          echo 'layoutlib_semantic_ownership=PASS'
+
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -43,6 +69,8 @@ jobs:
             scripts/deploy_layoutlab_v07_release.py \
             web_assets/layoutlab_v0_5.html \
             web_assets/layoutlib-browser-v0.5.js \
+            web_assets/layoutlib-editor-v0.7.js \
+            web_assets/layoutlab-editor-ui-v0.7.js \
             web_assets/layoutlab-capability-bridge-v0.7.js \
             web_assets/layoutlab-v0.7-release-fix.js \
           | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
@@ -51,34 +79,24 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             bash -s -- "$STAGE" "$GITHUB_SHA" <<'REMOTE'
           set -euo pipefail
-          STAGE="$1"
-          SHA="$2"
+          STAGE="$1"; SHA="$2"
           RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
           RECEIPT=/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v07.json
           mkdir -p "$RUNTIME/agentos_node" "$RUNTIME/scripts" "$RUNTIME/web_assets" "$(dirname "$RECEIPT")"
           install -m 0644 "$STAGE/agentos_node/action_relay.py" "$RUNTIME/agentos_node/action_relay.py"
           install -m 0755 "$STAGE/scripts/deploy_layoutlab_static.py" "$RUNTIME/scripts/deploy_layoutlab_static.py"
           install -m 0755 "$STAGE/scripts/deploy_layoutlab_v07_release.py" "$RUNTIME/scripts/deploy_layoutlab_v07_release.py"
-          for f in layoutlab_v0_5.html layoutlib-browser-v0.5.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
+          for f in layoutlab_v0_5.html layoutlib-browser-v0.5.js layoutlib-editor-v0.7.js layoutlab-editor-ui-v0.7.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
             install -m 0644 "$STAGE/web_assets/$f" "$RUNTIME/web_assets/$f"
           done
           python3 - "$RUNTIME" "$SHA" "$RECEIPT" <<'PY'
           import hashlib,json,sys
           from pathlib import Path
           root=Path(sys.argv[1]); sha=sys.argv[2]; receipt=Path(sys.argv[3])
-          rels=[
-            'agentos_node/action_relay.py',
-            'scripts/deploy_layoutlab_static.py',
-            'scripts/deploy_layoutlab_v07_release.py',
-            'web_assets/layoutlab_v0_5.html',
-            'web_assets/layoutlib-browser-v0.5.js',
-            'web_assets/layoutlab-capability-bridge-v0.7.js',
-            'web_assets/layoutlab-v0.7-release-fix.js',
-          ]
+          rels=['agentos_node/action_relay.py','scripts/deploy_layoutlab_static.py','scripts/deploy_layoutlab_v07_release.py','web_assets/layoutlab_v0_5.html','web_assets/layoutlib-browser-v0.5.js','web_assets/layoutlib-editor-v0.7.js','web_assets/layoutlab-editor-ui-v0.7.js','web_assets/layoutlab-capability-bridge-v0.7.js','web_assets/layoutlab-v0.7-release-fix.js']
           hashes={r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}
           data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'layoutlab-v0.7','source_commit':sha,'runtime_root':str(root),'sha256':hashes}
-          receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n')
-          print(json.dumps(data,sort_keys=True))
+          receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n'); print(json.dumps(data,sort_keys=True))
           PY
           rm -rf "$STAGE"
           REMOTE
@@ -87,47 +105,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$GITHUB_SHA" <<'REMOTE'
           set -euo pipefail
-          SHA="$1"
-          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
-          RECEIPT=/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v07.json
+          SHA="$1"; RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime; RECEIPT=/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v07.json
           python3 - "$RECEIPT" "$SHA" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('ok') is True, r
-          assert r.get('source_commit') == sys.argv[2], r
-          assert r.get('scope') == 'layoutlab-v0.7', r
+          r=json.load(open(sys.argv[1])); assert r.get('ok') is True; assert r.get('source_commit')==sys.argv[2]; assert r.get('scope')=='layoutlab-v0.7'
           print('runtime_refresh_receipt=PASS')
           PY
           cd "$RUNTIME"
           /usr/bin/python3 scripts/deploy_layoutlab_v07_release.py | tee /tmp/layoutlab-v07-release.json
           grep -q '"ok": true' /tmp/layoutlab-v07-release.json
-          grep -q 'layoutlab-v0.7.8' /tmp/layoutlab-v07-release.json
-          echo 'layoutlab_v078_deploy=PASS'
+          grep -q 'layoutlab-v0.7.9' /tmp/layoutlab-v07-release.json
+          echo 'layoutlab_v079_deploy=PASS'
           REMOTE
 
-      - name: Public v0.7.8 acceptance
+      - name: Public v0.7.9 acceptance
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://studio.milkcat.org/layout-lab
-          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v078-ui
-          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.8" -o /tmp/layoutlab-v078-fix
-          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v078-bridge
-          grep -q '<div class="badge" data-release="0.7.8">v0.7.8</div>' /tmp/layoutlab-v078-ui
-          grep -q 'Layout Lab v0.7.8：' /tmp/layoutlab-v078-ui
-          grep -q 'v0.7.8 Capability learning contract' /tmp/layoutlab-v078-ui
-          grep -q 'layoutlab-v0.7-release-fix.js?v=0.7.8' /tmp/layoutlab-v078-ui
-          grep -q "const RELEASE='0.7.8'" /tmp/layoutlab-v078-fix
-          grep -q 'compactVersionBadge:true' /tmp/layoutlab-v078-fix
-          grep -q 'deleteKey:true' /tmp/layoutlab-v078-fix
-          grep -q 'initialWallPreview:true' /tmp/layoutlab-v078-fix
-          grep -q 'rightDragPan:true' /tmp/layoutlab-v078-fix
-          grep -q 'durableManualEdits:true' /tmp/layoutlab-v078-fix
-          grep -q 'finishModel' /tmp/layoutlab-v078-bridge
-          grep -q 'applyCanonicalPolicy' /tmp/layoutlab-v078-bridge
-          echo 'public_v078_compact_version_identity=PASS'
-          echo 'editor_interaction_contracts=PASS'
+          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v079-ui
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlib-editor-v0.7.js?v=0.7.9" -o /tmp/layoutlib-editor-v079
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-editor-ui-v0.7.js?v=0.7.9" -o /tmp/layoutlab-editor-ui-v079
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.9" -o /tmp/layoutlab-v079-fix
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v079-bridge
+          grep -q '<div class="badge" data-release="0.7.9">v0.7.9</div>' /tmp/layoutlab-v079-ui
+          grep -q 'layoutlib-editor-v0.7.js?v=0.7.9' /tmp/layoutlab-v079-ui
+          grep -q 'layoutlab-editor-ui-v0.7.js?v=0.7.9' /tmp/layoutlab-v079-ui
+          grep -q 'layoutlab-v0.7-release-fix.js?v=0.7.9' /tmp/layoutlab-v079-ui
+          grep -q 'deleteWallsById' /tmp/layoutlib-editor-v079
+          grep -q 'moveWallPx' /tmp/layoutlib-editor-v079
+          grep -q 'matchWallByEvidence' /tmp/layoutlib-editor-v079
+          grep -q 'createCorrectionSession' /tmp/layoutlib-editor-v079
+          grep -q 'LayoutLibEditor' /tmp/layoutlab-editor-ui-v079
+          grep -q "const RELEASE='0.7.9'" /tmp/layoutlab-v079-fix
+          grep -q 'uiOnly:true' /tmp/layoutlab-v079-fix
+          ! grep -q 'deleteWallsById=' /tmp/layoutlab-v079-fix
+          ! grep -q 'MANUAL_OPS=' /tmp/layoutlab-v079-fix
+          grep -q 'finishModel' /tmp/layoutlab-v079-bridge
+          grep -q 'applyCanonicalPolicy' /tmp/layoutlab-v079-bridge
+          echo 'public_v079_identity=PASS'
+          echo 'library_owned_editor_semantics=PASS'
+          echo 'demo_ui_only_boundary=PASS'
           echo 'capability_bridge=PASS'
