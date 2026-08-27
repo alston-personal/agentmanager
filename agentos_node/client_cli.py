@@ -6,7 +6,7 @@ import os
 import socket
 from pathlib import Path
 
-from agentos_node.thin_client import ThinClientPolicy, render_json
+from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
 
 
@@ -27,7 +27,6 @@ def _default_policy() -> Path:
 def _load_policy(path: Path) -> ThinClientPolicy:
     if not path.exists():
         raise FileNotFoundError(f'policy file not found: {path}; run `agentos-client policy-init` first')
-    # Windows PowerShell may emit UTF-8 with BOM. utf-8-sig accepts both BOM and BOM-less UTF-8.
     data = json.loads(path.read_text(encoding='utf-8-sig'))
     return ThinClientPolicy(
         allowed_executables=set(data.get('allowed_executables') or []),
@@ -60,7 +59,7 @@ def main() -> int:
     p_policy = sub.add_parser('policy-init', help='create a conservative local execution policy')
     p_policy.add_argument('--root', help='workspace root ONE may read/write')
 
-    p_join = sub.add_parser('join', help='request Realm membership and wait for human approval')
+    p_join = sub.add_parser('join', help='join Realm, bootstrap inherited cognition, run regression, become ready')
     p_join.add_argument('--one', required=True, help='ONE base URL')
     p_join.add_argument('--node-id', default=socket.gethostname().lower())
     p_join.add_argument('--expires-minutes', type=int, default=10)
@@ -74,7 +73,8 @@ def main() -> int:
 
     sub.add_parser('manifest', help='print local capability manifest')
     sub.add_parser('health', help='check ONE health')
-    sub.add_parser('once', help='heartbeat, pull tasks once, execute, return receipts')
+    sub.add_parser('bootstrap', help='show inherited Realm capabilities and canonical capability states')
+    sub.add_parser('once', help='heartbeat, refresh discovery, pull tasks once, execute, return receipts')
     sub.add_parser('run', help='run persistent polling daemon')
 
     args = parser.parse_args()
@@ -86,6 +86,8 @@ def main() -> int:
     policy = _load_policy(args.policy)
 
     if args.command == 'join':
+        before_manifest = ThinClient(NodeIdentity('pending', args.node_id), policy).capability_manifest()
+
         def show_request(payload: dict[str, object]) -> None:
             print('AgentOS enrollment approval required')
             print(f'Node: {payload.get("node_id")}')
@@ -106,8 +108,16 @@ def main() -> int:
             on_request=show_request,
             on_status=show_status,
         )
-        print(render_json({'ok': True, 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config)}))
-        return 0
+        transport = build_client(config, policy)
+        completion = transport.complete_join(before_manifest)
+        print(render_json({
+            'ok': bool(completion.get('node_ready')),
+            'realm_id': config.realm_id,
+            'node_id': config.node_id,
+            'config': str(args.config),
+            'completion': completion,
+        }))
+        return 0 if completion.get('node_ready') else 2
 
     if args.command == 'enroll':
         config = ThinClientTransport.enroll(
@@ -127,6 +137,8 @@ def main() -> int:
         print(render_json(transport.client.capability_manifest()))
     elif args.command == 'health':
         print(render_json(transport.health()))
+    elif args.command == 'bootstrap':
+        print(render_json(transport.bootstrap()))
     elif args.command == 'once':
         print(render_json({'receipts': transport.run_once()}))
     elif args.command == 'run':
