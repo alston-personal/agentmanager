@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
 import subprocess
+import threading
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from agent_core.distributed_control_plane import DistributedControlPlane
-from agent_core.distributed_gateway import DistributedGatewayService
+from agent_core.distributed_gateway import DistributedGatewayServer, DistributedGatewayService
+from agentos_client import AgentOSClient
 from agentos_node.remote_worker import build_default_worker
 from runtime_core.canonical_ir import CanonicalIR
 
@@ -36,6 +40,8 @@ def test_attach_submit_execute_receipt(tmp_path: Path):
     assert receipt["protocol"] == "agentos.receipt/v0.1"
     assert receipt["terminal"] is True
     assert receipt["status"] == "succeeded"
+    assert receipt["executor"] == "oracle-core-node"
+    assert receipt["evidence"]["validated"] is True
 
     resumed = service.attach({"project_id": "leopardcat-tarot", "agent": {"type": "new-session"}})
     assert resumed["state"]["latestTask"]["taskId"] == task_id
@@ -66,3 +72,43 @@ def test_native_project_inspect_is_registry_gated(tmp_path: Path, monkeypatch):
     denied = worker.execute(CanonicalIR(goal="inspect", project_id="not-registered", capability="agentos.project.inspect"))
     assert denied.status == "failed"
     assert "not registered" in denied.result["message"]
+
+
+def test_scoped_client_can_use_human_api_but_not_runtime_api(tmp_path: Path):
+    store = DistributedControlPlane(tmp_path / "edge.sqlite3")
+    server = DistributedGatewayServer(("127.0.0.1", 0), DistributedGatewayService(store), token="root-secret")
+    issued = server.client_tokens.issue(
+        "test:chat-client",
+        label="test client",
+        permissions=("project.read", "task.read", "task.submit"),
+        ttl_days=1,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        client = AgentOSClient(base, token=issued["token"])
+        attached = client.attach("demo", agent={"type": "external-test"})
+        assert attached["project_id"] == "demo"
+        submitted = client.submit_task(goal="validate edge", capability="agentos.ir.validate", payload={})
+        assert submitted["task"]["status"] == "submitted"
+        assert client.get_state()["projectId"] == "demo"
+
+        request = Request(
+            base + "/v1/lease",
+            data=b'{"node_id":"intruder","capabilities":["agentos.ir.validate"]}',
+            headers={
+                "Authorization": f"Bearer {issued['token']}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            urlopen(request, timeout=2)
+            assert False, "scoped client must not lease runtime work"
+        except HTTPError as exc:
+            assert exc.code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
