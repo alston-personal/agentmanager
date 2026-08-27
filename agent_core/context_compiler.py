@@ -15,6 +15,7 @@ from typing import Any
 
 
 CONTEXT_PROTOCOL = "agentos.execution-context/v0.1"
+WORKING_SET_PROTOCOL = "agentos.executor-working-set/v0.1"
 DEFAULT_CONTEXT_MAX_AGE_SECONDS = 24 * 60 * 60
 
 
@@ -116,6 +117,41 @@ def _freshness(source_updated_at: Any, *, now: datetime | None = None) -> dict[s
     }
 
 
+def _executor_working_set(
+    *,
+    project_id: str,
+    active_goal: str | None,
+    recommended_action: str,
+    next_action: str,
+    current_findings: list[str],
+    next_actions: list[str],
+    write_policy: dict[str, Any] | None,
+    integration_branch: Any,
+    source_revision: Any,
+    context_freshness: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile the semantic minimum needed by a bounded executor.
+
+    Heavy transport/debug state such as latest_task, current_ir and continuation
+    stays available on the parent execution_context, but is intentionally not
+    repeated here. This gives weak or latency-sensitive executors a stable
+    working set without creating a second source of truth.
+    """
+    return {
+        "schema": WORKING_SET_PROTOCOL,
+        "project_id": project_id,
+        "active_goal": active_goal,
+        "recommended_action": recommended_action,
+        "next_action": next_action,
+        "current_findings": current_findings,
+        "next_actions": next_actions,
+        "write_policy": write_policy,
+        "integration_branch": integration_branch,
+        "source_revision": source_revision,
+        "context_freshness": context_freshness,
+    }
+
+
 def compile_execution_context(
     project_id: str,
     state: dict[str, Any],
@@ -146,21 +182,40 @@ def compile_execution_context(
     else:
         next_action = "Derive the first task from the active goal and current canonical state."
 
+    current_findings = [str(x) for x in findings[:12]]
+    bounded_next_actions = [str(x) for x in next_actions[:8]]
+    write_policy = document.get("write_policy") if isinstance(document.get("write_policy"), dict) else None
+    integration_branch = active.get("integration_branch") or document.get("integration_branch")
     source_revision = document.get("updated_at")
+    freshness = _freshness(source_revision, now=now)
+    active_goal = goal or None
+    working_set = _executor_working_set(
+        project_id=project_id,
+        active_goal=active_goal,
+        recommended_action=recommended,
+        next_action=next_action,
+        current_findings=current_findings,
+        next_actions=bounded_next_actions,
+        write_policy=write_policy,
+        integration_branch=integration_branch,
+        source_revision=source_revision,
+        context_freshness=freshness,
+    )
     return {
         "schema": CONTEXT_PROTOCOL,
         "project_id": project_id,
         "agent": agent or {},
-        "active_goal": goal or None,
+        "active_goal": active_goal,
         "recommended_action": recommended,
         "next_action": next_action,
-        "current_findings": [str(x) for x in findings[:12]],
-        "next_actions": [str(x) for x in next_actions[:8]],
+        "current_findings": current_findings,
+        "next_actions": bounded_next_actions,
         "latest_task": latest,
         "current_ir": state.get("currentIR"),
         "continuation": state.get("continuation"),
-        "write_policy": document.get("write_policy") if isinstance(document.get("write_policy"), dict) else None,
-        "integration_branch": active.get("integration_branch") or document.get("integration_branch"),
+        "write_policy": write_policy,
+        "integration_branch": integration_branch,
         "source_revision": source_revision,
-        "context_freshness": _freshness(source_revision, now=now),
+        "context_freshness": freshness,
+        "working_set": working_set,
     }
