@@ -55,7 +55,20 @@ class DesktopExecutorHost:
             return 0
         return self.host.serve_once(self._handle)
 
+    def _publish_unavailable(self, exc: Exception) -> None:
+        original = self.host.details_provider
+        try:
+            self.host.details_provider = lambda: {'error': f'{type(exc).__name__}: {exc}'}
+            self.host.publish_descriptor(ready=False)
+        except Exception:
+            pass
+        finally:
+            self.host.details_provider = original
+
     def run_forever(self) -> None:
         while True:
-            self.serve_once()
+            try:
+                self.serve_once()
+            except Exception as exc:
+                self._publish_unavailable(exc)
             time.sleep(self.poll_seconds)
