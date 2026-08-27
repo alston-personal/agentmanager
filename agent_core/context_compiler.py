@@ -7,6 +7,7 @@ stable execution-context contract suitable for any attached executor.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ from typing import Any
 
 
 CONTEXT_PROTOCOL = "agentos.execution-context/v0.1"
+DEFAULT_CONTEXT_MAX_AGE_SECONDS = 24 * 60 * 60
 
 
 def _load_json(path: Path) -> dict[str, Any] | None:
@@ -54,11 +56,72 @@ def _development_context(project_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _max_context_age_seconds() -> int:
+    raw = os.getenv("AGENTOS_CONTEXT_MAX_AGE_SECONDS", str(DEFAULT_CONTEXT_MAX_AGE_SECONDS))
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_CONTEXT_MAX_AGE_SECONDS
+    return value if value >= 60 else DEFAULT_CONTEXT_MAX_AGE_SECONDS
+
+
+def _freshness(source_updated_at: Any, *, now: datetime | None = None) -> dict[str, Any]:
+    compiled = now or datetime.now(timezone.utc)
+    if compiled.tzinfo is None:
+        compiled = compiled.replace(tzinfo=timezone.utc)
+    compiled = compiled.astimezone(timezone.utc)
+    max_age = _max_context_age_seconds()
+    source_text = str(source_updated_at or "").strip()
+    if not source_text:
+        return {
+            "status": "unknown",
+            "source_updated_at": None,
+            "compiled_at": _iso(compiled),
+            "age_seconds": None,
+            "max_age_seconds": max_age,
+        }
+    try:
+        source = datetime.fromisoformat(source_text.replace("Z", "+00:00"))
+        if source.tzinfo is None:
+            source = source.replace(tzinfo=timezone.utc)
+        source = source.astimezone(timezone.utc)
+    except ValueError:
+        return {
+            "status": "unknown",
+            "source_updated_at": source_text,
+            "compiled_at": _iso(compiled),
+            "age_seconds": None,
+            "max_age_seconds": max_age,
+        }
+
+    # Small future timestamps are usually clock skew. Treat them as age zero;
+    # large future skew is explicitly unknown rather than falsely fresh.
+    raw_age = (compiled - source).total_seconds()
+    if raw_age < -300:
+        status = "unknown"
+        age_seconds = None
+    else:
+        age_seconds = max(0, int(raw_age))
+        status = "fresh" if age_seconds <= max_age else "stale"
+    return {
+        "status": status,
+        "source_updated_at": source_text,
+        "compiled_at": _iso(compiled),
+        "age_seconds": age_seconds,
+        "max_age_seconds": max_age,
+    }
+
+
 def compile_execution_context(
     project_id: str,
     state: dict[str, Any],
     *,
     agent: dict[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     document = _development_context(project_id) or {}
     active = document.get("active_work") if isinstance(document.get("active_work"), dict) else {}
@@ -83,6 +146,7 @@ def compile_execution_context(
     else:
         next_action = "Derive the first task from the active goal and current canonical state."
 
+    source_revision = document.get("updated_at")
     return {
         "schema": CONTEXT_PROTOCOL,
         "project_id": project_id,
@@ -97,5 +161,6 @@ def compile_execution_context(
         "continuation": state.get("continuation"),
         "write_policy": document.get("write_policy") if isinstance(document.get("write_policy"), dict) else None,
         "integration_branch": active.get("integration_branch") or document.get("integration_branch"),
-        "source_revision": document.get("updated_at"),
+        "source_revision": source_revision,
+        "context_freshness": _freshness(source_revision, now=now),
     }
