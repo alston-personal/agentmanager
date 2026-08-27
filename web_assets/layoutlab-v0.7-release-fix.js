@@ -35,7 +35,6 @@ function removeByEvidence(ir,removed){
         const d=evidenceDistance(out,w,e);
         if(d<bestD){bestD=d;best=i}
       });
-      // Endpoint-sum tolerance: 16 px allows modest parser regeneration drift.
       if(best>=0&&bestD<=16)idx=best;
     }
     if(idx>=0)drop.add(idx);
@@ -61,36 +60,36 @@ L.replayEdits=(base,edits=[])=>{
 };
 
 /*
- * Production bug fixed in v0.7.3:
- * the v0.6 selection hotfix selected walls from displayIr(), but its delete
- * button deleted from currentIr. While a Draft/preview was displayed those
- * are different documents, so the selected wall ids were absent from
- * currentIr and the click was a silent no-op. Deletion must operate on the
- * exact IR the user is looking at, then commit that result as currentIr.
+ * v0.7.4 fixes the actual button wiring.
+ * The selection Set lives inside the v0.6 hotfix IIFE, so an external overlay
+ * cannot replace button.onclick and still read `sel`. Doing that caused a
+ * ReferenceError on click, which looked like a dead button. Instead, keep the
+ * original onclick closure (which owns `sel`) and use a capture listener to
+ * make currentIr equal to the exact displayed IR before that onclick runs.
  */
 function bindDisplayedIrDelete(){
   const button=document.getElementById('deleteSelected');
-  if(!button||typeof displayIr!=='function')return false;
-  button.onclick=()=>{
+  if(!button||typeof displayIr!=='function'||button.dataset.v07DeleteBound==='1')return false;
+  button.dataset.v07DeleteBound='1';
+  let beforeCount=null;
+  button.addEventListener('click',()=>{
     const shown=displayIr();
-    if(!shown||!sel?.size)return;
-    const before=(shown.walls||[]).length;
-    const next=L.deleteWallsById(shown,[...sel]);
-    const after=(next.walls||[]).length;
-    if(after>=before){
-      status.textContent='刪除失敗：選取牆未能對應目前顯示的 Spatial IR。';
-      return;
-    }
-    saveHistory();
-    // A user edit is a commit boundary: stop rendering an older Draft over it.
+    if(!shown)return;
+    beforeCount=(shown.walls||[]).length;
+    currentIr=clone(shown);
     previewIr=null;
     detectionDirty=false;
-    applyIr(next);
-    sel.clear();
-    button.disabled=true;
-    status.textContent=`已刪除 ${before-after} 面牆。`;
-    render2d();
-  };
+  },true);
+  button.addEventListener('click',()=>{
+    Promise.resolve().then(()=>{
+      if(beforeCount===null||!currentIr)return;
+      const after=(currentIr.walls||[]).length;
+      if(after<beforeCount){
+        status.textContent=`已刪除 ${beforeCount-after} 面牆。`;
+      }
+      beforeCount=null;
+    });
+  });
   return true;
 }
 
@@ -105,5 +104,5 @@ function labelV07(){
 }
 labelV07();
 bindDisplayedIrDelete();
-window.LayoutLabV07Release={version:'0.7.3',robustDelete:true,displayedIrDelete:true,labelV07,bindDisplayedIrDelete};
+window.LayoutLabV07Release={version:'0.7.4',robustDelete:true,displayedIrDelete:true,labelV07,bindDisplayedIrDelete};
 })();
