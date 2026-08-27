@@ -1,4 +1,4 @@
-/* Layout Lab editor UI adapter v0.7.1
+/* Layout Lab editor UI adapter v0.7.0
  * UI/input/rendering only. Spatial IR mutation semantics live in LayoutLibEditor.
  */
 (()=>{
@@ -123,5 +123,5 @@ if(typeof file!=='undefined'&&typeof file.onchange==='function'){
 // Re-analysis/drafts rebase library-owned correction journal over the new automatic base.
 if(typeof withManual==='function')withManual=base=>{let out=correctionSession.rebase(base);if(currentIr?.geometry)out=L.setGeometry(out,currentIr.geometry);return out};
 
-window.LayoutLabEditorUI={version:'0.7.1',correctionSession,selected};
+window.LayoutLabEditorUI={version:'0.7.0',correctionSession,selected};
 })();
