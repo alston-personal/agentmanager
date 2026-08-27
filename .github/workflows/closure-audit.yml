@@ -1,0 +1,33 @@
+name: Closure Audit
+
+on:
+  pull_request:
+    paths:
+      - '.agent/closure/**'
+      - 'scripts/closure_audit.py'
+      - 'tests/test_closure_audit.py'
+      - 'docs/CLOSURE_REALITY.md'
+      - '.github/workflows/closure-audit.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.agent/closure/**'
+      - 'scripts/closure_audit.py'
+      - 'tests/test_closure_audit.py'
+      - 'docs/CLOSURE_REALITY.md'
+      - '.github/workflows/closure-audit.yml'
+
+jobs:
+  closure-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+      - name: Validate closure ledger
+        run: python3 scripts/closure_audit.py --summary
+      - name: Run closure audit regression tests
+        run: python3 -m unittest tests.test_closure_audit -v
