@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.self_update_desktop_v01",
   "node_id": "vopc5750",
-  "nonce": "onboarding-runtime-readiness-20260827"
+  "nonce": "restart-race-fix-20260827-1103"
 }
