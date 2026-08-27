@@ -11,12 +11,17 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 
-class NodeRegistry:
-    """Persistent ONE-side Realm Node Map.
+def _parse_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
 
-    Logic lives in agentmanager; mutable Realm state lives outside the source
-    repository under AGENT_DATA_ROOT by default.
-    """
+
+class NodeRegistry:
+    """Persistent ONE-side Realm Node Map with heartbeat freshness semantics."""
 
     def __init__(self, path: str | Path | None = None):
         data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
@@ -78,7 +83,6 @@ class NodeRegistry:
     def record_heartbeat(self, heartbeat: dict[str, Any]) -> dict[str, Any]:
         if heartbeat.get('schema') != 'agentos.node-heartbeat/v0.1':
             raise ValueError('invalid heartbeat')
-
         manifest = heartbeat.get('manifest')
         if manifest is not None:
             if not isinstance(manifest, dict):
@@ -117,14 +121,34 @@ class NodeRegistry:
         self.save(data)
         return snapshot
 
+    def _effective_node(self, node: dict[str, Any]) -> dict[str, Any]:
+        result = dict(node)
+        reported = str(node.get('status') or 'unknown')
+        result['reported_status'] = reported
+        last = _parse_utc(node.get('last_heartbeat_at'))
+        stale_seconds = max(15, int(os.environ.get('AGENTOS_NODE_STALE_SECONDS', '30')))
+        age = None
+        if last is not None:
+            age = max(0, int((datetime.now(timezone.utc) - last).total_seconds()))
+        result['heartbeat_age_seconds'] = age
+        result['heartbeat_stale_after_seconds'] = stale_seconds
+        if reported == 'online' and (age is None or age > stale_seconds):
+            result['status'] = 'offline'
+            result['status_reason'] = 'heartbeat_stale'
+        else:
+            result['status'] = reported
+        return result
+
     def node_map(self) -> dict[str, Any]:
         data = self.load()
-        nodes = sorted(data['nodes'].values(), key=lambda n: (n.get('role') != 'core', n.get('node_id', '')))
+        nodes = [self._effective_node(node) for node in data['nodes'].values()]
+        nodes.sort(key=lambda n: (n.get('role') != 'core', n.get('node_id', '')))
         realm_caps = sorted({cap for node in nodes for cap in node.get('capabilities', []) if node.get('status') != 'offline'})
-        tools = sorted({tool for node in nodes for tool in node.get('tool_presence', {})})
+        tools = sorted({tool for node in nodes for tool in node.get('tool_presence', {}) if node.get('status') != 'offline'})
         surface_providers = sorted({
             str(surface.get('provider'))
             for node in nodes
+            if node.get('status') != 'offline'
             for surface in (node.get('surface_inventory') or {}).get('surfaces', [])
             if isinstance(surface, dict) and surface.get('provider')
         })
@@ -132,6 +156,7 @@ class NodeRegistry:
             'schema': 'agentos.node-map/v0.1',
             'realm_id': data.get('realm_id'),
             'node_count': len(nodes),
+            'online_node_count': sum(1 for node in nodes if node.get('status') == 'online'),
             'nodes': nodes,
             'realm_capabilities': realm_caps,
             'realm_tool_presence': tools,
