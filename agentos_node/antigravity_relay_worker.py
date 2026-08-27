@@ -107,6 +107,63 @@ class AntigravityRelayWorker:
                 except OSError:
                     pass
 
+    def _write_receipt(self, receipt: dict[str, Any]) -> None:
+        target = self.paths.receipts / f"{receipt['capsule_id']}.json"
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        share_relay_path(tmp)
+        tmp.replace(target)
+        share_relay_path(target)
+
+    def reconcile_abandoned_processing(self) -> list[str]:
+        """Close processing artifacts orphaned by a previous daemon instance.
+
+        We deliberately do not re-execute them. A killed executor may have
+        completed an external side effect before losing its receipt, so replaying
+        blindly would violate AgentOS governance. Instead emit a terminal receipt
+        declaring the outcome UNKNOWN and requiring reconciliation before retry.
+        """
+        self._ensure_shared_spool()
+        reconciled: list[str] = []
+        for processing in sorted(self.paths.processing.glob("relay-*.json")):
+            capsule_id = processing.stem
+            receipt_path = self.paths.receipts / f"{capsule_id}.json"
+            if receipt_path.exists():
+                processing.unlink(missing_ok=True)
+                reconciled.append(capsule_id)
+                continue
+            project_id = None
+            source_revision = None
+            try:
+                capsule = json.loads(processing.read_text(encoding="utf-8"))
+                if isinstance(capsule, dict):
+                    capsule_id = str(capsule.get("capsule_id") or capsule_id)
+                    project_id = capsule.get("project_id")
+                    ctx = capsule.get("execution_context")
+                    if isinstance(ctx, dict):
+                        source_revision = ctx.get("source_revision")
+            except Exception:
+                pass
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "completed_at": _utc_now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "ok": False,
+                "status": "execution_outcome_unknown",
+                "reconciliation_required": True,
+                "project_id": project_id,
+                "context_source_revision": source_revision,
+                "error": (
+                    "AbandonedExecution: relay daemon restarted while capsule was in processing; "
+                    "execution outcome is unknown. Do not retry irreversible work until evidence is reconciled."
+                ),
+            }
+            self._write_receipt(receipt)
+            processing.unlink(missing_ok=True)
+            reconciled.append(capsule_id)
+        return reconciled
+
     def process_one(self) -> dict[str, Any] | None:
         self._ensure_shared_spool()
         candidates = sorted(self.paths.inbox.glob("relay-*.json"))
@@ -170,17 +227,12 @@ class AntigravityRelayWorker:
                 "ok": False,
                 "error": f"{type(exc).__name__}: {exc}",
             }
-        target = self.paths.receipts / f"{receipt['capsule_id']}.json"
-        tmp = target.with_suffix(target.suffix + ".tmp")
-        tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        share_relay_path(tmp)
-        tmp.replace(target)
-        share_relay_path(target)
+        self._write_receipt(receipt)
         processing.unlink(missing_ok=True)
         return receipt
 
     def serve(self, *, interval: float = 1.0) -> None:
-        self._ensure_shared_spool()
+        self.reconcile_abandoned_processing()
         while True:
             processed = self.process_one()
             if processed is None:
@@ -196,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
 
     worker = AntigravityRelayWorker(args.root)
     if args.once:
+        worker.reconcile_abandoned_processing()
         result = worker.process_one()
         print(json.dumps(result or {"status": "idle"}, ensure_ascii=False, indent=2))
         return 0
