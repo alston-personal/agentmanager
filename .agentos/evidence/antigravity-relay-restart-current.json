@@ -1,0 +1,29 @@
+{
+  "action": "agentos.antigravity.restart",
+  "capsule_id": "action-36dbe8b286894790a099e2935f673699",
+  "completed_at": "2026-08-27T03:13:01Z",
+  "executor_user": "ubuntu",
+  "observations": [
+    {
+      "returncode": 0,
+      "state": "active",
+      "stderr": ""
+    }
+  ],
+  "ok": true,
+  "restart": {
+    "argv": [
+      "systemctl",
+      "--user",
+      "--no-block",
+      "restart",
+      "agentos-antigravity-relay.service"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": ""
+  },
+  "schema": "agentos.action-receipt/v1",
+  "service": "agentos-antigravity-relay.service",
+  "started_at": "2026-08-27T03:13:01Z"
+}
