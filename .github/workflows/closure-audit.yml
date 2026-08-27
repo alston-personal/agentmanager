@@ -4,18 +4,24 @@ on:
   pull_request:
     paths:
       - '.agent/closure/**'
+      - 'agent_core/employee_runtime.py'
       - 'scripts/closure_audit.py'
       - 'tests/test_closure_audit.py'
+      - 'tests/test_employee_runtime.py'
       - 'docs/CLOSURE_REALITY.md'
+      - 'docs/closure/**'
       - '.github/workflows/closure-audit.yml'
   push:
     branches:
       - main
     paths:
       - '.agent/closure/**'
+      - 'agent_core/employee_runtime.py'
       - 'scripts/closure_audit.py'
       - 'tests/test_closure_audit.py'
+      - 'tests/test_employee_runtime.py'
       - 'docs/CLOSURE_REALITY.md'
+      - 'docs/closure/**'
       - '.github/workflows/closure-audit.yml'
 
 jobs:
@@ -31,3 +37,5 @@ jobs:
         run: python3 scripts/closure_audit.py --summary
       - name: Run closure audit regression tests
         run: python3 -m unittest tests.test_closure_audit -v
+      - name: Run employee runtime regression tests
+        run: python3 -m unittest tests.test_employee_runtime -v
