@@ -5,6 +5,10 @@ has already entered ``processing`` may have produced side effects before a
 worker crash, so replaying it automatically is unsafe. New workers consume only
 ``inbox`` capsules. Stranded ``processing`` artifacts are forensic evidence and
 must be reconciled/quarantined explicitly before any intentional replay.
+
+Transport and model execution are intentionally separate concerns. The relay
+accepts a small, fixed provider set instead of treating an IDE-private binary as
+the identity of the Antigravity surface itself.
 """
 from __future__ import annotations
 
@@ -22,11 +26,14 @@ from typing import Any, Sequence
 from .antigravity_relay import RELAY_SCHEMA, RECEIPT_SCHEMA, RelayPaths, share_relay_path
 
 
+SUPPORTED_PROVIDERS = {"claude", "agy"}
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def discover_executor() -> list[str] | None:
+def _discover_claude() -> list[str] | None:
     explicit = os.environ.get("AGENTOS_ANTIGRAVITY_EXECUTOR")
     if explicit:
         candidate = Path(explicit).expanduser()
@@ -44,6 +51,24 @@ def discover_executor() -> list[str] | None:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return [str(candidate), "--bare", "--print", "--output-format", "text", "--effort", "low"]
     return None
+
+
+def _discover_agy() -> list[str] | None:
+    # Deliberately fixed to the ubuntu-owned AgentOS CLI location. Do not turn
+    # this into arbitrary command text from a capsule or environment variable.
+    candidate = Path.home() / ".local/bin/agy"
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return [str(candidate)]
+    return None
+
+
+def discover_executor(provider: str | None = None) -> tuple[str, list[str] | None]:
+    selected = str(provider or os.environ.get("AGENTOS_ANTIGRAVITY_PROVIDER") or "claude").strip().lower()
+    if selected not in SUPPORTED_PROVIDERS:
+        raise ValueError(f"unsupported Antigravity executor provider: {selected}")
+    if selected == "agy":
+        return selected, _discover_agy()
+    return selected, _discover_claude()
 
 
 def build_prompt(capsule: dict[str, Any]) -> str:
@@ -65,9 +90,23 @@ def build_prompt(capsule: dict[str, Any]) -> str:
 
 
 class AntigravityRelayWorker:
-    def __init__(self, root: str | Path, *, executor: Sequence[str] | None = None, timeout: float = 180.0) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        executor: Sequence[str] | None = None,
+        provider: str | None = None,
+        timeout: float = 180.0,
+    ) -> None:
         self.paths = RelayPaths(Path(root).expanduser())
-        self.executor = list(executor) if executor else discover_executor()
+        if executor is not None:
+            # Test/in-process injection only. Production discovery remains a
+            # fixed provider contract.
+            self.provider = str(provider or "injected")
+            self.executor = list(executor)
+        else:
+            self.provider, discovered = discover_executor(provider)
+            self.executor = discovered
         self.timeout = timeout
 
     def _ensure_shared_spool(self) -> None:
@@ -82,11 +121,18 @@ class AntigravityRelayWorker:
         inbox = sorted(self.paths.inbox.glob("relay-*.json"))
         return inbox[0] if inbox else None
 
-    def _run_executor(self, capsule: dict[str, Any], workspace: Path) -> dict[str, Any]:
+    def _executor_argv(self, capsule: dict[str, Any], workspace: Path) -> list[str]:
         if not self.executor:
-            raise RuntimeError("no authorized local Antigravity executor discovered")
+            raise RuntimeError(f"no authorized local Antigravity executor discovered for provider={self.provider}")
+        prompt = build_prompt(capsule)
+        if self.provider == "agy":
+            return [*self.executor, "run", "--task", prompt, "--workspace", str(workspace)]
+        return [*self.executor, prompt]
+
+    def _run_executor(self, capsule: dict[str, Any], workspace: Path) -> dict[str, Any]:
+        argv = self._executor_argv(capsule, workspace)
         proc = subprocess.Popen(
-            [*self.executor, build_prompt(capsule)],
+            argv,
             cwd=str(workspace),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -153,6 +199,7 @@ class AntigravityRelayWorker:
                 "started_at": started,
                 "completed_at": _utc_now(),
                 "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "provider": self.provider,
                 "executor": self.executor[0] if self.executor else None,
                 "returncode": result["returncode"],
                 "ok": result["returncode"] == 0 and not result["timed_out"],
@@ -167,6 +214,7 @@ class AntigravityRelayWorker:
                 "started_at": started,
                 "completed_at": _utc_now(),
                 "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "provider": self.provider,
                 "ok": False,
                 "error": f"{type(exc).__name__}: {exc}",
             }
@@ -189,12 +237,13 @@ class AntigravityRelayWorker:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ubuntu-owned AgentOS Antigravity relay worker")
     parser.add_argument("--root", default=str(Path.home() / "agent-data/runtime/antigravity-relay"))
+    parser.add_argument("--provider", choices=sorted(SUPPORTED_PROVIDERS), default=None)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--interval", type=float, default=1.0)
     args = parser.parse_args(argv)
-    worker = AntigravityRelayWorker(args.root)
+    worker = AntigravityRelayWorker(args.root, provider=args.provider)
     if args.once:
-        print(json.dumps(worker.process_one() or {"status": "idle"}, ensure_ascii=False, indent=2))
+        print(json.dumps(worker.process_one() or {"status": "idle", "provider": worker.provider}, ensure_ascii=False, indent=2))
         return 0
     worker.serve(interval=args.interval)
     return 0
