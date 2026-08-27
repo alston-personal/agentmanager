@@ -6,8 +6,9 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
-from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+from agentos_node.antigravity_relay_worker import AntigravityRelayWorker, discover_executor
 
 
 class AntigravityRelayWorkerTests(unittest.TestCase):
@@ -47,6 +48,38 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
             self.assertTrue(result["timed_out"])
             self.assertEqual(result["returncode"], 124)
             self.assertLess(elapsed, 5.0)
+
+    def test_agy_provider_uses_fixed_agentos_cli_path(self) -> None:
+        fake_home = Path("/home/ubuntu")
+        with patch("agentos_node.antigravity_relay_worker.Path.home", return_value=fake_home), \
+             patch.object(Path, "is_file", return_value=True), \
+             patch("agentos_node.antigravity_relay_worker.os.access", return_value=True):
+            provider, executor = discover_executor("agy")
+        self.assertEqual(provider, "agy")
+        self.assertEqual(executor, ["/home/ubuntu/.local/bin/agy"])
+
+    def test_unknown_provider_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported Antigravity executor provider"):
+            discover_executor("shell")
+
+    def test_agy_argv_is_structured_not_shell_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="agy",
+                executor=["/home/ubuntu/.local/bin/agy"],
+            )
+            argv = worker._executor_argv(
+                {"canonical_ir": {"goal": "probe"}, "instruction": "Return exactly PASS"},
+                workspace,
+            )
+            self.assertEqual(argv[0:2], ["/home/ubuntu/.local/bin/agy", "run"])
+            self.assertIn("--task", argv)
+            self.assertIn("--workspace", argv)
+            self.assertEqual(argv[-1], str(workspace))
+            self.assertNotIn("sh", argv)
+            self.assertNotIn("bash", argv)
 
 
 if __name__ == "__main__":
