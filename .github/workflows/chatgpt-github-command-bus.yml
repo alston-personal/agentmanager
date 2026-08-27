@@ -5,7 +5,8 @@ on:
     branches:
       - feature/distributed-agentos-runtime
     paths:
-      - "agentos-github-bus/requests/**.json"
+      - "agentos-github-bus/requests/**"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -36,8 +37,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- 'agentos-github-bus/requests/*.json' > /tmp/agentos_request_files
-          test -s /tmp/agentos_request_files || { echo 'No command request in triggering commit' >&2; exit 2; }
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            find agentos-github-bus/requests -maxdepth 1 -type f -name '*.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2- > /tmp/agentos_request_files
+          else
+            git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- agentos-github-bus/requests/ > /tmp/agentos_request_files
+          fi
+          test -s /tmp/agentos_request_files || { echo 'No command request found' >&2; exit 2; }
           cat /tmp/agentos_request_files
 
       - name: Resolve deploy host
