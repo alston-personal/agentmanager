@@ -20,12 +20,48 @@ done
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 mkdir -p "$(dirname "$RUNTIME_ROOT")" "$UNIT_DIR"
 
+# The Action Relay spool may be created by the agentos-node runner and therefore
+# legitimately be owned by agentos-node:agentos. Membership in agentos grants
+# ubuntu access, but Linux still forbids ubuntu from chgrp/chmod on another
+# user's inode. Treat an already-correct shared boundary as immutable instead
+# of trying to seize ownership. Only repair metadata when ubuntu owns the inode.
+ensure_shared_dir() {
+  local path="$1"
+  mkdir -p "$path"
+  local owner group mode
+  owner=$(stat -c '%U' "$path")
+  group=$(stat -c '%G' "$path")
+  mode=$(stat -c '%a' "$path")
+
+  if [ "$group" != agentos ]; then
+    if [ "$owner" != ubuntu ]; then
+      echo "ERROR: $path has group=$group owner=$owner; ubuntu cannot repair foreign-owned shared boundary" >&2
+      exit 5
+    fi
+    chgrp agentos "$path"
+    group=agentos
+  fi
+
+  if [ "$mode" != 2770 ]; then
+    if [ "$owner" != ubuntu ]; then
+      echo "ERROR: $path has mode=$mode owner=$owner; expected 2770 and ubuntu cannot chmod foreign-owned inode" >&2
+      exit 5
+    fi
+    chmod 2770 "$path"
+    mode=2770
+  fi
+
+  echo "action_relay_spool_dir=PASS path=$path owner=$owner group=$group mode=$mode"
+}
+
 if [ "${AGENTOS_ACTION_SPOOL_PREPROVISIONED:-0}" = 1 ]; then
   echo "action_relay_spool_preprovisioned=YES"
 else
-  mkdir -p "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
-  chgrp agentos "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
-  chmod 2770 "$RELAY_ROOT" "$RELAY_ROOT/inbox" "$RELAY_ROOT/processing" "$RELAY_ROOT/receipts" "$RELAY_ROOT/quarantine"
+  ensure_shared_dir "$RELAY_ROOT"
+  ensure_shared_dir "$RELAY_ROOT/inbox"
+  ensure_shared_dir "$RELAY_ROOT/processing"
+  ensure_shared_dir "$RELAY_ROOT/receipts"
+  ensure_shared_dir "$RELAY_ROOT/quarantine"
 fi
 
 git -C "$REPO" fetch origin main
