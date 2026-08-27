@@ -8,6 +8,7 @@ ENV_FILE="${AGENTOS_CONFIG_ENV_FILE:-$CONFIG_ROOT/.env}"
 DIST_ENV_FILE="${AGENTOS_DISTRIBUTED_ENV_FILE:-$HOME/.config/agentos/distributed.env}"
 SECRETS_FILE="${AGENTOS_SECRETS_FILE:-$HOME/.agentos.secrets}"
 USER_SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+PROJECT_PATHS_FILE="${AGENTOS_PROJECT_PATHS_FILE:-$HOME/.config/agentos/project-paths.json}"
 
 [ -f "$ENV_FILE" ] || { echo "Missing base AgentOS env: $ENV_FILE" >&2; exit 2; }
 [ -f "$DIST_ENV_FILE" ] || { echo "Missing Distributed AgentOS env: $DIST_ENV_FILE" >&2; exit 2; }
@@ -26,7 +27,20 @@ PYTHON_BIN="${AGENTOS_DISTRIBUTED_PYTHON:-}"
 if [ -z "$PYTHON_BIN" ] && [ -x "$LOGIC_ROOT/.venv/bin/python3" ]; then PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"; fi
 if [ -z "$PYTHON_BIN" ]; then PYTHON_BIN="$(command -v python3)"; fi
 [ -x "$PYTHON_BIN" ] || { echo "No usable Python interpreter found" >&2; exit 2; }
-mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
+mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs" "$(dirname "$PROJECT_PATHS_FILE")"
+
+# Native execution is allowlisted by project id. Never accept arbitrary paths from task payloads.
+if [ ! -f "$PROJECT_PATHS_FILE" ]; then
+  "$PYTHON_BIN" - "$PROJECT_PATHS_FILE" "$CONFIG_ROOT" <<'PY'
+import json, pathlib, sys
+out=pathlib.Path(sys.argv[1]); config=pathlib.Path(sys.argv[2]).resolve()
+value={"agentmanager": str(config)}
+leopard=pathlib.Path.home()/"leopardcat-tarot"
+if (leopard/".git").exists(): value["leopardcat-tarot"]=str(leopard.resolve())
+out.write_text(json.dumps(value, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+PY
+  chmod 600 "$PROJECT_PATHS_FILE"
+fi
 
 cat > "$USER_SYSTEMD_DIR/agentos-control-plane.service" <<EOF
 [Unit]
@@ -65,6 +79,7 @@ Environment=AGENT_PROJECT_ROOT=$LOGIC_ROOT
 Environment=PYTHONPATH=$LOGIC_ROOT
 Environment=AGENTOS_CONTROL_PLANE_URL=http://127.0.0.1:8765
 Environment=AGENTOS_RUNTIME_ID=oracle-core-node
+Environment=AGENTOS_PROJECT_PATHS_FILE=$PROJECT_PATHS_FILE
 EnvironmentFile=-$ENV_FILE
 EnvironmentFile=-$DIST_ENV_FILE
 EnvironmentFile=-$SECRETS_FILE
@@ -122,4 +137,5 @@ fi
 echo "Installed isolated Distributed AgentOS services from $LOGIC_ROOT"
 echo "Python: $PYTHON_BIN"
 echo "Native node: oracle-core-node"
+echo "Native project registry: $PROJECT_PATHS_FILE"
 echo "Data logs: $DATA_ROOT/logs"
