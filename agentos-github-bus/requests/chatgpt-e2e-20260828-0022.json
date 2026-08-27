@@ -1,0 +1,7 @@
+{
+  "protocol": "agentos.github-command/v1",
+  "request_id": "chatgpt-e2e-20260828-0022",
+  "action": "resume",
+  "hint": "",
+  "principal": "chatgpt-github"
+}
