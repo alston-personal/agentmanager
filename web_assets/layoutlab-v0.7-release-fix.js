@@ -6,7 +6,7 @@
 'use strict';
 const L=window.LayoutLibBrowser;
 if(!L)return;
-const RELEASE='0.7.7';
+const RELEASE='0.7.8';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const px=(ir,w)=>({
   start_px:L.worldToSourcePx(ir.coordinate_frame,w.start),
@@ -268,12 +268,20 @@ function clarifyResetEdits(){
   button.title='移除補牆、擦牆與刪牆等手動修正，回到本次自動分析的原始結果。';
 }
 
+/* Keep the patch identity impossible to miss. The long product/status phrase
+ * previously overflowed the header, and native title tooltips are not a
+ * dependable discovery surface. The badge now contains only the patch version. */
 function labelRelease(){
-  const full=`Layout Lab v${RELEASE} · AgentOS closed loop`;
   const sub=document.querySelector('header .sub');
   if(sub)sub.textContent=`Layout Lab v${RELEASE}：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。`;
   const badge=document.querySelector('header .badge');
-  if(badge){badge.textContent=full;badge.title=`完整版本：${RELEASE}`;}
+  if(badge){
+    badge.textContent=`v${RELEASE}`;
+    badge.removeAttribute('title');
+    badge.style.flex='0 0 auto';
+    badge.style.fontWeight='800';
+    badge.style.fontVariantNumeric='tabular-nums';
+  }
   document.querySelectorAll('.compactTitle').forEach(el=>{
     if(/^v0\.(6|7(?:\.\d+)?)\s+(Learning|Capability learning) contract$/i.test(el.textContent||''))el.textContent=`v${RELEASE} Capability learning contract`;
   });
@@ -289,5 +297,5 @@ enableInitialWallPreview();
 enable2dPanZoom();
 fixViewerZoom();
 clarifyResetEdits();
-window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,initialWallPreview:true,fixedFrameZoom:true,twoDPanZoom:true,rightDragPan:true,durableManualEdits:true,labelRelease};
+window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,initialWallPreview:true,fixedFrameZoom:true,twoDPanZoom:true,rightDragPan:true,durableManualEdits:true,compactVersionBadge:true,labelRelease};
 })();
