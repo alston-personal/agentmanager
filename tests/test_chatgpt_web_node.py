@@ -1,5 +1,6 @@
 from agentos_node.chatgpt_web_node import (
     BOOTSTRAP_PROTOCOL,
+    bootstrap_chatgpt_web,
     build_bootstrap_from_attachment,
 )
 from runtime_core.canonical_ir import CanonicalIR
@@ -46,6 +47,43 @@ def test_bootstrap_compiles_authoritative_attachment_into_web_request():
     assert packet.request["input_ir_id"] == ir.ir_id
     assert packet.request["input_digest"] == ir.digest()
     assert packet.request["canonical_ir"]["payload"]["next_action"] == "inspect existing demo"
+
+
+def test_account_scoped_attach_excludes_device_identity():
+    class FakeClient:
+        def __init__(self):
+            self.agent = None
+
+        def attach(self, project_id, *, agent=None):
+            self.agent = agent
+            return _attachment(
+                project_id,
+                {
+                    "projectId": project_id,
+                    "latestTask": None,
+                    "currentIR": None,
+                    "currentSource": None,
+                    "recommendedAction": "start",
+                },
+            )
+
+    client = FakeClient()
+    bootstrap_chatgpt_web(
+        client,
+        "layout-3d",
+        principal_id="chatgpt-principal-1",
+        transport="mcp",
+    )
+
+    assert client.agent == {
+        "runtime_id": "chatgpt-web",
+        "kind": "chatgpt_web",
+        "transport": "mcp",
+        "identity_scope": "account",
+        "principal_id": "chatgpt-principal-1",
+    }
+    assert "device" not in client.agent
+    assert "conversation" not in client.agent
 
 
 def test_bootstrap_start_state_has_no_fabricated_ir():
