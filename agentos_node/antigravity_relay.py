@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 from typing import Any
 import uuid
 
@@ -55,17 +56,19 @@ def _shared_gid() -> int:
 
 
 def share_relay_path(path: Path, *, directory: bool = False) -> None:
-    """Make one relay artifact readable/writable by both relay identities.
+    """Ensure a relay artifact already satisfies the cross-user sharing contract.
 
-    Relay directories are setgid, so newly-created artifacts normally inherit
-    the ``agentos`` group already. Avoid an unnecessary chown in that case:
-    unprivileged user services may chmod their own files but cannot always issue
-    chown(2), even when the requested gid is already correct. If the artifact
-    does not have the shared gid, retain the fail-closed chown requirement.
+    Relay directories are setgid, so artifacts created inside them normally
+    inherit the ``agentos`` group and expected mode. Cross-identity consumers
+    must not issue redundant chown/chmod calls against artifacts they do not own:
+    Linux can deny those syscalls even when the requested metadata is already
+    correct. We therefore mutate metadata only when it actually differs, while
+    retaining fail-closed behavior if a required correction cannot be made.
     """
+    desired_mode = SHARED_DIR_MODE if directory else SHARED_FILE_MODE
+    metadata = path.stat()
     shared_gid = _shared_gid()
-    current_gid = path.stat().st_gid
-    if current_gid != shared_gid:
+    if metadata.st_gid != shared_gid:
         try:
             os.chown(path, -1, shared_gid)
         except PermissionError as exc:
@@ -74,7 +77,17 @@ def share_relay_path(path: Path, *, directory: bool = False) -> None:
                 f"ensure the artifact is created inside a setgid {SHARED_GROUP} relay directory "
                 f"or the current OS process can change its group"
             ) from exc
-    os.chmod(path, SHARED_DIR_MODE if directory else SHARED_FILE_MODE)
+        metadata = path.stat()
+
+    current_mode = stat.S_IMODE(metadata.st_mode)
+    if current_mode != desired_mode:
+        try:
+            os.chmod(path, desired_mode)
+        except PermissionError as exc:
+            raise PermissionError(
+                f"cannot set shared mode {oct(desired_mode)} on {path}; "
+                "ensure the producer creates relay artifacts with the shared mode"
+            ) from exc
 
 
 @dataclass(frozen=True)
