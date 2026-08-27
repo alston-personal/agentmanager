@@ -99,3 +99,35 @@ def test_verified_receipt_advances_fresh_attach(tmp_path: Path, monkeypatch: pyt
     assert context["runtime_context"]["revision"] == 2
     assert "gpt-5.4-mini low passed" in " ".join(context["current_findings"])
     assert seed_path.read_text(encoding="utf-8") == original_seed
+
+
+def test_invalid_checkpoint_cannot_leave_success_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    seed_path = tmp_path / "development-context.json"
+    seed_path.write_text(json.dumps(seed_doc()), encoding="utf-8")
+    monkeypatch.setenv("AGENTOS_PROJECT_CONTEXTS_JSON", json.dumps({"demo": str(seed_path)}))
+
+    control = DistributedControlPlane(tmp_path / "control-plane.sqlite3")
+    gateway = DistributedGatewayService(control)
+    gateway.attach({"project_id": "demo", "agent": {"history": "none"}})
+    submitted = gateway.submit_task({
+        "project_id": "demo",
+        "goal": "attempt an unproven context transition",
+        "capability": "agentos.context.checkpoint",
+        "payload": {
+            "completed_action": "Invented work that was never active.",
+            "finding": "fake evidence",
+        },
+    })
+    task_id = submitted["task"]["taskId"]
+    lease = control.lease_ir_task(task_id, "oracle-core-node")
+    assert lease is not None
+    result = build_default_worker("oracle-core-node").execute(lease.ir)
+    assert result.status == "succeeded"
+
+    with pytest.raises(ValueError, match="not an active next_action"):
+        control.complete_ir(task_id, result)
+
+    task = control.get_task(task_id)
+    assert task["status"] == "leased"
+    loaded = CanonicalContextStore(tmp_path / "control-plane.sqlite3").load("demo")
+    assert loaded["_runtime_context"]["revision"] == 1
