@@ -7,6 +7,7 @@ on:
       - '.github/workflows/oracle-deploy-layoutlab-static-official.yml'
       - 'web_assets/layoutlab_v0_5.html'
       - 'web_assets/layoutlib-browser-v0.5.js'
+      - 'web_assets/layoutlab-capability-bridge-v0.7.js'
       - 'scripts/deploy_layoutlab_static.py'
 
 permissions:
@@ -30,20 +31,22 @@ jobs:
           RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
           SRC_HTML=$(sha256sum web_assets/layoutlab_v0_5.html | awk '{print $1}')
           SRC_LIB=$(sha256sum web_assets/layoutlib-browser-v0.5.js | awk '{print $1}')
+          SRC_BRIDGE=$(sha256sum web_assets/layoutlab-capability-bridge-v0.7.js | awk '{print $1}')
           SRC_DEPLOY=$(sha256sum scripts/deploy_layoutlab_static.py | awk '{print $1}')
           for i in $(seq 1 240); do
-            if [ -f "$RUNTIME/web_assets/layoutlab_v0_5.html" ] && [ -f "$RUNTIME/web_assets/layoutlib-browser-v0.5.js" ] && [ -f "$RUNTIME/scripts/deploy_layoutlab_static.py" ]; then
+            if [ -f "$RUNTIME/web_assets/layoutlab_v0_5.html" ] && [ -f "$RUNTIME/web_assets/layoutlib-browser-v0.5.js" ] && [ -f "$RUNTIME/web_assets/layoutlab-capability-bridge-v0.7.js" ] && [ -f "$RUNTIME/scripts/deploy_layoutlab_static.py" ]; then
               RUN_HTML=$(sha256sum "$RUNTIME/web_assets/layoutlab_v0_5.html" | awk '{print $1}')
               RUN_LIB=$(sha256sum "$RUNTIME/web_assets/layoutlib-browser-v0.5.js" | awk '{print $1}')
+              RUN_BRIDGE=$(sha256sum "$RUNTIME/web_assets/layoutlab-capability-bridge-v0.7.js" | awk '{print $1}')
               RUN_DEPLOY=$(sha256sum "$RUNTIME/scripts/deploy_layoutlab_static.py" | awk '{print $1}')
-              if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ] && [ "$SRC_DEPLOY" = "$RUN_DEPLOY" ]; then
-                echo 'runtime_v0_6_refresh=PASS'
+              if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ] && [ "$SRC_BRIDGE" = "$RUN_BRIDGE" ] && [ "$SRC_DEPLOY" = "$RUN_DEPLOY" ]; then
+                echo 'runtime_v0_7_refresh=PASS'
                 exit 0
               fi
             fi
             sleep 1
           done
-          echo 'runtime_v0_6_refresh=TIMEOUT'
+          echo 'runtime_v0_7_refresh=TIMEOUT'
           exit 3
 
       - name: Submit deterministic static deployment
@@ -69,7 +72,7 @@ jobs:
           assert r.get('ok') is True, r
           assert r.get('executor_user') == 'ubuntu', r
           text=(r.get('step') or {}).get('stdout','')
-          assert 'layoutlib-v0.6-demo-hotfix' in text, r
+          assert 'layoutlib-v0.7-capability-bridge' in text, r
           print('deterministic_static_deploy=PASS')
           PY
 
@@ -80,14 +83,18 @@ jobs:
           OUT=.agentos/evidence/layoutlab-static-official-acceptance.txt
           URL=https://studio.milkcat.org/layout-lab/
           LIB=https://studio.milkcat.org/layout-lab/layoutlib-browser-v0.5.js
+          BRIDGE=https://studio.milkcat.org/layout-lab/layoutlab-capability-bridge-v0.7.js
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             CODE=$(curl -sS -o /tmp/layoutlab-static-ui -w '%{http_code}' --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$URL")
             LIBCODE=$(curl -sS -o /tmp/layoutlab-lib -w '%{http_code}' --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$LIB")
+            BRIDGECODE=$(curl -sS -o /tmp/layoutlab-capability-bridge -w '%{http_code}' --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$BRIDGE")
             echo "public_ui_http_code=$CODE"
             echo "public_library_http_code=$LIBCODE"
+            echo "public_capability_bridge_http_code=$BRIDGECODE"
             test "$CODE" = 200
             test "$LIBCODE" = 200
+            test "$BRIDGECODE" = 200
             grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-static-ui
             grep -q 'LayoutLib Browser Adapter v0.6' /tmp/layoutlab-static-ui
             grep -q '3D 即時對照' /tmp/layoutlab-static-ui
@@ -100,12 +107,18 @@ jobs:
             grep -q '▭ 選取' /tmp/layoutlab-static-ui
             grep -q '刪除選取' /tmp/layoutlab-static-ui
             grep -q 'view={yaw:0,pitch:0,zoom:1}' /tmp/layoutlab-static-ui
+            grep -q 'layoutlab-capability-bridge-v0.7.js' /tmp/layoutlab-static-ui
             grep -q "version:'0.6.0'" /tmp/layoutlab-lib
             grep -q 'previewEraseStrokePx' /tmp/layoutlab-lib
             grep -q 'extractProfileFeatures' /tmp/layoutlab-lib
             grep -q 'predictProfileParameters' /tmp/layoutlab-lib
             grep -q 'makeLearningObservation' /tmp/layoutlab-lib
             grep -q 'replayEdits' /tmp/layoutlab-lib
+            grep -q 'finishModel' /tmp/layoutlab-capability-bridge
+            grep -q 'layoutlib.capability.pending.v1' /tmp/layoutlab-capability-bridge
+            grep -q 'agentos.capability-experience/v1' /tmp/layoutlab-capability-bridge
+            grep -q 'applyCanonicalPolicy' /tmp/layoutlab-capability-bridge
+            grep -q 'correction_cost' /tmp/layoutlab-capability-bridge
             echo 'public_payload_identity=PASS'
             echo 'dual_2d_3d_workspace=PASS'
             echo 'erase_preview_highlight=PASS'
@@ -115,6 +128,9 @@ jobs:
             echo 'pre_analysis_editing=PASS'
             echo 'box_selection_delete=PASS'
             echo 'plan_aligned_reset=PASS'
+            echo 'completion_experience_bridge=PASS'
+            echo 'correction_cost_learning_boundary=PASS'
+            echo 'canonical_policy_bootstrap_hook=PASS'
             echo 'official_layoutlab_web_ui=PASS'
           } 2>&1 | tee "$OUT"
 
