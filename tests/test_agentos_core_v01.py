@@ -5,6 +5,8 @@ import threading
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
+
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayServer, DistributedGatewayService
 from agentos_client import AgentOSClient
@@ -74,13 +76,23 @@ def test_native_project_inspect_is_registry_gated(tmp_path: Path, monkeypatch):
     assert "not registered" in denied.result["message"]
 
 
-def test_scoped_client_can_use_human_api_but_not_runtime_api(tmp_path: Path):
+def test_scoped_client_enforces_permission_project_capability_and_task_isolation(tmp_path: Path):
     store = DistributedControlPlane(tmp_path / "edge.sqlite3")
-    server = DistributedGatewayServer(("127.0.0.1", 0), DistributedGatewayService(store), token="root-secret")
+    service = DistributedGatewayService(store)
+    foreign = service.submit_task({
+        "project_id": "other-project",
+        "goal": "foreign task",
+        "capability": "agentos.ir.validate",
+        "payload": {},
+    })["task"]
+
+    server = DistributedGatewayServer(("127.0.0.1", 0), service, token="root-secret")
     issued = server.client_tokens.issue(
         "test:chat-client",
         label="test client",
         permissions=("project.read", "task.read", "task.submit"),
+        projects=("demo",),
+        capabilities=("agentos.ir.validate",),
         ttl_days=1,
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -93,6 +105,18 @@ def test_scoped_client_can_use_human_api_but_not_runtime_api(tmp_path: Path):
         submitted = client.submit_task(goal="validate edge", capability="agentos.ir.validate", payload={})
         assert submitted["task"]["status"] == "submitted"
         assert client.get_state()["projectId"] == "demo"
+
+        with pytest.raises(RuntimeError, match="HTTP 403"):
+            client.attach("other-project")
+        with pytest.raises(RuntimeError, match="HTTP 403"):
+            client.submit_task(
+                project_id="demo",
+                goal="forbidden capability",
+                capability="agentos.project.inspect",
+                payload={},
+            )
+        with pytest.raises(RuntimeError, match="HTTP 403"):
+            client.get_task(foreign["taskId"])
 
         request = Request(
             base + "/v1/lease",
