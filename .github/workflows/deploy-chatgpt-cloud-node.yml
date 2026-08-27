@@ -94,14 +94,17 @@ jobs:
             fi
           fi
 
-          if ! "$PYTHON_BIN" -c 'import mcp' >/dev/null 2>&1; then
+          # Do not treat an arbitrary/old `mcp` package as sufficient. Verify the
+          # exact SDK v2 API used by our server and force an upgrade when absent.
+          if ! "$PYTHON_BIN" -c 'from mcp.server.mcpserver import MCPServer; assert MCPServer' >/dev/null 2>&1; then
+            echo "MCP SDK v2 server API missing; upgrading from requirements-mcp.txt"
             if [ "$PYTHON_BIN" = "$(command -v python3)" ]; then
               "$PYTHON_BIN" -m pip install --user --upgrade -r "$RELEASE_ROOT/requirements-mcp.txt"
             else
               "$PYTHON_BIN" -m pip install --upgrade -r "$RELEASE_ROOT/requirements-mcp.txt"
             fi
           fi
-          "$PYTHON_BIN" -c 'import mcp' >/dev/null
+          "$PYTHON_BIN" -c 'from mcp.server.mcpserver import MCPServer; assert MCPServer' >/dev/null
 
           DIST_ENV="$HOME/.config/agentos/distributed.env"
           python3 - "$DIST_ENV" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS" <<'PY'
