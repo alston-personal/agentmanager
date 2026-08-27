@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+import subprocess
 
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayService
@@ -38,3 +40,29 @@ def test_attach_submit_execute_receipt(tmp_path: Path):
     resumed = service.attach({"project_id": "leopardcat-tarot", "agent": {"type": "new-session"}})
     assert resumed["state"]["latestTask"]["taskId"] == task_id
     assert resumed["state"]["recommendedAction"] == "continue"
+
+
+def test_native_project_inspect_is_registry_gated(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "demo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "agentos@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "AgentOS Test"], check=True)
+    (repo / "README.md").write_text("native inspect\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "init"], check=True, stdout=subprocess.DEVNULL)
+
+    registry = tmp_path / "projects.json"
+    registry.write_text(json.dumps({"demo": str(repo)}), encoding="utf-8")
+    monkeypatch.setenv("AGENTOS_PROJECT_PATHS_FILE", str(registry))
+
+    worker = build_default_worker("oracle-core-node")
+    good = worker.execute(CanonicalIR(goal="inspect", project_id="demo", capability="agentos.project.inspect"))
+    assert good.status == "succeeded"
+    assert good.result["project_id"] == "demo"
+    assert good.result["head"]
+    assert good.result["dirty"] is False
+
+    denied = worker.execute(CanonicalIR(goal="inspect", project_id="not-registered", capability="agentos.project.inspect"))
+    assert denied.status == "failed"
+    assert "not registered" in denied.result["message"]
