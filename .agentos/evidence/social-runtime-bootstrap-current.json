@@ -1,0 +1,57 @@
+{
+  "credential_refs": [
+    "facebook/default",
+    "instagram/default",
+    "threads/default"
+  ],
+  "credential_store": "/home/agentos-node/.agentos/social-credentials.json",
+  "credential_store_mode": "0o600",
+  "executor": "/home/agentos-node/.local/bin/agentos-social",
+  "executor_present": true,
+  "identity_probes": {
+    "facebook": {
+      "receipt": {
+        "credential_ref": "facebook/default",
+        "observed_at": "2026-08-27T05:14:20Z",
+        "ok": true,
+        "operation": "identity",
+        "platform": "facebook",
+        "platform_object_id": "814025338452355",
+        "result": {
+          "name": "\u65ed\u6f6d\u5e7b\u5883"
+        },
+        "schema": "agentos.social.publish-receipt/v0.1"
+      },
+      "returncode": 0
+    },
+    "instagram": {
+      "receipt": {
+        "credential_ref": "instagram/default",
+        "error_code": "invalid_request",
+        "error_message": "Instagram identity requires ig_id in args or credential metadata",
+        "observed_at": "2026-08-27T05:14:20Z",
+        "ok": false,
+        "operation": "identity",
+        "platform": "instagram",
+        "schema": "agentos.social.publish-receipt/v0.1"
+      },
+      "returncode": 2
+    },
+    "threads": {
+      "receipt": {
+        "credential_ref": "threads/default",
+        "error_code": "platform_http_error",
+        "error_message": "HTTP 400: {\"error\":{\"message\":\"Error validating access token: Session has expired on Tuesday, 23-Jun-26 01:33:13 PDT. The current time is Wednesday, 26-Aug-26 22:14:19 PDT.\",\"type\":\"OAuthException\",\"code\":190,\"error_subcode\":0,\"fbtrace_id\":\"AmBOR7G_bLxUmABHje4KKBG\"}}",
+        "observed_at": "2026-08-27T05:14:19Z",
+        "ok": false,
+        "operation": "identity",
+        "platform": "threads",
+        "schema": "agentos.social.publish-receipt/v0.1"
+      },
+      "returncode": 2
+    }
+  },
+  "schema": "agentos.social-runtime-bootstrap/v0.1",
+  "secret_values_collected_in_evidence": false,
+  "write_operations_performed": false
+}
