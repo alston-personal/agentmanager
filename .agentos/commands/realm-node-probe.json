@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.probe",
   "node_id": "vopc5750",
-  "nonce": "first-windows-node-probe-20260826"
+  "nonce": "readiness-timeout-diagnostic-20260827"
 }
