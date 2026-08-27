@@ -1,7 +1,7 @@
 {
   "schema": "agentos.meta-desktop-inspect/v0.1",
   "node_id": "vopc5750",
-  "operation": "quarantine_stale_tasks",
-  "purpose": "remove only known timed-out tasks before controlled node recovery",
-  "nonce": "meta-zeuswriter-quarantine-20260827-03"
+  "operation": "check_recovery",
+  "purpose": "verify Thin Client restart restored heartbeat before Meta desktop probe",
+  "nonce": "meta-zeuswriter-recovery-20260827-04"
 }
