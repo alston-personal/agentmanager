@@ -1,0 +1,9 @@
+{
+  "capsule_id": "relay-92e6dc7cc89744e9b0fc131cdabbaa69",
+  "completed_at": "2026-08-27T03:11:50Z",
+  "error": "PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-92e6dc7cc89744e9b0fc131cdabbaa69.json'",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "schema": "agentos.antigravity-receipt/v1",
+  "started_at": "2026-08-27T03:11:50Z"
+}
