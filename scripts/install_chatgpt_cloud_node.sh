@@ -22,8 +22,8 @@ set +a
 if [ -z "$PYTHON_BIN" ] && [ -x "$LOGIC_ROOT/.venv/bin/python3" ]; then PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"; fi
 if [ -z "$PYTHON_BIN" ]; then PYTHON_BIN="$(command -v python3)"; fi
 [ -x "$PYTHON_BIN" ] || { echo "No usable Python interpreter found" >&2; exit 2; }
-"$PYTHON_BIN" -c 'import mcp' >/dev/null 2>&1 || {
-  echo "Python MCP SDK is missing; install requirements-mcp.txt into $PYTHON_BIN environment" >&2
+"$PYTHON_BIN" -c 'from mcp.server.mcpserver import MCPServer; assert MCPServer' >/dev/null 2>&1 || {
+  echo "Python MCP SDK v2 server API is missing; install/upgrade requirements-mcp.txt into $PYTHON_BIN environment" >&2
   exit 2
 }
 
