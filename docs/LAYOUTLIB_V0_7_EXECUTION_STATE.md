@@ -1,6 +1,6 @@
 # LayoutLib v0.7 Execution State
 
-Status: RELEASE COMPLETE — production closed loop deployed and accepted
+Status: RELEASE COMPLETE — production closed loop deployed and editor semantic ownership corrected
 Date: 2026-08-27
 
 ## Goal
@@ -18,8 +18,12 @@ Learning closure:
 ## Released architecture
 
 - LayoutLib core remains a pure execution library.
+- `web_assets/layoutlib-browser-v0.5.js` remains the historical-name parser core.
+- `web_assets/layoutlib-editor-v0.7.js` is the versioned LayoutLib editor-semantics extension. It owns editable-document creation, wall query/selection geometry, delete semantics, correction evidence matching, correction replay/rebase, correction-session state, and the first `moveWallPx` primitive.
+- `web_assets/layoutlab-editor-ui-v0.7.js` is demo UI/input wiring only. It maps pointer/selection/delete interactions to LayoutLib APIs and renders selection state.
+- `web_assets/layoutlab-v0.7-release-fix.js` is UI-only release presentation/navigation: version badge, keyboard Delete mapping, 2D pan/zoom, fixed-frame 3D zoom, and labels. It no longer defines Spatial IR mutation semantics.
 - `capabilities/layoutlib/adapter.py` translates abstract profile features, policies, and correction metrics into AgentOS capability experience.
-- `agentos_node/capability_runtime.py` provides generic experience observation, candidate consolidation, evaluation, seeded canonical state, and explicit governed promotion. Promotion now requires a successful evaluator result as well as an authority receipt.
+- `agentos_node/capability_runtime.py` provides generic experience observation, candidate consolidation, evaluation, seeded canonical state, and explicit governed promotion. Promotion requires a successful evaluator result and authority receipt.
 - `agentos_node/capability_store.py` provides persistent idempotent capability-owned experience and canonical-state storage.
 - `agentos_node/capability_http.py` provides the HTTP gateway contract for experience ingestion and canonical-state reads.
 - `agentos_node/capability_consolidator.py` loads persisted experience, produces/stores candidate state, and can explicitly promote/store canonical state with governance provenance.
@@ -34,16 +38,17 @@ Reference metrics include walls added/deleted, erase length, re-analysis count, 
 
 ## Verification and deployment result
 
-1. Focused v0.7 test suite passed: 15 tests covering runtime governance, persistence/idempotency, raw-image rejection, persisted consolidation, LayoutLib adapter/convergence, and browser bridge asset contract.
+1. Focused v0.7 runtime/capability tests previously passed for governance, persistence/idempotency, raw-image rejection, persisted consolidation, LayoutLib adapter/convergence, and browser bridge contracts.
 2. Browser completion boundary and correction metrics are present in the production v0.7 bridge.
 3. Capability Gateway is installed as a reboot-persistent system service bound to `127.0.0.1:8767`, with capability persistence owned by `agentos-node`.
-4. nginx now routes `/layout-lab/api/...` to the capability gateway; nginx configuration was syntax-checked before reload with backup/rollback handling.
-5. Public experience ingestion was exercised through the real `https://studio.milkcat.org/layout-lab/api/...` route and returned accepted receipts.
+4. nginx routes `/layout-lab/api/...` to the capability gateway.
+5. Public experience ingestion and canonical-state bootstrap were exercised through the real public route.
 6. Three independent proof-node experiences were persisted, consolidated, evaluated, explicitly promoted with an authority receipt, then retrieved through the public canonical-state endpoint.
-7. A fresh-node bootstrap proof read the capability-owned canonical profile before any local history. The automated proof verifies convergence/bootstrap mechanics; it does not claim an empirical human correction-cost improvement yet.
-8. Production static acceptance passed for the Layout Lab UI, v0.7 bridge, finish boundary, pending queue, capability experience schema, correction-cost signal, canonical-policy bootstrap hook, and existing v0.6 browser library contract.
+7. A fresh-node bootstrap proof read capability-owned canonical profile state before local history. This proves convergence/bootstrap mechanics, not yet empirical human correction-cost improvement.
+8. v0.7.9 release workflow `33044098450` passed governed runtime refresh, semantic-ownership guard, deployment, and public acceptance.
+9. The release gate now mechanically requires delete/move/evidence/replay/session semantics to exist in `layoutlib-editor-v0.7.js`, rejects those semantic implementations in the release UI overlay, and rejects deployment-time `HOTFIX` injection.
 
-Release workflow: `Oracle Deploy Tested LayoutLib v0.7 Closed Loop`, run `33033667929`, commit `64dfb587bf073d5c03f539188a3b0cfd83f0494e`.
+Current production patch: `v0.7.9`.
 
 ## Production boundaries
 
@@ -56,11 +61,9 @@ Browser transport uses the same-origin namespace:
 
 Transport is at-least-once from the browser edge queue. Server ingestion is idempotent by `experience_id`: replay of the same payload is accepted as duplicate; reuse of the same ID with a different payload is rejected. The browser cannot write canonical state.
 
-## Demo/library ownership audit — mandatory invariant
+## Demo/library ownership invariant
 
-Layout Lab is a demo/validation surface for LayoutLib, not the semantic owner of editing behavior. Any behavior that changes Spatial IR meaning or correction semantics must live in LayoutLib (or a clearly versioned LayoutLib editor module) and be called by the demo. The website may own only presentation/input wiring such as buttons, pointer gestures, viewport pan/zoom, labels, status text, and transport/bootstrap glue.
-
-Current audit found this invariant is not yet fully satisfied. The browser library already owns raster analysis, coordinate transforms, `addWallPx`, erase preview/application, geometry updates, and basic edit replay. However production currently injects or overlays additional semantic editing behavior from the demo/deploy layer, including editable-document creation, wall selection helpers, delete-wall semantics/evidence replay, and the durable manual-correction layer. These must be migrated back into LayoutLib before treating the demo as a faithful consumer-only reference implementation.
+Layout Lab is a demo/validation surface for LayoutLib, not the semantic owner of editing behavior. Any behavior that changes Spatial IR meaning or correction semantics must live in LayoutLib (or a clearly versioned LayoutLib editor module) and be called by the demo. The website may own presentation/input wiring such as buttons, pointer gestures, viewport pan/zoom, labels, status text, and transport/bootstrap glue.
 
 Required ownership target:
 
@@ -68,25 +71,27 @@ Required ownership target:
 
 `Layout Lab: render + pointer/keyboard mapping + viewport navigation + call LayoutLib APIs + display results`
 
-No new semantic editor primitive may be implemented only in `layoutlab-v0.7-release-fix.js`, `layoutlab_v0_5.html`, or deployment-time HOTFIX injection.
+As of v0.7.9, the deployment-time semantic HOTFIX has been removed and the previously misplaced delete/evidence/manual-correction behavior has been moved behind `LayoutLibEditor`. CI now enforces this boundary for the release path. No new semantic editor primitive may be implemented only in `layoutlab-v0.7-release-fix.js`, `layoutlab_v0_5.html`, or deployment code.
 
 ## Correction lineage and moved-wall semantics
 
-A moved auto-detected wall cannot be represented only by changing `source:auto` to `source:manual`, because a later parser run may rediscover the original wall and create a duplicate. The correction journal must preserve both negative and positive intent:
+A moved auto-detected wall cannot be represented only by changing `source:auto` to `source:manual`, because a later parser run may rediscover the original wall and create a duplicate. The correction journal preserves both negative and positive intent:
 
 `move_wall = suppress(original evidence) + add(replacement geometry)`
 
-The original evidence must be source-space geometry/provenance, not regenerated wall ID alone. During re-analysis/rebase, LayoutLib matches newly detected candidates against the stored original evidence within controlled geometry/topology tolerances. A matched candidate is suppressed, then the replacement manual geometry is applied. If a new candidate is materially different and cannot be matched confidently, it is not silently suppressed; the rebase result should surface an unresolved/ambiguous correction conflict for review.
+The original evidence is source-space geometry/provenance, not regenerated wall ID alone. During re-analysis/rebase, LayoutLib matches newly detected candidates against stored original evidence within controlled geometry tolerances. A matched candidate is suppressed, then replacement manual geometry is applied. A materially different candidate remains part of the new auto base.
 
-This means parser output and user corrections are separate layers:
+Parser output and user corrections remain separate layers:
 
 `new auto base -> correction rebase/matching -> suppress matched originals -> replay manual replacements/additions/deletions -> final Spatial IR`
 
-The same lineage mechanism should serve delete and move so threshold changes cannot resurrect a wall that the user intentionally removed or relocated.
+The same lineage mechanism serves delete and move so threshold changes do not resurrect a wall intentionally removed or relocated.
+
+`moveWallPx` now exists in the LayoutLib editor module, but the Layout Lab drag-to-move gesture is not yet wired; that UI work must call the library primitive rather than reimplement it.
 
 ## What v0.7 proves
 
-v0.7 now proves the deployed mechanics of:
+v0.7 proves the deployed mechanics of:
 
 `independent nodes -> abstract experience -> lowest semantic owner -> persistent convergence -> evaluator/governance -> canonical capability state -> fresh-node bootstrap`
 
@@ -94,9 +99,9 @@ This is the engineering proof of shared capability convergence. The stronger res
 
 ## Next active work after v0.7
 
-- migrate semantic editor behavior out of Layout Lab HOTFIX/overlay code and into LayoutLib APIs, with regression tests;
-- implement a first-class correction journal/rebase contract, including geometry-evidence matching and ambiguity handling;
-- add `move_wall` and endpoint-adjustment primitives on top of that correction lineage contract;
+- harden correction evidence matching with ambiguity/conflict reporting rather than unsafe suppression when two candidates are equally plausible;
+- wire Layout Lab drag-to-move and endpoint adjustment strictly through LayoutLib editor APIs;
+- add functional regression tests for correction rebase across threshold changes, including move/delete resurrection prevention;
 - measure real fresh-node correction-cost improvement against a no-shared-learning baseline;
 - stabilize Spatial IR topology and add rooms/openings;
 - consolidate historical source/version filename drift into a clean canonical source identity;
