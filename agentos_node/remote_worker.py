@@ -24,6 +24,18 @@ def _validate(ir: CanonicalIR) -> dict[str, Any]:
 
 
 def _project_paths() -> dict[str, str]:
+    registry_file = os.getenv("AGENTOS_PROJECT_PATHS_FILE")
+    if registry_file:
+        path = Path(registry_file).expanduser()
+        if path.exists():
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("AGENTOS_PROJECT_PATHS_FILE contains invalid JSON") from exc
+            if not isinstance(value, dict):
+                raise RuntimeError("AGENTOS_PROJECT_PATHS_FILE must contain a JSON object")
+            return {str(k): str(v) for k, v in value.items() if k and v}
+
     raw = os.getenv("AGENTOS_PROJECT_PATHS_JSON", "{}")
     try:
         value = json.loads(raw)
@@ -55,6 +67,7 @@ def _inspect_project(ir: CanonicalIR) -> dict[str, Any]:
     if not path.is_dir() or not (path / ".git").exists():
         raise ValueError(f"registered project is not a git checkout: {ir.project_id}")
     status = _git(path, "status", "--porcelain")
+    remotes = _git(path, "remote")
     branch = _git(path, "branch", "--show-current")
     return {
         "project_id": ir.project_id,
@@ -63,7 +76,7 @@ def _inspect_project(ir: CanonicalIR) -> dict[str, Any]:
         "branch": branch or None,
         "dirty": bool(status),
         "dirty_entries": status.splitlines()[:50],
-        "remote": _git(path, "remote", "get-url", "origin") if _git(path, "remote") else None,
+        "remote": _git(path, "remote", "get-url", "origin") if "origin" in remotes.splitlines() else None,
     }
 
 
