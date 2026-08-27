@@ -22,6 +22,7 @@ def test_attach_submit_execute_receipt(tmp_path: Path):
     assert attached["protocol"] == "agentos.core/v0.1"
     assert attached["session_id"].startswith("aos_")
     assert attached["state"]["projectId"] == "leopardcat-tarot"
+    assert attached["execution_context"]["schema"] == "agentos.execution-context/v0.1"
 
     submitted = service.submit_task({
         "project_id": "leopardcat-tarot",
@@ -48,6 +49,40 @@ def test_attach_submit_execute_receipt(tmp_path: Path):
     resumed = service.attach({"project_id": "leopardcat-tarot", "agent": {"type": "new-session"}})
     assert resumed["state"]["latestTask"]["taskId"] == task_id
     assert resumed["state"]["recommendedAction"] == "continue"
+    assert resumed["execution_context"]["latest_task"]["taskId"] == task_id
+    assert resumed["execution_context"]["recommended_action"] == "continue"
+
+
+def test_attach_compiles_goal_findings_actions_and_write_policy(tmp_path: Path, monkeypatch):
+    context_doc = tmp_path / "development-context.json"
+    context_doc.write_text(json.dumps({
+        "updated_at": "2026-08-27T10:00:00+08:00",
+        "integration_branch": "feature/context-proof",
+        "write_policy": {"branch_required_for_writes": True},
+        "active_work": {
+            "goal": "Prove a fresh agent can resume without conversation history.",
+            "integration_branch": "feature/context-proof",
+            "current_findings": ["Native Oracle execution is proven.", "Scoped external edge is proven."],
+            "next_actions": ["Run the blind fresh-session attach proof.", "Then add native project test capability."],
+        },
+    }), encoding="utf-8")
+    registry = tmp_path / "contexts.json"
+    registry.write_text(json.dumps({"demo": str(context_doc)}), encoding="utf-8")
+    monkeypatch.setenv("AGENTOS_PROJECT_CONTEXTS_FILE", str(registry))
+
+    store = DistributedControlPlane(tmp_path / "context.sqlite3")
+    attached = DistributedGatewayService(store).attach({
+        "project_id": "demo",
+        "agent": {"type": "blind-fresh-session", "model": "weak-executor"},
+    })
+    context = attached["execution_context"]
+    assert context["schema"] == "agentos.execution-context/v0.1"
+    assert context["active_goal"] == "Prove a fresh agent can resume without conversation history."
+    assert context["next_action"] == "Run the blind fresh-session attach proof."
+    assert context["current_findings"] == ["Native Oracle execution is proven.", "Scoped external edge is proven."]
+    assert context["integration_branch"] == "feature/context-proof"
+    assert context["write_policy"]["branch_required_for_writes"] is True
+    assert context["agent"]["type"] == "blind-fresh-session"
 
 
 def test_native_project_inspect_is_registry_gated(tmp_path: Path, monkeypatch):
@@ -102,6 +137,7 @@ def test_scoped_client_enforces_permission_project_capability_and_task_isolation
         client = AgentOSClient(base, token=issued["token"])
         attached = client.attach("demo", agent={"type": "external-test"})
         assert attached["project_id"] == "demo"
+        assert attached["execution_context"]["project_id"] == "demo"
         submitted = client.submit_task(goal="validate edge", capability="agentos.ir.validate", payload={})
         assert submitted["task"]["status"] == "submitted"
         assert client.get_state()["projectId"] == "demo"
