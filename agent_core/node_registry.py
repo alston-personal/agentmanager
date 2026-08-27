@@ -53,6 +53,9 @@ class NodeRegistry:
             raise ValueError('manifest belongs to a different Realm')
         data['realm_id'] = realm_id
         existing = data['nodes'].get(node_id, {})
+        inventory = manifest.get('surface_inventory') or {}
+        if not isinstance(inventory, dict):
+            raise ValueError('surface_inventory must be an object')
         entry = {
             'node_id': node_id,
             'role': role,
@@ -61,6 +64,7 @@ class NodeRegistry:
             'platform_release': manifest.get('platform_release'),
             'capabilities': sorted(set(manifest.get('capabilities') or [])),
             'tool_presence': dict(manifest.get('tool_presence') or {}),
+            'surface_inventory': dict(inventory),
             'status': existing.get('status', 'unknown'),
             'first_seen_at': existing.get('first_seen_at', _utc_now()),
             'last_manifest_at': manifest.get('observed_at') or _utc_now(),
@@ -74,6 +78,17 @@ class NodeRegistry:
     def record_heartbeat(self, heartbeat: dict[str, Any]) -> dict[str, Any]:
         if heartbeat.get('schema') != 'agentos.node-heartbeat/v0.1':
             raise ValueError('invalid heartbeat')
+
+        manifest = heartbeat.get('manifest')
+        if manifest is not None:
+            if not isinstance(manifest, dict):
+                raise ValueError('heartbeat manifest must be an object')
+            if str(manifest.get('node_id') or '') != str(heartbeat.get('node_id') or ''):
+                raise ValueError('heartbeat manifest node_id mismatch')
+            if str(manifest.get('realm_id') or '') != str(heartbeat.get('realm_id') or ''):
+                raise ValueError('heartbeat manifest realm_id mismatch')
+            self.register_manifest(manifest)
+
         data = self.load()
         node_id = str(heartbeat.get('node_id') or '')
         realm_id = str(heartbeat.get('realm_id') or '')
@@ -85,6 +100,7 @@ class NodeRegistry:
         entry['status'] = heartbeat.get('status', 'unknown')
         entry['last_heartbeat_at'] = heartbeat.get('observed_at') or _utc_now()
         entry['uptime_seconds'] = heartbeat.get('uptime_seconds')
+        entry['surface_count'] = heartbeat.get('surface_count')
         data['nodes'][node_id] = entry
         self.save(data)
         return entry
@@ -106,6 +122,12 @@ class NodeRegistry:
         nodes = sorted(data['nodes'].values(), key=lambda n: (n.get('role') != 'core', n.get('node_id', '')))
         realm_caps = sorted({cap for node in nodes for cap in node.get('capabilities', []) if node.get('status') != 'offline'})
         tools = sorted({tool for node in nodes for tool in node.get('tool_presence', {})})
+        surface_providers = sorted({
+            str(surface.get('provider'))
+            for node in nodes
+            for surface in (node.get('surface_inventory') or {}).get('surfaces', [])
+            if isinstance(surface, dict) and surface.get('provider')
+        })
         return {
             'schema': 'agentos.node-map/v0.1',
             'realm_id': data.get('realm_id'),
@@ -113,4 +135,5 @@ class NodeRegistry:
             'nodes': nodes,
             'realm_capabilities': realm_caps,
             'realm_tool_presence': tools,
+            'realm_surface_providers': surface_providers,
         }
