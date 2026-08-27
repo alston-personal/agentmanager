@@ -14,6 +14,7 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.executor_bridge import FileExecutorBridge
 from agentos_node.executor_registry import ExecutorRegistry
 from agentos_node.session_bridge import FileSessionBridge
 
@@ -206,8 +207,13 @@ class ThinClient:
                     raise ValueError('request_id is required')
                 result = {'session_receipt': self._session_bridge(task).receipt(request_id)}
             elif str(action).startswith('desktop.'):
-                self.executors.require_desktop()
-                if action == 'desktop.session.inspect':
+                desktop = self.executors.require_desktop()
+                if desktop.kind == 'interactive-desktop-bridge':
+                    result = FileExecutorBridge.from_environment('desktop').execute(
+                        task,
+                        timeout_seconds=min(float(task.get('timeout_seconds') or 30), float(self.policy.max_timeout_seconds)),
+                    )
+                elif action == 'desktop.session.inspect':
                     result = {'desktop': interactive_desktop.session_info()}
                 elif action == 'desktop.windows.inspect':
                     result = interactive_desktop.inspect_windows()
