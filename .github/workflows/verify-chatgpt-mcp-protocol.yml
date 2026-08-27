@@ -1,0 +1,64 @@
+name: Verify ChatGPT MCP Protocol to ONE
+
+on:
+  push:
+    branches:
+      - feature/distributed-agentos-runtime
+    paths:
+      - "scripts/agentos_mcp_server.py"
+      - "scripts/verify_chatgpt_mcp_protocol.py"
+      - "agentos_node/mcp_read_tools.py"
+      - ".github/workflows/verify-chatgpt-mcp-protocol.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentos-chatgpt-mcp-protocol
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+
+    steps:
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify live MCP to ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$RELEASE_ROOT" <<'REMOTE'
+          set -euo pipefail
+          RELEASE_ROOT="$1"
+          REF="feature/distributed-agentos-runtime"
+          git -C "$RELEASE_ROOT" fetch --prune origin "$REF"
+          git -C "$RELEASE_ROOT" checkout --detach "$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)"
+          PYTHON_BIN="$(command -v python3)"
+          "$PYTHON_BIN" -c 'from mcp import ClientSession; from mcp.client.streamable_http import streamable_http_client'
+          systemctl --user is-active --quiet agentos-chatgpt-mcp.service
+          "$PYTHON_BIN" "$RELEASE_ROOT/scripts/verify_chatgpt_mcp_protocol.py" \
+            --url http://127.0.0.1:8000/mcp \
+            --project agentmanager
+          REMOTE
