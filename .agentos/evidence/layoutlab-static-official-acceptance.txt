@@ -1,6 +1,7 @@
-timestamp_utc=2026-08-26T14:54:09Z
+timestamp_utc=2026-08-27T01:59:01Z
 public_ui_http_code=200
 public_library_http_code=200
+public_capability_bridge_http_code=200
 public_payload_identity=PASS
 dual_2d_3d_workspace=PASS
 erase_preview_highlight=PASS
@@ -10,4 +11,7 @@ learning_not_image_fingerprint=PASS
 pre_analysis_editing=PASS
 box_selection_delete=PASS
 plan_aligned_reset=PASS
+completion_experience_bridge=PASS
+correction_cost_learning_boundary=PASS
+canonical_policy_bootstrap_hook=PASS
 official_layoutlab_web_ui=PASS
