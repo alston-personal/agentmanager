@@ -1,83 +1,79 @@
 # LayoutLib v0.7 Execution State
 
-Status: active implementation checkpoint
+Status: RELEASE COMPLETE — production closed loop deployed and accepted
 Date: 2026-08-27
 
 ## Goal
 
-Finish LayoutLib as the first real AgentOS capability-evolution closed loop, without mixing in unrelated character, trading, or general world-model work.
+Finish LayoutLib v0.7 as the first deployed AgentOS capability-evolution closed loop, without mixing in unrelated character, trading, or general world-model work.
 
-## Current product flow
+## Released product flow
 
 `layout image -> analyze -> Spatial IR -> edit/correct -> 3D preview -> finish`
 
-The remaining learning closure is:
+Learning closure:
 
-`finish/accept -> correction outcome -> CapabilityExperience -> governed transport -> consolidate -> canonical capability state -> fresh-node bootstrap`
+`finish/accept -> correction outcome -> CapabilityExperience -> governed transport -> persisted capability experience -> consolidate/evaluate -> governed canonical capability state -> fresh-node bootstrap`
 
-## Current architecture
+## Released architecture
 
 - LayoutLib core remains a pure execution library.
 - `capabilities/layoutlib/adapter.py` translates abstract profile features, policies, and correction metrics into AgentOS capability experience.
-- `agentos_node/capability_runtime.py` provides generic experience observation, candidate consolidation, evaluation, and explicit governed promotion.
+- `agentos_node/capability_runtime.py` provides generic experience observation, candidate consolidation, evaluation, seeded canonical state, and explicit governed promotion. Promotion now requires a successful evaluator result as well as an authority receipt.
 - `agentos_node/capability_store.py` provides persistent idempotent capability-owned experience and canonical-state storage.
-- `agentos_node/capability_http.py` provides a minimal same-purpose HTTP gateway contract for experience ingestion and canonical-state reads.
-- `web_assets/layoutlab-capability-bridge-v0.7.js` records completion/correction outcomes, keeps an offline edge queue, opportunistically submits queued experience, and can bootstrap a canonical profile policy.
-- Spatial IR is the canonical model. 3D preview and exported mesh formats are derived representations.
-- The current 3D browser preview is rendered from Spatial IR; it is not a stored 3D asset format.
+- `agentos_node/capability_http.py` provides the HTTP gateway contract for experience ingestion and canonical-state reads.
+- `agentos_node/capability_consolidator.py` loads persisted experience, produces/stores candidate state, and can explicitly promote/store canonical state with governance provenance.
+- `web_assets/layoutlab-capability-bridge-v0.7.js` records completion/correction outcomes, keeps an offline edge queue, opportunistically submits queued experience, and bootstraps a canonical profile policy.
+- Spatial IR remains the canonical spatial model. 3D preview and exported mesh formats are derived representations.
 
 ## Learning signal
 
-Use correction cost rather than Analyze as the primary reward signal.
+Correction cost, not Analyze, is the primary learning reward boundary.
 
-Reference metrics currently include:
+Reference metrics include walls added/deleted, erase length, re-analysis count, manual parameter changes, and accepted/completed outcome. No raw image is required in capability experience. The persistent store rejects obvious raw image/binary telemetry fields at the shared boundary.
 
-- walls added;
-- walls deleted;
-- erase length;
-- re-analysis count;
-- manual parameter changes;
-- accepted/completed outcome.
+## Verification and deployment result
 
-No raw image is required in the capability experience payload. The persistent store rejects obvious raw image/binary telemetry fields at the shared boundary.
+1. Focused v0.7 test suite passed: 15 tests covering runtime governance, persistence/idempotency, raw-image rejection, persisted consolidation, LayoutLib adapter/convergence, and browser bridge asset contract.
+2. Browser completion boundary and correction metrics are present in the production v0.7 bridge.
+3. Capability Gateway is installed as a reboot-persistent system service bound to `127.0.0.1:8767`, with capability persistence owned by `agentos-node`.
+4. nginx now routes `/layout-lab/api/...` to the capability gateway; nginx configuration was syntax-checked before reload with backup/rollback handling.
+5. Public experience ingestion was exercised through the real `https://studio.milkcat.org/layout-lab/api/...` route and returned accepted receipts.
+6. Three independent proof-node experiences were persisted, consolidated, evaluated, explicitly promoted with an authority receipt, then retrieved through the public canonical-state endpoint.
+7. A fresh-node bootstrap proof read the capability-owned canonical profile before any local history. The automated proof verifies convergence/bootstrap mechanics; it does not claim an empirical human correction-cost improvement yet.
+8. Production static acceptance passed for the Layout Lab UI, v0.7 bridge, finish boundary, pending queue, capability experience schema, correction-cost signal, canonical-policy bootstrap hook, and existing v0.6 browser library contract.
 
-## Progress
+Release workflow: `Oracle Deploy Tested LayoutLib v0.7 Closed Loop`, run `33033667929`, commit `64dfb587bf073d5c03f539188a3b0cfd83f0494e`.
 
-1. DONE in unit-level architecture proof: A/B/C experiences can consolidate to a canonical profile policy and a fresh Node D can consume that policy without local history.
-2. DONE in the real browser UI: explicit `finishModel` completion boundary and correction metrics are emitted from the Layout Lab session.
-3. DONE locally on the Oracle capability node: the persistent capability gateway is running on `127.0.0.1:8767`; health returns HTTP 200 and abstract experience ingestion returns HTTP 202 with an idempotent receipt. Current persistence root is `/home/agentos-node/.local/share/agentos/capabilities`.
-4. BLOCKED only at the public transport boundary: current nginx has no `/layout-lab/api/` proxy, so those URLs fall through to the Studio SPA and return HTML with HTTP 200. The nginx configuration is root-owned and the runner has no non-interactive sudo. A reviewed route snippet is staged at `ops/nginx/layoutlib-capability-gateway.conf` but is not installed.
-5. NEXT after that route is installed/reloaded: prove a real public browser completion creates a server-side stored receipt; then publish a governed canonical state and verify a fresh browser bootstraps it before any local history.
-6. AFTER CLOSED LOOP: stabilize Spatial IR topology/rooms/openings, consolidate historical source/version drift into canonical v0.7 source identity, and add regression fixtures before learned-policy promotion is allowed to influence production broadly.
+## Production boundaries
 
-## Verified host facts
+The older LayoutLib parser demo at `127.0.0.1:8766` remains separate and untouched. The AgentOS capability gateway owns `127.0.0.1:8767`.
 
-The Oracle host already had a separate legacy LayoutLib web demo at `127.0.0.1:8766`; it exposes `/api/health` and `/api/parse`. It is not the new AgentOS capability gateway and must not be confused with it.
-
-The new capability gateway runs independently at `127.0.0.1:8767` so the old parser demo remains untouched.
-
-The capability gateway user-systemd unit is staged, but the GitHub runner session currently has no usable user D-Bus. The current verified process therefore uses the controlled `nohup` fallback with `RUNNER_TRACKING_ID` removed so GitHub cleanup does not kill the intentional daemon. The unit remains the desired reboot-persistent mechanism once the user service bus is available.
-
-## Transport contract
-
-Browser transport uses the same-origin Layout Lab API namespace:
+Browser transport uses the same-origin namespace:
 
 - `POST ./api/capability/experience` with 1..20 abstract experiences.
 - `GET ./api/capability/<capability_id>/canonical` for bootstrap.
 
-Transport is at-least-once from the browser edge queue. Server-side ingestion is idempotent by `experience_id`: replay of the same payload is accepted as duplicate; reuse of the same ID with a different payload is rejected.
+Transport is at-least-once from the browser edge queue. Server ingestion is idempotent by `experience_id`: replay of the same payload is accepted as duplicate; reuse of the same ID with a different payload is rejected. The browser cannot write canonical state.
 
-The browser does not write canonical state. Canonical state remains a governed AgentOS output.
+## What v0.7 proves
 
-Required nginx mapping is conceptually:
+v0.7 now proves the deployed mechanics of:
 
-`/layout-lab/api/... -> http://127.0.0.1:8767/...`
+`independent nodes -> abstract experience -> lowest semantic owner -> persistent convergence -> evaluator/governance -> canonical capability state -> fresh-node bootstrap`
 
-The exact staged snippet is source-controlled in `ops/nginx/layoutlib-capability-gateway.conf`.
+This is the engineering proof of shared capability convergence. The stronger research claim — that a fresh Node D measurably requires less correction than an equivalent no-shared-learning baseline on real floorplans — remains a post-release controlled experiment, not a release blocker.
+
+## Next active work after v0.7
+
+- measure real fresh-node correction-cost improvement against a no-shared-learning baseline;
+- stabilize Spatial IR topology and add rooms/openings;
+- consolidate historical source/version filename drift into a clean canonical source identity;
+- grow the fixture/regression corpus before learned policies influence broader production behavior.
 
 ## Parked branches
 
-Do not expand these until the LayoutLib closed loop is measured:
+Keep these parked until the LayoutLib result is measured:
 
 - Character IR and IP Genome integration;
 - Blender/Unity native adapters;
@@ -85,17 +81,3 @@ Do not expand these until the LayoutLib closed loop is measured:
 - trading strategy capability;
 - autonomous graph/plasticity engine;
 - universal Semantic IR core extraction.
-
-These are valid future applications, but are not on the active LayoutLib execution path.
-
-## Success criterion
-
-The first capability-evolution experiment succeeds when:
-
-- Nodes A/B/C independently produce abstract LayoutLib experience;
-- experience converges to the LayoutLib semantic owner;
-- a candidate policy is evaluated and explicitly promoted;
-- Node D starts with no local history;
-- Node D receives the canonical policy before its first local learning event;
-- Node D's measured correction cost is lower than an equivalent no-shared-learning baseline;
-- provenance shows why the canonical policy exists and can be rolled back.
