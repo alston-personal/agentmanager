@@ -138,6 +138,7 @@ class ThinClient:
             'uptime_seconds': max(0, int(time.time() - datetime.fromisoformat(self.started_at.replace('Z', '+00:00')).timestamp())),
             'capability_count': len(manifest['capabilities']),
             'surface_count': int((manifest.get('surface_inventory') or {}).get('surface_count') or 0),
+            'manifest': manifest,
         }
 
     def execute(self, task: dict[str, Any]) -> dict[str, Any]:
