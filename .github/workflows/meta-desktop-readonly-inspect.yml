@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Quarantine stale node tasks
+      - name: Check recovered node state
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -32,50 +32,35 @@ jobs:
           import json
           from pathlib import Path
           from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
 
           cmd = json.load(open('.agentos/commands/meta-desktop-inspect.json', encoding='utf-8'))
           assert cmd.get('schema') == 'agentos.meta-desktop-inspect/v0.1', cmd
           assert cmd.get('node_id') == 'vopc5750', cmd
-          assert cmd.get('operation') == 'quarantine_stale_tasks', cmd
+          assert cmd.get('operation') == 'check_recovery', cmd
 
-          target_ids = {
-              'self-update-runtime-vopc5750-1787799601',
-              'probe-vopc5750-1787799699',
-              'self-update-runtime-vopc5750-1787799940',
-              'meta-desktop-open_url-1787810432803',
-          }
           fabric = RealmFabricStore()
           raw = fabric.load()
-          queue = list((raw.get('tasks') or {}).get('vopc5750') or [])
-          removed = [t for t in queue if t.get('task_id') in target_ids]
-          kept = [t for t in queue if t.get('task_id') not in target_ids]
-          found = {str(t.get('task_id')) for t in removed}
-          assert found == target_ids, {'expected': sorted(target_ids), 'found': sorted(found)}
-          raw['tasks']['vopc5750'] = kept
-          fabric.save(raw)
-
-          safe = lambda t: {
-              'task_id': t.get('task_id'),
-              'action': t.get('action'),
-              'queued_at': t.get('queued_at'),
-          }
+          node = dict((raw.get('nodes') or {}).get('vopc5750') or {})
+          node.pop('token_hash', None)
+          pending = list((raw.get('tasks') or {}).get('vopc5750') or [])
+          registry = NodeRegistry().node_map()
+          registry_node = next((n for n in registry.get('nodes', []) if n.get('node_id') == 'vopc5750'), None)
           result = {
-              'ok': True,
-              'node_id': 'vopc5750',
-              'removed': [safe(t) for t in removed],
-              'remaining_count': len(kept),
-              'remaining': [safe(t) for t in kept[-20:]],
+              'node': node,
+              'registry_node': registry_node,
+              'pending_task_count': len(pending),
           }
           out = Path('/tmp/meta-desktop')
           out.mkdir(parents=True, exist_ok=True)
-          (out / 'quarantine-result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
+          (out / 'recovery-status.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
           print(json.dumps(result, ensure_ascii=False, sort_keys=True))
           PY
 
-      - name: Upload quarantine evidence
+      - name: Upload recovery status
         uses: actions/upload-artifact@v4
         with:
-          name: meta-desktop-stale-task-quarantine
+          name: meta-desktop-recovery-status
           path: /tmp/meta-desktop
           if-no-files-found: error
           retention-days: 1
