@@ -71,17 +71,27 @@ jobs:
           TARGET_SHA="$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)"
           git -C "$RELEASE_ROOT" checkout --detach "$TARGET_SHA"
 
-          # Match the existing Core deployment policy: prefer the isolated venv,
-          # but do not require python3-venv/root package installation on Oracle.
-          PYTHON_BIN="$RELEASE_ROOT/.venv/bin/python3"
-          if [ ! -x "$PYTHON_BIN" ]; then
+          # Match the existing Core deployment policy: a venv is usable only if
+          # both its Python and pip work. Broken/partial venvs are discarded.
+          VENV_PYTHON="$RELEASE_ROOT/.venv/bin/python3"
+          PYTHON_BIN=""
+          if [ -x "$VENV_PYTHON" ] && "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
+            PYTHON_BIN="$VENV_PYTHON"
+            echo "Using existing isolated Python virtualenv"
+          else
             rm -rf "$RELEASE_ROOT/.venv" 2>/dev/null || true
-            if python3 -m venv "$RELEASE_ROOT/.venv" >/dev/null 2>&1; then
-              PYTHON_BIN="$RELEASE_ROOT/.venv/bin/python3"
-              echo "Using isolated Python virtualenv"
+            if python3 -m venv "$RELEASE_ROOT/.venv" >/dev/null 2>&1 \
+              && [ -x "$VENV_PYTHON" ] \
+              && "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
+              PYTHON_BIN="$VENV_PYTHON"
+              echo "Created isolated Python virtualenv"
             else
               rm -rf "$RELEASE_ROOT/.venv" 2>/dev/null || true
               PYTHON_BIN="$(command -v python3)"
+              "$PYTHON_BIN" -m pip --version >/dev/null 2>&1 || {
+                echo "system Python has no pip; cannot install MCP SDK without host mutation" >&2
+                exit 2
+              }
               echo "python3-venv unavailable; using system Python user site"
             fi
           fi
