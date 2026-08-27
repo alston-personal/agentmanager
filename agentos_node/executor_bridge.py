@@ -189,6 +189,8 @@ class FileExecutorHost:
         self.receipts.mkdir(parents=True, exist_ok=True)
         processed = 0
         for target in sorted(self.requests.glob('executor-*.json')):
+            request_id = target.stem
+            task: dict[str, Any] = {}
             try:
                 request = json.loads(target.read_text(encoding='utf-8-sig'))
                 if request.get('schema') != REQUEST_SCHEMA:
@@ -196,9 +198,10 @@ class FileExecutorHost:
                 if str(request.get('executor_id') or '') != self.executor_id:
                     raise ValueError('executor request targets another executor')
                 request_id = str(request.get('request_id') or '')
-                task = request.get('task')
-                if not request_id or not isinstance(task, dict):
+                task_raw = request.get('task')
+                if not request_id or not isinstance(task_raw, dict):
                     raise ValueError('invalid executor request')
+                task = task_raw
                 result = handler(task)
                 if not isinstance(result, dict):
                     raise ValueError('executor handler must return an object')
@@ -212,8 +215,6 @@ class FileExecutorHost:
                     'completed_at': _utc_now(),
                 }
             except Exception as exc:
-                request_id = locals().get('request_id') or target.stem
-                task = locals().get('task') if isinstance(locals().get('task'), dict) else {}
                 receipt = {
                     'schema': RECEIPT_SCHEMA,
                     'request_id': request_id,
