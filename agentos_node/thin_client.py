@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agentos_node import interactive_desktop
+from agentos_node.agent_surfaces import discover_surfaces
 
 
 def _utc_now() -> str:
@@ -66,7 +67,7 @@ class ThinClient:
     COMMON_TOOLS = (
         'git', 'python', 'python3', 'node', 'npm', 'pnpm', 'docker', 'podman',
         'powershell', 'pwsh', 'ffmpeg', 'adb', 'xcodebuild', 'unity', 'Unity',
-        'code', 'antigravity',
+        'code', 'cursor', 'antigravity', 'claude', 'codex', 'gemini',
     )
 
     def __init__(self, identity: NodeIdentity, policy: ThinClientPolicy):
@@ -83,9 +84,14 @@ class ThinClient:
                 found[tool.lower()] = path
         return dict(sorted(found.items()))
 
+    def surface_inventory(self) -> dict[str, Any]:
+        return discover_surfaces()
+
     def capability_manifest(self) -> dict[str, Any]:
         tools = self.discover_tools()
-        caps = ['context.harvest', 'process.inspect', 'tool.presence']
+        surface_inventory = self.surface_inventory()
+        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
+        caps.extend(surface_inventory.get('capabilities') or [])
         if self.policy.allowed_executables:
             caps.append('shell.exec')
         if self.policy.readable_roots:
@@ -111,8 +117,9 @@ class ThinClient:
             'platform_release': platform.release(),
             'python_version': platform.python_version(),
             'observed_at': _utc_now(),
-            'capabilities': sorted(caps),
+            'capabilities': sorted(set(caps)),
             'tool_presence': tools,
+            'surface_inventory': surface_inventory,
             'workspace_roots': {
                 'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
                 'writable': [str(p.expanduser().resolve()) for p in self.policy.writable_roots],
@@ -120,6 +127,7 @@ class ThinClient:
         }
 
     def heartbeat(self) -> dict[str, Any]:
+        manifest = self.capability_manifest()
         return {
             'schema': 'agentos.node-heartbeat/v0.1',
             'realm_id': self.identity.realm_id,
@@ -128,7 +136,8 @@ class ThinClient:
             'status': 'online',
             'observed_at': _utc_now(),
             'uptime_seconds': max(0, int(time.time() - datetime.fromisoformat(self.started_at.replace('Z', '+00:00')).timestamp())),
-            'capability_count': len(self.capability_manifest()['capabilities']),
+            'capability_count': len(manifest['capabilities']),
+            'surface_count': int((manifest.get('surface_inventory') or {}).get('surface_count') or 0),
         }
 
     def execute(self, task: dict[str, Any]) -> dict[str, Any]:
@@ -154,6 +163,8 @@ class ThinClient:
                 result = self._read_file(task)
             elif action == 'filesystem.write':
                 result = self._write_file(task)
+            elif action == 'agent.surface.inspect':
+                result = {'surface_inventory': self.surface_inventory()}
             elif action == 'desktop.session.inspect':
                 result = {'desktop': interactive_desktop.session_info()}
             elif action == 'desktop.windows.inspect':
