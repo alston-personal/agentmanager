@@ -78,6 +78,17 @@ class NodeRegistry:
     def record_heartbeat(self, heartbeat: dict[str, Any]) -> dict[str, Any]:
         if heartbeat.get('schema') != 'agentos.node-heartbeat/v0.1':
             raise ValueError('invalid heartbeat')
+
+        manifest = heartbeat.get('manifest')
+        if manifest is not None:
+            if not isinstance(manifest, dict):
+                raise ValueError('heartbeat manifest must be an object')
+            if str(manifest.get('node_id') or '') != str(heartbeat.get('node_id') or ''):
+                raise ValueError('heartbeat manifest node_id mismatch')
+            if str(manifest.get('realm_id') or '') != str(heartbeat.get('realm_id') or ''):
+                raise ValueError('heartbeat manifest realm_id mismatch')
+            self.register_manifest(manifest)
+
         data = self.load()
         node_id = str(heartbeat.get('node_id') or '')
         realm_id = str(heartbeat.get('realm_id') or '')
