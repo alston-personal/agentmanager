@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agentos_node import interactive_desktop
+from agentos_node.executor_bridge import describe_executor_bridge
 
 
 DESKTOP_CAPABILITIES = (
@@ -43,9 +44,10 @@ class ExecutorDescriptor:
 class ExecutorRegistry:
     """Discover runtime executors independently from the Node transport lifecycle.
 
-    The Node Runtime may stay online in a non-interactive service session while the
-    desktop executor is unavailable. Desktop capabilities are only advertised when
-    the current process is actually attached to the active interactive session.
+    A Node Runtime may stay online in a non-interactive service session while an
+    interactive desktop executor lives in another user-session process. Desktop
+    capabilities are advertised only when either the local process is interactive
+    or a fresh local executor bridge reports them available.
     """
 
     def __init__(
@@ -53,9 +55,37 @@ class ExecutorRegistry:
         *,
         platform_name: str | None = None,
         desktop_probe: Callable[[], dict[str, Any]] | None = None,
+        desktop_bridge_probe: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self.platform_name = platform_name or platform.system()
         self.desktop_probe = desktop_probe or interactive_desktop.session_info
+        self.desktop_bridge_probe = desktop_bridge_probe or (lambda: describe_executor_bridge('desktop'))
+
+    def _bridged_desktop(self) -> ExecutorDescriptor | None:
+        try:
+            bridge = self.desktop_bridge_probe()
+        except Exception:
+            return None
+        if not bridge or not bridge.get('ready'):
+            return None
+        advertised = {str(x) for x in (bridge.get('capabilities') or [])}
+        allowed = tuple(cap for cap in DESKTOP_CAPABILITIES if cap in advertised)
+        if not allowed:
+            return None
+        safe_details = {
+            'execution_mode': 'local_executor_bridge',
+            'heartbeat_age_seconds': bridge.get('heartbeat_age_seconds'),
+            'root': bridge.get('root'),
+            'security_boundary': bridge.get('security_boundary'),
+            'details': bridge.get('details'),
+        }
+        return ExecutorDescriptor(
+            executor_id='desktop',
+            kind='interactive-desktop-bridge',
+            status='available',
+            capabilities=allowed,
+            details=safe_details,
+        )
 
     def desktop(self) -> ExecutorDescriptor:
         if self.platform_name != 'Windows':
@@ -70,6 +100,9 @@ class ExecutorRegistry:
         try:
             info = dict(self.desktop_probe())
         except Exception as exc:
+            bridged = self._bridged_desktop()
+            if bridged:
+                return bridged
             return ExecutorDescriptor(
                 executor_id='desktop',
                 kind='interactive-desktop',
@@ -78,20 +111,23 @@ class ExecutorRegistry:
                 reason='probe_failed',
                 details={'error': f'{type(exc).__name__}: {exc}'},
             )
-        if not bool(info.get('interactive')):
+        if bool(info.get('interactive')):
             return ExecutorDescriptor(
                 executor_id='desktop',
                 kind='interactive-desktop',
-                status='unavailable',
-                capabilities=(),
-                reason='not_interactive_session',
-                details=info,
+                status='available',
+                capabilities=DESKTOP_CAPABILITIES,
+                details={'execution_mode': 'in_process', **info},
             )
+        bridged = self._bridged_desktop()
+        if bridged:
+            return bridged
         return ExecutorDescriptor(
             executor_id='desktop',
             kind='interactive-desktop',
-            status='available',
-            capabilities=DESKTOP_CAPABILITIES,
+            status='unavailable',
+            capabilities=(),
+            reason='not_interactive_session',
             details=info,
         )
 
