@@ -1,0 +1,99 @@
+name: Oracle Install LayoutLib Capability Gateway
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-install-layoutlib-capability-gateway.yml'
+      - 'agentos_node/capability_http.py'
+      - 'agentos_node/capability_store.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: layoutlib-capability-gateway-install
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and start user service
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=.agentos/evidence/layoutlib-capability-gateway-install.txt
+          mkdir -p .agentos/evidence
+          APP="$HOME/.local/share/agentos-capability-gateway"
+          STORE="$HOME/.local/share/agentos/capabilities"
+          UNIT="$HOME/.config/systemd/user/layoutlab-capability-gateway.service"
+          mkdir -p "$APP/agentos_node" "$STORE" "$(dirname "$UNIT")"
+          cp agentos_node/capability_http.py "$APP/agentos_node/capability_http.py"
+          cp agentos_node/capability_store.py "$APP/agentos_node/capability_store.py"
+          cat > "$APP/agentos_node/__init__.py" <<'PY'
+          """Deployed AgentOS capability gateway subset."""
+          PY
+          cat > "$UNIT" <<EOF
+          [Unit]
+          Description=AgentOS LayoutLib Capability Gateway
+          After=network.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory=$APP
+          Environment=PYTHONPATH=$APP
+          ExecStart=/usr/bin/python3 -m agentos_node.capability_http --host 127.0.0.1 --port 8767 --root $STORE
+          Restart=always
+          RestartSec=2
+          UMask=0077
+
+          [Install]
+          WantedBy=default.target
+          EOF
+          UID=$(id -u)
+          export XDG_RUNTIME_DIR="/run/user/$UID"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user daemon-reload
+          systemctl --user enable --now layoutlab-capability-gateway.service
+          for i in $(seq 1 20); do
+            code=$(curl -sS --max-time 2 -o /tmp/layoutlib-cap-health -w '%{http_code}' http://127.0.0.1:8767/healthz || true)
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          test "$code" = 200
+          cat > /tmp/layoutlib-exp.json <<'JSON'
+          {"experience":{"schema":"agentos.capability-experience/v1","experience_id":"exp-install-smoke-v1","capability_id":"layoutlib.profile-detection","node_id":"oracle-install-smoke","observation":{"profile_features":{"edge_density":0.2}},"policy_used":{"threshold":88,"min_wall_length_px":16},"outcome":{"accepted":true,"correction_cost":1.0,"quality":0.5},"provenance":{"source":"install-smoke"}}}
+          JSON
+          post=$(curl -sS --max-time 3 -o /tmp/layoutlib-exp-receipt -w '%{http_code}' -H 'Content-Type: application/json' --data-binary @/tmp/layoutlib-exp.json http://127.0.0.1:8767/capability/experience)
+          test "$post" = 202
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "service=layoutlab-capability-gateway.service"
+            echo "bind=127.0.0.1:8767"
+            echo "store=$STORE"
+            echo "health_http=$code"
+            echo "health_body=$(cat /tmp/layoutlib-cap-health)"
+            echo "ingest_http=$post"
+            echo "ingest_body=$(cat /tmp/layoutlib-exp-receipt)"
+            systemctl --user --no-pager --full status layoutlab-capability-gateway.service || true
+            echo 'local_capability_gateway=PASS'
+          } | tee "$OUT"
+      - name: Commit install evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .agentos/evidence/layoutlib-capability-gateway-install.txt /tmp/layoutlib-capability-gateway-install.txt 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/layoutlib-capability-gateway-install.txt .agentos/evidence/layoutlib-capability-gateway-install.txt 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-capability-gateway-install.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): capability gateway user service install'
+          git push origin HEAD:main
