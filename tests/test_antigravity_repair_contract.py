@@ -41,6 +41,20 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('Environment=AGENTOS_ANTIGRAVITY_PROVIDER=$PROVIDER', text)
         self.assertIn('antigravity_provider=$PROVIDER', text)
 
+    def test_repair_attests_runtime_source_provider_and_worker_digest(self):
+        text = _text(SCRIPT)
+        self.assertIn('MANIFEST="$RUNTIME/runtime-provenance.json"', text)
+        self.assertIn('WORKER_SHA256=$(sha256sum "$RUNTIME/agentos_node/antigravity_relay_worker.py"', text)
+        self.assertIn('"schema": "agentos.runtime-provenance/v1"', text)
+        self.assertIn('"source_ref": source_ref', text)
+        self.assertIn('"source_commit": source_commit', text)
+        self.assertIn('"provider": provider', text)
+        self.assertIn('"worker_sha256": worker_sha', text)
+        self.assertIn('Environment=AGENTOS_RUNTIME_SOURCE_REF=$SOURCE_REF', text)
+        self.assertIn('Environment=AGENTOS_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT', text)
+        self.assertIn('Environment=AGENTOS_RUNTIME_WORKER_SHA256=$WORKER_SHA256', text)
+        self.assertIn('antigravity_runtime_manifest=$MANIFEST', text)
+
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)
         self.assertIn('ensure_shared_dir()', text)
