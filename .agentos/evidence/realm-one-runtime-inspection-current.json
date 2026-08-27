@@ -1,23 +1,43 @@
 {
+  "benchmark_surface": {
+    "argv": [
+      "bash",
+      "-lc",
+      "curl -sS --max-time 3 -i -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark || true"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "HTTP/1.0 404 Not Found\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:06:33 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 35\nCache-Control: no-store\n\n{\"error\": \"not found\", \"ok\": false}"
+  },
+  "bootstrap_surface": {
+    "argv": [
+      "bash",
+      "-lc",
+      "curl -sS --max-time 3 -i 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750' || true"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "HTTP/1.0 404 Not Found\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:06:33 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 35\nCache-Control: no-store\n\n{\"error\": \"not found\", \"ok\": false}"
+  },
   "health_8780": {
     "argv": [
       "bash",
       "-lc",
-      "curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health || true"
+      "curl -sS --max-time 3 -i http://127.0.0.1:8780/v1/health || true"
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}"
+    "stdout": "HTTP/1.0 200 OK\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:06:33 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 77\nCache-Control: no-store\n\n{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}"
   },
   "listeners": {
     "argv": [
       "bash",
       "-lc",
-      "ss -ltnp 2>/dev/null | grep -E ':8780|:8766' || true"
+      "ss -ltnp 2>/dev/null | grep -E ':8780|:8766|:8767' || true"
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "LISTEN 0      5          127.0.0.1:8766       0.0.0.0:*    users:((\"python3\",pid=3335386,fd=3))     \nLISTEN 0      5          127.0.0.1:8780       0.0.0.0:*                                             \n"
+    "stdout": "LISTEN 0      5          127.0.0.1:8767       0.0.0.0:*    users:((\"python3\",pid=943327,fd=3))      \nLISTEN 0      5          127.0.0.1:8766       0.0.0.0:*    users:((\"python3\",pid=3335386,fd=3))     \nLISTEN 0      5          127.0.0.1:8780       0.0.0.0:*                                             \n"
   },
   "node_map": {
     "node_count": 1,
@@ -33,7 +53,7 @@
           "tool.presence"
         ],
         "first_seen_at": "2026-08-26T06:21:49Z",
-        "heartbeat_age_seconds": 68923,
+        "heartbeat_age_seconds": 69024,
         "heartbeat_stale_after_seconds": 30,
         "hostname": "VOPC5750",
         "last_heartbeat_at": "2026-08-26T07:56:09Z",
@@ -68,13 +88,23 @@
     "argv": [
       "bash",
       "-lc",
-      "ps -eo pid,user,args | grep -E 'agentos|realm_server|agentos-one' | grep -v grep || true"
+      "ps -eo pid,user,lstart,args | grep -E 'agent_core|realm_cli|realm_server|agentos-one|8780' | grep -v grep || true"
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": " 907317 root     /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\n 907319 ubuntu   sh -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\n 907321 ubuntu   /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay\n 936431 ubuntu   /usr/bin/python3 scripts/agentos_node_daemon.py\n 940013 agentos+ ssh-agent\n 943089 agentos+ ssh-agent\n 943327 agentos+ /usr/bin/python3 -m agentos_node.capability_http --host 127.0.0.1 --port 8767 --root /var/lib/agentos-capabilities\n 960900 ubuntu   /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/antigravity/bin/language_server_linux_arm --enable_lsp --csrf_token 6cb5e3d8-bff0-4084-8ed9-9c8915ea4752 --extension_server_port 44633 --extension_server_csrf_token f6437e10-cdbb-4764-bd54-e3dafb2eb9d7 --workspace_id file_home_ubuntu_agentmanager_agentos_code_workspace --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --subclient_type ide --app_data_dir antigravity-ide --parent_pipe_path /tmp/server_fe179c2fbd7177b4\n 963776 ubuntu   /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay\n 976515 agentos+ /home/agentos-node/runner/bin/Runner.Worker spawnclient 159 162\n 976711 agentos+ /usr/bin/bash --noprofile --norc -e -o pipefail /home/agentos-node/runner/_work/_temp/ff03d83e-2026-4407-aa8c-8d4a5fd19784.sh\n 976712 agentos+ python3 -\n 976717 agentos+ ps -eo pid,user,args\n2790389 agentos+ /bin/bash /home/agentos-node/runner/runsvc.sh\n2790392 agentos+ ./externals/node20/bin/node ./bin/RunnerService.js\n2790404 agentos+ /home/agentos-node/runner/bin/Runner.Listener run --startuptype service\n3335386 agentos+ /usr/bin/python3 /home/agentos-node/projects/layoutlib/web_demo/server.py --host 127.0.0.1 --port 8766\n3335408 agentos+ /home/agentos-node/.local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8766\n"
+    "stdout": " 907261 ubuntu   Thu Aug 27 09:58:39 2026 /usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780\n"
   },
-  "schema": "agentos.one-runtime-inspection/v0.1",
+  "schema": "agentos.one-runtime-inspection/v0.2",
+  "system_services": {
+    "argv": [
+      "bash",
+      "-lc",
+      "systemctl --no-pager --plain list-units --type=service 2>/dev/null | grep -E 'agentos|realm' || true"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": ""
+  },
   "user_services": {
     "argv": [
       "bash",
