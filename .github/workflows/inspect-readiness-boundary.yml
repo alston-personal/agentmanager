@@ -25,10 +25,13 @@ jobs:
           echo '=== spool ==='
           namei -l /home/ubuntu/agent-data/runtime/antigravity-relay || true
           find /home/ubuntu/agent-data/runtime/antigravity-relay -maxdepth 2 -printf '%M %u %g %p\n' 2>/dev/null | head -80 || true
+          echo '=== relay runtime ==='
+          namei -l /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py 2>/dev/null || true
+          stat -c '%A %U %G %a %n' /home/ubuntu/.local/share/agentos/runtime-vnext /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py 2>/dev/null || true
+          test -w /home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py && echo runtime_worker_write=YES || echo runtime_worker_write=NO
           echo '=== ACL tooling ==='
           command -v getfacl || true
           command -v setfacl || true
-          command -v getfacl >/dev/null && getfacl -p /home/ubuntu/agent-data/runtime/antigravity-relay /home/ubuntu/agent-data/runtime/antigravity-relay/inbox /home/ubuntu/agent-data/runtime/antigravity-relay/processing /home/ubuntu/agent-data/runtime/antigravity-relay/receipts || true
           echo '=== relay process ==='
           ps -eo pid,user,group,supgrp,args | grep antigravity_relay_worker | grep -v grep || true
           echo '=== action relay process ==='
@@ -36,8 +39,7 @@ jobs:
           echo '=== ONE process ==='
           ps -eo pid,user,group,supgrp,args | grep 'agent_core.realm_cli serve' | grep -v grep || true
           echo '=== ubuntu user unit files ==='
-          namei -l /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service 2>/dev/null || true
-          stat -c '%A %U %G %a %n' /home/ubuntu/.config /home/ubuntu/.config/systemd /home/ubuntu/.config/systemd/user /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service 2>/dev/null || true
+          stat -c '%A %U %G %a %n' /home/ubuntu/.config/systemd/user /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service 2>/dev/null || true
           cat /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service 2>/dev/null || true
           cat /home/ubuntu/.config/systemd/user/agentos-action-relay.service 2>/dev/null || true
           cat /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service 2>/dev/null || true
