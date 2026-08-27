@@ -20,6 +20,7 @@ on:
       - "tests/**"
       - ".github/workflows/distributed-agentos-*.yml"
       - ".github/workflows/deploy-agentos-core.yml"
+      - ".github/workflows/deploy-chatgpt-cloud-node.yml"
       - "pyproject.toml"
 
 permissions:
@@ -50,11 +51,14 @@ jobs:
         run: |
           bash -n scripts/install_systemd_user.sh
           bash -n scripts/install_distributed_systemd_user.sh
+          bash -n scripts/install_chatgpt_cloud_node.sh
           grep -q 'agentos-control-plane.service' scripts/install_distributed_systemd_user.sh
           grep -q 'agentos-provider-bridge.service' scripts/install_distributed_systemd_user.sh
           grep -q 'AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0' scripts/install_distributed_systemd_user.sh
           grep -q 'AGENTOS_PROVIDER_BRIDGE_ENABLED:-0' scripts/install_distributed_systemd_user.sh
           grep -q 'EnvironmentFile=-$SECRETS_FILE' scripts/install_distributed_systemd_user.sh
+          grep -q 'agentos-chatgpt-mcp.service' scripts/install_chatgpt_cloud_node.sh
+          grep -q 'AGENTOS_CHATGPT_CLIENT_TOKEN' scripts/install_chatgpt_cloud_node.sh
 
       - name: Validate Cloud-Core deploy workflow contract
         run: |
@@ -64,6 +68,9 @@ jobs:
           grep -q 'install_distributed_systemd_user.sh' .github/workflows/deploy-agentos-core.yml
           grep -q '127.0.0.1:8765/health' .github/workflows/deploy-agentos-core.yml
           grep -q 'isolated rollback' .github/workflows/deploy-agentos-core.yml
+          grep -q 'feature/distributed-agentos-runtime' .github/workflows/deploy-chatgpt-cloud-node.yml
+          grep -q 'install_chatgpt_cloud_node.sh' .github/workflows/deploy-chatgpt-cloud-node.yml
+          grep -q 'one_scoped_read=ok' .github/workflows/deploy-chatgpt-cloud-node.yml
 
       - name: Run deterministic AgentOS tests
         # test_platform_runtime.py launches a real recurring background runner and
