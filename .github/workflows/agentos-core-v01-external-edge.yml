@@ -1,0 +1,121 @@
+name: AgentOS Core v0.1 External Native Edge
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - '.github/workflows/agentos-core-v01-external-edge.yml'
+      - 'agentos_client/**'
+      - 'agent_core/client_auth.py'
+      - 'agent_core/distributed_gateway.py'
+      - 'scripts/issue_agentos_client_token.py'
+
+permissions:
+  contents: read
+
+jobs:
+  external-edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Resolve Oracle target
+        run: |
+          host="${DEPLOY_HOST_SOURCE#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Issue ephemeral scoped client token on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bootstrap=$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"; RELEASE_ROOT="$2"
+          set -a
+          source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          [ -n "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" ] || { echo 'NO_PUBLIC_URL'; exit 4; }
+          issued=$(cd "$RELEASE_ROOT" && PYTHONPATH=. python3 scripts/issue_agentos_client_token.py \
+            --subject 'ci:external-edge-proof' --label 'Core v0.1 external edge proof' --ttl-days 1)
+          printf '%s\n' "$AGENTOS_CONTROL_PLANE_PUBLIC_URL"
+          printf '%s\n' "$issued"
+          REMOTE
+          )
+          url=$(printf '%s\n' "$bootstrap" | sed -n '1p')
+          issued=$(printf '%s\n' "$bootstrap" | sed -n '2p')
+          token=$(ISSUED="$issued" python -c 'import json,os; print(json.loads(os.environ["ISSUED"])["token"])')
+          echo "::add-mask::$token"
+          echo "::add-mask::$url"
+          echo "AGENTOS_EDGE_URL=$url" >> "$GITHUB_ENV"
+          echo "AGENTOS_EDGE_TOKEN=$token" >> "$GITHUB_ENV"
+          echo 'ephemeral_client_token=issued'
+      - name: Prove runner to public Core to Oracle node path
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import os, time
+          from agentos_client import AgentOSClient
+
+          client=AgentOSClient(os.environ['AGENTOS_EDGE_URL'], token=os.environ['AGENTOS_EDGE_TOKEN'], timeout=20)
+          health=client.health()
+          assert health['status']=='ok' and health['protocol']=='agentos.core/v0.1', health
+          attached=client.attach('leopardcat-tarot', agent={'type':'github-runner-external-client','purpose':'network-proof'})
+          task=client.submit_task(
+              goal='inspect live repository over public AgentOS protocol',
+              capability='agentos.project.inspect',
+              payload={'proof':'external-native-edge'},
+          )
+          task_id=task['task']['taskId']
+          receipt=None
+          for _ in range(40):
+              receipt=client.get_receipt(task_id)
+              if receipt['terminal']:
+                  break
+              time.sleep(.5)
+          assert receipt and receipt['status']=='succeeded', receipt
+          assert receipt['executor']=='oracle-core-node', receipt
+          evidence=receipt['evidence']
+          assert evidence['project_id']=='leopardcat-tarot'
+          assert len(evidence['head'])==40
+          print('external_core_health=passed')
+          print('external_attach=passed')
+          print('external_task_submit=passed')
+          print('external_oracle_receipt=passed')
+          print('external_native_head='+evidence['head'])
+          PY
+      - name: Revoke ephemeral client token
+        if: always() && env.AGENTOS_EDGE_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$AGENTOS_EDGE_TOKEN" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"; RELEASE_ROOT="$2"; TOKEN="$3"
+          set -a
+          source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          cd "$RELEASE_ROOT"
+          PYTHONPATH=. python3 - "$TOKEN" <<'PY'
+          import sys
+          from agent_core.client_auth import ClientTokenStore
+          from agent_core.distributed_control_plane import DistributedControlPlane
+          store=ClientTokenStore(DistributedControlPlane())
+          assert store.revoke(sys.argv[1]) is True
+          print('ephemeral_client_token=revoked')
+          PY
+          REMOTE
