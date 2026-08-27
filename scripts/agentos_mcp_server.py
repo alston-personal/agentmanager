@@ -15,7 +15,7 @@ import os
 from mcp.server.mcpserver import MCPServer
 
 from agentos_node.control_plane_client import ControlPlaneClient
-from agentos_node.mcp_read_tools import get_project_state, get_task, resume_project
+from agentos_node.mcp_read_tools import get_project_state, get_task, resolve_active_project, resume_project
 
 
 CONTROL_PLANE_URL = os.environ.get("AGENTOS_CONTROL_PLANE_URL", "").strip()
@@ -36,10 +36,25 @@ mcp = MCPServer(
     "LeopardCat AgentOS",
     instructions=(
         "AgentOS is authoritative for existing work. For continuation requests, "
-        "call agentos_resume before using conversational memory. This ChatGPT node "
-        "is account-scoped and must behave identically across devices."
+        "first call agentos_resolve_active when the project id is not already known, "
+        "then call agentos_resume before using conversational memory. This ChatGPT "
+        "node is account-scoped and must behave identically across devices."
     ),
 )
+
+
+@mcp.tool()
+def agentos_resolve_active(hint: str = "") -> dict:
+    """Resolve which existing AgentOS project should be resumed.
+
+    Use this before agentos_resume when the user says continue/resume/繼續 and the
+    current conversation does not already contain an authoritative project id.
+    The result is derived from ONE's canonical task ledger and is filtered by this
+    app principal's project scope. Pass a short user hint such as '3D layoutlib'
+    when available; pass an empty string for bare continuation intent.
+    """
+
+    return resolve_active_project(client, hint=hint or None)
 
 
 @mcp.tool()
