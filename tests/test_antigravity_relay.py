@@ -1,9 +1,13 @@
 import json
+import os
+
+import pytest
 
 from agentos_node.antigravity_relay import (
     AntigravityRelayClient,
     RELAY_SCHEMA,
     capsule_digest,
+    share_relay_path,
     verify_capsule_digest,
 )
 from agentos_node.antigravity_relay_worker import build_prompt
@@ -90,3 +94,29 @@ def test_weak_executor_prompt_uses_durable_context_not_prior_chat():
 def test_missing_receipt_returns_none(tmp_path):
     client = AntigravityRelayClient(tmp_path / "relay")
     assert client.receipt("relay-does-not-exist") is None
+
+
+def test_share_relay_path_skips_redundant_chown_when_gid_already_shared(tmp_path, monkeypatch):
+    artifact = tmp_path / "receipt.tmp"
+    artifact.write_text("ok", encoding="utf-8")
+    monkeypatch.setattr("agentos_node.antigravity_relay._shared_gid", lambda: os.stat(artifact).st_gid)
+
+    def forbidden_chown(*args, **kwargs):
+        raise AssertionError("chown must not run when the setgid directory already supplied the shared gid")
+
+    monkeypatch.setattr("agentos_node.antigravity_relay.os.chown", forbidden_chown)
+    share_relay_path(artifact)
+    assert artifact.stat().st_mode & 0o777 == 0o660
+
+
+def test_share_relay_path_fails_closed_if_group_is_wrong_and_cannot_be_changed(tmp_path, monkeypatch):
+    artifact = tmp_path / "foreign.tmp"
+    artifact.write_text("blocked", encoding="utf-8")
+    monkeypatch.setattr("agentos_node.antigravity_relay._shared_gid", lambda: os.stat(artifact).st_gid + 1)
+
+    def denied_chown(*args, **kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("agentos_node.antigravity_relay.os.chown", denied_chown)
+    with pytest.raises(PermissionError, match="setgid agentos relay directory"):
+        share_relay_path(artifact)
