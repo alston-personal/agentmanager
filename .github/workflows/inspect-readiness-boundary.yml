@@ -32,25 +32,26 @@ jobs:
           echo one_benchmark_route=PASS
           ps -eo pid,user,group,supgrp,args | grep antigravity_relay_worker | grep -v grep
 
-      - name: Probe headless executor providers
+      - name: Verify executor isolation boundary
         shell: bash
         run: |
-          set +e
-          echo '=== embedded claude ==='
-          CLAUDE=$(find /home/ubuntu/.antigravity-ide-server/extensions -path '*/resources/native-binary/claude' -type f | sort -V | tail -1)
-          echo "claude=$CLAUDE"
-          timeout 10s "$CLAUDE" --version
-          echo "claude_version_exit=$?"
-          timeout 20s "$CLAUDE" --print --output-format text --effort low --no-session-persistence --dangerously-skip-permissions 'Return exactly AGENTOS_CLAUDE_SMOKE_PASS'
-          echo "claude_model_exit=$?"
+          set -euo pipefail
+          if find /home/ubuntu/.antigravity-ide-server/extensions -path '*/resources/native-binary/claude' -type f >/tmp/claude-paths 2>/tmp/claude-find-error; then
+            echo direct_embedded_claude_visibility=VISIBLE
+            cat /tmp/claude-paths
+          else
+            echo direct_embedded_claude_visibility=ISOLATED
+            cat /tmp/claude-find-error
+          fi
+          if command -v agy >/tmp/agy-path 2>/dev/null; then
+            echo direct_agy_visibility=VISIBLE
+            cat /tmp/agy-path
+          else
+            echo direct_agy_visibility=ISOLATED
+          fi
+          echo 'Direct provider visibility is diagnostic only; governed execution must cross the ubuntu relay boundary.'
 
-          echo '=== agy ==='
-          command -v agy || true
-          timeout 30s agy run --task 'Return exactly AGENTOS_AGY_SMOKE_PASS' --workspace /home/ubuntu/agentmanager
-          echo "agy_exit=$?"
-          set -e
-
-      - name: Verify cross-user relay transport only
+      - name: Verify cross-user relay end-to-end
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -59,35 +60,44 @@ jobs:
           python3 - <<'PY'
           import json, time
           from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          expected = 'AGENTOS_RELAY_E2E_PASS'
           client = AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
           capsule = client.submit(
-              project_id='realm-readiness-transport-smoke',
-              canonical_ir={'goal':'Prove cross-user relay transport and receipt production.'},
-              instruction='Return exactly AGENTOS_RELAY_TRANSPORT_PASS. Do not modify state.',
+              project_id='realm-readiness-e2e-smoke',
+              canonical_ir={'goal':'Prove governed cross-user relay execution and receipt production.'},
+              instruction=f'Return exactly {expected}. Do not modify state.',
               workspace='/home/ubuntu/agentmanager',
           )
-          cid=capsule['capsule_id']
-          print('capsule_id='+cid)
+          cid = capsule['capsule_id']
+          print('capsule_id=' + cid)
           for _ in range(115):
-              receipt=client.receipt(cid)
+              receipt = client.receipt(cid)
               if receipt:
                   print(json.dumps(receipt, indent=2, ensure_ascii=False))
-                  encoded=json.dumps(receipt, ensure_ascii=False)
+                  encoded = json.dumps(receipt, ensure_ascii=False)
                   if 'PermissionError' in encoded or 'Permission denied' in encoded:
                       raise SystemExit('cross-user permission regression')
-                  print('cross_user_transport_receipt=PASS')
+                  if not receipt.get('ok'):
+                      raise SystemExit('relay executor did not complete successfully')
+                  if expected not in str(receipt.get('stdout') or ''):
+                      raise SystemExit('relay executor returned no expected model result')
+                  print('cross_user_relay_e2e=PASS')
                   raise SystemExit(0)
               time.sleep(2)
-          raise SystemExit('transport receipt timeout')
+          raise SystemExit('relay receipt timeout')
           PY
 
-      - name: Inspect first-node registry freshness
+      - name: Verify first-node heartbeat freshness
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json
+          from datetime import datetime, timezone
           from pathlib import Path
+
+          stale_after = 30.0
           path = Path('/home/ubuntu/agent-data/realm/nodes.json')
           data = json.loads(path.read_text(encoding='utf-8'))
           nodes = data.get('nodes') or {}
@@ -97,7 +107,21 @@ jobs:
           print(json.dumps({'vopc5750': node}, indent=2, ensure_ascii=False))
           if not node:
               raise SystemExit('vopc5750 missing from registry')
-          print('vopc_reported_status=' + str(node.get('reported_status') or node.get('status')))
-          print('vopc_effective_status=' + str(node.get('effective_status') or node.get('status')))
-          print('vopc_last_heartbeat=' + str(node.get('last_heartbeat_at') or node.get('last_heartbeat')))
+
+          raw = node.get('last_heartbeat_at') or node.get('last_heartbeat')
+          if not raw:
+              raise SystemExit('vopc5750 heartbeat missing')
+          heartbeat = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+          age = (datetime.now(timezone.utc) - heartbeat).total_seconds()
+          reported = node.get('reported_status') or node.get('status')
+          effective = 'online' if reported == 'online' and age <= stale_after else 'offline'
+          reason = 'fresh_heartbeat' if effective == 'online' else 'heartbeat_stale'
+          print('vopc_reported_status=' + str(reported))
+          print('vopc_effective_status=' + effective)
+          print('vopc_status_reason=' + reason)
+          print(f'vopc_heartbeat_age_seconds={age:.1f}')
+          print('vopc_last_heartbeat=' + str(raw))
+          if effective != 'online':
+              raise SystemExit('vopc5750 heartbeat is stale')
+          print('vopc_heartbeat_freshness=PASS')
           PY
