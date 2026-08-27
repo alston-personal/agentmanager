@@ -9,6 +9,7 @@ DIST_ENV_FILE="${AGENTOS_DISTRIBUTED_ENV_FILE:-$HOME/.config/agentos/distributed
 SECRETS_FILE="${AGENTOS_SECRETS_FILE:-$HOME/.agentos.secrets}"
 USER_SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 PROJECT_PATHS_FILE="${AGENTOS_PROJECT_PATHS_FILE:-$HOME/.config/agentos/project-paths.json}"
+PROJECT_TESTS_FILE="${AGENTOS_PROJECT_TESTS_FILE:-$HOME/.config/agentos/project-tests.json}"
 
 [ -f "$ENV_FILE" ] || { echo "Missing base AgentOS env: $ENV_FILE" >&2; exit 2; }
 [ -f "$DIST_ENV_FILE" ] || { echo "Missing Distributed AgentOS env: $DIST_ENV_FILE" >&2; exit 2; }
@@ -27,20 +28,46 @@ PYTHON_BIN="${AGENTOS_DISTRIBUTED_PYTHON:-}"
 if [ -z "$PYTHON_BIN" ] && [ -x "$LOGIC_ROOT/.venv/bin/python3" ]; then PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"; fi
 if [ -z "$PYTHON_BIN" ]; then PYTHON_BIN="$(command -v python3)"; fi
 [ -x "$PYTHON_BIN" ] || { echo "No usable Python interpreter found" >&2; exit 2; }
-mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs" "$(dirname "$PROJECT_PATHS_FILE")"
+mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs" "$(dirname "$PROJECT_PATHS_FILE")" "$(dirname "$PROJECT_TESTS_FILE")"
 
 # Native execution is allowlisted by project id. Never accept arbitrary paths from task payloads.
-if [ ! -f "$PROJECT_PATHS_FILE" ]; then
-  "$PYTHON_BIN" - "$PROJECT_PATHS_FILE" "$CONFIG_ROOT" <<'PY'
+# Merge managed entries rather than replacing administrator-defined project mappings.
+"$PYTHON_BIN" - "$PROJECT_PATHS_FILE" "$CONFIG_ROOT" "$LOGIC_ROOT" <<'PY'
 import json, pathlib, sys
-out=pathlib.Path(sys.argv[1]); config=pathlib.Path(sys.argv[2]).resolve()
-value={"agentmanager": str(config)}
+out=pathlib.Path(sys.argv[1]); config=pathlib.Path(sys.argv[2]).resolve(); logic=pathlib.Path(sys.argv[3]).resolve()
+try:
+    value=json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+except (OSError, json.JSONDecodeError):
+    value={}
+if not isinstance(value, dict): value={}
+value["agentmanager"]=str(config)
+value["agentos-core"]=str(logic)
 leopard=pathlib.Path.home()/"leopardcat-tarot"
 if (leopard/".git").exists(): value["leopardcat-tarot"]=str(leopard.resolve())
 out.write_text(json.dumps(value, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
 PY
-  chmod 600 "$PROJECT_PATHS_FILE"
-fi
+chmod 600 "$PROJECT_PATHS_FILE"
+
+# Native test tasks select only a profile name. The command itself lives in this
+# local administrator-controlled registry and cannot be supplied by an Agent task.
+"$PYTHON_BIN" - "$PROJECT_TESTS_FILE" "$PYTHON_BIN" <<'PY'
+import json, pathlib, sys
+out=pathlib.Path(sys.argv[1]); python_bin=sys.argv[2]
+try:
+    value=json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+except (OSError, json.JSONDecodeError):
+    value={}
+if not isinstance(value, dict): value={}
+profiles=value.get("agentos-core")
+if not isinstance(profiles, dict): profiles={}
+profiles["core-v01"]={
+    "argv": [python_bin, "-m", "pytest", "-q", "tests/test_agentos_core_v01.py"],
+    "timeout_seconds": 180,
+}
+value["agentos-core"]=profiles
+out.write_text(json.dumps(value, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+PY
+chmod 600 "$PROJECT_TESTS_FILE"
 
 cat > "$USER_SYSTEMD_DIR/agentos-control-plane.service" <<EOF
 [Unit]
@@ -80,6 +107,7 @@ Environment=PYTHONPATH=$LOGIC_ROOT
 Environment=AGENTOS_CONTROL_PLANE_URL=http://127.0.0.1:8765
 Environment=AGENTOS_RUNTIME_ID=oracle-core-node
 Environment=AGENTOS_PROJECT_PATHS_FILE=$PROJECT_PATHS_FILE
+Environment=AGENTOS_PROJECT_TESTS_FILE=$PROJECT_TESTS_FILE
 EnvironmentFile=-$ENV_FILE
 EnvironmentFile=-$DIST_ENV_FILE
 EnvironmentFile=-$SECRETS_FILE
@@ -138,4 +166,5 @@ echo "Installed isolated Distributed AgentOS services from $LOGIC_ROOT"
 echo "Python: $PYTHON_BIN"
 echo "Native node: oracle-core-node"
 echo "Native project registry: $PROJECT_PATHS_FILE"
+echo "Native test registry: $PROJECT_TESTS_FILE"
 echo "Data logs: $DATA_ROOT/logs"
