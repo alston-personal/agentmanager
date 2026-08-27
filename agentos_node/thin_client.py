@@ -14,6 +14,7 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.session_bridge import FileSessionBridge
 
 
 def _utc_now() -> str:
@@ -100,12 +101,8 @@ class ThinClient:
             caps.append('filesystem.write')
         if platform.system() == 'Windows':
             caps.extend([
-                'desktop.session.inspect',
-                'desktop.windows.inspect',
-                'desktop.screenshot',
-                'desktop.open_url',
-                'desktop.mouse',
-                'desktop.keyboard',
+                'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
+                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
             ])
         return {
             'schema': 'agentos.node-manifest/v0.1',
@@ -141,6 +138,12 @@ class ThinClient:
             'manifest': manifest,
         }
 
+    def _session_bridge(self, task: dict[str, Any]) -> FileSessionBridge:
+        provider = str(task.get('provider') or '').strip()
+        if not provider:
+            raise ValueError('provider is required for session bridge action')
+        return FileSessionBridge.from_environment(provider)
+
     def execute(self, task: dict[str, Any]) -> dict[str, Any]:
         started = _utc_now()
         receipt: dict[str, Any] = {
@@ -166,6 +169,27 @@ class ThinClient:
                 result = self._write_file(task)
             elif action == 'agent.surface.inspect':
                 result = {'surface_inventory': self.surface_inventory()}
+            elif action == 'agent.session.discover':
+                result = {'session_index': self._session_bridge(task).discover()}
+            elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
+                op = {
+                    'agent.session.attach': 'attach',
+                    'agent.session.inspect': 'snapshot',
+                    'agent.context.harvest': 'harvest',
+                    'agent.context.inject': 'inject',
+                    'agent.session.handoff': 'handoff',
+                }[str(action)]
+                request = self._session_bridge(task).request(
+                    op,
+                    session_id=str(task.get('session_id') or '') or None,
+                    payload=dict(task.get('payload') or {}),
+                )
+                result = {'session_request': request}
+            elif action == 'agent.session.receipt':
+                request_id = str(task.get('request_id') or '')
+                if not request_id:
+                    raise ValueError('request_id is required')
+                result = {'session_receipt': self._session_bridge(task).receipt(request_id)}
             elif action == 'desktop.session.inspect':
                 result = {'desktop': interactive_desktop.session_info()}
             elif action == 'desktop.windows.inspect':
