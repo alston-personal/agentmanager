@@ -1,0 +1,28 @@
+name: AgentOS Readiness Repair Contract
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'tests/test_antigravity_repair_contract.py'
+      - '.github/workflows/readiness-repair-contract.yml'
+  pull_request:
+    paths:
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'tests/test_antigravity_repair_contract.py'
+      - '.github/workflows/readiness-repair-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repair script syntax
+        run: bash -n scripts/repair_antigravity_relay_user.sh
+      - name: Validate repair governance contract
+        run: python3 -m pytest -q tests/test_antigravity_repair_contract.py
