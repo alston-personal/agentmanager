@@ -48,7 +48,11 @@ jobs:
           set +a
           [ -n "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" ] || { echo 'NO_PUBLIC_URL'; exit 4; }
           issued=$(cd "$RELEASE_ROOT" && PYTHONPATH=. python3 scripts/issue_agentos_client_token.py \
-            --subject 'ci:external-edge-proof' --label 'Core v0.1 external edge proof' --ttl-days 1)
+            --subject 'ci:external-edge-proof' \
+            --label 'Core v0.1 external edge proof' \
+            --ttl-days 1 \
+            --project leopardcat-tarot \
+            --capability agentos.project.inspect)
           printf '%s\n' "$AGENTOS_CONTROL_PLANE_PUBLIC_URL"
           printf '%s\n' "$issued"
           REMOTE
@@ -90,10 +94,30 @@ jobs:
           evidence=receipt['evidence']
           assert evidence['project_id']=='leopardcat-tarot'
           assert len(evidence['head'])==40
+
+          # Same token must not cross project or capability resource boundaries.
+          try:
+              client.attach('agentmanager')
+              raise AssertionError('cross-project attach unexpectedly allowed')
+          except RuntimeError as exc:
+              assert 'HTTP 403' in str(exc)
+          try:
+              client.submit_task(
+                  project_id='leopardcat-tarot',
+                  goal='forbidden capability proof',
+                  capability='agentos.ir.validate',
+                  payload={},
+              )
+              raise AssertionError('cross-capability submit unexpectedly allowed')
+          except RuntimeError as exc:
+              assert 'HTTP 403' in str(exc)
+
           print('external_core_health=passed')
           print('external_attach=passed')
           print('external_task_submit=passed')
           print('external_oracle_receipt=passed')
+          print('external_project_scope=passed')
+          print('external_capability_scope=passed')
           print('external_native_head='+evidence['head'])
           PY
       - name: Revoke ephemeral client token
