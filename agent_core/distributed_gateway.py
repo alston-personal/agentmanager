@@ -13,6 +13,7 @@ from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
 from .client_auth import ClientPrincipal, ClientTokenStore
+from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 
@@ -39,17 +40,21 @@ class DistributedGatewayService:
         agent = body.get("agent") or {}
         if not isinstance(agent, dict):
             raise ValueError("agent must be an object")
+        state = read_project_state(self.store, project_id)
+        execution_context = compile_execution_context(project_id, state, agent=agent)
         return {
             "protocol": CORE_PROTOCOL,
             "session_id": f"aos_{uuid.uuid4().hex}",
             "project_id": project_id,
             "agent": agent,
-            "state": read_project_state(self.store, project_id),
+            "state": state,
+            "execution_context": execution_context,
             "capabilities": {
                 "state.read": True,
                 "task.submit": True,
                 "task.read": True,
                 "receipt.read": True,
+                "context.compile": True,
                 "production.deploy": "gated",
             },
         }
