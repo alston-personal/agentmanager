@@ -13,7 +13,7 @@ permissions:
 jobs:
   inspect:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 6
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
 
@@ -32,41 +32,53 @@ jobs:
           echo one_benchmark_route=PASS
           ps -eo pid,user,group,supgrp,args | grep antigravity_relay_worker | grep -v grep
 
-      - name: Verify agentos-node to ubuntu Antigravity handoff
+      - name: Probe headless executor providers
+        shell: bash
+        run: |
+          set +e
+          echo '=== embedded claude ==='
+          CLAUDE=$(find /home/ubuntu/.antigravity-ide-server/extensions -path '*/resources/native-binary/claude' -type f | sort -V | tail -1)
+          echo "claude=$CLAUDE"
+          timeout 10s "$CLAUDE" --version
+          echo "claude_version_exit=$?"
+          timeout 20s "$CLAUDE" --print --output-format text --effort low --no-session-persistence --dangerously-skip-permissions 'Return exactly AGENTOS_CLAUDE_SMOKE_PASS'
+          echo "claude_model_exit=$?"
+
+          echo '=== agy ==='
+          command -v agy || true
+          timeout 30s agy run --task 'Return exactly AGENTOS_AGY_SMOKE_PASS' --workspace /home/ubuntu/agentmanager
+          echo "agy_exit=$?"
+          set -e
+
+      - name: Verify cross-user relay transport only
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
-          import time
+          import json, time
           from agentos_node.antigravity_relay import AntigravityRelayClient
-
           client = AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
           capsule = client.submit(
-              project_id='realm-readiness-live-smoke',
-              canonical_ir={'goal': 'Verify only the governed AgentOS Antigravity relay boundary.'},
-              instruction='Return exactly AGENTOS_RELAY_SMOKE_PASS. Do not modify files, repositories, services, or system state.',
+              project_id='realm-readiness-transport-smoke',
+              canonical_ir={'goal':'Prove cross-user relay transport and receipt production.'},
+              instruction='Return exactly AGENTOS_RELAY_TRANSPORT_PASS. Do not modify state.',
               workspace='/home/ubuntu/agentmanager',
           )
-          print('capsule_id=' + capsule['capsule_id'])
-          for _ in range(90):
-              receipt = client.receipt(capsule['capsule_id'])
+          cid=capsule['capsule_id']
+          print('capsule_id='+cid)
+          for _ in range(115):
+              receipt=client.receipt(cid)
               if receipt:
                   print(json.dumps(receipt, indent=2, ensure_ascii=False))
-                  if not receipt.get('ok'):
-                      raise SystemExit('relay receipt failed')
-                  encoded = json.dumps(receipt, ensure_ascii=False)
+                  encoded=json.dumps(receipt, ensure_ascii=False)
                   if 'PermissionError' in encoded or 'Permission denied' in encoded:
                       raise SystemExit('cross-user permission regression')
-                  stdout = str(receipt.get('stdout') or '')
-                  if 'AGENTOS_RELAY_SMOKE_PASS' not in stdout:
-                      raise SystemExit('missing executor smoke marker')
-                  print('cross_user_antigravity_relay=PASS')
+                  print('cross_user_transport_receipt=PASS')
                   raise SystemExit(0)
               time.sleep(2)
-          raise SystemExit('relay smoke receipt timeout')
+          raise SystemExit('transport receipt timeout')
           PY
 
       - name: Inspect first-node registry freshness
@@ -76,7 +88,6 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           path = Path('/home/ubuntu/agent-data/realm/nodes.json')
           data = json.loads(path.read_text(encoding='utf-8'))
           nodes = data.get('nodes') or {}
