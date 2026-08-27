@@ -29,24 +29,37 @@ def test_task_is_read_only_passthrough():
     assert client.task_calls == ["task-123"]
 
 
-def test_resume_delegates_to_chatgpt_bootstrap(monkeypatch):
+def test_resume_delegates_to_account_scoped_chatgpt_bootstrap(monkeypatch):
     class Packet:
         def to_dict(self):
             return {"protocol": "agentos.chatgpt-web-bootstrap/v1", "project_id": "layout-3d"}
 
     seen = {}
 
-    def fake_bootstrap(client, project_id, *, runtime_id):
-        seen.update(client=client, project_id=project_id, runtime_id=runtime_id)
+    def fake_bootstrap(client, project_id, *, runtime_id, principal_id=None, transport="mcp"):
+        seen.update(
+            client=client,
+            project_id=project_id,
+            runtime_id=runtime_id,
+            principal_id=principal_id,
+            transport=transport,
+        )
         return Packet()
 
     monkeypatch.setattr(mcp_read_tools, "bootstrap_chatgpt_web", fake_bootstrap)
     client = object()
-    result = mcp_read_tools.resume_project(client, "layout-3d", runtime_id="chatgpt-web:test")
+    result = mcp_read_tools.resume_project(
+        client,
+        "layout-3d",
+        runtime_id="chatgpt-web:test",
+        principal_id="acct-test",
+    )
 
     assert result["protocol"] == "agentos.chatgpt-web-bootstrap/v1"
     assert seen == {
         "client": client,
         "project_id": "layout-3d",
         "runtime_id": "chatgpt-web:test",
+        "principal_id": "acct-test",
+        "transport": "mcp",
     }
