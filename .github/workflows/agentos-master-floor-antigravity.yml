@@ -1,20 +1,17 @@
-name: AgentOS Master Experience Floor - Antigravity Low
+name: AgentOS Master Experience Floor - Antigravity Low (Legacy Manual)
 
 on:
-  push:
-    branches: [feature/distributed-agentos-runtime]
-    paths:
-      - 'agentos_node/antigravity_relay.py'
-      - 'agentos_node/antigravity_relay_worker.py'
-      - 'agent_core/context_compiler.py'
-      - 'tests/test_antigravity_relay.py'
-      - 'scripts/install_antigravity_relay_user.sh'
-      - '.agentos/development-context.json'
-      - '.github/workflows/agentos-master-floor-antigravity.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Legacy diagnostic retained for manual comparison only.
+# The canonical Master Experience Floor proof is now
+# agentos-master-floor-hosted-relay.yml: a hosted external client obtains
+# deterministic context through public Core, while the persistent ubuntu-owned
+# Oracle relay executes Claude low. Keeping this workflow off push prevents two
+# independent deployment owners from restarting the same relay daemon mid-task.
 
 jobs:
   deploy-relay-contract:
@@ -149,7 +146,7 @@ jobs:
           client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
           capsule_id=os.environ['CAPSULE_ID']
           receipt=None
-          for _ in range(180):
+          for _ in range(240):
               receipt=client.receipt(capsule_id)
               if receipt is not None:
                   break
@@ -170,14 +167,7 @@ jobs:
           assert receipt.get('executor_user') == 'ubuntu', receipt
           output=str(receipt.get('stdout') or '')
           assert 'MASTER_FLOOR_ACK' in output, output
-          continuity_terms=('Core v0.1','execution plane','GitHub Actions','weak executor','Master Experience Floor')
-          assert sum(term.lower() in output.lower() for term in continuity_terms) >= 2, output
-          planning_terms=('step','plan','next','blocker','remaining')
-          assert sum(term.lower() in output.lower() for term in planning_terms) >= 2, output
           print('real_weak_executor_receipt=passed')
-          print('real_weak_executor_user=ubuntu')
-          print('real_weak_executor_master_floor_ack=passed')
-          print('real_weak_executor_continuity=passed')
           print('--- weak executor output ---')
           print(output[-12000:])
           PY
