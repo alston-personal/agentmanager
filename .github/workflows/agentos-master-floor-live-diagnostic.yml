@@ -53,21 +53,25 @@ jobs:
           import json
           from pathlib import Path
           root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay/receipts')
-          for p in sorted(root.glob('relay-*.json'), key=lambda x:x.stat().st_mtime)[-5:]:
+          target='relay-097c6975348e42a5aec4dbab12917fdb.json'
+          for p in sorted(root.glob('relay-*.json'), key=lambda x:x.stat().st_mtime)[-8:]:
               try:
                   d=json.loads(p.read_text(encoding='utf-8'))
                   print({
                       'file':p.name,
+                      'is_target':p.name == target,
                       'ok':d.get('ok'),
                       'returncode':d.get('returncode'),
                       'executor_user':d.get('executor_user'),
                       'error':d.get('error'),
                       'completed_at':d.get('completed_at'),
                       'stdout_bytes':len(str(d.get('stdout') or '').encode()),
+                      'stdout_tail':str(d.get('stdout') or '')[-1200:] if p.name == target else None,
                   })
               except Exception as exc:
                   print({'file':p.name,'error':str(exc)})
+          print('target_receipt_exists=' + str((root/target).exists()).lower())
           PY
           echo '--- relay service journal (bounded tail) ---'
-          journalctl --user -u agentos-antigravity-relay.service --no-pager -n 80 || true
+          journalctl --user -u agentos-antigravity-relay.service --no-pager -n 100 || true
           REMOTE
