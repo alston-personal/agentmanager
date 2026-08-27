@@ -59,6 +59,41 @@ L.replayEdits=(base,edits=[])=>{
   }
   return out;
 };
+
+/*
+ * Production bug fixed in v0.7.3:
+ * the v0.6 selection hotfix selected walls from displayIr(), but its delete
+ * button deleted from currentIr. While a Draft/preview was displayed those
+ * are different documents, so the selected wall ids were absent from
+ * currentIr and the click was a silent no-op. Deletion must operate on the
+ * exact IR the user is looking at, then commit that result as currentIr.
+ */
+function bindDisplayedIrDelete(){
+  const button=document.getElementById('deleteSelected');
+  if(!button||typeof displayIr!=='function')return false;
+  button.onclick=()=>{
+    const shown=displayIr();
+    if(!shown||!sel?.size)return;
+    const before=(shown.walls||[]).length;
+    const next=L.deleteWallsById(shown,[...sel]);
+    const after=(next.walls||[]).length;
+    if(after>=before){
+      status.textContent='刪除失敗：選取牆未能對應目前顯示的 Spatial IR。';
+      return;
+    }
+    saveHistory();
+    // A user edit is a commit boundary: stop rendering an older Draft over it.
+    previewIr=null;
+    detectionDirty=false;
+    applyIr(next);
+    sel.clear();
+    button.disabled=true;
+    status.textContent=`已刪除 ${before-after} 面牆。`;
+    render2d();
+  };
+  return true;
+}
+
 function labelV07(){
   const sub=document.querySelector('header .sub');
   if(sub)sub.textContent='Layout Lab v0.7：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。';
@@ -69,5 +104,6 @@ function labelV07(){
   });
 }
 labelV07();
-window.LayoutLabV07Release={version:'0.7.2',robustDelete:true,labelV07};
+bindDisplayedIrDelete();
+window.LayoutLabV07Release={version:'0.7.3',robustDelete:true,displayedIrDelete:true,labelV07,bindDisplayedIrDelete};
 })();
