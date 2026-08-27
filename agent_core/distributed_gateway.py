@@ -115,11 +115,15 @@ class DistributedGatewayService:
     def get_receipt(self, task_id: str) -> dict[str, Any]:
         task = self.store.get_task(task_id)
         status = str(task.get("status") or "")
+        persisted = task.get("result") if isinstance(task.get("result"), dict) else {}
+        evidence = persisted.get("result") if isinstance(persisted.get("result"), dict) else None
         return {
             "protocol": "agentos.receipt/v0.1",
             "task_id": task_id,
             "terminal": status in {"succeeded", "failed", "cancelled", "expired"},
             "status": status,
+            "executor": persisted.get("runtime_id"),
+            "evidence": evidence,
             "task": task,
         }
 
