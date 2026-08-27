@@ -18,10 +18,12 @@ import time
 from typing import Any, Sequence
 
 from .antigravity_relay import (
+    EXECUTION_CONTEXT_SCHEMA,
     RELAY_SCHEMA,
     RECEIPT_SCHEMA,
     RelayPaths,
     share_relay_path,
+    verify_capsule_digest,
 )
 
 
@@ -52,19 +54,36 @@ def discover_executor() -> list[str] | None:
 
 def build_prompt(capsule: dict[str, Any]) -> str:
     ir = capsule.get("canonical_ir") if isinstance(capsule.get("canonical_ir"), dict) else {}
-    goal = str(ir.get("goal") or "").strip()
+    context = capsule.get("execution_context") if isinstance(capsule.get("execution_context"), dict) else {}
+    goal = str(context.get("active_goal") or ir.get("goal") or "").strip()
     constraints = ir.get("constraints") if isinstance(ir.get("constraints"), list) else []
+    findings = context.get("current_findings") if isinstance(context.get("current_findings"), list) else []
+    next_actions = context.get("next_actions") if isinstance(context.get("next_actions"), list) else []
+    next_action = str(context.get("next_action") or "").strip()
+    freshness = context.get("context_freshness") if isinstance(context.get("context_freshness"), dict) else {}
     instruction = str(capsule.get("instruction") or "").strip()
+
     parts = [
-        "You are an executor inside AgentOS. Treat the supplied Canonical IR as authoritative context.",
-        "Do not invent missing state. Distinguish VERIFIED / RECONSTRUCTED / UNKNOWN.",
+        "You are a bounded weak executor inside AgentOS. The Kernel-supplied execution context is authoritative for continuity.",
+        "Preserve the Master Experience Floor: reason from durable goals, findings, decisions and next actions rather than behaving like a stateless chat session.",
+        "Do not invent missing state. Distinguish VERIFIED / RECONSTRUCTED / UNKNOWN. Do not claim side effects you did not perform.",
     ]
     if goal:
-        parts.append(f"Canonical goal: {goal}")
+        parts.append(f"Active durable goal: {goal}")
+    if findings:
+        parts.append("Verified current findings: " + json.dumps(findings[:12], ensure_ascii=False))
+    if next_action:
+        parts.append(f"Kernel-recommended next action: {next_action}")
+    if next_actions:
+        parts.append("Durable next-action queue: " + json.dumps(next_actions[:8], ensure_ascii=False))
+    if freshness:
+        parts.append("Context freshness: " + json.dumps(freshness, ensure_ascii=False, sort_keys=True))
+        if freshness.get("status") == "stale":
+            parts.append("The durable context is marked stale. Reconcile evidence before taking irreversible action.")
     if constraints:
-        parts.append("Constraints: " + json.dumps(constraints, ensure_ascii=False))
+        parts.append("Canonical constraints: " + json.dumps(constraints, ensure_ascii=False))
     parts.append("Execution instruction: " + instruction)
-    parts.append("Return the concrete result and any next-action/blocked evidence. Do not claim side effects you did not perform.")
+    parts.append("Return the concrete result, evidence used, and next-action/blocked state. Keep continuity with the durable goal even if this is a fresh executor session.")
     return "\n\n".join(parts)
 
 
@@ -102,7 +121,14 @@ class AntigravityRelayWorker:
             capsule = json.loads(processing.read_text(encoding="utf-8"))
             if not isinstance(capsule, dict) or capsule.get("schema") != RELAY_SCHEMA:
                 raise ValueError("invalid relay capsule")
+            if not verify_capsule_digest(capsule):
+                raise ValueError("relay capsule digest mismatch")
             capsule_id = str(capsule.get("capsule_id") or "").strip()
+            execution_context = capsule.get("execution_context")
+            if not isinstance(execution_context, dict) or execution_context.get("schema") != EXECUTION_CONTEXT_SCHEMA:
+                raise ValueError("relay capsule missing valid execution_context")
+            if str(execution_context.get("project_id") or "") != str(capsule.get("project_id") or ""):
+                raise ValueError("relay execution_context project mismatch")
             workspace = Path(str(capsule.get("workspace") or "")).expanduser()
             if not capsule_id:
                 raise ValueError("capsule_id missing")
@@ -128,6 +154,8 @@ class AntigravityRelayWorker:
                 "executor": self.executor[0],
                 "returncode": completed.returncode,
                 "ok": completed.returncode == 0,
+                "context_source_revision": execution_context.get("source_revision"),
+                "context_freshness": execution_context.get("context_freshness"),
                 "stdout": completed.stdout[-100000:],
                 "stderr": completed.stderr[-20000:],
             }
