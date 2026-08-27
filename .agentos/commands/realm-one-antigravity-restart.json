@@ -1,5 +1,5 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.one.refresh_via_antigravity",
-  "nonce": "live-one-refresh-20260827"
+  "nonce": "live-one-refresh-retry-20260827"
 }
