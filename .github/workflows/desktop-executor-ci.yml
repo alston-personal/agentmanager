@@ -1,0 +1,33 @@
+name: Desktop Executor CI
+
+on:
+  push:
+    branches:
+      - feature/desktop-browser-meta-inspect
+    paths:
+      - 'agentos_node/executor_registry.py'
+      - 'agentos_node/thin_client.py'
+      - 'tests/test_executor_registry.py'
+      - 'tests/test_thin_client.py'
+      - '.github/workflows/desktop-executor-ci.yml'
+  pull_request:
+    paths:
+      - 'agentos_node/executor_registry.py'
+      - 'agentos_node/thin_client.py'
+      - 'tests/test_executor_registry.py'
+      - 'tests/test_thin_client.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run executor and thin client tests
+        run: |
+          python -m unittest tests.test_executor_registry tests.test_thin_client -v
