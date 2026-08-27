@@ -55,7 +55,7 @@ items:
     regression_guard:
       - tests/test_protected_branch_authority.py
     gaps:
-      - "GitHub-native branch protection / required checks should remain independently enforced where available"
+      - "GitHub reports main as protected=false with no required checks; repository-native enforcement remains missing"
 
   - id: role-registry-and-inheritance
     owner: governance.spec_steward
@@ -76,33 +76,33 @@ items:
 
   - id: agent-employee-runtime
     owner: governance.spec_steward
-    stage: DISCOVERED
-    implementation: []
+    stage: IMPLEMENTED
+    implementation:
+      - agent_core/employee_runtime.py
+      - tests/test_employee_runtime.py
     integration_evidence: []
     verification_evidence: []
     operating_evidence: []
     regression_guard: []
     gaps:
-      - "durable AgentInstance identity"
-      - "per-agent memory namespace"
-      - "assignment and activation runtime"
-      - "agent-to-agent inbox/outbox messaging"
-      - "handoff and lifecycle closure"
-      - "executor binding independent of employee identity"
+      - "role inheritance is referenced by role_ids but not yet machine-hydrated into an effective employee contract"
+      - "skill_ids are durable references but skill loading/execution is not yet integrated"
+      - "first live Spec Steward assignment/receipt has not run"
+      - "agent-to-agent message transport is durable local storage only; Realm/cross-node transport not integrated"
+      - "Cognitive Thread return stack is not yet integrated into assignment state"
 
   - id: per-agent-durable-memory
     owner: governance.spec_steward
-    stage: SPECIFIED
+    stage: IMPLEMENTED
     implementation:
-      - .agent/roles/parents/
-    integration_evidence:
-      - agent_core/memory_router.py
+      - agent_core/employee_runtime.py
+    integration_evidence: []
     verification_evidence: []
     operating_evidence: []
     regression_guard: []
     gaps:
-      - "current memory router is project-scoped rather than employee-scoped"
-      - "role Memory Scope declarations are not equivalent to durable per-agent memory"
+      - "employee-scoped memory namespace now exists, but no memory consolidation/retrieval policy is integrated"
+      - "role Memory Scope declarations are not yet enforced against employee memory access"
 
   - id: responsibility-resolution
     owner: governance.keeper
@@ -143,7 +143,7 @@ items:
     operating_evidence: []
     regression_guard: []
     gaps:
-      - "not integrated into continuation_state runtime"
+      - "not integrated into EmployeeRuntime assignment state"
       - "cross-model thread-return experiment missing"
 
   - id: capability-learning-loop
@@ -187,16 +187,33 @@ items:
 
   - id: closure-audit
     owner: governance.spec_steward
-    stage: IMPLEMENTED
+    stage: GUARDED
     implementation:
       - .agent/closure/ledger.yaml
       - scripts/closure_audit.py
     integration_evidence:
       - docs/CLOSURE_REALITY.md
+      - .github/workflows/closure-audit.yml
     verification_evidence:
       - tests/test_closure_audit.py
-    operating_evidence: []
+      - "Closure Audit workflow run #1 on PR #16: success"
+    operating_evidence:
+      - "PR #16 closure ledger audit executed successfully in GitHub Actions"
     regression_guard:
       - tests/test_closure_audit.py
+      - .github/workflows/closure-audit.yml
     gaps:
-      - "promote to GUARDED only after CI evidence exists"
+      - "automatic recurring steward assignment generation is not yet implemented"
+
+  - id: repository-native-main-protection
+    owner: governance.keeper
+    stage: DISCOVERED
+    implementation: []
+    integration_evidence: []
+    verification_evidence:
+      - "GitHub branch metadata on 2026-08-27: main protected=false, required status checks empty"
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "enable native branch/ruleset protection for main"
+      - "require relevant CI checks independently of AgentOS policy"
