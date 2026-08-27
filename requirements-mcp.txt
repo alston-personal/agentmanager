@@ -1,0 +1,3 @@
+# Optional dependency set for the ChatGPT/AgentOS MCP bridge.
+# The core AgentOS runtime does not require MCP.
+mcp[cli]>=2,<3
