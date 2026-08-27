@@ -58,6 +58,8 @@ jobs:
           SITE=/etc/nginx/sites-available/studio.milkcat.org
           SNIP="$SRC/ops/nginx/layoutlib-capability-gateway.conf"
           BACKUP="${SITE}.layoutlib-v07.$(date +%Y%m%d%H%M%S).bak"
+          HEALTH_TMP=$(mktemp)
+          trap 'rm -f "$HEALTH_TMP"' EXIT
           sudo -n true
           id agentos-node >/dev/null
 
@@ -88,15 +90,35 @@ jobs:
           EOF
           sudo install -m 0644 /tmp/layoutlib-capability-gateway.service /etc/systemd/system/layoutlib-capability-gateway.service
           sudo systemctl daemon-reload
+          sudo systemctl stop layoutlib-capability-gateway.service 2>/dev/null || true
+
+          # Retire the earlier temporary nohup gateway, if it still owns 8767.
+          stale_pids=$(sudo ss -ltnp 'sport = :8767' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u || true)
+          for pid in $stale_pids; do
+            cmd=$(sudo ps -p "$pid" -o args= 2>/dev/null || true)
+            case "$cmd" in
+              *agentos_node.capability_http*8767*)
+                echo "retiring_stale_gateway_pid=$pid"
+                sudo kill "$pid" || true
+                ;;
+            esac
+          done
+          sleep 1
+
           sudo systemctl enable --now layoutlib-capability-gateway.service
           sudo systemctl restart layoutlib-capability-gateway.service
+          code=000
           for i in $(seq 1 20); do
-            code=$(curl -sS --max-time 2 -o /tmp/layoutlib-health -w '%{http_code}' http://127.0.0.1:8767/healthz || true)
-            [ "$code" = 200 ] && break
+            : > "$HEALTH_TMP"
+            code=$(curl -sS --max-time 2 -o "$HEALTH_TMP" -w '%{http_code}' http://127.0.0.1:8767/healthz || true)
+            [ "$code" = 200 ] && grep -q agentos-capability-gateway "$HEALTH_TMP" && break
             sleep 1
           done
+          echo "local_gateway_health_http=$code"
+          cat "$HEALTH_TMP"
           test "$code" = 200
-          grep -q agentos-capability-gateway /tmp/layoutlib-health
+          grep -q agentos-capability-gateway "$HEALTH_TMP"
+          systemctl is-active --quiet layoutlib-capability-gateway.service
 
           sudo cp -a "$SITE" "$BACKUP"
           if ! sudo grep -q 'BEGIN LAYOUTLIB CAPABILITY GATEWAY V0.7' "$SITE"; then
@@ -131,23 +153,28 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://studio.milkcat.org/layout-lab
-          curl -fsS "$BASE/api/healthz" | tee /tmp/v07-health
-          grep -q agentos-capability-gateway /tmp/v07-health
+          HEALTH_TMP=$(mktemp)
+          RECEIPT_TMP=$(mktemp)
+          CANONICAL_TMP=$(mktemp)
+          trap 'rm -f "$HEALTH_TMP" "$RECEIPT_TMP" "$CANONICAL_TMP"' EXIT
+          curl -fsS "$BASE/api/healthz" -o "$HEALTH_TMP"
+          cat "$HEALTH_TMP"
+          grep -q agentos-capability-gateway "$HEALTH_TMP"
           for row in 'proof-a 92 0.25' 'proof-b 88 0.75' 'proof-c 87 1.0'; do
             set -- $row
             payload=$(printf '{"experience":{"schema":"agentos.capability-experience/v1","experience_id":"v07-%s","capability_id":"layoutlib.profile-detection","node_id":"%s","observation":{"profile_features":{"background_luma":240,"edge_density":0.2,"contrast":0.58}},"policy_used":{"threshold":%s,"min_wall_length_px":16},"outcome":{"accepted":true,"correction_cost":1,"quality":%s},"provenance":{"experiment":"layoutlib-v0.7-public-proof"}}}' "$1" "$1" "$2" "$3")
-            code=$(curl -sS -o /tmp/v07-receipt -w '%{http_code}' -H 'Content-Type: application/json' --data "$payload" "$BASE/api/capability/experience")
+            code=$(curl -sS -o "$RECEIPT_TMP" -w '%{http_code}' -H 'Content-Type: application/json' --data "$payload" "$BASE/api/capability/experience")
             test "$code" = 202
-            grep -q '"accepted": true' /tmp/v07-receipt
+            grep -q '"accepted": true' "$RECEIPT_TMP"
           done
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "sudo -u agentos-node env PYTHONPATH=/opt/layoutlib-capability-gateway /usr/bin/python3 -m agentos_node.capability_consolidator --root /var/lib/agentos-capabilities --promote --authority-receipt-json '{\"decision_id\":\"layoutlib-v0.7-release-proof\",\"approved_by\":\"release-workflow\",\"scope\":\"profile-bootstrap\"}'" \
             | tee /tmp/v07-consolidation
           grep -q '"promoted": true' /tmp/v07-consolidation
-          curl -fsS "$BASE/api/capability/layoutlib.profile-detection/canonical" -o /tmp/v07-canonical
-          python3 - <<'PY'
-          import json
-          d=json.load(open('/tmp/v07-canonical')); s=d['state']
+          curl -fsS "$BASE/api/capability/layoutlib.profile-detection/canonical" -o "$CANONICAL_TMP"
+          python3 - "$CANONICAL_TMP" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); s=d['state']
           assert s['state_kind']=='canonical', s
           assert s['support'] >= 3, s
           t=float(s['payload']['policy']['threshold'])
@@ -160,15 +187,19 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://studio.milkcat.org/layout-lab
-          curl -fsS "$BASE/" -o /tmp/v07-ui
-          curl -fsS "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/v07-bridge
-          curl -fsS "$BASE/layoutlib-browser-v0.5.js" -o /tmp/v07-lib
-          grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/v07-ui
-          grep -q 'layoutlab-capability-bridge-v0.7.js' /tmp/v07-ui
-          grep -q finishModel /tmp/v07-bridge
-          grep -q 'agentos.capability-experience/v1' /tmp/v07-bridge
-          grep -q applyCanonicalPolicy /tmp/v07-bridge
-          grep -q 'layoutlib.capability.pending.v1' /tmp/v07-bridge
-          grep -q correction_cost /tmp/v07-bridge
-          grep -q "version:'0.6.0'" /tmp/v07-lib
+          UI_TMP=$(mktemp)
+          BRIDGE_TMP=$(mktemp)
+          LIB_TMP=$(mktemp)
+          trap 'rm -f "$UI_TMP" "$BRIDGE_TMP" "$LIB_TMP"' EXIT
+          curl -fsS "$BASE/" -o "$UI_TMP"
+          curl -fsS "$BASE/layoutlab-capability-bridge-v0.7.js" -o "$BRIDGE_TMP"
+          curl -fsS "$BASE/layoutlib-browser-v0.5.js" -o "$LIB_TMP"
+          grep -q '<title>Layout Lab | Milkcat Studio</title>' "$UI_TMP"
+          grep -q 'layoutlab-capability-bridge-v0.7.js' "$UI_TMP"
+          grep -q finishModel "$BRIDGE_TMP"
+          grep -q 'agentos.capability-experience/v1' "$BRIDGE_TMP"
+          grep -q applyCanonicalPolicy "$BRIDGE_TMP"
+          grep -q 'layoutlib.capability.pending.v1' "$BRIDGE_TMP"
+          grep -q correction_cost "$BRIDGE_TMP"
+          grep -q "version:'0.6.0'" "$LIB_TMP"
           echo 'layoutlib_v0_7_public_acceptance=PASS'
