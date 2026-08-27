@@ -37,14 +37,16 @@ jobs:
         run: |
           set -euo pipefail
           WORKER=/home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py
+          MANIFEST=/home/ubuntu/.local/share/agentos/runtime-vnext/runtime-provenance.json
           UNIT=/home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service
           echo "live_worker=$WORKER"
           stat -c 'live_worker_mtime=%y owner=%U group=%G mode=%a size=%s' "$WORKER"
-          sha256sum "$WORKER" | sed 's/^/live_worker_sha256=/'
+          ACTUAL_SHA=$(sha256sum "$WORKER" | awk '{print $1}')
+          echo "live_worker_sha256=$ACTUAL_SHA"
           echo '=== live worker provider markers ==='
           grep -nE 'AGENTOS_ANTIGRAVITY_PROVIDER|provider.?[:=]|discover_provider' "$WORKER" || true
           echo '=== live unit provider/runtime markers ==='
-          grep -nE 'Environment=AGENTOS_ANTIGRAVITY_PROVIDER|WorkingDirectory|ExecStart' "$UNIT" || true
+          grep -nE 'Environment=AGENTOS_ANTIGRAVITY_PROVIDER|Environment=AGENTOS_RUNTIME_|WorkingDirectory|ExecStart' "$UNIT" || true
           if ! grep -q 'AGENTOS_ANTIGRAVITY_PROVIDER' "$WORKER"; then
             echo 'live_relay_generation=STALE_NO_PROVIDER_ABSTRACTION'
             exit 42
@@ -53,6 +55,37 @@ jobs:
             echo 'live_relay_provider=NOT_AGY'
             exit 43
           fi
+          if [ ! -f "$MANIFEST" ]; then
+            echo 'live_relay_provenance=MISSING'
+            exit 44
+          fi
+          python3 - "$MANIFEST" "$ACTUAL_SHA" "$UNIT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          actual_sha = sys.argv[2]
+          unit = Path(sys.argv[3]).read_text(encoding='utf-8')
+          print('runtime_provenance=' + json.dumps(manifest, sort_keys=True))
+          if manifest.get('schema') != 'agentos.runtime-provenance/v1':
+              raise SystemExit('runtime provenance schema mismatch')
+          if manifest.get('provider') != 'agy':
+              raise SystemExit('runtime provenance provider drift')
+          if manifest.get('worker_sha256') != actual_sha:
+              raise SystemExit('runtime provenance worker digest drift')
+          source_ref = str(manifest.get('source_ref') or '')
+          source_commit = str(manifest.get('source_commit') or '')
+          if source_ref != 'feature/realm-node-fabric-readiness' or not source_commit:
+              raise SystemExit('runtime provenance source drift')
+          required = [
+              f'Environment=AGENTOS_RUNTIME_SOURCE_REF={source_ref}',
+              f'Environment=AGENTOS_RUNTIME_SOURCE_COMMIT={source_commit}',
+              f'Environment=AGENTOS_RUNTIME_WORKER_SHA256={actual_sha}',
+          ]
+          missing = [item for item in required if item not in unit]
+          if missing:
+              raise SystemExit('runtime unit provenance drift: ' + ','.join(missing))
+          print('live_relay_provenance=PASS')
+          PY
           echo 'live_relay_generation=PASS'
           echo 'live_relay_provider=agy'
 
