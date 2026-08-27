@@ -7,7 +7,7 @@
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "HTTP/1.0 404 Not Found\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:06:33 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 35\nCache-Control: no-store\n\n{\"error\": \"not found\", \"ok\": false}"
+    "stdout": "HTTP/1.0 404 Not Found\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:09:29 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 35\nCache-Control: no-store\n\n{\"error\": \"not found\", \"ok\": false}"
   },
   "bootstrap_surface": {
     "argv": [
@@ -17,7 +17,7 @@
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "HTTP/1.0 404 Not Found\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:06:33 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 35\nCache-Control: no-store\n\n{\"error\": \"not found\", \"ok\": false}"
+    "stdout": "HTTP/1.0 404 Not Found\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:09:29 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 35\nCache-Control: no-store\n\n{\"error\": \"not found\", \"ok\": false}"
   },
   "health_8780": {
     "argv": [
@@ -27,7 +27,17 @@
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "HTTP/1.0 200 OK\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:06:33 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 77\nCache-Control: no-store\n\n{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}"
+    "stdout": "HTTP/1.0 200 OK\nServer: AgentOS-ONE/0.1 Python/3.10.12\nDate: Thu, 27 Aug 2026 03:09:29 GMT\nContent-Type: application/json; charset=utf-8\nContent-Length: 77\nCache-Control: no-store\n\n{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}"
+  },
+  "identity": {
+    "argv": [
+      "bash",
+      "-lc",
+      "id; groups"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)\nagentos-node agentos\n"
   },
   "listeners": {
     "argv": [
@@ -53,7 +63,7 @@
           "tool.presence"
         ],
         "first_seen_at": "2026-08-26T06:21:49Z",
-        "heartbeat_age_seconds": 69024,
+        "heartbeat_age_seconds": 69200,
         "heartbeat_stale_after_seconds": 30,
         "hostname": "VOPC5750",
         "last_heartbeat_at": "2026-08-26T07:56:09Z",
@@ -94,7 +104,17 @@
     "stderr": "",
     "stdout": " 907261 ubuntu   Thu Aug 27 09:58:39 2026 /usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780\n"
   },
-  "schema": "agentos.one-runtime-inspection/v0.2",
+  "schema": "agentos.one-runtime-inspection/v0.3",
+  "sudo_noninteractive": {
+    "argv": [
+      "bash",
+      "-lc",
+      "sudo -n -l 2>&1 || true"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "sudo: a password is required\n"
+  },
   "system_services": {
     "argv": [
       "bash",
@@ -104,6 +124,16 @@
     "returncode": 0,
     "stderr": "",
     "stdout": ""
+  },
+  "ubuntu_repo_permissions": {
+    "argv": [
+      "bash",
+      "-lc",
+      "namei -l /home/ubuntu/agentmanager 2>/dev/null || true; stat -c '%U %G %a %n' /home/ubuntu /home/ubuntu/agentmanager 2>/dev/null || true"
+    ],
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "f: /home/ubuntu/agentmanager\ndrwxr-xr-x root   root    /\ndrwxr-xr-x root   root    home\ndrwxr-x--x ubuntu ubuntu  ubuntu\ndrwxrwsr-x ubuntu agentos agentmanager\nubuntu ubuntu 751 /home/ubuntu\nubuntu agentos 2775 /home/ubuntu/agentmanager\n"
   },
   "user_services": {
     "argv": [
