@@ -1,15 +1,15 @@
 governed_port=8800
-capsule_id=relay-e3748409bff14c87be1f87654d444ec5
+capsule_id=relay-2cd8fd5ae6934fbdb2e2ae175ce38439
 === EXECUTOR RECEIPT ===
 {
-  "capsule_id": "relay-e3748409bff14c87be1f87654d444ec5",
-  "completed_at": "2026-08-25T16:14:01Z",
-  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.243-linux-arm64/resources/native-binary/claude",
+  "capsule_id": "relay-2cd8fd5ae6934fbdb2e2ae175ce38439",
+  "completed_at": "2026-08-27T07:06:03Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.247-linux-arm64/resources/native-binary/claude",
   "executor_user": "ubuntu",
   "ok": false,
   "returncode": 124,
   "schema": "agentos.antigravity-receipt/v1",
-  "started_at": "2026-08-25T16:11:00Z",
+  "started_at": "2026-08-27T07:03:03Z",
   "stderr": "\nAgentOS executor timeout after 180.0s; process group terminated.\n",
   "stdout": "",
   "timed_out": true
