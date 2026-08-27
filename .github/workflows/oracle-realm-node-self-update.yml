@@ -66,10 +66,16 @@ jobs:
           $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
           $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
           Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
-          Start-ScheduledTask -TaskName $taskName
-          $parentPid=(Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
-          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',"Start-Sleep -Seconds 6; Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue")
+
+          # Do not Start-ScheduledTask while this update is still executing inside the
+          # currently-running scheduled-task instance. Windows may ignore the start,
+          # after which killing the old daemon leaves the node offline. Instead, let
+          # this command return its receipt first, then use a detached helper to stop
+          # the old scheduled-task instance and start a fresh one.
+          $restart = "Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$taskName'"
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
           Write-Output ('agentos_runtime_ref=REF')
+          Write-Output 'agentos_restart=deferred-stop-start'
           '''.replace('REF',ref)
           task_id='self-update-runtime-'+node_id+'-'+str(int(time.time()))
           task={
