@@ -4,6 +4,8 @@
 This is the preferred cross-device transport. ChatGPT connects to the remote MCP
 server; the server attaches to ONE and restores canonical state. No device,
 browser profile, or conversation id participates in durable node identity.
+
+The MCP process MUST use a scoped AgentOS client token, never the ONE root bearer.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from agentos_node.mcp_read_tools import get_project_state, get_task, resume_proj
 
 
 CONTROL_PLANE_URL = os.environ.get("AGENTOS_CONTROL_PLANE_URL", "").strip()
-CONTROL_PLANE_TOKEN = os.environ.get("AGENTOS_CONTROL_PLANE_TOKEN")
+CHATGPT_CLIENT_TOKEN = os.environ.get("AGENTOS_CHATGPT_CLIENT_TOKEN", "").strip()
 RUNTIME_ID = os.environ.get("AGENTOS_CHATGPT_RUNTIME_ID", "chatgpt-web").strip() or "chatgpt-web"
 PRINCIPAL_ID = os.environ.get("AGENTOS_CHATGPT_PRINCIPAL_ID", "").strip() or None
 MCP_HOST = os.environ.get("AGENTOS_MCP_HOST", "127.0.0.1").strip() or "127.0.0.1"
@@ -26,8 +28,10 @@ MCP_PATH = os.environ.get("AGENTOS_MCP_PATH", "/mcp").strip() or "/mcp"
 
 if not CONTROL_PLANE_URL:
     raise RuntimeError("AGENTOS_CONTROL_PLANE_URL is required")
+if not CHATGPT_CLIENT_TOKEN:
+    raise RuntimeError("AGENTOS_CHATGPT_CLIENT_TOKEN is required; do not use the ONE root token")
 
-client = ControlPlaneClient(CONTROL_PLANE_URL, token=CONTROL_PLANE_TOKEN)
+client = ControlPlaneClient(CONTROL_PLANE_URL, token=CHATGPT_CLIENT_TOKEN)
 mcp = MCPServer(
     "LeopardCat AgentOS",
     instructions=(
