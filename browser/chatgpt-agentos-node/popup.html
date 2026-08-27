@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AgentOS ChatGPT Node</title>
+  <style>
+    body { font: 13px/1.4 system-ui,sans-serif; width: 320px; padding: 12px; }
+    label { display:block; margin: 8px 0 4px; font-weight:600; }
+    input { box-sizing:border-box; width:100%; padding:7px; }
+    button { margin-top:10px; padding:7px 10px; }
+    #status { margin-top:10px; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <strong>LeopardCat AgentOS ChatGPT Node</strong>
+  <label for="project">AgentOS project_id</label>
+  <input id="project" placeholder="例如 layout-3d">
+  <label for="token">Companion token</label>
+  <input id="token" type="password" placeholder="AGENTOS_CHATGPT_COMPANION_TOKEN">
+  <button id="bind">綁定目前 Chat</button>
+  <button id="saveToken">儲存 Token</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
