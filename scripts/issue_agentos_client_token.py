@@ -21,6 +21,8 @@ def main() -> int:
     parser.add_argument("--label", required=True)
     parser.add_argument("--ttl-days", type=int, default=1)
     parser.add_argument("--permission", action="append", dest="permissions")
+    parser.add_argument("--project", action="append", dest="projects")
+    parser.add_argument("--capability", action="append", dest="capabilities")
     args = parser.parse_args()
 
     store = DistributedControlPlane(args.db) if args.db else DistributedControlPlane()
@@ -29,6 +31,8 @@ def main() -> int:
         args.subject,
         label=args.label,
         permissions=args.permissions or DEFAULT_IDE_PERMISSIONS,
+        projects=args.projects or ("*",),
+        capabilities=args.capabilities or ("*",),
         ttl_days=args.ttl_days,
     )
     print(json.dumps(issued, ensure_ascii=False, sort_keys=True))
