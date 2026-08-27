@@ -1,4 +1,4 @@
-name: AgentOS Codex App-Server Surface Diagnostic
+name: AgentOS Weak Executor Master Experience Floor
 
 on:
   push:
@@ -11,13 +11,14 @@ permissions:
   contents: read
 
 jobs:
-  app-server-surface:
+  weak-master-floor:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 10
     env:
       DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
     steps:
       - name: Resolve Oracle target
         run: |
@@ -27,11 +28,19 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Query official Codex app-server model catalog over stdio
+      - name: Blind fresh-session probe on gpt-5.4-mini low
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$CONFIG_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          set -a
+          source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          python3 - <<'PY'
           from __future__ import annotations
           import glob
           import json
@@ -40,105 +49,223 @@ jobs:
           import select
           import subprocess
           import time
+          from urllib.request import Request, urlopen
 
-          patterns = [
-              str(Path.home()/'.antigravity-ide-server/extensions/openai.chatgpt-*-linux-arm64/bin/linux-aarch64/codex'),
-              str(Path.home()/'.antigravity-ide-server/extensions/openai.chatgpt-*/bin/linux-aarch64/codex'),
-          ]
-          candidates=[]
-          for pattern in patterns:
-              candidates.extend(glob.glob(pattern))
-          candidates=sorted(set(candidates), reverse=True)
-          assert candidates, 'no Codex binary discovered under Antigravity extension tree'
+          MODEL='gpt-5.4-mini'
+          EFFORT='low'
+          BASE='http://127.0.0.1:8765'
+          token=os.environ['AGENTOS_CONTROL_PLANE_TOKEN']
+
+          attach_body={
+              'project_id':'agentmanager',
+              'agent':{
+                  'type':'blind-weak-master-floor',
+                  'history':'none',
+                  'model':MODEL,
+                  'reasoning_effort':EFFORT,
+                  'context_source':'attach-only',
+              },
+          }
+          req=Request(
+              BASE+'/v1/attach',
+              data=json.dumps(attach_body).encode(),
+              headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+              method='POST',
+          )
+          with urlopen(req, timeout=10) as response:
+              attached=json.load(response)
+          context=attached['execution_context']
+          assert context['schema']=='agentos.execution-context/v0.1'
+          assert context['agent']['history']=='none'
+          assert context['context_freshness']['status']=='fresh', context['context_freshness']
+          assert context['next_action']==context['next_actions'][0]
+          assert context['integration_branch']=='feature/distributed-agentos-runtime'
+          assert context['write_policy']['experimental_writes_to_main']=='deny'
+          print('weak_attach_context=passed')
+          print('weak_context_revision='+str(context['source_revision']))
+
+          candidates=sorted(set(
+              glob.glob(str(Path.home()/'.antigravity-ide-server/extensions/openai.chatgpt-*-linux-arm64/bin/linux-aarch64/codex'))+
+              glob.glob(str(Path.home()/'.antigravity-ide-server/extensions/openai.chatgpt-*/bin/linux-aarch64/codex'))
+          ), reverse=True)
+          assert candidates, 'Codex app-server binary not found'
           codex=candidates[0]
-          print('codex_binary=' + codex.replace(str(Path.home()), '~'))
-          version=subprocess.run([codex, '--version'], capture_output=True, text=True, timeout=5)
-          print('codex_version=' + (version.stdout.strip() or version.stderr.strip())[:240])
 
-          control=Path.home()/'.codex/app-server-control/app-server-control.sock'
-          router=Path.home()/'.codex/ipc/ipc.sock'
-          print('extension_router_exists=' + str(router.exists()).lower())
-          print('app_server_control_exists=' + str(control.exists()).lower())
+          empty=Path('/tmp/agentos-master-floor-empty')
+          empty.mkdir(parents=True, exist_ok=True)
+          for child in empty.iterdir():
+              if child.is_file() or child.is_symlink(): child.unlink()
 
           proc=subprocess.Popen(
-              [codex, 'app-server'],
-              stdin=subprocess.PIPE,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-              text=True,
-              bufsize=1,
-              cwd=str(Path.home()),
+              [codex,'app-server'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE, text=True, bufsize=1, cwd=str(empty),
           )
           assert proc.stdin and proc.stdout and proc.stderr
 
+          responses={}
+          side_effect_items=[]
+          item_types=[]
+          agent_texts=[]
+          server_requests=[]
+
           def send(obj):
-              proc.stdin.write(json.dumps(obj, separators=(',',':'))+'\n')
-              proc.stdin.flush()
+              proc.stdin.write(json.dumps(obj,separators=(',',':'))+'\n'); proc.stdin.flush()
+
+          def handle(msg):
+              if not isinstance(msg,dict): return
+              if 'id' in msg and 'method' not in msg:
+                  responses[msg['id']]=msg
+                  return
+              method=msg.get('method')
+              if method and 'id' in msg:
+                  server_requests.append(method)
+                  if method=='currentTime/read':
+                      send({'id':msg['id'],'result':{'currentTimeAt':int(time.time())}})
+                  elif method.endswith('requestApproval'):
+                      send({'id':msg['id'],'result':{'decision':'decline'}})
+                  else:
+                      send({'id':msg['id'],'error':{'code':-32601,'message':'AgentOS weak probe does not service this request'}})
+                  return
+              if method=='item/completed':
+                  item=(msg.get('params') or {}).get('item') or {}
+                  typ=item.get('type')
+                  if typ: item_types.append(str(typ))
+                  if typ=='agentMessage' and isinstance(item.get('text'),str):
+                      agent_texts.append(item['text'])
+                  if typ not in {None,'userMessage','agentMessage','reasoning','plan'}:
+                      side_effect_items.append(str(typ))
+
+          def read_until(predicate, timeout):
+              deadline=time.time()+timeout
+              while time.time()<deadline:
+                  if predicate(): return True
+                  ready,_,_=select.select([proc.stdout],[],[],0.5)
+                  if not ready:
+                      if proc.poll() is not None: break
+                      continue
+                  line=proc.stdout.readline()
+                  if not line: break
+                  try: msg=json.loads(line)
+                  except json.JSONDecodeError: continue
+                  handle(msg)
+              return predicate()
 
           send({'method':'initialize','id':0,'params':{
-              'clientInfo':{'name':'agentos_probe','title':'AgentOS bounded surface probe','version':'0.1.0'},
-              'capabilities':{'optOutNotificationMethods':['item/agentMessage/delta']},
+              'clientInfo':{'name':'agentos_master_floor','title':'AgentOS Master Experience Floor','version':'0.1.0'},
           }})
+          assert read_until(lambda:0 in responses,8), 'initialize response timeout'
+          assert 'error' not in responses[0], responses[0]
           send({'method':'initialized','params':{}})
-          send({'method':'model/list','id':1,'params':{'includeHidden':False}})
 
-          responses={}
-          deadline=time.time()+12
-          while time.time()<deadline and 1 not in responses:
+          send({'method':'thread/start','id':10,'params':{
+              'model':MODEL,
+              'cwd':str(empty),
+              'approvalPolicy':'never',
+              'sandbox':'readOnly',
+              'ephemeral':True,
+              'config':{'model_reasoning_effort':EFFORT},
+          }})
+          assert read_until(lambda:10 in responses,10), 'thread/start response timeout'
+          assert 'error' not in responses[10], responses[10]
+          thread=((responses[10].get('result') or {}).get('thread') or {})
+          thread_id=thread.get('id')
+          assert thread_id, responses[10]
+
+          schema={
+              'type':'object',
+              'additionalProperties':False,
+              'required':['active_goal','next_action','integration_branch','experimental_writes_to_main','history_assumed','should_continue','continuation_mode','current_position','governance_boundary','source'],
+              'properties':{
+                  'active_goal':{'type':'string'},
+                  'next_action':{'type':'string'},
+                  'integration_branch':{'type':'string'},
+                  'experimental_writes_to_main':{'type':'string','enum':['deny']},
+                  'history_assumed':{'type':'boolean'},
+                  'should_continue':{'type':'boolean'},
+                  'continuation_mode':{'type':'string','enum':['continue_now','wait','ask_user']},
+                  'current_position':{'type':'string'},
+                  'governance_boundary':{'type':'string'},
+                  'source':{'type':'string','enum':['execution_context_only']},
+              },
+          }
+          prompt=(
+              'You are a completely fresh weak executor with no previous conversation. '
+              'The JSON execution_context below is your sole project-state input. Do not inspect files, run commands, or call tools. '
+              'Return only the requested JSON object. Copy active_goal and next_action verbatim from execution_context. '
+              'Set integration_branch and experimental_writes_to_main from the write policy. history_assumed must be false. '
+              'Summarize current_position in one or two sentences using only current_findings. '
+              'governance_boundary must state the important safety boundary for writes. '
+              'If safe derivable work remains, set should_continue=true and continuation_mode=continue_now rather than asking the human to repeat context. '
+              'execution_context='+json.dumps(context,ensure_ascii=False,separators=(',',':'))
+          )
+          send({'method':'turn/start','id':20,'params':{
+              'threadId':thread_id,
+              'input':[{'type':'text','text':prompt}],
+              'model':MODEL,
+              'effort':EFFORT,
+              'approvalPolicy':'never',
+              'sandboxPolicy':{'type':'readOnly'},
+              'outputSchema':schema,
+          }})
+          turn_done=False
+          deadline=time.time()+90
+          while time.time()<deadline and not turn_done:
               ready,_,_=select.select([proc.stdout],[],[],0.5)
               if not ready:
-                  if proc.poll() is not None:
-                      break
+                  if proc.poll() is not None: break
                   continue
               line=proc.stdout.readline()
-              if not line:
-                  break
-              try:
-                  msg=json.loads(line)
-              except json.JSONDecodeError:
-                  continue
-              if isinstance(msg,dict) and isinstance(msg.get('id'),int):
-                  responses[msg['id']]=msg
+              if not line: break
+              try: msg=json.loads(line)
+              except json.JSONDecodeError: continue
+              handle(msg)
+              if msg.get('method')=='turn/completed': turn_done=True
+          assert 20 in responses and 'error' not in responses[20], responses.get(20)
+          assert turn_done, 'turn did not complete'
+          assert agent_texts, 'no completed agentMessage received'
+          text=agent_texts[-1].strip()
+          if text.startswith('```'):
+              text=text.strip('`').strip()
+              if text.startswith('json'): text=text[4:].strip()
+          result=json.loads(text)
 
+          assert not side_effect_items, {'side_effect_items':side_effect_items,'item_types':item_types}
+          assert result['active_goal']==context['active_goal']
+          assert result['next_action']==context['next_action']
+          assert result['integration_branch']==context['integration_branch']
+          assert result['experimental_writes_to_main']=='deny'
+          assert result['history_assumed'] is False
+          assert result['source']=='execution_context_only'
+          assert result['should_continue'] is True
+          assert result['continuation_mode']=='continue_now'
+          assert len(result['current_position'].strip())>=40
+          boundary=result['governance_boundary'].lower()
+          assert 'main' in boundary and ('branch' in boundary or 'write' in boundary)
+
+          print('weak_master_floor=passed')
+          print('weak_executor_model='+MODEL)
+          print('weak_executor_effort='+EFFORT)
+          print('weak_history_assumed=false')
+          print('weak_side_effect_items=none')
+          print('weak_should_continue=true')
+          print('weak_continuation_mode=continue_now')
+          print('weak_current_position='+result['current_position'].replace('\n',' ')[:800])
+          print('weak_governance_boundary='+result['governance_boundary'].replace('\n',' ')[:800])
+          print('weak_server_requests='+(','.join(server_requests) if server_requests else 'none'))
           try:
               proc.terminate(); proc.wait(timeout=3)
           except Exception:
               proc.kill(); proc.wait(timeout=3)
-
-          init=responses.get(0)
-          catalog=responses.get(1)
-          if init is None or catalog is None:
-              err=proc.stderr.read()[-1600:]
-              print('app_server_initialize=' + ('passed' if init else 'missing'))
-              print('model_list=' + ('passed' if catalog else 'missing'))
-              print('stderr_tail=' + err.replace('\n',' ')[:1600])
-              raise SystemExit(3)
-          if 'error' in init:
-              raise RuntimeError('initialize error: '+json.dumps(init['error'],sort_keys=True))
-          if 'error' in catalog:
-              raise RuntimeError('model/list error: '+json.dumps(catalog['error'],sort_keys=True))
-
-          print('app_server_initialize=passed')
-          print('model_list=passed')
-          result=catalog.get('result') or {}
-          models=result.get('data') or result.get('models') or []
-          print('visible_model_count='+str(len(models)))
-          for idx,model in enumerate(models):
-              if not isinstance(model,dict):
-                  continue
-              model_id=str(model.get('id') or model.get('model') or model.get('slug') or '')
-              display=str(model.get('displayName') or model.get('name') or '')
-              efforts=model.get('supportedReasoningEfforts') or model.get('supported_reasoning_efforts') or []
-              effort_names=[]
-              for effort in efforts:
-                  if isinstance(effort,str): effort_names.append(effort)
-                  elif isinstance(effort,dict): effort_names.append(str(effort.get('reasoningEffort') or effort.get('effort') or effort.get('value') or effort.get('name') or ''))
-              print(f'model[{idx}] id={model_id} display={display} efforts={",".join(x for x in effort_names if x)}')
           PY
+          REMOTE
 
-      - name: State bounded-surface interpretation
+      - name: State Master Experience Floor contract
         run: |
-          echo 'diagnostic_contract=official_app_server_initialize_plus_model_list_only'
-          echo 'user_turn_sent=false'
-          echo 'filesystem_mutation_requested=false'
-          echo 'next=select the weakest actually available model plus its minimum advertised reasoning effort for a blind Master Experience Floor probe.'
+          echo 'master_experience_floor=blind_attach_context_to_weak_executor'
+          echo 'weak_executor=gpt-5.4-mini'
+          echo 'reasoning_effort=low'
+          echo 'history=none'
+          echo 'thread=ephemeral'
+          echo 'sandbox=read-only'
+          echo 'approval_policy=never'
+          echo 'required_behavior=goal continuity + governance continuity + autonomous safe continuation'
