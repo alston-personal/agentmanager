@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.self_update_desktop_v01",
   "node_id": "vopc5750",
-  "nonce": "desktop-v01-window-inspect-refresh-20260826"
+  "nonce": "onboarding-runtime-readiness-20260827"
 }
