@@ -12,6 +12,7 @@ OVERLAY = ROOT / 'web_assets' / 'layoutlab-v0.7-release-fix.js'
 TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 INDEX = TARGET / 'index.html'
 TARGET_OVERLAY = TARGET / OVERLAY.name
+RELEASE = '0.7.5'
 
 
 def sha(path: Path) -> str:
@@ -36,15 +37,15 @@ def main() -> int:
     text = INDEX.read_text(encoding='utf-8')
     text = text.replace(
         'LayoutLib v0.6：2D / 3D 同屏、即時擦除反白、Draft/Committed 分離，以及從圖面特徵抽象學習 parser profile；不是記住單一圖片。',
-        'Layout Lab v0.7：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。',
+        f'Layout Lab v{RELEASE}：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。',
     )
     text = text.replace(
         '<div class="badge">LayoutLib Browser Adapter v0.6</div>',
-        '<div class="badge">Layout Lab v0.7 · AgentOS closed loop</div>',
+        f'<div class="badge">Layout Lab v{RELEASE} · AgentOS closed loop</div>',
     )
     text = text.replace(
         '<div class="compactTitle">v0.6 Learning contract</div>',
-        '<div class="compactTitle">v0.7 Capability learning contract</div>',
+        f'<div class="compactTitle">v{RELEASE} Capability learning contract</div>',
     )
 
     overlay_tag = '<script src="./layoutlab-v0.7-release-fix.js"></script>'
@@ -61,8 +62,8 @@ def main() -> int:
 
     deployed = INDEX.read_text(encoding='utf-8')
     required = [
-        'Layout Lab v0.7 · AgentOS closed loop',
-        'v0.7 Capability learning contract',
+        f'Layout Lab v{RELEASE} · AgentOS closed loop',
+        f'v{RELEASE} Capability learning contract',
         'layoutlab-v0.7-release-fix.js',
         'layoutlab-capability-bridge-v0.7.js',
         'deleteWallsById',
@@ -72,9 +73,21 @@ def main() -> int:
     if missing:
         raise SystemExit(f'v0.7 release acceptance failed: {missing}')
 
+    overlay_text = TARGET_OVERLAY.read_text(encoding='utf-8')
+    overlay_required = [
+        "const RELEASE='0.7.5'",
+        'defaultSelection:true',
+        'deleteKey:true',
+        'fixedFrameZoom:true',
+        "button.textContent='清除手動修正'",
+    ]
+    overlay_missing = [x for x in overlay_required if x not in overlay_text]
+    if overlay_missing:
+        raise SystemExit(f'v0.7.5 overlay acceptance failed: {overlay_missing}')
+
     result = {
         'ok': True,
-        'release': 'layoutlab-v0.7.2',
+        'release': f'layoutlab-v{RELEASE}',
         'mode': 'layoutlib-v0.7-production-release',
         'index_sha256': sha(INDEX),
         'overlay_sha256': sha(TARGET_OVERLAY),
