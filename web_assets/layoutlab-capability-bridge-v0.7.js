@@ -1,22 +1,24 @@
-/* Layout Lab -> AgentOS Capability Experience Bridge v0.7.0
+/* Layout Lab -> AgentOS Capability Experience Bridge v0.7.1
  *
  * The LayoutLib library remains unaware of AgentOS. This browser-side adapter
- * observes editing outcomes, makes completion the learning boundary, and queues
- * abstract capability experiences for later governed convergence.
+ * observes editing outcomes, makes completion the learning boundary, queues
+ * abstract capability experiences, and opportunistically transports them to the
+ * AgentOS capability gateway. Failed transport leaves the edge queue intact.
  *
- * No raw image bytes or image fingerprint are stored in the experience queue.
+ * No raw image bytes or image fingerprint are stored or transported.
  */
 (()=>{
 'use strict';
 const L=window.LayoutLibBrowser;
 if(!L)return;
 
-const VERSION='0.7.0';
+const VERSION='0.7.1';
 const EXPERIENCE_KEY='layoutlib.capability.pending.v1';
 const NODE_KEY='agentos.layoutlib.node_id.v1';
 const PROFILE_CAPABILITY='layoutlib.profile-detection';
 const RECONSTRUCTION_CAPABILITY='layoutlib.layout-reconstruction';
 const MAX_PENDING=100;
+const API_BASE='./api';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const now=()=>new Date().toISOString();
 const uuid=()=>globalThis.crypto?.randomUUID?.()||`browser-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -30,7 +32,7 @@ function pending(){
   try{const v=JSON.parse(localStorage.getItem(EXPERIENCE_KEY)||'[]');return Array.isArray(v)?v:[]}catch(_){return[]}
 }
 function savePending(xs){localStorage.setItem(EXPERIENCE_KEY,JSON.stringify(xs.slice(-MAX_PENDING)))}
-function queue(exp){const xs=pending();xs.push(exp);savePending(xs);refreshPendingLabel();return exp}
+function queue(exp){const xs=pending();if(!xs.some(x=>x.experience_id===exp.experience_id))xs.push(exp);savePending(xs);refreshPendingLabel();return exp}
 function correctionCost(m){return Number(m.walls_added||0)+Number(m.walls_deleted||0)+Number(m.erase_length_px||0)/100+Number(m.reanalyze_count||0)*.5+Number(m.manual_parameter_changes||0)*.25}
 function quality(cost){return 1/(1+Math.max(0,Number(cost)||0))}
 function wallPixels(ir){
@@ -43,7 +45,7 @@ function wallPixels(ir){
   return n;
 }
 
-let session=null;
+let session=null,transportState='idle';
 function resetSession(){
   session={
     id:uuid(),started_at:now(),revision:0,analyze_count:0,
@@ -104,9 +106,8 @@ for(const id of ['threshold','thresholdRange','minlen']){
 }
 document.getElementById('file')?.addEventListener('change',()=>setTimeout(resetSession,0));
 
-// Keep the completion affordance adjacent to Analyze: completion is the strong
-// reward signal and the boundary at which experience becomes eligible to leave
-// the browser edge cache.
+// Completion is the strong reward signal and the boundary at which experience
+// becomes eligible to leave the browser edge cache.
 const actionRow=analyzeBtn?.parentElement;
 const finishBtn=document.createElement('button');
 finishBtn.id='finishModel';
@@ -122,7 +123,8 @@ actionRow?.parentElement?.appendChild(pendingLabel);
 function refreshPendingLabel(){
   if(!pendingLabel)return;
   const n=pending().length;
-  pendingLabel.textContent=n?`Capability Experience：${n} 筆待回歸 AgentOS`:'Capability Experience：目前無待回歸資料';
+  const suffix=transportState==='sending'?' · 回歸中…':transportState==='offline'?' · AgentOS 暫不可達':'';
+  pendingLabel.textContent=n?`Capability Experience：${n} 筆待回歸 AgentOS${suffix}`:'Capability Experience：已回歸，無待送資料';
 }
 
 function makeExperiences(){
@@ -155,14 +157,27 @@ function makeExperiences(){
   return [profile,reconstruction];
 }
 
-finishBtn.onclick=()=>{
+async function flushPendingExperiences(){
+  const xs=pending();
+  if(!xs.length){transportState='idle';refreshPendingLabel();return {ok:true,sent:0}}
+  transportState='sending';refreshPendingLabel();
   try{
-    const xs=makeExperiences();xs.forEach(queue);
-    if(originalAssimilate&&typeof profileFeatures!=='undefined'&&profileFeatures)originalAssimilate();
-    finishBtn.disabled=true;
-    if(typeof status!=='undefined')status.textContent=`模型完成：correction cost ${xs[0].outcome.correction_cost.toFixed(2)}；已產生抽象 Capability Experience，等待回歸。`;
-  }catch(err){if(typeof status!=='undefined')status.textContent=`完成失敗：${err.message||err}`}
-};
+    const response=await fetch(`${API_BASE}/capability/experience`,{
+      method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',
+      body:JSON.stringify({experiences:xs})
+    });
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const body=await response.json();
+    if(!body?.ok||!Array.isArray(body.receipts))throw new Error('invalid AgentOS receipt');
+    const accepted=new Set(body.receipts.filter(r=>r?.accepted).map(r=>r.experience_id));
+    savePending(xs.filter(x=>!accepted.has(x.experience_id)));
+    transportState='idle';refreshPendingLabel();
+    return {ok:true,sent:accepted.size,remaining:pending().length,receipts:body.receipts};
+  }catch(err){
+    transportState='offline';refreshPendingLabel();
+    return {ok:false,sent:0,remaining:xs.length,error:String(err?.message||err)};
+  }
+}
 
 function applyCanonicalPolicy(state){
   const policy=state?.payload?.policy||state?.policy||{};
@@ -178,15 +193,42 @@ function applyCanonicalPolicy(state){
   return policy;
 }
 
+async function bootstrapCanonicalPolicy(){
+  try{
+    const response=await fetch(`${API_BASE}/capability/${encodeURIComponent(PROFILE_CAPABILITY)}/canonical`,{cache:'no-store'});
+    if(response.status===404)return {ok:true,applied:false,reason:'no_canonical_state'};
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const body=await response.json();
+    if(!body?.ok||!body.state)throw new Error('invalid canonical-state response');
+    const policy=applyCanonicalPolicy(body.state);
+    return {ok:true,applied:true,state:body.state,policy};
+  }catch(err){return {ok:false,applied:false,error:String(err?.message||err)}}
+}
+
+finishBtn.onclick=async()=>{
+  try{
+    const xs=makeExperiences();xs.forEach(queue);
+    if(originalAssimilate&&typeof profileFeatures!=='undefined'&&profileFeatures)originalAssimilate();
+    finishBtn.disabled=true;
+    const result=await flushPendingExperiences();
+    if(typeof status!=='undefined')status.textContent=result.ok?`模型完成：correction cost ${xs[0].outcome.correction_cost.toFixed(2)}；Capability Experience 已送回 AgentOS。`:`模型完成：correction cost ${xs[0].outcome.correction_cost.toFixed(2)}；經驗已安全排隊，AgentOS 可用時自動回歸。`;
+  }catch(err){if(typeof status!=='undefined')status.textContent=`完成失敗：${err.message||err}`}
+};
+
 window.LayoutCapabilityBridge={
   version:VERSION,
+  apiBase:API_BASE,
   experienceKey:EXPERIENCE_KEY,
   nodeId,
   pendingExperiences:()=>clone(pending()),
   drainPendingExperiences:()=>{const xs=pending();localStorage.removeItem(EXPERIENCE_KEY);refreshPendingLabel();return clone(xs)},
+  flushPendingExperiences,
+  bootstrapCanonicalPolicy,
   applyCanonicalPolicy,
   correctionCost,
   makeExperiences:()=>clone(makeExperiences())
 };
+window.addEventListener('online',()=>flushPendingExperiences());
 resetSession();
+bootstrapCanonicalPolicy().finally(()=>flushPendingExperiences());
 })();
