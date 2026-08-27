@@ -1,0 +1,5 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.one.runtime.inspect",
+  "nonce": "bootstrap-20260827"
+}
