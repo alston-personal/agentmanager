@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlparse
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
+from .client_auth import ClientTokenStore
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 
@@ -137,6 +138,7 @@ class DistributedGatewayServer(ThreadingHTTPServer):
         validate_bind_security(host, token)
         self.service = service
         self.auth_token = token
+        self.client_tokens = ClientTokenStore(service.store)
         super().__init__(server_address, DistributedGatewayHandler)
 
 
@@ -151,12 +153,35 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _authorized(self) -> bool:
+    def _bearer(self) -> str | None:
+        header = self.headers.get("Authorization", "")
+        return header[7:] if header.startswith("Bearer ") else None
+
+    def _is_root(self) -> bool:
         expected = self.server.auth_token
         if not expected:
             return True
-        header = self.headers.get("Authorization", "")
-        return header.startswith("Bearer ") and hmac.compare_digest(header[7:], expected)
+        supplied = self._bearer()
+        return supplied is not None and hmac.compare_digest(supplied, expected)
+
+    def _client_allows(self, permission: str) -> bool:
+        if self._is_root():
+            return True
+        supplied = self._bearer()
+        principal = self.server.client_tokens.principal(supplied or "")
+        return principal is not None and permission in principal.permissions
+
+    def _require(self, permission: str) -> bool:
+        if self._client_allows(permission):
+            return True
+        self._json(403 if self._bearer() else 401, {"error": "forbidden", "required_permission": permission})
+        return False
+
+    def _require_root(self) -> bool:
+        if self._is_root():
+            return True
+        self._json(403 if self._bearer() else 401, {"error": "root_credential_required"})
+        return False
 
     def _read_body(self) -> dict[str, Any]:
         raw_length = self.headers.get("Content-Length")
@@ -179,14 +204,15 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         if path == "/health":
             self._json(200, {"status": "ok", "service": "distributed-agentos-control-plane", "protocol": CORE_PROTOCOL})
             return
-        if not self._authorized():
-            self._json(401, {"error": "unauthorized"}); return
         try:
             if len(parts) == 3 and parts[:2] == ["v1", "tasks"]:
+                if not self._require("task.read"): return
                 self._json(200, self.server.service.get_task(parts[2])); return
             if len(parts) == 3 and parts[:2] == ["v1", "receipts"]:
+                if not self._require("task.read"): return
                 self._json(200, self.server.service.get_receipt(parts[2])); return
             if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "state":
+                if not self._require("project.read"): return
                 self._json(200, self.server.service.project_state(unquote(parts[2]))); return
             self._json(404, {"error": "not_found"})
         except KeyError as exc:
@@ -195,22 +221,26 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid_request", "message": str(exc)})
 
     def do_POST(self) -> None:
-        if not self._authorized():
-            self._json(401, {"error": "unauthorized"}); return
         path, parts = self._route()
         try:
             body = self._read_body()
             if path == "/v1/attach":
+                if not self._require("project.read"): return
                 self._json(200, self.server.service.attach(body)); return
             if path == "/v1/tasks":
+                if not self._require("task.submit"): return
                 self._json(202, self.server.service.submit_task(body)); return
             if path == "/v1/ir/submit":
+                if not self._require_root(): return
                 self._json(200, self.server.service.submit(body)); return
             if path == "/v1/lease":
+                if not self._require_root(): return
                 self._json(200, self.server.service.lease(body)); return
             if len(parts) == 4 and parts[:2] == ["v1", "tasks"] and parts[3] == "lease":
+                if not self._require_root(): return
                 self._json(200, self.server.service.lease_task(parts[2], body)); return
             if len(parts) == 4 and parts[:2] == ["v1", "tasks"] and parts[3] == "complete":
+                if not self._require_root(): return
                 self._json(200, self.server.service.complete(parts[2], body)); return
             self._json(404, {"error": "not_found"})
         except KeyError as exc:
