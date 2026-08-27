@@ -6,7 +6,7 @@
 'use strict';
 const L=window.LayoutLibBrowser;
 if(!L)return;
-const RELEASE='0.7.6';
+const RELEASE='0.7.7';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const px=(ir,w)=>({
   start_px:L.worldToSourcePx(ir.coordinate_frame,w.start),
@@ -60,18 +60,15 @@ L.replayEdits=(base,edits=[])=>{
   return out;
 };
 
-/* Keep manual corrections as an editor-owned overlay. Parser parameter drafts
- * may change the automatic base, but they must never erase or resurrect a
- * user's add/erase/delete corrections. */
+/* Manual corrections are an editor-owned overlay. Parser parameter drafts may
+ * replace the automatic base but must never erase or resurrect user edits. */
 const MANUAL_OPS=new Set(['add_wall','erase_segments','delete_walls']);
 let durableManualEdits=[];
 const extractManual=ir=>(ir?.edits||[]).filter(e=>MANUAL_OPS.has(e.op)).map(clone);
 function installDurableManualLayer(){
   try{
     if(typeof currentIr!=='undefined')durableManualEdits=extractManual(currentIr);
-    if(typeof manualEdits==='function'){
-      manualEdits=()=>durableManualEdits.map(clone);
-    }
+    if(typeof manualEdits==='function')manualEdits=()=>durableManualEdits.map(clone);
     if(typeof applyIr==='function'){
       const beforeApply=applyIr;
       applyIr=ir=>{
@@ -82,6 +79,8 @@ function installDurableManualLayer(){
     }
     const clear=document.getElementById('clearEdits');
     clear?.addEventListener('click',()=>{durableManualEdits=[]},true);
+    const input=document.getElementById('file');
+    input?.addEventListener('change',()=>{durableManualEdits=[]},true);
     return true;
   }catch(err){
     console.error('LayoutLab durable manual layer failed',err);
@@ -129,11 +128,19 @@ function enableDefaultSelection(){
   return true;
 }
 
+/* Delete must work immediately after canvas selection, even while the file
+ * input still owns browser focus. Only genuine text-editing fields suppress it. */
 function bindDeleteKey(){
+  const isTypingTarget=t=>{
+    if(!t)return false;
+    if(t instanceof HTMLTextAreaElement || t.isContentEditable)return true;
+    if(!(t instanceof HTMLInputElement))return false;
+    const type=(t.type||'text').toLowerCase();
+    return !['file','button','checkbox','radio','range','submit','reset'].includes(type);
+  };
   document.addEventListener('keydown',e=>{
     if(!(e.key==='Delete'||e.code==='Delete'))return;
-    const t=e.target;
-    if(t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable))return;
+    if(isTypingTarget(e.target))return;
     const button=document.getElementById('deleteSelected');
     if(!button||button.disabled)return;
     e.preventDefault();
@@ -141,8 +148,41 @@ function bindDeleteKey(){
   },true);
 }
 
-/* 2D image navigation: wheel zooms the image/IR in-place; Space+left-drag or
- * middle-drag pans. Left drag without Space remains wall selection. */
+/* A selected image should immediately show an automatic wall draft. The base
+ * v0.6 file loader schedules a preview but leaves detectionDirty=false while
+ * the editable empty document is current, which hides that preview until the
+ * first Threshold movement. Wrap the complete async loader and explicitly
+ * expose the generated draft as soon as image decoding finishes. */
+function enableInitialWallPreview(){
+  try{
+    if(typeof file==='undefined'||typeof file.onchange!=='function')return false;
+    const before=file.onchange;
+    file.onchange=async e=>{
+      await before(e);
+      if(typeof bitmap==='undefined'||!bitmap)return;
+      try{
+        if(typeof previewIr!=='undefined'&&typeof analyzeRaw==='function')previewIr=analyzeRaw();
+        if(typeof detectionDirty!=='undefined')detectionDirty=true;
+        const dirty=document.getElementById('dirtyLabel');
+        if(dirty)dirty.style.display='none';
+        const draft=document.getElementById('draftPill');
+        if(draft)draft.style.display='inline';
+        if(typeof renderAll==='function')renderAll();
+        if(typeof status!=='undefined'&&previewIr){
+          status.textContent=`Draft：${(previewIr.walls||[]).length} 面候選牆 · Threshold ${previewIr.detection?.threshold ?? ''}；可直接選取/修正，按「分析 / 重新分析」正式套用。`;
+        }
+      }catch(err){ console.error('LayoutLab initial wall preview failed',err); }
+    };
+    return true;
+  }catch(err){
+    console.error('LayoutLab initial preview binding failed',err);
+    return false;
+  }
+}
+
+/* 2D navigation: wheel zooms image+IR in the fixed viewport. When zoomed,
+ * holding the right mouse button changes the cursor to a hand and drags the
+ * viewport. Space+left and middle drag remain as optional power-user paths. */
 function enable2dPanZoom(){
   const stage=document.querySelector('.stage');
   const canvas=document.getElementById('display');
@@ -159,7 +199,7 @@ function enable2dPanZoom(){
       canvas.style.height=`${Math.max(1,canvas.height*s)}px`;
     }
   };
-  const reset=()=>{zoom2d=1;stage.scrollLeft=0;stage.scrollTop=0;requestAnimationFrame(apply)};
+  const reset=()=>{zoom2d=1;stage.scrollLeft=0;stage.scrollTop=0;stage.style.cursor='';requestAnimationFrame(apply)};
   document.getElementById('file')?.addEventListener('change',()=>setTimeout(reset,0));
   window.addEventListener('resize',apply);
   stage.addEventListener('wheel',e=>{
@@ -178,9 +218,13 @@ function enable2dPanZoom(){
   },{passive:false});
   document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat)space=true},true);
   document.addEventListener('keyup',e=>{if(e.code==='Space')space=false},true);
+  stage.addEventListener('contextmenu',e=>{if(zoom2d>1)e.preventDefault()});
   stage.addEventListener('pointerdown',e=>{
-    if(!(e.button===1||(e.button===0&&space)))return;
+    const rightPan=e.button===2&&zoom2d>1;
+    const auxiliaryPan=e.button===1||(e.button===0&&space);
+    if(!(rightPan||auxiliaryPan))return;
     panning=true;lastX=e.clientX;lastY=e.clientY;
+    stage.style.cursor='grabbing';
     stage.setPointerCapture?.(e.pointerId);
     e.preventDefault();e.stopPropagation();
   },true);
@@ -190,7 +234,11 @@ function enable2dPanZoom(){
     lastX=e.clientX;lastY=e.clientY;
     e.preventDefault();e.stopPropagation();
   },true);
-  const stop=e=>{if(!panning)return;panning=false;e?.preventDefault?.();e?.stopPropagation?.()};
+  const stop=e=>{
+    if(!panning)return;
+    panning=false;stage.style.cursor='';
+    e?.preventDefault?.();e?.stopPropagation?.();
+  };
   stage.addEventListener('pointerup',stop,true);
   stage.addEventListener('pointercancel',stop,true);
   setTimeout(apply,0);
@@ -237,8 +285,9 @@ installDurableManualLayer();
 prepareDisplayedIrDelete();
 enableDefaultSelection();
 bindDeleteKey();
+enableInitialWallPreview();
 enable2dPanZoom();
 fixViewerZoom();
 clarifyResetEdits();
-window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,fixedFrameZoom:true,twoDPanZoom:true,durableManualEdits:true,labelRelease};
+window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,initialWallPreview:true,fixedFrameZoom:true,twoDPanZoom:true,rightDragPan:true,durableManualEdits:true,labelRelease};
 })();
