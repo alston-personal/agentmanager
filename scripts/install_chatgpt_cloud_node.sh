@@ -33,27 +33,88 @@ if [ -z "$PYTHON_BIN" ]; then PYTHON_BIN="$(command -v python3)"; fi
 touch "$SECRETS_FILE"
 chmod 600 "$SECRETS_FILE"
 
-# Provision a dedicated least-privilege client credential on first install. The
-# root Control Plane bearer is never copied into the MCP service environment.
-if [ -z "${AGENTOS_CHATGPT_CLIENT_TOKEN:-}" ]; then
-  PROJECT_ARGS=()
-  IFS=',' read -r -a CHATGPT_PROJECTS <<< "${AGENTOS_CHATGPT_PROJECTS:-*}"
-  for project in "${CHATGPT_PROJECTS[@]}"; do
-    project="${project//[[:space:]]/}"
-    [ -n "$project" ] && PROJECT_ARGS+=(--project "$project")
-  done
-  ISSUE_JSON="$($PYTHON_BIN "$LOGIC_ROOT/scripts/provision_chatgpt_cloud_principal.py" \
-    --db "$AGENTOS_CONTROL_PLANE_DB" \
-    --principal-id "$AGENTOS_CHATGPT_PRINCIPAL_ID" \
-    "${PROJECT_ARGS[@]}")"
-  AGENTOS_CHATGPT_CLIENT_TOKEN="$($PYTHON_BIN -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<< "$ISSUE_JSON")"
-  printf '\nAGENTOS_CHATGPT_CLIENT_TOKEN=%s\n' "$AGENTOS_CHATGPT_CLIENT_TOKEN" >> "$SECRETS_FILE"
-  export AGENTOS_CHATGPT_CLIENT_TOKEN
-  echo "Provisioned scoped ChatGPT Cloud client token in $SECRETS_FILE"
+# Reconcile the durable credential with the declared ChatGPT project scope.
+# Scope changes rotate the token instead of weakening gateway authorization.
+export AGENTOS_CHATGPT_CLIENT_TOKEN="${AGENTOS_CHATGPT_CLIENT_TOKEN:-}"
+RECONCILE_JSON="$(PYTHONPATH="$LOGIC_ROOT" "$PYTHON_BIN" - <<'PY'
+import json
+import os
+from agent_core.client_auth import ClientTokenStore
+from agent_core.distributed_control_plane import DistributedControlPlane
+
+principal_id = os.environ["AGENTOS_CHATGPT_PRINCIPAL_ID"]
+raw_projects = os.environ.get("AGENTOS_CHATGPT_PROJECTS", "*")
+expected_projects = tuple(sorted({p.strip() for p in raw_projects.split(",") if p.strip()})) or ("*",)
+expected_subject = f"chatgpt:{principal_id}"
+expected_permissions = ("project.read", "task.read")
+expected_capabilities = ("*",)
+existing_token = os.environ.get("AGENTOS_CHATGPT_CLIENT_TOKEN", "").strip()
+store = ClientTokenStore(DistributedControlPlane(os.environ["AGENTOS_CONTROL_PLANE_DB"]))
+principal = store.principal(existing_token) if existing_token else None
+matches = bool(
+    principal
+    and principal.subject == expected_subject
+    and tuple(sorted(principal.permissions)) == tuple(sorted(expected_permissions))
+    and tuple(sorted(principal.projects)) == expected_projects
+    and tuple(sorted(principal.capabilities)) == expected_capabilities
+)
+if matches:
+    token = existing_token
+    rotated = False
+else:
+    if existing_token and principal is not None:
+        store.revoke(existing_token)
+    issued = store.issue(
+        expected_subject,
+        label="ChatGPT Cloud Node",
+        permissions=expected_permissions,
+        projects=expected_projects,
+        capabilities=expected_capabilities,
+        ttl_days=90,
+    )
+    token = issued["token"]
+    rotated = True
+print(json.dumps({
+    "token": token,
+    "rotated": rotated,
+    "subject": expected_subject,
+    "projects": list(expected_projects),
+    "permissions": list(expected_permissions),
+}, sort_keys=True))
+PY
+)"
+AGENTOS_CHATGPT_CLIENT_TOKEN="$($PYTHON_BIN -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<< "$RECONCILE_JSON")"
+export AGENTOS_CHATGPT_CLIENT_TOKEN
+TOKEN_ROTATED="$($PYTHON_BIN -c 'import json,sys; print("1" if json.load(sys.stdin)["rotated"] else "0")' <<< "$RECONCILE_JSON")"
+
+# Replace every stale token assignment atomically while preserving unrelated secrets.
+"$PYTHON_BIN" - "$SECRETS_FILE" "$AGENTOS_CHATGPT_CLIENT_TOKEN" <<'PY'
+from pathlib import Path
+import os, sys, tempfile
+path = Path(sys.argv[1])
+token = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+lines = [line for line in lines if not line.startswith("AGENTOS_CHATGPT_CLIENT_TOKEN=")]
+lines.append(f"AGENTOS_CHATGPT_CLIENT_TOKEN={token}")
+fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent), text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+finally:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+PY
+chmod 600 "$SECRETS_FILE"
+if [ "$TOKEN_ROTATED" = "1" ]; then
+  echo "one_principal_scope_reconciled=rotated"
+else
+  echo "one_principal_scope_reconciled=reused"
 fi
 
-# Prove the credential resolves in the exact ONE database before touching the
-# running gateway. This distinguishes token/database drift from HTTP auth drift.
+# Prove the credential resolves in the exact ONE database and matches declared scope
+# before touching the running gateway.
 PYTHONPATH="$LOGIC_ROOT" "$PYTHON_BIN" - <<'PY'
 import os
 from agent_core.client_auth import ClientTokenStore
@@ -61,12 +122,14 @@ from agent_core.distributed_control_plane import DistributedControlPlane
 
 token = os.environ["AGENTOS_CHATGPT_CLIENT_TOKEN"]
 db = os.environ["AGENTOS_CONTROL_PLANE_DB"]
-expected = f"chatgpt:{os.environ['AGENTOS_CHATGPT_PRINCIPAL_ID']}"
+expected_subject = f"chatgpt:{os.environ['AGENTOS_CHATGPT_PRINCIPAL_ID']}"
+expected_projects = tuple(sorted({p.strip() for p in os.environ.get("AGENTOS_CHATGPT_PROJECTS", "*").split(",") if p.strip()})) or ("*",)
 principal = ClientTokenStore(DistributedControlPlane(db)).principal(token)
 assert principal is not None, "ChatGPT client token is not present/active in the configured ONE database"
-assert principal.subject == expected, (principal.subject, expected)
+assert principal.subject == expected_subject, (principal.subject, expected_subject)
 assert principal.allows_permission("project.read"), principal.permissions
 assert principal.allows_permission("task.read"), principal.permissions
+assert tuple(sorted(principal.projects)) == expected_projects, (principal.projects, expected_projects)
 print("one_principal_db=ok")
 print(f"one_principal_subject={principal.subject}")
 print(f"one_principal_permissions={','.join(principal.permissions)}")
