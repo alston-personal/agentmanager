@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, os, subprocess
+          import json, subprocess
           from pathlib import Path
           from agent_core.node_registry import NodeRegistry
 
@@ -32,11 +32,14 @@ jobs:
               return {'argv':argv,'returncode':p.returncode,'stdout':p.stdout[-12000:],'stderr':p.stderr[-4000:]}
 
           result={
-              'schema':'agentos.one-runtime-inspection/v0.1',
-              'processes':run(['bash','-lc',"ps -eo pid,user,args | grep -E 'agentos|realm_server|agentos-one' | grep -v grep || true"]),
-              'listeners':run(['bash','-lc',"ss -ltnp 2>/dev/null | grep -E ':8780|:8766' || true"]),
+              'schema':'agentos.one-runtime-inspection/v0.2',
+              'processes':run(['bash','-lc',"ps -eo pid,user,lstart,args | grep -E 'agent_core|realm_cli|realm_server|agentos-one|8780' | grep -v grep || true"]),
+              'listeners':run(['bash','-lc',"ss -ltnp 2>/dev/null | grep -E ':8780|:8766|:8767' || true"]),
+              'system_services':run(['bash','-lc',"systemctl --no-pager --plain list-units --type=service 2>/dev/null | grep -E 'agentos|realm' || true"]),
               'user_services':run(['bash','-lc',"systemctl --user --no-pager --plain list-units --type=service 2>/dev/null | grep -E 'agentos|realm' || true"]),
-              'health_8780':run(['bash','-lc',"curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health || true"]),
+              'health_8780':run(['bash','-lc',"curl -sS --max-time 3 -i http://127.0.0.1:8780/v1/health || true"]),
+              'bootstrap_surface':run(['bash','-lc',"curl -sS --max-time 3 -i 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750' || true"]),
+              'benchmark_surface':run(['bash','-lc',"curl -sS --max-time 3 -i -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark || true"]),
               'node_map':NodeRegistry().node_map(),
           }
           Path('/tmp/realm-one-runtime-inspection.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
