@@ -1,0 +1,66 @@
+name: Deploy ChatGPT Secure MCP Tunnel
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentos-chatgpt-secure-mcp-tunnel
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+      OPENAI_MCP_TUNNEL_ID: ${{ vars.OPENAI_MCP_TUNNEL_ID }}
+      OPENAI_MCP_TUNNEL_API_KEY: ${{ secrets.OPENAI_MCP_TUNNEL_API_KEY }}
+
+    steps:
+      - name: Check tunnel credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OPENAI_MCP_TUNNEL_ID" || { echo "blocked_missing_openai_tunnel_id"; exit 3; }
+          test -n "$OPENAI_MCP_TUNNEL_API_KEY" || { echo "blocked_missing_openai_tunnel_runtime_key"; exit 3; }
+
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install official OpenAI tunnel client
+        shell: bash
+        run: |
+          set -euo pipefail
+          TUNNEL_ID_B64="$(printf '%s' "$OPENAI_MCP_TUNNEL_ID" | base64 -w0)"
+          API_KEY_B64="$(printf '%s' "$OPENAI_MCP_TUNNEL_API_KEY" | base64 -w0)"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$RELEASE_ROOT" "$TUNNEL_ID_B64" "$API_KEY_B64" <<'REMOTE'
+          set -euo pipefail
+          RELEASE_ROOT="$1"
+          CONTROL_PLANE_TUNNEL_ID="$(printf '%s' "$2" | base64 -d)"
+          CONTROL_PLANE_API_KEY="$(printf '%s' "$3" | base64 -d)"
+          export CONTROL_PLANE_TUNNEL_ID CONTROL_PLANE_API_KEY
+          REF="feature/distributed-agentos-runtime"
+          git -C "$RELEASE_ROOT" fetch --prune origin "$REF"
+          git -C "$RELEASE_ROOT" checkout --detach "$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)"
+          systemctl --user is-active --quiet agentos-chatgpt-mcp.service
+          bash "$RELEASE_ROOT/scripts/install_chatgpt_secure_mcp_tunnel.sh"
+          REMOTE
