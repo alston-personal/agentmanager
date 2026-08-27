@@ -23,6 +23,28 @@ def _validate(ir: CanonicalIR) -> dict[str, Any]:
     }
 
 
+def _context_checkpoint(ir: CanonicalIR) -> dict[str, Any]:
+    """Validate a deterministic context transition request.
+
+    The node does not mutate canonical state. It only emits bounded evidence;
+    the Kernel applies the checkpoint after validating the successful receipt.
+    """
+    completed_action = str(ir.payload.get("completed_action") or "").strip()
+    finding = str(ir.payload.get("finding") or "").strip()
+    next_action = str(ir.payload.get("next_action") or "").strip() or None
+    if not completed_action or not finding:
+        raise ValueError("context checkpoint requires completed_action and finding")
+    if len(completed_action) > 4000 or len(finding) > 8000 or (next_action and len(next_action) > 4000):
+        raise ValueError("context checkpoint field exceeds bounded size")
+    return {
+        "context_checkpoint": {
+            "completed_action": completed_action,
+            "finding": finding,
+            "next_action": next_action,
+        }
+    }
+
+
 def _load_object_registry(file_env: str, json_env: str) -> dict[str, Any]:
     registry_file = os.getenv(file_env)
     if registry_file:
@@ -147,6 +169,7 @@ def _project_test(ir: CanonicalIR) -> dict[str, Any]:
 def build_default_worker(runtime_id: str) -> RemoteRuntimeWorker:
     worker = RemoteRuntimeWorker(runtime_id)
     worker.register("agentos.ir.validate", _validate)
+    worker.register("agentos.context.checkpoint", _context_checkpoint)
     worker.register("agentos.project.inspect", _inspect_project)
     worker.register("agentos.project.test", _project_test)
     return worker
