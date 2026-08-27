@@ -47,7 +47,7 @@ def main() -> int:
         '<div class="compactTitle">v0.6 Learning contract</div>',
         f'<div class="compactTitle">v{RELEASE} Capability learning contract</div>',
     )
-    for asset in ['layoutlib-editor-v0.7.js','layoutlab-editor-ui-v0.7.js']:
+    for asset in ['layoutlib-spatial-semantics-v0.1.js','layoutlib-editor-v0.7.js','layoutlab-editor-ui-v0.7.js']:
         text = text.replace(f'<script src="./{asset}"></script>', f'<script src="./{asset}?v={RELEASE}"></script>')
     overlay_tag = f'<script src="./layoutlab-v0.7-release-fix.js?v={RELEASE}"></script>'
     bridge_tag = '<script src="./layoutlab-capability-bridge-v0.7.js"></script>'
@@ -66,6 +66,7 @@ def main() -> int:
         f'<div class="badge" data-release="{RELEASE}">v{RELEASE}</div>',
         f'Layout Lab v{RELEASE}：',
         f'v{RELEASE} Capability learning contract',
+        f'layoutlib-spatial-semantics-v0.1.js?v={RELEASE}',
         f'layoutlib-editor-v0.7.js?v={RELEASE}',
         f'layoutlab-editor-ui-v0.7.js?v={RELEASE}',
         f'layoutlab-v0.7-release-fix.js?v={RELEASE}',
@@ -74,6 +75,15 @@ def main() -> int:
     missing = [x for x in required if x not in deployed]
     if missing:
         raise SystemExit(f'v0.7 release acceptance failed: {missing}')
+
+    semantic = TARGET / 'layoutlib-spatial-semantics-v0.1.js'
+    if not semantic.is_file():
+        raise SystemExit('semantic MVP asset missing after deployment')
+    semantic_text = semantic.read_text(encoding='utf-8')
+    semantic_required = ['LayoutLib Spatial Semantics v0.1.0','candidateOpenings','classifyOpening','segmentRooms','token_cost:0']
+    semantic_missing = [x for x in semantic_required if x not in semantic_text]
+    if semantic_missing:
+        raise SystemExit(f'semantic MVP acceptance failed: {semantic_missing}')
 
     overlay_text = TARGET_OVERLAY.read_text(encoding='utf-8')
     overlay_required = [
@@ -90,8 +100,10 @@ def main() -> int:
     result = {
         'ok': True,
         'release': f'layoutlab-v{RELEASE}',
-        'mode': 'layoutlib-v0.7-library-backed-demo',
+        'mode': 'layoutlib-v0.7-library-backed-demo+semantic-mvp',
+        'semantic_mvp': True,
         'index_sha256': sha(INDEX),
+        'semantic_sha256': sha(semantic),
         'overlay_sha256': sha(TARGET_OVERLAY),
         'base_stdout': base.stdout[-4000:],
     }
