@@ -136,8 +136,6 @@ class SocialCapability:
         if permalink:
             receipt["permalink"] = permalink
         if result:
-            # Only caller-safe identity/operation metadata belongs here. Never merge
-            # raw credential or request dictionaries into receipts.
             receipt["result"] = dict(result)
         if error:
             receipt["error_code"] = error.code
@@ -175,8 +173,10 @@ class SocialCapability:
             uid = str(data.get("id") or "")
             if not uid:
                 raise SocialCapabilityError("identity_unverified", "Threads identity response has no id")
-            return self._receipt(platform="threads", operation=operation, credential_ref=cred.ref, ok=True,
-                                 platform_object_id=uid, result={"username": data.get("username")})
+            return self._receipt(
+                platform="threads", operation=operation, credential_ref=cred.ref, ok=True,
+                platform_object_id=uid, result={"username": data.get("username")},
+            )
 
         text = str(args.get("text") or "")
         if not text:
@@ -203,42 +203,86 @@ class SocialCapability:
         creation_id = str(container.get("id") or "")
         if not creation_id:
             raise SocialCapabilityError("publish_container_failed", "Threads did not return creation id")
-        published = self.transport.request("POST", f"{base}/{uid}/threads_publish", params={"creation_id": creation_id, "access_token": token})
+        published = self.transport.request(
+            "POST", f"{base}/{uid}/threads_publish",
+            params={"creation_id": creation_id, "access_token": token},
+        )
         object_id = str(published.get("id") or "")
         if not object_id:
             raise SocialCapabilityError("publish_failed", "Threads did not return published id")
         permalink: str | None = None
         try:
-            item = self.transport.request("GET", f"{base}/{object_id}", params={"fields": "permalink", "access_token": token})
+            item = self.transport.request(
+                "GET", f"{base}/{object_id}", params={"fields": "permalink", "access_token": token}
+            )
             permalink = str(item.get("permalink") or "") or None
         except SocialCapabilityError:
             pass
-        return self._receipt(platform="threads", operation=operation, credential_ref=cred.ref, ok=True,
-                             platform_object_id=object_id, permalink=permalink)
+        return self._receipt(
+            platform="threads", operation=operation, credential_ref=cred.ref, ok=True,
+            platform_object_id=object_id, permalink=permalink,
+        )
 
     def _facebook(self, operation: str, cred: Credential, args: Mapping[str, Any]) -> dict[str, Any]:
         token = cred.require("access_token")
         page_id = str(args.get("page_id") or cred.values.get("page_id") or "")
         if operation != "identity":
-            raise SocialCapabilityError("operation_not_yet_verified", "Facebook write path is not enabled until controlled-publish verification")
+            raise SocialCapabilityError(
+                "operation_not_yet_verified",
+                "Facebook write path is not enabled until controlled-publish verification",
+            )
         target = page_id or "me"
-        data = self.transport.request("GET", f"https://graph.facebook.com/v23.0/{target}", params={"fields": "id,name", "access_token": token})
+        data = self.transport.request(
+            "GET", f"https://graph.facebook.com/v23.0/{target}",
+            params={"fields": "id,name", "access_token": token},
+        )
         object_id = str(data.get("id") or "")
         if not object_id:
             raise SocialCapabilityError("identity_unverified", "Facebook identity response has no id")
-        return self._receipt(platform="facebook", operation=operation, credential_ref=cred.ref, ok=True,
-                             platform_object_id=object_id, result={"name": data.get("name")})
+        return self._receipt(
+            platform="facebook", operation=operation, credential_ref=cred.ref, ok=True,
+            platform_object_id=object_id, result={"name": data.get("name")},
+        )
 
     def _instagram(self, operation: str, cred: Credential, args: Mapping[str, Any]) -> dict[str, Any]:
         token = cred.require("access_token")
         ig_id = str(args.get("ig_id") or cred.values.get("ig_id") or "")
+        page_id = str(args.get("page_id") or cred.values.get("page_id") or "")
         if operation != "identity":
-            raise SocialCapabilityError("operation_not_yet_verified", "Instagram write path is not enabled until controlled-publish verification")
+            raise SocialCapabilityError(
+                "operation_not_yet_verified",
+                "Instagram write path is not enabled until controlled-publish verification",
+            )
+
+        discovery = "explicit"
         if not ig_id:
-            raise SocialCapabilityError("invalid_request", "Instagram identity requires ig_id in args or credential metadata")
-        data = self.transport.request("GET", f"https://graph.facebook.com/v23.0/{ig_id}", params={"fields": "id,username", "access_token": token})
+            if not page_id:
+                raise SocialCapabilityError(
+                    "invalid_request",
+                    "Instagram identity requires ig_id or a connected Facebook page_id",
+                )
+            page = self.transport.request(
+                "GET", f"https://graph.facebook.com/v23.0/{page_id}",
+                params={"fields": "instagram_business_account", "access_token": token},
+            )
+            linked = page.get("instagram_business_account")
+            if not isinstance(linked, dict) or not linked.get("id"):
+                raise SocialCapabilityError(
+                    "identity_unverified",
+                    "Facebook Page has no discoverable instagram_business_account",
+                )
+            ig_id = str(linked["id"])
+            discovery = "facebook_page"
+
+        data = self.transport.request(
+            "GET", f"https://graph.facebook.com/v23.0/{ig_id}",
+            params={"fields": "id,username", "access_token": token},
+        )
         object_id = str(data.get("id") or "")
         if not object_id:
             raise SocialCapabilityError("identity_unverified", "Instagram identity response has no id")
-        return self._receipt(platform="instagram", operation=operation, credential_ref=cred.ref, ok=True,
-                             platform_object_id=object_id, result={"username": data.get("username")})
+        return self._receipt(
+            platform="instagram", operation=operation, credential_ref=cred.ref, ok=True,
+            platform_object_id=object_id,
+            result={"username": data.get("username"), "discovery": discovery},
+        )
