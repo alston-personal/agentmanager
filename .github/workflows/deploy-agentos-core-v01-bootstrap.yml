@@ -5,6 +5,7 @@ on:
     branches: [feature/distributed-agentos-runtime]
     paths:
       - 'agentos_client/**'
+      - 'agent_core/context_compiler.py'
       - 'agent_core/distributed_gateway.py'
       - 'agentos_node/remote_worker.py'
       - 'scripts/agentos_node_daemon.py'
@@ -33,7 +34,7 @@ jobs:
         run: |
           python -m pip install pytest >/dev/null
           python -m pytest -q tests/test_agentos_core_v01.py
-          python -m py_compile agentos_client/*.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
+          python -m py_compile agentos_client/*.py agent_core/context_compiler.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
           bash -n scripts/install_distributed_systemd_user.sh
       - name: Resolve Oracle target
         run: |
@@ -42,7 +43,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy and prove native continuity plus project inspection
+      - name: Deploy and prove native continuity plus blind context attach
         shell: bash
         run: |
           set -euo pipefail
@@ -56,7 +57,7 @@ jobs:
           git -C "$RELEASE_ROOT" checkout --detach "$SHA"
           cd "$RELEASE_ROOT"
           PYTHONPATH=. python3 -m pytest -q tests/test_agentos_core_v01.py
-          PYTHONPATH=. python3 -m py_compile agentos_client/*.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
+          PYTHONPATH=. python3 -m py_compile agentos_client/*.py agent_core/context_compiler.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
 
           set -a
           source "$CONFIG_ROOT/.env"
@@ -111,7 +112,34 @@ jobs:
           a=json.load(open('/tmp/a2.json'))
           assert a['state']['latestTask'] is not None
           assert a['state']['recommendedAction']=='continue'
+          assert a['execution_context']['latest_task']['taskId']==a['state']['latestTask']['taskId']
+          assert a['execution_context']['recommended_action']=='continue'
           print('cross_session_attach=passed')
+          print('cross_session_execution_context=passed')
+          PY
+
+          # Blind fresh-session proof: no prior conversation is supplied. The
+          # attached agent must learn the current AgentOS goal and next action
+          # from deterministic durable context alone.
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"project_id":"agentmanager","agent":{"type":"blind-fresh-session","history":"none"}}' \
+            "$BASE/v1/attach" >/tmp/blind-attach.json
+          python3 - <<'PY'
+          import json
+          a=json.load(open('/tmp/blind-attach.json'))
+          c=a['execution_context']
+          assert c['schema']=='agentos.execution-context/v0.1', c
+          assert c['active_goal'], c
+          assert c['current_findings'], c
+          assert c['next_actions'], c
+          assert c['next_action']==c['next_actions'][0], c
+          assert c['integration_branch']=='feature/distributed-agentos-runtime', c
+          assert c['write_policy']['branch_required_for_writes'] is True, c
+          assert c['agent']['history']=='none', c
+          print('blind_fresh_session_context=passed')
+          print('blind_active_goal='+c['active_goal'])
+          print('blind_next_action='+c['next_action'])
+          print('blind_integration_branch='+str(c['integration_branch']))
           PY
 
           curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
