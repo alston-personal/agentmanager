@@ -6,6 +6,8 @@ name; the runtime resolves that binding locally.
 
 from .contracts import SocialReceipt
 from .credentials import CredentialBinding, EnvironmentCredentialResolver
+from .facebook import FacebookCapability
+from .instagram import InstagramCapability
 from .threads import ThreadsCapability
 
 __all__ = [
@@ -13,4 +15,6 @@ __all__ = [
     "CredentialBinding",
     "EnvironmentCredentialResolver",
     "ThreadsCapability",
+    "FacebookCapability",
+    "InstagramCapability",
 ]
