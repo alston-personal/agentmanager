@@ -27,6 +27,8 @@ def _load_request(path: Path) -> dict:
     request_id = str(payload.get("request_id") or "").strip()
     if not request_id or "/" in request_id or ".." in request_id:
         raise ValueError("invalid request_id")
+    if path.stem != request_id:
+        raise ValueError("request filename must match request_id")
     action = str(payload.get("action") or "").strip()
     if action not in {"resume", "project_state"}:
         raise ValueError("unsupported action")
@@ -94,13 +96,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("request")
     args = parser.parse_args()
+    request_path = Path(args.request)
+    request_id = request_path.stem
     try:
-        payload = _load_request(Path(args.request))
+        payload = _load_request(request_path)
         response = process(payload)
     except Exception as exc:  # fail closed but return machine-readable evidence
         response = {
             "protocol": RESPONSE_PROTOCOL,
-            "request_id": None,
+            "request_id": request_id,
             "ok": False,
             "error": type(exc).__name__,
             "message": str(exc),
