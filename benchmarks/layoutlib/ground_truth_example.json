@@ -1,0 +1,27 @@
+{
+  "schema": "layoutlib.semantic-ground-truth/v1",
+  "image": "replace-with-floorplan-file",
+  "doors": [
+    {
+      "id": "door-001",
+      "midpoint_px": {"x": 100, "y": 100},
+      "type": "single_swing",
+      "hinge": "start",
+      "swing_side": "positive_normal"
+    }
+  ],
+  "windows": [
+    {
+      "id": "window-001",
+      "midpoint_px": {"x": 220, "y": 100},
+      "type": "window"
+    }
+  ],
+  "rooms": [
+    {"id": "room-001"}
+  ],
+  "openings": [
+    {"id": "opening-001"},
+    {"id": "opening-002"}
+  ]
+}
