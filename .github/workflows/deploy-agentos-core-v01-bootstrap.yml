@@ -1,0 +1,112 @@
+name: Bootstrap AgentOS Core v0.1 Native Path
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - 'agentos_client/**'
+      - 'agent_core/distributed_gateway.py'
+      - 'scripts/agentos_node_daemon.py'
+      - 'scripts/install_distributed_systemd_user.sh'
+      - 'tests/test_agentos_core_v01.py'
+      - '.github/workflows/deploy-agentos-core-v01-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-native-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Source contract
+        run: |
+          python -m pip install pytest >/dev/null
+          python -m pytest -q tests/test_agentos_core_v01.py
+          python -m py_compile agentos_client/*.py agent_core/distributed_gateway.py scripts/agentos_node_daemon.py
+          bash -n scripts/install_distributed_systemd_user.sh
+      - name: Resolve Oracle target
+        run: |
+          host="${DEPLOY_HOST_SOURCE#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy and prove native attach-task-receipt continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"; RELEASE_ROOT="$2"
+          REPO=https://github.com/alston-personal/agentmanager.git
+          if [ ! -d "$RELEASE_ROOT/.git" ]; then git clone "$REPO" "$RELEASE_ROOT"; fi
+          git -C "$RELEASE_ROOT" fetch origin feature/distributed-agentos-runtime
+          SHA=$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)
+          git -C "$RELEASE_ROOT" checkout --detach "$SHA"
+          cd "$RELEASE_ROOT"
+          PYTHONPATH=. python3 -m pytest -q tests/test_agentos_core_v01.py
+          PYTHONPATH=. python3 -m py_compile agentos_client/*.py agent_core/distributed_gateway.py scripts/agentos_node_daemon.py
+
+          set -a
+          source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          export AGENTOS_DISTRIBUTED_SERVICES_ENABLED=1
+          export AGENTOS_DISTRIBUTED_PYTHON="$(command -v python3)"
+          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" bash scripts/install_distributed_systemd_user.sh
+
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/health >/tmp/core-health.json 2>/dev/null && break; sleep 1; done
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/core-health.json'))
+          assert d['status']=='ok' and d['protocol']=='agentos.core/v0.1'
+          print('core_health=passed')
+          PY
+          systemctl --user is-active --quiet agentos-control-plane.service
+          systemctl --user is-active --quiet agentos-node.service
+
+          TOKEN="$AGENTOS_CONTROL_PLANE_TOKEN"
+          BASE=http://127.0.0.1:8765
+          AUTH="Authorization: Bearer $TOKEN"
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"project_id":"core-v01-proof","agent":{"type":"github-bootstrap","model":"none"}}' \
+            "$BASE/v1/attach" >/tmp/a1.json
+          SESSION=$(python3 -c "import json; print(json.load(open('/tmp/a1.json'))['session_id'])")
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
+            -d "{\"project_id\":\"core-v01-proof\",\"goal\":\"prove native execution\",\"capability\":\"agentos.ir.validate\",\"payload\":{\"source\":\"native\"},\"session_id\":\"$SESSION\"}" \
+            "$BASE/v1/tasks" >/tmp/task.json
+          TASK=$(python3 -c "import json; print(json.load(open('/tmp/task.json'))['task']['taskId'])")
+          for _ in $(seq 1 30); do
+            curl -fsS -H "$AUTH" "$BASE/v1/receipts/$TASK" >/tmp/receipt.json
+            terminal=$(python3 -c "import json; print(str(json.load(open('/tmp/receipt.json'))['terminal']).lower())")
+            [ "$terminal" = true ] && break
+            sleep 1
+          done
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/receipt.json'))
+          assert r['terminal'] is True and r['status']=='succeeded', r
+          print('native_task_receipt=passed')
+          PY
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
+            -d '{"project_id":"core-v01-proof","agent":{"type":"new-session"}}' "$BASE/v1/attach" >/tmp/a2.json
+          python3 - <<'PY'
+          import json
+          a=json.load(open('/tmp/a2.json'))
+          assert a['state']['latestTask'] is not None
+          assert a['state']['recommendedAction']=='continue'
+          print('cross_session_attach=passed')
+          PY
+          echo "native_core_sha=$SHA"
+          REMOTE
