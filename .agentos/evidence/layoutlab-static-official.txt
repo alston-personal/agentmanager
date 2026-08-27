@@ -1,15 +1,15 @@
-capsule_id=action-483ba461a43749f39ba8dd176fb0efa9
+capsule_id=action-b5195e005db14e58b12693f2065df5c5
 {
   "action": "layoutlab.static.deploy",
   "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
-  "capsule_id": "action-483ba461a43749f39ba8dd176fb0efa9",
-  "completed_at": "2026-08-27T01:59:01Z",
+  "capsule_id": "action-b5195e005db14e58b12693f2065df5c5",
+  "completed_at": "2026-08-27T05:55:13Z",
   "executor_user": "ubuntu",
   "mode": "browser-only-layoutlib-v0.1-compatible",
   "ok": true,
   "schema": "agentos.action-receipt/v1",
   "site": "studio.milkcat.org",
-  "started_at": "2026-08-27T01:59:00Z",
+  "started_at": "2026-08-27T05:55:13Z",
   "step": {
     "argv": [
       "/usr/bin/python3",
@@ -17,6 +17,6 @@ capsule_id=action-483ba461a43749f39ba8dd176fb0efa9
     ],
     "returncode": 0,
     "stderr": "",
-    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 31483, \"sha256\": \"69fdb94becf3f25f168a7a8ff495b276970adf8b8ee2d84f7d73530285adc9ed\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_v0_5.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlab-capability-bridge-v0.7.js\": {\"bytes\": 8640, \"sha256\": \"f083dd22d7a5ee35ab2f28b7d86cdf5819fd86e9eb33f7c96413b03bf90b3d9a\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab-capability-bridge-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlab-capability-bridge-v0.7.js\"}, \"layoutlib-browser-v0.5.js\": {\"bytes\": 12831, \"sha256\": \"d9acd99886a5265f94b9777ec0ea1b0e6c336bf5083d33355de907d6b8dcacab\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.5.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.5.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.7-capability-bridge\", \"ok\": true}\n"
+    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 25683, \"sha256\": \"ab6c21c6caa931178a35c05f26c9c790cc237de7d2f00a5fdd3ff92e0385d4c0\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_v0_5.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlab-capability-bridge-v0.7.js\": {\"bytes\": 13437, \"sha256\": \"e0e45b7347d9bf98b8f6c6997487c6c1096a8f21181cc0d88530b559592ab3de\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab-capability-bridge-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlab-capability-bridge-v0.7.js\"}, \"layoutlab-editor-ui-v0.7.js\": {\"bytes\": 5692, \"sha256\": \"cb98f2e3db4dea1b6d12d80f9ff181506be550c30042fc84ac2549bdcaceea7d\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab-editor-ui-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlab-editor-ui-v0.7.js\"}, \"layoutlib-browser-v0.5.js\": {\"bytes\": 12831, \"sha256\": \"d9acd99886a5265f94b9777ec0ea1b0e6c336bf5083d33355de907d6b8dcacab\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.5.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.5.js\"}, \"layoutlib-editor-v0.7.js\": {\"bytes\": 7567, \"sha256\": \"f8aeb05ea33a3596e817adc1bcb0b3715123c019dcd860215383e0bb2a02382e\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-editor-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-editor-v0.7.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.7-library-backed-demo\", \"ok\": true}\n"
   }
 }
