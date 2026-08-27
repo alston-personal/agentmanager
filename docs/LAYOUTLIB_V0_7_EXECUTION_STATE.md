@@ -56,6 +56,34 @@ Browser transport uses the same-origin namespace:
 
 Transport is at-least-once from the browser edge queue. Server ingestion is idempotent by `experience_id`: replay of the same payload is accepted as duplicate; reuse of the same ID with a different payload is rejected. The browser cannot write canonical state.
 
+## Demo/library ownership audit — mandatory invariant
+
+Layout Lab is a demo/validation surface for LayoutLib, not the semantic owner of editing behavior. Any behavior that changes Spatial IR meaning or correction semantics must live in LayoutLib (or a clearly versioned LayoutLib editor module) and be called by the demo. The website may own only presentation/input wiring such as buttons, pointer gestures, viewport pan/zoom, labels, status text, and transport/bootstrap glue.
+
+Current audit found this invariant is not yet fully satisfied. The browser library already owns raster analysis, coordinate transforms, `addWallPx`, erase preview/application, geometry updates, and basic edit replay. However production currently injects or overlays additional semantic editing behavior from the demo/deploy layer, including editable-document creation, wall selection helpers, delete-wall semantics/evidence replay, and the durable manual-correction layer. These must be migrated back into LayoutLib before treating the demo as a faithful consumer-only reference implementation.
+
+Required ownership target:
+
+`LayoutLib: analyze + Spatial IR + select/query + add/erase/delete/move + correction journal + replay/rebase`
+
+`Layout Lab: render + pointer/keyboard mapping + viewport navigation + call LayoutLib APIs + display results`
+
+No new semantic editor primitive may be implemented only in `layoutlab-v0.7-release-fix.js`, `layoutlab_v0_5.html`, or deployment-time HOTFIX injection.
+
+## Correction lineage and moved-wall semantics
+
+A moved auto-detected wall cannot be represented only by changing `source:auto` to `source:manual`, because a later parser run may rediscover the original wall and create a duplicate. The correction journal must preserve both negative and positive intent:
+
+`move_wall = suppress(original evidence) + add(replacement geometry)`
+
+The original evidence must be source-space geometry/provenance, not regenerated wall ID alone. During re-analysis/rebase, LayoutLib matches newly detected candidates against the stored original evidence within controlled geometry/topology tolerances. A matched candidate is suppressed, then the replacement manual geometry is applied. If a new candidate is materially different and cannot be matched confidently, it is not silently suppressed; the rebase result should surface an unresolved/ambiguous correction conflict for review.
+
+This means parser output and user corrections are separate layers:
+
+`new auto base -> correction rebase/matching -> suppress matched originals -> replay manual replacements/additions/deletions -> final Spatial IR`
+
+The same lineage mechanism should serve delete and move so threshold changes cannot resurrect a wall that the user intentionally removed or relocated.
+
 ## What v0.7 proves
 
 v0.7 now proves the deployed mechanics of:
@@ -66,6 +94,9 @@ This is the engineering proof of shared capability convergence. The stronger res
 
 ## Next active work after v0.7
 
+- migrate semantic editor behavior out of Layout Lab HOTFIX/overlay code and into LayoutLib APIs, with regression tests;
+- implement a first-class correction journal/rebase contract, including geometry-evidence matching and ambiguity handling;
+- add `move_wall` and endpoint-adjustment primitives on top of that correction lineage contract;
 - measure real fresh-node correction-cost improvement against a no-shared-learning baseline;
 - stabilize Spatial IR topology and add rooms/openings;
 - consolidate historical source/version filename drift into a clean canonical source identity;
