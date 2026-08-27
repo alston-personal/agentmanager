@@ -1,5 +1,5 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.one.runtime.inspect",
-  "nonce": "readiness-closure-20260827"
+  "nonce": "endpoint-generation-20260827"
 }
