@@ -13,10 +13,12 @@ PYTHON_BIN="${AGENTOS_DISTRIBUTED_PYTHON:-}"
 [ -f "$ENV_FILE" ] || { echo "Missing AgentOS env: $ENV_FILE" >&2; exit 2; }
 [ -f "$DIST_ENV_FILE" ] || { echo "Missing distributed env: $DIST_ENV_FILE" >&2; exit 2; }
 
+# Secrets provide credentials only. Distributed config is authoritative for
+# principal/scope policy and therefore loads last.
 set -a
 source "$ENV_FILE"
-source "$DIST_ENV_FILE"
 [ -f "$SECRETS_FILE" ] && source "$SECRETS_FILE"
+source "$DIST_ENV_FILE"
 set +a
 
 if [ -z "$PYTHON_BIN" ] && [ -x "$LOGIC_ROOT/.venv/bin/python3" ]; then PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"; fi
@@ -174,8 +176,8 @@ Environment=AGENTOS_MCP_HOST=127.0.0.1
 Environment=AGENTOS_MCP_PORT=${AGENTOS_MCP_PORT:-8000}
 Environment=AGENTOS_MCP_PATH=${AGENTOS_MCP_PATH:-/mcp}
 EnvironmentFile=-$ENV_FILE
-EnvironmentFile=-$DIST_ENV_FILE
 EnvironmentFile=-$SECRETS_FILE
+EnvironmentFile=-$DIST_ENV_FILE
 ExecStart=$PYTHON_BIN scripts/agentos_mcp_server.py
 Restart=always
 RestartSec=5
