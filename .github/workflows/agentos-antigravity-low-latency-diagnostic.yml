@@ -1,4 +1,4 @@
-name: AgentOS Antigravity IPC Surface Diagnostic
+name: AgentOS Codex App-Server Surface Diagnostic
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  ipc-surface-diagnostic:
+  app-server-surface:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     env:
@@ -27,134 +27,118 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Inventory Antigravity process and Unix IPC metadata
+      - name: Query official Codex app-server model catalog over stdio
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
           from __future__ import annotations
-          import hashlib
+          import glob
+          import json
           import os
           from pathlib import Path
-          import re
-          import socket
-          import stat
+          import select
+          import subprocess
+          import time
 
-          UID = os.getuid()
-          PROC = Path('/proc')
-          relevant_terms = ('antigravity', 'extensionhost', 'extension', 'language_server', 'language-server', 'claude', 'codex')
+          patterns = [
+              str(Path.home()/'.antigravity-ide-server/extensions/openai.chatgpt-*-linux-arm64/bin/linux-aarch64/codex'),
+              str(Path.home()/'.antigravity-ide-server/extensions/openai.chatgpt-*/bin/linux-aarch64/codex'),
+          ]
+          candidates=[]
+          for pattern in patterns:
+              candidates.extend(glob.glob(pattern))
+          candidates=sorted(set(candidates), reverse=True)
+          assert candidates, 'no Codex binary discovered under Antigravity extension tree'
+          codex=candidates[0]
+          print('codex_binary=' + codex.replace(str(Path.home()), '~'))
+          version=subprocess.run([codex, '--version'], capture_output=True, text=True, timeout=5)
+          print('codex_version=' + (version.stdout.strip() or version.stderr.strip())[:240])
 
-          def safe_readlink(path: Path) -> str:
-              try:
-                  return os.readlink(path)
-              except OSError:
-                  return ''
+          control=Path.home()/'.codex/app-server-control/app-server-control.sock'
+          router=Path.home()/'.codex/ipc/ipc.sock'
+          print('extension_router_exists=' + str(router.exists()).lower())
+          print('app_server_control_exists=' + str(control.exists()).lower())
 
-          def redact(text: str) -> str:
-              if not text:
-                  return ''
-              home = str(Path.home())
-              text = text.replace(home, '~')
-              text = re.sub(r'(?i)[0-9a-f]{24,}', '<hex>', text)
-              text = re.sub(r'(?i)[0-9a-f]{8}-[0-9a-f-]{20,}', '<uuid>', text)
-              text = re.sub(r'\b\d{5,}\b', '<n>', text)
-              return text
+          proc=subprocess.Popen(
+              [codex, 'app-server'],
+              stdin=subprocess.PIPE,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              bufsize=1,
+              cwd=str(Path.home()),
+          )
+          assert proc.stdin and proc.stdout and proc.stderr
 
-          def fingerprint(text: str) -> str:
-              return hashlib.sha256(text.encode()).hexdigest()[:12]
+          def send(obj):
+              proc.stdin.write(json.dumps(obj, separators=(',',':'))+'\n')
+              proc.stdin.flush()
 
-          processes = {}
-          for p in PROC.glob('[0-9]*'):
-              try:
-                  status = (p/'status').read_text(errors='ignore')
-                  uid_line = next(x for x in status.splitlines() if x.startswith('Uid:'))
-                  if int(uid_line.split()[1]) != UID:
-                      continue
-                  name = next((x.split(':',1)[1].strip() for x in status.splitlines() if x.startswith('Name:')), '')
-                  exe = safe_readlink(p/'exe')
-                  cwd = safe_readlink(p/'cwd')
-                  hay = (name + ' ' + exe + ' ' + cwd).lower()
-                  if not any(term in hay for term in relevant_terms):
-                      continue
-                  ppid = next((int(x.split()[1]) for x in status.splitlines() if x.startswith('PPid:')), 0)
-                  processes[int(p.name)] = {'name': name, 'ppid': ppid, 'exe': exe, 'cwd': cwd}
-              except (OSError, StopIteration, ValueError):
+          send({'method':'initialize','id':0,'params':{
+              'clientInfo':{'name':'agentos_probe','title':'AgentOS bounded surface probe','version':'0.1.0'},
+              'capabilities':{'optOutNotificationMethods':['item/agentMessage/delta']},
+          }})
+          send({'method':'initialized','params':{}})
+          send({'method':'model/list','id':1,'params':{'includeHidden':False}})
+
+          responses={}
+          deadline=time.time()+12
+          while time.time()<deadline and 1 not in responses:
+              ready,_,_=select.select([proc.stdout],[],[],0.5)
+              if not ready:
+                  if proc.poll() is not None:
+                      break
                   continue
-
-          print('credential_values_logged=false')
-          print(f'relevant_process_count={len(processes)}')
-          for pid, info in sorted(processes.items()):
-              print('process '
-                    f'pid={pid} ppid={info["ppid"]} name={redact(info["name"])} '
-                    f'exe={redact(info["exe"])} cwd={redact(info["cwd"])}')
-
-          inode_to_path = {}
-          try:
-              lines = (PROC/'net/unix').read_text(errors='ignore').splitlines()[1:]
-              for line in lines:
-                  parts = line.split()
-                  if len(parts) < 7:
-                      continue
-                  inode = parts[6]
-                  path = parts[7] if len(parts) >= 8 else ''
-                  inode_to_path[inode] = path
-          except OSError:
-              pass
-
-          owned = []
-          for pid, info in sorted(processes.items()):
-              fd_dir = PROC/str(pid)/'fd'
-              try:
-                  fds = list(fd_dir.iterdir())
-              except OSError:
-                  continue
-              for fd in fds:
-                  target = safe_readlink(fd)
-                  m = re.fullmatch(r'socket:\[(\d+)\]', target)
-                  if not m:
-                      continue
-                  inode = m.group(1)
-                  raw_path = inode_to_path.get(inode, '')
-                  if raw_path:
-                      owned.append((pid, info['name'], raw_path))
-
-          seen = set()
-          for pid, name, raw_path in owned:
-              key = (pid, raw_path)
-              if key in seen:
-                  continue
-              seen.add(key)
-              print('unix_socket '
-                    f'pid={pid} process={redact(name)} '
-                    f'pattern={redact(raw_path)} path_hash={fingerprint(raw_path)}')
-          print(f'relevant_owned_unix_socket_count={len(seen)}')
-
-          roots = [Path(f'/run/user/{UID}'), Path.home()/'.antigravity-ide-server']
-          fs_sockets = []
-          for root in roots:
-              if not root.exists():
-                  continue
-              try:
-                  iterator = root.rglob('*')
-                  for item in iterator:
-                      try:
-                          mode = item.lstat().st_mode
-                      except OSError:
-                          continue
-                      if stat.S_ISSOCK(mode):
-                          fs_sockets.append(str(item))
-                          if len(fs_sockets) >= 80:
-                              break
-              except OSError:
-                  continue
-              if len(fs_sockets) >= 80:
+              line=proc.stdout.readline()
+              if not line:
                   break
-          for raw_path in fs_sockets:
-              print(f'filesystem_socket pattern={redact(raw_path)} path_hash={fingerprint(raw_path)}')
-          print(f'filesystem_socket_count={len(fs_sockets)}')
+              try:
+                  msg=json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if isinstance(msg,dict) and isinstance(msg.get('id'),int):
+                  responses[msg['id']]=msg
+
+          try:
+              proc.terminate(); proc.wait(timeout=3)
+          except Exception:
+              proc.kill(); proc.wait(timeout=3)
+
+          init=responses.get(0)
+          catalog=responses.get(1)
+          if init is None or catalog is None:
+              err=proc.stderr.read()[-1600:]
+              print('app_server_initialize=' + ('passed' if init else 'missing'))
+              print('model_list=' + ('passed' if catalog else 'missing'))
+              print('stderr_tail=' + err.replace('\n',' ')[:1600])
+              raise SystemExit(3)
+          if 'error' in init:
+              raise RuntimeError('initialize error: '+json.dumps(init['error'],sort_keys=True))
+          if 'error' in catalog:
+              raise RuntimeError('model/list error: '+json.dumps(catalog['error'],sort_keys=True))
+
+          print('app_server_initialize=passed')
+          print('model_list=passed')
+          result=catalog.get('result') or {}
+          models=result.get('data') or result.get('models') or []
+          print('visible_model_count='+str(len(models)))
+          for idx,model in enumerate(models):
+              if not isinstance(model,dict):
+                  continue
+              model_id=str(model.get('id') or model.get('model') or model.get('slug') or '')
+              display=str(model.get('displayName') or model.get('name') or '')
+              efforts=model.get('supportedReasoningEfforts') or model.get('supported_reasoning_efforts') or []
+              effort_names=[]
+              for effort in efforts:
+                  if isinstance(effort,str): effort_names.append(effort)
+                  elif isinstance(effort,dict): effort_names.append(str(effort.get('reasoningEffort') or effort.get('effort') or effort.get('value') or effort.get('name') or ''))
+              print(f'model[{idx}] id={model_id} display={display} efforts={",".join(x for x in effort_names if x)}')
           PY
 
-      - name: State diagnostic interpretation
+      - name: State bounded-surface interpretation
         run: |
-          echo 'diagnostic_contract=metadata_only_no_protocol_writes'
-          echo 'next=use process-owned socket patterns to identify the authorized Antigravity extension-host boundary; do not reuse standalone Claude CLI unless evidence shows it shares the IDE session.'
+          echo 'diagnostic_contract=official_app_server_initialize_plus_model_list_only'
+          echo 'user_turn_sent=false'
+          echo 'filesystem_mutation_requested=false'
+          echo 'next=select the weakest actually available model plus its minimum advertised reasoning effort for a blind Master Experience Floor probe.'
