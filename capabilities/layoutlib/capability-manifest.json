@@ -1,0 +1,41 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "layoutlib.layout-reconstruction",
+  "display_name": "LayoutLib Layout Reconstruction",
+  "semantic_owner": "layoutlib",
+  "version": "0.1.0",
+  "lifecycle": "candidate",
+  "contract": {
+    "inputs": ["floorplan.image", "layoutlib.spatial-ir"],
+    "outputs": ["layoutlib.spatial-ir", "layoutlib.preview-geometry"],
+    "side_effects": []
+  },
+  "composition": {
+    "relation": "composes",
+    "capabilities": [
+      "layoutlib.profile-detection",
+      "layoutlib.geometry"
+    ]
+  },
+  "learning": {
+    "experience_schema": "agentos.capability-experience/v1",
+    "canonical_state_schema": "agentos.capability-state/v1",
+    "reward": "minimize_correction_cost",
+    "raw_image_learning_default": false,
+    "promotion": "explicit-governance-only"
+  },
+  "state": {
+    "local_role": "cache-and-offline-queue",
+    "canonical_owner": "layoutlib.layout-reconstruction"
+  },
+  "export": {
+    "canonical_source": "layoutlib.spatial-ir",
+    "derived_targets": ["gltf", "glb", "obj", "usd", "ifc"]
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}
