@@ -1,0 +1,50 @@
+{
+  "schema": "agentos.core-plane-contract/v0.1",
+  "execution_plane": {
+    "required_services": [
+      "agentos-control-plane.service",
+      "agentos-node.service"
+    ],
+    "protocol": "agentos.core/v0.1",
+    "client_entrypoints": [
+      "/v1/attach",
+      "/v1/tasks",
+      "/v1/receipts/{task_id}"
+    ],
+    "durable_components": [
+      "agent_core.distributed_control_plane",
+      "agent_core.distributed_gateway",
+      "agent_core.context_compiler",
+      "agentos_node.remote_worker",
+      "agentos_client"
+    ],
+    "allowed_external_dependencies": [
+      "network transport to the public Core endpoint",
+      "administrator-provisioned local project/test registries"
+    ],
+    "forbidden_runtime_dependencies": [
+      "GitHub Actions runner",
+      "GITHUB_TOKEN",
+      "GitHub workflow dispatch",
+      "GitHub API task transport",
+      "SSH session from CI"
+    ]
+  },
+  "ci_deploy_plane": {
+    "provider": "GitHub Actions",
+    "roles": [
+      "source contract tests",
+      "deploy immutable branch revision to Oracle",
+      "install/restart persistent user services",
+      "post-deploy smoke verification",
+      "external-edge integration proof"
+    ],
+    "not_roles": [
+      "normal AgentOS task executor",
+      "durable task queue",
+      "receipt store",
+      "session continuity store"
+    ]
+  },
+  "proof_rule": "A receipt for a normal bounded task must identify the native runtime executor (for the Oracle node: oracle-core-node), not a GitHub Actions runner. Once deployed, the execution plane must remain addressable through the public Core protocol without an active CI job."
+}
