@@ -12,7 +12,7 @@ OVERLAY = ROOT / 'web_assets' / 'layoutlab-v0.7-release-fix.js'
 TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 INDEX = TARGET / 'index.html'
 TARGET_OVERLAY = TARGET / OVERLAY.name
-RELEASE = '0.7.6'
+RELEASE = '0.7.7'
 
 
 def sha(path: Path) -> str:
@@ -79,9 +79,11 @@ def main() -> int:
 
     overlay_text = TARGET_OVERLAY.read_text(encoding='utf-8')
     overlay_required = [
-        "const RELEASE='0.7.6'",
+        "const RELEASE='0.7.7'",
         'defaultSelection:true',
         'deleteKey:true',
+        'initialWallPreview:true',
+        'rightDragPan:true',
         'fixedFrameZoom:true',
         'twoDPanZoom:true',
         'durableManualEdits:true',
@@ -89,7 +91,7 @@ def main() -> int:
     ]
     overlay_missing = [x for x in overlay_required if x not in overlay_text]
     if overlay_missing:
-        raise SystemExit(f'v0.7.6 overlay acceptance failed: {overlay_missing}')
+        raise SystemExit(f'v0.7.7 overlay acceptance failed: {overlay_missing}')
 
     result = {
         'ok': True,
