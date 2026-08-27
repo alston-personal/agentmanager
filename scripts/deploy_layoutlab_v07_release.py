@@ -12,7 +12,7 @@ OVERLAY = ROOT / 'web_assets' / 'layoutlab-v0.7-release-fix.js'
 TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 INDEX = TARGET / 'index.html'
 TARGET_OVERLAY = TARGET / OVERLAY.name
-RELEASE = '0.7.7'
+RELEASE = '0.7.8'
 
 
 def sha(path: Path) -> str:
@@ -41,7 +41,7 @@ def main() -> int:
     )
     text = text.replace(
         '<div class="badge">LayoutLib Browser Adapter v0.6</div>',
-        f'<div class="badge" data-release="{RELEASE}">Layout Lab v{RELEASE} · AgentOS closed loop</div>',
+        f'<div class="badge" data-release="{RELEASE}">v{RELEASE}</div>',
     )
     text = text.replace(
         '<div class="compactTitle">v0.6 Learning contract</div>',
@@ -65,8 +65,8 @@ def main() -> int:
 
     deployed = INDEX.read_text(encoding='utf-8')
     required = [
-        f'Layout Lab v{RELEASE} · AgentOS closed loop',
-        f'data-release="{RELEASE}"',
+        f'<div class="badge" data-release="{RELEASE}">v{RELEASE}</div>',
+        f'Layout Lab v{RELEASE}：',
         f'v{RELEASE} Capability learning contract',
         f'layoutlab-v0.7-release-fix.js?v={RELEASE}',
         'layoutlab-capability-bridge-v0.7.js',
@@ -79,7 +79,7 @@ def main() -> int:
 
     overlay_text = TARGET_OVERLAY.read_text(encoding='utf-8')
     overlay_required = [
-        "const RELEASE='0.7.7'",
+        "const RELEASE='0.7.8'",
         'defaultSelection:true',
         'deleteKey:true',
         'initialWallPreview:true',
@@ -87,11 +87,13 @@ def main() -> int:
         'fixedFrameZoom:true',
         'twoDPanZoom:true',
         'durableManualEdits:true',
+        'compactVersionBadge:true',
+        "badge.textContent=`v${RELEASE}`",
         "button.textContent='清除手動修正'",
     ]
     overlay_missing = [x for x in overlay_required if x not in overlay_text]
     if overlay_missing:
-        raise SystemExit(f'v0.7.7 overlay acceptance failed: {overlay_missing}')
+        raise SystemExit(f'v0.7.8 overlay acceptance failed: {overlay_missing}')
 
     result = {
         'ok': True,
