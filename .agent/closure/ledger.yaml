@@ -1,0 +1,202 @@
+schema_version: "0.1"
+updated_at: "2026-08-27"
+
+stages:
+  - DISCOVERED
+  - SPECIFIED
+  - PROTOTYPED
+  - IMPLEMENTED
+  - INTEGRATED
+  - VERIFIED
+  - OPERATING
+  - GUARDED
+  - CLOSED
+
+rules:
+  closed_requires:
+    - owner
+    - implementation
+    - integration_evidence
+    - verification_evidence
+    - operating_evidence
+    - regression_guard
+  no_silent_park: true
+  evidence_over_claims: true
+
+items:
+  - id: documentation-reality-guard
+    owner: governance.keeper
+    stage: GUARDED
+    implementation:
+      - scripts/documentation_reality_guard.py
+      - .github/workflows/documentation-reality-guard.yml
+    integration_evidence:
+      - .github/workflows/documentation-reality-guard.yml
+    verification_evidence:
+      - tests/test_documentation_reality_guard.py
+    operating_evidence:
+      - github-actions
+    regression_guard:
+      - tests/test_documentation_reality_guard.py
+    gaps: []
+
+  - id: protected-branch-authority
+    owner: governance.keeper
+    stage: GUARDED
+    implementation:
+      - scripts/protected_branch_authority.py
+      - .agent/governance/protected_branches.yaml
+    integration_evidence:
+      - docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md
+    verification_evidence:
+      - tests/test_protected_branch_authority.py
+    operating_evidence:
+      - "PR #10 human-approval-before-merge flow"
+    regression_guard:
+      - tests/test_protected_branch_authority.py
+    gaps:
+      - "GitHub-native branch protection / required checks should remain independently enforced where available"
+
+  - id: role-registry-and-inheritance
+    owner: governance.spec_steward
+    stage: VERIFIED
+    implementation:
+      - .agent/roles/registry.yaml
+      - .agent/roles/base_role.md
+      - .agent/roles/parents/
+    integration_evidence:
+      - agent_core/governance_directory.py
+    verification_evidence:
+      - tests/test_governance_directory.py
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "role status currently describes contract validity, not runtime employee activity"
+      - "no end-to-end employee lifecycle evidence"
+
+  - id: agent-employee-runtime
+    owner: governance.spec_steward
+    stage: DISCOVERED
+    implementation: []
+    integration_evidence: []
+    verification_evidence: []
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "durable AgentInstance identity"
+      - "per-agent memory namespace"
+      - "assignment and activation runtime"
+      - "agent-to-agent inbox/outbox messaging"
+      - "handoff and lifecycle closure"
+      - "executor binding independent of employee identity"
+
+  - id: per-agent-durable-memory
+    owner: governance.spec_steward
+    stage: SPECIFIED
+    implementation:
+      - .agent/roles/parents/
+    integration_evidence:
+      - agent_core/memory_router.py
+    verification_evidence: []
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "current memory router is project-scoped rather than employee-scoped"
+      - "role Memory Scope declarations are not equivalent to durable per-agent memory"
+
+  - id: responsibility-resolution
+    owner: governance.keeper
+    stage: VERIFIED
+    implementation:
+      - agent_core/governance_directory.py
+      - .agent/roles/registry.yaml
+    integration_evidence:
+      - docs/AGENTOS_NODE.md
+    verification_evidence:
+      - tests/test_governance_directory.py
+    operating_evidence: []
+    regression_guard:
+      - tests/test_governance_directory.py
+    gaps:
+      - "resolution does not itself activate an employee or guarantee task ownership at runtime"
+
+  - id: cognitive-ir
+    owner: governance.spec_steward
+    stage: PROTOTYPED
+    implementation:
+      - docs/CURRENT_STATE.md
+    integration_evidence: []
+    verification_evidence: []
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "model-independent schema is not canonical"
+      - "repeatable cross-model continuation benchmark is missing"
+
+  - id: cognitive-thread-return-stack
+    owner: governance.spec_steward
+    stage: PROTOTYPED
+    implementation: []
+    integration_evidence: []
+    verification_evidence:
+      - "conversation-level prototype: nested A -> B -> C -> return preserves parent HEAD"
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "not integrated into continuation_state runtime"
+      - "cross-model thread-return experiment missing"
+
+  - id: capability-learning-loop
+    owner: governance.spec_steward
+    stage: SPECIFIED
+    implementation:
+      - docs/agentos_ecosystem/CAPABILITY_EVOLUTION.md
+    integration_evidence: []
+    verification_evidence: []
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "first full LayoutLib execution-to-canonical-learning loop still needs durable end-to-end evidence"
+
+  - id: chronicler
+    owner: governance.spec_steward
+    stage: SPECIFIED
+    implementation:
+      - .agent/roles/registry.yaml
+    integration_evidence: []
+    verification_evidence: []
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "role status remains proposed"
+      - "no activation/runtime source"
+      - "chronicle projection is still manually triggered"
+
+  - id: matters-publisher-skill
+    owner: sector.paw
+    stage: IMPLEMENTED
+    implementation:
+      - .agent/skills/matters_publisher/SKILL.md
+      - .agent/skills/matters_publisher/scripts/
+    integration_evidence: []
+    verification_evidence: []
+    operating_evidence: []
+    regression_guard: []
+    gaps:
+      - "skill exists but no current role/employee activation path proves it is routinely used"
+
+  - id: closure-audit
+    owner: governance.spec_steward
+    stage: IMPLEMENTED
+    implementation:
+      - .agent/closure/ledger.yaml
+      - scripts/closure_audit.py
+    integration_evidence:
+      - docs/CLOSURE_REALITY.md
+    verification_evidence:
+      - tests/test_closure_audit.py
+    operating_evidence: []
+    regression_guard:
+      - tests/test_closure_audit.py
+    gaps:
+      - "promote to GUARDED only after CI evidence exists"
