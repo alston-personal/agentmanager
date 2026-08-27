@@ -1,0 +1,11 @@
+timestamp_utc=2026-08-27T02:14:28Z
+service=layoutlab-capability-gateway.service
+start_method=nohup-fallback
+bind=127.0.0.1:8767
+store=/home/agentos-node/.local/share/agentos/capabilities
+health_http=200
+health_body={"ok": true, "service": "agentos-capability-gateway", "version": "0.1"}
+ingest_http=202
+ingest_body={"ok": true, "receipts": [{"accepted": true, "capability_id": "layoutlib.profile-detection", "digest": "sha256:4cc0f7096a04a186e8e101e1d9c5da8daf1d7fa8a9ee49615fb34423ee40b154", "duplicate": false, "experience_id": "exp-install-smoke-v1"}]}
+agentos+ agentos+  925433       00:01 /usr/bin/python3 -m agentos_node.capability_http --host 127.0.0.1 --port 8767 --root /home/agentos-node/.local/share/agentos/capabilities
+local_capability_gateway=PASS
