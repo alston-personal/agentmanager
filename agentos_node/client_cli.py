@@ -74,6 +74,7 @@ def main() -> int:
     sub.add_parser('manifest', help='print local capability manifest')
     sub.add_parser('health', help='check ONE health')
     sub.add_parser('bootstrap', help='show inherited Realm capabilities and canonical capability states')
+    sub.add_parser('verify', help='verify an already-enrolled Node is ready and persist regression evidence')
     sub.add_parser('once', help='heartbeat, refresh discovery, pull tasks once, execute, return receipts')
     sub.add_parser('run', help='run persistent polling daemon')
 
@@ -110,24 +111,11 @@ def main() -> int:
         )
         transport = build_client(config, policy)
         completion = transport.complete_join(before_manifest)
-        print(render_json({
-            'ok': bool(completion.get('node_ready')),
-            'realm_id': config.realm_id,
-            'node_id': config.node_id,
-            'config': str(args.config),
-            'completion': completion,
-        }))
+        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'completion': completion}))
         return 0 if completion.get('node_ready') else 2
 
     if args.command == 'enroll':
-        config = ThinClientTransport.enroll(
-            one_url=args.one,
-            invite_id=args.invite_id,
-            code=args.code,
-            node_id=args.node_id,
-            policy=policy,
-            config_path=args.config,
-        )
+        config = ThinClientTransport.enroll(one_url=args.one, invite_id=args.invite_id, code=args.code, node_id=args.node_id, policy=policy, config_path=args.config)
         print(render_json({'ok': True, 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config)}))
         return 0
 
@@ -139,6 +127,10 @@ def main() -> int:
         print(render_json(transport.health()))
     elif args.command == 'bootstrap':
         print(render_json(transport.bootstrap()))
+    elif args.command == 'verify':
+        readiness = transport.verify_readiness()
+        print(render_json({'ok': bool(readiness.get('node_ready')), 'readiness': readiness}))
+        return 0 if readiness.get('node_ready') else 2
     elif args.command == 'once':
         print(render_json({'receipts': transport.run_once()}))
     elif args.command == 'run':
