@@ -1,0 +1,230 @@
+name: Oracle Finalize LayoutLib v0.7
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-finalize-layoutlib-v0.7.yml'
+      - 'agentos_node/capability_http.py'
+      - 'agentos_node/capability_store.py'
+      - 'agentos_node/capability_runtime.py'
+      - 'agentos_node/capability_consolidator.py'
+      - 'capabilities/layoutlib/**'
+      - 'tests/test_capability_runtime.py'
+      - 'tests/test_capability_store.py'
+      - 'tests/test_capability_consolidator.py'
+      - 'tests/test_layoutlib_capability_adapter.py'
+      - 'tests/test_layoutlib_capability_convergence.py'
+      - 'tests/test_layoutlab_capability_bridge_asset.py'
+      - 'web_assets/layoutlab_v0_5.html'
+      - 'web_assets/layoutlib-browser-v0.5.js'
+      - 'web_assets/layoutlab-capability-bridge-v0.7.js'
+      - 'scripts/deploy_layoutlab_static.py'
+      - 'ops/nginx/layoutlib-capability-gateway.conf'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layoutlib-v0-7-finalize
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run v0.7 focused tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q pytest
+          python3 -m pytest -q \
+            tests/test_capability_runtime.py \
+            tests/test_capability_store.py \
+            tests/test_capability_consolidator.py \
+            tests/test_layoutlib_capability_adapter.py \
+            tests/test_layoutlib_capability_convergence.py \
+            tests/test_layoutlab_capability_bridge_asset.py
+
+      - name: Resolve deployment host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Stage v0.7 payload on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar czf - \
+            agentos_node/capability_http.py \
+            agentos_node/capability_store.py \
+            agentos_node/capability_runtime.py \
+            agentos_node/capability_consolidator.py \
+            agentos_node/__init__.py \
+            web_assets/layoutlab_v0_5.html \
+            web_assets/layoutlib-browser-v0.5.js \
+            web_assets/layoutlab-capability-bridge-v0.7.js \
+            scripts/deploy_layoutlab_static.py \
+            ops/nginx/layoutlib-capability-gateway.conf \
+          | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              'rm -rf /tmp/layoutlib-v07 && mkdir -p /tmp/layoutlib-v07 && tar xzf - -C /tmp/layoutlib-v07'
+
+      - name: Install persistent capability gateway and nginx route
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SRC=/tmp/layoutlib-v07
+          APP=/opt/layoutlib-capability-gateway
+          STORE=/var/lib/agentos-capabilities
+          SITE=/etc/nginx/sites-available/studio.milkcat.org
+          SNIP="$SRC/ops/nginx/layoutlib-capability-gateway.conf"
+          BACKUP="${SITE}.layoutlib-v07.$(date +%Y%m%d%H%M%S).bak"
+
+          sudo -n true
+          id agentos-node >/dev/null
+          sudo install -d -o root -g root -m 0755 "$APP/agentos_node"
+          sudo install -m 0644 "$SRC/agentos_node/capability_http.py" "$APP/agentos_node/capability_http.py"
+          sudo install -m 0644 "$SRC/agentos_node/capability_store.py" "$APP/agentos_node/capability_store.py"
+          sudo install -m 0644 "$SRC/agentos_node/capability_runtime.py" "$APP/agentos_node/capability_runtime.py"
+          sudo install -m 0644 "$SRC/agentos_node/capability_consolidator.py" "$APP/agentos_node/capability_consolidator.py"
+          printf '%s\n' '"""Deployed AgentOS capability gateway."""' | sudo tee "$APP/agentos_node/__init__.py" >/dev/null
+          sudo chmod 0644 "$APP/agentos_node/__init__.py"
+          sudo install -d -o agentos-node -g agentos-node -m 0700 "$STORE"
+
+          cat >/tmp/layoutlib-capability-gateway.service <<EOF
+          [Unit]
+          Description=AgentOS LayoutLib Capability Gateway v0.7
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=agentos-node
+          Group=agentos-node
+          WorkingDirectory=$APP
+          Environment=PYTHONPATH=$APP
+          ExecStart=/usr/bin/python3 -m agentos_node.capability_http --host 127.0.0.1 --port 8767 --root $STORE
+          Restart=always
+          RestartSec=2
+          UMask=0077
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo install -m 0644 /tmp/layoutlib-capability-gateway.service /etc/systemd/system/layoutlib-capability-gateway.service
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now layoutlib-capability-gateway.service
+          sudo systemctl restart layoutlib-capability-gateway.service
+
+          for i in $(seq 1 20); do
+            code=$(curl -sS --max-time 2 -o /tmp/layoutlib-health -w '%{http_code}' http://127.0.0.1:8767/healthz || true)
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          test "$code" = 200
+          grep -q 'agentos-capability-gateway' /tmp/layoutlib-health
+
+          sudo cp -a "$SITE" "$BACKUP"
+          if ! sudo grep -q 'BEGIN LAYOUTLIB CAPABILITY GATEWAY V0.7' "$SITE"; then
+            sudo python3 - "$SITE" "$SNIP" <<'PY'
+          from pathlib import Path
+          import sys
+          site=Path(sys.argv[1]); snippet=Path(sys.argv[2]).read_text()
+          text=site.read_text()
+          needle='    error_page 404 /index.html;'
+          if text.count(needle) != 1:
+              raise SystemExit(f'expected one insertion anchor, found {text.count(needle)}')
+          block='    # BEGIN LAYOUTLIB CAPABILITY GATEWAY V0.7\n' + ''.join('    '+line+'\n' for line in snippet.splitlines()) + '    # END LAYOUTLIB CAPABILITY GATEWAY V0.7\n\n'
+          site.write_text(text.replace(needle, block+needle))
+          PY
+          fi
+
+          if ! sudo nginx -t; then
+            sudo cp -a "$BACKUP" "$SITE"
+            sudo nginx -t
+            exit 3
+          fi
+          sudo systemctl reload nginx
+          systemctl is-active --quiet layoutlib-capability-gateway.service
+          echo 'gateway_service=PASS'
+          echo 'nginx_route_install=PASS'
+          REMOTE
+
+      - name: Deploy v0.7 static assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'cd /tmp/layoutlib-v07 && python3 scripts/deploy_layoutlab_static.py'
+
+      - name: Public transport and convergence proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org/layout-lab
+          curl -fsS "$BASE/api/healthz" | tee /tmp/v07-health
+          grep -q 'agentos-capability-gateway' /tmp/v07-health
+
+          for row in 'proof-a 92 0.25' 'proof-b 88 0.75' 'proof-c 87 1.0'; do
+            set -- $row
+            id="$1" threshold="$2" quality="$3"
+            payload=$(printf '{"experience":{"schema":"agentos.capability-experience/v1","experience_id":"v07-%s","capability_id":"layoutlib.profile-detection","node_id":"%s","observation":{"profile_features":{"background_luma":240,"edge_density":0.2,"contrast":0.58}},"policy_used":{"threshold":%s,"min_wall_length_px":16},"outcome":{"accepted":true,"correction_cost":1,"quality":%s},"provenance":{"experiment":"layoutlib-v0.7-public-proof"}}}' "$id" "$id" "$threshold" "$quality")
+            code=$(curl -sS -o /tmp/v07-receipt -w '%{http_code}' -H 'Content-Type: application/json' --data "$payload" "$BASE/api/capability/experience")
+            test "$code" = 202
+            grep -q '"accepted": true' /tmp/v07-receipt
+          done
+
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "sudo -u agentos-node env PYTHONPATH=/opt/layoutlib-capability-gateway /usr/bin/python3 -m agentos_node.capability_consolidator --root /var/lib/agentos-capabilities --promote --authority-receipt-json '{\"decision_id\":\"layoutlib-v0.7-release-proof\",\"approved_by\":\"release-workflow\",\"scope\":\"profile-bootstrap\"}'" \
+            | tee /tmp/v07-consolidation
+          grep -q '"promoted": true' /tmp/v07-consolidation
+
+          curl -fsS "$BASE/api/capability/layoutlib.profile-detection/canonical" | tee /tmp/v07-canonical
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/v07-canonical'))
+          s=d['state']
+          assert s['state_kind']=='canonical', s
+          assert s['support'] >= 3, s
+          t=float(s['payload']['policy']['threshold'])
+          assert 87 <= t < 89.5, t
+          print('fresh_node_canonical_bootstrap=PASS threshold=', t)
+          PY
+
+      - name: Public static acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org/layout-lab
+          curl -fsS "$BASE/" -o /tmp/v07-ui
+          curl -fsS "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/v07-bridge
+          curl -fsS "$BASE/layoutlib-browser-v0.5.js" -o /tmp/v07-lib
+          grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/v07-ui
+          grep -q 'layoutlab-capability-bridge-v0.7.js' /tmp/v07-ui
+          grep -q 'finishModel' /tmp/v07-bridge
+          grep -q 'agentos.capability-experience/v1' /tmp/v07-bridge
+          grep -q 'applyCanonicalPolicy' /tmp/v07-bridge
+          grep -q 'layoutlib.capability.pending.v1' /tmp/v07-bridge
+          grep -q 'correction_cost' /tmp/v07-bridge
+          grep -q "version:'0.6.0'" /tmp/v07-lib
+          echo 'layoutlib_v0_7_public_acceptance=PASS'
