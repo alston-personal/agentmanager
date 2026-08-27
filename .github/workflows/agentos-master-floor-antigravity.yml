@@ -1,0 +1,183 @@
+name: AgentOS Master Experience Floor - Antigravity Low
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
+      - 'agent_core/context_compiler.py'
+      - 'tests/test_antigravity_relay.py'
+      - 'scripts/install_antigravity_relay_user.sh'
+      - '.agentos/development-context.json'
+      - '.github/workflows/agentos-master-floor-antigravity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-relay-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Relay source contract
+        run: |
+          python -m pip install pytest >/dev/null
+          python -m pytest -q tests/test_antigravity_relay.py
+          python -m py_compile agentos_node/antigravity_relay.py agentos_node/antigravity_relay_worker.py
+          bash -n scripts/install_antigravity_relay_user.sh
+      - name: Resolve Oracle target
+        run: |
+          host="${DEPLOY_HOST_SOURCE#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Update ubuntu-owned relay runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /home/ubuntu/agentmanager
+          git fetch origin feature/distributed-agentos-runtime
+          AGENTOS_RUNTIME_BRANCH=feature/distributed-agentos-runtime bash <(git show origin/feature/distributed-agentos-runtime:scripts/install_antigravity_relay_user.sh)
+          systemctl --user is-active --quiet agentos-antigravity-relay.service
+          PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext /usr/bin/python3 - <<'PY'
+          from agentos_node.antigravity_relay_worker import discover_executor
+          executor=discover_executor()
+          assert executor, 'no Antigravity executor discovered'
+          assert '--effort' in executor and executor[executor.index('--effort')+1]=='low', executor
+          print('relay_runtime=ready')
+          print('weak_executor='+executor[0])
+          print('weak_effort=low')
+          PY
+          REMOTE
+
+  real-weak-executor-proof:
+    needs: deploy-relay-contract
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - name: Checkout canonical vNext
+        uses: actions/checkout@v4
+      - name: Submit history-free Master Floor capsule as agentos-node
+        id: submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(whoami)" = "agentos-node"
+          export PYTHONPATH="$GITHUB_WORKSPACE"
+          export AGENT_PROJECT_ROOT="$GITHUB_WORKSPACE"
+          python3 - <<'PY' >/tmp/master-floor-capsule.json
+          import json
+          from agent_core.context_compiler import compile_execution_context
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          state={
+              'projectId':'agentmanager',
+              'currentIR':None,
+              'latestTask':None,
+              'continuation':None,
+              'recommendedAction':'continue',
+          }
+          context=compile_execution_context(
+              'agentmanager', state,
+              agent={
+                  'type':'antigravity-low-blind-executor',
+                  'history':'none',
+                  'effort':'low',
+              },
+          )
+          assert context['active_goal'], context
+          assert context['next_action'], context
+          assert context['context_freshness']['status']=='fresh', context
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule=client.submit(
+              project_id='agentmanager',
+              canonical_ir={
+                  'ir_id':'master-floor-real-weak-proof',
+                  'goal':context['active_goal'],
+                  'constraints':[
+                      'No repository writes or irreversible side effects.',
+                      'Use only the durable execution context supplied in this capsule.',
+                      'Assume there is no prior conversation history.',
+                  ],
+              },
+              execution_context=context,
+              instruction=(
+                  'This is a blind continuity evaluation. Without relying on any previous chat, '
+                  'state the durable active goal and the kernel-recommended next action in your own words. '
+                  'Then identify the single most important remaining blocker and propose a bounded 2-4 step plan. '
+                  'Do not modify files. Prefix the response with MASTER_FLOOR_ACK.'
+              ),
+              workspace='/home/ubuntu/.local/share/agentos/runtime-vnext',
+          )
+          print(json.dumps({
+              'capsule_id':capsule['capsule_id'],
+              'active_goal':context['active_goal'],
+              'next_action':context['next_action'],
+              'source_revision':context['source_revision'],
+          }, ensure_ascii=False))
+          PY
+          cat /tmp/master-floor-capsule.json
+          capsule_id=$(python3 -c "import json; print(json.load(open('/tmp/master-floor-capsule.json'))['capsule_id'])")
+          echo "capsule_id=$capsule_id" >> "$GITHUB_OUTPUT"
+          echo "relay_capsule_submitted=passed"
+          echo "producer_user=$(whoami)"
+
+      - name: Wait for ubuntu weak-executor receipt
+        shell: bash
+        env:
+          CAPSULE_ID: ${{ steps.submit.outputs.capsule_id }}
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import json, os, time
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule_id=os.environ['CAPSULE_ID']
+          receipt=None
+          for _ in range(180):
+              receipt=client.receipt(capsule_id)
+              if receipt is not None:
+                  break
+              time.sleep(1)
+          assert receipt is not None, 'relay receipt timed out'
+          print(json.dumps({
+              'schema':receipt.get('schema'),
+              'capsule_id':receipt.get('capsule_id'),
+              'ok':receipt.get('ok'),
+              'returncode':receipt.get('returncode'),
+              'executor_user':receipt.get('executor_user'),
+              'executor':receipt.get('executor'),
+              'context_source_revision':receipt.get('context_source_revision'),
+              'context_freshness':receipt.get('context_freshness'),
+          }, ensure_ascii=False, indent=2))
+          assert receipt['ok'] is True, receipt
+          assert receipt.get('returncode') == 0, receipt
+          assert receipt.get('executor_user') == 'ubuntu', receipt
+          output=str(receipt.get('stdout') or '')
+          assert 'MASTER_FLOOR_ACK' in output, output
+          # The low-effort executor must demonstrate durable continuity, not merely run.
+          continuity_terms=('Core v0.1','execution plane','GitHub Actions','weak executor','Master Experience Floor')
+          assert sum(term.lower() in output.lower() for term in continuity_terms) >= 2, output
+          planning_terms=('step','plan','next','blocker','remaining')
+          assert sum(term.lower() in output.lower() for term in planning_terms) >= 2, output
+          print('real_weak_executor_receipt=passed')
+          print('real_weak_executor_user=ubuntu')
+          print('real_weak_executor_master_floor_ack=passed')
+          print('real_weak_executor_continuity=passed')
+          print('--- weak executor output ---')
+          print(output[-12000:])
+          PY
