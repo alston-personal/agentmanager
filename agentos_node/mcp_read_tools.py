@@ -1,9 +1,4 @@
-"""Read-only MCP-facing AgentOS helpers.
-
-These helpers stay independent of any MCP SDK so they can be unit-tested without
-pulling transport dependencies into the core test suite. They expose only the
-read/attach surface needed for ChatGPT custom-app / developer-mode experiments.
-"""
+"""Read-only MCP-facing AgentOS helpers."""
 
 from __future__ import annotations
 
@@ -18,19 +13,22 @@ def resume_project(
     project_id: str,
     *,
     runtime_id: str = "chatgpt-web",
+    principal_id: str | None = None,
 ) -> dict[str, Any]:
-    """Return the authoritative AgentOS bootstrap packet for one project."""
+    """Return the authoritative account-scoped AgentOS bootstrap packet."""
 
-    return bootstrap_chatgpt_web(client, project_id, runtime_id=runtime_id).to_dict()
+    return bootstrap_chatgpt_web(
+        client,
+        project_id,
+        runtime_id=runtime_id,
+        principal_id=principal_id,
+        transport="mcp",
+    ).to_dict()
 
 
 def get_project_state(client: ControlPlaneClient, project_id: str) -> dict[str, Any]:
-    """Return the current durable project state without constructing new state."""
-
     return client.get_project_state(project_id)
 
 
 def get_task(client: ControlPlaneClient, task_id: str) -> dict[str, Any]:
-    """Read one AgentOS task by id."""
-
     return client.get_task(task_id)
