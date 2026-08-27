@@ -81,7 +81,6 @@ jobs:
           BASE=http://127.0.0.1:8765
           AUTH="Authorization: Bearer $TOKEN"
 
-          # Session A -> native task -> receipt.
           curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
             -d '{"project_id":"core-v01-proof","agent":{"type":"github-bootstrap","model":"none"}}' \
             "$BASE/v1/attach" >/tmp/a1.json
@@ -100,10 +99,11 @@ jobs:
           import json
           r=json.load(open('/tmp/receipt.json'))
           assert r['terminal'] is True and r['status']=='succeeded', r
+          assert r['executor']=='oracle-core-node'
+          assert r['evidence']['validated'] is True
           print('native_task_receipt=passed')
           PY
 
-          # Session B sees the same durable project state without previous conversation context.
           curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
             -d '{"project_id":"core-v01-proof","agent":{"type":"new-session"}}' "$BASE/v1/attach" >/tmp/a2.json
           python3 - <<'PY'
@@ -114,7 +114,6 @@ jobs:
           print('cross_session_attach=passed')
           PY
 
-          # Real native work: inspect the live LeopardCat repository through the allowlisted Oracle node.
           curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
             -d '{"project_id":"leopardcat-tarot","agent":{"type":"native-inspection-proof"}}' "$BASE/v1/attach" >/tmp/leopard-attach.json
           LSESSION=$(python3 -c "import json; print(json.load(open('/tmp/leopard-attach.json'))['session_id'])")
@@ -132,7 +131,8 @@ jobs:
           import json
           r=json.load(open('/tmp/inspect-receipt.json'))
           assert r['terminal'] is True and r['status']=='succeeded', r
-          result=r['task']['result']['runtime_result']['result']
+          assert r['executor']=='oracle-core-node'
+          result=r['evidence']
           assert result['project_id']=='leopardcat-tarot'
           assert len(result['head'])==40
           assert result['path'].endswith('/leopardcat-tarot')
