@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.meta-desktop-inspect/v0.1",
+  "node_id": "vopc5750",
+  "purpose": "read-only inspect zeuswriter Meta app via interactive desktop",
+  "nonce": "meta-zeuswriter-readonly-20260827-01"
+}
