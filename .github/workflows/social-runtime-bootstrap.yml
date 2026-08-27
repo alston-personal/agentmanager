@@ -1,0 +1,193 @@
+name: Social Runtime Bootstrap
+
+on:
+  push:
+    branches:
+      - feature/social-capability
+    paths:
+      - '.agentos/commands/social-runtime-bootstrap.json'
+      - '.github/workflows/social-runtime-bootstrap.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: social-runtime-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/social-capability
+
+      - name: Install feature executor without exposing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/home/agentos-node/.local/share/agentos-social
+          BIN=/home/agentos-node/.local/bin
+          install -d -m 0755 "$ROOT/src" "$BIN"
+          rm -rf "$ROOT/src/agentos_node"
+          cp -a agentos_node "$ROOT/src/agentos_node"
+          cat > "$BIN/agentos-social" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export PYTHONPATH=/home/agentos-node/.local/share/agentos-social/src${PYTHONPATH:+:$PYTHONPATH}
+          exec python3 -m agentos_node.social_cli "$@"
+          SH
+          chmod 0755 "$BIN/agentos-social"
+          "$BIN/agentos-social" --help >/dev/null
+
+      - name: Migrate legacy values to executor-local credential references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path('/home/ubuntu/agent-data/secrets/zeus-writer.env')
+          target = Path('/home/agentos-node/.agentos/social-credentials.json')
+          if not source.is_file():
+              raise SystemExit('legacy Zeus credential source is missing')
+
+          values = {}
+          for raw in source.read_text(encoding='utf-8', errors='replace').splitlines():
+              line = raw.strip()
+              if not line or line.startswith('#') or '=' not in line:
+                  continue
+              key, value = line.split('=', 1)
+              values[key.strip()] = value.strip().strip('"').strip("'")
+
+          refs = {}
+          threads = values.get('SOC_THREADS_TOKEN') or values.get('THREADS_ACCESS_TOKEN')
+          if threads:
+              refs['threads/default'] = {'platform': 'threads', 'access_token': threads}
+
+          fb = values.get('SOC_FB_TOKEN')
+          if fb:
+              item = {'platform': 'facebook', 'access_token': fb}
+              if values.get('SOC_FB_PAGE_ID'):
+                  item['page_id'] = values['SOC_FB_PAGE_ID']
+              refs['facebook/default'] = item
+
+          ig = values.get('SOC_IG_TOKEN')
+          if ig:
+              item = {'platform': 'instagram', 'access_token': ig}
+              if values.get('SOC_FB_PAGE_ID'):
+                  item['page_id'] = values['SOC_FB_PAGE_ID']
+              if values.get('SOC_IG_ID'):
+                  item['ig_id'] = values['SOC_IG_ID']
+              refs['instagram/default'] = item
+
+          if not refs:
+              raise SystemExit('no supported social credentials found in legacy source')
+
+          target.parent.mkdir(parents=True, exist_ok=True)
+          tmp = target.with_suffix('.tmp')
+          fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+          with os.fdopen(fd, 'w', encoding='utf-8') as f:
+              json.dump(refs, f, indent=2, sort_keys=True)
+              f.write('\n')
+          os.chmod(tmp, 0o600)
+          os.replace(tmp, target)
+          os.chmod(target, 0o600)
+
+          print('credential_store_created=true')
+          print('credential_refs=' + ','.join(sorted(refs)))
+          print('secret_values_printed=false')
+          PY
+
+      - name: Run read-only identity probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          python3 - <<'PY'
+          import json
+          import os
+          import stat
+          import subprocess
+          from pathlib import Path
+
+          store = Path('/home/agentos-node/.agentos/social-credentials.json')
+          refs = json.loads(store.read_text(encoding='utf-8'))
+          secrets = [str(v.get('access_token') or '') for v in refs.values() if isinstance(v, dict)]
+          exe = '/home/agentos-node/.local/bin/agentos-social'
+
+          def probe(platform, ref, extra=None):
+              cmd = [exe, platform, 'identity', '--credential', ref]
+              if extra:
+                  cmd += extra
+              p = subprocess.run(cmd, text=True, capture_output=True, timeout=40, check=False)
+              raw = (p.stdout.strip().splitlines() or ['{}'])[-1]
+              for secret in secrets:
+                  if secret:
+                      raw = raw.replace(secret, '[REDACTED]')
+              try:
+                  receipt = json.loads(raw)
+              except json.JSONDecodeError:
+                  receipt = {
+                      'schema': 'agentos.social.publish-receipt/v0.1',
+                      'ok': False,
+                      'platform': platform,
+                      'operation': 'identity',
+                      'credential_ref': ref,
+                      'error_code': 'invalid_executor_output',
+                  }
+              # Do not persist stderr; a third-party failure body is unnecessary evidence.
+              return {'returncode': p.returncode, 'receipt': receipt}
+
+          results = {}
+          if 'threads/default' in refs:
+              results['threads'] = probe('threads', 'threads/default')
+          if 'facebook/default' in refs:
+              extra = []
+              page_id = refs['facebook/default'].get('page_id')
+              if page_id:
+                  extra = ['--page-id', str(page_id)]
+              results['facebook'] = probe('facebook', 'facebook/default', extra)
+          if 'instagram/default' in refs:
+              extra = []
+              page_id = refs['instagram/default'].get('page_id')
+              ig_id = refs['instagram/default'].get('ig_id')
+              if page_id:
+                  extra += ['--page-id', str(page_id)]
+              if ig_id:
+                  extra += ['--ig-id', str(ig_id)]
+              results['instagram'] = probe('instagram', 'instagram/default', extra)
+
+          mode = oct(stat.S_IMODE(store.stat().st_mode))
+          payload = {
+              'schema': 'agentos.social-runtime-bootstrap/v0.1',
+              'executor': exe,
+              'executor_present': Path(exe).is_file(),
+              'credential_store': str(store),
+              'credential_store_mode': mode,
+              'credential_refs': sorted(refs),
+              'identity_probes': results,
+              'write_operations_performed': False,
+              'secret_values_collected_in_evidence': False,
+          }
+          Path('.agentos/evidence/social-runtime-bootstrap-current.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish secret-free evidence to feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/social-runtime-bootstrap-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(social): record executor bootstrap identities'
+          git push origin HEAD:feature/social-capability
