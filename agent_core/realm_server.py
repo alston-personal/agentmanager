@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
 from agent_core.realm_fabric import RealmFabricStore
 
 
@@ -71,6 +72,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 tasks = self.fabric.pull_tasks(node_id, token)
                 self._send(200, {'ok': True, 'tasks': tasks})
                 return
+            if parsed.path == '/v1/bootstrap':
+                query = parse_qs(parsed.query)
+                node_id = (query.get('node_id') or [''])[0]
+                token = self._bearer()
+                snapshot = bootstrap_snapshot(self.fabric, node_id, token)
+                self._send(200, {'ok': True, **snapshot})
+                return
             self._send(404, {'ok': False, 'error': 'not found'})
         except Exception as exc:
             self._error(exc)
@@ -115,6 +123,13 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 node = self.fabric.record_heartbeat(body, token)
                 self._send(200, {'ok': True, 'node': node})
+                return
+            if self.path == '/v1/benchmark':
+                body = self._json_body()
+                token = self._bearer()
+                node_id = str(body.get('node_id') or '')
+                report = record_join_regression(self.fabric, node_id, token, body)
+                self._send(200, {'ok': True, 'benchmark': report})
                 return
             if self.path == '/v1/receipts':
                 body = self._json_body()
