@@ -12,7 +12,7 @@ OVERLAY = ROOT / 'web_assets' / 'layoutlab-v0.7-release-fix.js'
 TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 INDEX = TARGET / 'index.html'
 TARGET_OVERLAY = TARGET / OVERLAY.name
-RELEASE = '0.7.5'
+RELEASE = '0.7.6'
 
 
 def sha(path: Path) -> str:
@@ -41,16 +41,19 @@ def main() -> int:
     )
     text = text.replace(
         '<div class="badge">LayoutLib Browser Adapter v0.6</div>',
-        f'<div class="badge">Layout Lab v{RELEASE} · AgentOS closed loop</div>',
+        f'<div class="badge" data-release="{RELEASE}">Layout Lab v{RELEASE} · AgentOS closed loop</div>',
     )
     text = text.replace(
         '<div class="compactTitle">v0.6 Learning contract</div>',
         f'<div class="compactTitle">v{RELEASE} Capability learning contract</div>',
     )
 
-    overlay_tag = '<script src="./layoutlab-v0.7-release-fix.js"></script>'
+    overlay_tag = f'<script src="./layoutlab-v0.7-release-fix.js?v={RELEASE}"></script>'
+    old_overlay_tag = '<script src="./layoutlab-v0.7-release-fix.js"></script>'
     bridge_tag = '<script src="./layoutlab-capability-bridge-v0.7.js"></script>'
-    if overlay_tag not in text:
+    if old_overlay_tag in text:
+        text = text.replace(old_overlay_tag, overlay_tag)
+    elif overlay_tag not in text:
         if bridge_tag not in text:
             raise SystemExit('capability bridge script tag missing from base deployment')
         text = text.replace(bridge_tag, overlay_tag + '\n' + bridge_tag)
@@ -63,8 +66,9 @@ def main() -> int:
     deployed = INDEX.read_text(encoding='utf-8')
     required = [
         f'Layout Lab v{RELEASE} · AgentOS closed loop',
+        f'data-release="{RELEASE}"',
         f'v{RELEASE} Capability learning contract',
-        'layoutlab-v0.7-release-fix.js',
+        f'layoutlab-v0.7-release-fix.js?v={RELEASE}',
         'layoutlab-capability-bridge-v0.7.js',
         'deleteWallsById',
         '刪除選取',
@@ -75,15 +79,17 @@ def main() -> int:
 
     overlay_text = TARGET_OVERLAY.read_text(encoding='utf-8')
     overlay_required = [
-        "const RELEASE='0.7.5'",
+        "const RELEASE='0.7.6'",
         'defaultSelection:true',
         'deleteKey:true',
         'fixedFrameZoom:true',
+        'twoDPanZoom:true',
+        'durableManualEdits:true',
         "button.textContent='清除手動修正'",
     ]
     overlay_missing = [x for x in overlay_required if x not in overlay_text]
     if overlay_missing:
-        raise SystemExit(f'v0.7.5 overlay acceptance failed: {overlay_missing}')
+        raise SystemExit(f'v0.7.6 overlay acceptance failed: {overlay_missing}')
 
     result = {
         'ok': True,
