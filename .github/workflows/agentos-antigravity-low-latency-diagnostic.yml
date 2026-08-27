@@ -13,7 +13,7 @@ permissions:
 jobs:
   low-latency-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     env:
       DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
@@ -32,8 +32,8 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
-          cd /home/ubuntu/.local/share/agentos/runtime-vnext
-          executor=$(PYTHONPATH=. /usr/bin/python3 - <<'PY'
+          runtime=/home/ubuntu/.local/share/agentos/runtime-vnext
+          executor=$(cd "$runtime" && PYTHONPATH=. /usr/bin/python3 - <<'PY'
           from agentos_node.antigravity_relay_worker import discover_executor
           e=discover_executor()
           assert e
@@ -43,24 +43,35 @@ jobs:
           echo "executor=$executor"
           "$executor" --version || true
           echo '--- relevant flags ---'
-          "$executor" --help 2>&1 | grep -E -- '--(effort|tools|permission|allowed|disallowed|dangerously|bare|print|output-format)' | head -60 || true
+          "$executor" --help 2>&1 | grep -E -- '--(effort|tools|permission|allowed|disallowed|dangerously|bare|print|output-format)' | head -80 || true
+          echo '--- non-secret environment shape ---'
+          echo "ssh_tty=$([ -t 0 ] && echo yes || echo no)"
+          echo "home=$HOME"
+          echo "user=$(whoami)"
+          printf 'named_env_keys='; env | cut -d= -f1 | grep -E '^(CLAUDE|ANTHROPIC|ANTIGRAVITY|XDG|DBUS|DISPLAY|WAYLAND|SSH_)' | sort | paste -sd, - || true
+
+          empty=/tmp/agentos-low-probe-empty
+          rm -rf "$empty"; mkdir -p "$empty"
+          prompt='Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.'
 
           probe() {
-            name="$1"; limit="$2"; prompt="$3"
+            name="$1"; cwd="$2"; shift 2
             out="/tmp/${name}.out"; err="/tmp/${name}.err"
             start=$(date +%s)
             set +e
-            timeout "${limit}s" "$executor" --bare --print --output-format text --effort low "$prompt" >"$out" 2>"$err"
+            (cd "$cwd" && timeout 35s "$executor" "$@" "$prompt" >"$out" 2>"$err")
             rc=$?
             set -e
             elapsed=$(( $(date +%s) - start ))
             echo "probe=$name rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
-            echo "--- $name stdout ---"
-            tail -c 3000 "$out" || true; echo
-            echo "--- $name stderr ---"
-            tail -c 3000 "$err" || true; echo
+            printf '%s stdout=' "$name"; tail -c 1200 "$out" || true; echo
+            printf '%s stderr=' "$name"; tail -c 1200 "$err" || true; echo
+            return 0
           }
 
-          probe ack 45 'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.'
-          probe continuity_min 60 'You are a weak AgentOS executor with no prior chat history. Durable goal: prove AgentOS can preserve continuity for a weak executor. Kernel next action: report the goal and next action without modifying files. Reply in at most 5 lines beginning MASTER_FLOOR_ACK. Do not use tools or inspect files.'
+          base=(--bare --print --output-format text --effort low)
+          probe empty_baseline "$empty" "${base[@]}"
+          probe empty_no_tools "$empty" "${base[@]}" --tools ""
+          probe empty_no_tools_dontask "$empty" "${base[@]}" --tools "" --permission-mode dontAsk
+          probe runtime_no_tools_dontask "$runtime" "${base[@]}" --tools "" --permission-mode dontAsk
           REMOTE
