@@ -1,154 +1,83 @@
-name: Oracle Deploy Layout Lab Static Official
+name: Oracle Verify Layout Lab Static Official
 
 on:
   workflow_dispatch:
   push:
     paths:
       - '.github/workflows/oracle-deploy-layoutlab-static-official.yml'
-      - 'web_assets/layoutlab_v0_5.html'
-      - 'web_assets/layoutlib-browser-v0.5.js'
-      - 'web_assets/layoutlab-capability-bridge-v0.7.js'
-      - 'scripts/deploy_layoutlab_static.py'
 
 permissions:
   contents: write
 
+# This legacy workflow is acceptance-only. Production mutation is owned by
+# oracle-release-layoutlab-v07.yml. Never call deploy_layoutlab_static.py here:
+# that base deploy intentionally starts from the historical layoutlab_v0_5.html
+# source and would overwrite the release-patched production index.
 concurrency:
-  group: layoutlab-production
-  cancel-in-progress: true
+  group: layoutlab-production-v07
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  verify:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 9
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      - name: Wait for governed runtime refresh
+      - name: Assert release ownership invariant
         shell: bash
         run: |
           set -euo pipefail
-          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
-          SRC_HTML=$(sha256sum web_assets/layoutlab_v0_5.html | awk '{print $1}')
-          SRC_LIB=$(sha256sum web_assets/layoutlib-browser-v0.5.js | awk '{print $1}')
-          SRC_BRIDGE=$(sha256sum web_assets/layoutlab-capability-bridge-v0.7.js | awk '{print $1}')
-          SRC_DEPLOY=$(sha256sum scripts/deploy_layoutlab_static.py | awk '{print $1}')
-          for i in $(seq 1 240); do
-            if [ -f "$RUNTIME/web_assets/layoutlab_v0_5.html" ] && [ -f "$RUNTIME/web_assets/layoutlib-browser-v0.5.js" ] && [ -f "$RUNTIME/web_assets/layoutlab-capability-bridge-v0.7.js" ] && [ -f "$RUNTIME/scripts/deploy_layoutlab_static.py" ]; then
-              RUN_HTML=$(sha256sum "$RUNTIME/web_assets/layoutlab_v0_5.html" | awk '{print $1}')
-              RUN_LIB=$(sha256sum "$RUNTIME/web_assets/layoutlib-browser-v0.5.js" | awk '{print $1}')
-              RUN_BRIDGE=$(sha256sum "$RUNTIME/web_assets/layoutlab-capability-bridge-v0.7.js" | awk '{print $1}')
-              RUN_DEPLOY=$(sha256sum "$RUNTIME/scripts/deploy_layoutlab_static.py" | awk '{print $1}')
-              if [ "$SRC_HTML" = "$RUN_HTML" ] && [ "$SRC_LIB" = "$RUN_LIB" ] && [ "$SRC_BRIDGE" = "$RUN_BRIDGE" ] && [ "$SRC_DEPLOY" = "$RUN_DEPLOY" ]; then
-                echo 'runtime_v0_7_refresh=PASS'
-                exit 0
-              fi
-            fi
-            sleep 1
-          done
-          echo 'runtime_v0_7_refresh=TIMEOUT'
-          exit 3
+          test -f .github/workflows/oracle-release-layoutlab-v07.yml
+          test -f scripts/deploy_layoutlab_v07_release.py
+          grep -q "RELEASE = '0.7.9'" scripts/deploy_layoutlab_v07_release.py
+          ! grep -q 'layoutlab.static.deploy' .github/workflows/oracle-deploy-layoutlab-static-official.yml
+          ! grep -q 'deploy_layoutlab_static.py' .github/workflows/oracle-deploy-layoutlab-static-official.yml || grep -q 'Never call deploy_layoutlab_static.py here' .github/workflows/oracle-deploy-layoutlab-static-official.yml
+          echo 'release_ownership=PASS'
 
-      - name: Submit deterministic static deployment
+      - name: Independent public v0.7.9 acceptance only
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/layoutlab-static-official.txt
-          ROOT=/home/ubuntu/agent-data/runtime/action-relay
-          CID=$(PYTHONPATH="$PWD" python3 - <<'PY'
-          from agentos_node.action_relay import ActionRelayClient
-          print(ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay').submit('layoutlab.static.deploy', {'site':'studio.milkcat.org'})['capsule_id'])
-          PY
-          )
-          RECEIPT="$ROOT/receipts/$CID.json"
-          for i in $(seq 1 60); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo "receipt timeout: $CID"; exit 2; }
-          { echo "capsule_id=$CID"; cat "$RECEIPT"; } | tee "$OUT"
-          python3 - "$RECEIPT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('action') == 'layoutlab.static.deploy', r
-          assert r.get('ok') is True, r
-          assert r.get('executor_user') == 'ubuntu', r
-          text=(r.get('step') or {}).get('stdout','')
-          assert 'layoutlib-v0.7-capability-bridge' in text, r
-          print('deterministic_static_deploy=PASS')
-          PY
-
-      - name: Independent public acceptance
-        shell: bash
-        run: |
-          set -euo pipefail
           OUT=.agentos/evidence/layoutlab-static-official-acceptance.txt
-          URL=https://studio.milkcat.org/layout-lab/
-          LIB=https://studio.milkcat.org/layout-lab/layoutlib-browser-v0.5.js
-          BRIDGE=https://studio.milkcat.org/layout-lab/layoutlab-capability-bridge-v0.7.js
+          BASE=https://studio.milkcat.org/layout-lab
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            CODE=$(curl -sS -o /tmp/layoutlab-static-ui -w '%{http_code}' --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$URL")
-            LIBCODE=$(curl -sS -o /tmp/layoutlab-lib -w '%{http_code}' --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$LIB")
-            BRIDGECODE=$(curl -sS -o /tmp/layoutlab-capability-bridge -w '%{http_code}' --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$BRIDGE")
-            echo "public_ui_http_code=$CODE"
-            echo "public_library_http_code=$LIBCODE"
-            echo "public_capability_bridge_http_code=$BRIDGECODE"
-            test "$CODE" = 200
-            test "$LIBCODE" = 200
-            test "$BRIDGECODE" = 200
-            grep -q '<title>Layout Lab | Milkcat Studio</title>' /tmp/layoutlab-static-ui
-            grep -q 'LayoutLib Browser Adapter v0.6' /tmp/layoutlab-static-ui
-            grep -q '3D 即時對照' /tmp/layoutlab-static-ui
-            grep -q '黃色反白' /tmp/layoutlab-static-ui
-            grep -q 'layoutlib.profile.samples.v1' /tmp/layoutlab-static-ui
-            grep -q '泛化建議' /tmp/layoutlab-static-ui
-            grep -q 'createEditableDocument' /tmp/layoutlab-static-ui
-            grep -q 'selectWallsInRectPx' /tmp/layoutlab-static-ui
-            grep -q 'deleteWallsById' /tmp/layoutlab-static-ui
-            grep -q '▭ 選取' /tmp/layoutlab-static-ui
-            grep -q '刪除選取' /tmp/layoutlab-static-ui
-            grep -q 'view={yaw:0,pitch:0,zoom:1}' /tmp/layoutlab-static-ui
-            grep -q 'layoutlab-capability-bridge-v0.7.js' /tmp/layoutlab-static-ui
-            grep -q "version:'0.6.0'" /tmp/layoutlab-lib
-            grep -q 'previewEraseStrokePx' /tmp/layoutlab-lib
-            grep -q 'extractProfileFeatures' /tmp/layoutlab-lib
-            grep -q 'predictProfileParameters' /tmp/layoutlab-lib
-            grep -q 'makeLearningObservation' /tmp/layoutlab-lib
-            grep -q 'replayEdits' /tmp/layoutlab-lib
-            grep -q 'finishModel' /tmp/layoutlab-capability-bridge
-            grep -q 'layoutlib.capability.pending.v1' /tmp/layoutlab-capability-bridge
-            grep -q 'agentos.capability-experience/v1' /tmp/layoutlab-capability-bridge
-            grep -q 'applyCanonicalPolicy' /tmp/layoutlab-capability-bridge
-            grep -q 'correction_cost' /tmp/layoutlab-capability-bridge
-            echo 'public_payload_identity=PASS'
-            echo 'dual_2d_3d_workspace=PASS'
-            echo 'erase_preview_highlight=PASS'
-            echo 'draft_committed_state=PASS'
-            echo 'generalized_profile_learning=PASS'
-            echo 'learning_not_image_fingerprint=PASS'
-            echo 'pre_analysis_editing=PASS'
-            echo 'box_selection_delete=PASS'
-            echo 'plan_aligned_reset=PASS'
-            echo 'completion_experience_bridge=PASS'
-            echo 'correction_cost_learning_boundary=PASS'
-            echo 'canonical_policy_bootstrap_hook=PASS'
-            echo 'official_layoutlab_web_ui=PASS'
+            curl -fsS --retry 8 --retry-all-errors "$BASE/" -o /tmp/layoutlab-official-ui
+            curl -fsS --retry 8 --retry-all-errors "$BASE/layoutlib-spatial-semantics-v0.1.js?v=0.7.9" -o /tmp/layoutlab-semantics
+            curl -fsS --retry 8 --retry-all-errors "$BASE/layoutlab-editor-ui-v0.7.js?v=0.7.9" -o /tmp/layoutlab-editor-ui
+            curl -fsS --retry 8 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.9" -o /tmp/layoutlab-release-fix
+            grep -q '<div class="badge" data-release="0.7.9">v0.7.9</div>' /tmp/layoutlab-official-ui
+            grep -q 'layoutlib-spatial-semantics-v0.1.js?v=0.7.9' /tmp/layoutlab-official-ui
+            grep -q 'candidateOpenings' /tmp/layoutlab-semantics
+            grep -q 'classifyOpening' /tmp/layoutlab-semantics
+            grep -q 'segmentRooms' /tmp/layoutlab-semantics
+            grep -q 'token_cost:0' /tmp/layoutlab-semantics
+            grep -q 'LayoutLibEditor' /tmp/layoutlab-editor-ui
+            grep -q "const RELEASE='0.7.9'" /tmp/layoutlab-release-fix
+            grep -q 'installSemanticOverlay' /tmp/layoutlab-release-fix
+            grep -q "fillText('門'" /tmp/layoutlab-release-fix
+            grep -q "fillText('窗'" /tmp/layoutlab-release-fix
+            ! grep -q 'AgentOS closed loop' /tmp/layoutlab-official-ui
+            echo 'public_v079_identity=PASS'
+            echo 'semantic_door_window_overlay=PASS'
+            echo 'legacy_static_overwrite_disabled=PASS'
           } 2>&1 | tee "$OUT"
 
-      - name: Commit deployment evidence
+      - name: Commit acceptance evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          cp .agentos/evidence/layoutlab-static-official.txt /tmp/layoutlab-static-official.txt 2>/dev/null || true
           cp .agentos/evidence/layoutlab-static-official-acceptance.txt /tmp/layoutlab-static-official-acceptance.txt 2>/dev/null || true
           git fetch origin main
           git reset --hard origin/main
           mkdir -p .agentos/evidence
-          cp /tmp/layoutlab-static-official.txt .agentos/evidence/layoutlab-static-official.txt 2>/dev/null || true
           cp /tmp/layoutlab-static-official-acceptance.txt .agentos/evidence/layoutlab-static-official-acceptance.txt 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/layoutlab-static-official*.txt 2>/dev/null || true
+          git add .agentos/evidence/layoutlab-static-official-acceptance.txt 2>/dev/null || true
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(layoutlab): stable official browser UI acceptance'
+          git commit -m 'evidence(layoutlab): verify release-owned official browser UI'
           git push origin HEAD:main
