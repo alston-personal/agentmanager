@@ -13,6 +13,7 @@ on:
       - 'scripts/install_thin_client_windows.ps1'
       - 'scripts/windows/install_node_runtime_service.ps1'
       - 'scripts/windows/install_desktop_executor_user.ps1'
+      - 'scripts/windows/migrate_split_node_executor_runtime.ps1'
       - 'tests/test_executor_bridge.py'
       - 'tests/test_executor_registry.py'
       - 'tests/test_thin_client.py'
@@ -28,6 +29,7 @@ on:
       - 'scripts/install_thin_client_windows.ps1'
       - 'scripts/windows/install_node_runtime_service.ps1'
       - 'scripts/windows/install_desktop_executor_user.ps1'
+      - 'scripts/windows/migrate_split_node_executor_runtime.ps1'
       - 'tests/test_executor_bridge.py'
       - 'tests/test_executor_registry.py'
       - 'tests/test_thin_client.py'
@@ -55,6 +57,7 @@ jobs:
 
           service = Path('scripts/windows/install_node_runtime_service.ps1').read_text(encoding='utf-8')
           desktop = Path('scripts/windows/install_desktop_executor_user.ps1').read_text(encoding='utf-8')
+          migration = Path('scripts/windows/migrate_split_node_executor_runtime.ps1').read_text(encoding='utf-8')
           bootstrap = Path('scripts/install_thin_client_windows.ps1').read_text(encoding='utf-8')
           host = Path('agentos_node/desktop_executor_host.py').read_text(encoding='utf-8')
           pyproject = Path('pyproject.toml').read_text(encoding='utf-8')
@@ -71,6 +74,10 @@ jobs:
           assert 'agentos-desktop-executor = "agentos_node.desktop_executor_cli:main"' in pyproject
           assert 'Register-ScheduledTask' not in bootstrap
           assert 'executor_bridge.py' in bootstrap and 'desktop_executor_host.py' in bootstrap
+          assert 'migration-backup-' in migration
+          assert 'Restore-LegacyRuntime' in migration
+          assert '[uri]::EscapeDataString($SourceRef)' in migration
+          assert 'client.json' in migration and 'policy.json' in migration
           print('node_desktop_carrier_boundary=PASS')
           PY
 
@@ -88,7 +95,8 @@ jobs:
           $files = @(
             'scripts/install_thin_client_windows.ps1',
             'scripts/windows/install_node_runtime_service.ps1',
-            'scripts/windows/install_desktop_executor_user.ps1'
+            'scripts/windows/install_desktop_executor_user.ps1',
+            'scripts/windows/migrate_split_node_executor_runtime.ps1'
           )
           foreach ($file in $files) {
             $tokens = $null
