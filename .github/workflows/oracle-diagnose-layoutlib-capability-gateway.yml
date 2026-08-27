@@ -1,0 +1,79 @@
+name: Oracle Diagnose LayoutLib Capability Gateway
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-diagnose-layoutlib-capability-gateway.yml'
+      - 'agentos_node/capability_http.py'
+      - 'agentos_node/capability_store.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: layoutlib-capability-gateway-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inspect service and reverse proxy wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=.agentos/evidence/layoutlib-capability-gateway-diagnostic.txt
+          mkdir -p .agentos/evidence
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "runner_identity=$(id)"
+            echo '=== PUBLIC CURRENT ==='
+            for u in \
+              https://studio.milkcat.org/layout-lab/ \
+              https://studio.milkcat.org/layout-lab/api/healthz \
+              https://studio.milkcat.org/layout-lab/api/capability/layoutlib.profile-detection/canonical; do
+              code=$(curl -sS --max-time 15 -o /tmp/layoutlib-gateway-probe -w '%{http_code}' "$u" || true)
+              printf 'url=%s code=%s body=' "$u" "$code"
+              head -c 300 /tmp/layoutlib-gateway-probe 2>/dev/null | tr '\n' ' ' || true
+              echo
+            done
+            echo '=== USER UNIT ==='
+            systemctl --user status layoutlab-api.service --no-pager 2>&1 || true
+            systemctl --user cat layoutlab-api.service 2>&1 || true
+            echo '=== USER UNIT FILES ==='
+            find "$HOME/.config/systemd/user" -maxdepth 1 -type f -name '*layout*' -o -name '*studio*' 2>/dev/null | sort | while read -r f; do echo "--- $f"; cat "$f"; done
+            echo '=== LISTENERS ==='
+            ss -ltnp 2>&1 | grep -E ':(8766|8000|8080|8088|8090|3000|3002|3005|3010|3011|3020)\b' || true
+            echo '=== NGINX SITE ==='
+            for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+              [ -r "$f" ] || continue
+              if grep -q 'studio.milkcat.org' "$f"; then echo "--- $f"; cat "$f"; fi
+            done
+            echo '=== LOCAL GATEWAY PROBE ==='
+            code=$(curl -sS --max-time 3 -o /tmp/layoutlib-local-gateway -w '%{http_code}' http://127.0.0.1:8766/healthz || true)
+            echo "local_8766_health_code=$code"
+            cat /tmp/layoutlib-local-gateway 2>/dev/null || true
+            echo
+            echo 'mutation=NONE'
+          } 2>&1 | tee "$OUT"
+
+      - name: Commit diagnostic evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .agentos/evidence/layoutlib-capability-gateway-diagnostic.txt /tmp/layoutlib-capability-gateway-diagnostic.txt 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/layoutlib-capability-gateway-diagnostic.txt .agentos/evidence/layoutlib-capability-gateway-diagnostic.txt 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-capability-gateway-diagnostic.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): capability gateway wiring diagnostic'
+          git push origin HEAD:main
