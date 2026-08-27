@@ -82,88 +82,77 @@ jobs:
           BASE=http://127.0.0.1:8765
           AUTH="Authorization: Bearer $TOKEN"
 
-          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"project_id":"core-v01-proof","agent":{"type":"github-bootstrap","model":"none"}}' \
-            "$BASE/v1/attach" >/tmp/a1.json
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"core-v01-proof","agent":{"type":"github-bootstrap","model":"none"}}' "$BASE/v1/attach" >/tmp/a1.json
           SESSION=$(python3 -c "import json; print(json.load(open('/tmp/a1.json'))['session_id'])")
-          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-            -d "{\"project_id\":\"core-v01-proof\",\"goal\":\"prove native execution\",\"capability\":\"agentos.ir.validate\",\"payload\":{\"source\":\"native\"},\"session_id\":\"$SESSION\"}" \
-            "$BASE/v1/tasks" >/tmp/task.json
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d "{\"project_id\":\"core-v01-proof\",\"goal\":\"prove native execution\",\"capability\":\"agentos.ir.validate\",\"payload\":{\"source\":\"native\"},\"session_id\":\"$SESSION\"}" "$BASE/v1/tasks" >/tmp/task.json
           TASK=$(python3 -c "import json; print(json.load(open('/tmp/task.json'))['task']['taskId'])")
-          for _ in $(seq 1 30); do
-            curl -fsS -H "$AUTH" "$BASE/v1/receipts/$TASK" >/tmp/receipt.json
-            terminal=$(python3 -c "import json; print(str(json.load(open('/tmp/receipt.json'))['terminal']).lower())")
-            [ "$terminal" = true ] && break
-            sleep 1
-          done
+          for _ in $(seq 1 30); do curl -fsS -H "$AUTH" "$BASE/v1/receipts/$TASK" >/tmp/receipt.json; terminal=$(python3 -c "import json; print(str(json.load(open('/tmp/receipt.json'))['terminal']).lower())"); [ "$terminal" = true ] && break; sleep 1; done
           python3 - <<'PY'
           import json
           r=json.load(open('/tmp/receipt.json'))
           assert r['terminal'] is True and r['status']=='succeeded', r
-          assert r['executor']=='oracle-core-node'
-          assert r['evidence']['validated'] is True
+          assert r['executor']=='oracle-core-node' and r['evidence']['validated'] is True
           print('native_task_receipt=passed')
           PY
 
-          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"project_id":"core-v01-proof","agent":{"type":"new-session"}}' "$BASE/v1/attach" >/tmp/a2.json
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"core-v01-proof","agent":{"type":"new-session"}}' "$BASE/v1/attach" >/tmp/a2.json
           python3 - <<'PY'
           import json
           a=json.load(open('/tmp/a2.json'))
-          assert a['state']['latestTask'] is not None
-          assert a['state']['recommendedAction']=='continue'
+          assert a['state']['latestTask'] is not None and a['state']['recommendedAction']=='continue'
           assert a['execution_context']['latest_task']['taskId']==a['state']['latestTask']['taskId']
           assert a['execution_context']['recommended_action']=='continue'
           print('cross_session_attach=passed')
           print('cross_session_execution_context=passed')
           PY
 
-          # Blind fresh-session proof: no prior conversation is supplied. The
-          # attached agent must learn the current AgentOS goal and next action
-          # from deterministic durable context alone.
-          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"project_id":"agentmanager","agent":{"type":"blind-fresh-session","history":"none"}}' \
-            "$BASE/v1/attach" >/tmp/blind-attach.json
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"agentmanager","agent":{"type":"blind-fresh-session","history":"none"}}' "$BASE/v1/attach" >/tmp/blind-attach.json
           python3 - <<'PY'
           import json
-          a=json.load(open('/tmp/blind-attach.json'))
-          c=a['execution_context']
-          assert c['schema']=='agentos.execution-context/v0.1', c
-          assert c['active_goal'], c
-          assert c['current_findings'], c
-          assert c['next_actions'], c
-          assert c['next_action']==c['next_actions'][0], c
-          assert c['integration_branch']=='feature/distributed-agentos-runtime', c
-          assert c['write_policy']['branch_required_for_writes'] is True, c
-          assert c['agent']['history']=='none', c
+          c=json.load(open('/tmp/blind-attach.json'))['execution_context']
+          assert c['schema']=='agentos.execution-context/v0.1' and c['active_goal'] and c['current_findings'] and c['next_actions']
+          assert c['next_action']==c['next_actions'][0]
+          assert c['integration_branch']=='feature/distributed-agentos-runtime'
+          assert c['write_policy']['branch_required_for_writes'] is True
+          assert c['agent']['history']=='none'
           print('blind_fresh_session_context=passed')
           print('blind_active_goal='+c['active_goal'])
           print('blind_next_action='+c['next_action'])
           print('blind_integration_branch='+str(c['integration_branch']))
           PY
 
-          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-            -d '{"project_id":"leopardcat-tarot","agent":{"type":"native-inspection-proof"}}' "$BASE/v1/attach" >/tmp/leopard-attach.json
+          # Real native test execution. GitHub Actions only submits and observes;
+          # oracle-core-node executes the administrator-defined core-v01 profile.
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"agentos-core","agent":{"type":"native-test-proof"}}' "$BASE/v1/attach" >/tmp/test-attach.json
+          TSESSION=$(python3 -c "import json; print(json.load(open('/tmp/test-attach.json'))['session_id'])")
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d "{\"project_id\":\"agentos-core\",\"goal\":\"run allowlisted Core v0.1 tests natively\",\"capability\":\"agentos.project.test\",\"payload\":{\"profile\":\"core-v01\",\"argv\":[\"false\"]},\"session_id\":\"$TSESSION\"}" "$BASE/v1/tasks" >/tmp/native-test-task.json
+          NTEST=$(python3 -c "import json; print(json.load(open('/tmp/native-test-task.json'))['task']['taskId'])")
+          for _ in $(seq 1 90); do curl -fsS -H "$AUTH" "$BASE/v1/receipts/$NTEST" >/tmp/native-test-receipt.json; terminal=$(python3 -c "import json; print(str(json.load(open('/tmp/native-test-receipt.json'))['terminal']).lower())"); [ "$terminal" = true ] && break; sleep 1; done
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/native-test-receipt.json'))
+          assert r['terminal'] is True and r['status']=='succeeded', r
+          assert r['executor']=='oracle-core-node', r
+          e=r['evidence']
+          assert e['project_id']=='agentos-core' and e['profile']=='core-v01' and e['passed'] is True and e['returncode']==0, e
+          assert 'passed' in e['stdout'], e
+          print('native_project_test=passed')
+          print('native_project_test_executor='+r['executor'])
+          print('native_project_test_head='+e['head'])
+          PY
+
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"leopardcat-tarot","agent":{"type":"native-inspection-proof"}}' "$BASE/v1/attach" >/tmp/leopard-attach.json
           LSESSION=$(python3 -c "import json; print(json.load(open('/tmp/leopard-attach.json'))['session_id'])")
-          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-            -d "{\"project_id\":\"leopardcat-tarot\",\"goal\":\"inspect live repository without GitHub Actions executor\",\"capability\":\"agentos.project.inspect\",\"payload\":{},\"session_id\":\"$LSESSION\"}" \
-            "$BASE/v1/tasks" >/tmp/inspect-task.json
+          curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d "{\"project_id\":\"leopardcat-tarot\",\"goal\":\"inspect live repository without GitHub Actions executor\",\"capability\":\"agentos.project.inspect\",\"payload\":{},\"session_id\":\"$LSESSION\"}" "$BASE/v1/tasks" >/tmp/inspect-task.json
           ITASK=$(python3 -c "import json; print(json.load(open('/tmp/inspect-task.json'))['task']['taskId'])")
-          for _ in $(seq 1 30); do
-            curl -fsS -H "$AUTH" "$BASE/v1/receipts/$ITASK" >/tmp/inspect-receipt.json
-            terminal=$(python3 -c "import json; print(str(json.load(open('/tmp/inspect-receipt.json'))['terminal']).lower())")
-            [ "$terminal" = true ] && break
-            sleep 1
-          done
+          for _ in $(seq 1 30); do curl -fsS -H "$AUTH" "$BASE/v1/receipts/$ITASK" >/tmp/inspect-receipt.json; terminal=$(python3 -c "import json; print(str(json.load(open('/tmp/inspect-receipt.json'))['terminal']).lower())"); [ "$terminal" = true ] && break; sleep 1; done
           python3 - <<'PY'
           import json
           r=json.load(open('/tmp/inspect-receipt.json'))
           assert r['terminal'] is True and r['status']=='succeeded', r
           assert r['executor']=='oracle-core-node'
           result=r['evidence']
-          assert result['project_id']=='leopardcat-tarot'
-          assert len(result['head'])==40
-          assert result['path'].endswith('/leopardcat-tarot')
+          assert result['project_id']=='leopardcat-tarot' and len(result['head'])==40 and result['path'].endswith('/leopardcat-tarot')
           print('native_project_inspect=passed')
           print('native_project_head='+result['head'])
           print('native_project_dirty='+str(result['dirty']).lower())
