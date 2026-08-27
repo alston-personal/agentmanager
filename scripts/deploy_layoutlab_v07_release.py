@@ -12,7 +12,7 @@ OVERLAY = ROOT / 'web_assets' / 'layoutlab-v0.7-release-fix.js'
 TARGET = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 INDEX = TARGET / 'index.html'
 TARGET_OVERLAY = TARGET / OVERLAY.name
-RELEASE = '0.7.8'
+RELEASE = '0.7.9'
 
 
 def sha(path: Path) -> str:
@@ -37,7 +37,7 @@ def main() -> int:
     text = INDEX.read_text(encoding='utf-8')
     text = text.replace(
         'LayoutLib v0.6：2D / 3D 同屏、即時擦除反白、Draft/Committed 分離，以及從圖面特徵抽象學習 parser profile；不是記住單一圖片。',
-        f'Layout Lab v{RELEASE}：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。',
+        f'Layout Lab v{RELEASE}：LayoutLib 的 2D / 3D Spatial IR 編輯與 AgentOS Capability closed-loop demo。',
     )
     text = text.replace(
         '<div class="badge">LayoutLib Browser Adapter v0.6</div>',
@@ -47,13 +47,11 @@ def main() -> int:
         '<div class="compactTitle">v0.6 Learning contract</div>',
         f'<div class="compactTitle">v{RELEASE} Capability learning contract</div>',
     )
-
+    for asset in ['layoutlib-editor-v0.7.js','layoutlab-editor-ui-v0.7.js']:
+        text = text.replace(f'<script src="./{asset}"></script>', f'<script src="./{asset}?v={RELEASE}"></script>')
     overlay_tag = f'<script src="./layoutlab-v0.7-release-fix.js?v={RELEASE}"></script>'
-    old_overlay_tag = '<script src="./layoutlab-v0.7-release-fix.js"></script>'
     bridge_tag = '<script src="./layoutlab-capability-bridge-v0.7.js"></script>'
-    if old_overlay_tag in text:
-        text = text.replace(old_overlay_tag, overlay_tag)
-    elif overlay_tag not in text:
+    if overlay_tag not in text:
         if bridge_tag not in text:
             raise SystemExit('capability bridge script tag missing from base deployment')
         text = text.replace(bridge_tag, overlay_tag + '\n' + bridge_tag)
@@ -68,10 +66,10 @@ def main() -> int:
         f'<div class="badge" data-release="{RELEASE}">v{RELEASE}</div>',
         f'Layout Lab v{RELEASE}：',
         f'v{RELEASE} Capability learning contract',
+        f'layoutlib-editor-v0.7.js?v={RELEASE}',
+        f'layoutlab-editor-ui-v0.7.js?v={RELEASE}',
         f'layoutlab-v0.7-release-fix.js?v={RELEASE}',
         'layoutlab-capability-bridge-v0.7.js',
-        'deleteWallsById',
-        '刪除選取',
     ]
     missing = [x for x in required if x not in deployed]
     if missing:
@@ -79,26 +77,20 @@ def main() -> int:
 
     overlay_text = TARGET_OVERLAY.read_text(encoding='utf-8')
     overlay_required = [
-        "const RELEASE='0.7.8'",
-        'defaultSelection:true',
-        'deleteKey:true',
-        'initialWallPreview:true',
-        'rightDragPan:true',
-        'fixedFrameZoom:true',
-        'twoDPanZoom:true',
-        'durableManualEdits:true',
-        'compactVersionBadge:true',
-        "badge.textContent=`v${RELEASE}`",
-        "button.textContent='清除手動修正'",
+        "const RELEASE='0.7.9'", 'uiOnly:true', 'deleteKey:true', 'rightDragPan:true',
+        'fixedFrameZoom:true', 'twoDPanZoom:true', 'compactVersionBadge:true',
+        "badge.textContent=`v${RELEASE}`", "button.textContent='清除手動修正'",
     ]
+    overlay_forbidden = ['deleteWallsById=', 'function removeByEvidence', 'MANUAL_OPS=', 'replayEdits=']
     overlay_missing = [x for x in overlay_required if x not in overlay_text]
-    if overlay_missing:
-        raise SystemExit(f'v0.7.8 overlay acceptance failed: {overlay_missing}')
+    overlay_bad = [x for x in overlay_forbidden if x in overlay_text]
+    if overlay_missing or overlay_bad:
+        raise SystemExit(f'v0.7.9 UI-only overlay acceptance failed: missing={overlay_missing} forbidden={overlay_bad}')
 
     result = {
         'ok': True,
         'release': f'layoutlab-v{RELEASE}',
-        'mode': 'layoutlib-v0.7-production-release',
+        'mode': 'layoutlib-v0.7-library-backed-demo',
         'index_sha256': sha(INDEX),
         'overlay_sha256': sha(TARGET_OVERLAY),
         'base_stdout': base.stdout[-4000:],
