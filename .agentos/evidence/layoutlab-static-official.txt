@@ -1,22 +1,22 @@
-capsule_id=action-13caf59ff51a4734978403960913ea0e
+capsule_id=action-f4f03dc32732495ea5381ab9d6a6db54
 {
   "action": "layoutlab.static.deploy",
   "artifact": "/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html",
-  "capsule_id": "action-13caf59ff51a4734978403960913ea0e",
-  "completed_at": "2026-08-27T08:45:39Z",
+  "capsule_id": "action-f4f03dc32732495ea5381ab9d6a6db54",
+  "completed_at": "2026-08-27T08:47:23Z",
   "executor_user": "ubuntu",
   "mode": "browser-only-layoutlib-v0.1-compatible",
-  "ok": false,
+  "ok": true,
   "schema": "agentos.action-receipt/v1",
   "site": "studio.milkcat.org",
-  "started_at": "2026-08-27T08:45:39Z",
+  "started_at": "2026-08-27T08:47:23Z",
   "step": {
     "argv": [
       "/usr/bin/python3",
       "/home/ubuntu/.local/share/agentos/action-runtime/scripts/deploy_layoutlab_static.py"
     ],
-    "returncode": 1,
-    "stderr": "missing source asset: /home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-spatial-semantics-v0.1.js\n",
-    "stdout": ""
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "{\"artifacts\": {\"index.html\": {\"bytes\": 25745, \"sha256\": \"6ae179d7bea083bfc17844bb8101bffe5b8f68502f5edcf0aed4aad5c51b6710\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab_v0_5.html\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/index.html\"}, \"layoutlab-capability-bridge-v0.7.js\": {\"bytes\": 13437, \"sha256\": \"e0e45b7347d9bf98b8f6c6997487c6c1096a8f21181cc0d88530b559592ab3de\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab-capability-bridge-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlab-capability-bridge-v0.7.js\"}, \"layoutlab-editor-ui-v0.7.js\": {\"bytes\": 7918, \"sha256\": \"bf7deb85f45f952a963978a3f95d5f392239086233ee3823419139415815abc3\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlab-editor-ui-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlab-editor-ui-v0.7.js\"}, \"layoutlib-browser-v0.5.js\": {\"bytes\": 12831, \"sha256\": \"d9acd99886a5265f94b9777ec0ea1b0e6c336bf5083d33355de907d6b8dcacab\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-browser-v0.5.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-browser-v0.5.js\"}, \"layoutlib-editor-v0.7.js\": {\"bytes\": 7567, \"sha256\": \"f8aeb05ea33a3596e817adc1bcb0b3715123c019dcd860215383e0bb2a02382e\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-editor-v0.7.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-editor-v0.7.js\"}, \"layoutlib-spatial-semantics-v0.1.js\": {\"bytes\": 9045, \"sha256\": \"ef2bb9e8d8d2ecf918b051cea2f76caa092fa00ef97d90246cdf7c6bce3d15a4\", \"source\": \"/home/ubuntu/.local/share/agentos/action-runtime/web_assets/layoutlib-spatial-semantics-v0.1.js\", \"target\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab/layoutlib-spatial-semantics-v0.1.js\"}}, \"directory\": \"/home/ubuntu/zeus-writer/website/dist/layout-lab\", \"directory_mode\": \"0755\", \"file_mode\": \"0644\", \"mode\": \"layoutlib-v0.7-library-backed-demo\", \"ok\": true}\n"
   }
 }
