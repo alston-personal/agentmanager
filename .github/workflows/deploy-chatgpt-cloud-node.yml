@@ -54,13 +54,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          CHATGPT_PROJECTS_B64="$(printf '%s' "$CHATGPT_PROJECTS" | base64 -w0)"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS" <<'REMOTE'
+            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS_B64" <<'REMOTE'
           set -euo pipefail
           CONFIG_ROOT="$1"
           RELEASE_ROOT="$2"
           CHATGPT_PRINCIPAL_ID="$3"
-          CHATGPT_PROJECTS="$4"
+          CHATGPT_PROJECTS="$(printf '%s' "$4" | base64 -d)"
           REF="feature/distributed-agentos-runtime"
 
           test -d "$RELEASE_ROOT/.git" || { echo "Distributed AgentOS release checkout missing: $RELEASE_ROOT"; exit 2; }
