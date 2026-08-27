@@ -1,4 +1,4 @@
-name: AgentOS Antigravity Low Latency Diagnostic
+name: AgentOS Antigravity IPC Surface Diagnostic
 
 on:
   push:
@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  low-latency-diagnostic:
+  ipc-surface-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 6
     env:
       DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
@@ -27,83 +27,134 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Inspect executor and environment names only
+      - name: Inventory Antigravity process and Unix IPC metadata
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -euo pipefail
-          runtime=/home/ubuntu/.local/share/agentos/runtime-vnext
-          executor=$(cd "$runtime" && PYTHONPATH=. /usr/bin/python3 - <<'PY'
-          from agentos_node.antigravity_relay_worker import discover_executor
-          e=discover_executor(); assert e; print(e[0])
-          PY
-          )
-          echo "executor=$executor"
-          "$executor" --version || true
-          echo '--- relevant flags ---'
-          "$executor" --help 2>&1 | grep -E -- '--(effort|tools|permission|allowed|disallowed|dangerously|bare|print|output-format)' | head -80 || true
-          echo '--- ssh environment keys only ---'
-          printf 'ssh_env_keys='; env | cut -d= -f1 | grep -E '^(CLAUDE|ANTHROPIC|ANTIGRAVITY|XDG|DBUS|DISPLAY|WAYLAND|SSH_)' | sort | paste -sd, - || true
-          echo '--- systemd user-manager environment keys only ---'
-          printf 'user_manager_env_keys='; systemctl --user show-environment 2>/dev/null | cut -d= -f1 | grep -E '^(CLAUDE|ANTHROPIC|ANTIGRAVITY|XDG|DBUS|DISPLAY|WAYLAND|PATH|HOME)' | sort | paste -sd, - || true
-          echo '--- relevant ubuntu process names only ---'
-          ps -u "$(id -u)" -o comm= | grep -Ei 'antigravity|claude|extension|language|node' | sort | uniq -c || true
-          REMOTE
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import os
+          from pathlib import Path
+          import re
+          import socket
+          import stat
 
-      - name: SSH empty workspace baseline
-        shell: bash
-        run: |
-          set +e
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -u
-          runtime=/home/ubuntu/.local/share/agentos/runtime-vnext
-          executor=$(cd "$runtime" && PYTHONPATH=. /usr/bin/python3 - <<'PY'
-          from agentos_node.antigravity_relay_worker import discover_executor
-          e=discover_executor(); assert e; print(e[0])
-          PY
-          )
-          empty=/tmp/agentos-low-probe-empty; rm -rf "$empty"; mkdir -p "$empty"; cd "$empty"
-          out=/tmp/ssh_empty_baseline.out; err=/tmp/ssh_empty_baseline.err; start=$(date +%s)
-          timeout -k 2s 25s "$executor" --bare --print --output-format text --effort low --tools '' --permission-mode dontAsk \
-            'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.' >"$out" 2>"$err"
-          rc=$?; elapsed=$(( $(date +%s)-start ))
-          echo "probe=ssh_empty rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
-          printf 'stdout='; tail -c 1200 "$out"; echo
-          printf 'stderr='; tail -c 1200 "$err"; echo
-          exit 0
-          REMOTE
-          exit 0
+          UID = os.getuid()
+          PROC = Path('/proc')
+          relevant_terms = ('antigravity', 'extensionhost', 'extension', 'language_server', 'language-server', 'claude', 'codex')
 
-      - name: User manager empty workspace probe
-        shell: bash
-        run: |
-          set +e
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -u
-          runtime=/home/ubuntu/.local/share/agentos/runtime-vnext
-          executor=$(cd "$runtime" && PYTHONPATH=. /usr/bin/python3 - <<'PY'
-          from agentos_node.antigravity_relay_worker import discover_executor
-          e=discover_executor(); assert e; print(e[0])
-          PY
-          )
-          empty=/tmp/agentos-low-probe-user-manager; rm -rf "$empty"; mkdir -p "$empty"
-          out=/tmp/user_manager_probe.out; err=/tmp/user_manager_probe.err; start=$(date +%s)
-          timeout -k 2s 25s systemd-run --user --wait --collect --pipe \
-            --property=WorkingDirectory="$empty" \
-            "$executor" --bare --print --output-format text --effort low --tools '' --permission-mode dontAsk \
-            'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.' >"$out" 2>"$err"
-          rc=$?; elapsed=$(( $(date +%s)-start ))
-          echo "probe=user_manager rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
-          printf 'stdout='; tail -c 1600 "$out"; echo
-          printf 'stderr='; tail -c 1600 "$err"; echo
-          exit 0
-          REMOTE
-          exit 0
+          def safe_readlink(path: Path) -> str:
+              try:
+                  return os.readlink(path)
+              except OSError:
+                  return ''
 
-      - name: Summarize session-surface evidence
-        shell: bash
+          def redact(text: str) -> str:
+              if not text:
+                  return ''
+              home = str(Path.home())
+              text = text.replace(home, '~')
+              text = re.sub(r'(?i)[0-9a-f]{24,}', '<hex>', text)
+              text = re.sub(r'(?i)[0-9a-f]{8}-[0-9a-f-]{20,}', '<uuid>', text)
+              text = re.sub(r'\b\d{5,}\b', '<n>', text)
+              return text
+
+          def fingerprint(text: str) -> str:
+              return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+          processes = {}
+          for p in PROC.glob('[0-9]*'):
+              try:
+                  status = (p/'status').read_text(errors='ignore')
+                  uid_line = next(x for x in status.splitlines() if x.startswith('Uid:'))
+                  if int(uid_line.split()[1]) != UID:
+                      continue
+                  name = next((x.split(':',1)[1].strip() for x in status.splitlines() if x.startswith('Name:')), '')
+                  exe = safe_readlink(p/'exe')
+                  cwd = safe_readlink(p/'cwd')
+                  hay = (name + ' ' + exe + ' ' + cwd).lower()
+                  if not any(term in hay for term in relevant_terms):
+                      continue
+                  ppid = next((int(x.split()[1]) for x in status.splitlines() if x.startswith('PPid:')), 0)
+                  processes[int(p.name)] = {'name': name, 'ppid': ppid, 'exe': exe, 'cwd': cwd}
+              except (OSError, StopIteration, ValueError):
+                  continue
+
+          print('credential_values_logged=false')
+          print(f'relevant_process_count={len(processes)}')
+          for pid, info in sorted(processes.items()):
+              print('process '
+                    f'pid={pid} ppid={info["ppid"]} name={redact(info["name"])} '
+                    f'exe={redact(info["exe"])} cwd={redact(info["cwd"])}')
+
+          inode_to_path = {}
+          try:
+              lines = (PROC/'net/unix').read_text(errors='ignore').splitlines()[1:]
+              for line in lines:
+                  parts = line.split()
+                  if len(parts) < 7:
+                      continue
+                  inode = parts[6]
+                  path = parts[7] if len(parts) >= 8 else ''
+                  inode_to_path[inode] = path
+          except OSError:
+              pass
+
+          owned = []
+          for pid, info in sorted(processes.items()):
+              fd_dir = PROC/str(pid)/'fd'
+              try:
+                  fds = list(fd_dir.iterdir())
+              except OSError:
+                  continue
+              for fd in fds:
+                  target = safe_readlink(fd)
+                  m = re.fullmatch(r'socket:\[(\d+)\]', target)
+                  if not m:
+                      continue
+                  inode = m.group(1)
+                  raw_path = inode_to_path.get(inode, '')
+                  if raw_path:
+                      owned.append((pid, info['name'], raw_path))
+
+          seen = set()
+          for pid, name, raw_path in owned:
+              key = (pid, raw_path)
+              if key in seen:
+                  continue
+              seen.add(key)
+              print('unix_socket '
+                    f'pid={pid} process={redact(name)} '
+                    f'pattern={redact(raw_path)} path_hash={fingerprint(raw_path)}')
+          print(f'relevant_owned_unix_socket_count={len(seen)}')
+
+          roots = [Path(f'/run/user/{UID}'), Path.home()/'.antigravity-ide-server']
+          fs_sockets = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              try:
+                  iterator = root.rglob('*')
+                  for item in iterator:
+                      try:
+                          mode = item.lstat().st_mode
+                      except OSError:
+                          continue
+                      if stat.S_ISSOCK(mode):
+                          fs_sockets.append(str(item))
+                          if len(fs_sockets) >= 80:
+                              break
+              except OSError:
+                  continue
+              if len(fs_sockets) >= 80:
+                  break
+          for raw_path in fs_sockets:
+              print(f'filesystem_socket pattern={redact(raw_path)} path_hash={fingerprint(raw_path)}')
+          print(f'filesystem_socket_count={len(fs_sockets)}')
+          PY
+
+      - name: State diagnostic interpretation
         run: |
-          echo 'diagnostic_contract=ssh_vs_user_manager_only'
-          echo 'credential_values_logged=false'
-          echo 'interpretation=if user_manager succeeds while ssh times out, relay should delegate executor launch to ubuntu user manager; if both time out, inspect Antigravity extension-host IPC next.'
+          echo 'diagnostic_contract=metadata_only_no_protocol_writes'
+          echo 'next=use process-owned socket patterns to identify the authorized Antigravity extension-host boundary; do not reuse standalone Claude CLI unless evidence shows it shares the IDE session.'
