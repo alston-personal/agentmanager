@@ -200,7 +200,10 @@ def compile_execution_context(
     else:
         next_action = "Derive the first task from the active goal and current canonical state."
 
-    current_findings = [str(x) for x in findings[:12]]
+    # Findings are an append-only evidence stream. Keep the newest bounded
+    # window so a fresh executor sees the state transitions that just occurred,
+    # rather than preserving old evidence while silently dropping new receipts.
+    current_findings = [str(x) for x in findings[-12:]]
     bounded_next_actions = [str(x) for x in next_actions[:8]]
     write_policy = document.get("write_policy") if isinstance(document.get("write_policy"), dict) else None
     integration_branch = active.get("integration_branch") or document.get("integration_branch")
