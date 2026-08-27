@@ -20,6 +20,7 @@ def resume_project(
     *,
     runtime_id: str = "chatgpt-web",
     principal_id: str | None = None,
+    transport: str = "mcp",
 ) -> dict[str, Any]:
     """Return the authoritative account-scoped AgentOS bootstrap packet."""
 
@@ -28,7 +29,7 @@ def resume_project(
         project_id,
         runtime_id=runtime_id,
         principal_id=principal_id,
-        transport="mcp",
+        transport=transport,
     ).to_dict()
 
 
