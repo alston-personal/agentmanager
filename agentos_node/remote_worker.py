@@ -11,6 +11,7 @@ from typing import Any
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeWorker
 
+from .codex_app_server_executor import BoundedCodexExecutor
 from .control_plane_client import ControlPlaneClient
 
 
@@ -43,6 +44,18 @@ def _context_checkpoint(ir: CanonicalIR) -> dict[str, Any]:
             "next_action": next_action,
         }
     }
+
+
+def _codex_execute(ir: CanonicalIR) -> dict[str, Any]:
+    working_set = ir.payload.get("working_set")
+    instruction = str(ir.payload.get("instruction") or "")
+    if not isinstance(working_set, dict):
+        raise ValueError("bounded Codex executor requires working_set object")
+    return BoundedCodexExecutor().execute(
+        project_id=ir.project_id,
+        working_set=working_set,
+        instruction=instruction,
+    )
 
 
 def _load_object_registry(file_env: str, json_env: str) -> dict[str, Any]:
@@ -170,6 +183,7 @@ def build_default_worker(runtime_id: str) -> RemoteRuntimeWorker:
     worker = RemoteRuntimeWorker(runtime_id)
     worker.register("agentos.ir.validate", _validate)
     worker.register("agentos.context.checkpoint", _context_checkpoint)
+    worker.register("agentos.executor.codex", _codex_execute)
     worker.register("agentos.project.inspect", _inspect_project)
     worker.register("agentos.project.test", _project_test)
     return worker
