@@ -94,8 +94,6 @@ jobs:
             fi
           fi
 
-          # Do not treat an arbitrary/old `mcp` package as sufficient. Verify the
-          # exact SDK v2 API used by our server and force an upgrade when absent.
           if ! "$PYTHON_BIN" -c 'from mcp.server.mcpserver import MCPServer; assert MCPServer' >/dev/null 2>&1; then
             echo "MCP SDK v2 server API missing; upgrading from requirements-mcp.txt"
             if [ "$PYTHON_BIN" = "$(command -v python3)" ]; then
@@ -107,10 +105,11 @@ jobs:
           "$PYTHON_BIN" -c 'from mcp.server.mcpserver import MCPServer; assert MCPServer' >/dev/null
 
           DIST_ENV="$HOME/.config/agentos/distributed.env"
-          python3 - "$DIST_ENV" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS" <<'PY'
+          CHATGPT_DIST_ENV="$HOME/.config/agentos/chatgpt-cloud.env"
+          python3 - "$DIST_ENV" "$CHATGPT_DIST_ENV" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS" <<'PY'
           import pathlib, sys
-          path=pathlib.Path(sys.argv[1]); principal=sys.argv[2]; projects=sys.argv[3]
-          lines=path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+          source=pathlib.Path(sys.argv[1]); target=pathlib.Path(sys.argv[2]); principal=sys.argv[3]; projects=sys.argv[4]
+          lines=source.read_text(encoding='utf-8').splitlines() if source.exists() else []
           updates={
               'AGENTOS_CHATGPT_PRINCIPAL_ID': principal,
               'AGENTOS_CHATGPT_PROJECTS': projects,
@@ -121,16 +120,22 @@ jobs:
           for line in lines:
               key=line.split('=',1)[0] if '=' in line else None
               if key in updates:
-                  out.append(f'{key}={updates[key]}'); seen.add(key)
+                  if key not in seen:
+                      out.append(f'{key}={updates[key]}')
+                      seen.add(key)
               else:
                   out.append(line)
           for key,value in updates.items():
               if key not in seen: out.append(f'{key}={value}')
-          path.write_text('\n'.join(out)+'\n', encoding='utf-8')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text('\n'.join(out)+'\n', encoding='utf-8')
           PY
-          chmod 600 "$DIST_ENV"
+          chmod 600 "$CHATGPT_DIST_ENV"
+          echo "one_declared_projects=$CHATGPT_PROJECTS"
 
-          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" AGENTOS_DISTRIBUTED_PYTHON="$PYTHON_BIN" \
+          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" \
+          AGENTOS_DISTRIBUTED_PYTHON="$PYTHON_BIN" \
+          AGENTOS_DISTRIBUTED_ENV_FILE="$CHATGPT_DIST_ENV" \
             bash "$RELEASE_ROOT/scripts/install_chatgpt_cloud_node.sh"
 
           systemctl --user is-active --quiet agentos-control-plane.service
@@ -161,8 +166,8 @@ jobs:
           echo "mcp_socket=ok"
 
           set -a
-          source "$DIST_ENV"
           source "$HOME/.agentos.secrets"
+          source "$CHATGPT_DIST_ENV"
           set +a
           curl -fsS -H "Authorization: Bearer ${AGENTOS_CHATGPT_CLIENT_TOKEN}" \
             "http://127.0.0.1:8765/v1/projects/agentmanager/state" >/tmp/chatgpt-one-state.json
