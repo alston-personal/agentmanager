@@ -71,8 +71,6 @@ jobs:
           TARGET_SHA="$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)"
           git -C "$RELEASE_ROOT" checkout --detach "$TARGET_SHA"
 
-          # Match the existing Core deployment policy: a venv is usable only if
-          # both its Python and pip work. Broken/partial venvs are discarded.
           VENV_PYTHON="$RELEASE_ROOT/.venv/bin/python3"
           PYTHON_BIN=""
           if [ -x "$VENV_PYTHON" ] && "$VENV_PYTHON" -m pip --version >/dev/null 2>&1; then
@@ -133,13 +131,31 @@ jobs:
             bash "$RELEASE_ROOT/scripts/install_chatgpt_cloud_node.sh"
 
           systemctl --user is-active --quiet agentos-control-plane.service
-          systemctl --user is-active --quiet agentos-chatgpt-mcp.service
-          "$PYTHON_BIN" - <<'PY'
+
+          MCP_READY=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if systemctl --user is-active --quiet agentos-chatgpt-mcp.service \
+              && "$PYTHON_BIN" - <<'PY'
           import socket
-          with socket.create_connection(('127.0.0.1', 8000), timeout=3):
+          with socket.create_connection(('127.0.0.1', 8000), timeout=1):
               pass
-          print('mcp_socket=ok')
           PY
+            then
+              MCP_READY=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$MCP_READY" != "1" ]; then
+            echo "=== agentos-chatgpt-mcp.service status ===" >&2
+            systemctl --user --no-pager --full status agentos-chatgpt-mcp.service >&2 || true
+            echo "=== agentos-chatgpt-mcp journal ===" >&2
+            journalctl --user -u agentos-chatgpt-mcp.service -n 120 --no-pager >&2 || true
+            echo "=== chatgpt_mcp.log ===" >&2
+            tail -n 120 "${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}/logs/chatgpt_mcp.log" >&2 || true
+            exit 7
+          fi
+          echo "mcp_socket=ok"
 
           set -a
           source "$DIST_ENV"
