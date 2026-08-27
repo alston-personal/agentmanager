@@ -13,7 +13,7 @@ permissions:
 jobs:
   low-latency-diagnostic:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
@@ -45,37 +45,13 @@ jobs:
           "$executor" --help 2>&1 | grep -E -- '--(effort|tools|permission|allowed|disallowed|dangerously|bare|print|output-format)' | head -80 || true
           echo '--- ssh environment keys only ---'
           printf 'ssh_env_keys='; env | cut -d= -f1 | grep -E '^(CLAUDE|ANTHROPIC|ANTIGRAVITY|XDG|DBUS|DISPLAY|WAYLAND|SSH_)' | sort | paste -sd, - || true
-          echo '--- live ubuntu Claude process environment keys only ---'
-          python3 - <<'PY'
-          from pathlib import Path
-          found=0
-          for status in Path('/proc').glob('[0-9]*/status'):
-              try:
-                  text=status.read_text(errors='ignore')
-                  name=next((x.split(':',1)[1].strip() for x in text.splitlines() if x.startswith('Name:')), '')
-                  uid_line=next((x for x in text.splitlines() if x.startswith('Uid:')), '')
-                  if name != 'claude' or not uid_line:
-                      continue
-                  uid=int(uid_line.split()[1])
-                  if uid != 1001:
-                      continue
-                  pid=status.parent.name
-                  keys=[]
-                  raw=(status.parent/'environ').read_bytes().split(b'\0')
-                  for item in raw:
-                      if b'=' not in item: continue
-                      key=item.split(b'=',1)[0].decode(errors='ignore')
-                      if key.startswith(('CLAUDE','ANTHROPIC','ANTIGRAVITY','XDG','DBUS','DISPLAY','WAYLAND')):
-                          keys.append(key)
-                  print(f'live_claude_pid={pid} env_keys={",".join(sorted(set(keys)))}')
-                  found += 1
-              except (OSError, ValueError, StopIteration):
-                  pass
-          print(f'live_claude_processes={found}')
-          PY
+          echo '--- systemd user-manager environment keys only ---'
+          printf 'user_manager_env_keys='; systemctl --user show-environment 2>/dev/null | cut -d= -f1 | grep -E '^(CLAUDE|ANTHROPIC|ANTIGRAVITY|XDG|DBUS|DISPLAY|WAYLAND|PATH|HOME)' | sort | paste -sd, - || true
+          echo '--- relevant ubuntu process names only ---'
+          ps -u "$(id -u)" -o comm= | grep -Ei 'antigravity|claude|extension|language|node' | sort | uniq -c || true
           REMOTE
 
-      - name: Empty workspace baseline
+      - name: SSH empty workspace baseline
         shell: bash
         run: |
           set +e
@@ -88,66 +64,18 @@ jobs:
           PY
           )
           empty=/tmp/agentos-low-probe-empty; rm -rf "$empty"; mkdir -p "$empty"; cd "$empty"
-          out=/tmp/empty_baseline.out; err=/tmp/empty_baseline.err; start=$(date +%s)
-          timeout -k 2s 25s "$executor" --bare --print --output-format text --effort low \
-            'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.' >"$out" 2>"$err"
-          rc=$?; elapsed=$(( $(date +%s)-start ))
-          echo "probe=empty_baseline rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
-          printf 'stdout='; tail -c 1200 "$out"; echo
-          printf 'stderr='; tail -c 1200 "$err"; echo
-          exit 0
-          REMOTE
-          exit 0
-
-      - name: Empty workspace with tools disabled
-        shell: bash
-        run: |
-          set +e
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -u
-          runtime=/home/ubuntu/.local/share/agentos/runtime-vnext
-          executor=$(cd "$runtime" && PYTHONPATH=. /usr/bin/python3 - <<'PY'
-          from agentos_node.antigravity_relay_worker import discover_executor
-          e=discover_executor(); assert e; print(e[0])
-          PY
-          )
-          empty=/tmp/agentos-low-probe-empty; mkdir -p "$empty"; cd "$empty"
-          out=/tmp/empty_no_tools.out; err=/tmp/empty_no_tools.err; start=$(date +%s)
-          timeout -k 2s 25s "$executor" --bare --print --output-format text --effort low --tools '' \
-            'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.' >"$out" 2>"$err"
-          rc=$?; elapsed=$(( $(date +%s)-start ))
-          echo "probe=empty_no_tools rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
-          printf 'stdout='; tail -c 1200 "$out"; echo
-          printf 'stderr='; tail -c 1200 "$err"; echo
-          exit 0
-          REMOTE
-          exit 0
-
-      - name: Empty workspace no tools dontAsk
-        shell: bash
-        run: |
-          set +e
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -u
-          runtime=/home/ubuntu/.local/share/agentos/runtime-vnext
-          executor=$(cd "$runtime" && PYTHONPATH=. /usr/bin/python3 - <<'PY'
-          from agentos_node.antigravity_relay_worker import discover_executor
-          e=discover_executor(); assert e; print(e[0])
-          PY
-          )
-          empty=/tmp/agentos-low-probe-empty; mkdir -p "$empty"; cd "$empty"
-          out=/tmp/empty_no_tools_dontask.out; err=/tmp/empty_no_tools_dontask.err; start=$(date +%s)
+          out=/tmp/ssh_empty_baseline.out; err=/tmp/ssh_empty_baseline.err; start=$(date +%s)
           timeout -k 2s 25s "$executor" --bare --print --output-format text --effort low --tools '' --permission-mode dontAsk \
             'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.' >"$out" 2>"$err"
           rc=$?; elapsed=$(( $(date +%s)-start ))
-          echo "probe=empty_no_tools_dontask rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
+          echo "probe=ssh_empty rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
           printf 'stdout='; tail -c 1200 "$out"; echo
           printf 'stderr='; tail -c 1200 "$err"; echo
           exit 0
           REMOTE
           exit 0
 
-      - name: AgentOS runtime no tools dontAsk
+      - name: User manager empty workspace probe
         shell: bash
         run: |
           set +e
@@ -159,14 +87,23 @@ jobs:
           e=discover_executor(); assert e; print(e[0])
           PY
           )
-          cd "$runtime"
-          out=/tmp/runtime_no_tools_dontask.out; err=/tmp/runtime_no_tools_dontask.err; start=$(date +%s)
-          timeout -k 2s 25s "$executor" --bare --print --output-format text --effort low --tools '' --permission-mode dontAsk \
+          empty=/tmp/agentos-low-probe-user-manager; rm -rf "$empty"; mkdir -p "$empty"
+          out=/tmp/user_manager_probe.out; err=/tmp/user_manager_probe.err; start=$(date +%s)
+          timeout -k 2s 25s systemd-run --user --wait --collect --pipe \
+            --property=WorkingDirectory="$empty" \
+            "$executor" --bare --print --output-format text --effort low --tools '' --permission-mode dontAsk \
             'Reply with exactly LOW_EXECUTOR_ACK and nothing else. Do not use tools, inspect files, or modify anything.' >"$out" 2>"$err"
           rc=$?; elapsed=$(( $(date +%s)-start ))
-          echo "probe=runtime_no_tools_dontask rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
-          printf 'stdout='; tail -c 1200 "$out"; echo
-          printf 'stderr='; tail -c 1200 "$err"; echo
+          echo "probe=user_manager rc=$rc elapsed_seconds=$elapsed stdout_bytes=$(wc -c <"$out") stderr_bytes=$(wc -c <"$err")"
+          printf 'stdout='; tail -c 1600 "$out"; echo
+          printf 'stderr='; tail -c 1600 "$err"; echo
           exit 0
           REMOTE
           exit 0
+
+      - name: Summarize session-surface evidence
+        shell: bash
+        run: |
+          echo 'diagnostic_contract=ssh_vs_user_manager_only'
+          echo 'credential_values_logged=false'
+          echo 'interpretation=if user_manager succeeds while ssh times out, relay should delegate executor launch to ubuntu user manager; if both time out, inspect Antigravity extension-host IPC next.'
