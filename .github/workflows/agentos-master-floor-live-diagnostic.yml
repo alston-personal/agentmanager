@@ -1,0 +1,71 @@
+name: AgentOS Master Floor Live Relay Diagnostic
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - '.github/workflows/agentos-master-floor-live-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  relay-live-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Resolve Oracle target
+        run: |
+          host="${DEPLOY_HOST_SOURCE#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect bounded relay state as ubuntu
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/agent-data/runtime/antigravity-relay
+          echo "diagnostic_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "diagnostic_user=$(whoami)"
+          systemctl --user is-active agentos-antigravity-relay.service
+          systemctl --user show agentos-antigravity-relay.service -p MainPID -p ActiveEnterTimestamp --no-pager
+          echo '--- bounded executor processes ---'
+          ps -eo user=,pid=,ppid=,etimes=,stat=,comm= | awk '$1=="ubuntu" && ($6=="python3" || $6=="claude") {print}' | tail -30 || true
+          echo '--- spool counts ---'
+          printf 'inbox='; find "$ROOT/inbox" -maxdepth 1 -type f -name 'relay-*.json' | wc -l
+          printf 'processing='; find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' | wc -l
+          printf 'receipts='; find "$ROOT/receipts" -maxdepth 1 -type f -name 'relay-*.json' | wc -l
+          echo '--- latest processing metadata ---'
+          now=$(date +%s)
+          find "$ROOT/processing" -maxdepth 1 -type f -name 'relay-*.json' -printf '%T@ %u %g %s %f\n' 2>/dev/null | sort -n | tail -5 | while read -r mt owner group size file; do
+            sec=${mt%%.*}; echo "age_seconds=$((now-sec)) owner=$owner group=$group size=$size file=$file"
+          done || true
+          echo '--- latest receipt summaries ---'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay/receipts')
+          for p in sorted(root.glob('relay-*.json'), key=lambda x:x.stat().st_mtime)[-5:]:
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+                  print({
+                      'file':p.name,
+                      'ok':d.get('ok'),
+                      'returncode':d.get('returncode'),
+                      'executor_user':d.get('executor_user'),
+                      'error':d.get('error'),
+                      'completed_at':d.get('completed_at'),
+                      'stdout_bytes':len(str(d.get('stdout') or '').encode()),
+                  })
+              except Exception as exc:
+                  print({'file':p.name,'error':str(exc)})
+          PY
+          REMOTE
