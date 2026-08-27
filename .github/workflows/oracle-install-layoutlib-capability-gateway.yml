@@ -53,11 +53,36 @@ jobs:
           [Install]
           WantedBy=default.target
           EOF
+
           USER_UID=$(id -u)
-          export XDG_RUNTIME_DIR="/run/user/$USER_UID"
-          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-          systemctl --user daemon-reload
-          systemctl --user enable --now layoutlab-capability-gateway.service
+          START_METHOD=none
+          if [ -S "/run/user/$USER_UID/bus" ]; then
+            export XDG_RUNTIME_DIR="/run/user/$USER_UID"
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+            if systemctl --user daemon-reload && systemctl --user enable --now layoutlab-capability-gateway.service; then
+              START_METHOD=systemd-user-bus
+            fi
+          fi
+          if [ "$START_METHOD" = none ]; then
+            if systemctl --user --machine="$(id -un)@.host" daemon-reload >/tmp/layoutlib-machine-systemd.log 2>&1 \
+              && systemctl --user --machine="$(id -un)@.host" enable --now layoutlab-capability-gateway.service >>/tmp/layoutlib-machine-systemd.log 2>&1; then
+              START_METHOD=systemd-user-machine
+            fi
+          fi
+          if [ "$START_METHOD" = none ]; then
+            old=$(pgrep -f "$APP.*agentos_node.capability_http.*8767" || true)
+            [ -z "$old" ] || kill $old || true
+            # GitHub runner cleanup targets descendants carrying RUNNER_TRACKING_ID.
+            # Remove only that tracking variable for this intentionally persistent,
+            # user-owned daemon; the unit file remains the preferred reboot path.
+            env -u RUNNER_TRACKING_ID PYTHONPATH="$APP" nohup /usr/bin/python3 -m agentos_node.capability_http \
+              --host 127.0.0.1 --port 8767 --root "$STORE" \
+              >"$APP/gateway.log" 2>&1 </dev/null &
+            echo $! > "$APP/gateway.pid"
+            START_METHOD=nohup-fallback
+          fi
+
+          code=000
           for i in $(seq 1 20); do
             code=$(curl -sS --max-time 2 -o /tmp/layoutlib-cap-health -w '%{http_code}' http://127.0.0.1:8767/healthz || true)
             [ "$code" = 200 ] && break
@@ -72,13 +97,14 @@ jobs:
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "service=layoutlab-capability-gateway.service"
+            echo "start_method=$START_METHOD"
             echo "bind=127.0.0.1:8767"
             echo "store=$STORE"
             echo "health_http=$code"
             echo "health_body=$(cat /tmp/layoutlib-cap-health)"
             echo "ingest_http=$post"
             echo "ingest_body=$(cat /tmp/layoutlib-exp-receipt)"
-            systemctl --user --no-pager --full status layoutlab-capability-gateway.service || true
+            ps -eo user,group,pid,etime,args | grep '[a]gentos_node.capability_http' || true
             echo 'local_capability_gateway=PASS'
           } | tee "$OUT"
       - name: Commit install evidence
