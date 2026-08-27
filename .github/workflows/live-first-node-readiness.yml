@@ -1,0 +1,95 @@
+name: Live First Node Readiness
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/live-first-node-readiness.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-first-node-readiness
+  cancel-in-progress: false
+
+jobs:
+  live-boundary:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify live ONE generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          health=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)
+          echo "ONE_HEALTH=$health"
+          bootstrap=$(curl -sS -o /tmp/agentos-bootstrap-body -w '%{http_code}' --max-time 3 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750')
+          benchmark=$(curl -sS -o /tmp/agentos-benchmark-body -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark)
+          test "$bootstrap" = 401
+          test "$benchmark" = 401
+          echo 'one_bootstrap_route=PASS'
+          echo 'one_benchmark_route=PASS'
+
+      - name: Verify agentos-node to ubuntu Antigravity handoff
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import time
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          client = AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule = client.submit(
+              project_id='realm-readiness-live-smoke',
+              canonical_ir={'goal': 'Verify only the governed AgentOS Antigravity relay boundary.'},
+              instruction='Return exactly AGENTOS_RELAY_SMOKE_PASS. Do not modify files, repositories, services, or system state.',
+              workspace='/home/ubuntu/agentmanager',
+          )
+          print('capsule_id=' + capsule['capsule_id'])
+          for _ in range(90):
+              receipt = client.receipt(capsule['capsule_id'])
+              if receipt:
+                  print(json.dumps(receipt, indent=2, ensure_ascii=False))
+                  if not receipt.get('ok'):
+                      raise SystemExit('relay receipt failed')
+                  encoded = json.dumps(receipt, ensure_ascii=False)
+                  if 'PermissionError' in encoded or 'Permission denied' in encoded:
+                      raise SystemExit('cross-user permission regression')
+                  stdout = str(receipt.get('stdout') or '')
+                  if 'AGENTOS_RELAY_SMOKE_PASS' not in stdout:
+                      raise SystemExit('missing executor smoke marker')
+                  print('cross_user_antigravity_relay=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('relay smoke receipt timeout')
+          PY
+
+      - name: Inspect first-node registry freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('/home/ubuntu/agent-data/realm/nodes.json')
+          print('registry_path=' + str(path))
+          data = json.loads(path.read_text(encoding='utf-8'))
+          nodes = data.get('nodes') or {}
+          node = nodes.get('vopc5750') if isinstance(nodes, dict) else None
+          if node is None and isinstance(nodes, list):
+              node = next((item for item in nodes if item.get('node_id') == 'vopc5750'), None)
+          print(json.dumps({'vopc5750': node}, indent=2, ensure_ascii=False))
+          if not node:
+              raise SystemExit('vopc5750 missing from registry')
+          print('vopc_reported_status=' + str(node.get('reported_status') or node.get('status')))
+          print('vopc_effective_status=' + str(node.get('effective_status') or node.get('status')))
+          print('vopc_last_heartbeat=' + str(node.get('last_heartbeat_at') or node.get('last_heartbeat')))
+          PY
