@@ -148,6 +148,10 @@ def test_restart_reconciliation_emits_unknown_outcome_receipt_without_reexecutio
         "execution_context": _execution_context(),
     }
     (processing / f"{capsule_id}.json").write_text(json.dumps(capsule), encoding="utf-8")
+    # RelayPaths.ensure() resolves share_relay_path from the relay module, while
+    # receipt writes resolve the worker import. Stub both because this unit test
+    # verifies restart semantics, not host group provisioning.
+    monkeypatch.setattr("agentos_node.antigravity_relay.share_relay_path", lambda *args, **kwargs: None)
     monkeypatch.setattr("agentos_node.antigravity_relay_worker.share_relay_path", lambda *args, **kwargs: None)
 
     worker = AntigravityRelayWorker(root, executor=["/bin/false"])
