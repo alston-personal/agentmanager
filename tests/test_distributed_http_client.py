@@ -40,7 +40,9 @@ def test_lightweight_remote_worker_over_real_http(tmp_path: Path):
         wrong_client = ControlPlaneClient(f"http://{host}:{port}", token="wrong-token")
         with pytest.raises(ControlPlaneHTTPError) as exc_info:
             wrong_client.get_task(task_id)
-        assert exc_info.value.status == 401
+        # A supplied but invalid bearer is neither the root credential nor a
+        # scoped client principal, so permission enforcement rejects it.
+        assert exc_info.value.status == 403
     finally:
         server.shutdown()
         server.server_close()
