@@ -1,4 +1,5 @@
 /* Layout Lab -> AgentOS Capability Experience Bridge v0.7.1
+ * Compatibility identity: Layout Lab -> AgentOS Capability Experience Bridge v0.7.0
  *
  * The LayoutLib library remains unaware of AgentOS. This browser-side adapter
  * observes editing outcomes, makes completion the learning boundary, queues
@@ -56,8 +57,6 @@ function resetSession(){
 }
 function markDirty(){if(!session)resetSession();session.revision++;if(finishBtn)finishBtn.disabled=!globalThis.currentIr}
 
-// Learning used to be coupled to pressing Analyze. Preserve the local prototype
-// learner as an edge cache, but invoke it only at explicit completion.
 let originalAssimilate=null;
 try{
   if(typeof assimilateLearning==='function'){
@@ -66,7 +65,6 @@ try{
   }
 }catch(_){/* older UI without this learner */}
 
-// Instrument domain editing without changing LayoutLib's implementation.
 if(typeof L.addWallPx==='function'){
   const old=L.addWallPx;
   L.addWallPx=(ir,...args)=>{
@@ -106,8 +104,6 @@ for(const id of ['threshold','thresholdRange','minlen']){
 }
 document.getElementById('file')?.addEventListener('change',()=>setTimeout(resetSession,0));
 
-// Completion is the strong reward signal and the boundary at which experience
-// becomes eligible to leave the browser edge cache.
 const actionRow=analyzeBtn?.parentElement;
 const finishBtn=document.createElement('button');
 finishBtn.id='finishModel';
