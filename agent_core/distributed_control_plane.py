@@ -2,7 +2,8 @@
 
 The base ControlPlaneStore remains a transport-neutral capability/task queue.
 This extension adds Distributed AgentOS semantics: immutable IR submission,
-lease validation, runtime-result verification, and guarded auto-continuation.
+lease validation, runtime-result verification, guarded auto-continuation, and
+receipt-driven canonical-context reconciliation.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
+from .canonical_context import CanonicalContextStore
 from .control_plane import ControlPlaneStore
 
 
@@ -60,7 +62,6 @@ class DistributedControlPlane(ControlPlaneStore):
         self.max_auto_continuation_hops = max_auto_continuation_hops
 
     def get_task(self, task_id: str) -> dict[str, Any]:
-        """Read one generic Control Plane task by id."""
         with self._connect() as connection:
             row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         if row is None:
@@ -116,12 +117,6 @@ class DistributedControlPlane(ControlPlaneStore):
         }
 
     def requeue_expired_ir_leases(self) -> int:
-        """Return expired Distributed AgentOS leases to the submitted queue.
-
-        Pull-node ownership is released so another node can recover the task.
-        Durable push targets registered by RuntimeDispatcher are preserved so the
-        dispatcher can safely re-wake the same external runtime after timeout.
-        """
         now = _utc_now()
         requeued = 0
         with self._connect() as connection:
@@ -185,13 +180,6 @@ class DistributedControlPlane(ControlPlaneStore):
         *,
         lease_seconds: int = 60,
     ) -> IRTaskLease | None:
-        """Atomically lease one exact Canonical IR task to a runtime.
-
-        Push dispatch carries a task id. Using a generic "lease next" call after
-        wake-up can steal a different queued task for the same runtime. This API
-        binds the wake-up, lease, and eventual result to the intended task while
-        retaining the normal lease as the execution fence.
-        """
         if not task_id or not node_id:
             raise ValueError("task_id and node_id are required")
         if lease_seconds < 1:
@@ -246,6 +234,30 @@ class DistributedControlPlane(ControlPlaneStore):
             ir=ir,
         )
 
+    def _reconcile_context_checkpoint(
+        self,
+        *,
+        task_id: str,
+        input_ir: CanonicalIR,
+        runtime_result: RemoteRuntimeResult,
+    ) -> dict[str, Any] | None:
+        if input_ir.capability != "agentos.context.checkpoint" or runtime_result.status != "succeeded":
+            return None
+        raw = runtime_result.result.get("context_checkpoint")
+        if not isinstance(raw, dict):
+            raise ValueError("successful context checkpoint receipt must contain context_checkpoint evidence")
+        completed_action = str(raw.get("completed_action") or "").strip()
+        finding = str(raw.get("finding") or "").strip()
+        next_action = str(raw.get("next_action") or "").strip() or None
+        return CanonicalContextStore(self.db_path).checkpoint(
+            input_ir.project_id,
+            checkpoint_id=f"receipt:{task_id}:{runtime_result.input_digest}",
+            task_id=task_id,
+            completed_action=completed_action,
+            finding=finding,
+            next_action=next_action,
+        )
+
     def complete_ir(
         self,
         task_id: str,
@@ -283,6 +295,11 @@ class DistributedControlPlane(ControlPlaneStore):
             **runtime_result.to_dict(),
         }
         updated_task = self.update_task(task_id, task_state, persisted_result)
+        context_checkpoint = self._reconcile_context_checkpoint(
+            task_id=task_id,
+            input_ir=input_ir,
+            runtime_result=runtime_result,
+        ) if task_state == "succeeded" else None
 
         enqueued_task = None
         continuation_blocked = None
@@ -306,6 +323,7 @@ class DistributedControlPlane(ControlPlaneStore):
             "continuationIR": continuation.to_dict() if continuation else None,
             "enqueuedTask": enqueued_task,
             "continuationBlocked": continuation_blocked,
+            "contextCheckpoint": context_checkpoint,
         }
 
     def load_continuation_ir(self, task_id: str) -> CanonicalIR | None:
