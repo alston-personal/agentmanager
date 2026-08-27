@@ -1,0 +1,27 @@
+{
+  "agentos_social": null,
+  "credential_stores": [
+    {
+      "credential_refs": null,
+      "exists": false,
+      "mode": null,
+      "owner": null,
+      "path": "/home/ubuntu/.agentos/social-credentials.json"
+    },
+    {
+      "credential_refs": null,
+      "exists": false,
+      "mode": null,
+      "owner": null,
+      "path": "/home/agentos-node/.agentos/social-credentials.json"
+    }
+  ],
+  "runner": {
+    "home": "/home/agentos-node",
+    "user": "agentos-node"
+  },
+  "schema": "agentos.social-runtime-inventory/v0.1",
+  "secret_values_collected": false,
+  "zeus_directories": [],
+  "zeus_env_files": []
+}
