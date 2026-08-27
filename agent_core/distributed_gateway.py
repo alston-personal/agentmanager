@@ -67,6 +67,106 @@ class DistributedGatewayService:
             },
         }
 
+    def resolve_active_project(
+        self,
+        body: dict[str, Any],
+        *,
+        principal: ClientPrincipal | None = None,
+    ) -> dict[str, Any]:
+        """Resolve the most recently active readable project, optionally using a hint.
+
+        The durable source is the canonical task ledger.  Browser/device/session
+        metadata is intentionally excluded so the result is stable across ChatGPT
+        devices.  A scoped principal never learns project ids outside its scope.
+        """
+
+        hint = str(body.get("hint") or "").strip().casefold()
+        with self.store._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT project_id, MAX(updated_at) AS last_active_at
+                FROM tasks
+                WHERE project_id IS NOT NULL AND TRIM(project_id) <> ''
+                GROUP BY project_id
+                ORDER BY last_active_at DESC, project_id ASC
+                """
+            ).fetchall()
+
+        candidates: list[dict[str, Any]] = []
+        for row in rows:
+            project_id = str(row["project_id"] or "").strip()
+            if not project_id:
+                continue
+            if principal is not None and not principal.allows_project(project_id):
+                continue
+            state = read_project_state(self.store, project_id)
+            current_ir = state.get("currentIR") if isinstance(state.get("currentIR"), dict) else {}
+            goal = str(current_ir.get("goal") or "")
+            score = 0
+            if hint:
+                project_folded = project_id.casefold()
+                goal_folded = goal.casefold()
+                if hint == project_folded:
+                    score = 100
+                elif hint in project_folded:
+                    score = 80
+                elif hint in goal_folded:
+                    score = 60
+                else:
+                    hint_terms = [term for term in hint.replace("/", " ").replace("-", " ").split() if len(term) >= 2]
+                    score = sum(10 for term in hint_terms if term in project_folded or term in goal_folded)
+            candidates.append(
+                {
+                    "project_id": project_id,
+                    "last_active_at": row["last_active_at"],
+                    "recommended_action": state.get("recommendedAction"),
+                    "current_source": state.get("currentSource"),
+                    "goal": goal or None,
+                    "hint_score": score,
+                }
+            )
+
+        if not candidates:
+            return {
+                "protocol": "agentos.active-project/v1",
+                "resolution": "none",
+                "project_id": None,
+                "candidates": [],
+            }
+
+        ranked = candidates
+        if hint:
+            ranked = sorted(
+                candidates,
+                key=lambda item: (int(item["hint_score"]), str(item["last_active_at"] or ""), item["project_id"]),
+                reverse=True,
+            )
+            best_score = int(ranked[0]["hint_score"])
+            if best_score <= 0:
+                return {
+                    "protocol": "agentos.active-project/v1",
+                    "resolution": "no_hint_match",
+                    "project_id": None,
+                    "candidates": ranked[:5],
+                }
+            tied = [item for item in ranked if int(item["hint_score"]) == best_score]
+            if len(tied) > 1 and tied[0]["last_active_at"] == tied[1]["last_active_at"]:
+                return {
+                    "protocol": "agentos.active-project/v1",
+                    "resolution": "ambiguous",
+                    "project_id": None,
+                    "candidates": tied[:5],
+                }
+
+        selected = ranked[0]
+        return {
+            "protocol": "agentos.active-project/v1",
+            "resolution": "resolved",
+            "project_id": selected["project_id"],
+            "selected": selected,
+            "candidates": ranked[:5],
+        }
+
     def submit(self, body: dict[str, Any]) -> dict[str, Any]:
         raw_ir = body.get("canonical_ir")
         if not isinstance(raw_ir, dict):
@@ -264,6 +364,9 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
                 project_id = str(body.get("project_id") or "")
                 if not self._require("project.read", project_id=project_id): return
                 self._json(200, self.server.service.attach(body)); return
+            if path == "/v1/projects/resolve-active":
+                if not self._require("project.read"): return
+                self._json(200, self.server.service.resolve_active_project(body, principal=self._principal())); return
             if path == "/v1/tasks":
                 project_id = str(body.get("project_id") or "")
                 capability = str(body.get("capability") or "")

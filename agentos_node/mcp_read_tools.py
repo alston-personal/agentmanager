@@ -8,6 +8,12 @@ from .chatgpt_web_node import bootstrap_chatgpt_web
 from .control_plane_client import ControlPlaneClient
 
 
+def resolve_active_project(client: ControlPlaneClient, *, hint: str | None = None) -> dict[str, Any]:
+    """Resolve the authoritative active readable project from ONE."""
+
+    return client.resolve_active_project(hint=hint)
+
+
 def resume_project(
     client: ControlPlaneClient,
     project_id: str,

@@ -93,6 +93,12 @@ class ControlPlaneClient:
             {"project_id": project_id, "agent": dict(agent or {})},
         )
 
+    def resolve_active_project(self, *, hint: str | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if hint is not None and str(hint).strip():
+            payload["hint"] = str(hint).strip()
+        return self._request("POST", "/v1/projects/resolve-active", payload)
+
     def resolve_enrollment(self, reference: str) -> dict[str, Any]:
         return self._request("POST", "/v1/nodes/enrollment/resolve", {"reference": reference})
 
