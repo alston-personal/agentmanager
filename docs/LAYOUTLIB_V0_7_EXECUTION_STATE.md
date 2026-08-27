@@ -9,17 +9,20 @@ Finish LayoutLib as the first real AgentOS capability-evolution closed loop, wit
 
 ## Current product flow
 
-`layout image -> analyze -> Spatial IR -> edit/correct -> 3D preview`
+`layout image -> analyze -> Spatial IR -> edit/correct -> 3D preview -> finish`
 
-The missing product/learning closure is:
+The remaining learning closure is:
 
-`finish/accept -> correction outcome -> CapabilityExperience -> consolidate -> canonical capability state -> fresh-node bootstrap`
+`finish/accept -> correction outcome -> CapabilityExperience -> governed transport -> consolidate -> canonical capability state -> fresh-node bootstrap`
 
 ## Current architecture
 
 - LayoutLib core remains a pure execution library.
 - `capabilities/layoutlib/adapter.py` translates abstract profile features, policies, and correction metrics into AgentOS capability experience.
 - `agentos_node/capability_runtime.py` provides generic experience observation, candidate consolidation, evaluation, and explicit governed promotion.
+- `agentos_node/capability_store.py` provides persistent idempotent capability-owned experience and canonical-state storage.
+- `agentos_node/capability_http.py` provides a minimal same-purpose HTTP gateway contract for experience ingestion and canonical-state reads.
+- `web_assets/layoutlab-capability-bridge-v0.7.js` records completion/correction outcomes, keeps an offline edge queue, opportunistically submits queued experience, and can bootstrap a canonical profile policy.
 - Spatial IR is the canonical model. 3D preview and exported mesh formats are derived representations.
 - The current 3D browser preview is rendered from Spatial IR; it is not a stored 3D asset format.
 
@@ -36,16 +39,26 @@ Reference metrics currently include:
 - manual parameter changes;
 - accepted/completed outcome.
 
-No raw image is required in the capability experience payload.
+No raw image is required in the capability experience payload. The persistent store rejects obvious raw image/binary telemetry fields at the shared boundary.
 
-## Immediate implementation sequence
+## Progress
 
-1. Prove cross-node convergence in tests: A/B/C experiences consolidate to a canonical profile policy and a fresh Node D can consume it without local history.
-2. Add an explicit UI/product completion event and collect correction metrics from the actual Layout Lab editing session.
-3. Bridge browser-generated experience into the governed AgentOS capability runtime rather than leaving canonical learning only in localStorage.
-4. Stabilize the Spatial IR schema and topology primitives needed for rooms/openings.
-5. Consolidate historical v0.5/v0.6/staged/deploy-hotfix source drift into a canonical v0.7 source/release identity.
-6. Add regression fixtures and acceptance metrics before allowing learned policy promotion.
+1. DONE in unit-level architecture proof: A/B/C experiences can consolidate to a canonical profile policy and a fresh Node D can consume that policy without local history.
+2. DONE in the real browser UI: explicit `finishModel` completion boundary and correction metrics are emitted from the Layout Lab session.
+3. IN PROGRESS end-to-end: browser edge queue and HTTP transport client exist; persistent AgentOS store and gateway service contract exist. The public `/layout-lab/api/...` proxy/service wiring is not yet proven live, so failed network submission intentionally leaves experience queued locally.
+4. NEXT: wire and verify the capability gateway on the Oracle host, then prove a real browser completion produces a server-side stored receipt and that a fresh browser receives canonical bootstrap state.
+5. AFTER CLOSED LOOP: stabilize Spatial IR topology/rooms/openings, consolidate historical source/version drift into canonical v0.7 source identity, and add regression fixtures before learned-policy promotion is allowed to influence production broadly.
+
+## Transport contract
+
+Browser transport uses the same-origin Layout Lab API namespace:
+
+- `POST ./api/capability/experience` with 1..20 abstract experiences.
+- `GET ./api/capability/<capability_id>/canonical` for bootstrap.
+
+Transport is at-least-once from the browser edge queue. Server-side ingestion is idempotent by `experience_id`: replay of the same payload is accepted as duplicate; reuse of the same ID with a different payload is rejected.
+
+The browser does not write canonical state. Canonical state remains a governed AgentOS output.
 
 ## Parked branches
 
