@@ -41,12 +41,30 @@ def _token_hash(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
 
 
+def _normalize(values: Iterable[str], *, name: str) -> tuple[str, ...]:
+    normalized = tuple(sorted({item.strip() for item in values if isinstance(item, str) and item.strip()}))
+    if not normalized:
+        raise ValueError(f"client token {name} are required")
+    return normalized
+
+
 @dataclass(frozen=True)
 class ClientPrincipal:
     subject: str
     label: str
     permissions: tuple[str, ...]
+    projects: tuple[str, ...]
+    capabilities: tuple[str, ...]
     expires_at: str
+
+    def allows_permission(self, permission: str) -> bool:
+        return "*" in self.permissions or permission in self.permissions
+
+    def allows_project(self, project_id: str) -> bool:
+        return "*" in self.projects or project_id in self.projects
+
+    def allows_capability(self, capability: str) -> bool:
+        return "*" in self.capabilities or capability in self.capabilities
 
 
 class ClientTokenStore:
@@ -65,6 +83,8 @@ class ClientTokenStore:
                     subject TEXT NOT NULL,
                     label TEXT NOT NULL,
                     permissions_json TEXT NOT NULL,
+                    projects_json TEXT NOT NULL DEFAULT '["*" ]',
+                    capabilities_json TEXT NOT NULL DEFAULT '["*" ]',
                     created_at TEXT NOT NULL,
                     expires_at TEXT NOT NULL,
                     last_used_at TEXT,
@@ -74,6 +94,18 @@ class ClientTokenStore:
                     ON client_tokens(subject, revoked_at, expires_at);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(client_tokens)")
+            }
+            if "projects_json" not in columns:
+                connection.execute(
+                    "ALTER TABLE client_tokens ADD COLUMN projects_json TEXT NOT NULL DEFAULT '[\"*\"]'"
+                )
+            if "capabilities_json" not in columns:
+                connection.execute(
+                    "ALTER TABLE client_tokens ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '[\"*\"]'"
+                )
 
     def issue(
         self,
@@ -81,15 +113,17 @@ class ClientTokenStore:
         *,
         label: str,
         permissions: Iterable[str] = DEFAULT_IDE_PERMISSIONS,
+        projects: Iterable[str] = ("*",),
+        capabilities: Iterable[str] = ("*",),
         ttl_days: int = 90,
     ) -> dict[str, Any]:
         subject = str(subject or "").strip()
         label = str(label or "").strip()[:128]
-        normalized = tuple(sorted({item for item in permissions if isinstance(item, str) and item}))
+        normalized_permissions = _normalize(permissions, name="permissions")
+        normalized_projects = _normalize(projects, name="projects")
+        normalized_capabilities = _normalize(capabilities, name="capabilities")
         if not subject or not label:
             raise ValueError("client token subject and label are required")
-        if not normalized:
-            raise ValueError("client token permissions are required")
         if ttl_days < 1 or ttl_days > 365:
             raise ValueError("client token ttl_days must be between 1 and 365")
 
@@ -101,14 +135,17 @@ class ClientTokenStore:
                 """
                 INSERT INTO client_tokens(
                     token_hash, subject, label, permissions_json,
+                    projects_json, capabilities_json,
                     created_at, expires_at, last_used_at, revoked_at
-                ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
                 """,
                 (
                     _token_hash(token),
                     subject,
                     label,
-                    json.dumps(normalized),
+                    json.dumps(normalized_permissions),
+                    json.dumps(normalized_projects),
+                    json.dumps(normalized_capabilities),
                     _timestamp(created),
                     _timestamp(expires),
                 ),
@@ -117,7 +154,9 @@ class ClientTokenStore:
             "token": token,
             "subject": subject,
             "label": label,
-            "permissions": list(normalized),
+            "permissions": list(normalized_permissions),
+            "projects": list(normalized_projects),
+            "capabilities": list(normalized_capabilities),
             "expiresAt": _timestamp(expires),
         }
 
@@ -135,6 +174,8 @@ class ClientTokenStore:
             if _parse_timestamp(row["expires_at"]) <= now:
                 return None
             permissions = tuple(json.loads(row["permissions_json"]))
+            projects = tuple(json.loads(row["projects_json"]))
+            capabilities = tuple(json.loads(row["capabilities_json"]))
             connection.execute(
                 "UPDATE client_tokens SET last_used_at=? WHERE token_hash=?",
                 (_timestamp(now), row["token_hash"]),
@@ -143,6 +184,8 @@ class ClientTokenStore:
                 subject=row["subject"],
                 label=row["label"],
                 permissions=permissions,
+                projects=projects,
+                capabilities=capabilities,
                 expires_at=row["expires_at"],
             )
 
@@ -206,5 +249,7 @@ class GitHubIdentityEnrollment:
             f"github:{login}",
             label=label,
             permissions=DEFAULT_IDE_PERMISSIONS,
+            projects=("*",),
+            capabilities=("*",),
             ttl_days=self.ttl_days,
         )
