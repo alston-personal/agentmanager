@@ -30,6 +30,7 @@ $currentUser = $identity.Name
 & icacls.exe $BridgeRoot /grant:r 'SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' "$currentUser`:(OI)(CI)M" | Out-Null
 
 $serviceExe = Join-Path $runtimeRoot 'AgentOSNodeRuntimeService.exe'
+$escapedServiceName = $ServiceName.Replace('"', '""')
 $escapedLauncher = $launcher.Replace('"', '""')
 $escapedInstall = $InstallRoot.Replace('"', '""')
 $escapedBridge = $BridgeRoot.Replace('"', '""')
@@ -47,13 +48,14 @@ public sealed class AgentOSNodeRuntimeService : ServiceBase
     private Process child;
     private bool stopping;
 
+    private const string RuntimeServiceName = @"__SERVICE_NAME__";
     private const string Launcher = @"__LAUNCHER__";
     private const string WorkingRoot = @"__INSTALL_ROOT__";
     private const string DesktopBridge = @"__BRIDGE_ROOT__";
 
     public AgentOSNodeRuntimeService()
     {
-        ServiceName = "AgentOSNodeRuntime";
+        ServiceName = RuntimeServiceName;
         CanStop = true;
         CanShutdown = true;
         AutoLog = true;
@@ -129,7 +131,7 @@ public sealed class AgentOSNodeRuntimeService : ServiceBase
     }
 }
 '@
-$source = $source.Replace('__LAUNCHER__', $escapedLauncher).Replace('__INSTALL_ROOT__', $escapedInstall).Replace('__BRIDGE_ROOT__', $escapedBridge)
+$source = $source.Replace('__SERVICE_NAME__', $escapedServiceName).Replace('__LAUNCHER__', $escapedLauncher).Replace('__INSTALL_ROOT__', $escapedInstall).Replace('__BRIDGE_ROOT__', $escapedBridge)
 
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
