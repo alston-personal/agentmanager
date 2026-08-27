@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Any, Callable, Iterable, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol
 import json
 
 
@@ -105,26 +105,11 @@ class CapabilityState:
 
 
 class CapabilityReducer(Protocol):
-    """Domain-owned reducer: Experience[] -> candidate CapabilityState."""
-
-    def __call__(
-        self,
-        capability_id: str,
-        experiences: list[CapabilityExperience],
-        current: CapabilityState | None,
-    ) -> CapabilityState:
-        ...
+    def __call__(self, capability_id: str, experiences: list[CapabilityExperience], current: CapabilityState | None) -> CapabilityState: ...
 
 
 class CapabilityEvaluator(Protocol):
-    """Returns whether a candidate is safe/valuable enough to be promotable."""
-
-    def __call__(
-        self,
-        candidate: CapabilityState,
-        current: CapabilityState | None,
-    ) -> tuple[bool, Mapping[str, Any]]:
-        ...
+    def __call__(self, candidate: CapabilityState, current: CapabilityState | None) -> tuple[bool, Mapping[str, Any]]: ...
 
 
 @dataclass
@@ -135,17 +120,13 @@ class ConsolidationResult:
 
 
 class CapabilityRuntime:
-    """Generic capability learning boundary.
-
-    The runtime owns protocol mechanics only. Domain intelligence lives in the
-    reducer/evaluator supplied by the capability. `consolidate` never promotes
-    automatically; callers/governance must call `promote` explicitly.
-    """
+    """Generic capability learning boundary with an explicit governance gate."""
 
     def __init__(self) -> None:
         self._experiences: dict[str, dict[str, CapabilityExperience]] = {}
         self._canonical: dict[str, CapabilityState] = {}
         self._candidates: dict[str, CapabilityState] = {}
+        self._evaluations: dict[str, tuple[bool, dict[str, Any]]] = {}
 
     def observe(self, experience: CapabilityExperience) -> str:
         bucket = self._experiences.setdefault(experience.capability_id, {})
@@ -161,12 +142,28 @@ class CapabilityRuntime:
     def candidate(self, capability_id: str) -> CapabilityState | None:
         return self._candidates.get(capability_id)
 
-    def consolidate(
-        self,
-        capability_id: str,
-        reducer: CapabilityReducer,
-        evaluator: CapabilityEvaluator,
-    ) -> ConsolidationResult:
+    def seed_canonical(self, state: CapabilityState | Mapping[str, Any]) -> CapabilityState:
+        """Load an already-governed canonical state from persistent storage."""
+        if isinstance(state, Mapping):
+            state = CapabilityState(
+                capability_id=str(state["capability_id"]),
+                version=int(state["version"]),
+                payload=dict(state.get("payload") or {}),
+                support=int(state.get("support", 0)),
+                confidence=float(state.get("confidence", 0)),
+                state_kind=str(state.get("state_kind") or "canonical"),
+                evidence_ids=tuple(state.get("evidence_ids") or ()),
+                parent_state_id=state.get("parent_state_id"),
+                created_at=str(state.get("created_at") or _utcnow()),
+                schema=str(state.get("schema") or "agentos.capability-state/v1"),
+                state_id=str(state.get("state_id") or ""),
+            )
+        if state.state_kind != "canonical":
+            raise ValueError("seeded state must be canonical")
+        self._canonical[state.capability_id] = state
+        return state
+
+    def consolidate(self, capability_id: str, reducer: CapabilityReducer, evaluator: CapabilityEvaluator) -> ConsolidationResult:
         xs = self.experiences(capability_id)
         if not xs:
             raise ValueError(f"no experiences for capability {capability_id}")
@@ -176,22 +173,12 @@ class CapabilityRuntime:
             raise ValueError("reducer returned state for a different capability")
         if candidate.state_kind != "candidate":
             raise ValueError("reducer must return candidate state")
-        self._candidates[capability_id] = candidate
         promotable, evidence = evaluator(candidate, current)
+        self._candidates[capability_id] = candidate
+        self._evaluations[capability_id] = (bool(promotable), dict(evidence))
         return ConsolidationResult(candidate, bool(promotable), dict(evidence))
 
-    def promote(
-        self,
-        capability_id: str,
-        *,
-        approved: bool,
-        authority_receipt: Mapping[str, Any],
-    ) -> CapabilityState:
-        """Explicit governance gate from candidate -> canonical.
-
-        `approved=True` is insufficient by itself: a non-empty authority receipt
-        is required so promotion always has provenance.
-        """
+    def promote(self, capability_id: str, *, approved: bool, authority_receipt: Mapping[str, Any]) -> CapabilityState:
         if not approved:
             raise PermissionError("candidate promotion was not approved")
         if not authority_receipt:
@@ -199,6 +186,9 @@ class CapabilityRuntime:
         candidate = self._candidates.get(capability_id)
         if candidate is None:
             raise ValueError(f"no candidate for capability {capability_id}")
+        evaluation = self._evaluations.get(capability_id)
+        if evaluation is None or not evaluation[0]:
+            raise PermissionError("candidate has not passed evaluation")
         canonical = CapabilityState(
             capability_id=candidate.capability_id,
             version=candidate.version,
@@ -213,27 +203,12 @@ class CapabilityRuntime:
         return canonical
 
 
-def weighted_numeric_profile_reducer(
-    parameter_names: Iterable[str],
-    *,
-    quality_key: str = "quality",
-) -> CapabilityReducer:
-    """Small reference reducer for numeric policy parameters.
-
-    Each experience's `policy_used` contributes values. Outcome quality is a
-    weight in [0, 1]. This is deliberately generic; domain capabilities can
-    replace it with clustering, regime detection, Bayesian updates, etc.
-    """
+def weighted_numeric_profile_reducer(parameter_names: Iterable[str], *, quality_key: str = "quality") -> CapabilityReducer:
     names = tuple(parameter_names)
 
-    def reduce(
-        capability_id: str,
-        experiences: list[CapabilityExperience],
-        current: CapabilityState | None,
-    ) -> CapabilityState:
+    def reduce(capability_id: str, experiences: list[CapabilityExperience], current: CapabilityState | None) -> CapabilityState:
         totals = {name: 0.0 for name in names}
         weights = {name: 0.0 for name in names}
-        usable = 0
         for exp in experiences:
             quality = max(0.0, min(1.0, float(exp.outcome.get(quality_key, 1.0))))
             for name in names:
@@ -246,12 +221,7 @@ def weighted_numeric_profile_reducer(
                 w = max(quality, 1e-6)
                 totals[name] += value * w
                 weights[name] += w
-                usable += 1
-        policy = {
-            name: totals[name] / weights[name]
-            for name in names
-            if weights[name] > 0
-        }
+        policy = {name: totals[name] / weights[name] for name in names if weights[name] > 0}
         if not policy:
             raise ValueError("experiences contain no usable numeric parameters")
         version = 1 if current is None else current.version + 1
@@ -270,16 +240,7 @@ def weighted_numeric_profile_reducer(
     return reduce
 
 
-def non_regression_evaluator(
-    candidate: CapabilityState,
-    current: CapabilityState | None,
-) -> tuple[bool, Mapping[str, Any]]:
-    """Conservative reference evaluator.
-
-    First state needs at least two observations. Later candidates may not have
-    lower confidence than the current canonical state. Real capabilities should
-    additionally run domain benchmarks/shadow evaluation before promotion.
-    """
+def non_regression_evaluator(candidate: CapabilityState, current: CapabilityState | None) -> tuple[bool, Mapping[str, Any]]:
     if current is None:
         ok = candidate.support >= 2
         return ok, {"reason": "bootstrap_support", "support": candidate.support}
