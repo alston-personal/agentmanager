@@ -1,0 +1,41 @@
+{
+  "schema": "agentos.engineering-state/v0.1",
+  "project": "AgentOS",
+  "active_goal": {
+    "goal_id": "realm-node-fabric-readiness",
+    "title": "Complete first Node readiness regression before second fresh join",
+    "status": "active",
+    "acceptance": [
+      "vopc5750 heartbeat is fresh and effective status is online",
+      "surface and capability discovery are reported to ONE",
+      "ONE bootstrap and benchmark endpoints are live",
+      "canonical capability bootstrap succeeds",
+      "readiness regression succeeds",
+      "uplift benchmark is persisted",
+      "node_ready is true"
+    ]
+  },
+  "authority": {
+    "owner_role": "agentos-engineering",
+    "ownership_mode": "single-writer",
+    "active_branch": "feature/realm-node-fabric-readiness",
+    "merge_target": "main",
+    "main_write_policy": "pull-request-only",
+    "handoff_required": true
+  },
+  "default_permissions": {
+    "agentos-engineering": ["inspect", "research", "edit_active_branch", "run_regression", "submit_pull_request"],
+    "agentos-research": ["inspect", "research", "submit_change_request", "submit_evidence"],
+    "project-agent": ["inspect", "submit_change_request", "submit_evidence"],
+    "experiment-agent": ["inspect", "research", "edit_isolated_experiment_branch", "submit_evidence"],
+    "unknown": ["inspect", "submit_change_request"]
+  },
+  "invariants": [
+    "No chat session owns canonical engineering truth",
+    "Only one writable owner exists for an active integration goal",
+    "Core changes from other projects enter through change requests",
+    "Experiments use isolated branches",
+    "Merge requires regression evidence",
+    "Capability growth must not weaken governance"
+  ]
+}
