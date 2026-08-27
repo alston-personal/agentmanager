@@ -1,6 +1,6 @@
 {
   "schema": "agentos.development-context/v1",
-  "updated_at": "2026-08-27T10:20:16+08:00",
+  "updated_at": "2026-08-27T10:26:00+08:00",
   "repo": "alston-personal/agentmanager",
   "stable_branch": "main",
   "integration_branch": "feature/distributed-agentos-runtime",
@@ -12,28 +12,29 @@
     "rule": "All non-production AgentOS development must explicitly target the integration branch or a declared short-lived child branch. Never omit branch on GitHub write operations."
   },
   "active_work": {
-    "goal": "Complete AgentOS Core v0.1 as the canonical cross-session execution path: scoped external clients attach to deterministic durable context, submit bounded capabilities to the Oracle native node, and receive receipts without GitHub Actions acting as the task executor.",
+    "goal": "Complete AgentOS Core v0.1 as the canonical cross-session execution path and prove its execution plane is independent from GitHub Actions: durable context, scoped clients, bounded Oracle-native capabilities, receipts, and a weak-executor Master Experience Floor must remain system-owned.",
     "integration_branch": "feature/distributed-agentos-runtime",
     "current_findings": [
-      "Oracle now runs persistent agentos-control-plane.service and agentos-node.service; the native node leases Canonical IR tasks and completes receipts without GitHub Actions being the executor.",
+      "Oracle runs persistent agentos-control-plane.service and agentos-node.service; the native node leases Canonical IR tasks and completes receipts without GitHub Actions being the executor.",
       "Session A -> task -> Oracle execution -> receipt -> Session B attach continuity is proven against the durable Control Plane store.",
-      "The public ONE/Core network edge is proven from an external GitHub-hosted runner using a short-lived scoped AgentOS client token; the token was revoked after the proof.",
+      "The public ONE/Core network edge is proven from an external client using short-lived scoped AgentOS credentials; test credentials are revoked after each proof.",
       "Client credentials are stored only as SHA-256 digests and support expiry, revocation, permissions, project allowlists, and capability allowlists; runtime lease/complete APIs remain root-only.",
-      "agentos.project.inspect is a real native capability gated by an Oracle-local project registry; LeopardCat inspection returned HEAD f44db405678cd54ce42b944e71a37de033ed8234 from executor oracle-core-node.",
-      "Context Compiler v0 is deterministic rather than model-generated. /v1/attach now returns agentos.execution-context/v0.1 with active goal, findings, next actions, latest task, branch and write policy.",
-      "A blind fresh-session attach with history=none successfully recovered the canonical AgentOS goal, next action and integration branch using durable state alone.",
-      "agentos.project.test is now a real native capability. Tasks may select only an administrator-defined profile name; task-supplied argv/command fields are ignored.",
-      "Oracle successfully executed the allowlisted agentos-core/core-v01 test profile and returned a succeeded receipt from executor oracle-core-node at native Core SHA 3cd3e177311f90592a51bd5e68c0909be871dd20.",
-      "The prior development context had become stale even though the Context Compiler worked correctly. Canonical context freshness is therefore part of the Master Experience Floor, not merely context transport.",
+      "agentos.project.inspect is a native allowlisted capability; LeopardCat inspection returned HEAD f44db405678cd54ce42b944e71a37de033ed8234 from executor oracle-core-node.",
+      "agentos.project.test is a native profile-gated capability; task-supplied argv/command fields are ignored in favor of the Oracle-local administrator registry.",
+      "The external least-privilege native-test proof succeeded: a token restricted to agentos-core + agentos.project.test submitted core-v01 over the public Core edge, received an oracle-core-node succeeded receipt, was denied cross-project and cross-capability access, and was then revoked.",
+      "Context Compiler v0 is deterministic rather than model-generated. /v1/attach returns agentos.execution-context/v0.1 with active goal, findings, next actions, latest task, branch and write policy.",
+      "A blind fresh-session attach with history=none recovered the updated canonical Core v0.1 goal and next action using durable context alone.",
+      "Execution context now exposes a freshness contract with source_updated_at, compiled_at, age_seconds, max_age_seconds and fresh/stale/unknown status. A seven-day-old source is explicitly marked stale without hiding its content.",
+      "The latest Oracle bootstrap passed six Core v0.1 tests and redeployed native services at SHA 3315e25ff9936be2d2a886604630cc9aef461abb while preserving native inspect/test execution.",
       "WorkspaceGuard and the bounded Antigravity relay remain relevant for interactive/local executor integration, but they are no longer blockers for the Core attach/task/receipt execution plane.",
       "feature/distributed-agentos-runtime remains the sole canonical vNext continuation line; experimental writes to main remain denied."
     ],
     "next_actions": [
-      "Prove an external least-privilege client can submit agentos.project.test for only agentos-core/core-v01 through the public Core edge and receive an oracle-core-node receipt, then revoke the token.",
-      "Add an explicit freshness contract to execution_context so attached agents can detect stale canonical development context instead of silently trusting it.",
-      "Separate bootstrap/deployment responsibilities from normal AgentOS execution so GitHub Actions is clearly CI/deploy infrastructure rather than an execution dependency.",
+      "Separate CI/deployment responsibilities from the normal AgentOS execution plane in repository contracts and workflows, then preserve evidence that deployed Core services and Oracle task execution do not depend on a running GitHub Actions job.",
       "Wire a real weak interactive executor adapter (Antigravity or another bounded executor surface) to consume the same attach execution_context and emit receipts, then repeat the blind Master Experience Floor experiment.",
-      "Preserve the new Core v0.1 evidence in the AgentOS research record and update the paper/chronology after the external native-test edge and weak-executor proof are complete."
+      "Add automatic canonical-context reconciliation/checkpoint rules so successful receipts can advance durable development context without relying on manual summary maintenance.",
+      "Preserve the Core v0.1 evidence in the AgentOS research chronology and update the paper after the weak-executor proof is complete.",
+      "Review legacy GitHub workflows that still fail noisily on every branch push and isolate or retire those that are no longer part of the canonical AgentOS path."
     ]
   },
   "branch_registry": {
