@@ -34,6 +34,13 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertNotIn('NoNewPrivileges=true', unit_section)
         self.assertIn('UMask=0007', unit_section)
 
+    def test_relay_provider_is_explicit_allowlisted_and_not_capsule_controlled(self):
+        text = _text(SCRIPT)
+        self.assertIn('PROVIDER="${AGENTOS_ANTIGRAVITY_PROVIDER:-claude}"', text)
+        self.assertIn('claude|agy', text)
+        self.assertIn('Environment=AGENTOS_ANTIGRAVITY_PROVIDER=$PROVIDER', text)
+        self.assertIn('antigravity_provider=$PROVIDER', text)
+
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)
         self.assertIn('ensure_shared_dir()', text)
