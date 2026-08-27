@@ -61,7 +61,11 @@ if not isinstance(value, dict): value={}
 profiles=value.get("agentos-core")
 if not isinstance(profiles, dict): profiles={}
 profiles["core-v01"]={
-    "argv": [python_bin, "-m", "pytest", "-q", "tests/test_agentos_core_v01.py"],
+    "argv": [
+        python_bin, "-m", "pytest", "-q",
+        "tests/test_agentos_core_v01.py",
+        "tests/test_agentos_core_plane_boundary.py"
+    ],
     "timeout_seconds": 180,
 }
 value["agentos-core"]=profiles
