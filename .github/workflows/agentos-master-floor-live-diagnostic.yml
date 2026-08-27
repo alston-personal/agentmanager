@@ -68,4 +68,6 @@ jobs:
               except Exception as exc:
                   print({'file':p.name,'error':str(exc)})
           PY
+          echo '--- relay service journal (bounded tail) ---'
+          journalctl --user -u agentos-antigravity-relay.service --no-pager -n 80 || true
           REMOTE
