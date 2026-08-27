@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {
     'index.html': ROOT / 'web_assets/layoutlab_v0_5.html',
     'layoutlib-browser-v0.5.js': ROOT / 'web_assets/layoutlib-browser-v0.5.js',
+    'layoutlab-capability-bridge-v0.7.js': ROOT / 'web_assets/layoutlab-capability-bridge-v0.7.js',
 }
 TARGET_DIR = Path('/home/ubuntu/zeus-writer/website/dist/layout-lab')
 
@@ -43,6 +44,10 @@ def _identity(name: str, data: bytes) -> None:
         required = [b'<title>Layout Lab | Milkcat Studio</title>', b'LayoutLib Browser Adapter v0.6', b'3D \xe5\x8d\xb3\xe6\x99\x82\xe5\xb0\x8d\xe7\x85\xa7', b'layoutlib.profile.samples.v1', b'previewEraseStrokePx']
         if not all(x in data for x in required):
             raise SystemExit('html source asset failed v0.6 identity check')
+    elif name == 'layoutlab-capability-bridge-v0.7.js':
+        required = [b'Layout Lab -> AgentOS Capability Experience Bridge v0.7.0', b'finishModel', b'agentos.capability-experience/v1', b'applyCanonicalPolicy', b'layoutlib.capability.pending.v1']
+        if not all(x in data for x in required):
+            raise SystemExit('capability bridge asset failed v0.7 identity check')
     elif name.endswith('.js'):
         required = [b'LayoutLib Browser Adapter v0.6.0', b"version:'0.6.0'", b'previewEraseStrokePx', b'extractProfileFeatures', b'predictProfileParameters', b'makeLearningObservation', b'replayEdits']
         if not all(x in data for x in required):
@@ -62,6 +67,9 @@ def main() -> int:
             text = data.decode('utf-8')
             if 'deleteSelected' not in text:
                 text = text.replace('</body>', HOTFIX + '\n</body>')
+            bridge = '<script src="./layoutlab-capability-bridge-v0.7.js"></script>'
+            if bridge not in text:
+                text = text.replace('</body>', bridge + '\n</body>')
             data = text.encode('utf-8')
         target = TARGET_DIR / name
         tmp = target.with_suffix(target.suffix + '.tmp')
@@ -70,7 +78,7 @@ def main() -> int:
         tmp.replace(target)
         os.chmod(target, 0o644)
         artifacts[name] = {'source': str(source), 'target': str(target), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
-    print(json.dumps({'ok': True, 'directory': str(TARGET_DIR), 'directory_mode': '0755', 'file_mode': '0644', 'mode': 'layoutlib-v0.6-demo-hotfix', 'artifacts': artifacts}, ensure_ascii=False, sort_keys=True))
+    print(json.dumps({'ok': True, 'directory': str(TARGET_DIR), 'directory_mode': '0755', 'file_mode': '0644', 'mode': 'layoutlib-v0.7-capability-bridge', 'artifacts': artifacts}, ensure_ascii=False, sort_keys=True))
     return 0
 
 
