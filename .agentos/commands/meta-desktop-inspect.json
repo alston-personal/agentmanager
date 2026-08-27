@@ -1,6 +1,7 @@
 {
   "schema": "agentos.meta-desktop-inspect/v0.1",
   "node_id": "vopc5750",
-  "purpose": "read-only diagnose node transport for zeuswriter Meta inspection",
-  "nonce": "meta-zeuswriter-transport-20260827-02"
+  "operation": "quarantine_stale_tasks",
+  "purpose": "remove only known timed-out tasks before controlled node recovery",
+  "nonce": "meta-zeuswriter-quarantine-20260827-03"
 }
