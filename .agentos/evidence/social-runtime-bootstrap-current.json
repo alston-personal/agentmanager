@@ -12,7 +12,7 @@
     "facebook": {
       "receipt": {
         "credential_ref": "facebook/default",
-        "observed_at": "2026-08-27T05:14:20Z",
+        "observed_at": "2026-08-27T05:17:33Z",
         "ok": true,
         "operation": "identity",
         "platform": "facebook",
@@ -27,22 +27,25 @@
     "instagram": {
       "receipt": {
         "credential_ref": "instagram/default",
-        "error_code": "invalid_request",
-        "error_message": "Instagram identity requires ig_id in args or credential metadata",
-        "observed_at": "2026-08-27T05:14:20Z",
-        "ok": false,
+        "observed_at": "2026-08-27T05:17:34Z",
+        "ok": true,
         "operation": "identity",
         "platform": "instagram",
+        "platform_object_id": "17841451767627377",
+        "result": {
+          "discovery": "facebook_page",
+          "username": "oursong_alstonhuang"
+        },
         "schema": "agentos.social.publish-receipt/v0.1"
       },
-      "returncode": 2
+      "returncode": 0
     },
     "threads": {
       "receipt": {
         "credential_ref": "threads/default",
         "error_code": "platform_http_error",
-        "error_message": "HTTP 400: {\"error\":{\"message\":\"Error validating access token: Session has expired on Tuesday, 23-Jun-26 01:33:13 PDT. The current time is Wednesday, 26-Aug-26 22:14:19 PDT.\",\"type\":\"OAuthException\",\"code\":190,\"error_subcode\":0,\"fbtrace_id\":\"AmBOR7G_bLxUmABHje4KKBG\"}}",
-        "observed_at": "2026-08-27T05:14:19Z",
+        "error_message": "HTTP 400: {\"error\":{\"message\":\"Error validating access token: Session has expired on Tuesday, 23-Jun-26 01:33:13 PDT. The current time is Wednesday, 26-Aug-26 22:17:33 PDT.\",\"type\":\"OAuthException\",\"code\":190,\"error_subcode\":0,\"fbtrace_id\":\"AheB5OnsTkO49v8HdEKkuHJ\"}}",
+        "observed_at": "2026-08-27T05:17:33Z",
         "ok": false,
         "operation": "identity",
         "platform": "threads",
