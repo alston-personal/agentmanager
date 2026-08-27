@@ -66,6 +66,10 @@ def test_node_manifest_advertises_surface_inventory(monkeypatch, tmp_path):
     assert 'agent.chat' in manifest['capabilities']
     assert 'agent.surface.inspect' in manifest['capabilities']
 
+    heartbeat = client.heartbeat()
+    assert heartbeat['manifest']['node_id'] == 'host-01'
+    assert heartbeat['surface_count'] == 1
+
 
 def test_node_registry_preserves_surface_inventory(tmp_path):
     registry = NodeRegistry(tmp_path / 'nodes.json')
@@ -94,3 +98,42 @@ def test_node_registry_preserves_surface_inventory(tmp_path):
     node_map = registry.node_map()
     assert node_map['node_count'] == 1
     assert node_map['realm_surface_providers'] == ['antigravity']
+
+
+def test_heartbeat_refreshes_surface_inventory(tmp_path):
+    registry = NodeRegistry(tmp_path / 'nodes.json')
+    initial = {
+        'schema': 'agentos.node-manifest/v0.1',
+        'realm_id': 'realm-test',
+        'node_id': 'host-01',
+        'role': 'client',
+        'hostname': 'HOST-01',
+        'platform': 'Windows',
+        'platform_release': '11',
+        'capabilities': ['tool.presence'],
+        'tool_presence': {},
+        'surface_inventory': {'schema': 'agentos.surface-inventory/v0.1', 'surface_count': 0, 'providers': [], 'capabilities': [], 'surfaces': []},
+    }
+    registry.register_manifest(initial)
+
+    refreshed = dict(initial)
+    refreshed['capabilities'] = ['agent.chat', 'tool.presence']
+    refreshed['surface_inventory'] = {
+        'schema': 'agentos.surface-inventory/v0.1',
+        'surface_count': 1,
+        'providers': ['antigravity'],
+        'capabilities': ['agent.chat'],
+        'surfaces': [{'provider': 'antigravity', 'kind': 'ide-agent'}],
+    }
+    registry.record_heartbeat({
+        'schema': 'agentos.node-heartbeat/v0.1',
+        'realm_id': 'realm-test',
+        'node_id': 'host-01',
+        'status': 'online',
+        'surface_count': 1,
+        'manifest': refreshed,
+    })
+
+    node = registry.node_map()['nodes'][0]
+    assert node['surface_inventory']['providers'] == ['antigravity']
+    assert 'agent.chat' in node['capabilities']
