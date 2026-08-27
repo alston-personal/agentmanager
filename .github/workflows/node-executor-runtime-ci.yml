@@ -5,15 +5,19 @@ on:
     branches:
       - feature/node-executor-runtime
     paths:
+      - 'agentos_node/executor_bridge.py'
       - 'agentos_node/executor_registry.py'
       - 'agentos_node/thin_client.py'
+      - 'tests/test_executor_bridge.py'
       - 'tests/test_executor_registry.py'
       - 'tests/test_thin_client.py'
       - '.github/workflows/node-executor-runtime-ci.yml'
   pull_request:
     paths:
+      - 'agentos_node/executor_bridge.py'
       - 'agentos_node/executor_registry.py'
       - 'agentos_node/thin_client.py'
+      - 'tests/test_executor_bridge.py'
       - 'tests/test_executor_registry.py'
       - 'tests/test_thin_client.py'
 
@@ -28,6 +32,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run executor and thin client tests
+      - name: Run executor bridge and thin client tests
         run: |
-          python -m unittest tests.test_executor_registry tests.test_thin_client -v
+          python -m unittest tests.test_executor_bridge tests.test_executor_registry tests.test_thin_client -v
