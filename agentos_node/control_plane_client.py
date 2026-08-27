@@ -83,6 +83,16 @@ class ControlPlaneClient:
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
 
+    def attach(self, project_id: str, *, agent: dict[str, Any] | None = None) -> dict[str, Any]:
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            raise ValueError("project_id is required")
+        return self._request(
+            "POST",
+            "/v1/attach",
+            {"project_id": project_id, "agent": dict(agent or {})},
+        )
+
     def resolve_enrollment(self, reference: str) -> dict[str, Any]:
         return self._request("POST", "/v1/nodes/enrollment/resolve", {"reference": reference})
 
