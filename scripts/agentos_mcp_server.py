@@ -2,7 +2,7 @@
 """Read-only AgentOS MCP server for ChatGPT developer-mode experiments.
 
 Run this on a trusted host and connect it through Secure MCP Tunnel or another
-authorized private transport.  Do not expose it anonymously to the public
+authorized private transport. Do not expose it anonymously to the public
 Internet: the server-side Control Plane credential may authorize private state.
 """
 
@@ -19,12 +19,22 @@ from agentos_node.mcp_read_tools import get_project_state, get_task, resume_proj
 CONTROL_PLANE_URL = os.environ.get("AGENTOS_CONTROL_PLANE_URL", "").strip()
 CONTROL_PLANE_TOKEN = os.environ.get("AGENTOS_CONTROL_PLANE_TOKEN")
 RUNTIME_ID = os.environ.get("AGENTOS_CHATGPT_RUNTIME_ID", "chatgpt-web").strip() or "chatgpt-web"
+MCP_HOST = os.environ.get("AGENTOS_MCP_HOST", "127.0.0.1").strip() or "127.0.0.1"
+MCP_PORT = int(os.environ.get("AGENTOS_MCP_PORT", "8000"))
+MCP_PATH = os.environ.get("AGENTOS_MCP_PATH", "/mcp").strip() or "/mcp"
 
 if not CONTROL_PLANE_URL:
     raise RuntimeError("AGENTOS_CONTROL_PLANE_URL is required")
 
 client = ControlPlaneClient(CONTROL_PLANE_URL, token=CONTROL_PLANE_TOKEN)
-mcp = MCPServer("LeopardCat AgentOS")
+mcp = MCPServer(
+    "LeopardCat AgentOS",
+    instructions=(
+        "Use AgentOS as the authoritative source for existing project state. "
+        "When a user asks to continue/resume prior work, call agentos_resume "
+        "before reasoning from chat memory."
+    ),
+)
 
 
 @mcp.tool()
@@ -55,4 +65,11 @@ def agentos_task(task_id: str) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run("streamable-http")
+    mcp.run(
+        transport="streamable-http",
+        host=MCP_HOST,
+        port=MCP_PORT,
+        streamable_http_path=MCP_PATH,
+        stateless_http=True,
+        json_response=True,
+    )
