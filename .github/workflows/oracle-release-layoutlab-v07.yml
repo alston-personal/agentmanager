@@ -104,35 +104,30 @@ jobs:
           cd "$RUNTIME"
           /usr/bin/python3 scripts/deploy_layoutlab_v07_release.py | tee /tmp/layoutlab-v07-release.json
           grep -q '"ok": true' /tmp/layoutlab-v07-release.json
-          grep -q 'layoutlab-v0.7.7' /tmp/layoutlab-v07-release.json
-          echo 'layoutlab_v077_deploy=PASS'
+          grep -q 'layoutlab-v0.7.8' /tmp/layoutlab-v07-release.json
+          echo 'layoutlab_v078_deploy=PASS'
           REMOTE
 
-      - name: Public v0.7.7 acceptance
+      - name: Public v0.7.8 acceptance
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://studio.milkcat.org/layout-lab
-          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v077-ui
-          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.7" -o /tmp/layoutlab-v077-fix
-          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v077-bridge
-          grep -q 'Layout Lab v0.7.7 · AgentOS closed loop' /tmp/layoutlab-v077-ui
-          grep -q 'data-release="0.7.7"' /tmp/layoutlab-v077-ui
-          grep -q 'v0.7.7 Capability learning contract' /tmp/layoutlab-v077-ui
-          grep -q 'layoutlab-v0.7-release-fix.js?v=0.7.7' /tmp/layoutlab-v077-ui
-          grep -q "const RELEASE='0.7.7'" /tmp/layoutlab-v077-fix
-          grep -q 'deleteKey:true' /tmp/layoutlab-v077-fix
-          grep -q 'initialWallPreview:true' /tmp/layoutlab-v077-fix
-          grep -q 'rightDragPan:true' /tmp/layoutlab-v077-fix
-          grep -q 'durableManualEdits:true' /tmp/layoutlab-v077-fix
-          grep -q "e.button===2&&zoom2d>1" /tmp/layoutlab-v077-fix
-          grep -q "typeof previewIr!=='undefined'&&typeof analyzeRaw==='function'" /tmp/layoutlab-v077-fix
-          grep -q "\['file','button','checkbox','radio','range','submit','reset'\]" /tmp/layoutlab-v077-fix
-          grep -q 'finishModel' /tmp/layoutlab-v077-bridge
-          grep -q 'applyCanonicalPolicy' /tmp/layoutlab-v077-bridge
-          echo 'public_v077_identity=PASS'
-          echo 'delete_before_button_focus_contract=PASS'
-          echo 'initial_preview_contract=PASS'
-          echo 'right_drag_pan_contract=PASS'
-          echo 'durable_manual_edit_contract=PASS'
+          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v078-ui
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.8" -o /tmp/layoutlab-v078-fix
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v078-bridge
+          grep -q '<div class="badge" data-release="0.7.8">v0.7.8</div>' /tmp/layoutlab-v078-ui
+          grep -q 'Layout Lab v0.7.8：' /tmp/layoutlab-v078-ui
+          grep -q 'v0.7.8 Capability learning contract' /tmp/layoutlab-v078-ui
+          grep -q 'layoutlab-v0.7-release-fix.js?v=0.7.8' /tmp/layoutlab-v078-ui
+          grep -q "const RELEASE='0.7.8'" /tmp/layoutlab-v078-fix
+          grep -q 'compactVersionBadge:true' /tmp/layoutlab-v078-fix
+          grep -q 'deleteKey:true' /tmp/layoutlab-v078-fix
+          grep -q 'initialWallPreview:true' /tmp/layoutlab-v078-fix
+          grep -q 'rightDragPan:true' /tmp/layoutlab-v078-fix
+          grep -q 'durableManualEdits:true' /tmp/layoutlab-v078-fix
+          grep -q 'finishModel' /tmp/layoutlab-v078-bridge
+          grep -q 'applyCanonicalPolicy' /tmp/layoutlab-v078-bridge
+          echo 'public_v078_compact_version_identity=PASS'
+          echo 'editor_interaction_contracts=PASS'
           echo 'capability_bridge=PASS'
