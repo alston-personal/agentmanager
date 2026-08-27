@@ -1,0 +1,178 @@
+name: Social Runtime Inventory
+
+on:
+  push:
+    branches:
+      - feature/social-capability
+    paths:
+      - '.agentos/commands/social-runtime-inventory.json'
+      - '.github/workflows/social-runtime-inventory.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: social-runtime-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/social-capability
+
+      - name: Collect non-secret runtime inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import shutil
+          import stat
+          import subprocess
+          from pathlib import Path
+
+          def mode_of(path: Path):
+              try:
+                  return oct(stat.S_IMODE(path.stat().st_mode))
+              except OSError:
+                  return None
+
+          def owner_of(path: Path):
+              try:
+                  s = path.stat()
+                  return {'uid': s.st_uid, 'gid': s.st_gid}
+              except OSError:
+                  return None
+
+          def env_key_names(path: Path):
+              keys = []
+              try:
+                  for raw in path.read_text(encoding='utf-8', errors='replace').splitlines():
+                      line = raw.strip()
+                      if not line or line.startswith('#') or '=' not in line:
+                          continue
+                      key = line.split('=', 1)[0].strip()
+                      if key and key.replace('_', '').isalnum():
+                          keys.append(key)
+              except (OSError, PermissionError):
+                  return None
+              # Deliberately return names only, never values.
+              interesting = {
+                  'SOC_THREADS_TOKEN', 'THREADS_ACCESS_TOKEN', 'SOC_FB_TOKEN',
+                  'SOC_IG_TOKEN', 'AGENTOS_SOCIAL_CREDENTIAL_STORE',
+                  'AGENTOS_THREADS_CREDENTIAL_REF', 'AGENTOS_FB_CREDENTIAL_REF',
+                  'AGENTOS_IG_CREDENTIAL_REF', 'SOC_FB_PAGE_ID', 'SOC_IG_ID',
+              }
+              return sorted(k for k in set(keys) if k in interesting)
+
+          def credential_refs(path: Path):
+              try:
+                  data = json.loads(path.read_text(encoding='utf-8'))
+              except (OSError, PermissionError, json.JSONDecodeError):
+                  return None
+              if not isinstance(data, dict):
+                  return None
+              out = []
+              for ref, payload in data.items():
+                  platform = payload.get('platform') if isinstance(payload, dict) else None
+                  out.append({'ref': str(ref), 'platform': str(platform) if platform else None})
+              return sorted(out, key=lambda x: x['ref'])
+
+          roots = [Path('/home/ubuntu'), Path('/home/agentos-node')]
+          zeus_dirs = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              try:
+                  proc = subprocess.run(
+                      ['find', str(root), '-maxdepth', '5', '-type', 'd', '-iname', '*zeus*'],
+                      text=True, capture_output=True, timeout=20, check=False,
+                  )
+                  for line in proc.stdout.splitlines():
+                      p = Path(line.strip())
+                      if p.exists() and str(p) not in zeus_dirs:
+                          zeus_dirs.append(str(p))
+              except Exception:
+                  pass
+
+          executable = shutil.which('agentos-social')
+          exe_info = None
+          if executable:
+              p = Path(executable)
+              exe_info = {'path': executable, 'mode': mode_of(p), 'owner': owner_of(p)}
+              try:
+                  help_run = subprocess.run([executable, '--help'], text=True, capture_output=True, timeout=10, check=False)
+                  exe_info['help_returncode'] = help_run.returncode
+              except Exception as exc:
+                  exe_info['help_error_type'] = type(exc).__name__
+
+          candidate_stores = [
+              Path('/home/ubuntu/.agentos/social-credentials.json'),
+              Path('/home/agentos-node/.agentos/social-credentials.json'),
+              Path.home() / '.agentos' / 'social-credentials.json',
+          ]
+          stores = []
+          seen = set()
+          for p in candidate_stores:
+              key = str(p)
+              if key in seen:
+                  continue
+              seen.add(key)
+              stores.append({
+                  'path': key,
+                  'exists': p.exists(),
+                  'mode': mode_of(p) if p.exists() else None,
+                  'owner': owner_of(p) if p.exists() else None,
+                  'credential_refs': credential_refs(p) if p.exists() else None,
+              })
+
+          env_files = []
+          for d in zeus_dirs:
+              base = Path(d)
+              for name in ('.env', '.env.local', '.env.production'):
+                  p = base / name
+                  if p.is_file():
+                      env_files.append({
+                          'path': str(p),
+                          'mode': mode_of(p),
+                          'owner': owner_of(p),
+                          'relevant_key_names': env_key_names(p),
+                      })
+
+          payload = {
+              'schema': 'agentos.social-runtime-inventory/v0.1',
+              'runner': {
+                  'user': os.environ.get('USER'),
+                  'home': str(Path.home()),
+              },
+              'agentos_social': exe_info,
+              'zeus_directories': sorted(zeus_dirs),
+              'credential_stores': stores,
+              'zeus_env_files': env_files,
+              'secret_values_collected': False,
+          }
+          Path('.agentos/evidence/social-runtime-inventory-current.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish non-secret evidence to feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/social-runtime-inventory-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(social): record Core runtime inventory'
+          git push origin HEAD:feature/social-capability
