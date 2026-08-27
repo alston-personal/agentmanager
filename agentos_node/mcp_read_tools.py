@@ -1,8 +1,8 @@
 """Read-only MCP-facing AgentOS helpers.
 
 These helpers stay independent of any MCP SDK so they can be unit-tested without
-pulling transport dependencies into the core test suite.  They expose only the
-read/attach surface needed for ChatGPT Plus developer-mode experiments.
+pulling transport dependencies into the core test suite. They expose only the
+read/attach surface needed for ChatGPT custom-app / developer-mode experiments.
 """
 
 from __future__ import annotations
