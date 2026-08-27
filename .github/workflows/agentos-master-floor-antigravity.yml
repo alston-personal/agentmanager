@@ -51,7 +51,8 @@ jobs:
           git fetch origin feature/distributed-agentos-runtime
           AGENTOS_RUNTIME_BRANCH=feature/distributed-agentos-runtime bash <(git show origin/feature/distributed-agentos-runtime:scripts/install_antigravity_relay_user.sh)
           systemctl --user is-active --quiet agentos-antigravity-relay.service
-          PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext /usr/bin/python3 - <<'PY'
+          cd /home/ubuntu/.local/share/agentos/runtime-vnext
+          PYTHONPATH=. /usr/bin/python3 - <<'PY'
           from agentos_node.antigravity_relay_worker import discover_executor
           executor=discover_executor()
           assert executor, 'no Antigravity executor discovered'
@@ -169,7 +170,6 @@ jobs:
           assert receipt.get('executor_user') == 'ubuntu', receipt
           output=str(receipt.get('stdout') or '')
           assert 'MASTER_FLOOR_ACK' in output, output
-          # The low-effort executor must demonstrate durable continuity, not merely run.
           continuity_terms=('Core v0.1','execution plane','GitHub Actions','weak executor','Master Experience Floor')
           assert sum(term.lower() in output.lower() for term in continuity_terms) >= 2, output
           planning_terms=('step','plan','next','blocker','remaining')
