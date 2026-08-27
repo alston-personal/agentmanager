@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -7,6 +8,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from agent_core.context_compiler import compile_execution_context
 from agent_core.distributed_control_plane import DistributedControlPlane
 from agent_core.distributed_gateway import DistributedGatewayServer, DistributedGatewayService
 from agentos_client import AgentOSClient
@@ -22,6 +24,7 @@ def test_attach_submit_execute_receipt(tmp_path: Path):
     assert attached["session_id"].startswith("aos_")
     assert attached["state"]["projectId"] == "leopardcat-tarot"
     assert attached["execution_context"]["schema"] == "agentos.execution-context/v0.1"
+    assert attached["execution_context"]["context_freshness"]["status"] == "unknown"
     submitted = service.submit_task({"project_id": "leopardcat-tarot", "goal": "validate native AgentOS path", "capability": "agentos.ir.validate", "payload": {"probe": True}, "session_id": attached["session_id"]})
     task_id = submitted["task"]["taskId"]
     lease = store.lease_next_ir("oracle-core-node", ["agentos.ir.validate"], lease_seconds=60)
@@ -47,8 +50,12 @@ def test_attach_compiles_goal_findings_actions_and_write_policy(tmp_path: Path, 
     registry = tmp_path / "contexts.json"
     registry.write_text(json.dumps({"demo": str(context_doc)}), encoding="utf-8")
     monkeypatch.setenv("AGENTOS_PROJECT_CONTEXTS_FILE", str(registry))
-    attached = DistributedGatewayService(DistributedControlPlane(tmp_path / "context.sqlite3")).attach({"project_id": "demo", "agent": {"type": "blind-fresh-session", "model": "weak-executor"}})
-    context = attached["execution_context"]
+    context = compile_execution_context(
+        "demo",
+        {"recommendedAction": "start"},
+        agent={"type": "blind-fresh-session", "model": "weak-executor"},
+        now=datetime(2026, 8, 27, 2, 30, tzinfo=timezone.utc),
+    )
     assert context["schema"] == "agentos.execution-context/v0.1"
     assert context["active_goal"] == "Prove a fresh agent can resume without conversation history."
     assert context["next_action"] == "Run the blind fresh-session attach proof."
@@ -56,6 +63,30 @@ def test_attach_compiles_goal_findings_actions_and_write_policy(tmp_path: Path, 
     assert context["integration_branch"] == "feature/context-proof"
     assert context["write_policy"]["branch_required_for_writes"] is True
     assert context["agent"]["type"] == "blind-fresh-session"
+    assert context["context_freshness"]["status"] == "fresh"
+    assert context["context_freshness"]["age_seconds"] == 1800
+
+
+def test_execution_context_marks_stale_source_without_blocking_it(tmp_path: Path, monkeypatch):
+    context_doc = tmp_path / "stale-context.json"
+    context_doc.write_text(json.dumps({
+        "updated_at": "2026-08-20T00:00:00Z",
+        "active_work": {"goal": "Old but still visible goal", "next_actions": ["Reconcile before acting"]},
+    }), encoding="utf-8")
+    registry = tmp_path / "contexts.json"
+    registry.write_text(json.dumps({"stale-demo": str(context_doc)}), encoding="utf-8")
+    monkeypatch.setenv("AGENTOS_PROJECT_CONTEXTS_FILE", str(registry))
+    monkeypatch.setenv("AGENTOS_CONTEXT_MAX_AGE_SECONDS", "86400")
+    context = compile_execution_context(
+        "stale-demo",
+        {"recommendedAction": "start"},
+        now=datetime(2026, 8, 27, 0, 0, tzinfo=timezone.utc),
+    )
+    freshness = context["context_freshness"]
+    assert context["active_goal"] == "Old but still visible goal"
+    assert freshness["status"] == "stale"
+    assert freshness["age_seconds"] == 7 * 24 * 60 * 60
+    assert freshness["max_age_seconds"] == 86400
 
 
 def _make_git_repo(path: Path) -> None:
