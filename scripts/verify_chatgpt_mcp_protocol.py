@@ -2,7 +2,8 @@
 """Live Streamable HTTP acceptance probe for the ChatGPT Cloud MCP node.
 
 This proves the actual MCP protocol path, not just TCP readiness or a separate
-Control Plane REST request: initialize -> list tools -> call AgentOS tool -> ONE.
+Control Plane REST request.  The strongest continuity path is:
+initialize -> list tools -> resolve active project -> resume -> ONE.
 """
 
 from __future__ import annotations
@@ -15,7 +16,12 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 
-EXPECTED_TOOLS = {"agentos_resume", "agentos_project_state", "agentos_task"}
+EXPECTED_TOOLS = {
+    "agentos_resolve_active",
+    "agentos_resume",
+    "agentos_project_state",
+    "agentos_task",
+}
 
 
 def _content_text(result: object) -> str:
@@ -24,7 +30,23 @@ def _content_text(result: object) -> str:
     return "\n".join(text for text in texts if text)
 
 
-async def verify(url: str, project_id: str) -> None:
+def _payload(result: object, tool_name: str) -> dict:
+    if getattr(result, "is_error", False):
+        raise RuntimeError(f"{tool_name} returned MCP error: {_content_text(result)}")
+    structured = getattr(result, "structured_content", None)
+    if isinstance(structured, dict):
+        return structured
+    text = _content_text(result)
+    try:
+        payload = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"{tool_name} result is not JSON/structured content: {text!r}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{tool_name} result root is not an object")
+    return payload
+
+
+async def verify(url: str, fallback_project_id: str) -> None:
     async with streamable_http_client(url) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             initialized = await session.initialize()
@@ -34,22 +56,31 @@ async def verify(url: str, project_id: str) -> None:
             if missing:
                 raise RuntimeError(f"missing MCP tools: {sorted(missing)}")
 
-            result = await session.call_tool("agentos_project_state", {"project_id": project_id})
-            if getattr(result, "is_error", False):
-                raise RuntimeError(f"agentos_project_state returned MCP error: {_content_text(result)}")
+            resolved_result = await session.call_tool("agentos_resolve_active", {"hint": ""})
+            resolved = _payload(resolved_result, "agentos_resolve_active")
+            if resolved.get("resolution") != "resolved":
+                raise RuntimeError(f"bare continuation did not resolve an active project: {resolved!r}")
+            project_id = str(resolved.get("project_id") or "").strip()
+            if not project_id:
+                raise RuntimeError(f"active-project resolver returned no project id: {resolved!r}")
 
-            structured = getattr(result, "structured_content", None)
-            payload = structured if isinstance(structured, dict) else None
-            if payload is None:
-                text = _content_text(result)
-                try:
-                    payload = json.loads(text)
-                except (TypeError, json.JSONDecodeError) as exc:
-                    raise RuntimeError(f"MCP tool result is not JSON/structured content: {text!r}") from exc
-
-            if payload.get("projectId") != project_id:
+            resume_result = await session.call_tool("agentos_resume", {"project_id": project_id})
+            resume = _payload(resume_result, "agentos_resume")
+            if resume.get("project_id") != project_id:
                 raise RuntimeError(
-                    f"MCP tool reached unexpected project: {payload.get('projectId')!r} != {project_id!r}"
+                    f"resume reached unexpected project: {resume.get('project_id')!r} != {project_id!r}"
+                )
+
+            # Keep a known-project read as a secondary regression check.  It proves
+            # the historical project-state tool remains usable after adding resolver.
+            state_result = await session.call_tool(
+                "agentos_project_state", {"project_id": fallback_project_id}
+            )
+            state = _payload(state_result, "agentos_project_state")
+            if state.get("projectId") != fallback_project_id:
+                raise RuntimeError(
+                    f"project-state tool reached unexpected project: "
+                    f"{state.get('projectId')!r} != {fallback_project_id!r}"
                 )
 
             server_info = getattr(initialized, "server_info", None)
@@ -57,8 +88,11 @@ async def verify(url: str, project_id: str) -> None:
             print("mcp_initialize=ok")
             print(f"mcp_server={server_name}")
             print("mcp_tools=ok")
+            print("mcp_resolve_active=ok")
+            print(f"mcp_active_project={project_id}")
+            print("mcp_resume_active=ok")
             print("mcp_tool_call_one=ok")
-            print(f"mcp_project={project_id}")
+            print(f"mcp_project={fallback_project_id}")
 
 
 def main() -> int:
