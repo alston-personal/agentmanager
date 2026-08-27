@@ -46,6 +46,10 @@ def _identity(name: str, data: bytes) -> None:
 
 
 def main() -> int:
+    # This is only the base-materialization step of the authoritative release.
+    # It must never be invoked by legacy/verification workflows to publish directly.
+    if os.environ.get('LAYOUTLAB_RELEASE_BASE_DEPLOY') != '1':
+        raise SystemExit('direct base deploy forbidden; use deploy_layoutlab_v07_release.py')
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(TARGET_DIR, 0o755)
     artifacts = {}
