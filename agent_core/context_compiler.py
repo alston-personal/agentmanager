@@ -3,6 +3,10 @@
 The compiler does not ask a model to summarize state. It selects durable facts
 from project state and an optional development-context document into a compact,
 stable execution-context contract suitable for any attached executor.
+
+Repository development-context files are seeds/snapshots. When a runtime
+CanonicalContextStore is supplied, the compiler seeds it once and thereafter
+prefers the mutable data-layer context owned by the Kernel.
 """
 
 from __future__ import annotations
@@ -12,6 +16,8 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+
+from .canonical_context import CanonicalContextStore
 
 
 CONTEXT_PROTOCOL = "agentos.execution-context/v0.1"
@@ -43,18 +49,37 @@ def _context_registry() -> dict[str, str]:
     return {str(k): str(v) for k, v in value.items() if k and v}
 
 
-def _development_context(project_id: str) -> dict[str, Any] | None:
+def _source_development_context(project_id: str) -> dict[str, Any] | None:
     registry = _context_registry()
     configured = registry.get(project_id)
     if configured:
         return _load_json(Path(configured).expanduser())
 
-    # The Core project itself may carry its canonical development context in
-    # the deployed source tree without an explicit registry entry.
     if project_id == "agentmanager":
         root = Path(os.getenv("AGENT_PROJECT_ROOT", Path.cwd()))
         return _load_json(root / ".agentos" / "development-context.json")
     return None
+
+
+def _development_context(
+    project_id: str,
+    *,
+    context_store: CanonicalContextStore | None = None,
+) -> dict[str, Any] | None:
+    source = _source_development_context(project_id)
+    if context_store is None:
+        return source
+
+    runtime = context_store.load(project_id)
+    if runtime is not None:
+        return runtime
+    if source is None:
+        return None
+    return context_store.seed(
+        project_id,
+        source,
+        seed_revision=str(source.get("updated_at") or "") or None,
+    )
 
 
 def _iso(value: datetime) -> str:
@@ -99,8 +124,6 @@ def _freshness(source_updated_at: Any, *, now: datetime | None = None) -> dict[s
             "max_age_seconds": max_age,
         }
 
-    # Small future timestamps are usually clock skew. Treat them as age zero;
-    # large future skew is explicitly unknown rather than falsely fresh.
     raw_age = (compiled - source).total_seconds()
     if raw_age < -300:
         status = "unknown"
@@ -130,13 +153,7 @@ def _executor_working_set(
     source_revision: Any,
     context_freshness: dict[str, Any],
 ) -> dict[str, Any]:
-    """Compile the semantic minimum needed by a bounded executor.
-
-    Heavy transport/debug state such as latest_task, current_ir and continuation
-    stays available on the parent execution_context, but is intentionally not
-    repeated here. This gives weak or latency-sensitive executors a stable
-    working set without creating a second source of truth.
-    """
+    """Compile the semantic minimum needed by a bounded executor."""
     return {
         "schema": WORKING_SET_PROTOCOL,
         "project_id": project_id,
@@ -158,8 +175,9 @@ def compile_execution_context(
     *,
     agent: dict[str, Any] | None = None,
     now: datetime | None = None,
+    context_store: CanonicalContextStore | None = None,
 ) -> dict[str, Any]:
-    document = _development_context(project_id) or {}
+    document = _development_context(project_id, context_store=context_store) or {}
     active = document.get("active_work") if isinstance(document.get("active_work"), dict) else {}
     findings = active.get("current_findings") if isinstance(active.get("current_findings"), list) else []
     next_actions = active.get("next_actions") if isinstance(active.get("next_actions"), list) else []
@@ -186,6 +204,7 @@ def compile_execution_context(
     bounded_next_actions = [str(x) for x in next_actions[:8]]
     write_policy = document.get("write_policy") if isinstance(document.get("write_policy"), dict) else None
     integration_branch = active.get("integration_branch") or document.get("integration_branch")
+    runtime_meta = document.get("_runtime_context") if isinstance(document.get("_runtime_context"), dict) else None
     source_revision = document.get("updated_at")
     freshness = _freshness(source_revision, now=now)
     active_goal = goal or None
@@ -217,5 +236,6 @@ def compile_execution_context(
         "integration_branch": integration_branch,
         "source_revision": source_revision,
         "context_freshness": freshness,
+        "runtime_context": runtime_meta,
         "working_set": working_set,
     }
