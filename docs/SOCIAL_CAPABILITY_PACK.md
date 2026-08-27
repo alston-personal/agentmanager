@@ -14,16 +14,19 @@ Products express intent; AgentOS owns credentials, platform adapters, governance
 | `social.threads.replies.read` | low | allow | Evidence retrieval; never implies arbitrary public-post access |
 | `social.threads.publish` | medium | explicit write intent | `agentos-social` requires `--allow-write` |
 | `social.threads.reply` | medium | explicit write intent | `agentos-social` requires `--allow-write` |
-| `social.threads.delete` | high | deny in v0.1 | Not implemented |
-
-Facebook and Instagram use the same contract in the next adapter increment; they must not be
-re-embedded into Zeus Writer.
+| `social.facebook.identity.read` | low | allow | Resolves configured Page without exposing its token |
+| `social.facebook.publish` | medium | explicit write intent | Photo/Page post in v0.1 |
+| `social.facebook.reply` | medium | explicit write intent | Page comment/reply |
+| `social.instagram.identity.read` | low | allow | Resolves linked Business account |
+| `social.instagram.publish` | medium | explicit write intent | Image post in v0.1 |
+| `social.instagram.reply` | medium | explicit write intent | Media comment/reply |
+| `social.*.delete` | high | deny in v0.1 | Not implemented |
 
 ## Credential boundary
 
-Callers refer to logical credentials (`threads/default`). The executor maps that ref to a local
-environment/secret binding (`SOC_THREADS_TOKEN`). A secret value must never be written into a
-receipt, Git commit, task payload, evidence file or caller response.
+Callers refer to logical credentials (`threads/default`, `facebook/default`, `instagram/default`).
+The executor maps those refs to local environment/secret bindings. A secret value must never be
+written into a receipt, Git commit, task payload, evidence file or caller response.
 
 Bitwarden may continue provisioning the environment on the Oracle executor. That provisioning is
 separate from capability invocation.
@@ -32,7 +35,7 @@ separate from capability invocation.
 
 Every invocation emits `agentos.social-receipt/v0.1` containing capability, credential ref,
 platform operation, timestamps, status and sanitized platform identifiers/results. It never
-contains an access token.
+contains an access token or derived Page token.
 
 ## Threads API boundary
 
@@ -48,21 +51,22 @@ separate capability and provenance source.
 
 ### Zeus Writer
 
-`feature/social-capability-client` uses `agentos-social` first. Its legacy direct Threads API path
-remains only as a temporary migration fallback and can be disabled after the AgentOS executable is
-installed and live receipts are verified.
+`feature/social-capability-client` routes Threads, Facebook and Instagram through `agentos-social`
+when that executable is available. Existing direct platform API implementations remain temporary
+migration fallbacks and can be disabled with `AGENTOS_SOCIAL_DISABLE=1` while comparing behavior.
+The fallback is removed only after live receipt verification.
 
 ### Vendor Reputation
 
-Vendor ingestion should consume `social.threads.replies.read` receipts as raw evidence. It must not
+Vendor ingestion consumes `social.threads.replies.read` receipts as raw evidence. It must not
 automatically convert every reply into a rating. Entity extraction, sentiment/recommendation
 classification, duplicate normalization and human review happen after evidence capture.
 
 ## Acceptance gates
 
-1. Unit tests prove secret-free receipts and normalized read/write contracts.
-2. Oracle identity health check returns only presence/validity/username, never the token.
-3. Zeus Writer publishes one controlled test through AgentOS and receives a receipt.
+1. Unit tests prove secret-free receipts and normalized Threads/Facebook/Instagram contracts.
+2. Oracle identity health checks return only presence/validity/account identity, never tokens.
+3. Zeus Writer performs controlled shadow/live tests through AgentOS and receives receipts.
 4. Vendor ingestion attempts the supplied Threads source. If Meta denies third-party access, the
    result is recorded as an API boundary and the browser evidence path is used instead.
-5. Only after shadow comparison succeeds is the direct Zeus Writer Threads API fallback removed.
+5. Only after shadow comparison succeeds are direct Zeus Writer Meta API fallbacks removed.
