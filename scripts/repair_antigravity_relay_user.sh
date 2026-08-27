@@ -11,6 +11,7 @@ RUNTIME="${AGENTOS_RUNTIME_VNEXT:-/home/ubuntu/.local/share/agentos/runtime-vnex
 REALM_RUNTIME="${AGENTOS_REALM_RUNTIME:-/home/ubuntu/.local/share/agentos/realm-fabric/current}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 SOURCE_REF="${AGENTOS_REF:-main}"
+PROVIDER="${AGENTOS_ANTIGRAVITY_PROVIDER:-claude}"
 SPOOL="$DATA_ROOT/runtime/antigravity-relay"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
@@ -19,6 +20,11 @@ REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
 case "$SOURCE_REF" in
   main|feature/realm-node-fabric-readiness) ;;
   *) echo "ERROR: AGENTOS_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
+esac
+
+case "$PROVIDER" in
+  claude|agy) ;;
+  *) echo "ERROR: AGENTOS_ANTIGRAVITY_PROVIDER is not allowlisted: $PROVIDER" >&2; exit 5 ;;
 esac
 
 for user in ubuntu agentos-node; do
@@ -77,6 +83,7 @@ done
 # correct. Pin the boundary explicitly with `sg agentos` on every relay start.
 # NoNewPrivileges must not be enabled here because it blocks this authorized
 # setgid transition; authority remains bounded by account membership + capsule schema.
+# Provider selection is also explicit and allowlisted; capsules cannot choose it.
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
@@ -86,6 +93,7 @@ After=default.target
 Type=simple
 WorkingDirectory=$RUNTIME
 Environment=PYTHONPATH=$RUNTIME
+Environment=AGENTOS_ANTIGRAVITY_PROVIDER=$PROVIDER
 UMask=0007
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.antigravity_relay_worker --root $SPOOL'
 Restart=on-failure
@@ -129,10 +137,12 @@ systemctl --user restart agentos-realm-fabric.service
 systemctl --user enable agentos-realm-fabric.service >/dev/null
 (
   cd "$RUNTIME"
-  PYTHONPATH="$RUNTIME" python3 - <<'PY'
+  PYTHONPATH="$RUNTIME" AGENTOS_ANTIGRAVITY_PROVIDER="$PROVIDER" python3 - <<'PY'
 from agentos_node.antigravity_relay import AntigravityRelayClient
 from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+worker = AntigravityRelayWorker('/tmp/agentos-provider-import-check')
 print('antigravity_runtime_import=PASS')
+print('antigravity_provider=' + worker.provider)
 PY
 )
 
@@ -158,6 +168,7 @@ echo "agentos_source_ref=$SOURCE_REF"
 echo "agentos_source_commit=$SOURCE_COMMIT"
 echo "antigravity_checkout_merge=SKIPPED"
 echo "antigravity_group_context=agentos"
+echo "antigravity_provider=$PROVIDER"
 echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
 echo "realm_fabric_install=PASS"
