@@ -16,6 +16,7 @@ SPOOL="$DATA_ROOT/runtime/antigravity-relay"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
 REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
+MANIFEST="$RUNTIME/runtime-provenance.json"
 
 case "$SOURCE_REF" in
   main|feature/realm-node-fabric-readiness) ;;
@@ -72,6 +73,24 @@ install -m 0664 "$TMPDIR/realm_server.py" "$REALM_RUNTIME/agent_core/realm_serve
 install -m 0664 "$TMPDIR/realm_cli.py" "$REALM_RUNTIME/agent_core/realm_cli.py"
 test -f "$REALM_RUNTIME/agent_core/node_bootstrap.py"
 
+WORKER_SHA256=$(sha256sum "$RUNTIME/agentos_node/antigravity_relay_worker.py" | awk '{print $1}')
+python3 - "$MANIFEST" "$SOURCE_REF" "$SOURCE_COMMIT" "$PROVIDER" "$WORKER_SHA256" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+path, source_ref, source_commit, provider, worker_sha = sys.argv[1:]
+payload = {
+    "schema": "agentos.runtime-provenance/v1",
+    "installed_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    "source_ref": source_ref,
+    "source_commit": source_commit,
+    "provider": provider,
+    "worker_sha256": worker_sha,
+}
+Path(path).write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+PY
+chmod 0664 "$MANIFEST"
+
 for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
   mkdir -p "$d"
   chgrp agentos "$d"
@@ -83,7 +102,7 @@ done
 # correct. Pin the boundary explicitly with `sg agentos` on every relay start.
 # NoNewPrivileges must not be enabled here because it blocks this authorized
 # setgid transition; authority remains bounded by account membership + capsule schema.
-# Provider selection is also explicit and allowlisted; capsules cannot choose it.
+# Provider selection and runtime provenance are explicit; capsules cannot choose either.
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
@@ -94,6 +113,9 @@ Type=simple
 WorkingDirectory=$RUNTIME
 Environment=PYTHONPATH=$RUNTIME
 Environment=AGENTOS_ANTIGRAVITY_PROVIDER=$PROVIDER
+Environment=AGENTOS_RUNTIME_SOURCE_REF=$SOURCE_REF
+Environment=AGENTOS_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT
+Environment=AGENTOS_RUNTIME_WORKER_SHA256=$WORKER_SHA256
 UMask=0007
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.antigravity_relay_worker --root $SPOOL'
 Restart=on-failure
@@ -138,7 +160,6 @@ systemctl --user enable agentos-realm-fabric.service >/dev/null
 (
   cd "$RUNTIME"
   PYTHONPATH="$RUNTIME" AGENTOS_ANTIGRAVITY_PROVIDER="$PROVIDER" python3 - <<'PY'
-from agentos_node.antigravity_relay import AntigravityRelayClient
 from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
 worker = AntigravityRelayWorker('/tmp/agentos-provider-import-check')
 print('antigravity_runtime_import=PASS')
@@ -169,6 +190,8 @@ echo "agentos_source_commit=$SOURCE_COMMIT"
 echo "antigravity_checkout_merge=SKIPPED"
 echo "antigravity_group_context=agentos"
 echo "antigravity_provider=$PROVIDER"
+echo "antigravity_worker_sha256=$WORKER_SHA256"
+echo "antigravity_runtime_manifest=$MANIFEST"
 echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
 echo "realm_fabric_install=PASS"
