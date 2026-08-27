@@ -10,7 +10,7 @@ from agentos_node.antigravity_relay import (
     share_relay_path,
     verify_capsule_digest,
 )
-from agentos_node.antigravity_relay_worker import build_prompt
+from agentos_node.antigravity_relay_worker import AntigravityRelayWorker, build_prompt
 
 
 def _execution_context():
@@ -40,7 +40,6 @@ def _execution_context():
 
 
 def test_submit_creates_bounded_capsule_with_execution_context(tmp_path, monkeypatch):
-    # Unit tests validate protocol semantics rather than host group ownership.
     monkeypatch.setattr("agentos_node.antigravity_relay.share_relay_path", lambda *args, **kwargs: None)
     client = AntigravityRelayClient(tmp_path / "relay")
     payload = client.submit(
@@ -87,7 +86,7 @@ def test_weak_executor_prompt_uses_durable_context_not_prior_chat():
     assert "Inspect the durable evidence and continue the canonical goal." in prompt
     assert "Core continuity is already verified." in prompt
     assert '"status": "fresh"' in prompt
-    assert "fallback goal" not in prompt  # durable active goal takes precedence
+    assert "fallback goal" not in prompt
     assert "Continue without any previous conversation messages." in prompt
 
 
@@ -109,6 +108,19 @@ def test_share_relay_path_skips_redundant_chown_when_gid_already_shared(tmp_path
     assert artifact.stat().st_mode & 0o777 == 0o660
 
 
+def test_share_relay_path_skips_redundant_chmod_when_mode_is_already_shared(tmp_path, monkeypatch):
+    artifact = tmp_path / "cross-owner.json"
+    artifact.write_text("ok", encoding="utf-8")
+    os.chmod(artifact, 0o660)
+    monkeypatch.setattr("agentos_node.antigravity_relay._shared_gid", lambda: os.stat(artifact).st_gid)
+
+    def forbidden_chmod(*args, **kwargs):
+        raise AssertionError("chmod must not run when producer already supplied the shared mode")
+
+    monkeypatch.setattr("agentos_node.antigravity_relay.os.chmod", forbidden_chmod)
+    share_relay_path(artifact)
+
+
 def test_share_relay_path_fails_closed_if_group_is_wrong_and_cannot_be_changed(tmp_path, monkeypatch):
     artifact = tmp_path / "foreign.tmp"
     artifact.write_text("blocked", encoding="utf-8")
@@ -120,3 +132,31 @@ def test_share_relay_path_fails_closed_if_group_is_wrong_and_cannot_be_changed(t
     monkeypatch.setattr("agentos_node.antigravity_relay.os.chown", denied_chown)
     with pytest.raises(PermissionError, match="setgid agentos relay directory"):
         share_relay_path(artifact)
+
+
+def test_restart_reconciliation_emits_unknown_outcome_receipt_without_reexecution(tmp_path, monkeypatch):
+    root = tmp_path / "relay"
+    processing = root / "processing"
+    processing.mkdir(parents=True)
+    (root / "inbox").mkdir()
+    (root / "receipts").mkdir()
+    capsule_id = "relay-abandoned"
+    capsule = {
+        "schema": RELAY_SCHEMA,
+        "capsule_id": capsule_id,
+        "project_id": "agentmanager",
+        "execution_context": _execution_context(),
+    }
+    (processing / f"{capsule_id}.json").write_text(json.dumps(capsule), encoding="utf-8")
+    monkeypatch.setattr("agentos_node.antigravity_relay_worker.share_relay_path", lambda *args, **kwargs: None)
+
+    worker = AntigravityRelayWorker(root, executor=["/bin/false"])
+    reconciled = worker.reconcile_abandoned_processing()
+
+    assert reconciled == [capsule_id]
+    assert not (processing / f"{capsule_id}.json").exists()
+    receipt = json.loads((root / "receipts" / f"{capsule_id}.json").read_text(encoding="utf-8"))
+    assert receipt["ok"] is False
+    assert receipt["status"] == "execution_outcome_unknown"
+    assert receipt["reconciliation_required"] is True
+    assert "Do not retry irreversible work" in receipt["error"]
