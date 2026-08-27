@@ -26,3 +26,12 @@ def test_bridge_does_not_queue_raw_image_data():
     assert "raw_image" not in text
     assert "imageData" not in text
     assert "toDataURL" not in text
+
+
+def test_v07_product_identity_and_robust_selected_wall_delete_are_present():
+    text = BRIDGE.read_text(encoding="utf-8")
+    assert "Layout Lab v0.7 · AgentOS closed loop" in text
+    assert "robustDeleteWallsById" in text
+    assert "start_px" in text and "end_px" in text
+    assert "endpointDistance" in text
+    assert "edit.removed" in text
