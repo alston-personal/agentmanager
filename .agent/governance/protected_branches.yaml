@@ -1,0 +1,38 @@
+schema_version: "0.1"
+policy_version: "2026.08.27.1"
+
+# Capability to perform a Git mutation is not authority to perform it.
+# Protected-branch mutations require an explicit human approval event.
+protected_branches:
+  - pattern: "main"
+    require_pull_request: true
+    require_explicit_human_approval: true
+    agent_may_merge: false
+  - pattern: "master"
+    require_pull_request: true
+    require_explicit_human_approval: true
+    agent_may_merge: false
+  - pattern: "release/*"
+    require_pull_request: true
+    require_explicit_human_approval: true
+    agent_may_merge: false
+
+approval:
+  accepted_actor_kinds:
+    - human
+  explicit_only: true
+  examples:
+    accepted:
+      - "merge this PR"
+      - "approve merge into main"
+    rejected:
+      - "continue"
+      - "looks good"
+      - "PR is mergeable"
+      - "CI passed"
+
+invariants:
+  - id: capability_does_not_imply_authority
+    statement: "A tool capability to mutate a protected branch never implies permission to do so."
+  - id: protected_branch_requires_human_approval
+    statement: "An agent must stop at ready-for-merge until an explicit human approval event exists."

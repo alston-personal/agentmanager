@@ -36,10 +36,17 @@ jobs:
             python3 scripts/documentation_reality_guard.py --base "$BASE"
           fi
 
-      - name: Test documentation guard and continuation contracts
+      - name: Test documentation, continuation, and authority contracts
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest tests.test_documentation_reality_guard -v
           python3 scripts/continuation_state.py --self-test
           python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
+          python3 -m unittest tests.test_protected_branch_authority -v
+          set +e
+          python3 scripts/protected_branch_authority.py --branch main --actor-kind agent --via-pull-request >/tmp/authority.json
+          rc=$?
+          set -e
+          test "$rc" -eq 3
+          python3 -c 'import json; d=json.load(open("/tmp/authority.json")); assert d["state"]=="AWAITING_HUMAN_APPROVAL" and d["allowed"] is False'
