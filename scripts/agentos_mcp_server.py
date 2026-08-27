@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from mcp.server import MCPServer
+from mcp.server.mcpserver import MCPServer
 
 from agentos_node.control_plane_client import ControlPlaneClient
 from agentos_node.mcp_read_tools import get_project_state, get_task, resume_project
