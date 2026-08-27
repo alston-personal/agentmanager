@@ -1,0 +1,60 @@
+name: Oracle Inspect LayoutLib Web Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-inspect-layoutlib-web-runtime.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect LayoutLib runtime source and permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=.agentos/evidence/layoutlib-web-runtime-inspection.txt
+          mkdir -p .agentos/evidence
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo '=== PROJECT ==='
+            P=/home/agentos-node/projects/layoutlib
+            stat -c '%U:%G %a %F %n' "$P" "$P/web_demo" "$P/web_demo/server.py" 2>&1 || true
+            if [ -d "$P/.git" ]; then
+              git -c safe.directory="$P" -C "$P" remote -v 2>&1 || true
+              git -c safe.directory="$P" -C "$P" branch --show-current 2>&1 || true
+              git -c safe.directory="$P" -C "$P" rev-parse HEAD 2>&1 || true
+              git -c safe.directory="$P" -C "$P" status --short 2>&1 || true
+            fi
+            echo '=== SERVER SOURCE ==='
+            sed -n '1,360p' "$P/web_demo/server.py" 2>&1 || true
+            echo '=== SERVICE PROCESS ==='
+            ps -eo user,group,pid,etime,args | grep '[w]eb_demo/server.py' || true
+            echo '=== NGINX PERMISSIONS ==='
+            stat -c '%U:%G %a %n' /etc/nginx/sites-enabled/studio.milkcat.org /etc/nginx/sites-available/studio.milkcat.org 2>&1 || true
+            echo '=== SUDO ==='
+            sudo -n true >/dev/null 2>&1 && echo 'sudo_noninteractive=YES' || echo 'sudo_noninteractive=NO'
+            echo 'mutation=NONE'
+          } 2>&1 | tee "$OUT"
+      - name: Commit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .agentos/evidence/layoutlib-web-runtime-inspection.txt /tmp/layoutlib-web-runtime-inspection.txt 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/layoutlib-web-runtime-inspection.txt .agentos/evidence/layoutlib-web-runtime-inspection.txt 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/layoutlib-web-runtime-inspection.txt 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(layoutlib): inspect existing web runtime'
+          git push origin HEAD:main
