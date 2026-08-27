@@ -290,16 +290,23 @@ class DistributedControlPlane(ControlPlaneStore):
         else:
             task_state = "failed"
 
-        persisted_result = {
-            "protocol": RESULT_PROTOCOL,
-            **runtime_result.to_dict(),
-        }
-        updated_task = self.update_task(task_id, task_state, persisted_result)
+        # A successful context-checkpoint receipt is a state transition, not
+        # merely metadata. Apply its idempotent transition before marking the
+        # task succeeded. If validation fails, the task remains leased/running
+        # and can be retried; if the process crashes after this checkpoint but
+        # before task persistence, the deterministic checkpoint id replays
+        # safely on retry without advancing context twice.
         context_checkpoint = self._reconcile_context_checkpoint(
             task_id=task_id,
             input_ir=input_ir,
             runtime_result=runtime_result,
         ) if task_state == "succeeded" else None
+
+        persisted_result = {
+            "protocol": RESULT_PROTOCOL,
+            **runtime_result.to_dict(),
+        }
+        updated_task = self.update_task(task_id, task_state, persisted_result)
 
         enqueued_task = None
         continuation_blocked = None
