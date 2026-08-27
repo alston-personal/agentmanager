@@ -1,6 +1,6 @@
 """Cross-user relay boundary for an ubuntu-owned Antigravity executor.
 
-The GitHub runner must not impersonate the ubuntu desktop/session. Instead it may
+The AgentOS node must not impersonate the ubuntu desktop/session. Instead it may
 place a bounded execution capsule in an explicitly authorized spool directory.
 An ubuntu-owned relay consumes the capsule, invokes the local executor, and
 writes a receipt back. This keeps OS identity and AgentOS authority separate.
@@ -21,6 +21,7 @@ import uuid
 
 RELAY_SCHEMA = "agentos.antigravity-relay/v1"
 RECEIPT_SCHEMA = "agentos.antigravity-receipt/v1"
+EXECUTION_CONTEXT_SCHEMA = "agentos.execution-context/v0.1"
 SHARED_GROUP = "agentos"
 SHARED_DIR_MODE = 0o2770
 SHARED_FILE_MODE = 0o660
@@ -34,6 +35,18 @@ def _canonical_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def capsule_digest(payload: dict[str, Any]) -> str:
+    """Return the digest of a relay capsule excluding its digest field."""
+    unsigned = dict(payload)
+    unsigned.pop("digest", None)
+    return "sha256:" + hashlib.sha256(_canonical_bytes(unsigned)).hexdigest()
+
+
+def verify_capsule_digest(payload: dict[str, Any]) -> bool:
+    supplied = str(payload.get("digest") or "")
+    return bool(supplied) and supplied == capsule_digest(payload)
+
+
 def _shared_gid() -> int:
     try:
         return grp.getgrnam(SHARED_GROUP).gr_gid
@@ -42,12 +55,7 @@ def _shared_gid() -> int:
 
 
 def share_relay_path(path: Path, *, directory: bool = False) -> None:
-    """Make one relay artifact readable/writable by both relay identities.
-
-    Both ubuntu and agentos-node are expected to be members of the dedicated
-    ``agentos`` group. Failing explicitly is safer than silently producing a
-    capsule/receipt that the peer cannot consume.
-    """
+    """Make one relay artifact readable/writable by both relay identities."""
     try:
         os.chown(path, -1, _shared_gid())
     except PermissionError as exc:
@@ -80,9 +88,6 @@ class RelayPaths:
             try:
                 share_relay_path(path, directory=True)
             except PermissionError:
-                # A non-owner peer may not be allowed to chgrp/chmod a directory
-                # that is already correctly shared. Actual artifact creation below
-                # still enforces the file-level contract and fails if it is broken.
                 pass
 
 
@@ -95,6 +100,7 @@ class AntigravityRelayClient:
         *,
         project_id: str,
         canonical_ir: dict[str, Any],
+        execution_context: dict[str, Any],
         instruction: str,
         workspace: str,
         executor_hint: str = "antigravity",
@@ -106,6 +112,12 @@ class AntigravityRelayClient:
             raise ValueError("project_id, instruction, and workspace are required")
         if not isinstance(canonical_ir, dict):
             raise ValueError("canonical_ir must be an object")
+        if not isinstance(execution_context, dict):
+            raise ValueError("execution_context must be an object")
+        if execution_context.get("schema") != EXECUTION_CONTEXT_SCHEMA:
+            raise ValueError("execution_context must use agentos.execution-context/v0.1")
+        if str(execution_context.get("project_id") or "") != project_id:
+            raise ValueError("execution_context project_id must match relay project_id")
 
         self.paths.ensure()
         capsule_id = f"relay-{uuid.uuid4().hex}"
@@ -118,13 +130,14 @@ class AntigravityRelayClient:
             "executor_hint": executor_hint,
             "instruction": instruction,
             "canonical_ir": canonical_ir,
+            "execution_context": execution_context,
             "authority": {
                 "source": "agentos-node",
                 "desktop_user": "ubuntu",
                 "direct_session_impersonation": False,
             },
         }
-        payload["digest"] = "sha256:" + hashlib.sha256(_canonical_bytes(payload)).hexdigest()
+        payload["digest"] = capsule_digest(payload)
         target = self.paths.inbox / f"{capsule_id}.json"
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
