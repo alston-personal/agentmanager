@@ -1,6 +1,6 @@
 {
   "schema": "agentos.development-context/v1",
-  "updated_at": "2026-08-27T10:26:00+08:00",
+  "updated_at": "2026-08-27T11:20:00+08:00",
   "repo": "alston-personal/agentmanager",
   "stable_branch": "main",
   "integration_branch": "feature/distributed-agentos-runtime",
@@ -24,17 +24,20 @@
       "The external least-privilege native-test proof succeeded: a token restricted to agentos-core + agentos.project.test submitted core-v01 over the public Core edge, received an oracle-core-node succeeded receipt, was denied cross-project and cross-capability access, and was then revoked.",
       "Context Compiler v0 is deterministic rather than model-generated. /v1/attach returns agentos.execution-context/v0.1 with active goal, findings, next actions, latest task, branch and write policy.",
       "A blind fresh-session attach with history=none recovered the updated canonical Core v0.1 goal and next action using durable context alone.",
-      "Execution context now exposes a freshness contract with source_updated_at, compiled_at, age_seconds, max_age_seconds and fresh/stale/unknown status. A seven-day-old source is explicitly marked stale without hiding its content.",
-      "The latest Oracle bootstrap passed six Core v0.1 tests and redeployed native services at SHA 3315e25ff9936be2d2a886604630cc9aef461abb while preserving native inspect/test execution.",
-      "WorkspaceGuard and the bounded Antigravity relay remain relevant for interactive/local executor integration, but they are no longer blockers for the Core attach/task/receipt execution plane.",
+      "Execution context exposes a freshness contract with source_updated_at, compiled_at, age_seconds, max_age_seconds and fresh/stale/unknown status; stale context remains visible rather than silently trusted.",
+      "Claude Code 2.1.246 invoked as a standalone Antigravity extension binary times out at 25 seconds even in an empty workspace with --bare, tools disabled, dontAsk and low effort. Launching the same binary through the ubuntu systemd user manager also times out, so SSH environment differences alone do not explain the failure.",
+      "Process/IPC metadata proves the timed-out standalone Claude process is outside the live Antigravity extension-host process tree. The live Antigravity node tree owns multiple vscode-ipc sockets and the same-user Codex router at ~/.codex/ipc/ipc.sock.",
+      "The official Codex app-server surface works immediately from the same Oracle noninteractive environment: codex-cli 0.150.0-alpha.8 completed initialize and model/list without a user turn or filesystem mutation.",
+      "The Oracle Codex model catalog currently exposes six visible models. The weakest visible model is gpt-5.4-mini and its minimum advertised reasoning effort is low; this is now the canonical weak-executor candidate rather than an assumed model setting.",
+      "WorkspaceGuard and the bounded Antigravity relay remain relevant for interactive/local executor integration, but the standalone Claude CLI is not currently a validated authorized Antigravity session surface and must not be treated as one.",
       "feature/distributed-agentos-runtime remains the sole canonical vNext continuation line; experimental writes to main remain denied."
     ],
     "next_actions": [
-      "Separate CI/deployment responsibilities from the normal AgentOS execution plane in repository contracts and workflows, then preserve evidence that deployed Core services and Oracle task execution do not depend on a running GitHub Actions job.",
-      "Wire a real weak interactive executor adapter (Antigravity or another bounded executor surface) to consume the same attach execution_context and emit receipts, then repeat the blind Master Experience Floor experiment.",
+      "Run a blind fresh-session Master Experience Floor probe on the officially available gpt-5.4-mini + low combination through Codex app-server. Give it only the current /v1/attach execution_context, use an ephemeral read-only thread with approvals disabled, and verify goal, current position, next action, governance boundary and autonomous continuation intent.",
+      "If the weak probe passes, implement a bounded Codex app-server executor adapter that consumes AgentOS execution_context and returns a structured receipt including model, reasoning effort, thread/turn identity and evaluation evidence; do not depend on the private vscode-ipc protocol.",
       "Add automatic canonical-context reconciliation/checkpoint rules so successful receipts can advance durable development context without relying on manual summary maintenance.",
-      "Preserve the Core v0.1 evidence in the AgentOS research chronology and update the paper after the weak-executor proof is complete.",
-      "Review legacy GitHub workflows that still fail noisily on every branch push and isolate or retire those that are no longer part of the canonical AgentOS path."
+      "Separate CI/deployment responsibilities from the normal AgentOS execution plane in repository contracts and workflows, then preserve evidence that deployed Core services and Oracle task execution do not depend on a running GitHub Actions job.",
+      "Preserve the Core v0.1 and weak-executor evidence in the AgentOS research chronology, update the paper, and isolate or retire legacy workflows that still fail noisily on every branch push."
     ]
   },
   "branch_registry": {
