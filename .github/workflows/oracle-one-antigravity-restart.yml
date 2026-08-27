@@ -1,0 +1,90 @@
+name: Oracle ONE Refresh via Antigravity
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-one-antigravity-restart.json'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit governed Antigravity refresh
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          client=AntigravityRelayClient(root)
+          capsule=client.submit(
+              project_id='agentos-one-runtime-refresh',
+              workspace='/home/ubuntu/agentmanager',
+              canonical_ir={
+                  'goal':'Refresh the running AgentOS ONE Realm server to the current repository main without weakening governance.',
+                  'constraints':[
+                      'Operate only inside /home/ubuntu/agentmanager and the existing ONE process on 127.0.0.1:8780.',
+                      'Do not alter credentials, sudoers, firewall, or unrelated services.',
+                      'Preserve /home/ubuntu/agent-data Realm state.',
+                      'Verify /v1/health remains healthy and /v1/bootstrap plus /v1/benchmark are no longer 404.',
+                  ],
+              },
+              instruction='Fetch/fast-forward /home/ubuntu/agentmanager to origin/main if clean. Replace the existing ubuntu-owned ONE process on port 8780 with python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780 using the updated checkout. Keep it alive after this executor exits (for example nohup), and verify the required endpoints. Return exact commands/results and do not touch unrelated processes.',
+          )
+          Path('/tmp/one-antigravity-refresh.json').write_text(json.dumps(capsule,indent=2)+'\n')
+          print('capsule_id='+capsule['capsule_id'])
+          PY
+      - name: Wait for Antigravity receipt
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          CAPSULE=$(python3 -c "import json;print(json.load(open('/tmp/one-antigravity-refresh.json'))['capsule_id'])")
+          python3 - "$CAPSULE" <<'PY'
+          import json,sys,time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          for _ in range(100):
+              r=client.receipt(sys.argv[1])
+              if r:
+                  Path('/tmp/one-antigravity-refresh-receipt.json').write_text(json.dumps(r,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+                  print(json.dumps(r,indent=2,ensure_ascii=False))
+                  raise SystemExit(0 if r.get('ok') else 1)
+              time.sleep(2)
+          raise SystemExit('Antigravity receipt timeout')
+          PY
+      - name: Verify ONE endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 5 http://127.0.0.1:8780/v1/health
+          test "$(curl -sS -o /tmp/bootstrap.out -w '%{http_code}' --max-time 5 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750')" != 404
+          test "$(curl -sS -o /tmp/benchmark.out -w '%{http_code}' --max-time 5 -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark)" != 404
+          echo 'one_runtime_generation=PASS'
+      - name: Publish receipt evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/one-antigravity-refresh-receipt.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/one-antigravity-refresh-receipt.json .agentos/evidence/realm-one-antigravity-refresh-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-one-antigravity-refresh-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): refresh ONE through Antigravity'
+          git push origin HEAD:main
