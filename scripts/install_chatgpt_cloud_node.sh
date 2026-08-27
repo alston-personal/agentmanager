@@ -52,6 +52,47 @@ if [ -z "${AGENTOS_CHATGPT_CLIENT_TOKEN:-}" ]; then
   echo "Provisioned scoped ChatGPT Cloud client token in $SECRETS_FILE"
 fi
 
+# Prove the credential resolves in the exact ONE database before touching the
+# running gateway. This distinguishes token/database drift from HTTP auth drift.
+PYTHONPATH="$LOGIC_ROOT" "$PYTHON_BIN" - <<'PY'
+import os
+from agent_core.client_auth import ClientTokenStore
+from agent_core.distributed_control_plane import DistributedControlPlane
+
+token = os.environ["AGENTOS_CHATGPT_CLIENT_TOKEN"]
+db = os.environ["AGENTOS_CONTROL_PLANE_DB"]
+expected = f"chatgpt:{os.environ['AGENTOS_CHATGPT_PRINCIPAL_ID']}"
+principal = ClientTokenStore(DistributedControlPlane(db)).principal(token)
+assert principal is not None, "ChatGPT client token is not present/active in the configured ONE database"
+assert principal.subject == expected, (principal.subject, expected)
+assert principal.allows_permission("project.read"), principal.permissions
+assert principal.allows_permission("task.read"), principal.permissions
+print("one_principal_db=ok")
+print(f"one_principal_subject={principal.subject}")
+print(f"one_principal_permissions={','.join(principal.permissions)}")
+print(f"one_principal_projects={','.join(principal.projects)}")
+PY
+
+# The release checkout may have advanced while the long-running Control Plane
+# still has older Python modules loaded. Restart it so scoped-auth semantics and
+# the code used by the MCP service come from the same deployed revision.
+systemctl --user restart agentos-control-plane.service
+CONTROL_READY=0
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -fsS http://127.0.0.1:8765/health >/dev/null 2>&1; then
+    CONTROL_READY=1
+    break
+  fi
+  sleep 1
+done
+if [ "$CONTROL_READY" != "1" ]; then
+  echo "Control Plane did not become healthy after ChatGPT Cloud refresh" >&2
+  systemctl --user --no-pager --full status agentos-control-plane.service >&2 || true
+  journalctl --user -u agentos-control-plane.service -n 120 --no-pager >&2 || true
+  exit 7
+fi
+echo "one_control_plane_refresh=ok"
+
 mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
 
 cat > "$USER_SYSTEMD_DIR/agentos-chatgpt-mcp.service" <<EOF
