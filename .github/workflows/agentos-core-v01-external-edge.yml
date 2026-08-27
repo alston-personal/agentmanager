@@ -34,7 +34,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Issue ephemeral scoped client token on Oracle
+      - name: Issue ephemeral least-privilege token on Oracle
         shell: bash
         run: |
           set -euo pipefail
@@ -48,11 +48,11 @@ jobs:
           set +a
           [ -n "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" ] || { echo 'NO_PUBLIC_URL'; exit 4; }
           issued=$(cd "$RELEASE_ROOT" && PYTHONPATH=. python3 scripts/issue_agentos_client_token.py \
-            --subject 'ci:external-edge-proof' \
-            --label 'Core v0.1 external edge proof' \
+            --subject 'ci:external-native-test-proof' \
+            --label 'Core v0.1 external native test proof' \
             --ttl-days 1 \
-            --project leopardcat-tarot \
-            --capability agentos.project.inspect)
+            --project agentos-core \
+            --capability agentos.project.test)
           printf '%s\n' "$AGENTOS_CONTROL_PLANE_PUBLIC_URL"
           printf '%s\n' "$issued"
           REMOTE
@@ -65,7 +65,7 @@ jobs:
           echo "AGENTOS_EDGE_URL=$url" >> "$GITHUB_ENV"
           echo "AGENTOS_EDGE_TOKEN=$token" >> "$GITHUB_ENV"
           echo 'ephemeral_client_token=issued'
-      - name: Prove runner to public Core to Oracle node path
+      - name: Prove public Core to Oracle native test path
         env:
           PYTHONPATH: .
         run: |
@@ -76,15 +76,15 @@ jobs:
           client=AgentOSClient(os.environ['AGENTOS_EDGE_URL'], token=os.environ['AGENTOS_EDGE_TOKEN'], timeout=20)
           health=client.health()
           assert health['status']=='ok' and health['protocol']=='agentos.core/v0.1', health
-          attached=client.attach('leopardcat-tarot', agent={'type':'github-runner-external-client','purpose':'network-proof'})
+          attached=client.attach('agentos-core', agent={'type':'github-runner-external-client','purpose':'native-test-network-proof'})
           task=client.submit_task(
-              goal='inspect live repository over public AgentOS protocol',
-              capability='agentos.project.inspect',
-              payload={'proof':'external-native-edge'},
+              goal='run allowlisted Core v0.1 tests over public AgentOS protocol',
+              capability='agentos.project.test',
+              payload={'profile':'core-v01','argv':['false'],'proof':'external-native-test-edge'},
           )
           task_id=task['task']['taskId']
           receipt=None
-          for _ in range(40):
+          for _ in range(120):
               receipt=client.get_receipt(task_id)
               if receipt['terminal']:
                   break
@@ -92,20 +92,21 @@ jobs:
           assert receipt and receipt['status']=='succeeded', receipt
           assert receipt['executor']=='oracle-core-node', receipt
           evidence=receipt['evidence']
-          assert evidence['project_id']=='leopardcat-tarot'
-          assert len(evidence['head'])==40
+          assert evidence['project_id']=='agentos-core', evidence
+          assert evidence['profile']=='core-v01' and evidence['passed'] is True and evidence['returncode']==0, evidence
+          assert 'passed' in evidence['stdout'], evidence
 
-          # Same token must not cross project or capability resource boundaries.
+          # Same token must not cross either resource boundary.
           try:
-              client.attach('agentmanager')
+              client.attach('leopardcat-tarot')
               raise AssertionError('cross-project attach unexpectedly allowed')
           except RuntimeError as exc:
               assert 'HTTP 403' in str(exc)
           try:
               client.submit_task(
-                  project_id='leopardcat-tarot',
+                  project_id='agentos-core',
                   goal='forbidden capability proof',
-                  capability='agentos.ir.validate',
+                  capability='agentos.project.inspect',
                   payload={},
               )
               raise AssertionError('cross-capability submit unexpectedly allowed')
@@ -114,11 +115,12 @@ jobs:
 
           print('external_core_health=passed')
           print('external_attach=passed')
-          print('external_task_submit=passed')
-          print('external_oracle_receipt=passed')
+          print('external_native_test_submit=passed')
+          print('external_native_test_receipt=passed')
+          print('external_native_test_executor='+receipt['executor'])
+          print('external_native_test_head='+evidence['head'])
           print('external_project_scope=passed')
           print('external_capability_scope=passed')
-          print('external_native_head='+evidence['head'])
           PY
       - name: Revoke ephemeral client token
         if: always() && env.AGENTOS_EDGE_TOKEN != ''
