@@ -1,4 +1,4 @@
-/* Layout Lab -> AgentOS Capability Experience Bridge v0.7.1
+/* Layout Lab -> AgentOS Capability Experience Bridge v0.7.2
  * Compatibility identity: Layout Lab -> AgentOS Capability Experience Bridge v0.7.0
  *
  * The LayoutLib library remains unaware of AgentOS. This browser-side adapter
@@ -13,7 +13,7 @@
 const L=window.LayoutLibBrowser;
 if(!L)return;
 
-const VERSION='0.7.1';
+const VERSION='0.7.2';
 const EXPERIENCE_KEY='layoutlib.capability.pending.v1';
 const NODE_KEY='agentos.layoutlib.node_id.v1';
 const PROFILE_CAPABILITY='layoutlib.profile-detection';
@@ -23,6 +23,19 @@ const API_BASE='./api';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const now=()=>new Date().toISOString();
 const uuid=()=>globalThis.crypto?.randomUUID?.()||`browser-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+// Product release identity is v0.7. The raster core is still the v0.6 adapter
+// underneath, but users should see the release they are actually testing.
+function refreshReleaseIdentity(){
+  const sub=document.querySelector('header .sub');
+  const badge=document.querySelector('header .badge');
+  if(sub)sub.textContent='Layout Lab v0.7：2D / 3D 同屏、可編輯 Spatial IR、完成模型回饋，以及 AgentOS Capability Experience 回歸。';
+  if(badge)badge.textContent='Layout Lab v0.7 · AgentOS closed loop';
+  for(const el of document.querySelectorAll('.compactTitle')){
+    if(el.textContent?.includes('v0.6 Learning contract'))el.textContent='v0.7 Learning contract';
+  }
+}
+refreshReleaseIdentity();
 
 function nodeId(){
   let id=localStorage.getItem(NODE_KEY);
@@ -44,6 +57,54 @@ function wallPixels(ir){
     n+=Math.hypot(b.x-a.x,b.y-a.y);
   }
   return n;
+}
+
+// v0.7 owns robust delete semantics. The earlier deploy hotfix deleted only by
+// generated wall id, which could become stale after re-analysis. Store geometry
+// evidence and replay against either the original id or the nearest same segment.
+function wallEvidence(ir,w){
+  const a=L.worldToSourcePx(ir.coordinate_frame,w.start),b=L.worldToSourcePx(ir.coordinate_frame,w.end);
+  return {wall_id:w.id,start_px:{x:a.x,y:a.y},end_px:{x:b.x,y:b.y},source:w.source||null};
+}
+function endpointDistance(a0,a1,b0,b1){
+  const direct=Math.hypot(a0.x-b0.x,a0.y-b0.y)+Math.hypot(a1.x-b1.x,a1.y-b1.y);
+  const reverse=Math.hypot(a0.x-b1.x,a0.y-b1.y)+Math.hypot(a1.x-b0.x,a1.y-b0.y);
+  return Math.min(direct,reverse);
+}
+function robustDeleteWallsById(ir,ids){
+  const out=clone(ir),wanted=new Set(ids||[]),removed=[];
+  out.walls=(out.walls||[]).filter(w=>{
+    if(!wanted.has(w.id))return true;
+    removed.push(wallEvidence(out,w));
+    return false;
+  });
+  if(removed.length)(out.edits||(out.edits=[])).push({op:'delete_walls',removed});
+  return out;
+}
+L.deleteWallsById=robustDeleteWallsById;
+
+if(typeof L.replayEdits==='function'){
+  const replayWithoutV07Delete=L.replayEdits;
+  L.replayEdits=(base,edits=[])=>{
+    let out=replayWithoutV07Delete(base,edits.filter(e=>e.op!=='delete_walls'));
+    for(const edit of edits.filter(e=>e.op==='delete_walls')){
+      const ids=[];
+      for(const removed of edit.removed||[]){
+        const exact=(out.walls||[]).find(w=>w.id===removed.wall_id);
+        if(exact){ids.push(exact.id);continue}
+        if(!removed.start_px||!removed.end_px)continue;
+        let best=null,bestDistance=Infinity;
+        for(const wall of out.walls||[]){
+          const ev=wallEvidence(out,wall);
+          const d=endpointDistance(removed.start_px,removed.end_px,ev.start_px,ev.end_px);
+          if(d<bestDistance){bestDistance=d;best=wall}
+        }
+        if(best&&bestDistance<=12)ids.push(best.id);
+      }
+      out=robustDeleteWallsById(out,ids);
+    }
+    return out;
+  };
 }
 
 let session=null,transportState='idle';
