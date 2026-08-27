@@ -161,7 +161,7 @@ jobs:
               'model':MODEL,
               'cwd':str(empty),
               'approvalPolicy':'never',
-              'sandbox':'readOnly',
+              'sandbox':'read-only',
               'ephemeral':True,
               'config':{'model_reasoning_effort':EFFORT},
           }})
@@ -204,7 +204,6 @@ jobs:
               'model':MODEL,
               'effort':EFFORT,
               'approvalPolicy':'never',
-              'sandboxPolicy':{'type':'readOnly'},
               'outputSchema':schema,
           }})
           turn_done=False
