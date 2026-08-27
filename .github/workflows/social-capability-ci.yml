@@ -9,6 +9,7 @@ on:
       - 'agentos_node/social_cli.py'
       - 'tests/test_social_threads_capability.py'
       - 'setup.py'
+      - 'pyproject.toml'
       - '.github/workflows/social-capability-ci.yml'
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - 'agentos_node/social_cli.py'
       - 'tests/test_social_threads_capability.py'
       - 'setup.py'
+      - 'pyproject.toml'
 
 jobs:
   test:
