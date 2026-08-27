@@ -1,0 +1,130 @@
+name: Deploy ChatGPT Cloud Node to ONE
+
+on:
+  push:
+    branches:
+      - feature/distributed-agentos-runtime
+    paths:
+      - "agentos_node/chatgpt_web_node.py"
+      - "agentos_node/mcp_read_tools.py"
+      - "scripts/agentos_mcp_server.py"
+      - "scripts/provision_chatgpt_cloud_principal.py"
+      - "scripts/install_chatgpt_cloud_node.sh"
+      - "requirements-mcp.txt"
+      - ".github/workflows/deploy-chatgpt-cloud-node.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentos-chatgpt-cloud-node
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+      CHATGPT_PRINCIPAL_ID: ${{ vars.AGENTOS_CHATGPT_PRINCIPAL_ID || 'chatgpt-primary' }}
+      CHATGPT_PROJECTS: ${{ vars.AGENTOS_CHATGPT_PROJECTS || '*' }}
+
+    steps:
+      - name: Resolve deploy host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Deploy MCP service beside ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"
+          RELEASE_ROOT="$2"
+          CHATGPT_PRINCIPAL_ID="$3"
+          CHATGPT_PROJECTS="$4"
+          REF="feature/distributed-agentos-runtime"
+
+          test -d "$RELEASE_ROOT/.git" || { echo "Distributed AgentOS release checkout missing: $RELEASE_ROOT"; exit 2; }
+          test -f "$HOME/.config/agentos/distributed.env" || { echo "Distributed env missing"; exit 2; }
+          test -f "$HOME/.agentos.secrets" || { echo "AgentOS secrets file missing"; exit 2; }
+
+          git -C "$RELEASE_ROOT" fetch --prune origin "$REF"
+          TARGET_SHA="$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)"
+          git -C "$RELEASE_ROOT" checkout --detach "$TARGET_SHA"
+
+          PYTHON_BIN="$RELEASE_ROOT/.venv/bin/python3"
+          if [ ! -x "$PYTHON_BIN" ]; then
+            python3 -m venv "$RELEASE_ROOT/.venv"
+          fi
+          "$PYTHON_BIN" -m pip install --upgrade -r "$RELEASE_ROOT/requirements-mcp.txt"
+
+          DIST_ENV="$HOME/.config/agentos/distributed.env"
+          python3 - "$DIST_ENV" "$CHATGPT_PRINCIPAL_ID" "$CHATGPT_PROJECTS" <<'PY'
+          import pathlib, sys
+          path=pathlib.Path(sys.argv[1]); principal=sys.argv[2]; projects=sys.argv[3]
+          lines=path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+          updates={
+              'AGENTOS_CHATGPT_PRINCIPAL_ID': principal,
+              'AGENTOS_CHATGPT_PROJECTS': projects,
+              'AGENTOS_MCP_PORT': '8000',
+              'AGENTOS_MCP_PATH': '/mcp',
+          }
+          out=[]; seen=set()
+          for line in lines:
+              key=line.split('=',1)[0] if '=' in line else None
+              if key in updates:
+                  out.append(f'{key}={updates[key]}'); seen.add(key)
+              else:
+                  out.append(line)
+          for key,value in updates.items():
+              if key not in seen: out.append(f'{key}={value}')
+          path.write_text('\n'.join(out)+'\n', encoding='utf-8')
+          PY
+          chmod 600 "$DIST_ENV"
+
+          AGENTOS_CONFIG_ROOT="$CONFIG_ROOT" AGENTOS_DISTRIBUTED_PYTHON="$PYTHON_BIN" \
+            bash "$RELEASE_ROOT/scripts/install_chatgpt_cloud_node.sh"
+
+          systemctl --user is-active --quiet agentos-control-plane.service
+          systemctl --user is-active --quiet agentos-chatgpt-mcp.service
+          "$PYTHON_BIN" - <<'PY'
+          import socket
+          with socket.create_connection(('127.0.0.1', 8000), timeout=3):
+              pass
+          print('mcp_socket=ok')
+          PY
+
+          set -a
+          source "$DIST_ENV"
+          source "$HOME/.agentos.secrets"
+          set +a
+          curl -fsS -H "Authorization: Bearer ${AGENTOS_CHATGPT_CLIENT_TOKEN}" \
+            "http://127.0.0.1:8765/v1/projects/agentmanager/state" >/tmp/chatgpt-one-state.json
+          python3 - <<'PY'
+          import json
+          payload=json.load(open('/tmp/chatgpt-one-state.json', encoding='utf-8'))
+          assert payload.get('projectId') == 'agentmanager'
+          print('one_scoped_read=ok')
+          PY
+          echo "deployed_sha=$TARGET_SHA"
+          echo "chatgpt_principal=$CHATGPT_PRINCIPAL_ID"
+          REMOTE

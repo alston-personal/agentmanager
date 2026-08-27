@@ -22,9 +22,35 @@ set +a
 if [ -z "$PYTHON_BIN" ] && [ -x "$LOGIC_ROOT/.venv/bin/python3" ]; then PYTHON_BIN="$LOGIC_ROOT/.venv/bin/python3"; fi
 if [ -z "$PYTHON_BIN" ]; then PYTHON_BIN="$(command -v python3)"; fi
 [ -x "$PYTHON_BIN" ] || { echo "No usable Python interpreter found" >&2; exit 2; }
+"$PYTHON_BIN" -c 'import mcp' >/dev/null 2>&1 || {
+  echo "Python MCP SDK is missing; install requirements-mcp.txt into $PYTHON_BIN environment" >&2
+  exit 2
+}
 
-[ -n "${AGENTOS_CHATGPT_CLIENT_TOKEN:-}" ] || { echo "AGENTOS_CHATGPT_CLIENT_TOKEN is required" >&2; exit 2; }
 [ -n "${AGENTOS_CHATGPT_PRINCIPAL_ID:-}" ] || { echo "AGENTOS_CHATGPT_PRINCIPAL_ID is required" >&2; exit 2; }
+[ -n "${AGENTOS_CONTROL_PLANE_DB:-}" ] || { echo "AGENTOS_CONTROL_PLANE_DB is required" >&2; exit 2; }
+
+touch "$SECRETS_FILE"
+chmod 600 "$SECRETS_FILE"
+
+# Provision a dedicated least-privilege client credential on first install. The
+# root Control Plane bearer is never copied into the MCP service environment.
+if [ -z "${AGENTOS_CHATGPT_CLIENT_TOKEN:-}" ]; then
+  PROJECT_ARGS=()
+  IFS=',' read -r -a CHATGPT_PROJECTS <<< "${AGENTOS_CHATGPT_PROJECTS:-*}"
+  for project in "${CHATGPT_PROJECTS[@]}"; do
+    project="${project//[[:space:]]/}"
+    [ -n "$project" ] && PROJECT_ARGS+=(--project "$project")
+  done
+  ISSUE_JSON="$($PYTHON_BIN "$LOGIC_ROOT/scripts/provision_chatgpt_cloud_principal.py" \
+    --db "$AGENTOS_CONTROL_PLANE_DB" \
+    --principal-id "$AGENTOS_CHATGPT_PRINCIPAL_ID" \
+    "${PROJECT_ARGS[@]}")"
+  AGENTOS_CHATGPT_CLIENT_TOKEN="$($PYTHON_BIN -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<< "$ISSUE_JSON")"
+  printf '\nAGENTOS_CHATGPT_CLIENT_TOKEN=%s\n' "$AGENTOS_CHATGPT_CLIENT_TOKEN" >> "$SECRETS_FILE"
+  export AGENTOS_CHATGPT_CLIENT_TOKEN
+  echo "Provisioned scoped ChatGPT Cloud client token in $SECRETS_FILE"
+fi
 
 mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
 
