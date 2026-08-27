@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlparse
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
-from .client_auth import ClientTokenStore
+from .client_auth import ClientPrincipal, ClientTokenStore
 from .distributed_control_plane import DistributedControlPlane
 from .project_state import read_project_state
 
@@ -164,17 +164,35 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         supplied = self._bearer()
         return supplied is not None and hmac.compare_digest(supplied, expected)
 
-    def _client_allows(self, permission: str) -> bool:
+    def _principal(self) -> ClientPrincipal | None:
+        if self._is_root():
+            return None
+        supplied = self._bearer()
+        return self.server.client_tokens.principal(supplied or "")
+
+    def _require(
+        self,
+        permission: str,
+        *,
+        project_id: str | None = None,
+        capability: str | None = None,
+    ) -> bool:
         if self._is_root():
             return True
-        supplied = self._bearer()
-        principal = self.server.client_tokens.principal(supplied or "")
-        return principal is not None and permission in principal.permissions
-
-    def _require(self, permission: str) -> bool:
-        if self._client_allows(permission):
+        principal = self._principal()
+        allowed = principal is not None and principal.allows_permission(permission)
+        if allowed and project_id is not None:
+            allowed = principal.allows_project(project_id)
+        if allowed and capability is not None:
+            allowed = principal.allows_capability(capability)
+        if allowed:
             return True
-        self._json(403 if self._bearer() else 401, {"error": "forbidden", "required_permission": permission})
+        payload: dict[str, Any] = {"error": "forbidden", "required_permission": permission}
+        if project_id is not None:
+            payload["project_id"] = project_id
+        if capability is not None:
+            payload["capability"] = capability
+        self._json(403 if self._bearer() else 401, payload)
         return False
 
     def _require_root(self) -> bool:
@@ -206,14 +224,19 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
             return
         try:
             if len(parts) == 3 and parts[:2] == ["v1", "tasks"]:
-                if not self._require("task.read"): return
-                self._json(200, self.server.service.get_task(parts[2])); return
+                response = self.server.service.get_task(parts[2])
+                project_id = str(response["task"].get("projectId") or "")
+                if not self._require("task.read", project_id=project_id): return
+                self._json(200, response); return
             if len(parts) == 3 and parts[:2] == ["v1", "receipts"]:
-                if not self._require("task.read"): return
-                self._json(200, self.server.service.get_receipt(parts[2])); return
+                response = self.server.service.get_receipt(parts[2])
+                project_id = str(response["task"].get("projectId") or "")
+                if not self._require("task.read", project_id=project_id): return
+                self._json(200, response); return
             if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "state":
-                if not self._require("project.read"): return
-                self._json(200, self.server.service.project_state(unquote(parts[2]))); return
+                project_id = unquote(parts[2])
+                if not self._require("project.read", project_id=project_id): return
+                self._json(200, self.server.service.project_state(project_id)); return
             self._json(404, {"error": "not_found"})
         except KeyError as exc:
             self._json(404, {"error": "not_found", "message": str(exc)})
@@ -225,10 +248,13 @@ class DistributedGatewayHandler(BaseHTTPRequestHandler):
         try:
             body = self._read_body()
             if path == "/v1/attach":
-                if not self._require("project.read"): return
+                project_id = str(body.get("project_id") or "")
+                if not self._require("project.read", project_id=project_id): return
                 self._json(200, self.server.service.attach(body)); return
             if path == "/v1/tasks":
-                if not self._require("task.submit"): return
+                project_id = str(body.get("project_id") or "")
+                capability = str(body.get("capability") or "")
+                if not self._require("task.submit", project_id=project_id, capability=capability): return
                 self._json(202, self.server.service.submit_task(body)); return
             if path == "/v1/ir/submit":
                 if not self._require_root(): return
