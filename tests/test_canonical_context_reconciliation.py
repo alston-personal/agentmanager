@@ -1,14 +1,25 @@
 from pathlib import Path
+import json
 
 import pytest
 
 from agent_core.canonical_context import CanonicalContextStore
+from agent_core.distributed_control_plane import DistributedControlPlane
+from agent_core.distributed_gateway import DistributedGatewayService
+from agentos_node.remote_worker import build_default_worker
 
 
 def seed_doc():
     return {
         "updated_at": "2026-08-27T00:00:00Z",
+        "integration_branch": "feature/distributed-agentos-runtime",
+        "write_policy": {
+            "experimental_writes_to_main": "deny",
+            "branch_required_for_writes": True,
+        },
         "active_work": {
+            "goal": "prove receipt-driven context",
+            "integration_branch": "feature/distributed-agentos-runtime",
             "current_findings": ["native execution exists"],
             "next_actions": ["Validate Master Floor.", "Separate CI from execution."],
         },
@@ -51,3 +62,40 @@ def test_checkpoint_rejects_unproven_action(tmp_path: Path):
             completed_action="Invented work.",
             finding="fake evidence",
         )
+
+
+def test_verified_receipt_advances_fresh_attach(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    seed_path = tmp_path / "development-context.json"
+    seed_path.write_text(json.dumps(seed_doc()), encoding="utf-8")
+    original_seed = seed_path.read_text(encoding="utf-8")
+    monkeypatch.setenv("AGENTOS_PROJECT_CONTEXTS_JSON", json.dumps({"demo": str(seed_path)}))
+
+    control = DistributedControlPlane(tmp_path / "control-plane.sqlite3")
+    gateway = DistributedGatewayService(control)
+    before = gateway.attach({"project_id": "demo", "agent": {"history": "none"}})
+    assert before["execution_context"]["next_action"] == "Validate Master Floor."
+    assert before["execution_context"]["runtime_context"]["revision"] == 1
+
+    submitted = gateway.submit_task({
+        "project_id": "demo",
+        "goal": "record verified Master Floor evidence",
+        "capability": "agentos.context.checkpoint",
+        "payload": {
+            "completed_action": "Validate Master Floor.",
+            "finding": "gpt-5.4-mini low passed with no side effects.",
+        },
+    })
+    task_id = submitted["task"]["taskId"]
+    lease = control.lease_ir_task(task_id, "oracle-core-node")
+    assert lease is not None
+    result = build_default_worker("oracle-core-node").execute(lease.ir)
+    completed = control.complete_ir(task_id, result)
+    assert completed["contextCheckpoint"]["revision"] == 2
+
+    fresh = DistributedGatewayService(DistributedControlPlane(tmp_path / "control-plane.sqlite3"))
+    after = fresh.attach({"project_id": "demo", "agent": {"history": "none"}})
+    context = after["execution_context"]
+    assert context["next_action"] == "Separate CI from execution."
+    assert context["runtime_context"]["revision"] == 2
+    assert "gpt-5.4-mini low passed" in " ".join(context["current_findings"])
+    assert seed_path.read_text(encoding="utf-8") == original_seed
