@@ -1,0 +1,236 @@
+name: AgentOS Master Floor - Hosted Client to Oracle Relay
+
+on:
+  push:
+    branches: [feature/distributed-agentos-runtime]
+    paths:
+      - '.github/workflows/agentos-master-floor-hosted-relay.yml'
+      - 'agent_core/context_compiler.py'
+      - 'agent_core/distributed_gateway.py'
+      - 'agentos_client/**'
+      - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
+      - 'scripts/install_antigravity_relay_user.sh'
+      - 'scripts/issue_agentos_client_token.py'
+      - '.agentos/development-context.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-client-oracle-weak-executor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || 'https://n8n.milkcat.org' }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || 'ubuntu' }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CONFIG_ROOT: ${{ vars.AGENTOS_CONFIG_ROOT || '/home/ubuntu/agentmanager' }}
+      RELEASE_ROOT: ${{ vars.AGENTOS_DISTRIBUTED_DEPLOY_ROOT || '/home/ubuntu/agentos-distributed' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: Resolve Oracle target
+        run: |
+          host="${DEPLOY_HOST_SOURCE#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          echo "DEPLOY_HOST=$host" >> "$GITHUB_ENV"
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Prepare Oracle relay and issue least-privilege context token
+        shell: bash
+        run: |
+          set -euo pipefail
+          bootstrap=$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"; RELEASE_ROOT="$2"
+          cd /home/ubuntu/agentmanager
+          git fetch origin feature/distributed-agentos-runtime
+          AGENTOS_RUNTIME_BRANCH=feature/distributed-agentos-runtime bash <(git show origin/feature/distributed-agentos-runtime:scripts/install_antigravity_relay_user.sh) >/dev/null
+          systemctl --user is-active --quiet agentos-antigravity-relay.service
+          cd /home/ubuntu/.local/share/agentos/runtime-vnext
+          PYTHONPATH=. /usr/bin/python3 - <<'PY'
+          from agentos_node.antigravity_relay_worker import discover_executor
+          executor=discover_executor()
+          assert executor, 'no Antigravity executor discovered'
+          assert '--effort' in executor and executor[executor.index('--effort')+1]=='low', executor
+          PY
+          set -a
+          source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          [ -n "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" ] || { echo 'NO_PUBLIC_URL'; exit 4; }
+          issued=$(cd "$RELEASE_ROOT" && PYTHONPATH=. python3 scripts/issue_agentos_client_token.py \
+            --subject 'ci:master-floor-hosted-client' \
+            --label 'Master Floor hosted client proof' \
+            --ttl-days 1 \
+            --permission project.read \
+            --project agentmanager \
+            --capability agentos.project.inspect)
+          printf '%s\n' "$AGENTOS_CONTROL_PLANE_PUBLIC_URL"
+          printf '%s\n' "$issued"
+          REMOTE
+          )
+          url=$(printf '%s\n' "$bootstrap" | sed -n '1p')
+          issued=$(printf '%s\n' "$bootstrap" | sed -n '2p')
+          token=$(ISSUED="$issued" python -c 'import json,os; print(json.loads(os.environ["ISSUED"])["token"])')
+          echo "::add-mask::$token"
+          echo "::add-mask::$url"
+          echo "AGENTOS_EDGE_URL=$url" >> "$GITHUB_ENV"
+          echo "AGENTOS_EDGE_TOKEN=$token" >> "$GITHUB_ENV"
+          echo 'oracle_relay_ready=passed'
+          echo 'weak_effort=low'
+          echo 'least_privilege_context_token=issued'
+
+      - name: Blind attach through public Core
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from agentos_client import AgentOSClient
+
+          client=AgentOSClient(os.environ['AGENTOS_EDGE_URL'], token=os.environ['AGENTOS_EDGE_TOKEN'], timeout=20)
+          attached=client.attach('agentmanager', agent={
+              'type':'antigravity-low-blind-executor',
+              'history':'none',
+              'effort':'low',
+              'transport':'public-core-hosted-client',
+          })
+          context=attached['execution_context']
+          assert context['schema']=='agentos.execution-context/v0.1', context
+          assert context['active_goal'], context
+          assert context['next_action'], context
+          assert context['context_freshness']['status']=='fresh', context
+          Path('/tmp/master-floor-context.json').write_text(json.dumps(context, ensure_ascii=False), encoding='utf-8')
+          print('public_core_attach=passed')
+          print('blind_history=none')
+          print('context_schema='+context['schema'])
+          print('context_freshness='+context['context_freshness']['status'])
+          print('context_source_revision='+str(context.get('source_revision')))
+          PY
+          base64 -w0 /tmp/master-floor-context.json > /tmp/master-floor-context.b64
+
+      - name: Submit compiled context to persistent Oracle weak executor
+        id: submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONTEXT_B64=$(cat /tmp/master-floor-context.b64)
+          result=$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            env CONTEXT_B64="$CONTEXT_B64" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /home/ubuntu/.local/share/agentos/runtime-vnext
+          PYTHONPATH=. /usr/bin/python3 - <<'PY'
+          import base64, json, os
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          context=json.loads(base64.b64decode(os.environ['CONTEXT_B64']).decode('utf-8'))
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule=client.submit(
+              project_id='agentmanager',
+              canonical_ir={
+                  'ir_id':'master-floor-hosted-relay-proof',
+                  'goal':context['active_goal'],
+                  'constraints':[
+                      'No repository writes or irreversible side effects.',
+                      'Use only the durable execution context supplied in this capsule.',
+                      'Assume there is no prior conversation history.',
+                  ],
+              },
+              execution_context=context,
+              instruction=(
+                  'This is a blind continuity evaluation. Without relying on any previous chat, '
+                  'state the durable active goal and the kernel-recommended next action in your own words. '
+                  'Then identify the single most important remaining blocker and propose a bounded 2-4 step plan. '
+                  'Do not modify files. Prefix the response with MASTER_FLOOR_ACK.'
+              ),
+              workspace='/home/ubuntu/.local/share/agentos/runtime-vnext',
+          )
+          print(capsule['capsule_id'])
+          PY
+          REMOTE
+          )
+          capsule_id=$(printf '%s\n' "$result" | tail -1)
+          test -n "$capsule_id"
+          echo "capsule_id=$capsule_id" >> "$GITHUB_OUTPUT"
+          echo 'relay_capsule_submitted=passed'
+          echo 'relay_producer_user=ubuntu'
+
+      - name: Observe daemon-produced weak-executor receipt
+        env:
+          CAPSULE_ID: ${{ steps.submit.outputs.capsule_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt_b64=$(ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            env CAPSULE_ID="$CAPSULE_ID" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /home/ubuntu/.local/share/agentos/runtime-vnext
+          PYTHONPATH=. /usr/bin/python3 - <<'PY'
+          import base64, json, os, time
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          receipt=None
+          for _ in range(180):
+              receipt=client.receipt(os.environ['CAPSULE_ID'])
+              if receipt is not None:
+                  break
+              time.sleep(1)
+          assert receipt is not None, 'relay receipt timed out'
+          print(base64.b64encode(json.dumps(receipt, ensure_ascii=False).encode()).decode())
+          PY
+          REMOTE
+          )
+          RECEIPT_B64="$receipt_b64" python - <<'PY'
+          import base64, json, os
+          receipt=json.loads(base64.b64decode(os.environ['RECEIPT_B64']).decode('utf-8'))
+          assert receipt['ok'] is True, receipt
+          assert receipt.get('returncode') == 0, receipt
+          assert receipt.get('executor_user') == 'ubuntu', receipt
+          output=str(receipt.get('stdout') or '')
+          assert 'MASTER_FLOOR_ACK' in output, output
+          continuity_terms=('Core v0.1','execution plane','GitHub Actions','weak executor','Master Experience Floor')
+          assert sum(term.lower() in output.lower() for term in continuity_terms) >= 2, output
+          planning_terms=('step','plan','next','blocker','remaining')
+          assert sum(term.lower() in output.lower() for term in planning_terms) >= 2, output
+          print('daemon_weak_executor_receipt=passed')
+          print('weak_executor_user=ubuntu')
+          print('master_floor_ack=passed')
+          print('durable_continuity=passed')
+          print('--- weak executor output ---')
+          print(output[-12000:])
+          PY
+
+      - name: Revoke context token
+        if: always() && env.AGENTOS_EDGE_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$CONFIG_ROOT" "$RELEASE_ROOT" "$AGENTOS_EDGE_TOKEN" <<'REMOTE'
+          set -euo pipefail
+          CONFIG_ROOT="$1"; RELEASE_ROOT="$2"; TOKEN="$3"
+          set -a
+          source "$CONFIG_ROOT/.env"
+          [ -f "$HOME/.config/agentos/distributed.env" ] && source "$HOME/.config/agentos/distributed.env"
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          cd "$RELEASE_ROOT"
+          PYTHONPATH=. python3 - "$TOKEN" <<'PY'
+          import sys
+          from agent_core.client_auth import ClientTokenStore
+          from agent_core.distributed_control_plane import DistributedControlPlane
+          store=ClientTokenStore(DistributedControlPlane())
+          assert store.revoke(sys.argv[1]) is True
+          print('context_token=revoked')
+          PY
+          REMOTE
