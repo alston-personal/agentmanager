@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Open Meta app and capture interactive desktop
+      - name: Inspect node transport state
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -29,58 +29,46 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, json, time
+          import json
           from pathlib import Path
           from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
 
           cmd = json.load(open('.agentos/commands/meta-desktop-inspect.json', encoding='utf-8'))
           assert cmd.get('schema') == 'agentos.meta-desktop-inspect/v0.1', cmd
           assert cmd.get('node_id') == 'vopc5750', cmd
-          # Intentionally fixed/allowlisted for this read-only acceptance probe.
-          url = 'https://developers.facebook.com/apps/2656768804723248/'
+
           fabric = RealmFabricStore()
-
-          def run(action, **fields):
-              task_id = 'meta-' + action.replace('.', '-') + '-' + str(int(time.time() * 1000))
-              task = {
-                  'schema': 'agentos.node-task/v0.1',
-                  'task_id': task_id,
-                  'action': action,
-                  'cognition_ids_used': [],
-                  **fields,
+          raw = fabric.load()
+          node = dict((raw.get('nodes') or {}).get('vopc5750') or {})
+          node.pop('token_hash', None)
+          pending = list((raw.get('tasks') or {}).get('vopc5750') or [])
+          pending_safe = [
+              {
+                  'task_id': t.get('task_id'),
+                  'action': t.get('action'),
+                  'queued_at': t.get('queued_at'),
               }
-              fabric.queue_task('vopc5750', task)
-              deadline = time.time() + 60
-              while time.time() < deadline:
-                  receipt = fabric.get_receipt(task_id)
-                  if receipt:
-                      if receipt.get('ok') is not True:
-                          raise RuntimeError(receipt)
-                      return receipt
-                  time.sleep(2)
-              raise TimeoutError(task_id)
-
+              for t in pending[-20:]
+          ]
+          registry = NodeRegistry().node_map()
+          registry_node = next((n for n in registry.get('nodes', []) if n.get('node_id') == 'vopc5750'), None)
+          result = {
+              'node': node,
+              'registry_node': registry_node,
+              'pending_task_count': len(pending),
+              'pending_tasks_tail': pending_safe,
+          }
           out = Path('/tmp/meta-desktop')
           out.mkdir(parents=True, exist_ok=True)
-
-          open_receipt = run('desktop.open_url', url=url)
-          time.sleep(8)
-          windows_receipt = run('desktop.windows.inspect')
-          shot_receipt = run('desktop.screenshot', quality=70)
-
-          raw = base64.b64decode(shot_receipt.pop('image_base64'))
-          (out / 'desktop.jpg').write_bytes(raw)
-          (out / 'open-receipt.json').write_text(json.dumps(open_receipt, indent=2, ensure_ascii=False), encoding='utf-8')
-          (out / 'windows-receipt.json').write_text(json.dumps(windows_receipt, indent=2, ensure_ascii=False), encoding='utf-8')
-          (out / 'screenshot-receipt.json').write_text(json.dumps(shot_receipt, indent=2, ensure_ascii=False), encoding='utf-8')
-          print('meta_desktop_readonly_probe=PASS')
-          print('screenshot_sha256=' + str(shot_receipt.get('sha256')))
+          (out / 'transport-diagnostic.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
+          print(json.dumps(result, ensure_ascii=False, sort_keys=True))
           PY
 
-      - name: Upload read-only desktop evidence
+      - name: Upload read-only transport evidence
         uses: actions/upload-artifact@v4
         with:
-          name: meta-desktop-readonly-evidence
+          name: meta-desktop-transport-diagnostic
           path: /tmp/meta-desktop
           if-no-files-found: error
           retention-days: 1
