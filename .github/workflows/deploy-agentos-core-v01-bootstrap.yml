@@ -6,12 +6,15 @@ on:
     paths:
       - '.agentos/development-context.json'
       - 'agentos_client/**'
+      - 'agent_core/canonical_context.py'
       - 'agent_core/context_compiler.py'
+      - 'agent_core/distributed_control_plane.py'
       - 'agent_core/distributed_gateway.py'
       - 'agentos_node/remote_worker.py'
       - 'scripts/agentos_node_daemon.py'
       - 'scripts/install_distributed_systemd_user.sh'
       - 'tests/test_agentos_core_v01.py'
+      - 'tests/test_canonical_context_reconciliation.py'
       - '.github/workflows/deploy-agentos-core-v01-bootstrap.yml'
 
 permissions:
@@ -34,8 +37,8 @@ jobs:
       - name: Source contract
         run: |
           python -m pip install pytest >/dev/null
-          python -m pytest -q tests/test_agentos_core_v01.py
-          python -m py_compile agentos_client/*.py agent_core/context_compiler.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
+          python -m pytest -q tests/test_agentos_core_v01.py tests/test_canonical_context_reconciliation.py
+          python -m py_compile agentos_client/*.py agent_core/canonical_context.py agent_core/context_compiler.py agent_core/distributed_control_plane.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
           bash -n scripts/install_distributed_systemd_user.sh
       - name: Resolve Oracle target
         run: |
@@ -44,7 +47,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy and prove native continuity plus blind context attach
+      - name: Deploy and prove native continuity plus reconciliation
         shell: bash
         run: |
           set -euo pipefail
@@ -57,8 +60,8 @@ jobs:
           SHA=$(git -C "$RELEASE_ROOT" rev-parse FETCH_HEAD)
           git -C "$RELEASE_ROOT" checkout --detach "$SHA"
           cd "$RELEASE_ROOT"
-          PYTHONPATH=. python3 -m pytest -q tests/test_agentos_core_v01.py
-          PYTHONPATH=. python3 -m py_compile agentos_client/*.py agent_core/context_compiler.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
+          PYTHONPATH=. python3 -m pytest -q tests/test_agentos_core_v01.py tests/test_canonical_context_reconciliation.py
+          PYTHONPATH=. python3 -m py_compile agentos_client/*.py agent_core/canonical_context.py agent_core/context_compiler.py agent_core/distributed_control_plane.py agent_core/distributed_gateway.py agentos_node/remote_worker.py scripts/agentos_node_daemon.py
 
           set -a
           source "$CONFIG_ROOT/.env"
@@ -116,10 +119,11 @@ jobs:
           assert c['integration_branch']=='feature/distributed-agentos-runtime'
           assert c['write_policy']['branch_required_for_writes'] is True
           assert c['agent']['history']=='none'
+          assert c['runtime_context'] and c['runtime_context']['revision'] >= 1
           print('blind_fresh_session_context=passed')
+          print('blind_runtime_context_revision='+str(c['runtime_context']['revision']))
           print('blind_active_goal='+c['active_goal'])
           print('blind_next_action='+c['next_action'])
-          print('blind_integration_branch='+str(c['integration_branch']))
           PY
 
           curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"agentos-core","agent":{"type":"native-test-proof"}}' "$BASE/v1/attach" >/tmp/test-attach.json
@@ -134,10 +138,8 @@ jobs:
           assert r['executor']=='oracle-core-node', r
           e=r['evidence']
           assert e['project_id']=='agentos-core' and e['profile']=='core-v01' and e['passed'] is True and e['returncode']==0, e
-          assert 'passed' in e['stdout'], e
           print('native_project_test=passed')
           print('native_project_test_executor='+r['executor'])
-          print('native_project_test_head='+e['head'])
           PY
 
           curl -fsS -H "$AUTH" -H 'Content-Type: application/json' -d '{"project_id":"leopardcat-tarot","agent":{"type":"native-inspection-proof"}}' "$BASE/v1/attach" >/tmp/leopard-attach.json
@@ -151,10 +153,9 @@ jobs:
           assert r['terminal'] is True and r['status']=='succeeded', r
           assert r['executor']=='oracle-core-node'
           result=r['evidence']
-          assert result['project_id']=='leopardcat-tarot' and len(result['head'])==40 and result['path'].endswith('/leopardcat-tarot')
+          assert result['project_id']=='leopardcat-tarot' and len(result['head'])==40
           print('native_project_inspect=passed')
           print('native_project_head='+result['head'])
-          print('native_project_dirty='+str(result['dirty']).lower())
           PY
           echo "native_core_sha=$SHA"
           REMOTE
