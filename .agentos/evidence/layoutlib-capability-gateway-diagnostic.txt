@@ -1,0 +1,250 @@
+timestamp_utc=2026-08-27T02:09:20Z
+runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
+=== PUBLIC CURRENT ===
+url=https://studio.milkcat.org/layout-lab/ code=200 body=<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Layout Lab | Milkcat Studio</title><style> :root{font-family:Inter,system-ui,-apple-system,"Noto Sans TC",sans-serif;color:#171717;background:#f6f6f4}*{box-sizing
+url=https://studio.milkcat.org/layout-lab/api/healthz code=200 body=<!DOCTYPE html><html lang="zh-TW"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="canonical" href="https://studio.milkcat.org/"><!-- SEO Base Tags --><title>Milkcat Studio | Alston Huang 的創作實
+url=https://studio.milkcat.org/layout-lab/api/capability/layoutlib.profile-detection/canonical code=200 body=<!DOCTYPE html><html lang="zh-TW"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="canonical" href="https://studio.milkcat.org/"><!-- SEO Base Tags --><title>Milkcat Studio | Alston Huang 的創作實
+=== USER UNIT ===
+Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
+Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)
+=== USER UNIT FILES ===
+--- /home/agentos-node/.config/systemd/user/layoutlib-web.service
+[Unit]
+Description=LayoutLib Web UI/API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/agentos-node/projects/layoutlib
+Environment=PYTHONPATH=/home/agentos-node/projects/layoutlib/src
+Environment=LAYOUTLIB_WEB_QUIET=1
+ExecStart=/usr/bin/python3 /home/agentos-node/projects/layoutlib/web_demo/server.py --host 127.0.0.1 --port 8766
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+=== LISTENERS ===
+LISTEN 0      511        127.0.0.1:3011       0.0.0.0:*                                             
+LISTEN 0      5          127.0.0.1:8766       0.0.0.0:*    users:(("python3",pid=3335386,fd=3))     
+LISTEN 0      2048         0.0.0.0:8090       0.0.0.0:*                                             
+LISTEN 0      5            0.0.0.0:8088       0.0.0.0:*                                             
+LISTEN 0      4096         0.0.0.0:8080       0.0.0.0:*                                             
+LISTEN 0      511          0.0.0.0:3002       0.0.0.0:*                                             
+LISTEN 0      4096            [::]:8080          [::]:*                                             
+LISTEN 0      511                *:3020             *:*                                             
+LISTEN 0      511                *:3010             *:*                                             
+LISTEN 0      511                *:3000             *:*                                             
+LISTEN 0      511                *:3005             *:*                                             
+=== NGINX SITE ===
+--- /etc/nginx/sites-enabled/studio.milkcat.org
+server {
+    listen 3001 ssl;
+    server_name studio.milkcat.org;
+
+    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+}
+
+server {
+    listen 8099;
+    server_name studio.milkcat.org;
+
+    root /home/ubuntu/prophecy-verifier;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 80;
+    server_name studio.milkcat.org;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name studio.milkcat.org;
+
+    ssl_certificate /etc/letsencrypt/live/studio.milkcat.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/studio.milkcat.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /home/ubuntu/zeus-writer/website/dist;
+    index index.html;
+
+
+    location / {
+        try_files $uri $uri/ /index.html;
+      }
+
+    location /prophecy/ {
+        alias /home/ubuntu/prophecy-verifier/;
+        try_files $uri $uri/ /prophecy/index.html;
+    }
+
+    location /api/cookies {
+        proxy_pass http://127.0.0.1:8088/api/cookies;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /novels/ {
+        alias /home/ubuntu/zeus-writer/website/dist/;
+        try_files $uri $uri/ /novels/index.html;
+      }
+
+    location /dashboard {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /ipgenome/api/ {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+      }
+
+    location /ipgenome {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+      }
+
+    location /iftv/renders/ {
+        alias /home/ubuntu/if-tv-station/public/renders/;
+        access_log off;
+    }
+
+    location /iftv/assets/uploads/ {
+        alias /home/ubuntu/if-tv-station/public/assets/uploads/;
+        access_log off;
+    }
+
+    location /iftv/assets/intros/ {
+        alias /home/ubuntu/if-tv-station/public/assets/intros/;
+        access_log off;
+    }
+
+    location /iftv {
+        proxy_pass http://localhost:3005;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /chamber-api {
+        proxy_pass http://localhost:3011;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location = /echo/chamber-extension.zip {
+        alias /home/ubuntu/metashield-protocol/web-feed/public/chamber-extension.zip;
+    }
+
+    location = /echo/README_TEST.md {
+        alias /home/ubuntu/metashield-protocol/web-feed/public/README_TEST.md;
+        default_type text/markdown;
+        charset utf-8;
+        charset_types text/markdown;
+    }
+
+    location /echo {
+        proxy_pass http://localhost:3010;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+    location /hanzi {
+        proxy_pass http://localhost:3020;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+      }
+
+
+    location /acas/ {
+        proxy_pass http://localhost:8090/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location = /acas {
+        return 301 https://$host/acas/;
+    }
+
+    error_page 404 /index.html;
+}
+=== LOCAL GATEWAY PROBE ===
+local_8766_health_code=404
+not found
+mutation=NONE
