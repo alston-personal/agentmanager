@@ -25,4 +25,4 @@ jobs:
       - name: Validate repair script syntax
         run: bash -n scripts/repair_antigravity_relay_user.sh
       - name: Validate repair governance contract
-        run: python3 -m pytest -q tests/test_antigravity_repair_contract.py
+        run: python3 -m unittest tests.test_antigravity_repair_contract -v
