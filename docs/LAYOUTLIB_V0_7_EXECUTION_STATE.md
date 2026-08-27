@@ -45,9 +45,18 @@ No raw image is required in the capability experience payload. The persistent st
 
 1. DONE in unit-level architecture proof: A/B/C experiences can consolidate to a canonical profile policy and a fresh Node D can consume that policy without local history.
 2. DONE in the real browser UI: explicit `finishModel` completion boundary and correction metrics are emitted from the Layout Lab session.
-3. IN PROGRESS end-to-end: browser edge queue and HTTP transport client exist; persistent AgentOS store and gateway service contract exist. The public `/layout-lab/api/...` proxy/service wiring is not yet proven live, so failed network submission intentionally leaves experience queued locally.
-4. NEXT: wire and verify the capability gateway on the Oracle host, then prove a real browser completion produces a server-side stored receipt and that a fresh browser receives canonical bootstrap state.
-5. AFTER CLOSED LOOP: stabilize Spatial IR topology/rooms/openings, consolidate historical source/version drift into canonical v0.7 source identity, and add regression fixtures before learned-policy promotion is allowed to influence production broadly.
+3. DONE locally on the Oracle capability node: the persistent capability gateway is running on `127.0.0.1:8767`; health returns HTTP 200 and abstract experience ingestion returns HTTP 202 with an idempotent receipt. Current persistence root is `/home/agentos-node/.local/share/agentos/capabilities`.
+4. BLOCKED only at the public transport boundary: current nginx has no `/layout-lab/api/` proxy, so those URLs fall through to the Studio SPA and return HTML with HTTP 200. The nginx configuration is root-owned and the runner has no non-interactive sudo. A reviewed route snippet is staged at `ops/nginx/layoutlib-capability-gateway.conf` but is not installed.
+5. NEXT after that route is installed/reloaded: prove a real public browser completion creates a server-side stored receipt; then publish a governed canonical state and verify a fresh browser bootstraps it before any local history.
+6. AFTER CLOSED LOOP: stabilize Spatial IR topology/rooms/openings, consolidate historical source/version drift into canonical v0.7 source identity, and add regression fixtures before learned-policy promotion is allowed to influence production broadly.
+
+## Verified host facts
+
+The Oracle host already had a separate legacy LayoutLib web demo at `127.0.0.1:8766`; it exposes `/api/health` and `/api/parse`. It is not the new AgentOS capability gateway and must not be confused with it.
+
+The new capability gateway runs independently at `127.0.0.1:8767` so the old parser demo remains untouched.
+
+The capability gateway user-systemd unit is staged, but the GitHub runner session currently has no usable user D-Bus. The current verified process therefore uses the controlled `nohup` fallback with `RUNNER_TRACKING_ID` removed so GitHub cleanup does not kill the intentional daemon. The unit remains the desired reboot-persistent mechanism once the user service bus is available.
 
 ## Transport contract
 
@@ -59,6 +68,12 @@ Browser transport uses the same-origin Layout Lab API namespace:
 Transport is at-least-once from the browser edge queue. Server-side ingestion is idempotent by `experience_id`: replay of the same payload is accepted as duplicate; reuse of the same ID with a different payload is rejected.
 
 The browser does not write canonical state. Canonical state remains a governed AgentOS output.
+
+Required nginx mapping is conceptually:
+
+`/layout-lab/api/... -> http://127.0.0.1:8767/...`
+
+The exact staged snippet is source-controlled in `ops/nginx/layoutlib-capability-gateway.conf`.
 
 ## Parked branches
 
