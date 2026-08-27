@@ -1,0 +1,56 @@
+name: Oracle Realm ONE Runtime Inspect
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/realm-one-runtime-inspect.json'
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect live ONE runtime
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          from agent_core.node_registry import NodeRegistry
+
+          def run(argv):
+              p=subprocess.run(argv,text=True,capture_output=True,check=False,timeout=10)
+              return {'argv':argv,'returncode':p.returncode,'stdout':p.stdout[-12000:],'stderr':p.stderr[-4000:]}
+
+          result={
+              'schema':'agentos.one-runtime-inspection/v0.1',
+              'processes':run(['bash','-lc',"ps -eo pid,user,args | grep -E 'agentos|realm_server|agentos-one' | grep -v grep || true"]),
+              'listeners':run(['bash','-lc',"ss -ltnp 2>/dev/null | grep -E ':8780|:8766' || true"]),
+              'user_services':run(['bash','-lc',"systemctl --user --no-pager --plain list-units --type=service 2>/dev/null | grep -E 'agentos|realm' || true"]),
+              'health_8780':run(['bash','-lc',"curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health || true"]),
+              'node_map':NodeRegistry().node_map(),
+          }
+          Path('/tmp/realm-one-runtime-inspection.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+      - name: Publish inspection evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-one-runtime-inspection.json .agentos/evidence/realm-one-runtime-inspection-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-one-runtime-inspection-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): inspect live ONE runtime'
+          git push origin HEAD:main
