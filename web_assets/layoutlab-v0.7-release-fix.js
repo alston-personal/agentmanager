@@ -6,7 +6,7 @@
 'use strict';
 const L=window.LayoutLibBrowser;
 if(!L)return;
-const RELEASE='0.7.5';
+const RELEASE='0.7.6';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const px=(ir,w)=>({
   start_px:L.worldToSourcePx(ir.coordinate_frame,w.start),
@@ -60,8 +60,37 @@ L.replayEdits=(base,edits=[])=>{
   return out;
 };
 
-/* v0.7.4: keep the original selection closure that owns `sel`, but make its
- * delete handler operate on the exact IR currently displayed. */
+/* Keep manual corrections as an editor-owned overlay. Parser parameter drafts
+ * may change the automatic base, but they must never erase or resurrect a
+ * user's add/erase/delete corrections. */
+const MANUAL_OPS=new Set(['add_wall','erase_segments','delete_walls']);
+let durableManualEdits=[];
+const extractManual=ir=>(ir?.edits||[]).filter(e=>MANUAL_OPS.has(e.op)).map(clone);
+function installDurableManualLayer(){
+  try{
+    if(typeof currentIr!=='undefined')durableManualEdits=extractManual(currentIr);
+    if(typeof manualEdits==='function'){
+      manualEdits=()=>durableManualEdits.map(clone);
+    }
+    if(typeof applyIr==='function'){
+      const beforeApply=applyIr;
+      applyIr=ir=>{
+        const incoming=extractManual(ir);
+        if(incoming.length)durableManualEdits=incoming;
+        return beforeApply(ir);
+      };
+    }
+    const clear=document.getElementById('clearEdits');
+    clear?.addEventListener('click',()=>{durableManualEdits=[]},true);
+    return true;
+  }catch(err){
+    console.error('LayoutLab durable manual layer failed',err);
+    return false;
+  }
+}
+
+/* Keep the original selection closure that owns `sel`, but make its delete
+ * handler operate on the exact IR currently displayed. */
 function prepareDisplayedIrDelete(){
   const button=document.getElementById('deleteSelected');
   if(!button)return false;
@@ -75,13 +104,13 @@ function prepareDisplayedIrDelete(){
         if(typeof previewIr!=='undefined')previewIr=null;
         if(typeof detectionDirty!=='undefined')detectionDirty=false;
       }
-    }catch(err){ console.error('LayoutLab v0.7 delete preparation failed',err); }
+    }catch(err){ console.error('LayoutLab delete preparation failed',err); }
   },true);
   return true;
 }
 
-/* v0.7.5 UX: selection is the default idle tool. The old explicit selection
- * button remains as an implementation hook for its closure, but is hidden. */
+/* Selection is the default idle tool. The old explicit selection button stays
+ * as an implementation hook for the closure that owns `sel`, but is hidden. */
 function enableDefaultSelection(){
   const selectButton=document.getElementById('selectWall');
   const displayCanvas=document.getElementById('display');
@@ -92,9 +121,7 @@ function enableDefaultSelection(){
     if(!selectButton.classList.contains('active'))selectButton.click();
   };
   setTimeout(enter,0);
-  const fileInput=document.getElementById('file');
-  fileInput?.addEventListener('change',()=>setTimeout(enter,0));
-  // Add/erase are single-use tools; after the gesture, return to normal select.
+  document.getElementById('file')?.addEventListener('change',()=>setTimeout(enter,0));
   displayCanvas?.addEventListener('pointerup',()=>{
     const add=document.getElementById('addWall'),erase=document.getElementById('eraseWall');
     if(add?.classList.contains('active')||erase?.classList.contains('active'))setTimeout(enter,0);
@@ -104,14 +131,70 @@ function enableDefaultSelection(){
 
 function bindDeleteKey(){
   document.addEventListener('keydown',e=>{
-    if(e.key!=='Delete')return;
+    if(!(e.key==='Delete'||e.code==='Delete'))return;
     const t=e.target;
     if(t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable))return;
     const button=document.getElementById('deleteSelected');
     if(!button||button.disabled)return;
     e.preventDefault();
     button.click();
-  });
+  },true);
+}
+
+/* 2D image navigation: wheel zooms the image/IR in-place; Space+left-drag or
+ * middle-drag pans. Left drag without Space remains wall selection. */
+function enable2dPanZoom(){
+  const stage=document.querySelector('.stage');
+  const canvas=document.getElementById('display');
+  if(!stage||!canvas)return false;
+  stage.style.overflow='auto';
+  canvas.style.maxWidth='none';
+  canvas.style.transformOrigin='0 0';
+  let zoom2d=1,space=false,panning=false,lastX=0,lastY=0;
+  const fitScale=()=>canvas.width>0?Math.min(1,Math.max(.05,(stage.clientWidth-2)/canvas.width)):1;
+  const apply=()=>{
+    const s=fitScale()*zoom2d;
+    if(canvas.width>0&&canvas.height>0){
+      canvas.style.width=`${Math.max(1,canvas.width*s)}px`;
+      canvas.style.height=`${Math.max(1,canvas.height*s)}px`;
+    }
+  };
+  const reset=()=>{zoom2d=1;stage.scrollLeft=0;stage.scrollTop=0;requestAnimationFrame(apply)};
+  document.getElementById('file')?.addEventListener('change',()=>setTimeout(reset,0));
+  window.addEventListener('resize',apply);
+  stage.addEventListener('wheel',e=>{
+    if(!canvas.width)return;
+    e.preventDefault();
+    const rect=stage.getBoundingClientRect();
+    const x=e.clientX-rect.left+stage.scrollLeft;
+    const y=e.clientY-rect.top+stage.scrollTop;
+    const old=zoom2d;
+    zoom2d=Math.max(.2,Math.min(8,zoom2d*(e.deltaY<0?1.12:1/1.12)));
+    if(old===zoom2d)return;
+    const ratio=zoom2d/old;
+    apply();
+    stage.scrollLeft=x*ratio-(e.clientX-rect.left);
+    stage.scrollTop=y*ratio-(e.clientY-rect.top);
+  },{passive:false});
+  document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.repeat)space=true},true);
+  document.addEventListener('keyup',e=>{if(e.code==='Space')space=false},true);
+  stage.addEventListener('pointerdown',e=>{
+    if(!(e.button===1||(e.button===0&&space)))return;
+    panning=true;lastX=e.clientX;lastY=e.clientY;
+    stage.setPointerCapture?.(e.pointerId);
+    e.preventDefault();e.stopPropagation();
+  },true);
+  stage.addEventListener('pointermove',e=>{
+    if(!panning)return;
+    stage.scrollLeft-=e.clientX-lastX;stage.scrollTop-=e.clientY-lastY;
+    lastX=e.clientX;lastY=e.clientY;
+    e.preventDefault();e.stopPropagation();
+  },true);
+  const stop=e=>{if(!panning)return;panning=false;e?.preventDefault?.();e?.stopPropagation?.()};
+  stage.addEventListener('pointerup',stop,true);
+  stage.addEventListener('pointercancel',stop,true);
+  setTimeout(apply,0);
+  return true;
 }
 
 function fixViewerZoom(){
@@ -124,7 +207,7 @@ function fixViewerZoom(){
     try{
       view.zoom=Math.max(.2,Math.min(8,Number(view.zoom||1)*factor));
       render3d();
-    }catch(err){ console.error('LayoutLab v0.7 viewer zoom failed',err); }
+    }catch(err){ console.error('LayoutLab viewer zoom failed',err); }
   };
   if(zin)zin.onclick=e=>{e.preventDefault();zoom(1.18)};
   if(zout)zout.onclick=e=>{e.preventDefault();zoom(1/1.18)};
@@ -138,21 +221,24 @@ function clarifyResetEdits(){
 }
 
 function labelRelease(){
+  const full=`Layout Lab v${RELEASE} · AgentOS closed loop`;
   const sub=document.querySelector('header .sub');
   if(sub)sub.textContent=`Layout Lab v${RELEASE}：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。`;
   const badge=document.querySelector('header .badge');
-  if(badge)badge.textContent=`Layout Lab v${RELEASE} · AgentOS closed loop`;
+  if(badge){badge.textContent=full;badge.title=`完整版本：${RELEASE}`;}
   document.querySelectorAll('.compactTitle').forEach(el=>{
-    if(/v0\.6\s+Learning contract/i.test(el.textContent||''))el.textContent=`v${RELEASE} Capability learning contract`;
-    else if(/^v0\.7\s+Capability learning contract$/i.test(el.textContent||''))el.textContent=`v${RELEASE} Capability learning contract`;
+    if(/^v0\.(6|7(?:\.\d+)?)\s+(Learning|Capability learning) contract$/i.test(el.textContent||''))el.textContent=`v${RELEASE} Capability learning contract`;
   });
+  document.documentElement.dataset.layoutLabVersion=RELEASE;
 }
 
 labelRelease();
+installDurableManualLayer();
 prepareDisplayedIrDelete();
 enableDefaultSelection();
 bindDeleteKey();
+enable2dPanZoom();
 fixViewerZoom();
 clarifyResetEdits();
-window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,fixedFrameZoom:true,labelRelease};
+window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,fixedFrameZoom:true,twoDPanZoom:true,durableManualEdits:true,labelRelease};
 })();
