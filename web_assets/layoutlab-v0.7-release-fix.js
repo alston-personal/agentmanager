@@ -1,11 +1,12 @@
 /* Layout Lab v0.7 release overlay
- * Keeps the v0.6 parser core compatible while presenting the v0.7 product
- * identity and making selected-wall deletion survive regenerated wall ids.
+ * Keeps the v0.6 parser core compatible while presenting the current v0.7
+ * product patch identity and fixing production editor interaction semantics.
  */
 (()=>{
 'use strict';
 const L=window.LayoutLibBrowser;
 if(!L)return;
+const RELEASE='0.7.5';
 const clone=v=>JSON.parse(JSON.stringify(v));
 const px=(ir,w)=>({
   start_px:L.worldToSourcePx(ir.coordinate_frame,w.start),
@@ -59,50 +60,99 @@ L.replayEdits=(base,edits=[])=>{
   return out;
 };
 
-/*
- * v0.7.4 fixes the actual button wiring.
- * The selection Set lives inside the v0.6 hotfix IIFE, so an external overlay
- * cannot replace button.onclick and still read `sel`. Doing that caused a
- * ReferenceError on click, which looked like a dead button. Instead, keep the
- * original onclick closure (which owns `sel`) and use a capture listener to
- * make currentIr equal to the exact displayed IR before that onclick runs.
- */
-function bindDisplayedIrDelete(){
+/* v0.7.4: keep the original selection closure that owns `sel`, but make its
+ * delete handler operate on the exact IR currently displayed. */
+function prepareDisplayedIrDelete(){
   const button=document.getElementById('deleteSelected');
-  if(!button||typeof displayIr!=='function'||button.dataset.v07DeleteBound==='1')return false;
-  button.dataset.v07DeleteBound='1';
-  let beforeCount=null;
+  if(!button)return false;
   button.addEventListener('click',()=>{
-    const shown=displayIr();
-    if(!shown)return;
-    beforeCount=(shown.walls||[]).length;
-    currentIr=clone(shown);
-    previewIr=null;
-    detectionDirty=false;
-  },true);
-  button.addEventListener('click',()=>{
-    Promise.resolve().then(()=>{
-      if(beforeCount===null||!currentIr)return;
-      const after=(currentIr.walls||[]).length;
-      if(after<beforeCount){
-        status.textContent=`已刪除 ${beforeCount-after} 面牆。`;
+    try{
+      if(typeof displayIr!=='function')return;
+      const shown=displayIr();
+      if(!shown)return;
+      if(typeof currentIr!=='undefined'&&shown!==currentIr){
+        currentIr=clone(shown);
+        if(typeof previewIr!=='undefined')previewIr=null;
+        if(typeof detectionDirty!=='undefined')detectionDirty=false;
       }
-      beforeCount=null;
-    });
+    }catch(err){ console.error('LayoutLab v0.7 delete preparation failed',err); }
+  },true);
+  return true;
+}
+
+/* v0.7.5 UX: selection is the default idle tool. The old explicit selection
+ * button remains as an implementation hook for its closure, but is hidden. */
+function enableDefaultSelection(){
+  const selectButton=document.getElementById('selectWall');
+  const displayCanvas=document.getElementById('display');
+  if(!selectButton)return false;
+  selectButton.style.display='none';
+  const enter=()=>{
+    if(selectButton.disabled)return;
+    if(!selectButton.classList.contains('active'))selectButton.click();
+  };
+  setTimeout(enter,0);
+  const fileInput=document.getElementById('file');
+  fileInput?.addEventListener('change',()=>setTimeout(enter,0));
+  // Add/erase are single-use tools; after the gesture, return to normal select.
+  displayCanvas?.addEventListener('pointerup',()=>{
+    const add=document.getElementById('addWall'),erase=document.getElementById('eraseWall');
+    if(add?.classList.contains('active')||erase?.classList.contains('active'))setTimeout(enter,0);
   });
   return true;
 }
 
-function labelV07(){
-  const sub=document.querySelector('header .sub');
-  if(sub)sub.textContent='Layout Lab v0.7：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。';
-  const badge=document.querySelector('header .badge');
-  if(badge)badge.textContent='Layout Lab v0.7 · AgentOS closed loop';
-  document.querySelectorAll('.compactTitle').forEach(el=>{
-    if(/v0\.6\s+Learning contract/i.test(el.textContent||''))el.textContent='v0.7 Capability learning contract';
+function bindDeleteKey(){
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Delete')return;
+    const t=e.target;
+    if(t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable))return;
+    const button=document.getElementById('deleteSelected');
+    if(!button||button.disabled)return;
+    e.preventDefault();
+    button.click();
   });
 }
-labelV07();
-bindDisplayedIrDelete();
-window.LayoutLabV07Release={version:'0.7.4',robustDelete:true,displayedIrDelete:true,labelV07,bindDisplayedIrDelete};
+
+function fixViewerZoom(){
+  const stage=document.getElementById('viewerStage');
+  const canvas=document.getElementById('viewer');
+  const zin=document.getElementById('zoomIn'),zout=document.getElementById('zoomOut');
+  if(stage){stage.style.overflow='hidden';stage.style.contain='layout paint size';}
+  if(canvas){canvas.style.position='absolute';canvas.style.inset='0';canvas.style.width='100%';canvas.style.height='100%';}
+  const zoom=factor=>{
+    try{
+      view.zoom=Math.max(.2,Math.min(8,Number(view.zoom||1)*factor));
+      render3d();
+    }catch(err){ console.error('LayoutLab v0.7 viewer zoom failed',err); }
+  };
+  if(zin)zin.onclick=e=>{e.preventDefault();zoom(1.18)};
+  if(zout)zout.onclick=e=>{e.preventDefault();zoom(1/1.18)};
+}
+
+function clarifyResetEdits(){
+  const button=document.getElementById('clearEdits');
+  if(!button)return;
+  button.textContent='清除手動修正';
+  button.title='移除補牆、擦牆與刪牆等手動修正，回到本次自動分析的原始結果。';
+}
+
+function labelRelease(){
+  const sub=document.querySelector('header .sub');
+  if(sub)sub.textContent=`Layout Lab v${RELEASE}：2D / 3D 同屏、可編輯 Spatial IR、修正成本學習，以及 AgentOS Capability closed loop。`;
+  const badge=document.querySelector('header .badge');
+  if(badge)badge.textContent=`Layout Lab v${RELEASE} · AgentOS closed loop`;
+  document.querySelectorAll('.compactTitle').forEach(el=>{
+    if(/v0\.6\s+Learning contract/i.test(el.textContent||''))el.textContent=`v${RELEASE} Capability learning contract`;
+    else if(/^v0\.7\s+Capability learning contract$/i.test(el.textContent||''))el.textContent=`v${RELEASE} Capability learning contract`;
+  });
+}
+
+labelRelease();
+prepareDisplayedIrDelete();
+enableDefaultSelection();
+bindDeleteKey();
+fixViewerZoom();
+clarifyResetEdits();
+window.LayoutLabV07Release={version:RELEASE,robustDelete:true,displayedIrDelete:true,defaultSelection:true,deleteKey:true,fixedFrameZoom:true,labelRelease};
 })();
