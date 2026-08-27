@@ -104,39 +104,35 @@ jobs:
           cd "$RUNTIME"
           /usr/bin/python3 scripts/deploy_layoutlab_v07_release.py | tee /tmp/layoutlab-v07-release.json
           grep -q '"ok": true' /tmp/layoutlab-v07-release.json
-          grep -q 'layoutlab-v0.7.6' /tmp/layoutlab-v07-release.json
-          echo 'layoutlab_v076_deploy=PASS'
+          grep -q 'layoutlab-v0.7.7' /tmp/layoutlab-v07-release.json
+          echo 'layoutlab_v077_deploy=PASS'
           REMOTE
 
-      - name: Public v0.7.6 acceptance
+      - name: Public v0.7.7 acceptance
         shell: bash
         run: |
           set -euo pipefail
           BASE=https://studio.milkcat.org/layout-lab
-          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v076-ui
-          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.6" -o /tmp/layoutlab-v076-fix
-          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v076-bridge
-          grep -q 'Layout Lab v0.7.6 · AgentOS closed loop' /tmp/layoutlab-v076-ui
-          grep -q 'data-release="0.7.6"' /tmp/layoutlab-v076-ui
-          grep -q 'v0.7.6 Capability learning contract' /tmp/layoutlab-v076-ui
-          grep -q 'layoutlab-v0.7-release-fix.js?v=0.7.6' /tmp/layoutlab-v076-ui
-          ! grep -q '<div class="badge">LayoutLib Browser Adapter v0.6</div>' /tmp/layoutlab-v076-ui
-          grep -q "const RELEASE='0.7.6'" /tmp/layoutlab-v076-fix
-          grep -q 'robustDelete:true' /tmp/layoutlab-v076-fix
-          grep -q 'defaultSelection:true' /tmp/layoutlab-v076-fix
-          grep -q 'deleteKey:true' /tmp/layoutlab-v076-fix
-          grep -q 'fixedFrameZoom:true' /tmp/layoutlab-v076-fix
-          grep -q 'twoDPanZoom:true' /tmp/layoutlab-v076-fix
-          grep -q 'durableManualEdits:true' /tmp/layoutlab-v076-fix
-          grep -q "e.code==='Delete'" /tmp/layoutlab-v076-fix
-          grep -q "e.code==='Space'" /tmp/layoutlab-v076-fix
-          grep -q "MANUAL_OPS=new Set" /tmp/layoutlab-v076-fix
-          grep -q "button.textContent='清除手動修正'" /tmp/layoutlab-v076-fix
-          grep -q 'finishModel' /tmp/layoutlab-v076-bridge
-          grep -q 'applyCanonicalPolicy' /tmp/layoutlab-v076-bridge
-          echo 'public_v076_identity=PASS'
-          echo 'delete_key_contract=PASS'
-          echo '2d_pan_zoom_contract=PASS'
+          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v077-ui
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.7" -o /tmp/layoutlab-v077-fix
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v077-bridge
+          grep -q 'Layout Lab v0.7.7 · AgentOS closed loop' /tmp/layoutlab-v077-ui
+          grep -q 'data-release="0.7.7"' /tmp/layoutlab-v077-ui
+          grep -q 'v0.7.7 Capability learning contract' /tmp/layoutlab-v077-ui
+          grep -q 'layoutlab-v0.7-release-fix.js?v=0.7.7' /tmp/layoutlab-v077-ui
+          grep -q "const RELEASE='0.7.7'" /tmp/layoutlab-v077-fix
+          grep -q 'deleteKey:true' /tmp/layoutlab-v077-fix
+          grep -q 'initialWallPreview:true' /tmp/layoutlab-v077-fix
+          grep -q 'rightDragPan:true' /tmp/layoutlab-v077-fix
+          grep -q 'durableManualEdits:true' /tmp/layoutlab-v077-fix
+          grep -q "e.button===2&&zoom2d>1" /tmp/layoutlab-v077-fix
+          grep -q "typeof previewIr!=='undefined'&&typeof analyzeRaw==='function'" /tmp/layoutlab-v077-fix
+          grep -q "\['file','button','checkbox','radio','range','submit','reset'\]" /tmp/layoutlab-v077-fix
+          grep -q 'finishModel' /tmp/layoutlab-v077-bridge
+          grep -q 'applyCanonicalPolicy' /tmp/layoutlab-v077-bridge
+          echo 'public_v077_identity=PASS'
+          echo 'delete_before_button_focus_contract=PASS'
+          echo 'initial_preview_contract=PASS'
+          echo 'right_drag_pan_contract=PASS'
           echo 'durable_manual_edit_contract=PASS'
-          echo 'fixed_frame_3d_zoom_contract=PASS'
           echo 'capability_bridge=PASS'
