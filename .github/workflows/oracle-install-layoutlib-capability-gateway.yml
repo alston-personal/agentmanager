@@ -53,8 +53,8 @@ jobs:
           [Install]
           WantedBy=default.target
           EOF
-          UID=$(id -u)
-          export XDG_RUNTIME_DIR="/run/user/$UID"
+          USER_UID=$(id -u)
+          export XDG_RUNTIME_DIR="/run/user/$USER_UID"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
           systemctl --user daemon-reload
           systemctl --user enable --now layoutlab-capability-gateway.service
