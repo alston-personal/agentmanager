@@ -6,11 +6,13 @@ on:
       - feature/realm-node-fabric-readiness
     paths:
       - 'scripts/repair_antigravity_relay_user.sh'
+      - 'scripts/install_action_relay_user.sh'
       - 'tests/test_antigravity_repair_contract.py'
       - '.github/workflows/readiness-repair-contract.yml'
   pull_request:
     paths:
       - 'scripts/repair_antigravity_relay_user.sh'
+      - 'scripts/install_action_relay_user.sh'
       - 'tests/test_antigravity_repair_contract.py'
       - '.github/workflows/readiness-repair-contract.yml'
 
@@ -23,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate repair script syntax
-        run: bash -n scripts/repair_antigravity_relay_user.sh
+        run: |
+          bash -n scripts/repair_antigravity_relay_user.sh
+          bash -n scripts/install_action_relay_user.sh
       - name: Validate repair governance contract
         run: python3 -m unittest tests.test_antigravity_repair_contract -v
