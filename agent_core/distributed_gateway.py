@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlparse
 from runtime_core.canonical_ir import CanonicalIR
 from runtime_core.remote_runtime import RemoteRuntimeResult
 
+from .canonical_context import CanonicalContextStore
 from .client_auth import ClientPrincipal, ClientTokenStore
 from .context_compiler import compile_execution_context
 from .distributed_control_plane import DistributedControlPlane
@@ -32,6 +33,7 @@ class DistributedGatewayService:
 
     def __init__(self, store: DistributedControlPlane) -> None:
         self.store = store
+        self.context_store = CanonicalContextStore(store.db_path)
 
     def attach(self, body: dict[str, Any]) -> dict[str, Any]:
         project_id = str(body.get("project_id") or "").strip()
@@ -41,7 +43,12 @@ class DistributedGatewayService:
         if not isinstance(agent, dict):
             raise ValueError("agent must be an object")
         state = read_project_state(self.store, project_id)
-        execution_context = compile_execution_context(project_id, state, agent=agent)
+        execution_context = compile_execution_context(
+            project_id,
+            state,
+            agent=agent,
+            context_store=self.context_store,
+        )
         return {
             "protocol": CORE_PROTOCOL,
             "session_id": f"aos_{uuid.uuid4().hex}",
@@ -55,6 +62,7 @@ class DistributedGatewayService:
                 "task.read": True,
                 "receipt.read": True,
                 "context.compile": True,
+                "context.checkpoint": True,
                 "production.deploy": "gated",
             },
         }
