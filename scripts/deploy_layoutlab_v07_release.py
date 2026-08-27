@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -23,9 +24,11 @@ def main() -> int:
     if not BASE_DEPLOY.is_file() or not OVERLAY.is_file():
         raise SystemExit('v0.7 release source incomplete')
 
+    env = os.environ.copy()
+    env['LAYOUTLAB_RELEASE_BASE_DEPLOY'] = '1'
     base = subprocess.run(
         ['/usr/bin/python3', str(BASE_DEPLOY)],
-        cwd=str(ROOT), text=True, capture_output=True, timeout=60, check=False,
+        cwd=str(ROOT), text=True, capture_output=True, timeout=60, check=False, env=env,
     )
     if base.returncode != 0:
         print(base.stdout, end='')
@@ -37,7 +40,7 @@ def main() -> int:
     text = INDEX.read_text(encoding='utf-8')
     text = text.replace(
         'LayoutLib v0.6：2D / 3D 同屏、即時擦除反白、Draft/Committed 分離，以及從圖面特徵抽象學習 parser profile；不是記住單一圖片。',
-        f'Layout Lab v{RELEASE}：LayoutLib 的 2D / 3D Spatial IR 編輯與 AgentOS Capability closed-loop demo。',
+        'Floor Plan → Spatial IR → 3D',
     )
     text = text.replace(
         '<div class="badge">LayoutLib Browser Adapter v0.6</div>',
@@ -45,7 +48,7 @@ def main() -> int:
     )
     text = text.replace(
         '<div class="compactTitle">v0.6 Learning contract</div>',
-        f'<div class="compactTitle">v{RELEASE} Capability learning contract</div>',
+        '<div class="compactTitle">Semantic IR</div>',
     )
     for asset in ['layoutlib-spatial-semantics-v0.1.js','layoutlib-editor-v0.7.js','layoutlab-editor-ui-v0.7.js']:
         text = text.replace(f'<script src="./{asset}"></script>', f'<script src="./{asset}?v={RELEASE}"></script>')
@@ -64,8 +67,8 @@ def main() -> int:
     deployed = INDEX.read_text(encoding='utf-8')
     required = [
         f'<div class="badge" data-release="{RELEASE}">v{RELEASE}</div>',
-        f'Layout Lab v{RELEASE}：',
-        f'v{RELEASE} Capability learning contract',
+        'Floor Plan → Spatial IR → 3D',
+        '<div class="compactTitle">Semantic IR</div>',
         f'layoutlib-spatial-semantics-v0.1.js?v={RELEASE}',
         f'layoutlib-editor-v0.7.js?v={RELEASE}',
         f'layoutlab-editor-ui-v0.7.js?v={RELEASE}',
@@ -73,8 +76,10 @@ def main() -> int:
         'layoutlab-capability-bridge-v0.7.js',
     ]
     missing = [x for x in required if x not in deployed]
-    if missing:
-        raise SystemExit(f'v0.7 release acceptance failed: {missing}')
+    forbidden = ['AgentOS closed loop', 'Capability learning contract']
+    bad = [x for x in forbidden if x in deployed]
+    if missing or bad:
+        raise SystemExit(f'v0.7 release acceptance failed: missing={missing} forbidden={bad}')
 
     semantic = TARGET / 'layoutlib-spatial-semantics-v0.1.js'
     if not semantic.is_file():
@@ -102,6 +107,7 @@ def main() -> int:
         'release': f'layoutlab-v{RELEASE}',
         'mode': 'layoutlib-v0.7-library-backed-demo+semantic-mvp',
         'semantic_mvp': True,
+        'authoritative_publisher': True,
         'index_sha256': sha(INDEX),
         'semantic_sha256': sha(semantic),
         'overlay_sha256': sha(TARGET_OVERLAY),
