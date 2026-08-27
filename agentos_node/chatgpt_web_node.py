@@ -1,10 +1,7 @@
 """Bootstrap/resume contract for ChatGPT Web as an AgentOS web node.
 
-This module deliberately stays transport-neutral. It does not automate the
-ChatGPT UI and it never stores browser credentials. Its only job is to attach
-to the authoritative Control Plane, restore canonical project state, and
-compile that state into the immutable WebAgentAdapter request consumed by a
-browser-side bridge.
+The ChatGPT node is account/cloud scoped. Device, browser and conversation are
+transport details only and must never become the durable AgentOS identity.
 """
 
 from __future__ import annotations
@@ -20,6 +17,7 @@ from .web_agent_adapter import WebAgentAdapter
 
 BOOTSTRAP_PROTOCOL = "agentos.chatgpt-web-bootstrap/v1"
 DEFAULT_RUNTIME_ID = "chatgpt-web"
+DEFAULT_TRANSPORT = "mcp"
 
 
 @dataclass(frozen=True)
@@ -45,8 +43,6 @@ def build_bootstrap_from_attachment(
     *,
     runtime_id: str = DEFAULT_RUNTIME_ID,
 ) -> ChatGPTWebBootstrap:
-    """Compile a `/v1/attach` response into a deterministic resume packet."""
-
     project_id = str(attachment.get("project_id") or "").strip()
     if not project_id:
         raise ValueError("attachment is missing project_id")
@@ -111,14 +107,28 @@ def bootstrap_chatgpt_web(
     project_id: str,
     *,
     runtime_id: str = DEFAULT_RUNTIME_ID,
+    principal_id: str | None = None,
+    transport: str = DEFAULT_TRANSPORT,
 ) -> ChatGPTWebBootstrap:
-    """Attach ChatGPT Web to one AgentOS project and restore its current state."""
+    """Attach one account-scoped ChatGPT executor to AgentOS.
+
+    `principal_id` identifies the stable ChatGPT/account integration principal.
+    Device/browser/conversation identifiers intentionally do not participate in
+    the durable identity contract.
+    """
 
     project_id = str(project_id or "").strip()
     if not project_id:
         raise ValueError("project_id is required")
-    attachment = client.attach(
-        project_id,
-        agent={"runtime_id": runtime_id, "kind": "chatgpt_web", "transport": "browser"},
-    )
+    transport = str(transport or DEFAULT_TRANSPORT).strip() or DEFAULT_TRANSPORT
+    agent: dict[str, Any] = {
+        "runtime_id": runtime_id,
+        "kind": "chatgpt_web",
+        "transport": transport,
+        "identity_scope": "account",
+    }
+    if principal_id:
+        agent["principal_id"] = str(principal_id).strip()
+
+    attachment = client.attach(project_id, agent=agent)
     return build_bootstrap_from_attachment(attachment, runtime_id=runtime_id)
