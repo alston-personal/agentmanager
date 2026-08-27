@@ -1,0 +1,52 @@
+name: Oracle Antigravity Relay Restart
+
+on:
+  push:
+    paths:
+      - '.agentos/commands/antigravity-relay-restart.json'
+
+permissions:
+  contents: write
+
+jobs:
+  restart:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restart relay through allowlisted action boundary
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agentos_node.action_relay import ActionRelayClient
+          client=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          cap=client.submit('agentos.antigravity.restart', {'service':'agentos-antigravity-relay'})
+          cid=cap['capsule_id']
+          for _ in range(40):
+              r=client.receipt(cid)
+              if r:
+                  print(json.dumps(r,indent=2,ensure_ascii=False))
+                  Path('/tmp/antigravity-restart-receipt.json').write_text(json.dumps(r,indent=2)+'\n')
+                  raise SystemExit(0 if r.get('ok') else 1)
+              time.sleep(1)
+          raise SystemExit('action relay receipt timeout')
+          PY
+      - name: Publish evidence
+        if: always()
+        shell: bash
+        run: |
+          test -f /tmp/antigravity-restart-receipt.json || exit 0
+          mkdir -p .agentos/evidence
+          cp /tmp/antigravity-restart-receipt.json .agentos/evidence/antigravity-relay-restart-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/antigravity-relay-restart-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): restart Antigravity relay'
+          git push origin HEAD:main
