@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {
     'index.html': ROOT / 'web_assets/layoutlab_v0_5.html',
     'layoutlib-browser-v0.5.js': ROOT / 'web_assets/layoutlib-browser-v0.5.js',
+    'layoutlib-spatial-semantics-v0.1.js': ROOT / 'web_assets/layoutlib-spatial-semantics-v0.1.js',
     'layoutlib-editor-v0.7.js': ROOT / 'web_assets/layoutlib-editor-v0.7.js',
     'layoutlab-editor-ui-v0.7.js': ROOT / 'web_assets/layoutlab-editor-ui-v0.7.js',
     'layoutlab-capability-bridge-v0.7.js': ROOT / 'web_assets/layoutlab-capability-bridge-v0.7.js',
@@ -26,6 +27,10 @@ def _identity(name: str, data: bytes) -> None:
         required = [b'LayoutLib Browser Adapter v0.6.0', b"version:'0.6.0'", b'previewEraseStrokePx', b'extractProfileFeatures', b'predictProfileParameters', b'makeLearningObservation', b'replayEdits']
         if not all(x in data for x in required):
             raise SystemExit('browser parser core failed identity check')
+    elif name == 'layoutlib-spatial-semantics-v0.1.js':
+        required = [b'LayoutLib Spatial Semantics v0.1.0', b'candidateOpenings', b'classifyOpening', b'segmentRooms', b'token_cost:0']
+        if not all(x in data for x in required):
+            raise SystemExit('LayoutLib spatial semantics MVP failed identity check')
     elif name == 'layoutlib-editor-v0.7.js':
         required = [b'LayoutLib Editor Semantics v0.7.0', b'deleteWallsById', b'moveWallPx', b'replayCorrections', b'matchWallByEvidence', b'createCorrectionSession']
         if not all(x in data for x in required):
@@ -52,6 +57,7 @@ def main() -> int:
         if name == 'index.html':
             text = data.decode('utf-8')
             tags = [
+                '<script src="./layoutlib-spatial-semantics-v0.1.js"></script>',
                 '<script src="./layoutlib-editor-v0.7.js"></script>',
                 '<script src="./layoutlab-editor-ui-v0.7.js"></script>',
                 '<script src="./layoutlab-capability-bridge-v0.7.js"></script>',
