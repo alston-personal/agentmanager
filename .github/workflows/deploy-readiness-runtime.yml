@@ -1,0 +1,179 @@
+name: Deploy Realm Readiness Runtime
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/deploy-readiness-runtime.yml'
+      - 'agent_core/**'
+      - 'agentos_node/antigravity_relay.py'
+      - 'agentos_node/antigravity_relay_worker.py'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: realm-readiness-runtime
+  cancel-in-progress: false
+
+env:
+  READINESS_REF: feature/realm-node-fabric-readiness
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Validate deployment settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install branch runtime under ubuntu identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$READINESS_REF" <<'REMOTE'
+          set -euo pipefail
+          REF="$1"
+          REPO=/home/ubuntu/agentmanager
+          DATA=/home/ubuntu/agent-data
+          ROOT=/home/ubuntu/.local/share/agentos/readiness-runtime
+          SAFE_REF="${REF//\//_}"
+          RELEASE="$ROOT/releases/$SAFE_REF"
+          UNIT_DIR="$HOME/.config/systemd/user"
+          ONE_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
+          RELAY_UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
+          SPOOL="$DATA/runtime/antigravity-relay"
+
+          test "$(id -un)" = ubuntu
+          for user in ubuntu agentos-node; do
+            id -Gn "$user" | tr ' ' '\n' | grep -qx agentos
+          done
+          mkdir -p "$RELEASE" "$UNIT_DIR" "$DATA/logs"
+          git -C "$REPO" fetch origin "$REF"
+          rm -rf "$RELEASE/venv"
+          python3 -m venv "$RELEASE/venv"
+          "$RELEASE/venv/bin/python" -m pip install --upgrade pip >/dev/null
+          "$RELEASE/venv/bin/python" -m pip install "git+https://github.com/alston-personal/agentmanager.git@$REF"
+
+          AGENT_DATA_ROOT="$DATA" "$RELEASE/venv/bin/agentos-one" init --realm-id realm-alston >/dev/null
+          for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
+            mkdir -p "$d"
+            chgrp agentos "$d"
+            chmod 2770 "$d"
+          done
+
+          cat > "$ONE_UNIT" <<EOF
+          [Unit]
+          Description=AgentOS ONE Realm Fabric (readiness branch)
+          After=network.target
+
+          [Service]
+          Type=simple
+          Environment=AGENT_DATA_ROOT=$DATA
+          ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
+          Restart=always
+          RestartSec=3
+          UMask=0007
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+          cat > "$RELAY_UNIT" <<EOF
+          [Unit]
+          Description=AgentOS Antigravity Relay (readiness branch, governed cross-user boundary)
+          After=default.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory=$REPO
+          Environment=PYTHONPATH=$RELEASE/venv/lib/python3.10/site-packages
+          UMask=0007
+          ExecStart=/usr/bin/sg agentos -c '$RELEASE/venv/bin/python -m agentos_node.antigravity_relay_worker --root $SPOOL'
+          Restart=on-failure
+          RestartSec=3
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+          systemctl --user daemon-reload
+          systemctl --user enable agentos-realm-fabric.service agentos-antigravity-relay.service >/dev/null
+          systemctl --user restart agentos-realm-fabric.service
+          systemctl --user restart agentos-antigravity-relay.service
+
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null && break
+            sleep 1
+          done
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
+          systemctl --user is-active --quiet agentos-realm-fabric.service
+          systemctl --user is-active --quiet agentos-antigravity-relay.service
+
+          bootstrap_code=$(curl -sS -o /tmp/bootstrap-body -w '%{http_code}' --max-time 3 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750')
+          benchmark_code=$(curl -sS -o /tmp/benchmark-body -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark)
+          test "$bootstrap_code" = 401
+          test "$benchmark_code" = 401
+          echo "readiness_ref=$REF"
+          echo "one_health=PASS"
+          echo "bootstrap_route=PASS"
+          echo "benchmark_route=PASS"
+          echo "relay_service=PASS"
+          REMOTE
+
+  relay-smoke:
+    needs: deploy
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify agentos-node to ubuntu relay handoff
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule=client.submit(
+              project_id='realm-readiness-relay-smoke',
+              canonical_ir={'goal':'Verify the governed cross-user Antigravity relay boundary only.'},
+              instruction='Return exactly AGENTOS_RELAY_SMOKE_PASS. Do not modify files or services.',
+              workspace='/home/ubuntu/agentmanager',
+          )
+          for _ in range(90):
+              receipt=client.receipt(capsule['capsule_id'])
+              if receipt:
+                  print(json.dumps(receipt, indent=2, ensure_ascii=False))
+                  if not receipt.get('ok'):
+                      raise SystemExit('relay receipt failed')
+                  if 'PermissionError' in json.dumps(receipt):
+                      raise SystemExit('cross-user spool permission regression')
+                  if 'AGENTOS_RELAY_SMOKE_PASS' not in str(receipt.get('stdout') or ''):
+                      raise SystemExit('executor did not return smoke marker')
+                  print('cross_user_relay=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('relay smoke receipt timeout')
+          PY
