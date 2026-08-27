@@ -1,0 +1,46 @@
+name: AgentOS Engineering Authority
+
+on:
+  push:
+    paths:
+      - '.agentos/engineering/**'
+      - 'agent_core/engineering_authority.py'
+      - 'tests/test_engineering_authority.py'
+  pull_request:
+    paths:
+      - '.agentos/engineering/**'
+      - 'agent_core/engineering_authority.py'
+      - 'tests/test_engineering_authority.py'
+
+jobs:
+  authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate canonical engineering state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from agent_core.engineering_authority import load_engineering_state, evaluate_branch_write
+
+          state=load_engineering_state()
+          authority=state['authority']
+          assert authority['ownership_mode'] == 'single-writer'
+          assert authority['main_write_policy'] == 'pull-request-only'
+          assert authority['merge_target'] == 'main'
+          active=authority['active_branch']
+          assert active and active != 'main'
+
+          owner=evaluate_branch_write(role=authority['owner_role'], branch=active, state=state)
+          assert owner.allowed and owner.permission == 'write', owner
+          main=evaluate_branch_write(role=authority['owner_role'], branch='main', state=state)
+          assert not main.allowed, main
+          outsider=evaluate_branch_write(role='project-agent', branch=active, state=state)
+          assert not outsider.allowed, outsider
+          print(json.dumps({'engineering_authority':'PASS','active_branch':active,'merge_target':'main'},indent=2))
+          PY
+      - name: Run authority tests
+        run: python3 -m unittest tests.test_engineering_authority -v
