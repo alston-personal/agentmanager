@@ -29,12 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate image-to-3D Character Blueprint source
+      - name: Validate Character Blueprint v0.5 source contract
         shell: bash
         run: |
           set -euo pipefail
           PAGE=web_assets/character-blueprint-poc.html
           DEPLOY=scripts/deploy_character_blueprint_poc.py
+          # The checked-in page remains the stable v0.4 base; the authoritative deployer publishes v0.5.
           grep -q 'data-version="0.4.0"' "$PAGE"
           grep -q 'character-blueprint-ir/v0.4' "$PAGE"
           grep -q 'threeDProxy:true' "$PAGE"
@@ -44,11 +45,15 @@ jobs:
           grep -q '3D Blueprint' "$PAGE"
           grep -q '技術細節 / Character IR' "$PAGE"
           grep -q '"llm_tokens":0' "$PAGE"
-          grep -q 'visibility-gated-v0.4.1' "$DEPLOY"
-          grep -q 'character-blueprint-poc-v0.4.1' "$DEPLOY"
-          grep -q 'browserSelfTest:true' "$DEPLOY"
+          grep -q 'silhouette-envelope-v0.5' "$DEPLOY"
+          grep -q 'border-evidence-silhouette/v0.5' "$DEPLOY"
+          grep -q 'threejs-silhouette-envelope/v0.5' "$DEPLOY"
+          grep -q 'function envelopeGeometry' "$DEPLOY"
+          grep -q 'extractSilhouetteProfile' "$DEPLOY"
+          grep -q 'character-blueprint-poc-v0.5.0' "$DEPLOY"
+          grep -q 'silhouetteEnvelope:true' "$DEPLOY"
           grep -q '/poc/character-blueprint/' "$DEPLOY"
-          echo 'character_blueprint_v041_source=PASS'
+          echo 'character_blueprint_v050_source=PASS'
 
       - name: Geometry regression gate
         shell: bash
@@ -56,9 +61,11 @@ jobs:
           set -euo pipefail
           python3 scripts/character_blueprint_geometry_selftest.py | tee /tmp/character-blueprint-regression.json
           grep -q '"ok": true' /tmp/character-blueprint-regression.json
+          grep -q 'character-blueprint-geometry-regression/v2' /tmp/character-blueprint-regression.json
+          grep -q 'silhouette-envelope-v0.5' /tmp/character-blueprint-regression.json
           grep -q 'portrait_upperbody_regression_01' /tmp/character-blueprint-regression.json
           grep -q '"coverage": "upper_body"' /tmp/character-blueprint-regression.json
-          echo 'character_blueprint_geometry_regression=PASS'
+          echo 'character_blueprint_geometry_regression_v05=PASS'
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -90,46 +97,49 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1]); sha=sys.argv[2]; receipt=Path(sys.argv[3])
           rels=['scripts/deploy_character_blueprint_poc.py','scripts/character_blueprint_geometry_selftest.py','web_assets/character-blueprint-poc.html']
-          data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.4.1','source_commit':sha,'runtime_root':str(root),'sha256':{r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}}
+          data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.5.0','source_commit':sha,'runtime_root':str(root),'sha256':{r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}}
           receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n'); print(json.dumps(data,sort_keys=True))
           PY
           cd "$RUNTIME"
           /usr/bin/python3 scripts/character_blueprint_geometry_selftest.py | tee /tmp/character-blueprint-regression-runtime.json
           grep -q '"ok": true' /tmp/character-blueprint-regression-runtime.json
+          grep -q 'silhouette-envelope-v0.5' /tmp/character-blueprint-regression-runtime.json
           /usr/bin/python3 scripts/deploy_character_blueprint_poc.py | tee /tmp/character-blueprint-release.json
           grep -q '"ok": true' /tmp/character-blueprint-release.json
-          grep -q 'character-blueprint-poc-v0.4.1' /tmp/character-blueprint-release.json
-          grep -q '"three_d_proxy": true' /tmp/character-blueprint-release.json
+          grep -q 'character-blueprint-poc-v0.5.0' /tmp/character-blueprint-release.json
+          grep -q '"three_d_envelope": true' /tmp/character-blueprint-release.json
+          grep -q 'border-evidence-silhouette/v0.5' /tmp/character-blueprint-release.json
           grep -q '"browser_self_test": true' /tmp/character-blueprint-release.json
-          grep -q '"visibility_gated_body_frame": true' /tmp/character-blueprint-release.json
           rm -rf "$STAGE"
-          echo 'character_blueprint_v041_deploy=PASS'
+          echo 'character_blueprint_v050_deploy=PASS'
           REMOTE
 
-      - name: Public v0.4.1 demo acceptance
+      - name: Public v0.5 demo acceptance
         shell: bash
         run: |
           set -euo pipefail
           URL=https://studio.milkcat.org/poc/character-blueprint/
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$URL" -o /tmp/character-blueprint-public
-          grep -q 'meta name="character-blueprint-poc" content="v0.4.1"' /tmp/character-blueprint-public
-          grep -q '<title>Character Blueprint POC v0.4.1</title>' /tmp/character-blueprint-public
-          grep -q 'character-blueprint-ir/v0.4' /tmp/character-blueprint-public
-          grep -q 'threeDProxy:true' /tmp/character-blueprint-public
-          grep -q 'interactivePartLinking:true' /tmp/character-blueprint-public
+          grep -q 'data-version="0.5.0"' /tmp/character-blueprint-public
+          grep -q 'meta name="character-blueprint-poc" content="v0.5.0"' /tmp/character-blueprint-public
+          grep -q '<title>Character Blueprint POC v0.5</title>' /tmp/character-blueprint-public
+          grep -q 'character-blueprint-ir/v0.5' /tmp/character-blueprint-public
+          grep -q 'threejs-silhouette-envelope/v0.5' /tmp/character-blueprint-public
+          grep -q 'border-evidence-silhouette/v0.5' /tmp/character-blueprint-public
+          grep -q 'silhouetteEnvelope:true' /tmp/character-blueprint-public
           grep -q 'browserSelfTest:true' /tmp/character-blueprint-public
           grep -q 'selfTestLandmarks' /tmp/character-blueprint-public
           grep -q 'OrbitControls' /tmp/character-blueprint-public
-          grep -q 'visibility-gated-v0.4.1' /tmp/character-blueprint-public
-          grep -q '丟一張角色圖，先把她立起來' /tmp/character-blueprint-public
+          grep -q 'silhouette-envelope-v0.5' /tmp/character-blueprint-public
+          grep -q 'CHARACTER BLUEPRINT · IMAGE → 3D ENVELOPE' /tmp/character-blueprint-public
           grep -q '3D Blueprint' /tmp/character-blueprint-public
           grep -q '技術細節 / Character IR' /tmp/character-blueprint-public
           grep -q '"llm_tokens":0' /tmp/character-blueprint-public
           if grep -q 'Milkcat Studio Portal' /tmp/character-blueprint-public && ! grep -q 'character-blueprint-poc' /tmp/character-blueprint-public; then
             echo 'ERROR: Studio homepage fallback detected' >&2; exit 1
           fi
-          echo 'public_character_blueprint_v041_identity=PASS'
-          echo 'upper_body_proxy_contract=PASS'
+          echo 'public_character_blueprint_v050_identity=PASS'
+          echo 'silhouette_envelope_contract=PASS'
 
   browser-e2e:
     needs: release
@@ -166,10 +176,11 @@ jobs:
           set -euo pipefail
           node scripts/character_blueprint_browser_smoke.mjs | tee /tmp/character-blueprint-browser-smoke.json
           grep -q '"ok": true' /tmp/character-blueprint-browser-smoke.json
-          grep -q 'character-blueprint-browser-smoke/v2' /tmp/character-blueprint-browser-smoke.json
-          grep -q 'visibility-gated-v0.4.1' /tmp/character-blueprint-browser-smoke.json
+          grep -q 'character-blueprint-browser-smoke/v3' /tmp/character-blueprint-browser-smoke.json
+          grep -q 'silhouette-envelope-v0.5' /tmp/character-blueprint-browser-smoke.json
+          grep -q 'border-evidence-silhouette/v0.5' /tmp/character-blueprint-browser-smoke.json
           grep -q '"statusClass": "status ok"' /tmp/character-blueprint-browser-smoke.json
-          grep -q '"schema": "character-blueprint-ir/v0.4"' /tmp/character-blueprint-browser-smoke.json
-          echo 'character_blueprint_real_image_e2e=PASS'
+          grep -q '"schema": "character-blueprint-ir/v0.5"' /tmp/character-blueprint-browser-smoke.json
+          echo 'character_blueprint_v05_real_image_e2e=PASS'
 
-# Real-image public-domain E2E release gate.
+# Silhouette-driven 3D envelope release gate.
