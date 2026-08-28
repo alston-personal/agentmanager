@@ -1,0 +1,39 @@
+name: AgentOS Control Inbox Contract
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/realm_server.py'
+      - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'tests/test_controller_api.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - '.github/workflows/control-inbox-contract.yml'
+  pull_request:
+    paths:
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/realm_server.py'
+      - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'tests/test_controller_api.py'
+      - 'tests/test_control_inbox_bridge.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate installer shell syntax
+        run: bash -n scripts/install_control_inbox_bridge_user.sh
+      - name: Run controller and bridge contracts
+        run: python -m pytest -q tests/test_controller_api.py tests/test_control_inbox_bridge.py
