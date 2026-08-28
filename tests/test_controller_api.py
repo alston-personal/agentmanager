@@ -80,6 +80,34 @@ def test_controller_rejects_arbitrary_shell_even_when_node_has_capability(tmp_pa
         controller.dispatch('node-a', {'action': 'shell.exec', 'executable': 'cmd'})
 
 
+def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_path: Path) -> None:
+    fabric, node_token = _online_fabric(tmp_path)
+    controller = ControllerService(fabric)
+    commit = 'a' * 40
+    result = controller.dispatch('node-a', {
+        'action': 'node.runtime.converge',
+        'source_commit': commit,
+        'executable': 'cmd.exe',
+        'argv': ['/c', 'whoami'],
+    })
+    assert result['action'] == 'node.runtime.converge'
+    queued = fabric.pull_tasks('node-a', node_token)
+    assert len(queued) == 1
+    task = queued[0]
+    assert task['action'] == 'shell.exec'
+    assert task['controller_action'] == 'node.runtime.converge'
+    assert task['executable'] == 'powershell'
+    script = task['argv'][-1]
+    assert commit in script
+    assert 'AgentOS Thin Client Watchdog' in script
+    assert 'Register-ScheduledTask' not in script
+    assert 'whoami' not in script
+    assert 'cmd.exe' not in script
+
+    with pytest.raises(ValueError, match='source_commit'):
+        controller.dispatch('node-a', {'action': 'node.runtime.converge', 'source_commit': 'main'})
+
+
 def _request(url: str, token: str | None = None, *, method: str = 'GET', body: dict | None = None):
     headers = {'Accept': 'application/json'}
     if token is not None:
