@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dispatch Chamber Sovereignty Preview RC1 through existing Antigravity carrier
+      - name: Dispatch Chamber Sovereignty Preview RC1 with private-spool compatibility
         shell: bash
         run: |
           set -euo pipefail
@@ -25,17 +25,23 @@ jobs:
           RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
           export PYTHONPATH="$RUNTIME"
           python3 - <<'PY'
-          import json,time
+          import json, os, time
           from pathlib import Path
           from agentos_node.antigravity_relay import AntigravityRelayClient
+
           cmd=json.loads(Path('.agentos/commands/metashield-mvp-rc1.json').read_text(encoding='utf-8'))
           assert cmd.get('project_id')=='metashield-protocol'
           assert cmd.get('action')=='project.mvp.rc1'
           workspace=Path(str(cmd.get('workspace') or ''))
-          assert str(workspace) == '/home/ubuntu/agentmanager/workspace/metashield-protocol'
+          assert str(workspace)=='/home/ubuntu/agentmanager/workspace/metashield-protocol'
           assert workspace.is_dir(), workspace
-          relay=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+
+          relay_root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          relay=AntigravityRelayClient(relay_root)
+          os.umask(0)
+          receipts=[]
           submitted=[]
+
           for phase in cmd['phases']:
               p=relay.submit(
                   project_id='metashield-protocol',
@@ -54,31 +60,39 @@ jobs:
                   instruction=str(phase['instruction']),
                   workspace=str(workspace),
                   executor_hint='antigravity')
-              submitted.append({'phase':phase['id'],'capsule_id':p['capsule_id']})
-          out={'schema':'agentos.metashield-mvp-dispatch/v0.1','project_id':'metashield-protocol','workspace':str(workspace),'submitted_at':int(time.time()),'submitted':submitted}
-          Path('/tmp/metashield-mvp-dispatch.json').write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          print(json.dumps(out,ensure_ascii=False,indent=2))
-          PY
+              cid=p['capsule_id']
+              submitted.append({'phase':phase['id'],'capsule_id':cid})
+              # Compatibility workaround only: spool directory stays private (2770),
+              # while capsule bytes are writable by both authorized relay identities.
+              inbox=relay_root/'inbox'/f'{cid}.json'
+              if inbox.exists():
+                  os.chmod(inbox,0o666)
+              deadline=time.monotonic()+240
+              receipt=None
+              while time.monotonic()<deadline:
+                  receipt=relay.receipt(cid)
+                  if receipt is not None: break
+                  time.sleep(1)
+              if receipt is None:
+                  receipt={'schema':'agentos.antigravity-receipt/v1','capsule_id':cid,'ok':False,'error':'receipt_timeout'}
+              receipts.append({'phase':phase['id'],'receipt':receipt})
+              if not receipt.get('ok'):
+                  break
 
-          python3 - <<'PY'
-          import json,time
-          from pathlib import Path
-          from agentos_node.antigravity_relay import AntigravityRelayClient
-          dispatch=json.loads(Path('/tmp/metashield-mvp-dispatch.json').read_text(encoding='utf-8'))
-          relay=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          pending={x['capsule_id']:x['phase'] for x in dispatch['submitted']}
-          receipts=[]
-          deadline=time.monotonic()+900
-          while pending and time.monotonic()<deadline:
-              for cid in list(pending):
-                  r=relay.receipt(cid)
-                  if r is not None:
-                      receipts.append({'phase':pending.pop(cid),'receipt':r})
-              if pending: time.sleep(2)
-          result={**dispatch,'receipts':receipts,'pending':[{'capsule_id':k,'phase':v} for k,v in pending.items()],'complete':not pending}
+          result={
+            'schema':'agentos.metashield-mvp-dispatch/v0.1',
+            'project_id':'metashield-protocol',
+            'workspace':str(workspace),
+            'submitted_at':int(time.time()),
+            'submitted':submitted,
+            'receipts':receipts,
+            'complete':len(receipts)==len(cmd['phases']) and all((x.get('receipt') or {}).get('ok') for x in receipts),
+            'spool_workaround':'0666 capsule inside private relay spool; Core boundary repair remains separate'
+          }
           Path('.agentos/evidence/metashield-mvp-rc1-current.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           print(json.dumps(result,ensure_ascii=False,indent=2))
-          if pending: raise SystemExit('receipt timeout')
+          if not result['complete']:
+              raise SystemExit('one or more MVP phases failed')
           PY
 
       - name: Validate and commit MetaShield execution evidence
@@ -90,10 +104,10 @@ jobs:
             python3 - <<'PY'
           import json
           r=json.load(open('.agentos/evidence/metashield-mvp-rc1-current.json',encoding='utf-8'))
-          print('phase_count=',len(r.get('receipts') or []))
+          print('complete=',r.get('complete'))
           for item in r.get('receipts') or []:
               rec=item.get('receipt') or {}
-              print(item.get('phase'), 'ok=', rec.get('ok'), 'returncode=', rec.get('returncode'), 'timed_out=', rec.get('timed_out'))
+              print(item.get('phase'),'ok=',rec.get('ok'),'returncode=',rec.get('returncode'),'timed_out=',rec.get('timed_out'),'error=',rec.get('error'))
           PY
           fi
           git config user.name 'github-actions[bot]'
