@@ -80,7 +80,6 @@ def make_proxy_stable(text: str) -> str:
     m = pattern.search(text)
     if not m:
         raise SystemExit('character blueprint geometry transform failed: coverage/buildIR boundary missing')
-    # Preserve buildIR; replace coverage and inject reliability helper.
     prefix = STABLE_PROXY_FUNCTIONS.split('function rebuild3D', 1)[0]
     text = text[:m.start()] + prefix + 'function buildIR(l)' + text[m.end():]
     rebuild_pattern = re.compile(r"function rebuild3D\(l\)\{.*?viewerEmpty\.style\.display='none';fitCamera\(\);selectPart\(selected\)\}", re.S)
@@ -91,8 +90,20 @@ def make_proxy_stable(text: str) -> str:
     text = text.replace('POC v0.4 · browser-local', 'POC v0.4.1 · browser-local', 1)
     text = text.replace('<title>Character Blueprint POC v0.4</title>', '<title>Character Blueprint POC v0.4.1</title>', 1)
     text = text.replace('meta name="character-blueprint-poc" content="v0.4.0"', 'meta name="character-blueprint-poc" content="v0.4.1"', 1)
+    text = text.replace("const VERSION='0.4.0'", "const VERSION='0.4.1'", 1)
     if "proxyBodyFrame='visibility-gated-v0.4.1'" not in text:
         raise SystemExit('character blueprint stable body-frame marker missing')
+    return text
+
+
+def make_browser_testable(text: str) -> str:
+    old = "window.CharacterBlueprintPOC={version:VERSION,schema:SCHEMA,threeDProxy:true,interactivePartLinking:true,llmTokens:0};"
+    new = """window.CharacterBlueprintPOC={version:VERSION,schema:SCHEMA,threeDProxy:true,interactivePartLinking:true,llmTokens:0,browserSelfTest:true,selfTestLandmarks:(l)=>{currentLm=l;currentIR=buildIR(l);selected='body';rebuild3D(l);const parts=[...new Set(meshParts.map(x=>x.userData.part))];selectPart('head');return{coverage:coverage(l),parts,selected,meshCount:meshParts.length,canvasCount:viewer.querySelectorAll('canvas').length,bodyFrame:root?.userData?.proxyBodyFrame||null}}};"""
+    if old not in text:
+        raise SystemExit('character blueprint browser self-test transform failed: public API marker missing')
+    text = text.replace(old, new, 1)
+    if 'browserSelfTest:true' not in text or 'selfTestLandmarks' not in text:
+        raise SystemExit('character blueprint browser self-test hook missing')
     return text
 
 
@@ -107,12 +118,12 @@ def main() -> int:
     tmp.chmod(0o755)
     try:
         index = tmp / 'index.html'
-        published_text = make_proxy_stable(make_browser_safe(source_text))
+        published_text = make_browser_testable(make_proxy_stable(make_browser_safe(source_text)))
         index.write_text(published_text, encoding='utf-8')
         index.chmod(0o644)
         deployed_text = index.read_text(encoding='utf-8')
         validate(deployed_text)
-        required = ['type="importmap"', "from 'three/addons/controls/OrbitControls.js'", 'v0.4.1', "proxyBodyFrame='visibility-gated-v0.4.1'"]
+        required = ['type="importmap"', "from 'three/addons/controls/OrbitControls.js'", 'v0.4.1', "proxyBodyFrame='visibility-gated-v0.4.1'", 'browserSelfTest:true', 'selfTestLandmarks']
         missing = [m for m in required if m not in deployed_text]
         if missing:
             raise SystemExit(f'character blueprint published artifact invalid: missing={missing}')
@@ -129,7 +140,7 @@ def main() -> int:
     deployed = TARGET / 'index.html'
     final_text = deployed.read_text(encoding='utf-8')
     validate(final_text)
-    if 'type="importmap"' not in final_text or "proxyBodyFrame='visibility-gated-v0.4.1'" not in final_text:
+    if 'type="importmap"' not in final_text or "proxyBodyFrame='visibility-gated-v0.4.1'" not in final_text or 'browserSelfTest:true' not in final_text:
         raise SystemExit('character blueprint public artifact missing runtime safety markers')
     print(json.dumps({
         'ok': True,
@@ -140,6 +151,7 @@ def main() -> int:
         'three_d_proxy': True,
         'interactive_part_linking': True,
         'browser_import_map': True,
+        'browser_self_test': True,
         'visibility_gated_body_frame': True,
         'llm_tokens': 0,
         'sha256': digest(deployed),
