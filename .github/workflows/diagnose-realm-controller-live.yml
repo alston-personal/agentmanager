@@ -23,12 +23,16 @@ jobs:
           cat /home/ubuntu/agent-data/governance/core-deployment.json || true
           echo '=== unit ==='
           cat /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service || true
+          echo '=== process ==='
+          ps -eo user,group,pid,ppid,etime,args | grep -F 'agent_core.realm_cli serve' | grep -v grep || true
           echo '=== systemd show ==='
           XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
             systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p ExecMainCode || true
           echo '=== recent journal ==='
           XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
             journalctl --user -u agentos-realm-fabric.service -n 120 --no-pager || true
+          echo '=== service log ==='
+          tail -n 180 /home/ubuntu/agent-data/logs/realm-fabric.log || true
           echo '=== release files ==='
           rel=$(sed -n 's#^WorkingDirectory=##p' /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service | head -1)
           echo "release=$rel"
