@@ -18,24 +18,26 @@ jobs:
     runs-on: [self-hosted, oracle]
     timeout-minutes: 3
     steps:
-      - name: Identify live Action Relay service boundary
+      - name: Locate live Action Relay module and service controls
         shell: bash
         run: |
           set -euo pipefail
-          pid="$(pgrep -u ubuntu -f 'python3 -m agentos_node.action_relay' | head -n1)"
-          echo "relay_pid=$pid"
-          echo '=== process ==='
-          ps -o user,pid,ppid,args -p "$pid" || true
-          ppid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
-          ps -o user,pid,ppid,args -p "$ppid" || true
-          echo '=== cgroup ==='
-          cat "/proc/$pid/cgroup" || true
-          echo '=== source visibility ==='
-          readlink -f "/proc/$pid/cwd" || true
-          ls -l /home/ubuntu/agentmanager/agentos_node/action_relay.py || true
-          echo '=== gh config permissions only ==='
-          ls -ld /home/ubuntu/.config /home/ubuntu/.config/gh 2>/dev/null || true
-          ls -l /home/ubuntu/.config/gh/hosts.yml 2>/dev/null || true
-          echo '=== system service candidates ==='
-          systemctl list-units --type=service --all --no-pager | grep -Ei 'agentos|relay' || true
-          systemctl list-unit-files --type=service --no-pager | grep -Ei 'agentos|relay' || true
+          echo '=== local module resolution ==='
+          /usr/bin/python3 - <<'PY'
+          import agentos_node.action_relay as m
+          print(m.__file__)
+          print(sorted(m.ACTIONS))
+          PY
+          echo '=== module path permissions ==='
+          mod=$(/usr/bin/python3 - <<'PY'
+          import agentos_node.action_relay as m
+          print(m.__file__)
+          PY
+          )
+          ls -l "$mod" || true
+          namei -l "$mod" || true
+          echo '=== ubuntu user service query ==='
+          systemctl --user --machine=ubuntu@ is-active agentos-action-relay.service || true
+          systemctl --user --machine=ubuntu@ cat agentos-action-relay.service || true
+          echo '=== relay root permissions ==='
+          ls -ld /home/ubuntu/agent-data/runtime/action-relay /home/ubuntu/agent-data/runtime/action-relay/{inbox,processing,receipts,quarantine} || true
