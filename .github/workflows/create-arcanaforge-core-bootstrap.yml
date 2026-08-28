@@ -62,12 +62,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          runtime=/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
           if grep -q 'github.repo.ensure_arcanaforge' "$runtime" 2>/dev/null && grep -q 'github.repo.ensure_layoutlib' "$runtime" 2>/dev/null; then
-            echo 'action_runtime_repo_capabilities=ALREADY_READY'
+            echo 'action_relay_runtime_repo_capabilities=ALREADY_READY'
             exit 0
           fi
-          echo 'action_runtime_repo_capabilities=REFRESH_REQUIRED'
+          echo 'action_relay_runtime_repo_capabilities=REFRESH_REQUIRED'
           tmp=/tmp/bootstrap-action-relay-canonical-repos-safe.sh
           sed \
             -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
@@ -77,7 +77,7 @@ jobs:
           bash "$tmp"
           grep -q 'github.repo.ensure_arcanaforge' "$runtime"
           grep -q 'github.repo.ensure_layoutlib' "$runtime"
-          echo 'action_runtime_repo_capabilities=READY_AFTER_REFRESH'
+          echo 'action_relay_runtime_repo_capabilities=READY_AFTER_REFRESH'
       - name: Ensure ArcanaForge repository
         shell: bash
         run: |
