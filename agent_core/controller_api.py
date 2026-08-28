@@ -55,6 +55,27 @@ class ControllerService:
             raise KeyError(node_id)
         return node
 
+    def _existing_task(self, task_id: str) -> dict[str, Any] | None:
+        data = self.fabric.load()
+        receipt = (data.get('receipts') or {}).get(task_id)
+        if isinstance(receipt, dict):
+            return {
+                'state': 'completed',
+                'node_id': receipt.get('node_id'),
+                'action': receipt.get('action'),
+                'queued_at': None,
+            }
+        for queued_node_id, queue in (data.get('tasks') or {}).items():
+            for task in queue or []:
+                if isinstance(task, dict) and task.get('task_id') == task_id:
+                    return {
+                        'state': 'queued',
+                        'node_id': queued_node_id,
+                        'action': task.get('action'),
+                        'queued_at': task.get('queued_at'),
+                    }
+        return None
+
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
         node = self.node(node_id)
         if node.get('status') != 'online':
@@ -68,6 +89,21 @@ class ControllerService:
             raise ValueError(f'node lacks capability: {required_capability}')
 
         task_id = str(request.get('task_id') or '').strip() or 'ctl_' + secrets.token_hex(12)
+        existing = self._existing_task(task_id)
+        if existing is not None:
+            if existing.get('node_id') != node_id or existing.get('action') != action:
+                raise ValueError(f'task_id already belongs to another request: {task_id}')
+            return {
+                'schema': 'agentos.controller-dispatch/v0.1',
+                'ok': True,
+                'node_id': node_id,
+                'task_id': task_id,
+                'action': action,
+                'queued_at': existing.get('queued_at'),
+                'state': existing.get('state'),
+                'reused': True,
+            }
+
         task: dict[str, Any] = {
             'schema': 'agentos.node-task/v0.1',
             'task_id': task_id,
@@ -85,6 +121,8 @@ class ControllerService:
             'task_id': task_id,
             'action': action,
             'queued_at': queued.get('queued_at'),
+            'state': 'queued',
+            'reused': False,
         }
 
     def discover(self, node_id: str) -> dict[str, Any]:
