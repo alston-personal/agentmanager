@@ -1,0 +1,53 @@
+{
+  "schema": "agentos.threads-vendor-source-probe/v1",
+  "checked_at": "2026-08-28T08:44:40Z",
+  "target": {
+    "username": "nico1e.16",
+    "shortcode": "DcWVvpwGTSh",
+    "url": "https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh"
+  },
+  "token_exposed": false,
+  "writes_performed": false,
+  "authenticated_identity": {
+    "ok": true,
+    "http_status": 200,
+    "username": "oursong_alstonhuang",
+    "user_id": "26535980679370657"
+  },
+  "profile_lookup": {
+    "ok": false,
+    "http_status": 500,
+    "error_code": 100,
+    "error_subcode": null,
+    "error_type": "THApiException",
+    "error_message": "Tried accessing nonexisting field (id)"
+  },
+  "profile_posts": {
+    "ok": false,
+    "pages_checked": 1,
+    "posts_checked": 0,
+    "target_found": false,
+    "http_status": 400,
+    "error_code": 10,
+    "error_subcode": 4279067,
+    "error_type": "OAuthException",
+    "error_message": "Application does not have permission for this action"
+  },
+  "target_post": null,
+  "replies": {
+    "ok": false,
+    "not_attempted": true,
+    "reason": "target_post_not_found"
+  },
+  "conversation": {
+    "ok": false,
+    "not_attempted": true,
+    "reason": "target_post_not_found"
+  },
+  "capability_summary": {
+    "third_party_profile_read": false,
+    "third_party_post_discovery": false,
+    "third_party_top_level_replies_read": false,
+    "third_party_full_conversation_read": false
+  }
+}
