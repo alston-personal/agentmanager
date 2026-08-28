@@ -54,6 +54,23 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
+      - name: Diagnose live Chronos execution path
+        shell: bash
+        run: |
+          set -euo pipefail
+          pid="$(pgrep -u ubuntu -f 'scripts/chronos.py' | head -n1)"
+          echo "chronos_pid=$pid"
+          echo "chronos_cwd=$(readlink -f /proc/$pid/cwd || true)"
+          echo '=== chronos groups ==='
+          grep '^Groups:' "/proc/$pid/status" || true
+          echo '=== chronos cmdline ==='
+          tr '\0' ' ' < "/proc/$pid/cmdline"; echo
+          echo '=== live schedule selector ==='
+          grep -A2 -B1 'swarm-board-refresh' /home/ubuntu/agentmanager/schedule.yaml || true
+          echo '=== target metadata ==='
+          stat /home/ubuntu/agentmanager/scripts/update_scheduler_board.py || true
+          echo '=== recent Chronos triggers ==='
+          tail -n 160 /home/ubuntu/agent-data/logs/chronos.log | grep -E 'swarm-board-refresh|Trigger|Chronos' | tail -n 80 || true
       - name: Refresh ubuntu Action Relay runtime through canonical safe Chronos transport
         shell: bash
         run: |
