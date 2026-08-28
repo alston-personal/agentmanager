@@ -33,13 +33,16 @@ async function runSyntheticGeometrySmoke() {
     });
     return {
       version: window.CharacterBlueprintPOC.version,
+      silhouetteEnvelope: window.CharacterBlueprintPOC.silhouetteEnvelope,
       ...window.CharacterBlueprintPOC.selfTestLandmarks(l),
     };
   });
 
-  assert.equal(result.version, '0.4.1');
+  assert.equal(result.version, '0.5.0');
+  assert.equal(result.silhouetteEnvelope, true);
   assert.equal(result.coverage, 'upper_body');
-  assert.equal(result.bodyFrame, 'visibility-gated-v0.4.1');
+  assert.equal(result.bodyFrame, 'silhouette-envelope-v0.5');
+  assert.equal(result.silhouetteEngine, 'pose-fallback');
   assert.equal(result.selected, 'head');
   assert(result.canvasCount >= 1, `no Three.js canvas: ${JSON.stringify(result)}`);
   assert(result.meshCount >= 6, `too few meshes: ${JSON.stringify(result)}`);
@@ -76,17 +79,27 @@ async function runRealImageUploadSmoke() {
       partsMetric: Number(document.getElementById('mParts')?.textContent || 0),
       partButtons: [...document.querySelectorAll('#parts .part')].map(x => x.dataset.part),
       canvasCount: document.querySelectorAll('#viewer canvas').length,
+      publicApi: {
+        version: window.CharacterBlueprintPOC?.version,
+        silhouetteEnvelope: window.CharacterBlueprintPOC?.silhouetteEnvelope,
+      },
       ir,
     };
   });
 
   assert(result.statusClass.includes('ok'), `real-image analysis failed: ${JSON.stringify(result)}`);
   assert(result.statusText.includes('完成'), `unexpected success state: ${JSON.stringify(result)}`);
+  assert.equal(result.publicApi.version, '0.5.0');
+  assert.equal(result.publicApi.silhouetteEnvelope, true);
   assert(result.canvasCount >= 1, `real-image flow created no Three.js canvas: ${JSON.stringify(result)}`);
   assert(result.partsMetric >= 4, `real-image flow created too few 3D parts: ${JSON.stringify(result)}`);
   assert(result.ir, `real-image flow emitted invalid Character IR: ${JSON.stringify(result)}`);
-  assert.equal(result.ir.schema, 'character-blueprint-ir/v0.4');
+  assert.equal(result.ir.schema, 'character-blueprint-ir/v0.5');
   assert.equal(result.ir.llm_tokens, 0);
+  assert.equal(result.ir.proxy_3d?.renderer, 'threejs-silhouette-envelope/v0.5');
+  assert.equal(result.ir.observed?.silhouette?.engine, 'border-evidence-silhouette/v0.5');
+  assert(result.ir.observed?.silhouette?.torso_rows >= 5, `too few silhouette torso rows: ${JSON.stringify(result.ir.observed?.silhouette)}`);
+  assert(result.ir.observed?.silhouette?.hair_rows >= 4, `too few silhouette hair rows: ${JSON.stringify(result.ir.observed?.silhouette)}`);
   assert(result.ir.observed?.pose?.mean_visibility > 0.1, `pose visibility too low: ${JSON.stringify(result.ir.observed?.pose)}`);
   assert(['full_body','three_quarter','upper_body'].includes(result.ir.observed?.pose?.coverage), `invalid coverage: ${JSON.stringify(result.ir.observed?.pose)}`);
   for (const required of ['head','hair','body','garment']) {
@@ -103,7 +116,7 @@ try {
 
   console.log(JSON.stringify({
     ok: true,
-    suite: 'character-blueprint-browser-smoke/v2',
+    suite: 'character-blueprint-browser-smoke/v3',
     url,
     synthetic,
     realImage,
