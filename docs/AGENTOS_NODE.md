@@ -18,7 +18,9 @@ The runtime bundle is derived from the AgentOS logic repository and reads mutabl
 agentos-node harvest
 ```
 
-Advertises node-supported query/observation capabilities, including:
+Harvest advertises what the node surface can route/query/observe. It may include governance, resource, resolve, runtime/surface, and other registered capabilities depending on the installed node version.
+
+Examples from the original v0.1 surface include:
 
 - `governance.resolve`
 - `governance.get`
@@ -27,7 +29,26 @@ Advertises node-supported query/observation capabilities, including:
 - `resource.register`
 - `resource.verify.site`
 
-Harvest describes what the node surface can route/query. It does not grant execution authority.
+The authoritative capability set is the node's live advertisement/NodeRegistry record, not this illustrative list.
+
+## Capability semantics
+
+Keep four states separate:
+
+```text
+advertised capability
+    != routable transport
+    != authorized effect
+    != successful execution
+```
+
+Rules:
+
+- Harvest/NodeRegistry capability advertisement is descriptive; it does not grant authority.
+- ONE/ControllerService may be reachable even when the target node does not advertise the requested capability.
+- A `NODE_CAPABILITY_NOT_ADVERTISED` result after ControllerService entry is a node-readiness/capability-convergence outcome, not evidence that the Core controller route is missing.
+- A capability that is advertised still requires whatever governance/effect authorization applies before mutation.
+- Architecture diagrams and expected capabilities are not substitutes for live capability advertisement.
 
 ## Responsibility resolution
 
@@ -37,7 +58,7 @@ Before implementing reusable or cross-project capability:
 agentos-node governance resolve capability://network.port.allocate
 ```
 
-Expected current result:
+Expected established ownership example:
 
 ```text
 manager://port
@@ -66,6 +87,26 @@ If a registered resource is fresh, use it. Only stale/unverified records should 
 agentos-node resource verify-site site://studio.milkcat.org
 ```
 
+## Project identity and source authority
+
+Project identity is not the repository or checkout path.
+
+Canonical Project Identity is owned by the AgentOS project store / resolver and projected into Governance Directory. A node may expose/query project information, but it must not infer canonical identity from its local filesystem.
+
+A canonical project separates:
+
+```text
+project_id
+aliases
+source repo/branch
+canonical source path
+source node
+state/data location
+runtime/deployment location
+```
+
+For mutation, project/source integrity must be resolved before acting. A local checkout that merely looks like the right repository is not sufficient source authority.
+
 ## Canonical authority boundaries
 
 The node surface is an index/router over existing authorities:
@@ -74,10 +115,13 @@ The node surface is an index/router over existing authorities:
 |---|---|
 | Role semantics | `.agent/roles/registry.yaml` |
 | Responsibility/provider resolution | Governance Directory |
+| Canonical Project Identity / source locator | Project Store + canonical resolver, projected to Governance Directory |
 | World/environment state | Resource Registry |
 | Port allocation | `manager://port` / Port Manager |
-| Project state | Agent Data project registry |
-| Execution authorization | Governance Registry / effect-derived authority |
+| Node liveness/capability advertisement | NodeRegistry / live node heartbeat |
+| Core deployed generation | Core deployment authority state |
+| Execution authorization | Governance / effect-derived authority |
+| Execution proof | receipts/evidence |
 
 `agentos-node` must not silently take ownership from those components.
 
@@ -86,30 +130,58 @@ The node surface is an index/router over existing authorities:
 For system/cross-project work:
 
 ```text
-1. harvest
-2. governance resolve(required capability)
-3. query relevant registered resources
-4. targeted verify only if stale/missing
-5. reuse/extend active owner
-6. only if unresolved: discover → register provider/resource
-7. authorize effect
-8. execute
-9. persist receipt/evidence
+1. harvest / inspect live node capabilities
+2. resolve canonical project identity when project-scoped
+3. governance resolve(required capability/responsibility)
+4. query relevant registered resources
+5. targeted verify only if stale/missing
+6. reuse/extend active owner
+7. only if unresolved: discover -> register provider/resource
+8. authorize effect
+9. execute
+10. persist receipt/evidence
 ```
 
 This protocol operationalizes:
 
 > Discover before invent. Resolve before implement. Verify before trust.
 
-## Current verified evidence (2026-08-25)
+## Node Map / heartbeat rules
 
-Oracle validation proved:
+The Realm Node Map is ONE-side persistent state. A node should be treated as live only when runtime evidence supports enrollment/status/heartbeat freshness.
 
-- six dependency-free contract tests passed;
-- runtime entrypoint installed under the `agentos-node` identity;
-- `harvest` advertises governance/resource capabilities;
-- `network.port.allocate` resolves to exclusive `manager://port`;
-- `site://studio.milkcat.org` is queryable directly from registered verified state;
-- Governance Directory audit completed with zero errors.
+Do not:
 
-Warnings are not hidden. At validation time the Service Registry and Watchdog source still disagreed on `moltbot-gateway.service` vs `os-lobster.service`; that requires targeted runtime verification before correction.
+- count a conceptual ChatGPT/PC surface as a live Realm node without enrollment evidence;
+- infer freshness from a stale manifest alone;
+- infer capability from intended role or source code presence;
+- infer Node readiness from Core `/health` or ControllerService reachability.
+
+For Golden Path work, preserve heartbeat provenance, advertised capability set, runtime/version provenance where relevant, and the final action receipt.
+
+## Core / Node failure boundary established by Issue #64
+
+On 2026-08-28 the real Control Inbox path was used to test `agent.surface.inspect` for `vopc5750`.
+
+The request reached ControllerService, proving the Core route was alive, but the target node did not advertise the capability. The resulting node-level outcome was therefore the correct boundary.
+
+This establishes the debugging order:
+
+```text
+transport
+ -> ONE / controller route
+ -> ControllerService
+ -> node presence / heartbeat
+ -> capability advertisement
+ -> effect authority
+ -> node execution
+ -> receipt
+```
+
+Do not reopen or modify Core routing merely because a downstream node capability is missing unless fresh evidence shows the controller path itself has regressed.
+
+## Historical verified evidence
+
+The 2026-08-25 Oracle validation proved the original v0.1 discovery/governance/resource surface, including runtime entrypoint installation, governance/resource harvest, exclusive responsibility resolution, registered resource query, and Governance Directory audit.
+
+That evidence remains valid for those behaviors, but its enumerated capability list is not a permanent complete Node contract. Newer node/runtime capabilities must be verified from live advertisement and receipts.
