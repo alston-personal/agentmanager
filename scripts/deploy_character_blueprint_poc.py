@@ -11,12 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'web_assets' / 'character-blueprint-poc.html'
 TARGET = Path('/home/ubuntu/zeus-writer/website/dist/poc/character-blueprint')
 MARKERS = [
-    'character-blueprint-poc',
-    'Character Blueprint',
-    'character-blueprint-ir/v0.3',
-    'semantic-region-mask',
-    'user-confirmed-semantics',
-    '匯出透明 PNG',
+    'data-version="0.4.0"',
+    'character-blueprint-ir/v0.4',
+    'threeDProxy:true',
+    'interactivePartLinking:true',
+    '3D Blueprint',
+    'OrbitControls',
     'llm_tokens: 0',
 ]
 FORBIDDEN_FALLBACK = ['Milkcat Studio Portal', 'SERIALS', '連載作品']
@@ -61,10 +61,12 @@ def main() -> int:
     validate(deployed.read_text(encoding='utf-8'))
     print(json.dumps({
         'ok': True,
-        'release': 'character-blueprint-poc-v0.3',
+        'release': 'character-blueprint-poc-v0.4',
         'target': str(TARGET),
         'public_path': '/poc/character-blueprint/',
-        'marker': 'character-blueprint-poc/v0.3.0',
+        'marker': 'character-blueprint-poc/v0.4.0',
+        'three_d_proxy': True,
+        'interactive_part_linking': True,
         'llm_tokens': 0,
         'sha256': digest(deployed),
     }, ensure_ascii=False, sort_keys=True))
