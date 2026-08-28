@@ -25,7 +25,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 for path in \
   agent_core/controller_api.py \
   agent_core/runtime_ota.py \
-  agent_core/node_registry.py; do
+  agent_core/node_registry.py \
+  agent_core/realm_server.py; do
   dest="$TMPDIR/$(basename "$path")"
   git -C "$REPO" show "$SOURCE_COMMIT:$path" > "$dest"
   python3 -m py_compile "$dest"
@@ -34,6 +35,7 @@ done
 install -m 0664 "$TMPDIR/runtime_ota.py" "$REALM_RUNTIME/agent_core/runtime_ota.py"
 install -m 0664 "$TMPDIR/node_registry.py" "$REALM_RUNTIME/agent_core/node_registry.py"
 install -m 0664 "$TMPDIR/controller_api.py" "$REALM_RUNTIME/agent_core/controller_api.py"
+install -m 0664 "$TMPDIR/realm_server.py" "$REALM_RUNTIME/agent_core/realm_server.py"
 
 systemctl --user restart agentos-realm-fabric.service
 for i in $(seq 1 20); do
@@ -45,8 +47,10 @@ systemctl --user is-active --quiet agentos-realm-fabric.service
 grep -q "realm.runtime.rollout" "$REALM_RUNTIME/agent_core/controller_api.py"
 grep -q "runtime_status" "$REALM_RUNTIME/agent_core/runtime_ota.py"
 grep -q "runtime_converged_count" "$REALM_RUNTIME/agent_core/node_registry.py"
+grep -q "auto_ota_" "$REALM_RUNTIME/agent_core/realm_server.py"
 echo "core_runtime_ota_deploy=PASS"
 echo "agentos_source_commit=$SOURCE_COMMIT"
 echo "bridge_env_preserved=PASS"
 echo "realm_ota_policy=available"
+echo "realm_ota_auto_converge=available"
 echo "realm_service=active"
