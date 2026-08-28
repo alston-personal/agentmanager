@@ -1,4 +1,4 @@
-name: Create ArcanaForge Through Oracle Core
+name: Create Canonical Repositories Through Oracle Core
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: arcanaforge-core-bootstrap
+  group: canonical-repo-core-bootstrap
   cancel-in-progress: true
 
 jobs:
@@ -21,20 +21,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Add narrow governed ArcanaForge capability
+      - name: Add narrow governed repository capabilities
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
           git reset --hard origin/main
           python3 scripts/patch_action_relay_arcanaforge.py
+          python3 scripts/patch_action_relay_layoutlib.py
           python3 -m py_compile agentos_node/action_relay.py
           grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
+          grep -q 'github.repo.ensure_layoutlib' agentos_node/action_relay.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add agentos_node/action_relay.py
           if ! git diff --cached --quiet; then
-            git commit -m 'feat(agentos): add governed ArcanaForge remote action'
+            git commit -m 'feat(agentos): add governed canonical repo actions'
             git pull --rebase origin main
             git push origin HEAD:main
           fi
@@ -54,17 +56,18 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
-      - name: Ensure ubuntu Action Relay runtime contains ArcanaForge capability
+          grep -q 'github.repo.ensure_layoutlib' agentos_node/action_relay.py
+      - name: Ensure ubuntu Action Relay runtime contains canonical repo capabilities
         shell: bash
         run: |
           set -euo pipefail
           runtime=/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py
-          if grep -q 'github.repo.ensure_arcanaforge' "$runtime" 2>/dev/null; then
-            echo 'action_runtime_arcanaforge=ALREADY_READY'
+          if grep -q 'github.repo.ensure_arcanaforge' "$runtime" 2>/dev/null && grep -q 'github.repo.ensure_layoutlib' "$runtime" 2>/dev/null; then
+            echo 'action_runtime_repo_capabilities=ALREADY_READY'
             exit 0
           fi
-          echo 'action_runtime_arcanaforge=REFRESH_REQUIRED'
-          tmp=/tmp/bootstrap-action-relay-arcanaforge-safe.sh
+          echo 'action_runtime_repo_capabilities=REFRESH_REQUIRED'
+          tmp=/tmp/bootstrap-action-relay-canonical-repos-safe.sh
           sed \
             -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
             -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
@@ -72,28 +75,35 @@ jobs:
           chmod 700 "$tmp"
           bash "$tmp"
           grep -q 'github.repo.ensure_arcanaforge' "$runtime"
-          echo 'action_runtime_arcanaforge=READY_AFTER_REFRESH'
-      - name: Ask Core Action Relay to create ArcanaForge and require receipt
+          grep -q 'github.repo.ensure_layoutlib' "$runtime"
+          echo 'action_runtime_repo_capabilities=READY_AFTER_REFRESH'
+      - name: Ensure ArcanaForge repository
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ensure_arcanaforge_remote_via_action_relay.py
+      - name: Ensure LayoutLib repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ensure_layoutlib_remote_via_action_relay.py
       - name: Commit governed receipt evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          E=.agentos/evidence/arcanaforge-remote-action-relay.txt
-          test -f "$E" || exit 0
-          cp "$E" /tmp/arcanaforge-remote-action-relay.txt
+          mkdir -p /tmp/canonical-repo-evidence
+          for f in .agentos/evidence/arcanaforge-remote-action-relay.txt .agentos/evidence/layoutlib-remote-action-relay.txt; do
+            [ -f "$f" ] && cp "$f" /tmp/canonical-repo-evidence/
+          done
           git fetch origin main
           git reset --hard origin/main
           mkdir -p .agentos/evidence
-          cp /tmp/arcanaforge-remote-action-relay.txt "$E"
+          cp /tmp/canonical-repo-evidence/* .agentos/evidence/ 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$E"
+          git add .agentos/evidence
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(arcanaforge): governed Core repository creation'
+          git commit -m 'evidence(project): governed canonical repository creation'
           git pull --rebase origin main
           git push origin HEAD:main
