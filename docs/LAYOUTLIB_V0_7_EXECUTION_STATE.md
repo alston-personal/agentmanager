@@ -3,6 +3,42 @@
 Status: RELEASE COMPLETE — production closed loop deployed and editor semantic ownership corrected
 Date: 2026-08-27
 
+## Canonical project identity
+
+This section is the authoritative locator for cross-session/project recovery. Agents must resolve this identity before searching for a repository named `layoutlib`.
+
+- Canonical project id: `layoutlib`
+- Human aliases: `LayoutLib`, `3D LayoutLib`, `Layout Lab`
+- Product/library distinction: `LayoutLib` is the semantic/execution library; `Layout Lab` is its browser demo/validation and production surface.
+- Source repository: `alston-personal/agentmanager`
+- Canonical branch: `main`
+- Source-of-truth execution state: `docs/LAYOUTLIB_V0_7_EXECUTION_STATE.md`
+- Production release: `v0.7.9`
+- Production URL: `https://studio.milkcat.org/layout-lab/`
+- Release workflow: `.github/workflows/oracle-release-layoutlab-v07.yml`
+- Workflow display name: `Oracle Release Layout Lab v0.7`
+- Verified successful v0.7.9 release run: `33044098450`
+- Governed Oracle action runtime root: `/home/ubuntu/.local/share/agentos/action-runtime`
+- Runtime refresh receipt: `/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v07.json`
+- Production static publish target: `/home/ubuntu/zeus-writer/website/dist/layout-lab`
+- Capability gateway: `127.0.0.1:8767`
+- Historical parser demo boundary: `127.0.0.1:8766`
+- Standalone studio-web candidate checkout: `/home/agentos-node/projects/studio-web` (not production cutover; do not confuse with the production publish target)
+
+Important commit lineage:
+
+- `8dd61bc9664db7867db5d3cdf51da1b0a2162443` — earlier Layout Lab source baseline during studio-web separation work.
+- `f16fdf3648648ef79ceeeb60c6d27a1251185874` — drag-to-move wired through `LayoutLibEditor`.
+- `3ad667f1a20dd6ffdb76750d4fec8fb5e06f647a` — preserve v0.7 UI adapter identity contract.
+- `cc5ea0106fa41fd7429c693b0a7f60a09577de6d` — record library ownership correction and v0.7.9.
+- `e8efc4ed7cbd41839f960373f79c5fb6a5f82375` — improve door evidence with leaf and swing geometry; latest recovered LayoutLib semantic work checkpoint from 2026-08-27.
+
+Recovery rule:
+
+`project alias -> canonical id layoutlib -> alston-personal/agentmanager@main -> this execution-state file -> workflow/runtime/publish locators -> latest layoutlib commit lineage`
+
+Do **not** infer that a repository named `layoutlib` must exist. Do **not** treat `/home/agentos-node/projects/studio-web` as the production checkout. The production release is built from `agentmanager@main`, refreshed into the governed runtime, then published to `/home/ubuntu/zeus-writer/website/dist/layout-lab`.
+
 ## Goal
 
 Finish LayoutLib v0.7 as the first deployed AgentOS capability-evolution closed loop, without mixing in unrelated character, trading, or general world-model work.
@@ -87,7 +123,7 @@ Parser output and user corrections remain separate layers:
 
 The same lineage mechanism serves delete and move so threshold changes do not resurrect a wall intentionally removed or relocated.
 
-`moveWallPx` now exists in the LayoutLib editor module, but the Layout Lab drag-to-move gesture is not yet wired; that UI work must call the library primitive rather than reimplement it.
+`moveWallPx` exists in the LayoutLib editor module and the recovered lineage includes the drag-to-move UI wiring commit; future gesture/endpoint work must continue to call library primitives rather than reimplement semantics in the demo.
 
 ## What v0.7 proves
 
@@ -100,10 +136,10 @@ This is the engineering proof of shared capability convergence. The stronger res
 ## Next active work after v0.7
 
 - harden correction evidence matching with ambiguity/conflict reporting rather than unsafe suppression when two candidates are equally plausible;
-- wire Layout Lab drag-to-move and endpoint adjustment strictly through LayoutLib editor APIs;
+- continue endpoint adjustment and interaction polish strictly through LayoutLib editor APIs;
 - add functional regression tests for correction rebase across threshold changes, including move/delete resurrection prevention;
 - measure real fresh-node correction-cost improvement against a no-shared-learning baseline;
-- stabilize Spatial IR topology and add rooms/openings;
+- stabilize Spatial IR topology, door/window evidence, and room/opening semantics from the current semantic MVP;
 - consolidate historical source/version filename drift into a clean canonical source identity;
 - grow the fixture/regression corpus before learned policies influence broader production behavior.
 
