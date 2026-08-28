@@ -1,0 +1,9 @@
+{
+  "capsule_id": "action-9e72ccd25c5f4784a19d0f6e24b66b32",
+  "completed_at": "2026-08-28T06:13:22Z",
+  "error": "IsADirectoryError: [Errno 21] Is a directory: '/home/ubuntu/.local/share/agentos/realm-fabric/.current-23a49f8f8bb7fafb7dd5f76116bd9f271172529d' -> '/home/ubuntu/.local/share/agentos/realm-fabric/current'",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "schema": "agentos.action-receipt/v1",
+  "started_at": "2026-08-28T06:13:20Z"
+}
