@@ -1,0 +1,118 @@
+name: Character Blueprint Meshy Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/character-blueprint-meshy-benchmark.yml'
+      - 'scripts/character_blueprint_meshy_benchmark.py'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/character-blueprint/providers-v0.1.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: character-blueprint-meshy-benchmark
+  cancel-in-progress: true
+
+jobs:
+  meshy-real-person-fullbody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MESHY_API_KEY: ${{ secrets.MESHY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Meshy benchmark adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/character_blueprint_meshy_benchmark.py
+          node --check scripts/character_blueprint_glb_render.mjs
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('benchmarks/character-blueprint/providers-v0.1.json').read_text())
+          m=p['providers']['meshy']
+          assert m['base_url']=='https://api.meshy.ai'
+          assert m['credential_env']=='MESHY_API_KEY'
+          print('meshy_benchmark_adapter_contract=PASS')
+          PY
+
+      - name: Detect Meshy credential
+        id: key
+        shell: bash
+        run: |
+          if [ -n "${MESHY_API_KEY:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'meshy_api_key=AVAILABLE'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'meshy_api_key=MISSING; external benchmark not executed'
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.available == 'true'
+        with:
+          node-version: '22'
+
+      - name: Install Playwright Chromium
+        if: steps.key.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Fetch frozen baseline fixture
+        if: steps.key.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE=/tmp/character-blueprint-benchmark-person.jpg
+          curl -fL --retry 5 --retry-delay 2 \
+            'https://upload.wikimedia.org/wikipedia/commons/c/c3/Man-standing.jpg' \
+            -o "$FIXTURE"
+          test "$(wc -c < "$FIXTURE")" -gt 10000
+          file "$FIXTURE" | grep -qi 'JPEG image data'
+
+      - name: Run Meshy Image-to-3D benchmark
+        if: steps.key.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=benchmark-artifacts/meshy/real-person-fullbody/meshy-7
+          python3 scripts/character_blueprint_meshy_benchmark.py \
+            --image /tmp/character-blueprint-benchmark-person.jpg \
+            --case-id real-person-fullbody \
+            --ai-model meshy-7 \
+            --out "$OUT"
+          test -s "$OUT/model.glb"
+          test -s "$OUT/result.json"
+
+      - name: Render canonical GLB benchmark views
+        if: steps.key.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=benchmark-artifacts/meshy/real-person-fullbody/meshy-7
+          node scripts/character_blueprint_glb_render.mjs \
+            --glb "$OUT/model.glb" \
+            --out "$OUT" \
+            --result "$OUT/result.json"
+          for view in front yaw45 right back; do test -s "$OUT/canonical-$view.png"; done
+          test -s "$OUT/geometry.json"
+          grep -q 'threejs-glb-canonical/v0.1' "$OUT/result.json"
+          echo 'meshy_character_benchmark=PASS'
+
+      - name: Upload Meshy benchmark evidence
+        if: steps.key.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-blueprint-benchmark-meshy-real-person-fullbody
+          path: benchmark-artifacts/meshy/real-person-fullbody/meshy-7/
+          if-no-files-found: error
+          retention-days: 30
