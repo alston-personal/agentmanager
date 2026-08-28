@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from scripts.execution_head import arbitrate_heads, collect_execution_head, discover_version
+from scripts.update_projects_pulse import _status_observed_at
 
 
 class ExecutionHeadTests(unittest.TestCase):
@@ -111,6 +112,38 @@ class ExecutionHeadTests(unittest.TestCase):
         result = arbitrate_heads([failed_local, remote], now=now)
         self.assertEqual(result["winner"]["source"], "remote-git")
         self.assertEqual(len(result["invalid_evidence"]), 1)
+
+    def test_persisted_receipt_survives_missing_workspace_and_stale_status(self):
+        now = datetime(2026, 8, 28, 2, 0, tzinfo=timezone.utc)
+        failed_local = {
+            "source": "local-git",
+            "error": "workspace_not_found",
+            "observed_at": (now - timedelta(seconds=1)).isoformat(),
+            "confidence": 0.0,
+        }
+        persisted = {
+            "source": "execution-receipt",
+            "local_head": "0b37627",
+            "version": "1.0.59",
+            "observed_at": (now - timedelta(hours=1)).isoformat(),
+            "confidence": 0.95,
+        }
+        stale_status = {
+            "source": "status-md",
+            "status": "v1.0.20 released",
+            "observed_at": "2026-08-20T02:25:00+00:00",
+            "confidence": 1.0,
+        }
+        result = arbitrate_heads([failed_local, stale_status, persisted], now=now)
+        self.assertEqual(result["winner"]["source"], "execution-receipt")
+        self.assertEqual(result["winner"]["version"], "1.0.59")
+
+    def test_status_semantic_timestamp_beats_checkout_mtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "STATUS.md"
+            path.write_text("status", encoding="utf-8")
+            observed = _status_observed_at(path, {"last_updated": "2026-08-20 10:25"})
+            self.assertTrue(observed.startswith("2026-08-20T10:25:00"))
 
 
 if __name__ == "__main__":
