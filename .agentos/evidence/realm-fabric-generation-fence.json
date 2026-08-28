@@ -1,5 +1,24 @@
 {
+  "claim_receipt": {
+    "action": "agentos.realm-fabric.claim_deployment",
+    "capsule_id": "action-0a9a1df91c8343a1b7c07bd074235fb4",
+    "completed_at": "2026-08-28T07:47:56Z",
+    "deployment_generation": 3,
+    "deployment_status": "rejected_lease",
+    "desired_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+    "executor_user": "ubuntu",
+    "lease_expires_at": "2026-08-28T07:57:21.140145+00:00",
+    "lease_owner": "agentos-core-mainline",
+    "observed_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+    "ok": false,
+    "schema": "agentos.action-receipt/v1",
+    "started_at": "2026-08-28T07:47:56Z"
+  },
+  "current_desired_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+  "deployment_generation": 3,
+  "deployment_status": "rejected_lease",
+  "lease_owner": "agentos-core-mainline",
   "ok": false,
-  "stage": "runtime_ready",
-  "source_commit": "26f0f62fdc516fb172d8d3f3d608d4113674c8f3"
+  "source_commit": "590669d08d05f9b5365ee97b377f2923176e4ff5",
+  "stage": "transition_required"
 }
