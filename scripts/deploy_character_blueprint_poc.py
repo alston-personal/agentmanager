@@ -17,7 +17,7 @@ MARKERS = [
     'interactivePartLinking:true',
     '3D Blueprint',
     'OrbitControls',
-    'llm_tokens: 0',
+    '"llm_tokens":0',
 ]
 FORBIDDEN_FALLBACK = ['Milkcat Studio Portal', 'SERIALS', '連載作品']
 
