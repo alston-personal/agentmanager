@@ -135,7 +135,7 @@ class ThinClientTransport:
             raise RuntimeError('client is not enrolled')
         return self._request(self.config.one_url + '/v1/benchmark', method='POST', body=report, token=self.config.node_token)
 
-    def _complete_regression(self, before_manifest: dict[str, Any], *, report_kind: str, completion_schema: str) -> dict[str, Any]:
+    def _complete_regression(self, before_manifest: dict[str, Any], *, report_kind: str, completion_schema: str, lifecycle: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
         heartbeat = self.heartbeat()
@@ -148,6 +148,7 @@ class ThinClientTransport:
             after_manifest=after_manifest,
             bootstrap=bootstrap,
             report_kind=report_kind,
+            lifecycle=lifecycle,
         )
         persisted = self.submit_benchmark(report)
         return {
@@ -156,18 +157,19 @@ class ThinClientTransport:
             'node_id': self.config.node_id,
             'heartbeat': heartbeat,
             'bootstrap': bootstrap,
+            'lifecycle': lifecycle,
             'regression': report,
             'benchmark_persisted': bool(persisted.get('ok')),
-            'node_ready': bool(report.get('node_ready')),
+            'node_ready': bool(report.get('node_ready')) and bool(persisted.get('ok')),
         }
 
-    def complete_join(self, before_manifest: dict[str, Any]) -> dict[str, Any]:
-        return self._complete_regression(before_manifest, report_kind='join-regression', completion_schema='agentos.join-completion/v0.1')
+    def complete_join(self, before_manifest: dict[str, Any], *, lifecycle: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._complete_regression(before_manifest, report_kind='join-regression', completion_schema='agentos.join-completion/v0.1', lifecycle=lifecycle)
 
-    def verify_readiness(self) -> dict[str, Any]:
-        """Verify an already-enrolled Node against current discovery and inherited Realm state."""
+    def verify_readiness(self, *, lifecycle: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Verify an already-enrolled Node against current discovery, lifecycle, and inherited Realm state."""
         baseline = self.client.capability_manifest()
-        return self._complete_regression(baseline, report_kind='readiness-regression', completion_schema='agentos.node-readiness/v0.1')
+        return self._complete_regression(baseline, report_kind='readiness-regression', completion_schema='agentos.node-readiness/v0.1', lifecycle=lifecycle)
 
     def pull_tasks(self) -> list[dict[str, Any]]:
         if not self.config:
