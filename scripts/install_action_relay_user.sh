@@ -37,10 +37,23 @@ else
     # Legacy Action Relay deployments predate the detached-worktree runtime.
     # Migrate only a narrowly-recognized runtime shape and preserve the old
     # directory as a timestamped rollback snapshot instead of deleting it.
-    test -f "$RUNTIME_ROOT/agentos_node/action_relay.py" || {
+    if [ ! -f "$RUNTIME_ROOT/agentos_node/action_relay.py" ]; then
+      echo '=== UNKNOWN ACTION RELAY RUNTIME SHAPE (READ-ONLY) ===' >&2
+      stat -c 'runtime_root=%n owner=%U:%G mode=%a type=%F' "$RUNTIME_ROOT" >&2 || true
+      find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 2 -printf 'runtime_entry=%y %P\n' 2>/dev/null | LC_ALL=C sort | head -n 120 >&2 || true
+      for marker in \
+        agentos_node/action_relay.py \
+        current/agentos_node/action_relay.py \
+        src/agentos_node/action_relay.py \
+        runtime/agentos_node/action_relay.py \
+        .git; do
+        if [ -e "$RUNTIME_ROOT/$marker" ]; then
+          echo "runtime_marker=$marker" >&2
+        fi
+      done
       echo "ERROR: non-empty runtime root is neither a worktree nor recognized legacy Action Relay runtime: $RUNTIME_ROOT" >&2
       exit 2
-    }
+    fi
     unexpected="$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 ! -name agentos_node ! -name __pycache__ -print -quit 2>/dev/null || true)"
     if [ -n "$unexpected" ]; then
       echo "ERROR: refusing legacy runtime migration because unexpected entry exists: $unexpected" >&2
