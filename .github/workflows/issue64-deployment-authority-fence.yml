@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/issue64-deployment-authority-fence.yml'
       - 'scripts/patch_realm_fabric_advance_active_lease_fence.py'
+      - 'scripts/patch_deployment_rejection_precedence.py'
       - 'scripts/install_realm_fabric_via_action_relay.py'
 
 permissions:
@@ -31,16 +32,18 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           python3 scripts/patch_realm_fabric_advance_active_lease_fence.py
+          python3 scripts/patch_deployment_rejection_precedence.py
           python3 -m py_compile agentos_node/action_relay.py scripts/install_realm_fabric_via_action_relay.py
           grep -q 'realm_fabric_advance_active_lease_fence_v1' agentos_node/action_relay.py
           grep -q 'realm_fabric_deployment_release_v1' agentos_node/action_relay.py
+          grep -q 'deployment_rejection_precedence_v1' agentos_node/action_relay.py
           grep -q 'agentos.realm-fabric.release_deployment' agentos_node/action_relay.py
           ! grep -q "advance_payload = client.submit" scripts/install_realm_fabric_via_action_relay.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add agentos_node/action_relay.py
           if ! git diff --cached --quiet; then
-            git commit -m 'fix(agentos): require release before generation advance'
+            git commit -m 'fix(agentos): preserve fenced deployment rejection verdicts'
             git pull --rebase origin main
             git push origin HEAD:main
           fi
@@ -63,13 +66,14 @@ jobs:
           git reset --hard origin/main
           grep -q 'realm_fabric_advance_active_lease_fence_v1' agentos_node/action_relay.py
           grep -q 'realm_fabric_deployment_release_v1' agentos_node/action_relay.py
+          grep -q 'deployment_rejection_precedence_v1' agentos_node/action_relay.py
           ! grep -q "advance_payload = client.submit" scripts/install_realm_fabric_via_action_relay.py
       - name: Refresh ubuntu Action Relay only
         shell: bash
         run: |
           set -euo pipefail
           runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
-          if ! grep -q 'realm_fabric_advance_active_lease_fence_v1' "$runtime" 2>/dev/null; then
+          if ! grep -q 'deployment_rejection_precedence_v1' "$runtime" 2>/dev/null; then
             tmp=/tmp/bootstrap-action-relay-advance-fence.sh
             sed \
               -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
@@ -79,6 +83,7 @@ jobs:
             bash "$tmp" || true
           fi
           grep -q 'realm_fabric_advance_active_lease_fence_v1' "$runtime"
+          grep -q 'deployment_rejection_precedence_v1' "$runtime"
           grep -q 'agentos.realm-fabric.release_deployment' "$runtime"
           test -n "$(pgrep -f 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' || true)"
       - name: Prove active lease blocks same-owner generation advance
@@ -96,7 +101,6 @@ jobs:
           owner=str(before['lease_owner'])
           assert before.get('deployment_status')=='converged',before
           assert before.get('observed_core_commit')==current,before
-          # Use a real different historical Core commit; it must never become desired.
           attempted='6ea6276f6b0dc065667853dbde05e6712193b380'
           assert attempted != current
           client=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
