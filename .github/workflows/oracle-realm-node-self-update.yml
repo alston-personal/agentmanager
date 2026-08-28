@@ -6,6 +6,7 @@ on:
       - feature/realm-node-fabric-readiness
     paths:
       - '.agentos/commands/realm-node-self-update.json'
+      - '.github/workflows/oracle-realm-node-self-update.yml'
 
 permissions:
   contents: read
@@ -70,8 +71,6 @@ jobs:
           $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
           Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
 
-          # Independent OS-level watchdog. It does not depend on ONE or the Thin Client,
-          # so a dead Thin Client can recover without remote intervention.
           $watchdog=Join-Path $install 'agentos-thin-client-watchdog.ps1'
           @"
           `$ErrorActionPreference='Stop'
@@ -93,9 +92,6 @@ jobs:
           $watchdogSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
           Register-ScheduledTask -TaskName $watchdogName -Action $watchdogAction -Trigger $watchdogTrigger -Settings $watchdogSettings -Description 'AgentOS OS-level watchdog; restarts Thin Client when it is not running' -Force | Out-Null
 
-          # Let this task return its receipt before replacing the currently executing
-          # Thin Client instance. Even if the deferred restart fails, the watchdog will
-          # independently recover it within one minute.
           $restart = "Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$taskName'"
           Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
 
