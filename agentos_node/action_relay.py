@@ -745,6 +745,20 @@ def _advance_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
         _da_fcntl.flock(lock.fileno(), _da_fcntl.LOCK_EX)
         state = _deployment_state_read()
         generation = int(state.get('deployment_generation') or 0)
+        # realm_fabric_advance_active_lease_fence_v1
+        # Generation changes require an explicit release (or natural expiry).
+        # The same textual lease_owner is not sufficient authority to replace
+        # an actively leased desired generation.
+        _lease_status = str(state.get('lease_status') or 'active')
+        _lease_expiry = str(state.get('lease_expires_at') or '')
+        _lease_active = False
+        if _lease_status != 'released' and _lease_expiry:
+            try:
+                _lease_active = _da_datetime.fromisoformat(_lease_expiry.replace('Z', '+00:00')).astimezone(_da_timezone.utc) > _da_datetime.now(_da_timezone.utc)
+            except ValueError:
+                _lease_active = True
+        if _lease_active:
+            return {'ok': False, 'deployment_status': 'rejected_active_lease', **state, 'observed_core_commit': _observed_realm_commit()}
         if generation != expected:
             return {'ok': False, 'deployment_status': 'rejected_generation', **state, 'observed_core_commit': _observed_realm_commit()}
         if state.get('lease_owner') != owner:
@@ -761,6 +775,7 @@ def _advance_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
             'deployment_generation': generation + 1,
             'lease_owner': owner,
             'lease_expires_at': (now + _da_timedelta(seconds=lease_seconds)).isoformat(),
+            'lease_status': 'active',
             'deployment_status': 'desired',
             'advanced_from_commit': current_desired,
             'advanced_from_generation': generation,
@@ -817,6 +832,51 @@ def _renew_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
             renewed['deployment_status'] = 'desired'
         _deployment_state_write(renewed)
         return {'ok': True, **renewed}
+
+
+# realm_fabric_deployment_release_v1
+def _release_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _rl_fcntl
+    from datetime import datetime as _rl_datetime, timezone as _rl_timezone
+    import re as _rl_re
+
+    required = {'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    if set(params) != required:
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    generation = int(params['deployment_generation'])
+    if not _rl_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _rl_fcntl.flock(lock.fileno(), _rl_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        if int(state.get('deployment_generation') or 0) != generation:
+            return {'ok': False, 'deployment_status': 'rejected_generation', **state, 'observed_core_commit': _observed_realm_commit()}
+        if state.get('desired_core_commit') != desired:
+            return {'ok': False, 'deployment_status': 'rejected_desired', **state, 'observed_core_commit': _observed_realm_commit()}
+        if state.get('lease_owner') != owner:
+            return {'ok': False, 'deployment_status': 'rejected_lease_owner', **state, 'observed_core_commit': _observed_realm_commit()}
+        observed = _observed_realm_commit()
+        if observed != desired:
+            return {'ok': False, 'deployment_status': 'rejected_not_converged', **state, 'observed_core_commit': observed}
+        now = _rl_datetime.now(_rl_timezone.utc)
+        released = dict(state)
+        released.update({
+            'observed_core_commit': observed,
+            'lease_status': 'released',
+            'lease_expires_at': now.isoformat(),
+            'released_by': owner,
+            'released_at': now.isoformat(),
+            'deployment_status': 'converged',
+            'updated_at': now.isoformat(),
+        })
+        _deployment_state_write(released)
+        return {'ok': True, **released}
 
 def _realm_fabric_deployment_status(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({},):
@@ -1164,6 +1224,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "agentos.antigravity.restart": _antigravity_restart,
     "agentos.realm-fabric.claim_deployment": _claim_realm_fabric_deployment,
     "agentos.realm-fabric.deployment_status": _realm_fabric_deployment_status,
+    "agentos.realm-fabric.release_deployment": _release_realm_fabric_deployment,
     "agentos.realm-fabric.renew_deployment": _renew_realm_fabric_deployment,
     "agentos.realm-fabric.inspect_service": _inspect_realm_fabric_service,
     "agentos.realm-fabric.advance_deployment": _advance_realm_fabric_deployment,
