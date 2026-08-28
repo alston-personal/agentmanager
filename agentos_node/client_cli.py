@@ -6,6 +6,7 @@ import os
 import socket
 from pathlib import Path
 
+from agentos_node.onboarding import check_windows_node_supervisor, install_windows_node_supervisor
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
 
@@ -59,7 +60,7 @@ def main() -> int:
     p_policy = sub.add_parser('policy-init', help='create a conservative local execution policy')
     p_policy.add_argument('--root', help='workspace root ONE may read/write')
 
-    p_join = sub.add_parser('join', help='join Realm, bootstrap inherited cognition, run regression, become ready')
+    p_join = sub.add_parser('join', help='join Realm, install lifecycle supervisor, bootstrap inherited cognition, run regression, become ready')
     p_join.add_argument('--one', required=True, help='ONE base URL')
     p_join.add_argument('--node-id', default=socket.gethostname().lower())
     p_join.add_argument('--expires-minutes', type=int, default=10)
@@ -74,7 +75,7 @@ def main() -> int:
     sub.add_parser('manifest', help='print local capability manifest')
     sub.add_parser('health', help='check ONE health')
     sub.add_parser('bootstrap', help='show inherited Realm capabilities and canonical capability states')
-    sub.add_parser('verify', help='verify an already-enrolled Node is ready and persist regression evidence')
+    sub.add_parser('verify', help='verify an already-enrolled Node including lifecycle supervisor and persist regression evidence')
     sub.add_parser('once', help='heartbeat, refresh discovery, pull tasks once, execute, return receipts')
     sub.add_parser('run', help='run persistent polling daemon')
 
@@ -96,7 +97,7 @@ def main() -> int:
             print(f'Expires: {payload.get("expires_at")}')
             print('Tell your Realm administrator or AgentOS assistant to approve this code.')
 
-        def show_status(payload: dict[str, object]) -> None:
+        def show_status(payload: dict[str, Any]) -> None:
             print(f'[agentos-client] enrollment status: {payload.get("status")}', flush=True)
 
         config = ThinClientTransport.enroll_device(
@@ -109,9 +110,10 @@ def main() -> int:
             on_request=show_request,
             on_status=show_status,
         )
+        lifecycle = install_windows_node_supervisor()
         transport = build_client(config, policy)
-        completion = transport.complete_join(before_manifest)
-        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'completion': completion}))
+        completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
+        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion}))
         return 0 if completion.get('node_ready') else 2
 
     if args.command == 'enroll':
@@ -128,8 +130,9 @@ def main() -> int:
     elif args.command == 'bootstrap':
         print(render_json(transport.bootstrap()))
     elif args.command == 'verify':
-        readiness = transport.verify_readiness()
-        print(render_json({'ok': bool(readiness.get('node_ready')), 'readiness': readiness}))
+        lifecycle = check_windows_node_supervisor()
+        readiness = transport.verify_readiness(lifecycle=lifecycle)
+        print(render_json({'ok': bool(readiness.get('node_ready')), 'lifecycle': lifecycle, 'readiness': readiness}))
         return 0 if readiness.get('node_ready') else 2
     elif args.command == 'once':
         print(render_json({'receipts': transport.run_once()}))
