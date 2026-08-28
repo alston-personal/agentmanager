@@ -18,17 +18,21 @@ jobs:
     runs-on: [self-hosted, oracle]
     timeout-minutes: 3
     steps:
-      - name: Locate Action Relay service source checkout
+      - name: Verify Action Relay runtime deployment boundary
         shell: bash
         run: |
           set -euo pipefail
+          runtime=/home/ubuntu/.local/share/agentos/action-runtime
           unit=/home/ubuntu/.config/systemd/user/agentos-action-relay.service
-          echo '=== service source selectors ==='
-          if [ -r "$unit" ]; then
-            grep -E '^(WorkingDirectory|ExecStart|Environment=PYTHONPATH)' "$unit" || true
-            ls -l "$unit"
-          else
-            echo 'unit_not_readable'
-          fi
-          echo '=== likely source trees ==='
-          find /home/ubuntu -maxdepth 4 -type f -path '*/agentos_node/action_relay.py' -print 2>/dev/null | head -n 20 || true
+          echo '=== runtime permissions ==='
+          ls -ld /home/ubuntu/.local /home/ubuntu/.local/share /home/ubuntu/.local/share/agentos "$runtime" 2>/dev/null || true
+          ls -ld "$runtime/agentos_node" 2>/dev/null || true
+          ls -l "$runtime/agentos_node/action_relay.py" 2>/dev/null || true
+          echo '=== service restart policy ==='
+          grep -E '^(Restart|RestartSec|Type|ExecStart|WorkingDirectory)' "$unit" 2>/dev/null || true
+          echo '=== runner write checks ==='
+          for p in "$runtime" "$runtime/agentos_node" "$runtime/agentos_node/action_relay.py"; do
+            if [ -e "$p" ]; then
+              test -w "$p" && echo "writable:$p" || echo "not-writable:$p"
+            fi
+          done
