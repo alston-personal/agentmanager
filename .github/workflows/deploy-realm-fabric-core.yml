@@ -11,6 +11,8 @@ on:
       - 'agentos_node/thin_client_transport.py'
       - 'scripts/patch_action_relay_realm_fabric.py'
       - 'scripts/patch_realm_fabric_current_pointer_compat.py'
+      - 'scripts/patch_realm_fabric_release_isolation.py'
+      - 'scripts/patch_realm_fabric_process_attestation.py'
       - 'scripts/install_realm_fabric_via_action_relay.py'
       - 'tests/test_resolve_facade.py'
       - 'tests/test_realm_resolve_endpoint.py'
@@ -30,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Add narrow governed Realm Fabric install capability
+      - name: Compile governed Realm Fabric install capability
         shell: bash
         run: |
           set -euo pipefail
@@ -38,14 +40,18 @@ jobs:
           git reset --hard origin/main
           python3 scripts/patch_action_relay_realm_fabric.py
           python3 scripts/patch_realm_fabric_current_pointer_compat.py
+          python3 scripts/patch_realm_fabric_release_isolation.py
+          python3 scripts/patch_realm_fabric_process_attestation.py
           python3 -m py_compile agentos_node/action_relay.py
           grep -q 'agentos.realm-fabric.install_release' agentos_node/action_relay.py
           grep -q 'legacy_directory_preserved' agentos_node/action_relay.py
+          grep -q 'realm_fabric_release_isolation_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_process_attestation_v1' agentos_node/action_relay.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add agentos_node/action_relay.py
           if ! git diff --cached --quiet; then
-            git commit -m 'fix(agentos): preserve legacy Realm Fabric current pointer'
+            git commit -m 'fix(agentos): attest exact Realm Fabric release process'
             git pull --rebase origin main
             git push origin HEAD:main
           fi
@@ -69,6 +75,8 @@ jobs:
           git reset --hard origin/main
           grep -q 'agentos.realm-fabric.install_release' agentos_node/action_relay.py
           grep -q 'legacy_directory_preserved' agentos_node/action_relay.py
+          grep -q 'realm_fabric_release_isolation_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_process_attestation_v1' agentos_node/action_relay.py
           echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Focused resolve tests
@@ -78,12 +86,15 @@ jobs:
           python3 -m py_compile agent_core/resolve_facade.py agent_core/realm_server.py agentos_node/thin_client_transport.py
           python3 -m unittest tests.test_resolve_facade tests.test_realm_resolve_endpoint -v
 
-      - name: Ensure ubuntu Action Relay runtime contains Realm Fabric capability
+      - name: Ensure ubuntu Action Relay runtime contains attested Realm Fabric capability
         shell: bash
         run: |
           set -euo pipefail
           runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
-          if grep -q 'agentos.realm-fabric.install_release' "$runtime" 2>/dev/null && grep -q 'legacy_directory_preserved' "$runtime" 2>/dev/null; then
+          if grep -q 'agentos.realm-fabric.install_release' "$runtime" 2>/dev/null \
+             && grep -q 'legacy_directory_preserved' "$runtime" 2>/dev/null \
+             && grep -q 'realm_fabric_release_isolation_v1' "$runtime" 2>/dev/null \
+             && grep -q 'realm_fabric_process_attestation_v1' "$runtime" 2>/dev/null; then
             echo 'action_relay_runtime_realm_fabric=ALREADY_READY'
             exit 0
           fi
@@ -97,6 +108,8 @@ jobs:
           bash "$tmp"
           grep -q 'agentos.realm-fabric.install_release' "$runtime"
           grep -q 'legacy_directory_preserved' "$runtime"
+          grep -q 'realm_fabric_release_isolation_v1' "$runtime"
+          grep -q 'realm_fabric_process_attestation_v1' "$runtime"
           echo 'action_relay_runtime_realm_fabric=READY_AFTER_REFRESH'
 
       - name: Install exact Realm Fabric release through Action Relay
@@ -105,7 +118,7 @@ jobs:
           set -euo pipefail
           python3 scripts/install_realm_fabric_via_action_relay.py
 
-      - name: Live health and governed receipt
+      - name: Live health and governed process receipt
         shell: bash
         run: |
           set -euo pipefail
@@ -119,24 +132,16 @@ jobs:
           assert r.get('action') == 'agentos.realm-fabric.install_release', r
           assert r.get('source_commit') == os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT'], r
           assert r.get('health',{}).get('status') == 200, r
-          print(json.dumps({k:r.get(k) for k in ('source_commit','release','current','current_pointer_mode','service','endpoint','health')},ensure_ascii=False,indent=2))
+          assert r.get('resolve_auth_probe',{}).get('status') == 401, r
+          assert r.get('process_identity_attested') is True, r
+          assert int(r.get('main_pid_after') or 0) > 0, r
+          print(json.dumps({k:r.get(k) for k in (
+              'source_commit','release','current','current_pointer_mode','service','endpoint','health',
+              'resolve_auth_probe','main_pid_before','main_pid_after','process_identity_attested'
+          )},ensure_ascii=False,indent=2))
           PY
           curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
           echo
-
-      - name: Live governance and Realm snapshot
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from agent_core.governance_directory import list_entities
-          from agent_core.node_registry import NodeRegistry
-          print('=== PROJECT ENTITIES ===')
-          print(json.dumps(list_entities(kind='project'), ensure_ascii=False, indent=2))
-          print('=== NODE MAP ===')
-          print(json.dumps(NodeRegistry().node_map(), ensure_ascii=False, indent=2))
-          PY
 
       - name: Unauthenticated resolve must reject
         shell: bash
@@ -149,6 +154,34 @@ jobs:
           cat /tmp/resolve-unauth.json
           test "$code" = "401"
           echo "unauthenticated_resolve=PASS"
+
+      - name: Core node must remain online
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 12
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          data=NodeRegistry().node_map()
+          print(json.dumps(data,ensure_ascii=False,indent=2))
+          matches=[n for n in data.get('nodes',[]) if n.get('node_id')=='oracle-core-node']
+          assert len(matches)==1, data
+          node=matches[0]
+          assert node.get('role')=='core', node
+          assert node.get('status')=='online', node
+          assert 'agentos.one.resolve' in (node.get('capabilities') or []), node
+          PY
+
+      - name: Live governance snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.governance_directory import list_entities
+          print(json.dumps(list_entities(kind='project'), ensure_ascii=False, indent=2))
+          PY
 
       - name: Publish governed deployment evidence
         if: always()
