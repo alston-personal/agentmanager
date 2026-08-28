@@ -70,9 +70,10 @@ jobs:
               -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
               scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
             chmod 700 "$tmp"
-            bash "$tmp"
+            bash "$tmp" || true
           fi
           grep -q 'agentos.realm-fabric.inspect_service' "$runtime"
+          test -n "$(pgrep -f 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' || true)"
           echo action_relay_service_inspect=READY
       - name: Governed ubuntu service attestation
         shell: bash
