@@ -758,15 +758,15 @@ def _advance_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
             except ValueError:
                 _lease_active = True
         if _lease_active:
-            return {'ok': False, 'deployment_status': 'rejected_active_lease', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_active_lease'}
         if generation != expected:
-            return {'ok': False, 'deployment_status': 'rejected_generation', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
         if state.get('lease_owner') != owner:
-            return {'ok': False, 'deployment_status': 'rejected_lease_owner', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
         if state.get('desired_core_commit') != current_desired:
-            return {'ok': False, 'deployment_status': 'rejected_current_desired', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_current_desired'}
         if state.get('observed_core_commit') not in (None, current_desired) and _observed_realm_commit() != current_desired:
-            return {'ok': False, 'deployment_status': 'rejected_not_converged', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_not_converged'}
         now = _da_datetime.now(_da_timezone.utc)
         advanced = {
             'schema': 'agentos.core-deployment/v1',
@@ -812,11 +812,11 @@ def _renew_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
         state = _deployment_state_read()
         current_generation = int(state.get('deployment_generation') or 0)
         if current_generation != generation:
-            return {'ok': False, 'deployment_status': 'rejected_generation', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
         if state.get('desired_core_commit') != desired:
-            return {'ok': False, 'deployment_status': 'rejected_desired', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
         if state.get('lease_owner') != owner:
-            return {'ok': False, 'deployment_status': 'rejected_lease_owner', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
         now = _dr_datetime.now(_dr_timezone.utc)
         renewed = dict(state)
         renewed['lease_expires_at'] = (now + _dr_timedelta(seconds=lease_seconds)).isoformat()
@@ -856,11 +856,11 @@ def _release_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
         _rl_fcntl.flock(lock.fileno(), _rl_fcntl.LOCK_EX)
         state = _deployment_state_read()
         if int(state.get('deployment_generation') or 0) != generation:
-            return {'ok': False, 'deployment_status': 'rejected_generation', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_generation'}
         if state.get('desired_core_commit') != desired:
-            return {'ok': False, 'deployment_status': 'rejected_desired', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_desired'}
         if state.get('lease_owner') != owner:
-            return {'ok': False, 'deployment_status': 'rejected_lease_owner', **state, 'observed_core_commit': _observed_realm_commit()}
+            return {**state, 'observed_core_commit': _observed_realm_commit(), 'ok': False, 'deployment_status': 'rejected_lease_owner'}
         observed = _observed_realm_commit()
         if observed != desired:
             return {'ok': False, 'deployment_status': 'rejected_not_converged', **state, 'observed_core_commit': observed}
@@ -1212,6 +1212,7 @@ def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     return _restart_user_service("agentos-antigravity-relay.service")
 
 
+# deployment_rejection_precedence_v1
 ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "site.sync_build": _site_sync_build,
     "layoutlab.static.deploy": _layoutlab_static_deploy,
