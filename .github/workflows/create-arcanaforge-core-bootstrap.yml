@@ -7,33 +7,79 @@ on:
       - '.github/workflows/create-arcanaforge-core-bootstrap.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: arcanaforge-core-bootstrap
   cancel-in-progress: false
 
 jobs:
-  inspect-core:
-    runs-on: [self-hosted, oracle]
+  patch-capability:
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Verify Action Relay runtime deployment boundary
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add narrow governed ArcanaForge capability
         shell: bash
         run: |
           set -euo pipefail
-          echo 'probe_version=2'
-          runtime=/home/ubuntu/.local/share/agentos/action-runtime
-          unit=/home/ubuntu/.config/systemd/user/agentos-action-relay.service
-          echo '=== runtime permissions ==='
-          ls -ld /home/ubuntu/.local /home/ubuntu/.local/share /home/ubuntu/.local/share/agentos "$runtime" 2>/dev/null || true
-          ls -ld "$runtime/agentos_node" 2>/dev/null || true
-          ls -l "$runtime/agentos_node/action_relay.py" 2>/dev/null || true
-          echo '=== service restart policy ==='
-          grep -E '^(Restart|RestartSec|Type|ExecStart|WorkingDirectory)' "$unit" 2>/dev/null || true
-          echo '=== runner write checks ==='
-          for p in "$runtime" "$runtime/agentos_node" "$runtime/agentos_node/action_relay.py"; do
-            if [ -e "$p" ]; then
-              test -w "$p" && echo "writable:$p" || echo "not-writable:$p"
-            fi
-          done
+          git fetch origin main
+          git reset --hard origin/main
+          python3 scripts/patch_action_relay_arcanaforge.py
+          python3 -m py_compile agentos_node/action_relay.py
+          grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(agentos): add governed ArcanaForge remote action'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+  core-create:
+    needs: patch-capability
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refresh canonical source to latest main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
+      - name: Refresh ubuntu Action Relay runtime through canonical safe Chronos transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+      - name: Ask Core Action Relay to create ArcanaForge and require receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ensure_arcanaforge_remote_via_action_relay.py
+      - name: Commit governed receipt evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/arcanaforge-remote-action-relay.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/arcanaforge-remote-action-relay.txt
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/arcanaforge-remote-action-relay.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(arcanaforge): governed Core repository creation'
+          git pull --rebase origin main
+          git push origin HEAD:main
