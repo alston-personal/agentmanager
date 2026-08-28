@@ -14,6 +14,7 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
 
 
@@ -117,6 +118,7 @@ class ThinClient:
             'capabilities': sorted(set(caps)),
             'tool_presence': tools,
             'surface_inventory': surface_inventory,
+            'runtime': observe_runtime(),
             'workspace_roots': {
                 'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
                 'writable': [str(p.expanduser().resolve()) for p in self.policy.writable_roots],
