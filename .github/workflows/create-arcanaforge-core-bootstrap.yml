@@ -18,26 +18,17 @@ jobs:
     runs-on: [self-hosted, oracle]
     timeout-minutes: 3
     steps:
-      - name: Locate live Action Relay module and service controls
+      - name: Locate Action Relay service source checkout
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== local module resolution ==='
-          /usr/bin/python3 - <<'PY'
-          import agentos_node.action_relay as m
-          print(m.__file__)
-          print(sorted(m.ACTIONS))
-          PY
-          echo '=== module path permissions ==='
-          mod=$(/usr/bin/python3 - <<'PY'
-          import agentos_node.action_relay as m
-          print(m.__file__)
-          PY
-          )
-          ls -l "$mod" || true
-          namei -l "$mod" || true
-          echo '=== ubuntu user service query ==='
-          systemctl --user --machine=ubuntu@ is-active agentos-action-relay.service || true
-          systemctl --user --machine=ubuntu@ cat agentos-action-relay.service || true
-          echo '=== relay root permissions ==='
-          ls -ld /home/ubuntu/agent-data/runtime/action-relay /home/ubuntu/agent-data/runtime/action-relay/{inbox,processing,receipts,quarantine} || true
+          unit=/home/ubuntu/.config/systemd/user/agentos-action-relay.service
+          echo '=== service source selectors ==='
+          if [ -r "$unit" ]; then
+            grep -E '^(WorkingDirectory|ExecStart|Environment=PYTHONPATH)' "$unit" || true
+            ls -l "$unit"
+          else
+            echo 'unit_not_readable'
+          fi
+          echo '=== likely source trees ==='
+          find /home/ubuntu -maxdepth 4 -type f -path '*/agentos_node/action_relay.py' -print 2>/dev/null | head -n 20 || true
