@@ -32,6 +32,44 @@ jobs:
           echo one_benchmark_route=PASS
           ps -eo pid,user,group,supgrp,args | grep antigravity_relay_worker | grep -v grep
 
+      - name: Prove live control of vopc5750
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id = 'vopc5750'
+          task_id = 'desktop-open-url-smoke-' + str(int(time.time()))
+          task = {
+              'schema': 'agentos.node-task/v0.1',
+              'task_id': task_id,
+              'action': 'desktop.open_url',
+              'url': 'https://example.com',
+              'cognition_ids_used': [],
+          }
+          store = RealmFabricStore()
+          queued = store.queue_task(node_id, task)
+          print('vopc_control_task=' + json.dumps(queued, ensure_ascii=False, sort_keys=True))
+          for _ in range(30):
+              receipt = store.get_receipt(task_id)
+              if receipt:
+                  print('vopc_control_receipt=' + json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+                  if receipt.get('ok') is not True:
+                      raise SystemExit('vopc5750 consumed task but desktop.open_url failed')
+                  if receipt.get('action') != 'desktop.open_url' or receipt.get('launched') is not True:
+                      raise SystemExit('vopc5750 returned unexpected desktop control receipt')
+                  print('vopc_live_control=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          print('vopc_live_control=NO_RECEIPT_WITHIN_60S')
+          raise SystemExit(41)
+          PY
+
       - name: Fingerprint live relay generation
         shell: bash
         run: |
