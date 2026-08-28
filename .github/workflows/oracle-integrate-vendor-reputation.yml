@@ -10,109 +10,100 @@ permissions:
   contents: write
 
 jobs:
-  metashield_mvp_rc1_temporary_carrier:
+  integrate:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dispatch Chamber Sovereignty Preview RC1 with private-spool compatibility
+      - name: Ask AgentOS executor to implement vendor reputation MVP
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/vendor-reputation-integration.txt
           RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
           RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
-          export PYTHONPATH="$RUNTIME"
-          python3 - <<'PY'
-          import json, os, time
-          from pathlib import Path
+          CAPSULE_ID=$(PYTHONPATH="$RUNTIME" python3 - <<'PY'
           from agentos_node.antigravity_relay import AntigravityRelayClient
+          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          instruction='''Implement a production-usable MVP of a vendor directory and temporal reputation system inside the EXISTING official website https://studio.milkcat.org. The official website source checkout is /home/ubuntu/zeus-writer and current deployed/static site lives under that existing project. Do not create a separate unrelated site.
 
-          cmd=json.loads(Path('.agentos/commands/metashield-mvp-rc1.json').read_text(encoding='utf-8'))
-          assert cmd.get('project_id')=='metashield-protocol'
-          assert cmd.get('action')=='project.mvp.rc1'
-          workspace=Path(str(cmd.get('workspace') or ''))
-          assert str(workspace)=='/home/ubuntu/agentmanager/workspace/metashield-protocol'
-          assert workspace.is_dir(), workspace
+Goal:
+Turn public/community vendor recommendations into a searchable vendor knowledge base, with time-aware user ratings whose influence decays as ratings age.
 
-          relay_root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          relay=AntigravityRelayClient(relay_root)
-          os.umask(0)
-          receipts=[]
-          submitted=[]
+Required MVP behavior:
+1. Inspect the current /home/ubuntu/zeus-writer website architecture, routing, framework, build/deploy method, and visual system first. Reuse them. Preserve every unrelated route and feature.
+2. Add a first-class vendor directory area on the official site. Prefer a concise route such as /vendors/ unless an existing naming convention clearly suggests better.
+3. Provide vendor search and filters for at least: keyword/name, category/service, and region.
+4. Provide vendor detail pages/cards showing: vendor name, categories/services, region, current reputation score, historical score or baseline, confidence/sample size, recent trend, and recommendation/evidence entries.
+5. Add a user-facing rating/review flow suitable for MVP. At minimum allow rating value, review text, service/category context, region/context if relevant, and timestamp. If the existing site has no auth/backend suitable for persistent public writes, implement the safest minimal local/demo persistence pattern supported by the site and clearly document the limitation instead of inventing insecure auth.
+6. Implement temporal reputation scoring. Use an explainable exponential/half-life decay model where newer ratings weigh more and old ratings remain visible but their contribution to CURRENT score decays over time. Keep historical score separately so old reputation is not erased. Choose a defensible initial half-life (for example 365 days) and isolate it as configuration so category-specific half-lives can be added later.
+7. Avoid the cold-start error where a new vendor with 2-3 five-star ratings automatically outranks a long-established vendor with hundreds of credible ratings. Use a simple Bayesian/prior or confidence shrinkage mechanism and expose sample/confidence information in the UI.
+8. Keep data model extensible for future Threads imports. Evidence/recommendation records should be able to retain source_type, source_url/permalink, source_author, source_created_at, original_text, recommendation type, and vendor identity/aliases. Do NOT depend on Threads API for this MVP.
+9. Seed realistic demo data derived from the current concept (multiple vendors/categories/regions, ratings across different dates) so temporal decay and trend are visibly testable. Do not fabricate claims that look like verified real-world endorsements; clearly mark seed/demo data as sample data.
+10. Add a short visible explanation near the score explaining that recent experiences have more influence on CURRENT reputation and old reviews remain accessible.
+11. Build and run the site's existing test/build checks. Fix only issues caused by this work.
+12. Deploy using the site's existing safe deployment mechanism. Do not alter DNS, TLS, firewall, unrelated virtual hosts, or unrelated services.
+13. Publicly verify the new vendor route returns HTTP 200 and that search/filter/detail behavior is present in the built UI. If a local backend/API is introduced, verify its health and same-origin route too.
+14. Return exact changed paths, architecture discovered, route URL, scoring formula/configuration, persistence choice, build/test result, public HTTP checks, and remaining limitations.
 
-          for phase in cmd['phases']:
-              p=relay.submit(
-                  project_id='metashield-protocol',
-                  canonical_ir={
-                    'goal':'Complete Chamber Sovereignty Preview RC1 MVP from the actual local working tree.',
-                    'constraints':[
-                      'Preserve Facebook, Threads, Instagram and X/Twitter preservation adapters.',
-                      'Capture once; Mainnet promotion must not require source recapture.',
-                      'Use DEVNET_ONLY -> MAINNET_REFERENCED -> MAINNET_REPLICATED semantics.',
-                      'Do not reset/rebase/discard pre-existing local work.',
-                      'Do not public-promote, deploy Mainnet, or overwrite immutable release artifacts.',
-                      'Treat local workspace as execution truth; remote GitHub may be stale.',
-                      'Return evidence and do not claim unperformed tests or side effects.'
-                    ]
-                  },
-                  instruction=str(phase['instruction']),
-                  workspace=str(workspace),
-                  executor_hint='antigravity')
-              cid=p['capsule_id']
-              submitted.append({'phase':phase['id'],'capsule_id':cid})
-              # Compatibility workaround only: spool directory stays private (2770),
-              # while capsule bytes are writable by both authorized relay identities.
-              inbox=relay_root/'inbox'/f'{cid}.json'
-              if inbox.exists():
-                  os.chmod(inbox,0o666)
-              deadline=time.monotonic()+240
-              receipt=None
-              while time.monotonic()<deadline:
-                  receipt=relay.receipt(cid)
-                  if receipt is not None: break
-                  time.sleep(1)
-              if receipt is None:
-                  receipt={'schema':'agentos.antigravity-receipt/v1','capsule_id':cid,'ok':False,'error':'receipt_timeout'}
-              receipts.append({'phase':phase['id'],'receipt':receipt})
-              if not receipt.get('ok'):
-                  break
+Design intent:
+This is not merely a Threads comment index. It is a time-aware community vendor reputation/search product. The key user question is: “How good is this vendor NOW?” while preserving historical reputation and evidence.
 
-          result={
-            'schema':'agentos.metashield-mvp-dispatch/v0.1',
-            'project_id':'metashield-protocol',
-            'workspace':str(workspace),
-            'submitted_at':int(time.time()),
-            'submitted':submitted,
-            'receipts':receipts,
-            'complete':len(receipts)==len(cmd['phases']) and all((x.get('receipt') or {}).get('ok') for x in receipts),
-            'spool_workaround':'0666 capsule inside private relay spool; Core boundary repair remains separate'
-          }
-          Path('.agentos/evidence/metashield-mvp-rc1-current.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          print(json.dumps(result,ensure_ascii=False,indent=2))
-          if not result['complete']:
-              raise SystemExit('one or more MVP phases failed')
+You are authorized to make the minimal code/config/deployment changes required inside the existing official website project for this vendor-reputation MVP. Do not perform unrelated cleanup or destructive migrations.'''
+          p=c.submit(
+            project_id='vendor-reputation',
+            canonical_ir={
+              'goal':'Ship a searchable, time-aware vendor reputation MVP inside the existing official Studio website.',
+              'acceptance':[
+                'official site vendor route returns HTTP 200',
+                'search/filter and vendor detail UI work',
+                'current reputation uses explainable time decay',
+                'historical score remains separately visible or represented',
+                'cold-start ranking is confidence-adjusted',
+                'data model is extensible for future Threads evidence imports',
+                'existing unrelated routes remain intact'
+              ],
+              'constraints':[
+                'integrate into /home/ubuntu/zeus-writer existing website',
+                'preserve unrelated routes/config',
+                'no DNS/TLS/firewall changes',
+                'do not require Threads API for MVP',
+                'seed data must be clearly marked demo/sample'
+              ]
+            },
+            instruction=instruction,
+            workspace='/home/ubuntu/agentmanager')
+          print(p['capsule_id'])
+          PY
+          )
+          RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
+          for i in $(seq 1 900); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "receipt timeout: $CAPSULE_ID"; exit 3; }
+          {
+            echo "capsule_id=$CAPSULE_ID"
+            cat "$RECEIPT"
+          } | tee "$OUT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('ok') is True, r
+          text=(r.get('stdout','')+'\n'+r.get('stderr','')).lower()
+          required=['vendor','score','http']
+          missing=[x for x in required if x not in text]
+          if missing: raise SystemExit('receipt lacks minimum evidence: '+','.join(missing))
+          print('vendor_reputation_executor_receipt=PASS')
           PY
 
-      - name: Validate and commit MetaShield execution evidence
+      - name: Commit integration evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          if test -f .agentos/evidence/metashield-mvp-rc1-current.json; then
-            python3 - <<'PY'
-          import json
-          r=json.load(open('.agentos/evidence/metashield-mvp-rc1-current.json',encoding='utf-8'))
-          print('complete=',r.get('complete'))
-          for item in r.get('receipts') or []:
-              rec=item.get('receipt') or {}
-              print(item.get('phase'),'ok=',rec.get('ok'),'returncode=',rec.get('returncode'),'timed_out=',rec.get('timed_out'),'error=',rec.get('error'))
-          PY
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/metashield-mvp-rc1-current.json 2>/dev/null || true
+          git add .agentos/evidence/vendor-reputation-integration.txt 2>/dev/null || true
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(metashield): Sovereignty Preview RC1 execution'
-          git push origin HEAD:main
+          git commit -m 'evidence(vendors): temporal reputation official-site integration'
+          git push
