@@ -15,16 +15,13 @@ if anchor not in text:
 fn = r'''
 
 def _import_layoutlib_v079(params: dict[str, Any]) -> dict[str, Any]:
-    """Import the fixed LayoutLib v0.7.9 production package into its canonical repo.
-
-    This is deliberately not a general git/file-copy action. Source repository,
-    source commit, source files, destination repository and destination path are
-    all fixed by Core policy so the effect is reviewable and replayable.
-    """
+    """Import the fixed LayoutLib v0.7.9 production package into its canonical repo."""
     import hashlib as _ll_hashlib
+    import json as _ll_json
     import shutil as _ll_shutil
     import subprocess as _ll_subprocess
     import tempfile as _ll_tempfile
+    from pathlib import Path as _LLPath
 
     source_repo = 'alston-personal/agentmanager'
     source_commit = 'e8efc4ed7cbd41839f960373f79c5fb6a5f82375'
@@ -39,10 +36,7 @@ def _import_layoutlib_v079(params: dict[str, Any]) -> dict[str, Any]:
         'web_assets/layoutlab-capability-bridge-v0.7.js',
         'web_assets/layoutlab-v0.7-release-fix.js',
     ]
-    expected = {
-        'repository': target_repo,
-        'source_commit': source_commit,
-    }
+    expected = {'repository': target_repo, 'source_commit': source_commit}
     if params not in ({}, expected):
         raise ValueError('unexpected parameters')
 
@@ -50,12 +44,12 @@ def _import_layoutlib_v079(params: dict[str, Any]) -> dict[str, Any]:
         p = _ll_subprocess.run(argv, cwd=cwd, text=True, capture_output=True, timeout=timeout, check=False)
         return {'argv': argv, 'returncode': p.returncode, 'stdout': p.stdout[-4000:], 'stderr': p.stderr[-4000:]}
 
-    auth = run(['/usr/bin/gh', 'auth', 'status'], cwd=str(Path.home()), timeout=20)
+    auth = run(['/usr/bin/gh', 'auth', 'status'], cwd=str(_LLPath.home()), timeout=20)
     if auth['returncode'] != 0:
         return {'ok': False, 'error': 'ubuntu GitHub identity is not authenticated', 'auth': auth}
 
     with _ll_tempfile.TemporaryDirectory(prefix='layoutlib-v079-import-') as td:
-        root = Path(td)
+        root = _LLPath(td)
         src = root / 'source'
         dst = root / 'layoutlib'
         clone_src = run(['/usr/bin/gh', 'repo', 'clone', source_repo, str(src)], timeout=120)
@@ -75,28 +69,57 @@ def _import_layoutlib_v079(params: dict[str, Any]) -> dict[str, Any]:
         clone_dst = run(['/usr/bin/gh', 'repo', 'clone', target_repo, str(dst)], timeout=120)
         if clone_dst['returncode'] != 0:
             return {'ok': False, 'stage': 'clone_target', 'clone_target': clone_dst}
-        run(['/usr/bin/git', '-C', str(dst), 'checkout', '-B', 'main'], timeout=30)
+        branch = run(['/usr/bin/git', '-C', str(dst), 'checkout', '-B', 'main'], timeout=30)
+        if branch['returncode'] != 0:
+            return {'ok': False, 'stage': 'checkout_target', 'checkout_target': branch}
 
         release_dir = dst / 'release' / release
         release_dir.mkdir(parents=True, exist_ok=True)
         for rel in files:
-            _ll_shutil.copy2(src / rel, release_dir / Path(rel).name)
+            _ll_shutil.copy2(src / rel, release_dir / _LLPath(rel).name)
 
-        provenance = f'''# LayoutLib {release} production extraction\n\nCanonical source extraction from `{source_repo}` at exact commit `{source_commit}`.\n\nThe files in this directory are the seven assets used by the authoritative Oracle `Layout Lab v0.7` production release path. They are preserved flat so the historical script references remain valid.\n\n## Ownership boundary\n\n- LayoutLib library/parser/editor semantics: `layoutlib-browser-v0.5.js`, `layoutlib-spatial-semantics-v0.1.js`, `layoutlib-editor-v0.7.js`.\n- Layout Lab reference/demo surface: `layoutlab_v0_5.html`, `layoutlab-editor-ui-v0.7.js`, `layoutlab-capability-bridge-v0.7.js`, `layoutlab-v0.7-release-fix.js`.\n- The historical filename `layoutlib-browser-v0.5.js` identifies itself internally as Browser Adapter v0.6.0; it is intentionally not renamed in this extraction.\n\nThis extraction is provenance-preserving. Refactoring/version normalization must be a later, separately reviewed change.\n'''
+        provenance = f"""# LayoutLib {release} production extraction
+
+Canonical source extraction from `{source_repo}` at exact commit `{source_commit}`.
+
+The files in this directory are the seven assets used by the authoritative Oracle `Layout Lab v0.7` production release path. They are preserved flat so historical release identity remains auditable.
+
+## Ownership boundary
+
+- LayoutLib library/parser/editor semantics: `layoutlib-browser-v0.5.js`, `layoutlib-spatial-semantics-v0.1.js`, `layoutlib-editor-v0.7.js`.
+- Layout Lab reference/demo surface: `layoutlab_v0_5.html`, `layoutlab-editor-ui-v0.7.js`, `layoutlab-capability-bridge-v0.7.js`, `layoutlab-v0.7-release-fix.js`.
+- The historical filename `layoutlib-browser-v0.5.js` identifies itself internally as Browser Adapter v0.6.0; it is intentionally not renamed in this extraction.
+
+This extraction is provenance-preserving. Refactoring/version normalization must be a later, separately reviewed change.
+"""
         (release_dir / 'PROVENANCE.md').write_text(provenance, encoding='utf-8')
         manifest = {
             'schema': 'layoutlib.production-extraction/v1',
             'release': release,
             'source_repository': source_repo,
             'source_commit': source_commit,
-            'files': [{'source': rel, 'destination': f'release/{release}/{Path(rel).name}', 'sha256': source_hashes[rel]} for rel in files],
+            'files': [
+                {
+                    'source': rel,
+                    'destination': f'release/{release}/{_LLPath(rel).name}',
+                    'sha256': source_hashes[rel],
+                }
+                for rel in files
+            ],
         }
-        (release_dir / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n', encoding='utf-8')
-        readme = f'''# LayoutLib\n\nCanonical repository for the LayoutLib spatial layout library and the Layout Lab reference demo.\n\nThe first canonicalized production snapshot is under `release/{release}/`, extracted without semantic refactoring from `{source_repo}@{source_commit}`.\n'''
+        (release_dir / 'manifest.json').write_text(_ll_json.dumps(manifest, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+        readme = f"""# LayoutLib
+
+Canonical repository for the LayoutLib spatial layout library.
+
+The first canonicalized production snapshot is preserved under `release/{release}/`, extracted byte-for-byte from `{source_repo}@{source_commit}`. Layout Lab files in that snapshot are historical reference/demo surface assets, not LayoutLib project identity.
+"""
         (dst / 'README.md').write_text(readme, encoding='utf-8')
 
-        run(['/usr/bin/git', '-C', str(dst), 'config', 'user.name', 'AgentOS Oracle Core'])
-        run(['/usr/bin/git', '-C', str(dst), 'config', 'user.email', 'agentos-core@users.noreply.github.com'])
+        for key, value in [('user.name', 'AgentOS Oracle Core'), ('user.email', 'agentos-core@users.noreply.github.com')]:
+            cfg = run(['/usr/bin/git', '-C', str(dst), 'config', key, value])
+            if cfg['returncode'] != 0:
+                return {'ok': False, 'stage': 'git_config', 'git_config': cfg}
         add = run(['/usr/bin/git', '-C', str(dst), 'add', 'README.md', f'release/{release}'])
         if add['returncode'] != 0:
             return {'ok': False, 'stage': 'git_add', 'git_add': add}
@@ -114,10 +137,9 @@ def _import_layoutlib_v079(params: dict[str, Any]) -> dict[str, Any]:
             return {'ok': False, 'stage': 'head', 'head': head}
         target_commit = head['stdout'].strip()
 
-        # Byte-for-byte post-copy verification before declaring the effect complete.
         destination_hashes = {}
         for rel in files:
-            name = Path(rel).name
+            name = _LLPath(rel).name
             p = release_dir / name
             destination_hashes[name] = _ll_hashlib.sha256(p.read_bytes()).hexdigest()
             if destination_hashes[name] != source_hashes[rel]:
