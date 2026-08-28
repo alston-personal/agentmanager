@@ -20,11 +20,20 @@ test -f "$REALM_RUNTIME/agent_core/realm_server.py" || { echo "ERROR: realm runt
 
 git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
 SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
-TMP=$(mktemp)
-trap 'rm -f "$TMP"' EXIT
-git -C "$REPO" show "$SOURCE_COMMIT:agent_core/controller_api.py" > "$TMP"
-python3 -m py_compile "$TMP"
-install -m 0664 "$TMP" "$REALM_RUNTIME/agent_core/controller_api.py"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+for path in \
+  agent_core/controller_api.py \
+  agent_core/runtime_ota.py \
+  agent_core/node_registry.py; do
+  dest="$TMPDIR/$(basename "$path")"
+  git -C "$REPO" show "$SOURCE_COMMIT:$path" > "$dest"
+  python3 -m py_compile "$dest"
+done
+
+install -m 0664 "$TMPDIR/runtime_ota.py" "$REALM_RUNTIME/agent_core/runtime_ota.py"
+install -m 0664 "$TMPDIR/node_registry.py" "$REALM_RUNTIME/agent_core/node_registry.py"
+install -m 0664 "$TMPDIR/controller_api.py" "$REALM_RUNTIME/agent_core/controller_api.py"
 
 systemctl --user restart agentos-realm-fabric.service
 for i in $(seq 1 20); do
@@ -33,8 +42,11 @@ for i in $(seq 1 20); do
 done
 systemctl --user is-active --quiet agentos-realm-fabric.service
 
-grep -q "node.runtime.converge" "$REALM_RUNTIME/agent_core/controller_api.py"
-echo "controller_runtime_converge_deploy=PASS"
+grep -q "realm.runtime.rollout" "$REALM_RUNTIME/agent_core/controller_api.py"
+grep -q "runtime_status" "$REALM_RUNTIME/agent_core/runtime_ota.py"
+grep -q "runtime_converged_count" "$REALM_RUNTIME/agent_core/node_registry.py"
+echo "core_runtime_ota_deploy=PASS"
 echo "agentos_source_commit=$SOURCE_COMMIT"
 echo "bridge_env_preserved=PASS"
+echo "realm_ota_policy=available"
 echo "realm_service=active"
