@@ -27,19 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate Character Blueprint source identity
+      - name: Validate actionable Character Blueprint source
         shell: bash
         run: |
           set -euo pipefail
           PAGE=web_assets/character-blueprint-poc.html
           DEPLOY=scripts/deploy_character_blueprint_poc.py
-          grep -q 'character-blueprint-poc' "$PAGE"
-          grep -q 'Character Blueprint' "$PAGE"
-          grep -q 'character-blueprint-ir/v0.1' "$PAGE"
+          grep -q 'data-version="0.2.0"' "$PAGE"
+          grep -q 'character-blueprint-ir/v0.2' "$PAGE"
+          grep -q 'ImageSegmenter' "$PAGE"
+          grep -q 'transparent-cutout' "$PAGE"
+          grep -q 'user-annotations' "$PAGE"
+          grep -q '匯出透明 PNG' "$PAGE"
           grep -q 'llm_tokens: 0' "$PAGE"
-          grep -q 'MediaPipe Pose Landmarker' "$PAGE"
           grep -q '/poc/character-blueprint/' "$DEPLOY"
-          echo 'character_blueprint_source=PASS'
+          echo 'character_blueprint_v02_source=PASS'
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -52,9 +54,7 @@ jobs:
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           STAGE=/tmp/character-blueprint-${GITHUB_RUN_ID}
-          tar czf - \
-            scripts/deploy_character_blueprint_poc.py \
-            web_assets/character-blueprint-poc.html \
+          tar czf - scripts/deploy_character_blueprint_poc.py web_assets/character-blueprint-poc.html \
           | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               "rm -rf '$STAGE' && mkdir -p '$STAGE' && tar xzf - -C '$STAGE'"
 
@@ -72,35 +72,34 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1]); sha=sys.argv[2]; receipt=Path(sys.argv[3])
           rels=['scripts/deploy_character_blueprint_poc.py','web_assets/character-blueprint-poc.html']
-          hashes={r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}
-          data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.1','source_commit':sha,'runtime_root':str(root),'sha256':hashes}
-          receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n')
-          print(json.dumps(data,sort_keys=True))
+          data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.2','source_commit':sha,'runtime_root':str(root),'sha256':{r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}}
+          receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n'); print(json.dumps(data,sort_keys=True))
           PY
           cd "$RUNTIME"
           /usr/bin/python3 scripts/deploy_character_blueprint_poc.py | tee /tmp/character-blueprint-release.json
           grep -q '"ok": true' /tmp/character-blueprint-release.json
-          grep -q 'character-blueprint-poc-v0.1' /tmp/character-blueprint-release.json
+          grep -q 'character-blueprint-poc-v0.2' /tmp/character-blueprint-release.json
           rm -rf "$STAGE"
-          echo 'character_blueprint_deploy=PASS'
+          echo 'character_blueprint_v02_deploy=PASS'
           REMOTE
 
-      - name: Public route acceptance rejects Studio fallback
+      - name: Public v0.2 acceptance rejects inert or fallback page
         shell: bash
         run: |
           set -euo pipefail
           URL=https://studio.milkcat.org/poc/character-blueprint/
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$URL" -o /tmp/character-blueprint-public
-          grep -q 'meta name="character-blueprint-poc" content="v0.1.0"' /tmp/character-blueprint-public
-          grep -q 'data-app="character-blueprint-poc"' /tmp/character-blueprint-public
-          grep -q '<title>Character Blueprint POC v0.1</title>' /tmp/character-blueprint-public
-          grep -q 'character-blueprint-ir/v0.1' /tmp/character-blueprint-public
+          grep -q 'meta name="character-blueprint-poc" content="v0.2.0"' /tmp/character-blueprint-public
+          grep -q '<title>Character Blueprint POC v0.2</title>' /tmp/character-blueprint-public
+          grep -q 'character-blueprint-ir/v0.2' /tmp/character-blueprint-public
+          grep -q '匯出透明 PNG' /tmp/character-blueprint-public
+          grep -q '開始點圖標註' /tmp/character-blueprint-public
+          grep -q 'transparent-cutout' /tmp/character-blueprint-public
+          grep -q 'user-annotations' /tmp/character-blueprint-public
           grep -q 'llm_tokens: 0' /tmp/character-blueprint-public
+          ! grep -q '<title>Character Blueprint POC v0.1</title>' /tmp/character-blueprint-public
           if grep -q 'Milkcat Studio Portal' /tmp/character-blueprint-public && ! grep -q 'character-blueprint-poc' /tmp/character-blueprint-public; then
-            echo 'ERROR: Studio homepage fallback detected' >&2
-            exit 1
+            echo 'ERROR: Studio homepage fallback detected' >&2; exit 1
           fi
-          echo 'public_character_blueprint_identity=PASS'
-          echo 'studio_fallback_rejected=PASS'
-
-# This workflow deliberately verifies page identity, not merely HTTP 200.
+          echo 'public_character_blueprint_v02_identity=PASS'
+          echo 'actionable_features=PASS'
