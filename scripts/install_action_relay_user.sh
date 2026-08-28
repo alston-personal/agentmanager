@@ -8,7 +8,9 @@ fi
 
 REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 DATA="${AGENT_DATA_ROOT:-$HOME/agent-data}"
-RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
+# Action Relay owns a dedicated runtime. Do not reuse action-runtime: that
+# path is application/runtime asset space (for example character-blueprint).
+RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-relay-runtime}"
 RELAY_ROOT="$DATA/runtime/action-relay"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-action-relay.service"
@@ -34,9 +36,8 @@ if [ -e "$RUNTIME_ROOT/.git" ]; then
   git -C "$RUNTIME_ROOT" reset --hard origin/main
 else
   if [ -e "$RUNTIME_ROOT" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    # Legacy Action Relay deployments predate the detached-worktree runtime.
-    # Migrate only a narrowly-recognized runtime shape and preserve the old
-    # directory as a timestamped rollback snapshot instead of deleting it.
+    # Migrate only a narrowly-recognized Action Relay runtime shape and keep a
+    # timestamped rollback snapshot. Unknown content is never removed.
     if [ ! -f "$RUNTIME_ROOT/agentos_node/action_relay.py" ]; then
       echo '=== UNKNOWN ACTION RELAY RUNTIME SHAPE (READ-ONLY) ===' >&2
       stat -c 'runtime_root=%n owner=%U:%G mode=%a type=%F' "$RUNTIME_ROOT" >&2 || true
@@ -51,12 +52,12 @@ else
           echo "runtime_marker=$marker" >&2
         fi
       done
-      echo "ERROR: non-empty runtime root is neither a worktree nor recognized legacy Action Relay runtime: $RUNTIME_ROOT" >&2
+      echo "ERROR: non-empty runtime root is neither a worktree nor recognized Action Relay runtime: $RUNTIME_ROOT" >&2
       exit 2
     fi
     unexpected="$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 ! -name agentos_node ! -name __pycache__ -print -quit 2>/dev/null || true)"
     if [ -n "$unexpected" ]; then
-      echo "ERROR: refusing legacy runtime migration because unexpected entry exists: $unexpected" >&2
+      echo "ERROR: refusing Action Relay runtime migration because unexpected entry exists: $unexpected" >&2
       exit 2
     fi
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
