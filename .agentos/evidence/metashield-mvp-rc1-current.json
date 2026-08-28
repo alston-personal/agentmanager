@@ -1,0 +1,60 @@
+{
+  "schema": "agentos.metashield-mvp-dispatch/v0.1",
+  "project_id": "metashield-protocol",
+  "workspace": "/home/ubuntu/agentmanager/workspace/metashield-protocol/",
+  "submitted_at": 1787885066,
+  "submitted": [
+    {
+      "phase": "phase-1-product-surface-and-contract",
+      "capsule_id": "relay-dafe380a81a44099892f2515fb41184b"
+    },
+    {
+      "phase": "phase-2-devnet-exit-and-integrity",
+      "capsule_id": "relay-c85b364943014cf98a968ae3ef6a0891"
+    },
+    {
+      "phase": "phase-3-rc-validation-package-and-receipt",
+      "capsule_id": "relay-60e61e44c2cb4196bd255a60ec7d168e"
+    }
+  ],
+  "receipts": [
+    {
+      "phase": "phase-1-product-surface-and-contract",
+      "receipt": {
+        "capsule_id": "relay-dafe380a81a44099892f2515fb41184b",
+        "completed_at": "2026-08-28T02:44:26Z",
+        "error": "PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-dafe380a81a44099892f2515fb41184b.json'",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-08-28T02:44:26Z"
+      }
+    },
+    {
+      "phase": "phase-2-devnet-exit-and-integrity",
+      "receipt": {
+        "capsule_id": "relay-c85b364943014cf98a968ae3ef6a0891",
+        "completed_at": "2026-08-28T02:44:26Z",
+        "error": "PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-c85b364943014cf98a968ae3ef6a0891.json'",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-08-28T02:44:26Z"
+      }
+    },
+    {
+      "phase": "phase-3-rc-validation-package-and-receipt",
+      "receipt": {
+        "capsule_id": "relay-60e61e44c2cb4196bd255a60ec7d168e",
+        "completed_at": "2026-08-28T02:44:26Z",
+        "error": "PermissionError: [Errno 13] Permission denied: '/home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-60e61e44c2cb4196bd255a60ec7d168e.json'",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-08-28T02:44:26Z"
+      }
+    }
+  ],
+  "pending": [],
+  "complete": true
+}
