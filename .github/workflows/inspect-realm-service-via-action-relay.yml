@@ -1,0 +1,100 @@
+name: Inspect Realm Service Through Action Relay
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-realm-service-via-action-relay.yml'
+      - 'scripts/patch_action_relay_realm_service_inspect.py'
+      - 'scripts/repair_antigravity_relay_user.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compile governed service attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python3 scripts/patch_action_relay_realm_service_inspect.py
+          python3 -m py_compile agentos_node/action_relay.py
+          grep -q 'agentos.realm-fabric.inspect_service' agentos_node/action_relay.py
+          grep -q 'realm_fabric_deploy_authority_separation_v1' scripts/repair_antigravity_relay_user.sh
+          ! grep -q 'systemctl --user restart agentos-realm-fabric.service' scripts/repair_antigravity_relay_user.sh
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(agentos): compile governed Realm service attestation'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+  inspect:
+    needs: compile
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 9
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refresh canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          grep -q 'agentos.realm-fabric.inspect_service' agentos_node/action_relay.py
+          grep -q 'realm_fabric_deploy_authority_separation_v1' scripts/repair_antigravity_relay_user.sh
+      - name: Refresh ubuntu Action Relay only
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
+          if ! grep -q 'agentos.realm-fabric.inspect_service' "$runtime" 2>/dev/null; then
+            tmp=/tmp/bootstrap-action-relay-service-inspect.sh
+            sed \
+              -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+              -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
+              scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
+            chmod 700 "$tmp"
+            bash "$tmp"
+          fi
+          grep -q 'agentos.realm-fabric.inspect_service' "$runtime"
+          echo action_relay_service_inspect=READY
+      - name: Governed ubuntu service attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agentos_node.action_relay import ActionRelayClient
+          root='/home/ubuntu/agent-data/runtime/action-relay'
+          c=ActionRelayClient(root)
+          cap=c.submit('agentos.realm-fabric.inspect_service',{})
+          cid=cap['capsule_id']
+          rec=None
+          for _ in range(120):
+              rec=c.receipt(cid)
+              if rec is not None: break
+              time.sleep(.5)
+          if rec is None: raise SystemExit('service attestation receipt timeout')
+          print(json.dumps(rec,ensure_ascii=False,indent=2))
+          Path('/tmp/realm-service-attestation.json').write_text(json.dumps(rec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          assert rec.get('schema')=='agentos.action-receipt/v1',rec
+          assert rec.get('executor_user')=='ubuntu',rec
+          assert rec.get('action')=='agentos.realm-fabric.inspect_service',rec
+          PY
