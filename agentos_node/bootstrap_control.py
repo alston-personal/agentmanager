@@ -13,7 +13,8 @@ SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
-ALLOWED_ACTIONS = {ACTION_REPAIR_TRANSPORT, ACTION_DEPLOY_REALM_GATEWAY}
+ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750 = "agentos.controller.surface-inspect-vopc5750"
+ALLOWED_ACTIONS = {ACTION_REPAIR_TRANSPORT, ACTION_DEPLOY_REALM_GATEWAY, ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750}
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
 
@@ -115,6 +116,8 @@ def _execute(action: str) -> dict[str, Any]:
         return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, env_extra={"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"})
     if action == ACTION_DEPLOY_REALM_GATEWAY:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300)
+    if action == ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750:
+        return _run_canonical_script("scripts/controller_surface_inspect_vopc5750.sh", timeout=60)
     raise ValueError("unsupported bootstrap action")
 
 

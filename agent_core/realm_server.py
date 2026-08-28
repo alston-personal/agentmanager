@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from agent_core.controller_service import ControllerService
 from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
 from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
@@ -201,6 +202,11 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
+                return
+            if self.path == '/v1/controller/dispatch':
+                body = self._json_body()
+                result = ControllerService(self.fabric).dispatch(body)
+                self._send(200, result)
                 return
             if self.path == '/v1/resolve':
                 body = self._json_body()
