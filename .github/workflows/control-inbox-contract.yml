@@ -7,19 +7,31 @@ on:
     paths:
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/node_registry.py'
       - 'agent_core/realm_server.py'
+      - 'agent_core/runtime_ota.py'
+      - 'agentos_node/runtime_provenance.py'
+      - 'agentos_node/thin_client.py'
       - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'scripts/deploy_controller_runtime_converge_user.sh'
       - 'tests/test_controller_api.py'
       - 'tests/test_control_inbox_bridge.py'
+      - 'tests/test_runtime_ota.py'
       - '.github/workflows/control-inbox-contract.yml'
   pull_request:
     paths:
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/node_registry.py'
       - 'agent_core/realm_server.py'
+      - 'agent_core/runtime_ota.py'
+      - 'agentos_node/runtime_provenance.py'
+      - 'agentos_node/thin_client.py'
       - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'scripts/deploy_controller_runtime_converge_user.sh'
       - 'tests/test_controller_api.py'
       - 'tests/test_control_inbox_bridge.py'
+      - 'tests/test_runtime_ota.py'
 
 permissions:
   contents: read
@@ -36,6 +48,8 @@ jobs:
       - name: Install test dependency
         run: python -m pip install pytest
       - name: Validate installer shell syntax
-        run: bash -n scripts/install_control_inbox_bridge_user.sh
-      - name: Run controller and bridge contracts
-        run: python -m pytest -q tests/test_controller_api.py tests/test_control_inbox_bridge.py
+        run: |
+          bash -n scripts/install_control_inbox_bridge_user.sh
+          bash -n scripts/deploy_controller_runtime_converge_user.sh
+      - name: Run controller, bridge, and OTA contracts
+        run: python -m pytest -q tests/test_controller_api.py tests/test_control_inbox_bridge.py tests/test_runtime_ota.py
