@@ -1,0 +1,80 @@
+name: Oracle vopc5750 Runtime Stage2 Start
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-runtime-stage2-start.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Start staged Thin Client
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          REF=$(git rev-parse HEAD)
+          python3 - "$REF" <<'PY' >/tmp/vopc5750-stage2-task.txt
+          import sys,time
+          from agent_core.realm_fabric import RealmFabricStore
+          ref=sys.argv[1]
+          node='vopc5750'
+          tid='runtime-stage2-start-'+node+'-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $taskName='AgentOS Thin Client'
+          $t=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          if ($t.State -ne 'Running') { Start-ScheduledTask -TaskName $taskName }
+          Start-Sleep -Seconds 2
+          $state=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).State
+          Write-Output ('agentos_thin_client_task_state=' + $state)
+          Write-Output 'agentos_runtime_stage2_start=PASS'
+          '''
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node,task)
+          print(tid)
+          PY
+      - name: Wait for start receipt and converged heartbeat
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(cat /tmp/vopc5750-stage2-task.txt)
+          for i in $(seq 1 60); do
+            python3 - "$TASK" <<'PY' && exit 0 || true
+          import json,sys
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if not r or r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+              raise SystemExit(1)
+          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+          if not node:
+              raise SystemExit(1)
+          caps=set(node.get('capabilities') or [])
+          runtime=node.get('runtime') or {}
+          ok=('agent.surface.inspect' in caps and 'node.runtime.converge' in caps and runtime.get('source_commit'))
+          if ok:
+              print(json.dumps({'receipt':r,'node':node},ensure_ascii=False,indent=2,sort_keys=True))
+              raise SystemExit(0)
+          raise SystemExit(1)
+          PY
+            sleep 2
+          done
+          echo 'stage2 heartbeat convergence timeout' >&2
+          exit 1
