@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/create-arcanaforge-core-bootstrap.yml'
+      - 'scripts/install_action_relay_user.sh'
 
 permissions:
   contents: write
