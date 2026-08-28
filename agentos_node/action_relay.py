@@ -141,11 +141,22 @@ def _register_agentos_core_project(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError('unexpected parameters')
 
     import sys as _pc_sys
-    source_root = Path('/home/ubuntu/agentmanager')
-    if not (source_root / 'agent_core' / 'project_store.py').is_file():
-        return {'ok': False, 'stage': 'source', 'error': 'canonical Core project store unavailable'}
-    if str(source_root) not in _pc_sys.path:
-        _pc_sys.path.insert(0, str(source_root))
+    # core_project_runtime_binding_v1: bind mutation logic to the exact deployed Core
+    # release, never to a mutable source checkout that may be refreshed independently.
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    if not unit.is_file():
+        return {'ok': False, 'stage': 'runtime_binding', 'error': 'Realm Fabric unit unavailable'}
+    exec_line = ''
+    for raw in unit.read_text(encoding='utf-8').splitlines():
+        if raw.startswith('ExecStart='):
+            exec_line = raw.split('=', 1)[1].strip()
+            break
+    launcher = Path(exec_line.split()[0]) if exec_line else None
+    release_root = launcher.parent.parent if launcher else None
+    if release_root is None or not (release_root / 'agent_core' / 'project_store.py').is_file():
+        return {'ok': False, 'stage': 'runtime_binding', 'error': 'deployed Core project store unavailable', 'exec_start': exec_line}
+    if str(release_root) not in _pc_sys.path:
+        _pc_sys.path.insert(0, str(release_root))
 
     from agent_core.project_store import (
         CanonicalProjectRegistration,
