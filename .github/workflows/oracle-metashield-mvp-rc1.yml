@@ -1,8 +1,10 @@
 name: Oracle MetaShield MVP RC1
 
 on:
+  workflow_dispatch:
   push:
     paths:
+      - '.github/workflows/oracle-metashield-mvp-rc1.yml'
       - '.agentos/commands/metashield-mvp-rc1.json'
 
 permissions:
