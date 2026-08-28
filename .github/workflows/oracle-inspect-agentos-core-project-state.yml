@@ -18,7 +18,7 @@ jobs:
       AGENT_DATA_ROOT: /home/ubuntu/agent-data
     steps:
       - uses: actions/checkout@v4
-      - name: Read-only project state inventory
+      - name: Read-only project identity and state inventory
         shell: bash
         run: |
           set -euo pipefail
@@ -31,41 +31,47 @@ jobs:
           if not root.is_dir():
               raise SystemExit(0)
           print('project_dirs=', json.dumps(sorted(p.name for p in root.iterdir() if p.is_dir()), ensure_ascii=False))
-          target=root/'agentos-core'
-          print('agentos_core_exists=', target.is_dir())
-          if not target.is_dir():
-              raise SystemExit(0)
 
-          safe_names=[]
-          for p in sorted(target.rglob('*')):
-              if not p.is_file():
+          for project_name in ('agentos-core','agentmanager'):
+              target=root/project_name
+              print(f'=== {project_name} ===')
+              print('exists=', target.is_dir())
+              if not target.is_dir():
                   continue
-              rel=p.relative_to(target).as_posix()
-              low=rel.lower()
-              if any(x in low for x in ('secret','token','credential','password','private','key.pem','.env')):
-                  continue
-              if p.stat().st_size > 2_000_000:
-                  continue
-              safe_names.append(rel)
-          print('agentos_core_files=', json.dumps(safe_names, ensure_ascii=False, indent=2))
 
-          candidates=[]
-          for rel in safe_names:
-              low=rel.lower()
-              if any(x in low for x in ('checkpoint','continuity','state','execution-head','ir.json','handoff')):
-                  candidates.append(rel)
-          print('state_candidates=', json.dumps(candidates, ensure_ascii=False, indent=2))
+              safe_names=[]
+              for p in sorted(target.rglob('*')):
+                  if not p.is_file():
+                      continue
+                  rel=p.relative_to(target).as_posix()
+                  low=rel.lower()
+                  if any(x in low for x in ('secret','token','credential','password','private','key.pem','.env')):
+                      continue
+                  if p.stat().st_size > 2_000_000:
+                      continue
+                  safe_names.append(rel)
+              print('files=', json.dumps(safe_names, ensure_ascii=False, indent=2))
 
-          for rel in candidates:
-              p=target/rel
-              if p.suffix.lower() != '.json':
-                  continue
-              try:
-                  data=json.loads(p.read_text(encoding='utf-8'))
-              except Exception as exc:
-                  print('candidate_parse_error=', rel, type(exc).__name__)
-                  continue
-              if isinstance(data, dict):
-                  summary={k:data.get(k) for k in ('schema','project_id','project','status','goal','version','updated_at','observed_at','node_id','branch','head','local_head') if k in data}
-                  print('candidate_summary=', rel, json.dumps(summary, ensure_ascii=False, sort_keys=True))
+              candidates=[]
+              for rel in safe_names:
+                  low=rel.lower()
+                  if any(x in low for x in ('checkpoint','continuity','state','execution-head','ir.json','handoff','identity','current')):
+                      candidates.append(rel)
+              print('state_candidates=', json.dumps(candidates, ensure_ascii=False, indent=2))
+
+              for rel in candidates:
+                  p=target/rel
+                  if p.suffix.lower() != '.json':
+                      continue
+                  try:
+                      data=json.loads(p.read_text(encoding='utf-8'))
+                  except Exception as exc:
+                      print('candidate_parse_error=', rel, type(exc).__name__)
+                      continue
+                  if isinstance(data, dict):
+                      summary={k:data.get(k) for k in (
+                          'schema','project_id','project','name','status','goal','version','updated_at','observed_at',
+                          'node_id','node','branch','head','local_head','repo','repository','next_action','current_goal'
+                      ) if k in data}
+                      print('candidate_summary=', rel, json.dumps(summary, ensure_ascii=False, sort_keys=True))
           PY
