@@ -10,82 +10,104 @@ permissions:
   contents: write
 
 jobs:
-  probe:
+  metashield_mvp_rc1_bridge:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-
+    timeout-minutes: 15
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Probe host and workspace permissions
+      - name: Temporary governed bridge to MetaShield Antigravity relay
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          cmd = json.loads(Path('.agentos/commands/metashield-mvp-rc1.json').read_text(encoding='utf-8'))
+          assert cmd.get('schema') == 'agentos.project-command/v0.1'
+          assert cmd.get('project_id') == 'metashield-protocol'
+          assert cmd.get('action') == 'project.mvp.rc1'
+          workspace = str(cmd.get('workspace') or '')
+          assert workspace == '/home/ubuntu/agentmanager/workspace/metashield-protocol/'
+          assert Path(workspace).is_dir(), f'workspace unavailable: {workspace}'
+          phases = cmd.get('phases') or []
+          assert isinstance(phases, list) and len(phases) == 3
+          relay = AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          submitted = []
+          for phase in phases:
+              capsule = relay.submit(
+                  project_id='metashield-protocol',
+                  canonical_ir={
+                      'goal': 'Complete Chamber Sovereignty Preview RC1 MVP from the actual local working tree.',
+                      'constraints': [
+                          'Preserve Facebook, Threads, Instagram, and X/Twitter backup adapters.',
+                          'Capture once: Mainnet promotion must not require source recapture.',
+                          'Use DEVNET_ONLY -> MAINNET_REFERENCED -> MAINNET_REPLICATED semantics.',
+                          'Do not reset, rebase, discard, or overwrite pre-existing local work.',
+                          'Do not public-promote, deploy Mainnet, or overwrite immutable release artifacts.',
+                          'Treat local workspace state as execution truth; GitHub remote may be stale.',
+                          'Return receipts/evidence; never claim tests or side effects not actually performed.'
+                      ],
+                  },
+                  instruction=str(phase['instruction']),
+                  workspace=workspace,
+                  executor_hint='antigravity',
+              )
+              submitted.append({'phase': phase['id'], 'capsule_id': capsule['capsule_id']})
+          dispatch = {
+              'schema': 'agentos.metashield-mvp-dispatch/v0.1',
+              'project_id': 'metashield-protocol',
+              'workspace': workspace,
+              'submitted_at': int(time.time()),
+              'submitted': submitted,
+          }
+          Path('/tmp/metashield-mvp-dispatch.json').write_text(json.dumps(dispatch, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(dispatch, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Wait for MetaShield Antigravity receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          dispatch=json.loads(Path('/tmp/metashield-mvp-dispatch.json').read_text(encoding='utf-8'))
+          relay=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          pending={x['capsule_id']:x['phase'] for x in dispatch['submitted']}
+          receipts=[]
+          deadline=time.monotonic()+720
+          while pending and time.monotonic()<deadline:
+              for cid in list(pending):
+                  r=relay.receipt(cid)
+                  if r is not None:
+                      receipts.append({'phase':pending.pop(cid),'receipt':r})
+              if pending: time.sleep(3)
+          result={**dispatch,'receipts':receipts,'pending':[{'capsule_id':k,'phase':v} for k,v in pending.items()],'complete':not pending}
+          Path('/tmp/metashield-mvp-result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,ensure_ascii=False,indent=2))
+          if pending: raise SystemExit('receipt timeout')
+          PY
+
+      - name: Commit non-secret MetaShield execution evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=/tmp/metashield-mvp-result.json
+          test -f "$src" || src=/tmp/metashield-mvp-dispatch.json
+          test -f "$src" || exit 0
           mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/oracle-node-permission-audit.txt
-          {
-            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "hostname=$(hostname)"
-            echo "whoami=$(whoami)"
-            echo "uid_gid=$(id)"
-            echo "groups=$(id -Gn)"
-            echo "uname=$(uname -a)"
-            echo "runner_workspace=$PWD"
-            echo
-            echo "=== PATH ACCESS ==="
-            for p in /home/ubuntu /home/ubuntu/agentmanager /home/ubuntu/agent-data /home/agentos-node /home/agentos-node/runner; do
-              echo "PATH=$p"
-              if test -e "$p"; then
-                stat -c 'owner=%U group=%G mode=%a type=%F' "$p" || true
-                test -r "$p" && echo 'read=true' || echo 'read=false'
-                test -w "$p" && echo 'write=true' || echo 'write=false'
-                test -x "$p" && echo 'execute=true' || echo 'execute=false'
-              else
-                echo 'exists=false'
-              fi
-              echo
-            done
-
-            echo "=== UBUNTU HOME TOP LEVEL ==="
-            ls -la /home/ubuntu 2>&1 | sed -n '1,120p' || true
-
-            echo
-            echo "=== CANDIDATE PROJECT DIRECTORIES ==="
-            find /home/ubuntu -maxdepth 2 -mindepth 1 -type d \
-              \( -name .git -o -name node_modules -o -name .cache -o -name .config -o -name .local \) -prune -o \
-              -maxdepth 2 -mindepth 1 -type d -print 2>/dev/null | sed -n '1,160p' || true
-
-            echo
-            echo "=== AGENTMANAGER LOCAL REPO ==="
-            if test -d /home/ubuntu/agentmanager/.git; then
-              git -C /home/ubuntu/agentmanager rev-parse --abbrev-ref HEAD 2>&1 || true
-              git -C /home/ubuntu/agentmanager rev-parse HEAD 2>&1 || true
-              git -C /home/ubuntu/agentmanager status --short --branch 2>&1 | sed -n '1,80p' || true
-            else
-              echo 'not_git_repo_or_inaccessible=true'
-            fi
-
-            echo
-            echo "=== AGENT-DATA LOCAL REPO ==="
-            if test -d /home/ubuntu/agent-data/.git; then
-              git -C /home/ubuntu/agent-data rev-parse --abbrev-ref HEAD 2>&1 || true
-              git -C /home/ubuntu/agent-data rev-parse HEAD 2>&1 || true
-              git -C /home/ubuntu/agent-data status --short --branch 2>&1 | sed -n '1,80p' || true
-            else
-              echo 'not_git_repo_or_inaccessible=true'
-            fi
-          } | tee "$OUT"
-
-      - name: Commit evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "agentos-node"
-          git config user.email "agentos-node@users.noreply.github.com"
-          git add .agentos/evidence/oracle-node-permission-audit.txt
-          if git diff --cached --quiet; then
-            echo "No evidence change to commit"
-            exit 0
-          fi
-          git commit -m "evidence(agentos): Oracle node permission audit"
-          git push
+          cp "$src" .agentos/evidence/metashield-mvp-rc1-current.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/metashield-mvp-rc1-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(metashield): record Sovereignty Preview RC1 execution'
+          git push origin HEAD:main
