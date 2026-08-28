@@ -1,0 +1,203 @@
+name: Realm Controller Live Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/realm-controller-live-acceptance.yml'
+      - 'agent_core/controller_service.py'
+      - 'scripts/patch_realm_controller_dispatch.py'
+      - 'scripts/patch_realm_fabric_deployment_advance.py'
+      - 'scripts/patch_bootstrap_control_controller_probe.py'
+      - 'scripts/controller_surface_inspect_vopc5750.sh'
+      - 'tests/test_controller_service.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: realm-controller-live-acceptance
+  cancel-in-progress: false
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compile controller and fenced generation advance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python3 scripts/patch_realm_controller_dispatch.py
+          python3 scripts/patch_realm_fabric_deployment_advance.py
+          python3 scripts/patch_bootstrap_control_controller_probe.py
+          python3 -m py_compile \
+            agent_core/controller_service.py \
+            agent_core/realm_server.py \
+            agentos_node/action_relay.py \
+            agentos_node/bootstrap_control.py
+          grep -q "'/v1/controller/dispatch'" agent_core/realm_server.py
+          grep -q 'agentos.realm-fabric.advance_deployment' agentos_node/action_relay.py
+          grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' agentos_node/bootstrap_control.py
+          python3 -m unittest tests.test_controller_service -v
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent_core/realm_server.py agentos_node/action_relay.py agentos_node/bootstrap_control.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(agentos): compile live controller dispatch contract'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+  live-acceptance:
+    needs: compile
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      AGENTOS_REALM_FABRIC_LEASE_OWNER: agentos-core-mainline
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refresh canonical controller source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          grep -q "'/v1/controller/dispatch'" agent_core/realm_server.py
+          grep -q 'agentos.realm-fabric.advance_deployment' agentos_node/action_relay.py
+          grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' agentos_node/bootstrap_control.py
+          python3 -m unittest tests.test_controller_service -v
+          echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Refresh ubuntu Action Relay runtime with generation advance
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
+          if grep -q 'agentos.realm-fabric.advance_deployment' "$runtime" 2>/dev/null \
+             && grep -q 'realm_fabric_lease_immutability_v1' "$runtime" 2>/dev/null \
+             && grep -q 'governed_receipt_reserved_fields_v1' "$runtime" 2>/dev/null; then
+            echo 'action_relay_generation_advance=ALREADY_READY'
+          else
+            tmp=/tmp/bootstrap-action-relay-controller-safe.sh
+            sed \
+              -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+              -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
+              scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
+            chmod 700 "$tmp"
+            bash "$tmp"
+          fi
+          grep -q 'agentos.realm-fabric.advance_deployment' "$runtime"
+          grep -q 'realm_fabric_deployment_fence_v1' "$runtime"
+          grep -q 'realm_fabric_lease_immutability_v1' "$runtime"
+          echo 'action_relay_generation_advance=READY'
+
+      - name: Advance and deploy exact controller generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/install_realm_fabric_via_action_relay.py
+          python3 - <<'PY'
+          import json,os
+          r=json.load(open('.agentos/evidence/realm-fabric-install-current.json'))
+          expected=os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT']
+          assert r.get('desired_core_commit') == expected,r
+          assert r.get('observed_core_commit') == expected,r
+          assert r.get('deployment_status') == 'converged',r
+          assert int(r.get('deployment_generation') or 0) >= 2,r
+          print('controller_generation_converged=PASS')
+          print('deployment_generation='+str(r['deployment_generation']))
+          print('observed_core_commit='+str(r['observed_core_commit']))
+          PY
+
+      - name: Install exact fixed Control Inbox action definition
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          test -e "$LIVE"
+          test -w "$LIVE"
+          cat agentos_node/bootstrap_control.py > "$LIVE"
+          chmod 0664 "$LIVE" || true
+          python3 -m py_compile "$LIVE"
+          grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' "$LIVE"
+          echo 'bootstrap_controller_action_live=PASS'
+
+      - name: Real Control Inbox to ONE controller dispatch acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          for i in $(seq 1 60); do [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break; sleep 1; done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$ROOT")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+          RID="controller-surface-inspect-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
+          REQ="$REQUESTS/$RID.request.json"
+          REC="$RECEIPTS/$RID.json"
+          python3 - "$REQ" "$RID" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          p=Path(sys.argv[1]); rid=sys.argv[2]
+          payload={
+              'schema':'agentos.bootstrap-request/v1',
+              'request_id':rid,
+              'action':'agentos.controller.surface-inspect-vopc5750',
+              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=p.with_suffix(p.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
+          PY
+          test "$(stat -c '%U' "$REQ")" = agentos-node
+          for i in $(seq 1 180); do [ -f "$REC" ] && break; sleep 1; done
+          test -f "$REC" || { echo 'control_inbox_controller_receipt=TIMEOUT'; exit 3; }
+          cat "$REC"
+          python3 - "$REC" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('schema') == 'agentos.bootstrap-receipt/v1',r
+          assert r.get('action') == 'agentos.controller.surface-inspect-vopc5750',r
+          assert r.get('executor_user') == 'ubuntu',r
+          assert r.get('executor_uid') == 1001,r
+          assert r.get('ok') is True,r
+          text='\n'.join((str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '')) for s in r.get('steps',[]))
+          assert 'controller_dispatch_http_code=200' in text,text[-12000:]
+          assert 'controller_service_entered=PASS' in text,text[-12000:]
+          print('control_inbox_to_one_controller=PASS')
+          PY
+          cp "$REC" /tmp/controller-control-inbox-acceptance.json
+
+      - name: Publish controller live acceptance evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/controller-control-inbox-acceptance.json || exit 0
+          cp /tmp/controller-control-inbox-acceptance.json /tmp/controller-control-inbox-acceptance.keep.json
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/controller-control-inbox-acceptance.keep.json .agentos/evidence/controller-control-inbox-acceptance.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/controller-control-inbox-acceptance.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): accept Control Inbox controller dispatch'
+          git pull --rebase origin main
+          git push origin HEAD:main
