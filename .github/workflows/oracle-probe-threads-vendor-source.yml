@@ -1,0 +1,216 @@
+name: Oracle Probe Threads Vendor Source
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-threads-vendor-source.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-vendor-source-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe third-party Threads discovery and reply access
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/threads-vendor-source-probe.json
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - <<'PY' > "$OUT"
+          import json, re
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+
+          ENV_PATH = Path('/home/ubuntu/agent-data/secrets/zeus-writer.env')
+          BASE = 'https://graph.threads.net'
+          USERNAME = 'nico1e.16'
+          SHORTCODE = 'DcWVvpwGTSh'
+
+          def now_iso():
+              return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+
+          def api_get(path, params):
+              url = f"{BASE}{path}?{urlencode(params)}"
+              req = Request(url, method='GET', headers={'Accept':'application/json'})
+              try:
+                  with urlopen(req, timeout=30) as r:
+                      body = r.read().decode('utf-8','replace')
+                      return r.status, json.loads(body) if body.strip() else {}
+              except HTTPError as e:
+                  body = e.read().decode('utf-8','replace')
+                  try: data = json.loads(body) if body.strip() else {}
+                  except Exception: data = {'error': {'message': body[:400]}}
+                  return e.code, data
+
+          def err_summary(status, data):
+              e = data.get('error') or {}
+              return {
+                  'http_status': status,
+                  'error_code': e.get('code'),
+                  'error_subcode': e.get('error_subcode'),
+                  'error_type': e.get('type'),
+                  'error_message': str(e.get('message',''))[:400],
+              }
+
+          text = ENV_PATH.read_text(encoding='utf-8')
+          m = re.search(r'(?m)^SOC_THREADS_TOKEN=(.*)$', text)
+          if not m or not m.group(1).strip():
+              raise SystemExit('SOC_THREADS_TOKEN missing')
+          token = m.group(1).strip().strip('"').strip("'")
+
+          result = {
+              'schema': 'agentos.threads-vendor-source-probe/v1',
+              'checked_at': now_iso(),
+              'target': {
+                  'username': USERNAME,
+                  'shortcode': SHORTCODE,
+                  'url': f'https://www.threads.com/@{USERNAME}/post/{SHORTCODE}',
+              },
+              'token_exposed': False,
+              'writes_performed': False,
+          }
+
+          s, me = api_get('/v1.0/me', {'fields':'id,username','access_token':token})
+          result['authenticated_identity'] = {
+              'ok': s == 200 and 'id' in me,
+              'http_status': s,
+              'username': me.get('username'),
+              'user_id': me.get('id'),
+          }
+          if not result['authenticated_identity']['ok']:
+              result['authenticated_identity'].update(err_summary(s, me))
+              print(json.dumps(result, ensure_ascii=False, indent=2))
+              raise SystemExit(2)
+
+          s, profile = api_get('/profile_lookup', {
+              'username': USERNAME,
+              'fields': 'id,username,name',
+              'access_token': token,
+          })
+          result['profile_lookup'] = {'ok': s == 200 and 'id' in profile, 'http_status': s}
+          if s == 200:
+              result['profile_lookup'].update({
+                  'user_id': profile.get('id'),
+                  'username': profile.get('username'),
+                  'name': profile.get('name'),
+              })
+          else:
+              result['profile_lookup'].update(err_summary(s, profile))
+
+          target = None
+          pages_checked = 0
+          posts_checked = 0
+          after = None
+          last_posts_error = None
+          for _ in range(20):
+              params = {
+                  'username': USERNAME,
+                  'fields': 'id,username,permalink,timestamp,shortcode,has_replies',
+                  'limit': 100,
+                  'access_token': token,
+              }
+              if after: params['after'] = after
+              ps, pdata = api_get('/profile_posts', params)
+              pages_checked += 1
+              if ps != 200:
+                  last_posts_error = err_summary(ps, pdata)
+                  break
+              rows = pdata.get('data') or []
+              posts_checked += len(rows)
+              for p in rows:
+                  if p.get('shortcode') == SHORTCODE or SHORTCODE in str(p.get('permalink','')):
+                      target = p
+                      break
+              if target: break
+              new_after = ((pdata.get('paging') or {}).get('cursors') or {}).get('after')
+              if not new_after or new_after == after: break
+              after = new_after
+
+          result['profile_posts'] = {
+              'ok': last_posts_error is None,
+              'pages_checked': pages_checked,
+              'posts_checked': posts_checked,
+              'target_found': bool(target),
+          }
+          if last_posts_error:
+              result['profile_posts'].update(last_posts_error)
+
+          if target:
+              tid = target.get('id')
+              result['target_post'] = {
+                  'id': tid,
+                  'username': target.get('username'),
+                  'permalink': target.get('permalink'),
+                  'timestamp': target.get('timestamp'),
+                  'shortcode': target.get('shortcode'),
+                  'has_replies': target.get('has_replies'),
+              }
+              fields = 'id,username,timestamp,permalink,shortcode,is_reply,root_post,replied_to'
+              for edge in ('replies','conversation'):
+                  es, edata = api_get(f'/{tid}/{edge}', {
+                      'fields': fields,
+                      'reverse': 'false',
+                      'limit': 100,
+                      'access_token': token,
+                  })
+                  item = {'ok': es == 200 and 'data' in edata, 'http_status': es}
+                  if item['ok']:
+                      item['first_page_count'] = len(edata.get('data') or [])
+                      item['has_next_page'] = bool((edata.get('paging') or {}).get('next'))
+                  else:
+                      item.update(err_summary(es, edata))
+                  result[edge] = item
+          else:
+              result['target_post'] = None
+              result['replies'] = {'ok': False, 'not_attempted': True, 'reason': 'target_post_not_found'}
+              result['conversation'] = {'ok': False, 'not_attempted': True, 'reason': 'target_post_not_found'}
+
+          result['capability_summary'] = {
+              'third_party_profile_read': bool(result.get('profile_lookup',{}).get('ok')),
+              'third_party_post_discovery': bool(result.get('profile_posts',{}).get('target_found')),
+              'third_party_top_level_replies_read': bool(result.get('replies',{}).get('ok')),
+              'third_party_full_conversation_read': bool(result.get('conversation',{}).get('ok')),
+          }
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          PY
+
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+
+      - name: Commit sanitized capability evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/threads-vendor-source-probe.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-vendor-source-probe.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(threads): probe vendor source read capabilities'
+          git push
