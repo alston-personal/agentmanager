@@ -108,6 +108,7 @@ jobs:
           echo 'canonical_vendor_build=PASS'
 
           mkdir -p "$BACKUP" "$LIVE/poc"
+          chmod 0755 "$LIVE/poc"
           if [ -f "$LIVE/poc/index.html" ]; then
             cp -a "$LIVE/poc/index.html" "$BACKUP/poc-index.previous"
           fi
