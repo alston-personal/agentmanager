@@ -145,6 +145,28 @@ class ExecutionHeadTests(unittest.TestCase):
             observed = _status_observed_at(path, {"last_updated": "2026-08-20 10:25"})
             self.assertTrue(observed.startswith("2026-08-20T10:25:00"))
 
+    def test_operator_bootstrap_receipt_is_valid_execution_evidence(self):
+        now = datetime(2026, 8, 28, 2, 0, tzinfo=timezone.utc)
+        bootstrap = {
+            "source": "execution-receipt",
+            "receipt_kind": "operator-confirmed-bootstrap",
+            "verification_state": "pending-node-attestation",
+            "local_head": "0b37627",
+            "version": "1.0.59",
+            "latest_tag": "v1.0.55",
+            "ahead": 40,
+            "observed_at": (now - timedelta(minutes=10)).isoformat(),
+            "confidence": 0.95,
+        }
+        stale_status = {
+            "source": "status-md",
+            "status": "v1.0.20 released",
+            "observed_at": "2026-08-20T02:25:00+00:00",
+        }
+        result = arbitrate_heads([stale_status, bootstrap], now=now)
+        self.assertEqual(result["winner"]["receipt_kind"], "operator-confirmed-bootstrap")
+        self.assertEqual(result["winner"]["version"], "1.0.59")
+
 
 if __name__ == "__main__":
     unittest.main()
