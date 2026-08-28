@@ -1,0 +1,9 @@
+{
+  "capsule_id": "action-dedb85b0add14e39a6518c8f49a371d1",
+  "completed_at": "2026-08-28T06:40:36Z",
+  "error": "ImportError: cannot import name 'CanonicalProjectRegistration' from 'agent_core.project_store' (/home/ubuntu/agentmanager/agent_core/project_store.py)",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "schema": "agentos.action-receipt/v1",
+  "started_at": "2026-08-28T06:40:36Z"
+}
