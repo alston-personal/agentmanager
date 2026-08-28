@@ -102,3 +102,5 @@ jobs:
           fi
           echo 'public_character_blueprint_identity=PASS'
           echo 'studio_fallback_rejected=PASS'
+
+# This workflow deliberately verifies page identity, not merely HTTP 200.
