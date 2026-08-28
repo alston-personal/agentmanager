@@ -1,62 +1,73 @@
-name: Create ArcanaForge Core Bootstrap
+name: Create ArcanaForge Through Oracle Core
 
 on:
   push:
+    branches:
+      - main
     paths:
       - '.github/workflows/create-arcanaforge-core-bootstrap.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: arcanaforge-core-bootstrap
+  cancel-in-progress: false
+
 jobs:
   create:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
-      - name: Ensure ArcanaForge private repository using Core Actions identity
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Validate Core connection configuration
         shell: bash
         run: |
           set -euo pipefail
-          status=$(curl -sS -o /tmp/view.json -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            https://api.github.com/repos/alston-personal/arcanaforge)
-          if [ "$status" = 200 ]; then
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start Core SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Ensure only the allowlisted private ArcanaForge repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          repo='alston-personal/arcanaforge'
+          description='Symbolic collection generator: SymbolicSystem × Subject × Style, initially Tarot + I Ching, packaging outputs for Divination OS'
+
+          /usr/bin/gh auth status
+          if /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json 2>/tmp/arcanaforge-view.err; then
             python3 - <<'PY'
           import json
-          x=json.load(open('/tmp/view.json'))
-          assert x.get('full_name') == 'alston-personal/arcanaforge'
-          assert x.get('private') is True
+          x=json.load(open('/tmp/arcanaforge-view.json'))
+          assert x.get('nameWithOwner') == 'alston-personal/arcanaforge'
+          assert x.get('isPrivate') is True
           print('arcanaforge_remote=EXISTS_PRIVATE')
           PY
             exit 0
           fi
-          test "$status" = 404
-          code=$(curl -sS -o /tmp/create.json -w '%{http_code}' -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            https://api.github.com/orgs/alston-personal/repos \
-            -d '{"name":"arcanaforge","private":true,"description":"Symbolic collection generator: SymbolicSystem × Subject × Style, initially Tarot + I Ching, packaging outputs for Divination OS"}')
-          echo "create_http=$code"
-          if [ "$code" != 201 ]; then
-            python3 - <<'PY'
-          import json
-          try:
-              x=json.load(open('/tmp/create.json'))
-              print('github_error='+str(x.get('message','unknown')))
-          except Exception:
-              print('github_error=unparseable')
-          PY
-            exit 3
-          fi
+
+          /usr/bin/gh repo create "$repo" --private --description "$description"
+          /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json
           python3 - <<'PY'
           import json
-          x=json.load(open('/tmp/create.json'))
-          assert x.get('full_name') == 'alston-personal/arcanaforge'
-          assert x.get('private') is True
+          x=json.load(open('/tmp/arcanaforge-view.json'))
+          assert x.get('nameWithOwner') == 'alston-personal/arcanaforge'
+          assert x.get('isPrivate') is True
           print('arcanaforge_remote=CREATED_PRIVATE')
           PY
+          REMOTE
