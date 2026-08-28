@@ -41,7 +41,7 @@ jobs:
           grep -q '丟一張角色圖，先把她立起來' "$PAGE"
           grep -q '3D Blueprint' "$PAGE"
           grep -q '技術細節 / Character IR' "$PAGE"
-          grep -q 'llm_tokens: 0' "$PAGE"
+          grep -q '"llm_tokens":0' "$PAGE"
           grep -q '/poc/character-blueprint/' "$DEPLOY"
           echo 'character_blueprint_v04_source=PASS'
 
@@ -101,11 +101,10 @@ jobs:
           grep -q '丟一張角色圖，先把她立起來' /tmp/character-blueprint-public
           grep -q '3D Blueprint' /tmp/character-blueprint-public
           grep -q '技術細節 / Character IR' /tmp/character-blueprint-public
+          grep -q '"llm_tokens":0' /tmp/character-blueprint-public
           ! grep -q '<title>Character Blueprint POC v0.3</title>' /tmp/character-blueprint-public
           if grep -q 'Milkcat Studio Portal' /tmp/character-blueprint-public && ! grep -q 'character-blueprint-poc' /tmp/character-blueprint-public; then
             echo 'ERROR: Studio homepage fallback detected' >&2; exit 1
           fi
           echo 'public_character_blueprint_v04_identity=PASS'
           echo 'interactive_3d_demo_contract=PASS'
-
-# v0.4 authoritative release trigger
