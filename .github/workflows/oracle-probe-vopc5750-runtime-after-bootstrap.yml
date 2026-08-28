@@ -1,0 +1,84 @@
+name: Oracle Probe vopc5750 Runtime After Bootstrap
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-probe-vopc5750-runtime-after-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Queue read-only runtime probe
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >/tmp/vopc5750-probe-task.txt
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          node='vopc5750'
+          tid='probe-runtime-after-bootstrap-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $thin=Join-Path $install 'agentos_node\thin_client.py'
+          $prov=Join-Path $install 'runtime-provenance.json'
+          Write-Output ('thin_client_exists=' + (Test-Path $thin))
+          if (Test-Path $thin) {
+            $hasSurface=[bool](Select-String -Path $thin -SimpleMatch "'agent.surface.inspect'" -Quiet)
+            $hasConverge=[bool](Select-String -Path $thin -SimpleMatch "'node.runtime.converge'" -Quiet)
+            Write-Output ('thin_has_agent_surface_inspect=' + $hasSurface)
+            Write-Output ('thin_has_node_runtime_converge=' + $hasConverge)
+            Write-Output ('thin_mtime_utc=' + (Get-Item $thin).LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ'))
+          }
+          Write-Output ('runtime_provenance_exists=' + (Test-Path $prov))
+          if (Test-Path $prov) { Get-Content -Raw $prov }
+          foreach($name in @('AgentOS Thin Client','AgentOS Thin Client Watchdog')) {
+            $t=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            if ($null -eq $t) { Write-Output ($name + '=MISSING') }
+            else {
+              $i=Get-ScheduledTaskInfo -TaskName $name -ErrorAction SilentlyContinue
+              Write-Output ($name + '_state=' + $t.State)
+              if ($null -ne $i) { Write-Output ($name + '_last_result=' + $i.LastTaskResult) }
+            }
+          }
+          '''
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node,task)
+          print(tid)
+          PY
+      - name: Wait for probe receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(cat /tmp/vopc5750-probe-task.txt)
+          for i in $(seq 1 45); do
+            python3 - "$TASK" <<'PY' && exit 0 || true
+          import json,sys
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if not r:
+              raise SystemExit(1)
+          print(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True))
+          raise SystemExit(0)
+          PY
+            sleep 2
+          done
+          echo 'probe receipt timeout' >&2
+          exit 1
