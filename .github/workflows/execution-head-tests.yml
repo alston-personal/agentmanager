@@ -1,0 +1,33 @@
+name: Execution Head Tests
+
+on:
+  push:
+    branches:
+      - feature/execution-head-freshness
+    paths:
+      - 'scripts/execution_head.py'
+      - 'scripts/update_projects_pulse.py'
+      - 'scripts/project_overview.py'
+      - 'tests/test_execution_head.py'
+      - '.github/workflows/execution-head-tests.yml'
+  pull_request:
+    paths:
+      - 'scripts/execution_head.py'
+      - 'scripts/update_projects_pulse.py'
+      - 'scripts/project_overview.py'
+      - 'tests/test_execution_head.py'
+
+jobs:
+  execution-head:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimal dependency
+        run: python -m pip install PyYAML
+      - name: Compile changed Python modules
+        run: python -m py_compile scripts/execution_head.py scripts/update_projects_pulse.py scripts/project_overview.py tests/test_execution_head.py
+      - name: Run execution-head regression tests
+        run: python -m unittest -v tests.test_execution_head
