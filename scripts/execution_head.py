@@ -177,7 +177,10 @@ def _parse_time(value: str | None) -> datetime:
     if not value:
         return datetime.fromtimestamp(0, tz=timezone.utc)
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     except Exception:
         return datetime.fromtimestamp(0, tz=timezone.utc)
 
