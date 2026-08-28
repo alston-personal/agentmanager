@@ -1,17 +1,24 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 const url = process.env.CHARACTER_BLUEPRINT_URL || 'https://studio.milkcat.org/poc/character-blueprint/';
-const browser = await chromium.launch({ headless: true });
+const fixture = process.env.CHARACTER_BLUEPRINT_FIXTURE || '';
+const browser = await chromium.launch({
+  headless: true,
+  args: ['--use-angle=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'],
+});
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(String(e)));
 
-try {
+async function openPublicPage() {
   const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   assert(response && response.ok(), `public page HTTP failed: ${response?.status()}`);
   await page.waitForFunction(() => window.CharacterBlueprintPOC?.browserSelfTest === true, null, { timeout: 60_000 });
+}
 
+async function runSyntheticGeometrySmoke() {
   const result = await page.evaluate(() => {
     const P=(x=.5,y=.5,z=0,visibility=0)=>({x,y,z,visibility});
     const l=Array.from({length:33},()=>P());
@@ -40,9 +47,67 @@ try {
     assert(result.parts.includes(required), `missing ${required}: ${JSON.stringify(result)}`);
   }
   assert(!result.parts.includes('left_leg') && !result.parts.includes('right_leg'), `upper-body fixture invented legs: ${JSON.stringify(result)}`);
+  return result;
+}
+
+async function runRealImageUploadSmoke() {
+  assert(fixture, 'CHARACTER_BLUEPRINT_FIXTURE is required for real-image E2E');
+  assert(fs.existsSync(fixture), `fixture not found: ${fixture}`);
+
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.waitForFunction(() => window.CharacterBlueprintPOC?.browserSelfTest === true, null, { timeout: 60_000 });
+  await page.locator('#file').setInputFiles(fixture);
+
+  await page.waitForFunction(() => {
+    const s = document.getElementById('status');
+    return s?.classList.contains('ok') || s?.classList.contains('err');
+  }, null, { timeout: 120_000 });
+
+  const result = await page.evaluate(() => {
+    const status = document.getElementById('status');
+    const irText = document.getElementById('json')?.textContent || '';
+    let ir = null;
+    try { ir = JSON.parse(irText); } catch {}
+    return {
+      statusClass: status?.className || '',
+      statusText: status?.textContent || '',
+      pose: document.getElementById('mPose')?.textContent || '',
+      coverage: document.getElementById('mCoverage')?.textContent || '',
+      partsMetric: Number(document.getElementById('mParts')?.textContent || 0),
+      partButtons: [...document.querySelectorAll('#parts .part')].map(x => x.dataset.part),
+      canvasCount: document.querySelectorAll('#viewer canvas').length,
+      ir,
+    };
+  });
+
+  assert(result.statusClass.includes('ok'), `real-image analysis failed: ${JSON.stringify(result)}`);
+  assert(result.statusText.includes('完成'), `unexpected success state: ${JSON.stringify(result)}`);
+  assert(result.canvasCount >= 1, `real-image flow created no Three.js canvas: ${JSON.stringify(result)}`);
+  assert(result.partsMetric >= 4, `real-image flow created too few 3D parts: ${JSON.stringify(result)}`);
+  assert(result.ir, `real-image flow emitted invalid Character IR: ${JSON.stringify(result)}`);
+  assert.equal(result.ir.schema, 'character-blueprint-ir/v0.4');
+  assert.equal(result.ir.llm_tokens, 0);
+  assert(result.ir.observed?.pose?.mean_visibility > 0.1, `pose visibility too low: ${JSON.stringify(result.ir.observed?.pose)}`);
+  assert(['full_body','three_quarter','upper_body'].includes(result.ir.observed?.pose?.coverage), `invalid coverage: ${JSON.stringify(result.ir.observed?.pose)}`);
+  for (const required of ['head','hair','body','garment']) {
+    assert(result.partButtons.includes(required), `real-image flow missing ${required}: ${JSON.stringify(result)}`);
+  }
+  return result;
+}
+
+try {
+  await openPublicPage();
+  const synthetic = await runSyntheticGeometrySmoke();
+  const realImage = fixture ? await runRealImageUploadSmoke() : null;
   assert.equal(pageErrors.length, 0, `browser page errors: ${pageErrors.join(' | ')}`);
 
-  console.log(JSON.stringify({ ok:true, suite:'character-blueprint-browser-smoke/v1', url, result }, null, 2));
+  console.log(JSON.stringify({
+    ok: true,
+    suite: 'character-blueprint-browser-smoke/v2',
+    url,
+    synthetic,
+    realImage,
+  }, null, 2));
 } finally {
   await browser.close();
 }
