@@ -1,12 +1,8 @@
-timestamp_utc=2026-08-27T09:40:54Z
+timestamp_utc=2026-08-28T02:58:16Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
-request_id=transport-repair-33059653686-20260827T094054Z
+request_id=transport-repair-33137495620-20260828T025816Z
 canonical_py_compile=PASS
 chmod: changing permissions of '/home/ubuntu/agentmanager/scripts/update_scheduler_board.py': Operation not permitted
 live_bootstrap_hook=PASS
 ubuntu_owned_rendezvous=PASS
-bootstrap_control_repair=PASS
-antigravity_restart=PASS
-public_path=/ http_code=200
-public_path=/dashboard http_code=200
-bootstrap_control_plane=PASS
+bootstrap repair failed: {"action": "agentos.transport.repair", "completed_at": "2026-08-28T02:59:02Z", "executor_uid": 1001, "executor_user": "ubuntu", "ok": false, "request_id": "transport-repair-33137495620-20260828T025816Z", "schema": "agentos.bootstrap-receipt/v1", "script_sha256": "b31166cea1c2fd59aedb76aee54df82fb41eac9f8efc926d99596478ae1d1c95", "started_at": "2026-08-28T02:59:00Z", "steps": [{"returncode": 0, "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   404d0ba..551ffe1  main       -> origin/main\n", "stdout": "", "step": "git_fetch"}, {"returncode": 0, "stderr": "", "step": "git_show_script"}, {"returncode": 2, "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nFrom https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\nERROR: non-empty runtime root is not a worktree: /home/ubuntu/.local/share/agentos/action-runtime\n", "stdout": "antigravity_runtime_import=PASS\naction_relay_spool_preprovisioned=YES\n", "step": "run_script"}]}
