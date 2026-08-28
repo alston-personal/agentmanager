@@ -676,7 +676,12 @@ def _claim_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
                 active = _df_datetime.fromisoformat(str(expires_raw)) > now
             except ValueError:
                 active = False
-        if active and lease_owner != owner:
+        # realm_fabric_lease_immutability_v1: an active lease freezes the desired
+        # generation. Sharing the same owner label must not allow a second workflow
+        # to replace the desired commit. Identical claims are idempotent.
+        if active:
+            if lease_owner == owner and state.get('desired_core_commit') == desired:
+                return {'ok': True, **state, 'claim_status': 'idempotent'}
             return {
                 'ok': False,
                 'deployment_status': 'rejected_lease',
