@@ -57,7 +57,10 @@ def main() -> int:
     if overlay_tag not in text:
         if bridge_tag not in text:
             raise SystemExit('capability bridge script tag missing from base deployment')
-        text = text.replace(bridge_tag, overlay_tag + '\n' + bridge_tag)
+        # Historical bridge mutates the header identity to the old v0.7 closed-loop label.
+        # Keep the immutable bridge untouched; run the release overlay after it so v0.7.9
+        # is the final presentation authority.
+        text = text.replace(bridge_tag, bridge_tag + '\n' + overlay_tag)
     INDEX.write_text(text, encoding='utf-8')
     INDEX.chmod(0o644)
 
@@ -78,8 +81,9 @@ def main() -> int:
     missing = [x for x in required if x not in deployed]
     forbidden = ['AgentOS closed loop', 'Capability learning contract']
     bad = [x for x in forbidden if x in deployed]
-    if missing or bad:
-        raise SystemExit(f'v0.7 release acceptance failed: missing={missing} forbidden={bad}')
+    wrong_order = deployed.find(bridge_tag) < 0 or deployed.find(overlay_tag) < 0 or deployed.find(bridge_tag) > deployed.find(overlay_tag)
+    if missing or bad or wrong_order:
+        raise SystemExit(f'v0.7 release acceptance failed: missing={missing} forbidden={bad} bridge_before_overlay={not wrong_order}')
 
     semantic = TARGET / 'layoutlib-spatial-semantics-v0.1.js'
     if not semantic.is_file():
