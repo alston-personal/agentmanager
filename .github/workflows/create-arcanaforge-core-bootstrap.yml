@@ -65,7 +65,9 @@ jobs:
           fi
           echo 'action_runtime_arcanaforge=REFRESH_REQUIRED'
           tmp=/tmp/bootstrap-action-relay-arcanaforge-safe.sh
-          sed 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+          sed \
+            -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+            -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
             scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
           chmod 700 "$tmp"
           bash "$tmp"
