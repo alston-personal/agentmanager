@@ -78,14 +78,37 @@ def parse_status_md(status_path: Path) -> dict:
     return data
 
 
-def status_evidence(status_path: Path, status: dict) -> dict:
+def _status_observed_at(status_path: Path, status: dict) -> str:
+    """Use the semantic STATUS timestamp, never checkout/file mtime when available.
+
+    Git checkout/sync can refresh filesystem mtimes without changing project state,
+    which would incorrectly make stale STATUS.md evidence look fresh.
+    """
+    raw = str(status.get("last_updated") or "").strip()
+    if raw and raw.lower() not in {"unknown", "none", "n/a"}:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                parsed = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+                return parsed.isoformat()
+            except ValueError:
+                pass
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).isoformat()
+        except ValueError:
+            pass
     try:
-        observed = datetime.fromtimestamp(status_path.stat().st_mtime, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(status_path.stat().st_mtime, tz=timezone.utc).isoformat()
     except OSError:
-        observed = datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
+
+
+def status_evidence(status_path: Path, status: dict) -> dict:
     return {
         "source": "status-md",
-        "observed_at": observed,
+        "observed_at": _status_observed_at(status_path, status),
         "version": None,
         "status": status.get("last_status"),
         "updated_label": status.get("last_updated"),
