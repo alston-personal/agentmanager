@@ -1,0 +1,89 @@
+name: Oracle Release ArcanaForge POC
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-arcanaforge-poc.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arcanaforge-poc-production
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      SOURCE_REPOSITORY: alston-personal/studio-web
+      SOURCE_REF: main
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Build canonical Studio Web and publish ArcanaForge only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_REF" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; REF="$2"; RUN_ID="$3"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/arcanaforge-release-XXXXXX)
+          SRC="$TMP/studio-web"
+          NEW="$LIVE/poc/.arcanaforge-${RUN_ID}"
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/arcanaforge/${RUN_ID}
+          cleanup(){ rm -rf "$TMP" "$NEW" 2>/dev/null || true; }
+          trap cleanup EXIT
+          test -d "$LIVE/poc"
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone "$REPO" "$SRC" -- --depth=1 --branch "$REF"
+          cd "$SRC"
+          SOURCE_SHA=$(/usr/bin/git rev-parse HEAD)
+          npm install --no-package-lock --ignore-scripts
+          npm run build
+          test -f dist/poc/arcanaforge/index.html
+          grep -Fq '<title>ArcanaForge POC</title>' dist/poc/arcanaforge/index.html
+          mkdir -p "$BACKUP"
+          if [ -d "$LIVE/poc/arcanaforge" ]; then cp -a "$LIVE/poc/arcanaforge" "$BACKUP/previous"; fi
+          cp -a dist/poc/arcanaforge "$NEW"
+          find "$NEW" -type d -exec chmod 0755 {} +
+          find "$NEW" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/poc/arcanaforge"
+          mv "$NEW" "$LIVE/poc/arcanaforge"
+          curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/poc/arcanaforge/ -o "$TMP/live"
+          grep -Fq '<title>ArcanaForge POC</title>' "$TMP/live"
+          if grep -Fq 'Milkcat Studio Portal' "$TMP/live"; then echo 'homepage fallback detected' >&2; exit 1; fi
+          printf '%s\n' \
+            'schema=studio-web.arcanaforge-release/v1' \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            'scope=/poc/arcanaforge/' \
+            'ok=true' > "$BACKUP/receipt.txt"
+          echo "arcanaforge_deploy=PASS source_sha=$SOURCE_SHA"
+          REMOTE
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://studio.milkcat.org/poc/arcanaforge/
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$URL" -o /tmp/arcanaforge-public
+          grep -Fq '<title>ArcanaForge POC</title>' /tmp/arcanaforge-public
+          grep -Fq 'Technical × Style × Subject × Composition × Narrative' /tmp/arcanaforge-public
+          if grep -Fq 'Milkcat Studio Portal' /tmp/arcanaforge-public; then echo 'homepage fallback detected' >&2; exit 1; fi
+          echo 'public_arcanaforge_poc=PASS'
