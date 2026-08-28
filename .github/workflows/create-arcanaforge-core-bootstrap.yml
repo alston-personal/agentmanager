@@ -54,28 +54,23 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
-      - name: Diagnose live Chronos execution path
+      - name: Ensure ubuntu Action Relay runtime contains ArcanaForge capability
         shell: bash
         run: |
           set -euo pipefail
-          pid="$(pgrep -u ubuntu -f 'scripts/chronos.py' | head -n1)"
-          echo "chronos_pid=$pid"
-          echo "chronos_cwd=$(readlink -f /proc/$pid/cwd || true)"
-          echo '=== chronos groups ==='
-          grep '^Groups:' "/proc/$pid/status" || true
-          echo '=== chronos cmdline ==='
-          tr '\0' ' ' < "/proc/$pid/cmdline"; echo
-          echo '=== live schedule selector ==='
-          grep -A2 -B1 'swarm-board-refresh' /home/ubuntu/agentmanager/schedule.yaml || true
-          echo '=== target metadata ==='
-          stat /home/ubuntu/agentmanager/scripts/update_scheduler_board.py || true
-          echo '=== recent Chronos triggers ==='
-          tail -n 160 /home/ubuntu/agent-data/logs/chronos.log | grep -E 'swarm-board-refresh|Trigger|Chronos' | tail -n 80 || true
-      - name: Refresh ubuntu Action Relay runtime through canonical safe Chronos transport
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/bootstrap_action_relay_via_chronos_safe_v2.sh
+          runtime=/home/ubuntu/.local/share/agentos/action-runtime/agentos_node/action_relay.py
+          if grep -q 'github.repo.ensure_arcanaforge' "$runtime" 2>/dev/null; then
+            echo 'action_runtime_arcanaforge=ALREADY_READY'
+            exit 0
+          fi
+          echo 'action_runtime_arcanaforge=REFRESH_REQUIRED'
+          tmp=/tmp/bootstrap-action-relay-arcanaforge-safe.sh
+          sed 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+            scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
+          chmod 700 "$tmp"
+          bash "$tmp"
+          grep -q 'github.repo.ensure_arcanaforge' "$runtime"
+          echo 'action_runtime_arcanaforge=READY_AFTER_REFRESH'
       - name: Ask Core Action Relay to create ArcanaForge and require receipt
         shell: bash
         run: |
