@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent_core.runtime_ota import RuntimeOTAPolicyStore
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
@@ -23,9 +25,10 @@ def _parse_utc(value: str | None) -> datetime | None:
 class NodeRegistry:
     """Persistent ONE-side Realm Node Map with heartbeat freshness semantics."""
 
-    def __init__(self, path: str | Path | None = None):
+    def __init__(self, path: str | Path | None = None, *, ota_policy: RuntimeOTAPolicyStore | None = None):
         data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
         self.path = Path(path) if path else data_root / 'realm' / 'nodes.json'
+        self.ota_policy = ota_policy or RuntimeOTAPolicyStore()
 
     def _empty(self) -> dict[str, Any]:
         return {'schema': 'agentos.node-registry/v0.1', 'realm_id': None, 'nodes': {}}
@@ -59,8 +62,11 @@ class NodeRegistry:
         data['realm_id'] = realm_id
         existing = data['nodes'].get(node_id, {})
         inventory = manifest.get('surface_inventory') or {}
+        runtime = manifest.get('runtime') or {}
         if not isinstance(inventory, dict):
             raise ValueError('surface_inventory must be an object')
+        if not isinstance(runtime, dict):
+            raise ValueError('runtime must be an object')
         entry = {
             'node_id': node_id,
             'role': role,
@@ -70,6 +76,7 @@ class NodeRegistry:
             'capabilities': sorted(set(manifest.get('capabilities') or [])),
             'tool_presence': dict(manifest.get('tool_presence') or {}),
             'surface_inventory': dict(inventory),
+            'runtime': dict(runtime),
             'status': existing.get('status', 'unknown'),
             'first_seen_at': existing.get('first_seen_at', _utc_now()),
             'last_manifest_at': manifest.get('observed_at') or _utc_now(),
@@ -137,10 +144,11 @@ class NodeRegistry:
             result['status_reason'] = 'heartbeat_stale'
         else:
             result['status'] = reported
-        return result
+        return RuntimeOTAPolicyStore.annotate_node(result, self.ota_policy.load())
 
     def node_map(self) -> dict[str, Any]:
         data = self.load()
+        policy = self.ota_policy.load()
         nodes = [self._effective_node(node) for node in data['nodes'].values()]
         nodes.sort(key=lambda n: (n.get('role') != 'core', n.get('node_id', '')))
         realm_caps = sorted({cap for node in nodes for cap in node.get('capabilities', []) if node.get('status') != 'offline'})
@@ -161,4 +169,8 @@ class NodeRegistry:
             'realm_capabilities': realm_caps,
             'realm_tool_presence': tools,
             'realm_surface_providers': surface_providers,
+            'runtime_ota': policy,
+            'runtime_converged_count': sum(1 for node in nodes if node.get('runtime_status') == 'converged'),
+            'runtime_drifted_count': sum(1 for node in nodes if node.get('runtime_status') == 'drifted'),
+            'runtime_unknown_count': sum(1 for node in nodes if node.get('runtime_status') == 'unknown'),
         }
