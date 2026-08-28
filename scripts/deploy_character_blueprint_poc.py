@@ -13,9 +13,10 @@ TARGET = Path('/home/ubuntu/zeus-writer/website/dist/poc/character-blueprint')
 MARKERS = [
     'character-blueprint-poc',
     'Character Blueprint',
-    'character-blueprint-ir/v0.2',
-    'transparent-cutout',
-    'user-annotations',
+    'character-blueprint-ir/v0.3',
+    'semantic-region-mask',
+    'user-confirmed-semantics',
+    '匯出透明 PNG',
     'llm_tokens: 0',
 ]
 FORBIDDEN_FALLBACK = ['Milkcat Studio Portal', 'SERIALS', '連載作品']
@@ -36,9 +37,7 @@ def validate(text: str) -> None:
 def main() -> int:
     if not SOURCE.is_file():
         raise SystemExit(f'missing source: {SOURCE}')
-    source_text = SOURCE.read_text(encoding='utf-8')
-    validate(source_text)
-
+    validate(SOURCE.read_text(encoding='utf-8'))
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     TARGET.parent.chmod(0o755)
     tmp: Path | None = Path(tempfile.mkdtemp(prefix='.character-blueprint-', dir=str(TARGET.parent)))
@@ -49,31 +48,26 @@ def main() -> int:
         index.chmod(0o644)
         validate(index.read_text(encoding='utf-8'))
         backup = TARGET.with_name(TARGET.name + '.previous')
-        if backup.exists():
-            shutil.rmtree(backup)
-        if TARGET.exists():
-            TARGET.rename(backup)
+        if backup.exists(): shutil.rmtree(backup)
+        if TARGET.exists(): TARGET.rename(backup)
         tmp.rename(TARGET)
         TARGET.chmod(0o755)
         tmp = None
-        if backup.exists():
-            shutil.rmtree(backup)
+        if backup.exists(): shutil.rmtree(backup)
     finally:
-        if tmp is not None and tmp.exists():
-            shutil.rmtree(tmp)
+        if tmp is not None and tmp.exists(): shutil.rmtree(tmp)
 
     deployed = TARGET / 'index.html'
     validate(deployed.read_text(encoding='utf-8'))
-    result = {
+    print(json.dumps({
         'ok': True,
-        'release': 'character-blueprint-poc-v0.2',
+        'release': 'character-blueprint-poc-v0.3',
         'target': str(TARGET),
         'public_path': '/poc/character-blueprint/',
-        'marker': 'character-blueprint-poc/v0.2.0',
+        'marker': 'character-blueprint-poc/v0.3.0',
         'llm_tokens': 0,
         'sha256': digest(deployed),
-    }
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    }, ensure_ascii=False, sort_keys=True))
     return 0
 
 
