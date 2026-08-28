@@ -102,6 +102,14 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 self._authorize_controller()
                 self._send(200, {'ok': True, 'node_map': self.controller.nodes()})
                 return
+            rollout_prefix = '/v1/controller/runtime/rollouts/'
+            if parsed.path.startswith(rollout_prefix):
+                self._authorize_controller()
+                rollout_id = parsed.path.removeprefix(rollout_prefix).strip('/')
+                if not rollout_id or '/' in rollout_id:
+                    raise KeyError(parsed.path)
+                self._send(200, {'ok': True, 'rollout': self.controller.verify_runtime_rollout(rollout_id)})
+                return
             if parsed.path.startswith('/v1/controller/nodes/'):
                 self._authorize_controller()
                 node_id = parsed.path.removeprefix('/v1/controller/nodes/').strip('/')
@@ -160,7 +168,25 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 body = self._json_body()
                 token = self._bearer()
                 node = self.fabric.record_heartbeat(body, token)
-                self._send(200, {'ok': True, 'node': node})
+                auto_ota = None
+                policy = self.controller.ota_policy.load()
+                desired = str(policy.get('desired_source_commit') or '')
+                node_id = str(body.get('node_id') or '')
+                effective = self.controller.node(node_id)
+                if (
+                    policy.get('auto_converge') is True
+                    and desired
+                    and effective.get('status') == 'online'
+                    and effective.get('runtime_status') != 'converged'
+                    and 'shell.exec' in set(effective.get('capabilities') or [])
+                ):
+                    auto_ota = self.controller.dispatch(node_id, {
+                        'action': 'node.runtime.converge',
+                        'task_id': f'auto_ota_{desired[:12]}_{node_id}',
+                        'source_ref': str(policy.get('desired_source_ref') or 'feature/realm-node-fabric-readiness'),
+                        'source_commit': desired,
+                    })
+                self._send(200, {'ok': True, 'node': node, 'auto_ota': auto_ota})
                 return
             if parsed.path == '/v1/benchmark':
                 body = self._json_body()
@@ -174,6 +200,11 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
+                return
+            if parsed.path == '/v1/controller/runtime/rollout':
+                self._authorize_controller()
+                result = self.controller.rollout_runtime(self._json_body())
+                self._send(202, result)
                 return
             if parsed.path == '/v1/controller/dispatch':
                 self._authorize_controller()
