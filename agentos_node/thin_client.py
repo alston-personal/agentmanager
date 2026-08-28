@@ -92,7 +92,7 @@ class ThinClient:
     def capability_manifest(self) -> dict[str, Any]:
         tools = self.discover_tools()
         surface_inventory = self.surface_inventory()
-        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
+        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect', 'node.runtime.converge']
         caps.extend(surface_inventory.get('capabilities') or [])
         if self.policy.allowed_executables:
             caps.append('shell.exec')
