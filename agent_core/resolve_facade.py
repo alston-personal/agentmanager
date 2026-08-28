@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,77 @@ def _project_aliases(entity: dict[str, Any]) -> list[str]:
     return aliases
 
 
+def _project_authority(entity: dict[str, Any]) -> dict[str, Any]:
+    implementation = entity.get("implementation") or {}
+    metadata = entity.get("metadata") or {}
+
+    source = implementation.get("source") if isinstance(implementation.get("source"), dict) else {}
+    if not source:
+        source = {
+            "repo": implementation.get("repo"),
+            "branch": implementation.get("branch"),
+            "canonical_path": implementation.get("canonical_path"),
+            "node": implementation.get("node"),
+        }
+    else:
+        source = dict(source)
+
+    runtime = implementation.get("runtime") if isinstance(implementation.get("runtime"), dict) else {}
+    deployment = implementation.get("deployment") if isinstance(implementation.get("deployment"), dict) else {}
+    surfaces = metadata.get("surfaces") if isinstance(metadata.get("surfaces"), list) else []
+    state = metadata.get("state") if isinstance(metadata.get("state"), dict) else {}
+
+    required = {
+        "canonical_repo": bool(source.get("repo")),
+        "canonical_branch": bool(source.get("branch")),
+        "canonical_checkout": bool(source.get("canonical_path")),
+        "canonical_node": bool(source.get("node")),
+        "state_authority": bool(state.get("document") or state.get("checkpoint") or state.get("continuity")),
+    }
+    complete = all(required.values())
+
+    return {
+        "source": source,
+        "runtime": dict(runtime),
+        "deployment": dict(deployment),
+        "surfaces": list(surfaces),
+        "state": dict(state),
+        "integrity": {
+            "required": required,
+            "complete": complete,
+            "mutation_allowed": complete,
+            "reason": None if complete else "project resolution incomplete; source/path/state authority must be canonical before mutation",
+        },
+    }
+
+
+def _resolution_receipt(query: str, project: dict[str, Any]) -> dict[str, Any]:
+    integrity = project.get("integrity") or {}
+    source = project.get("source") or {}
+    state = project.get("state") or {}
+    confidence = {
+        "identity": 1.0 if project.get("identity_source") == "governance-directory" else 0.6,
+        "source": 1.0 if integrity.get("required", {}).get("canonical_repo") else 0.0,
+        "runtime": 1.0 if integrity.get("required", {}).get("canonical_node") else 0.0,
+    }
+    return {
+        "schema": "agentos.project-resolution/v1",
+        "query": query,
+        "resolved": {
+            "project_id": project.get("id"),
+            "aliases": project.get("aliases") or [],
+            "repo": source.get("repo"),
+            "branch": source.get("branch"),
+            "canonical_path": source.get("canonical_path"),
+            "node": source.get("node"),
+            "checkpoint": state.get("checkpoint") or state.get("document") or state.get("continuity"),
+        },
+        "confidence": confidence,
+        "integrity": integrity,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def resolve_project_identity(
     query: str,
     *,
@@ -54,6 +126,10 @@ def resolve_project_identity(
     so already-registered projects remain addressable while the Governance
     Directory is being populated. Aliases are *never* inferred from folder
     names, product identity registries, Git repositories, or free text.
+
+    Resolution and mutation authority are intentionally separate. A project may
+    be identifiable while still lacking canonical source/path/state authority;
+    callers must honor ``integrity.mutation_allowed`` before project mutation.
     """
     needle = _normalize(query)
     if not needle:
@@ -88,7 +164,7 @@ def resolve_project_identity(
     if matches:
         matched_by, entity = matches[0]
         project_id = _project_slug(entity)
-        return {
+        project = {
             "id": project_id,
             "name": str(entity.get("name") or project_id),
             "aliases": _project_aliases(entity),
@@ -98,14 +174,18 @@ def resolve_project_identity(
             "governance_entity_id": entity.get("id"),
             "governance_state": entity.get("state"),
         }
+        project.update(_project_authority(entity))
+        project["resolution_receipt"] = _resolution_receipt(query, project)
+        return project
 
     # Conservative migration fallback: exact canonical folder ID only. This is
     # not alias discovery and does not inspect STATUS.md or app-owned registries.
+    # Folder existence is never sufficient source authority for mutation.
     root = _data_root(data_root)
     projects_dir = root / "projects"
     exact_dir = projects_dir / str(query).strip()
     if exact_dir.is_dir() and _normalize(exact_dir.name) == needle:
-        return {
+        project = {
             "id": exact_dir.name,
             "name": exact_dir.name,
             "aliases": [],
@@ -114,7 +194,26 @@ def resolve_project_identity(
             "identity_source": "project-data-exact-id-fallback",
             "governance_entity_id": None,
             "governance_state": None,
+            "source": {},
+            "runtime": {},
+            "deployment": {},
+            "surfaces": [],
+            "state": {},
+            "integrity": {
+                "required": {
+                    "canonical_repo": False,
+                    "canonical_branch": False,
+                    "canonical_checkout": False,
+                    "canonical_node": False,
+                    "state_authority": False,
+                },
+                "complete": False,
+                "mutation_allowed": False,
+                "reason": "exact project-data directory fallback proves identity only; canonical source/path/state authority unresolved",
+            },
         }
+        project["resolution_receipt"] = _resolution_receipt(query, project)
+        return project
 
     raise KeyError(f"project identity unresolved: {query}")
 
@@ -184,6 +283,8 @@ def resolve_continuation(
         "schema": "agentos.resolve/v1",
         "intent": "continue",
         "project": project,
+        "project_resolution": project.get("resolution_receipt"),
+        "mutation_allowed": bool(project.get("integrity", {}).get("mutation_allowed")),
         "active_goal": active_goal,
         "execution_head": execution_head,
         "continuation": continuation,
@@ -191,6 +292,7 @@ def resolve_continuation(
         "next_action": recommended_action,
         "availability": {
             "project_identity": True,
+            "project_integrity": bool(project.get("integrity", {}).get("complete")),
             "continuation": continuation is not None,
             "execution_head": execution_head is not None,
             "node_context": node_context is not None,
@@ -198,6 +300,7 @@ def resolve_continuation(
         },
         "provenance": {
             "project_identity": project["identity_source"],
+            "project_resolution": "governance-directory" if project.get("governance_entity_id") else "project-data-exact-id-fallback",
             "continuation": "project/continuity/latest.json" if continuation is not None else None,
             "execution_head": "project/execution-head.json" if execution_head is not None else None,
             "last_receipt": "not-yet-project-indexed",
