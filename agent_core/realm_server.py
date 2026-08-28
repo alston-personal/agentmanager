@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 
 from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
 from agent_core.realm_fabric import RealmFabricStore
+from agent_core.resolve_facade import resolve_continuation
 
 
 class RealmRequestHandler(BaseHTTPRequestHandler):
@@ -136,6 +137,24 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
+                return
+            if self.path == '/v1/resolve':
+                body = self._json_body()
+                if body.get('schema') not in (None, 'agentos.resolve-request/v1'):
+                    raise ValueError('invalid resolve request schema')
+                if str(body.get('intent') or 'continue') != 'continue':
+                    raise ValueError('only continue intent is supported in v1')
+                node_id = str(body.get('node_id') or '')
+                if not node_id:
+                    raise ValueError('node_id is required')
+                token = self._bearer()
+                self.fabric.authenticate(node_id, token)
+                node_context = bootstrap_snapshot(self.fabric, node_id, token)
+                project_query = str(body.get('project') or body.get('query') or '').strip()
+                if not project_query:
+                    raise ValueError('project query is required')
+                result = resolve_continuation(project_query, node_context=node_context)
+                self._send(200, {'ok': True, **result})
                 return
             self._send(404, {'ok': False, 'error': 'not found'})
         except Exception as exc:
