@@ -13,7 +13,9 @@ TARGET = Path('/home/ubuntu/zeus-writer/website/dist/poc/character-blueprint')
 MARKERS = [
     'character-blueprint-poc',
     'Character Blueprint',
-    'character-blueprint-ir/v0.1',
+    'character-blueprint-ir/v0.2',
+    'transparent-cutout',
+    'user-annotations',
     'llm_tokens: 0',
 ]
 FORBIDDEN_FALLBACK = ['Milkcat Studio Portal', 'SERIALS', '連載作品']
@@ -46,7 +48,6 @@ def main() -> int:
         shutil.copy2(SOURCE, index)
         index.chmod(0o644)
         validate(index.read_text(encoding='utf-8'))
-
         backup = TARGET.with_name(TARGET.name + '.previous')
         if backup.exists():
             shutil.rmtree(backup)
@@ -65,10 +66,10 @@ def main() -> int:
     validate(deployed.read_text(encoding='utf-8'))
     result = {
         'ok': True,
-        'release': 'character-blueprint-poc-v0.1',
+        'release': 'character-blueprint-poc-v0.2',
         'target': str(TARGET),
         'public_path': '/poc/character-blueprint/',
-        'marker': 'character-blueprint-poc/v0.1.0',
+        'marker': 'character-blueprint-poc/v0.2.0',
         'llm_tokens': 0,
         'sha256': digest(deployed),
     }
