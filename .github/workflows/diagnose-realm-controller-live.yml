@@ -1,0 +1,49 @@
+name: Diagnose Realm Controller Live
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnose-realm-controller-live.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only Realm controller attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== deployment state ==='
+          cat /home/ubuntu/agent-data/governance/core-deployment.json || true
+          echo '=== unit ==='
+          cat /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service || true
+          echo '=== systemd show ==='
+          XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
+            systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p ExecMainCode || true
+          echo '=== recent journal ==='
+          XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
+            journalctl --user -u agentos-realm-fabric.service -n 120 --no-pager || true
+          echo '=== release files ==='
+          rel=$(sed -n 's#^WorkingDirectory=##p' /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service | head -1)
+          echo "release=$rel"
+          test -n "$rel"
+          ls -la "$rel/agent_core" | tail -80
+          test -f "$rel/agent_core/controller_service.py" && echo controller_service_file=YES || echo controller_service_file=NO
+          echo '=== exact release import ==='
+          cd "$rel"
+          PYTHONNOUSERSITE=1 PYTHONPATH="$rel" /usr/bin/python3 - <<'PY'
+          import agent_core.realm_server as rs
+          import agent_core.controller_service as cs
+          print('realm_server_file='+rs.__file__)
+          print('controller_service_file='+cs.__file__)
+          print('exact_release_import=PASS')
+          PY
+          echo '=== live probes ==='
+          curl -sS -i --max-time 3 http://127.0.0.1:8780/v1/health || true
+          curl -sS -i --max-time 3 -H 'Content-Type: application/json' -d '{"node_id":"vopc5750","action":"agent.surface.inspect"}' http://127.0.0.1:8780/v1/controller/dispatch || true
