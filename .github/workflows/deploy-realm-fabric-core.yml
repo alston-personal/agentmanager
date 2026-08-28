@@ -1,4 +1,5 @@
 name: Deploy Realm Fabric Core
+# Deployment trigger note: refresh Oracle Realm Fabric with current resolve-v1 source.
 
 on:
   workflow_dispatch:
