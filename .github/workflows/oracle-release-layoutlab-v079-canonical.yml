@@ -1,0 +1,193 @@
+name: Oracle Release Layout Lab v0.7.9 Canonical
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-layoutlab-v079-canonical.yml'
+      - 'scripts/deploy_layoutlab_static.py'
+      - 'scripts/deploy_layoutlab_v07_release.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layoutlab-production-v079-canonical
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Stage deployment scripts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          STAGE=/tmp/layoutlab-v079-canonical-${GITHUB_RUN_ID}
+          tar czf - \
+            scripts/deploy_layoutlab_static.py \
+            scripts/deploy_layoutlab_v07_release.py \
+          | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "rm -rf '$STAGE' && mkdir -p '$STAGE' && tar xzf - -C '$STAGE'"
+
+      - name: Refresh runtime from canonical LayoutLib repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "/tmp/layoutlab-v079-canonical-${GITHUB_RUN_ID}" "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          STAGE="$1"; ORCHESTRATOR_SHA="$2"
+          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
+          RECEIPT=/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v079-canonical.json
+          TMP=$(mktemp -d /tmp/layoutlib-canonical-release-XXXXXX)
+          trap 'rm -rf "$TMP" "$STAGE"' EXIT
+
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone alston-personal/layoutlib "$TMP/layoutlib" -- --depth=1
+          LL="$TMP/layoutlib"
+          LL_SHA=$(/usr/bin/git -C "$LL" rev-parse HEAD)
+          RELEASE="$LL/release/v0.7.9"
+          test -f "$RELEASE/manifest.json"
+
+          python3 - "$RELEASE" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          release=Path(sys.argv[1])
+          manifest=json.loads((release/'manifest.json').read_text())
+          assert manifest['schema']=='layoutlib.production-extraction/v1'
+          assert manifest['release']=='v0.7.9'
+          assert manifest['source_repository']=='alston-personal/agentmanager'
+          assert manifest['source_commit']=='e8efc4ed7cbd41839f960373f79c5fb6a5f82375'
+          assert len(manifest['files'])==7
+          for item in manifest['files']:
+              p=release/Path(item['destination']).name
+              assert p.is_file(), p
+              got=hashlib.sha256(p.read_bytes()).hexdigest()
+              assert got==item['sha256'], (p.name,got,item['sha256'])
+          print('canonical_layoutlib_manifest=PASS')
+          PY
+
+          mkdir -p "$RUNTIME/scripts" "$RUNTIME/web_assets" "$(dirname "$RECEIPT")"
+          install -m 0755 "$STAGE/scripts/deploy_layoutlab_static.py" "$RUNTIME/scripts/deploy_layoutlab_static.py"
+          install -m 0755 "$STAGE/scripts/deploy_layoutlab_v07_release.py" "$RUNTIME/scripts/deploy_layoutlab_v07_release.py"
+          for f in layoutlab_v0_5.html layoutlib-browser-v0.5.js layoutlib-spatial-semantics-v0.1.js layoutlib-editor-v0.7.js layoutlab-editor-ui-v0.7.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
+            install -m 0644 "$RELEASE/$f" "$RUNTIME/web_assets/$f"
+          done
+
+          python3 - "$RUNTIME" "$RELEASE/manifest.json" "$LL_SHA" "$ORCHESTRATOR_SHA" "$RECEIPT" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          runtime=Path(sys.argv[1]); manifest_path=Path(sys.argv[2]); ll_sha=sys.argv[3]; orch_sha=sys.argv[4]; receipt=Path(sys.argv[5])
+          manifest=json.loads(manifest_path.read_text())
+          hashes={}
+          for item in manifest['files']:
+              name=Path(item['destination']).name
+              p=runtime/'web_assets'/name
+              got=hashlib.sha256(p.read_bytes()).hexdigest()
+              assert got==item['sha256'], (name,got,item['sha256'])
+              hashes[name]=got
+          data={
+            'schema':'layoutlab.canonical-runtime-refresh/v1',
+            'ok':True,
+            'scope':'layoutlab-v0.7.9',
+            'asset_authority':'alston-personal/layoutlib',
+            'layoutlib_commit':ll_sha,
+            'historical_source_commit':manifest['source_commit'],
+            'orchestrator_repository':'alston-personal/agentmanager',
+            'orchestrator_commit':orch_sha,
+            'runtime_root':str(runtime),
+            'asset_sha256':hashes,
+          }
+          receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(data,sort_keys=True))
+          PY
+          REMOTE
+
+      - name: Enforce semantic ownership from canonical runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE'
+          set -euo pipefail
+          R=/home/ubuntu/.local/share/agentos/action-runtime/web_assets
+          LIB="$R/layoutlib-editor-v0.7.js"
+          SEM="$R/layoutlib-spatial-semantics-v0.1.js"
+          UI="$R/layoutlab-editor-ui-v0.7.js"
+          OVERLAY="$R/layoutlab-v0.7-release-fix.js"
+          grep -q 'deleteWallsById' "$LIB"
+          grep -q 'moveWallPx' "$LIB"
+          grep -q 'matchWallByEvidence' "$LIB"
+          grep -q 'replayCorrections' "$LIB"
+          grep -q 'createCorrectionSession' "$LIB"
+          grep -q 'candidateOpenings' "$SEM"
+          grep -q 'classifyOpening' "$SEM"
+          grep -q 'segmentRooms' "$SEM"
+          grep -q 'token_cost:0' "$SEM"
+          grep -q 'LayoutLibEditor' "$UI"
+          ! grep -q 'function removeByEvidence' "$UI"
+          ! grep -q 'deleteWallsById=' "$UI"
+          ! grep -q 'MANUAL_OPS=' "$UI"
+          ! grep -q 'function removeByEvidence' "$OVERLAY"
+          ! grep -q 'deleteWallsById=' "$OVERLAY"
+          ! grep -q 'MANUAL_OPS=' "$OVERLAY"
+          echo 'canonical_semantic_ownership=PASS'
+          REMOTE
+
+      - name: Deploy v0.7.9 from canonical runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE'
+          set -euo pipefail
+          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
+          RECEIPT=/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v079-canonical.json
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r.get('ok') is True
+          assert r.get('scope')=='layoutlab-v0.7.9'
+          assert r.get('asset_authority')=='alston-personal/layoutlib'
+          print('canonical_runtime_receipt=PASS')
+          PY
+          cd "$RUNTIME"
+          /usr/bin/python3 scripts/deploy_layoutlab_v07_release.py | tee /tmp/layoutlab-v079-canonical-release.json
+          grep -q '"ok": true' /tmp/layoutlab-v079-canonical-release.json
+          grep -q 'layoutlab-v0.7.9' /tmp/layoutlab-v079-canonical-release.json
+          echo 'canonical_layoutlab_v079_deploy=PASS'
+          REMOTE
+
+      - name: Public canonical v0.7.9 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org/layout-lab
+          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v079-ui
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlib-browser-v0.5.js" -o /tmp/layoutlib-browser-v079
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlib-spatial-semantics-v0.1.js?v=0.7.9" -o /tmp/layoutlib-semantics-v079
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlib-editor-v0.7.js?v=0.7.9" -o /tmp/layoutlib-editor-v079
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-editor-ui-v0.7.js?v=0.7.9" -o /tmp/layoutlab-editor-ui-v079
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-v0.7-release-fix.js?v=0.7.9" -o /tmp/layoutlab-v079-fix
+          curl -fsS --retry 6 --retry-all-errors "$BASE/layoutlab-capability-bridge-v0.7.js" -o /tmp/layoutlab-v079-bridge
+          grep -q '<div class="badge" data-release="0.7.9">v0.7.9</div>' /tmp/layoutlab-v079-ui
+          grep -q 'LayoutLib Browser Adapter v0.6.0' /tmp/layoutlib-browser-v079
+          grep -q 'candidateOpenings' /tmp/layoutlib-semantics-v079
+          grep -q 'deleteWallsById' /tmp/layoutlib-editor-v079
+          grep -q 'LayoutLibEditor' /tmp/layoutlab-editor-ui-v079
+          grep -q "const RELEASE='0.7.9'" /tmp/layoutlab-v079-fix
+          grep -q 'finishModel' /tmp/layoutlab-v079-bridge
+          echo 'public_canonical_v079=PASS'
