@@ -30,8 +30,14 @@ class ControllerFixture(unittest.TestCase):
             'tool_presence': {},
             'surface_inventory': {'surfaces': []},
         }
-        registry.register_manifest(manifest)
-        registry.record_heartbeat({
+        invite = self.fabric.create_invite(expires_minutes=5, label='controller-test')
+        enrolled = self.fabric.enroll(
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            manifest=manifest,
+        )
+        self.node_token = enrolled['node_token']
+        self.fabric.record_heartbeat({
             'schema': 'agentos.node-heartbeat/v0.1',
             'realm_id': 'realm-test',
             'node_id': 'vopc5750',
@@ -40,7 +46,7 @@ class ControllerFixture(unittest.TestCase):
             'uptime_seconds': 10,
             'surface_count': 0,
             'manifest': manifest,
-        })
+        }, self.node_token)
 
     def tearDown(self):
         self.tmp.cleanup()
