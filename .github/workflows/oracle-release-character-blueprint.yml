@@ -107,3 +107,5 @@ jobs:
           fi
           echo 'public_character_blueprint_v04_identity=PASS'
           echo 'interactive_3d_demo_contract=PASS'
+
+# v0.4 authoritative release trigger
