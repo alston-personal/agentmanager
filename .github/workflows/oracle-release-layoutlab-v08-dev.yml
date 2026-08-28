@@ -42,11 +42,12 @@ jobs:
           LL="$TMP/layoutlib"
           LL_SHA=$(/usr/bin/git -C "$LL" rev-parse HEAD)
           REL="$LL/release/v0.7.9"
-          TARGET=/home/ubuntu/zeus-writer/website/dist/layout-lab-dev
+          TARGET=/home/ubuntu/zeus-writer/website/dist/poc/layout-lab
+          OLD_TARGET=/home/ubuntu/zeus-writer/website/dist/layout-lab-dev
           test -f "$REL/manifest.json"
           test -f "$LL/src/semantic-editor.js"
           test -f "$LL/examples/layout-lab/semantic-tools.js"
-          rm -rf "$TARGET" && mkdir -p "$TARGET"
+          rm -rf "$TARGET" "$OLD_TARGET" && mkdir -p "$TARGET"
           install -m 0644 "$REL/layoutlab_v0_5.html" "$TARGET/index.html"
           for f in layoutlib-browser-v0.5.js layoutlib-spatial-semantics-v0.1.js layoutlib-editor-v0.7.js layoutlab-editor-ui-v0.7.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
             install -m 0644 "$REL/$f" "$TARGET/$f"
@@ -72,22 +73,24 @@ jobs:
               text=text.replace('</body>',tags+'\n</body>')
           p.write_text(text)
           PY
-          chmod 0755 "$TARGET"; chmod 0644 "$TARGET"/*
+          chmod 0755 /home/ubuntu/zeus-writer/website/dist/poc "$TARGET"
+          chmod 0644 "$TARGET"/*
           echo "layoutlib_commit=$LL_SHA"
-          echo "layoutlab_v08_dev_deploy=PASS"
+          echo "layoutlab_v08_poc_deploy=PASS"
           REMOTE
-      - name: Public v0.8 dev acceptance
+      - name: Public v0.8 POC acceptance
         shell: bash
         run: |
           set -euo pipefail
-          BASE=https://studio.milkcat.org/layout-lab-dev
-          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v08-dev
+          BASE=https://studio.milkcat.org/poc/layout-lab
+          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v08-poc
           curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-editor.js?v=0.8-dev" -o /tmp/layoutlib-semantic-editor
           curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-tools.js?v=0.8-dev" -o /tmp/layoutlab-semantic-tools
-          grep -q 'semantic-editor.js?v=0.8-dev' /tmp/layoutlab-v08-dev
-          grep -q 'semantic-tools.js?v=0.8-dev' /tmp/layoutlab-v08-dev
+          grep -q 'semantic-editor.js?v=0.8-dev' /tmp/layoutlab-v08-poc
+          grep -q 'semantic-tools.js?v=0.8-dev' /tmp/layoutlab-v08-poc
           grep -q 'LayoutLib Semantic Editor v0.8.0-dev' /tmp/layoutlib-semantic-editor
+          grep -q "selectButton.style.display=''" /tmp/layoutlab-semantic-tools
           grep -q "doorButton.textContent='＋ 門'" /tmp/layoutlab-semantic-tools
           grep -q "windowButton.textContent='＋ 窗'" /tmp/layoutlab-semantic-tools
           grep -q "badge.textContent='v0.8-dev'" /tmp/layoutlab-semantic-tools
-          echo 'public_layoutlab_v08_dev=PASS'
+          echo 'public_layoutlab_v08_poc=PASS'
