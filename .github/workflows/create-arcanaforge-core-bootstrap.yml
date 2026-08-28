@@ -41,7 +41,7 @@ jobs:
 
   core-create:
     needs: patch-capability
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: [self-hosted, oracle]
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
