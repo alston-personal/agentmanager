@@ -1,0 +1,71 @@
+name: Oracle vopc5750 Process Instances
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-process-instances.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Inspect AgentOS client processes
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >/tmp/vopc5750-process-task.txt
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          node='vopc5750'
+          tid='process-instance-probe-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $items=Get-CimInstance Win32_Process | Where-Object {
+            ($_.Name -match '^(python|pythonw|cmd)') -and
+            ($_.CommandLine -like '*AgentOS*' -or $_.CommandLine -like '*agentos_node*' -or $_.CommandLine -like '*agentos-client*')
+          } | Select-Object ProcessId,ParentProcessId,CreationDate,Name,ExecutablePath,CommandLine
+          $items | ConvertTo-Json -Depth 4 -Compress
+          $task=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue
+          if($null -ne $task){
+            $info=Get-ScheduledTaskInfo -TaskName 'AgentOS Thin Client'
+            Write-Output ('SCHEDULED_TASK_STATE=' + $task.State)
+            Write-Output ('SCHEDULED_TASK_LAST_RUN=' + $info.LastRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))
+            Write-Output ('SCHEDULED_TASK_LAST_RESULT=' + $info.LastTaskResult)
+          }
+          '''
+          RealmFabricStore().queue_task(node,{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          print(tid)
+          PY
+      - name: Wait for process receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(cat /tmp/vopc5750-process-task.txt)
+          for i in $(seq 1 30); do
+            python3 - "$TASK" <<'PY' && exit 0 || true
+          import json,sys
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if not r: raise SystemExit(1)
+          print(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True))
+          raise SystemExit(0)
+          PY
+            sleep 2
+          done
+          exit 1
