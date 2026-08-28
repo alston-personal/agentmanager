@@ -13,12 +13,16 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 3
     steps:
-      - name: Ensure ArcanaForge private repository exists
+      - name: Ensure ArcanaForge private repository exists via Core ubuntu identity
         shell: bash
         run: |
           set -euo pipefail
           repo='alston-personal/arcanaforge'
-          if /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json 2>/tmp/arcanaforge-view.err; then
+          run_as_ubuntu() {
+            sudo -n -u ubuntu -H "$@"
+          }
+          run_as_ubuntu /usr/bin/gh auth status
+          if run_as_ubuntu /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json 2>/tmp/arcanaforge-view.err; then
             python3 - <<'PY'
           import json
           x=json.load(open('/tmp/arcanaforge-view.json'))
@@ -28,10 +32,10 @@ jobs:
           PY
             exit 0
           fi
-          /usr/bin/gh repo create "$repo" \
+          run_as_ubuntu /usr/bin/gh repo create "$repo" \
             --private \
             --description 'Symbolic collection generator: SymbolicSystem × Subject × Style, initially Tarot + I Ching, packaging outputs for Divination OS'
-          /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json
+          run_as_ubuntu /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json
           python3 - <<'PY'
           import json
           x=json.load(open('/tmp/arcanaforge-view.json'))
