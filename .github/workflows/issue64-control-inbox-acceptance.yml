@@ -24,21 +24,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify live generation 2 remains healthy
+      - name: Verify authoritative live generation remains healthy
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin main
-          git reset --hard origin/main
           python3 - <<'PY'
           import json
           s=json.load(open('/home/ubuntu/agent-data/governance/core-deployment.json',encoding='utf-8'))
-          assert s.get('desired_core_commit')=='34a6863921389c7a3cc24b76cc3e4d8776c9ce8e',s
-          assert int(s.get('deployment_generation') or 0)==2,s
+          desired=str(s.get('desired_core_commit') or '')
+          observed=str(s.get('observed_core_commit') or '')
+          generation=int(s.get('deployment_generation') or 0)
+          assert len(desired)==40, s
+          assert observed==desired, s
+          assert generation >= 2, s
           assert s.get('lease_owner')=='agentos-core-mainline',s
-          print('issue64_generation='+str(s['deployment_generation']))
-          print('issue64_desired_core_commit='+s['desired_core_commit'])
-          print('issue64_observed_core_commit='+str(s.get('observed_core_commit')))
+          assert s.get('deployment_status')=='converged',s
+          print('issue64_generation='+str(generation))
+          print('issue64_desired_core_commit='+desired)
+          print('issue64_observed_core_commit='+observed)
           print('issue64_deployment_status='+str(s.get('deployment_status')))
           PY
           test ! -e /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service.d/runtime-generation.conf
