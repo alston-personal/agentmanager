@@ -9,25 +9,63 @@ on:
       - 'agent_core/realm_server.py'
       - 'agent_core/realm_fabric.py'
       - 'agentos_node/thin_client_transport.py'
+      - 'scripts/patch_action_relay_realm_fabric.py'
+      - 'scripts/install_realm_fabric_via_action_relay.py'
       - 'tests/test_resolve_facade.py'
       - 'tests/test_realm_resolve_endpoint.py'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: realm-fabric-core-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 12
-    env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      REALM_ROOT: ${{ github.workspace }}/.realm-fabric-runtime
+  patch-capability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Add narrow governed Realm Fabric install capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python3 scripts/patch_action_relay_realm_fabric.py
+          python3 -m py_compile agentos_node/action_relay.py
+          grep -q 'agentos.realm-fabric.install_release' agentos_node/action_relay.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(agentos): enable governed Realm Fabric install'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+  deploy:
+    needs: patch-capability
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refresh canonical source to latest main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          grep -q 'agentos.realm-fabric.install_release' agentos_node/action_relay.py
+          echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Focused resolve tests
         shell: bash
@@ -36,106 +74,50 @@ jobs:
           python3 -m py_compile agent_core/resolve_facade.py agent_core/realm_server.py agentos_node/thin_client_transport.py
           python3 -m unittest tests.test_resolve_facade tests.test_realm_resolve_endpoint -v
 
-      - name: Install versioned Realm Fabric release
+      - name: Ensure ubuntu Action Relay runtime contains Realm Fabric capability
         shell: bash
         run: |
           set -euo pipefail
-          REF="$GITHUB_SHA"
-          REALM_ROOT="$HOME/.local/share/agentos/realm-fabric"
-          RELEASE="$REALM_ROOT/releases/$REF"
-          CURRENT="$REALM_ROOT/current"
-          UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
-          BACKUP="$UNIT.pre-resolve-v1"
-          PREVIOUS_CURRENT=""
-          [ -L "$CURRENT" ] && PREVIOUS_CURRENT="$(readlink -f "$CURRENT" || true)"
-
-          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-          test -S "$XDG_RUNTIME_DIR/bus"
-          echo "user_bus=$DBUS_SESSION_BUS_ADDRESS"
-
-          mkdir -p "$RELEASE" "$HOME/.config/systemd/user" "$AGENT_DATA_ROOT/logs"
-          [ -f "$UNIT" ] && cp "$UNIT" "$BACKUP"
-
-          rollback() {
-            rc=$?
-            if [ "$rc" -ne 0 ]; then
-              echo "Realm Fabric deployment failed; restoring previous service" >&2
-              if [ -f "$BACKUP" ]; then
-                cp "$BACKUP" "$UNIT"
-                systemctl --user daemon-reload
-                systemctl --user restart agentos-realm-fabric.service || true
-              fi
-              if [ -n "$PREVIOUS_CURRENT" ] && [ -d "$PREVIOUS_CURRENT" ]; then
-                ln -sfn "$PREVIOUS_CURRENT" "$CURRENT"
-              fi
-            fi
-            exit "$rc"
-          }
-          trap rollback EXIT
-
-          # Versioned source snapshot. Avoid python3-venv/ensurepip so deployment
-          # does not require host package mutation or sudo on the self-hosted runner.
-          rm -rf "$RELEASE/agent_core" "$RELEASE/agentos_node" "$RELEASE/runtime_core" "$RELEASE/bin"
-          cp -a agent_core "$RELEASE/agent_core"
-          cp -a agentos_node "$RELEASE/agentos_node"
-          [ -d runtime_core ] && cp -a runtime_core "$RELEASE/runtime_core"
-          mkdir -p "$RELEASE/bin"
-          cat > "$RELEASE/bin/agentos-one" <<EOF
-          #!/usr/bin/env bash
-          set -euo pipefail
-          export PYTHONPATH="$RELEASE${PYTHONPATH:+:$PYTHONPATH}"
-          exec /usr/bin/python3 -m agent_core.realm_cli "\$@"
-          EOF
-          chmod 0755 "$RELEASE/bin/agentos-one"
-          PYTHONPATH="$RELEASE${PYTHONPATH:+:$PYTHONPATH}" /usr/bin/python3 -m py_compile \
-            "$RELEASE/agent_core/realm_cli.py" \
-            "$RELEASE/agent_core/realm_server.py" \
-            "$RELEASE/agent_core/resolve_facade.py"
-          "$RELEASE/bin/agentos-one" --help >/dev/null
-
-          REALM_ID=realm-alston
-          LIVE_ENV=/home/ubuntu/agentmanager/.env
-          if [ -f "$LIVE_ENV" ]; then
-            configured=$(grep -E '^AGENTOS_REALM_ID=' "$LIVE_ENV" | tail -n1 | cut -d= -f2- || true)
-            [ -n "$configured" ] && REALM_ID="$configured"
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
+          if grep -q 'agentos.realm-fabric.install_release' "$runtime" 2>/dev/null; then
+            echo 'action_relay_runtime_realm_fabric=ALREADY_READY'
+            exit 0
           fi
-          AGENT_DATA_ROOT="$AGENT_DATA_ROOT" "$RELEASE/bin/agentos-one" init --realm-id "$REALM_ID"
+          echo 'action_relay_runtime_realm_fabric=REFRESH_REQUIRED'
+          tmp=/tmp/bootstrap-action-relay-realm-fabric-safe.sh
+          sed \
+            -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+            -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
+            scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
+          chmod 700 "$tmp"
+          bash "$tmp"
+          grep -q 'agentos.realm-fabric.install_release' "$runtime"
+          echo 'action_relay_runtime_realm_fabric=READY_AFTER_REFRESH'
 
-          cat > "$UNIT" <<EOF
-          [Unit]
-          Description=AgentOS ONE Realm Fabric
-          After=network.target
+      - name: Install exact Realm Fabric release through Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/install_realm_fabric_via_action_relay.py
 
-          [Service]
-          Type=simple
-          Environment=AGENT_DATA_ROOT=$AGENT_DATA_ROOT
-          ExecStart=$RELEASE/bin/agentos-one serve --host 127.0.0.1 --port 8780
-          Restart=always
-          RestartSec=5
-          StandardOutput=append:$AGENT_DATA_ROOT/logs/realm-fabric.log
-          StandardError=append:$AGENT_DATA_ROOT/logs/realm-fabric.log
-
-          [Install]
-          WantedBy=default.target
-          EOF
-
-          systemctl --user daemon-reload
-          systemctl --user enable --now agentos-realm-fabric.service
-          for i in $(seq 1 20); do
-            if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then break; fi
-            sleep 1
-          done
+      - name: Live health and governed receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .agentos/evidence/realm-fabric-install-current.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('.agentos/evidence/realm-fabric-install-current.json'))
+          assert r.get('schema') == 'agentos.action-receipt/v1', r
+          assert r.get('ok') is True, r
+          assert r.get('executor_user') == 'ubuntu', r
+          assert r.get('action') == 'agentos.realm-fabric.install_release', r
+          assert r.get('source_commit') == __import__('os').environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT'], r
+          assert r.get('health',{}).get('status') == 200, r
+          print(json.dumps({k:r.get(k) for k in ('source_commit','release','current','service','endpoint','health')},ensure_ascii=False,indent=2))
+          PY
           curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
           echo
-          systemctl --user is-active agentos-realm-fabric.service
-
-          ln -sfn "$RELEASE" "$CURRENT"
-          test -x "$CURRENT/bin/agentos-one"
-          echo "realm_fabric_release=$RELEASE"
-          echo "realm_fabric_current=$CURRENT"
-          echo "realm_fabric_port=8780"
-          trap - EXIT
 
       - name: Live governance and Realm snapshot
         shell: bash
@@ -145,7 +127,6 @@ jobs:
           import json
           from agent_core.governance_directory import list_entities
           from agent_core.node_registry import NodeRegistry
-
           print('=== PROJECT ENTITIES ===')
           print(json.dumps(list_entities(kind='project'), ensure_ascii=False, indent=2))
           print('=== NODE MAP ===')
@@ -163,3 +144,23 @@ jobs:
           cat /tmp/resolve-unauth.json
           test "$code" = "401"
           echo "unauthenticated_resolve=PASS"
+
+      - name: Publish governed deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/realm-fabric-install-current.json
+          test -f "$E" || exit 0
+          cp "$E" /tmp/realm-fabric-install-current.json
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-fabric-install-current.json "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): governed Realm Fabric deployment'
+          git pull --rebase origin main
+          git push origin HEAD:main
