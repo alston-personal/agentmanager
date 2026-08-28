@@ -12,7 +12,6 @@ SPOOL = Path('/home/ubuntu/agent-data/runtime/action-relay')
 DEPLOYMENT_STATE = Path('/home/ubuntu/agent-data/governance/core-deployment.json')
 OUT = ROOT / '.agentos/evidence/realm-fabric-install-current.json'
 CLAIM_ACTION = 'agentos.realm-fabric.claim_deployment'
-ADVANCE_ACTION = 'agentos.realm-fabric.advance_deployment'
 INSTALL_ACTION = 'agentos.realm-fabric.install_release'
 STATUS_ACTION = 'agentos.realm-fabric.deployment_status'
 
@@ -32,7 +31,7 @@ deadline = time.time() + 240
 while time.time() < deadline:
     try:
         body = runtime_file.read_text(encoding='utf-8') if runtime_file.is_file() else ''
-        if all(action in body for action in (CLAIM_ACTION, ADVANCE_ACTION, INSTALL_ACTION, STATUS_ACTION)) and 'realm_fabric_deployment_fence_v1' in body:
+        if all(action in body for action in (CLAIM_ACTION, INSTALL_ACTION, STATUS_ACTION)) and 'realm_fabric_deployment_fence_v1' in body:
             break
     except OSError:
         pass
@@ -76,39 +75,33 @@ except TimeoutError:
     OUT.write_text(json.dumps({'ok': False, 'stage': 'claim_receipt_timeout'}, indent=2) + '\n', encoding='utf-8')
     raise SystemExit(3)
 
-advance = None
-if claim.get('ok') is True:
-    generation = int(claim.get('deployment_generation') or 0)
-elif (
-    claim.get('deployment_status') == 'rejected_lease'
-    and claim.get('lease_owner') == lease_owner
-    and claim.get('desired_core_commit')
-    and claim.get('desired_core_commit') != source_commit
-):
-    advance_payload = client.submit(ADVANCE_ACTION, {
-        'current_desired_core_commit': str(claim.get('desired_core_commit')),
-        'next_desired_core_commit': source_commit,
-        'lease_owner': lease_owner,
-        'expected_generation': int(claim.get('deployment_generation') or expected_generation),
-        'lease_seconds': 900,
-    })
-    try:
-        advance = wait_receipt(advance_payload['capsule_id'])
-    except TimeoutError:
-        OUT.write_text(json.dumps({'ok': False, 'stage': 'advance_receipt_timeout', 'claim': claim}, indent=2) + '\n', encoding='utf-8')
-        raise SystemExit(4)
-    if advance.get('executor_user') != 'ubuntu' or advance.get('action') != ADVANCE_ACTION or advance.get('ok') is not True:
-        OUT.write_text(json.dumps({'ok': False, 'stage': 'advance', 'claim': claim, 'advance': advance}, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+# Installation is intentionally NOT a generation transition primitive.
+# If another desired generation owns the lease, stop and require an explicit
+# governed release -> advance sequence.  This prevents a delayed workflow from
+# turning "deploy my checkout" into "replace the live Core generation".
+if claim.get('ok') is not True:
+    current_desired = str(claim.get('desired_core_commit') or '')
+    if current_desired and current_desired != source_commit:
+        payload = {
+            'ok': False,
+            'stage': 'transition_required',
+            'source_commit': source_commit,
+            'current_desired_core_commit': current_desired,
+            'deployment_generation': claim.get('deployment_generation'),
+            'lease_owner': claim.get('lease_owner'),
+            'deployment_status': claim.get('deployment_status'),
+            'claim_receipt': claim,
+        }
+        OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
         print(OUT.read_text(encoding='utf-8'))
         raise SystemExit(5)
-    generation = int(advance.get('deployment_generation') or 0)
-else:
     OUT.write_text(json.dumps({'ok': False, 'stage': 'claim', 'claim': claim}, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
     print(OUT.read_text(encoding='utf-8'))
     raise SystemExit(6)
 
-if generation <= expected_generation:
-    raise SystemExit('deployment generation did not advance')
+generation = int(claim.get('deployment_generation') or 0)
+if generation < expected_generation:
+    raise SystemExit('deployment generation regressed')
 
 install_payload = client.submit(INSTALL_ACTION, {
     'source_commit': source_commit,
@@ -130,8 +123,6 @@ except TimeoutError:
 
 combined = dict(receipt)
 combined['claim_receipt'] = claim
-if advance is not None:
-    combined['advance_receipt'] = advance
 combined['deployment_status_receipt'] = status
 OUT.write_text(json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
 print(OUT.read_text(encoding='utf-8'))
