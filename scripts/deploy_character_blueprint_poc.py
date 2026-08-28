@@ -38,7 +38,9 @@ def main() -> int:
     validate(source_text)
 
     TARGET.parent.mkdir(parents=True, exist_ok=True)
+    TARGET.parent.chmod(0o755)
     tmp: Path | None = Path(tempfile.mkdtemp(prefix='.character-blueprint-', dir=str(TARGET.parent)))
+    tmp.chmod(0o755)
     try:
         index = tmp / 'index.html'
         shutil.copy2(SOURCE, index)
@@ -51,6 +53,7 @@ def main() -> int:
         if TARGET.exists():
             TARGET.rename(backup)
         tmp.rename(TARGET)
+        TARGET.chmod(0o755)
         tmp = None
         if backup.exists():
             shutil.rmtree(backup)
