@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: arcanaforge-core-bootstrap
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   patch-capability:
