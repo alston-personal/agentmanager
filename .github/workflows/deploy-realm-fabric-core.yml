@@ -1,17 +1,16 @@
 name: Deploy Realm Fabric Core
-# Deployment trigger note: refresh Oracle Realm Fabric with current resolve-v1 source.
 
 on:
   workflow_dispatch:
-    inputs:
-      deploy_ref:
-        description: Git ref to install
-        required: true
-        default: main
-        type: string
   push:
     paths:
       - '.github/workflows/deploy-realm-fabric-core.yml'
+      - 'agent_core/resolve_facade.py'
+      - 'agent_core/realm_server.py'
+      - 'agent_core/realm_fabric.py'
+      - 'agentos_node/thin_client_transport.py'
+      - 'tests/test_resolve_facade.py'
+      - 'tests/test_realm_resolve_endpoint.py'
 
 permissions:
   contents: read
@@ -22,51 +21,48 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 12
     env:
-      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.sha }}
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      REALM_ROOT: /home/ubuntu/.local/share/agentos/realm-fabric
     steps:
-      - name: Validate deployment settings
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${DEPLOY_HOST_SOURCE:-}"
-          test -n "${DEPLOY_USER:-}"
-          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
-          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
-          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-          test -n "$DEPLOY_HOST"
-          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Install versioned Realm Fabric release and service
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$DEPLOY_REF" <<'REMOTE'
-          set -euo pipefail
-          REF="$1"
-          DATA=/home/ubuntu/agent-data
-          ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
-          RELEASE="$ROOT/releases/${REF//\//_}"
-          CURRENT="$ROOT/current"
-          UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
-          BACKUP="$UNIT.pre-realm-fabric"
-          LIVE_ENV=/home/ubuntu/agentmanager/.env
-          mkdir -p "$RELEASE" "$HOME/.config/systemd/user" "$DATA/logs"
+      - uses: actions/checkout@v4
 
-          if [ -f "$UNIT" ]; then cp "$UNIT" "$BACKUP"; fi
+      - name: Focused resolve tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agent_core/resolve_facade.py agent_core/realm_server.py agentos_node/thin_client_transport.py
+          python3 -m unittest tests.test_resolve_facade tests.test_realm_resolve_endpoint -v
+
+      - name: Install versioned Realm Fabric release
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$GITHUB_SHA"
+          RELEASE="$REALM_ROOT/releases/$REF"
+          CURRENT="$REALM_ROOT/current"
+          UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
+          BACKUP="$UNIT.pre-resolve-v1"
+          PREVIOUS_CURRENT=""
+          [ -L "$CURRENT" ] && PREVIOUS_CURRENT="$(readlink -f "$CURRENT" || true)"
+
+          mkdir -p "$RELEASE" "$HOME/.config/systemd/user" "$AGENT_DATA_ROOT/logs"
+          [ -f "$UNIT" ] && cp "$UNIT" "$BACKUP"
+
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
-              echo "Realm Fabric deployment failed; restoring previous unit" >&2
-              if [ -f "$BACKUP" ]; then cp "$BACKUP" "$UNIT"; systemctl --user daemon-reload; systemctl --user restart agentos-realm-fabric.service || true; else rm -f "$UNIT"; systemctl --user daemon-reload; fi
+              echo "Realm Fabric deployment failed; restoring previous service" >&2
+              if [ -f "$BACKUP" ]; then
+                cp "$BACKUP" "$UNIT"
+                systemctl --user daemon-reload
+                systemctl --user restart agentos-realm-fabric.service || true
+              fi
+              if [ -n "$PREVIOUS_CURRENT" ] && [ -d "$PREVIOUS_CURRENT" ]; then
+                ln -sfn "$PREVIOUS_CURRENT" "$CURRENT"
+              fi
             fi
             exit "$rc"
           }
@@ -74,14 +70,15 @@ jobs:
 
           python3 -m venv "$RELEASE/venv"
           "$RELEASE/venv/bin/python" -m pip install --upgrade pip >/dev/null
-          "$RELEASE/venv/bin/python" -m pip install "git+https://github.com/alston-personal/agentmanager.git@$REF"
+          "$RELEASE/venv/bin/python" -m pip install "$GITHUB_WORKSPACE"
 
           REALM_ID=realm-alston
+          LIVE_ENV=/home/ubuntu/agentmanager/.env
           if [ -f "$LIVE_ENV" ]; then
             configured=$(grep -E '^AGENTOS_REALM_ID=' "$LIVE_ENV" | tail -n1 | cut -d= -f2- || true)
             [ -n "$configured" ] && REALM_ID="$configured"
           fi
-          AGENT_DATA_ROOT="$DATA" "$RELEASE/venv/bin/agentos-one" init --realm-id "$REALM_ID"
+          AGENT_DATA_ROOT="$AGENT_DATA_ROOT" "$RELEASE/venv/bin/agentos-one" init --realm-id "$REALM_ID"
 
           cat > "$UNIT" <<EOF
           [Unit]
@@ -90,16 +87,17 @@ jobs:
 
           [Service]
           Type=simple
-          Environment=AGENT_DATA_ROOT=$DATA
+          Environment=AGENT_DATA_ROOT=$AGENT_DATA_ROOT
           ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
           Restart=always
           RestartSec=5
-          StandardOutput=append:$DATA/logs/realm-fabric.log
-          StandardError=append:$DATA/logs/realm-fabric.log
+          StandardOutput=append:$AGENT_DATA_ROOT/logs/realm-fabric.log
+          StandardError=append:$AGENT_DATA_ROOT/logs/realm-fabric.log
 
           [Install]
           WantedBy=default.target
           EOF
+
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-realm-fabric.service
           for i in $(seq 1 20); do
@@ -110,12 +108,36 @@ jobs:
           echo
           systemctl --user is-active agentos-realm-fabric.service
 
-          # Publish stable operator path only after the new service is healthy.
           ln -sfn "$RELEASE" "$CURRENT"
           test -x "$CURRENT/venv/bin/agentos-one"
           echo "realm_fabric_release=$RELEASE"
           echo "realm_fabric_current=$CURRENT"
           echo "realm_fabric_port=8780"
-          echo "public_route_configured=false"
           trap - EXIT
-          REMOTE
+
+      - name: Live governance and Realm snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.governance_directory import list_entities
+          from agent_core.node_registry import NodeRegistry
+
+          print('=== PROJECT ENTITIES ===')
+          print(json.dumps(list_entities(kind='project'), ensure_ascii=False, indent=2))
+          print('=== NODE MAP ===')
+          print(json.dumps(NodeRegistry().node_map(), ensure_ascii=False, indent=2))
+          PY
+
+      - name: Unauthenticated resolve must reject
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/resolve-unauth.json -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"schema":"agentos.resolve-request/v1","node_id":"oracle-acceptance","intent":"continue","project":"agentos-core"}' \
+            http://127.0.0.1:8780/v1/resolve)
+          cat /tmp/resolve-unauth.json
+          test "$code" = "401"
+          echo "unauthenticated_resolve=PASS"
