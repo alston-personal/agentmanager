@@ -5,6 +5,7 @@ import secrets
 from typing import Any
 
 from agent_core.realm_fabric import RealmFabricStore
+from agent_core.runtime_ota import RuntimeOTAPolicyStore
 
 
 CONTROLLER_ACTION_CAPABILITY = {
@@ -23,11 +24,12 @@ CONTROLLER_ACTION_CAPABILITY = {
 class ControllerService:
     """Governed controller-side facade for ONE."""
 
-    def __init__(self, fabric: RealmFabricStore):
+    def __init__(self, fabric: RealmFabricStore, ota_policy: RuntimeOTAPolicyStore | None = None):
         self.fabric = fabric
+        self.ota_policy = ota_policy or RuntimeOTAPolicyStore()
 
     def realm(self) -> dict[str, Any]:
-        node_map = self.fabric.node_registry.node_map()
+        node_map = self.nodes()
         return {
             'schema': 'agentos.controller-realm/v0.1',
             'realm_id': node_map.get('realm_id'),
@@ -36,10 +38,18 @@ class ControllerService:
             'realm_capabilities': list(node_map.get('realm_capabilities') or []),
             'realm_tool_presence': list(node_map.get('realm_tool_presence') or []),
             'realm_surface_providers': list(node_map.get('realm_surface_providers') or []),
+            'runtime_ota': self.ota_policy.load(),
         }
 
     def nodes(self) -> dict[str, Any]:
-        return self.fabric.node_registry.node_map()
+        node_map = self.fabric.node_registry.node_map()
+        policy = self.ota_policy.load()
+        result = dict(node_map)
+        result['nodes'] = [RuntimeOTAPolicyStore.annotate_node(node, policy) for node in node_map.get('nodes') or []]
+        result['runtime_ota'] = policy
+        result['runtime_converged_count'] = sum(1 for node in result['nodes'] if node.get('runtime_status') == 'converged')
+        result['runtime_drifted_count'] = sum(1 for node in result['nodes'] if node.get('runtime_status') == 'drifted')
+        return result
 
     def node(self, node_id: str) -> dict[str, Any]:
         node_id = str(node_id or '').strip()
@@ -67,9 +77,11 @@ class ControllerService:
         return None
 
     @staticmethod
-    def _runtime_convergence_task(task_id: str, source_commit: str) -> dict[str, Any]:
+    def _runtime_convergence_task(task_id: str, source_commit: str, source_ref: str = 'feature/realm-node-fabric-readiness') -> dict[str, Any]:
         if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
             raise ValueError('source_commit must be a 40-character lowercase git SHA')
+        if source_ref not in {'main', 'feature/realm-node-fabric-readiness'}:
+            raise ValueError('source_ref is not allowlisted')
         script = r'''$ErrorActionPreference='Stop'
 $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
 $base='https://raw.githubusercontent.com/alston-personal/agentmanager/SOURCE_COMMIT'
@@ -88,6 +100,13 @@ foreach($rel in $files){
   New-Item -ItemType Directory -Force -Path $parent | Out-Null
   Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
 }
+$prov=@{
+  schema='agentos.thin-client-runtime/v0.1'
+  source_ref='SOURCE_REF'
+  source_commit='SOURCE_COMMIT'
+  installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+} | ConvertTo-Json
+Set-Content -Encoding UTF8 -Path (Join-Path $install 'runtime-provenance.json') -Value $prov
 $taskName='AgentOS Thin Client'
 Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
 Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction Stop | Out-Null
@@ -96,7 +115,7 @@ Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-
 Write-Output 'agentos_runtime_converge=PASS'
 Write-Output 'agentos_watchdog_preserved=PASS'
 Write-Output 'agentos_source_commit=SOURCE_COMMIT'
-'''.replace('SOURCE_COMMIT', source_commit)
+'''.replace('SOURCE_COMMIT', source_commit).replace('SOURCE_REF', source_ref)
         return {
             'schema': 'agentos.node-task/v0.1',
             'task_id': task_id,
@@ -108,11 +127,45 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             'cognition_ids_used': [],
         }
 
+    def rollout_runtime(self, request: dict[str, Any]) -> dict[str, Any]:
+        source_commit = str(request.get('source_commit') or '').strip()
+        source_ref = str(request.get('source_ref') or 'feature/realm-node-fabric-readiness').strip()
+        auto_converge = bool(request.get('auto_converge', False))
+        policy = self.ota_policy.set_desired(source_commit=source_commit, source_ref=source_ref, auto_converge=auto_converge)
+        selected = [
+            node for node in self.nodes().get('nodes') or []
+            if node.get('role') == 'client' and node.get('status') == 'online' and 'shell.exec' in set(node.get('capabilities') or [])
+        ]
+        results: list[dict[str, Any]] = []
+        rollout_id = str(request.get('task_id') or '').strip() or 'ota_' + secrets.token_hex(8)
+        for node in selected:
+            node_id = str(node['node_id'])
+            task_id = f'{rollout_id}_{node_id}'
+            existing = self._existing_task(task_id)
+            if existing is not None:
+                results.append({'node_id': node_id, 'task_id': task_id, 'state': existing.get('state'), 'reused': True})
+                continue
+            task = self._runtime_convergence_task(task_id, source_commit, source_ref)
+            queued = self.fabric.queue_task(node_id, task)
+            results.append({'node_id': node_id, 'task_id': task_id, 'state': 'queued', 'queued_at': queued.get('queued_at'), 'reused': False})
+        return {
+            'schema': 'agentos.realm-runtime-rollout/v0.1',
+            'ok': True,
+            'action': 'realm.runtime.rollout',
+            'rollout_id': rollout_id,
+            'policy': policy,
+            'selected_node_count': len(selected),
+            'nodes': results,
+        }
+
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
+        action = str(request.get('action') or '').strip()
+        if action == 'realm.runtime.rollout':
+            return self.rollout_runtime(request)
+
         node = self.node(node_id)
         if node.get('status') != 'online':
             raise ValueError(f'node is not online: {node_id}')
-        action = str(request.get('action') or '').strip()
         required_capability = CONTROLLER_ACTION_CAPABILITY.get(action)
         if required_capability is None:
             raise PermissionError(f'controller action not permitted: {action}')
@@ -133,7 +186,11 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             }
 
         if action == 'node.runtime.converge':
-            task = self._runtime_convergence_task(task_id, str(request.get('source_commit') or '').strip())
+            task = self._runtime_convergence_task(
+                task_id,
+                str(request.get('source_commit') or '').strip(),
+                str(request.get('source_ref') or 'feature/realm-node-fabric-readiness').strip(),
+            )
         else:
             task = {
                 'schema': 'agentos.node-task/v0.1',
