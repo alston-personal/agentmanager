@@ -1,0 +1,36 @@
+name: Character Blueprint Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/character_blueprint_geometry_selftest.py'
+      - 'scripts/deploy_character_blueprint_poc.py'
+      - 'web_assets/character-blueprint-poc.html'
+      - '.github/workflows/character-blueprint-regression.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/character_blueprint_geometry_selftest.py'
+      - 'scripts/deploy_character_blueprint_poc.py'
+      - 'web_assets/character-blueprint-poc.html'
+
+permissions:
+  contents: read
+
+jobs:
+  geometry-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Character Blueprint geometry regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/character_blueprint_geometry_selftest.py | tee /tmp/character-blueprint-regression.json
+          grep -q '"ok": true' /tmp/character-blueprint-regression.json
+          grep -q 'portrait_upperbody_regression_01' /tmp/character-blueprint-regression.json
+          grep -q '"coverage": "upper_body"' /tmp/character-blueprint-regression.json
+          grep -q 'standing_fullbody_control_01' /tmp/character-blueprint-regression.json
+          echo 'character_blueprint_geometry_regression=PASS'
