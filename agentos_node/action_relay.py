@@ -593,6 +593,133 @@ def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
         _run(["rm", "-rf", str(verify_root)], cwd=Path.home(), timeout=30)
 
 
+
+# realm_fabric_deployment_fence_v1
+_DEPLOYMENT_STATE = Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+_DEPLOYMENT_LOCK = Path('/home/ubuntu/agent-data/governance/core-deployment.lock')
+
+
+def _deployment_state_read() -> dict[str, Any]:
+    if not _DEPLOYMENT_STATE.exists():
+        return {
+            'schema': 'agentos.core-deployment/v1',
+            'deployment_generation': 0,
+            'desired_core_commit': None,
+            'observed_core_commit': None,
+            'lease_owner': None,
+            'lease_expires_at': None,
+            'deployment_status': 'uninitialized',
+        }
+    data = json.loads(_DEPLOYMENT_STATE.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        raise ValueError('invalid Core deployment state')
+    return data
+
+
+def _deployment_state_write(state: dict[str, Any]) -> None:
+    _DEPLOYMENT_STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _DEPLOYMENT_STATE.with_suffix('.tmp')
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    _share(tmp)
+    tmp.replace(_DEPLOYMENT_STATE)
+    _share(_DEPLOYMENT_STATE)
+
+
+def _observed_realm_commit() -> str | None:
+    unit = Path('/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service')
+    if not unit.is_file():
+        return None
+    for raw in unit.read_text(encoding='utf-8').splitlines():
+        if not raw.startswith('ExecStart='):
+            continue
+        value = raw.split('=', 1)[1]
+        parts = value.split('/realm-fabric/releases/', 1)
+        if len(parts) != 2:
+            return None
+        commit = parts[1].split('/', 1)[0].strip().lower()
+        if len(commit) == 40 and all(c in '0123456789abcdef' for c in commit):
+            return commit
+    return None
+
+
+def _claim_realm_fabric_deployment(params: dict[str, Any]) -> dict[str, Any]:
+    import fcntl as _df_fcntl
+    from datetime import datetime as _df_datetime, timezone as _df_timezone, timedelta as _df_timedelta
+    import re as _df_re
+
+    required = {'desired_core_commit', 'lease_owner', 'expected_generation'}
+    optional = {'lease_seconds'}
+    if set(params) - (required | optional) or not required.issubset(params):
+        raise ValueError('unexpected parameters')
+    desired = str(params['desired_core_commit']).strip().lower()
+    owner = str(params['lease_owner']).strip()
+    expected = int(params['expected_generation'])
+    lease_seconds = int(params.get('lease_seconds') or 900)
+    if not _df_re.fullmatch(r'[0-9a-f]{40}', desired):
+        raise ValueError('desired_core_commit must be a 40-hex git commit')
+    if not owner or len(owner) > 200:
+        raise ValueError('lease_owner required')
+    if lease_seconds < 60 or lease_seconds > 3600:
+        raise ValueError('lease_seconds out of range')
+
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with _DEPLOYMENT_LOCK.open('a+', encoding='utf-8') as lock:
+        _df_fcntl.flock(lock.fileno(), _df_fcntl.LOCK_EX)
+        state = _deployment_state_read()
+        generation = int(state.get('deployment_generation') or 0)
+        now = _df_datetime.now(_df_timezone.utc)
+        lease_owner = state.get('lease_owner')
+        expires_raw = state.get('lease_expires_at')
+        active = False
+        if lease_owner and expires_raw:
+            try:
+                active = _df_datetime.fromisoformat(str(expires_raw)) > now
+            except ValueError:
+                active = False
+        if active and lease_owner != owner:
+            return {
+                'ok': False,
+                'deployment_status': 'rejected_lease',
+                'desired_core_commit': state.get('desired_core_commit'),
+                'observed_core_commit': _observed_realm_commit(),
+                'deployment_generation': generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': expires_raw,
+            }
+        if expected != generation:
+            return {
+                'ok': False,
+                'deployment_status': 'rejected_generation',
+                'desired_core_commit': state.get('desired_core_commit'),
+                'observed_core_commit': _observed_realm_commit(),
+                'deployment_generation': generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': expires_raw,
+            }
+        new_generation = generation + 1
+        state = {
+            'schema': 'agentos.core-deployment/v1',
+            'desired_core_commit': desired,
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': new_generation,
+            'lease_owner': owner,
+            'lease_expires_at': (now + _df_timedelta(seconds=lease_seconds)).isoformat(),
+            'deployment_status': 'desired',
+            'updated_at': now.isoformat(),
+        }
+        _deployment_state_write(state)
+        return {'ok': True, **state}
+
+
+def _realm_fabric_deployment_status(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+    state = _deployment_state_read()
+    state['observed_core_commit'] = _observed_realm_commit()
+    if state.get('desired_core_commit') and state.get('desired_core_commit') == state.get('observed_core_commit'):
+        state['deployment_status'] = 'converged'
+    return {'ok': True, **state}
+
 def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
     """Install one exact AgentOS Core commit as the ubuntu Realm Fabric service.
 
@@ -605,11 +732,47 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
     import tempfile as _rf_tempfile
     import urllib.request as _rf_urllib
 
-    if set(params) != {'source_commit'}:
+    required = {'source_commit', 'desired_core_commit', 'lease_owner', 'deployment_generation'}
+    if set(params) != required:
         raise ValueError('unexpected parameters')
     source_commit = str(params.get('source_commit') or '').strip().lower()
+    desired_core_commit = str(params.get('desired_core_commit') or '').strip().lower()
+    lease_owner = str(params.get('lease_owner') or '').strip()
+    deployment_generation = int(params.get('deployment_generation'))
     if not _rf_re.fullmatch(r'[0-9a-f]{40}', source_commit):
         raise ValueError('source_commit must be a 40-hex git commit')
+    if desired_core_commit != source_commit:
+        return {'ok': False, 'deployment_status': 'rejected_desired_mismatch', 'source_commit': source_commit, 'desired_core_commit': desired_core_commit}
+
+    import fcntl as _rf_fcntl
+    from datetime import datetime as _rf_datetime, timezone as _rf_timezone
+    _DEPLOYMENT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    _deployment_guard = _DEPLOYMENT_LOCK.open('a+', encoding='utf-8')
+    _rf_fcntl.flock(_deployment_guard.fileno(), _rf_fcntl.LOCK_EX)
+    _deployment_state = _deployment_state_read()
+    _current_generation = int(_deployment_state.get('deployment_generation') or 0)
+    _lease_expires = _deployment_state.get('lease_expires_at')
+    try:
+        _lease_active = bool(_lease_expires) and _rf_datetime.fromisoformat(str(_lease_expires)) > _rf_datetime.now(_rf_timezone.utc)
+    except ValueError:
+        _lease_active = False
+    if (
+        _current_generation != deployment_generation
+        or _deployment_state.get('desired_core_commit') != source_commit
+        or _deployment_state.get('lease_owner') != lease_owner
+        or not _lease_active
+    ):
+        _deployment_guard.close()
+        return {
+            'ok': False,
+            'deployment_status': 'rejected_fence',
+            'source_commit': source_commit,
+            'desired_core_commit': _deployment_state.get('desired_core_commit'),
+            'observed_core_commit': _observed_realm_commit(),
+            'deployment_generation': _current_generation,
+            'lease_owner': _deployment_state.get('lease_owner'),
+            'lease_expires_at': _deployment_state.get('lease_expires_at'),
+        }
 
     repo = Path('/home/ubuntu/agentmanager')
     if not (repo / '.git').exists():
@@ -768,8 +931,18 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
                 tmp_link.unlink(missing_ok=True)
                 tmp_link.symlink_to(release)
                 tmp_link.replace(current)
+            _deployment_state['observed_core_commit'] = source_commit
+            _deployment_state['deployment_status'] = 'converged'
+            _deployment_state['updated_at'] = _rf_datetime.now(_rf_timezone.utc).isoformat()
+            _deployment_state_write(_deployment_state)
             return {
                 'ok': True,
+                'deployment_status': 'converged',
+                'desired_core_commit': source_commit,
+                'observed_core_commit': source_commit,
+                'deployment_generation': deployment_generation,
+                'lease_owner': lease_owner,
+                'lease_expires_at': _deployment_state.get('lease_expires_at'),
                 'source_commit': source_commit,
                 'realm_id': realm_id,
                 'release': str(release),
@@ -786,6 +959,7 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
             }
         finally:
             _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'worktree', 'remove', '--force', str(checkout)], cwd=repo, timeout=30)
+            _deployment_guard.close()
 
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
@@ -807,6 +981,8 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
+    "agentos.realm-fabric.claim_deployment": _claim_realm_fabric_deployment,
+    "agentos.realm-fabric.deployment_status": _realm_fabric_deployment_status,
     "agentos.realm-fabric.install_release": _install_realm_fabric_release,
     "agentos.project.register_core": _register_agentos_core_project,
 }
@@ -873,7 +1049,20 @@ class ActionRelayWorker:
             expected = "sha256:" + hashlib.sha256(_canonical(unsigned)).hexdigest()
             if supplied != expected: raise ValueError("capsule digest mismatch")
             result = ACTIONS[action](params)
-            receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"action": action,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),**result}
+            # governed_receipt_reserved_fields_v1: the relay owns receipt identity.
+            # Capability results may carry their own schema/metadata but must never
+            # overwrite the governance envelope used for validation and audit.
+            receipt = {
+                "schema": RECEIPT_SCHEMA,
+                "capsule_id": capsule_id,
+                "action": action,
+                "started_at": started,
+                "completed_at": _now(),
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+            }
+            reserved = {"schema", "capsule_id", "action", "started_at", "completed_at", "executor_user"}
+            for key, value in result.items():
+                receipt[("result_" + key) if key in reserved else key] = value
         except Exception as exc:
             receipt = {"schema": RECEIPT_SCHEMA,"capsule_id": capsule_id,"started_at": started,"completed_at": _now(),"executor_user": os.environ.get("USER") or str(os.getuid()),"ok": False,"error": f"{type(exc).__name__}: {exc}"}
         target = self.paths.receipts / f"{capsule_id}.json"; tmp = target.with_suffix(".json.tmp")
