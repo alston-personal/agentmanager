@@ -1,0 +1,87 @@
+name: Prove vopc5750 Watchdog Recovery
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/vopc5750-watchdog-recovery-proof.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vopc5750-watchdog-recovery-proof
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Schedule Thin Client stop after receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          node_id='vopc5750'
+          task_id='watchdog-fault-'+str(int(time.time()))
+          ps="Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',\"Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue\")"
+          task={
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node_id,task)
+          print('fault_task_id='+task_id)
+          for _ in range(20):
+            r=RealmFabricStore().get_receipt(task_id)
+            if r:
+              print('fault_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True))
+              if r.get('ok') is not True:
+                raise SystemExit('fault scheduling failed')
+              raise SystemExit(0)
+            time.sleep(1)
+          raise SystemExit('fault receipt timeout')
+          PY
+
+      - name: Wait through watchdog interval
+        shell: bash
+        run: sleep 75
+
+      - name: Prove Thin Client recovered without intervention
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          node_id='vopc5750'
+          task_id='watchdog-proof-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'cmd','argv':['/d','/c','echo AGENTOS_WATCHDOG_RECOVERY_PASS'],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node_id,task)
+          print('proof_task_id='+task_id)
+          for _ in range(45):
+            r=RealmFabricStore().get_receipt(task_id)
+            if r:
+              print('proof_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True))
+              if r.get('ok') is not True:
+                raise SystemExit('recovered node returned failure receipt')
+              text=str(r.get('stdout') or '')
+              if 'AGENTOS_WATCHDOG_RECOVERY_PASS' not in text:
+                raise SystemExit('recovery marker missing')
+              print('vopc5750_watchdog_recovery=PASS')
+              raise SystemExit(0)
+            time.sleep(2)
+          raise SystemExit('NO_RECEIPT_AFTER_WATCHDOG_WINDOW')
+          PY
