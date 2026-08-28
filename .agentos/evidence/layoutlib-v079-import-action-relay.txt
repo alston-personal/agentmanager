@@ -1,0 +1,44 @@
+action_runtime_ready=PASS
+capsule_id=action-de8ac729d0794f3881bcf02416ec6dc6
+{
+  "action": "github.repo.import_layoutlib_v079",
+  "capsule_id": "action-de8ac729d0794f3881bcf02416ec6dc6",
+  "changed": true,
+  "completed_at": "2026-08-28T06:09:25Z",
+  "destination_sha256": {
+    "layoutlab-capability-bridge-v0.7.js": "e0e45b7347d9bf98b8f6c6997487c6c1096a8f21181cc0d88530b559592ab3de",
+    "layoutlab-editor-ui-v0.7.js": "bf7deb85f45f952a963978a3f95d5f392239086233ee3823419139415815abc3",
+    "layoutlab-v0.7-release-fix.js": "53e8767352acadae2e814ceca81d60d8261358ca4ca26bdcdca6eab6e8ccc5e3",
+    "layoutlab_v0_5.html": "8b5d05e28d20a00a99a10ae8b3f6db8cce449bfa515b41990b124936fc8fc30a",
+    "layoutlib-browser-v0.5.js": "d9acd99886a5265f94b9777ec0ea1b0e6c336bf5083d33355de907d6b8dcacab",
+    "layoutlib-editor-v0.7.js": "f8aeb05ea33a3596e817adc1bcb0b3715123c019dcd860215383e0bb2a02382e",
+    "layoutlib-spatial-semantics-v0.1.js": "058f8a4198d11fdbee746d987f61ac8df541d8a579fcbc4ff423c7cc92808237"
+  },
+  "executor_user": "ubuntu",
+  "file_count": 7,
+  "ok": true,
+  "release": "v0.7.9",
+  "repository": "alston-personal/layoutlib",
+  "schema": "agentos.action-receipt/v1",
+  "source_commit": "e8efc4ed7cbd41839f960373f79c5fb6a5f82375",
+  "source_repository": "alston-personal/agentmanager",
+  "source_sha256": {
+    "web_assets/layoutlab-capability-bridge-v0.7.js": "e0e45b7347d9bf98b8f6c6997487c6c1096a8f21181cc0d88530b559592ab3de",
+    "web_assets/layoutlab-editor-ui-v0.7.js": "bf7deb85f45f952a963978a3f95d5f392239086233ee3823419139415815abc3",
+    "web_assets/layoutlab-v0.7-release-fix.js": "53e8767352acadae2e814ceca81d60d8261358ca4ca26bdcdca6eab6e8ccc5e3",
+    "web_assets/layoutlab_v0_5.html": "8b5d05e28d20a00a99a10ae8b3f6db8cce449bfa515b41990b124936fc8fc30a",
+    "web_assets/layoutlib-browser-v0.5.js": "d9acd99886a5265f94b9777ec0ea1b0e6c336bf5083d33355de907d6b8dcacab",
+    "web_assets/layoutlib-editor-v0.7.js": "f8aeb05ea33a3596e817adc1bcb0b3715123c019dcd860215383e0bb2a02382e",
+    "web_assets/layoutlib-spatial-semantics-v0.1.js": "058f8a4198d11fdbee746d987f61ac8df541d8a579fcbc4ff423c7cc92808237"
+  },
+  "started_at": "2026-08-28T06:09:20Z",
+  "target_commit": "8577fbd653ddc5e65a4931c0e299e16aedd6b51f"
+}
+receipt_ok=PASS
+repository=NO_GO
+source_commit=NO_GO
+release=NO_GO
+file_count=NO_GO
+target_commit=NO_GO
+executor_user=ubuntu
+layoutlib_v079_import=NO_GO
