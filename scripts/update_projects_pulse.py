@@ -78,14 +78,33 @@ def parse_status_md(status_path: Path) -> dict:
     return data
 
 
-def status_evidence(status: dict, timestamp: str) -> dict:
+def status_evidence(status_path: Path, status: dict) -> dict:
+    try:
+        observed = datetime.fromtimestamp(status_path.stat().st_mtime, tz=timezone.utc).isoformat()
+    except OSError:
+        observed = datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
     return {
         "source": "status-md",
-        "observed_at": timestamp,
+        "observed_at": observed,
         "version": None,
         "status": status.get("last_status"),
         "updated_label": status.get("last_updated"),
     }
+
+
+def load_execution_receipt(project_dir: Path) -> dict | None:
+    target = project_dir / EXECUTION_HEAD_FILENAME
+    if not target.exists():
+        return None
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not data.get("local_head"):
+            return None
+        data = dict(data)
+        data["source"] = "execution-receipt"
+        return data
+    except Exception:
+        return None
 
 
 def publish_execution_receipt(project_dir: Path, execution: dict) -> None:
@@ -120,14 +139,23 @@ def main():
                 continue
 
             status = parse_status_md(status_file)
+            persisted_receipt = load_execution_receipt(proj_dir)
             execution = asdict(collect_execution_head(proj_dir.name, proj_dir))
             publish_execution_receipt(proj_dir, execution)
-            arbitration = arbitrate_heads([execution, status_evidence(status, timestamp)])
+
+            evidence = [execution]
+            if persisted_receipt:
+                evidence.append(persisted_receipt)
+            evidence.append(status_evidence(status_file, status))
+            arbitration = arbitrate_heads(evidence)
+
             pulse_data["projects"][proj_dir.name] = {
                 **status,
                 "execution": execution,
+                "persisted_execution_receipt": persisted_receipt,
                 "resolved_head": arbitration.get("winner"),
                 "state_conflicts": arbitration.get("conflicts", []),
+                "invalid_evidence": arbitration.get("invalid_evidence", []),
                 "resolution_reason": arbitration.get("reason"),
             }
 
@@ -137,9 +165,9 @@ def main():
 
     valid_heads = sum(
         1 for item in pulse_data["projects"].values()
-        if (item.get("execution") or {}).get("local_head")
+        if (item.get("resolved_head") or {}).get("local_head")
     )
-    print(f"✅ Pulse updated: {len(pulse_data['projects'])} projects cached; {valid_heads} execution heads published.")
+    print(f"✅ Pulse updated: {len(pulse_data['projects'])} projects cached; {valid_heads} resolved execution heads available.")
 
 
 if __name__ == "__main__":
