@@ -64,19 +64,26 @@ Current v1 composition can return:
 
 ## Maturity
 
-**Implemented in source; runtime verification pending.**
+**Implemented in source; runtime verification blocked by deployment-channel configuration.**
 
 The source and regression tests are committed, but no valid focused Core test run or Oracle live acceptance receipt has yet been produced for these commits. Unrelated application workflows triggered by repository pushes are not evidence for this capability.
+
+A governed Realm Fabric deployment was deliberately triggered on 2026-08-28 using the existing `.github/workflows/deploy-realm-fabric-core.yml` push path. Run `33135873181` failed before SSH or installation because `DEPLOY_HOST_SOURCE` was empty. The workflow resolves that value from `secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL`; `DEPLOY_USER` and the SSH port were present, but neither host source resolved. Therefore the failure is currently classified as a **deployment-channel configuration blocker**, not a resolver/code failure.
+
+Do not bypass this by inventing a parallel deploy transport. Repair or deliberately replace the canonical deployment channel, then re-run the same deployment and verification gates.
 
 The current ChatGPT conversation is also **not** evidence of end-to-end closure: this ChatGPT environment still cannot invoke the AgentOS ONE control plane directly and had to use repository access while implementing the missing path.
 
 ## Verification gates
 
-1. Deploy the current Realm Fabric/ONE source to Oracle through the governed deployment path.
-2. Run `tests/test_resolve_facade.py` and `tests/test_realm_resolve_endpoint.py` in the deployed/source-equivalent environment.
-3. Enroll or use a controlled test Node and perform an authenticated `/v1/resolve` request.
-4. Persist the result as Core evidence/receipt.
-5. Connect and attest the ChatGPT Web logical Node to the same transport contract.
-6. Open a fresh ChatGPT conversation, possibly on another machine, and enter only `繼續 metashield-protocol`.
+1. Restore a valid canonical Oracle deployment host source for Realm Fabric (`AGENTOS_DEPLOY_HOST` or an explicitly approved replacement/fallback).
+2. Re-run the governed Realm Fabric deployment for current source.
+3. Run `tests/test_resolve_facade.py` and `tests/test_realm_resolve_endpoint.py` in the deployed/source-equivalent environment.
+4. Enroll or use a controlled test Node and perform an authenticated `/v1/resolve` request.
+5. Persist the result as Core evidence/receipt.
+6. Query the live Governance Directory and verify canonical Project Identity aliases, including whether `Chamber` / `Echo` resolve to `metashield-protocol`.
+7. Query the live NodeRegistry/Node Map so conceptual Nodes are distinguished from enrolled/live Nodes.
+8. Connect and attest the ChatGPT Web logical Node to the same transport contract.
+9. Open a fresh ChatGPT conversation, possibly on another machine, and enter only `繼續 metashield-protocol`.
 
 Final PASS requires AgentOS to provide project identity/aliases, active goal, execution head, relevant capabilities, continuation/next action, and evidence pointer without GitHub/source rediscovery or alias guessing.
