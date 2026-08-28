@@ -5,6 +5,7 @@ import json
 import os
 import socket
 from pathlib import Path
+from typing import Any
 
 from agentos_node.onboarding import check_windows_node_supervisor, install_windows_node_supervisor
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
