@@ -1,0 +1,46 @@
+name: Attest Governance Directory Permissions
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-attest-governance-permissions.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only Governance Directory permission attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agent-data/governance
+          echo '=== identity ==='
+          id
+          echo '=== path chain ==='
+          namei -l "$root/directory.json" || true
+          echo '=== stats ==='
+          for p in /home/ubuntu/agent-data "$root" "$root/directory.json" "$root/directory.tmp"; do
+            if [ -e "$p" ] || [ -L "$p" ]; then
+              stat -c '%U:%G %a %A %n' "$p"
+            else
+              echo "MISSING $p"
+            fi
+          done
+          echo '=== ACL ==='
+          if command -v getfacl >/dev/null 2>&1; then
+            getfacl -p /home/ubuntu/agent-data "$root" "$root/directory.json" 2>/dev/null || true
+            [ ! -e "$root/directory.tmp" ] || getfacl -p "$root/directory.tmp" 2>/dev/null || true
+          else
+            echo 'getfacl=UNAVAILABLE'
+          fi
+          echo '=== writer processes ==='
+          lsof "$root/directory.json" "$root/directory.tmp" 2>/dev/null || true
+          echo '=== directory listing ==='
+          ls -la "$root"
