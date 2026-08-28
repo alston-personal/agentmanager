@@ -70,14 +70,13 @@ def proxy_spec(lm: list[P]) -> dict:
     elif reliable(lm[0], 0.3):
         nose = v(lm[0]); delta = sub(nose, shoulder)
         if delta[1] > 0.1 and norm(delta) < sw * 1.6: head_center = add(nose, (0.0, sw * 0.12, 0.0))
-    garment_r = max(0.21, sw * 0.285)
     parts = ['head', 'hair', 'body', 'garment']
     for label, a, b, c in [('left_arm',11,13,15),('right_arm',12,14,16)]:
         if reliable(lm[b], 0.22): parts.append(label)
     if cov != 'upper_body':
         for label, a, b, c in [('left_leg',23,25,27),('right_leg',24,26,28)]:
             if reliable(lm[a],0.35) and reliable(lm[b],0.3): parts.append(label)
-    return {'coverage':cov,'shoulder_width':sw,'shoulder':shoulder,'hip':hip,'torso_axis':torso_axis,'torso_center':torso_center,'torso_len':torso_len,'head_center':head_center,'garment_r':garment_r,'parts':parts}
+    return {'coverage':cov,'shoulder_width':sw,'shoulder':shoulder,'hip':hip,'torso_axis':torso_axis,'torso_center':torso_center,'torso_len':torso_len,'head_center':head_center,'parts':parts}
 
 
 def base_landmarks() -> list[P]: return [P(0.5,0.5,visibility=0.0) for _ in range(33)]
@@ -106,7 +105,6 @@ def assert_upper_body(spec: dict) -> None:
     head_above=spec['head_center'][1]-spec['torso_center'][1]
     assert spec['shoulder_width']*.55 <= head_above <= spec['shoulder_width']*2.2, (head_above,spec)
     assert .9 <= spec['torso_len']/spec['shoulder_width'] <= 1.5, spec
-    assert spec['garment_r']*2 < spec['torso_len']*.8, spec
 
 
 def assert_full_body(spec: dict) -> None:
@@ -118,7 +116,16 @@ def assert_full_body(spec: dict) -> None:
 
 def assert_deployer_contract() -> None:
     text=DEPLOYER.read_text(encoding='utf-8')
-    required=["proxyBodyFrame='visibility-gated-v0.4.1'","cov!=='upper_body'","torsoLen=sw*1.18","character-blueprint-poc-v0.4.1"]
+    required=[
+        "proxyBodyFrame='silhouette-envelope-v0.5'",
+        "border-evidence-silhouette/v0.5",
+        "threejs-silhouette-envelope/v0.5",
+        "function envelopeGeometry",
+        "extractSilhouetteProfile",
+        "cov!=='upper_body'",
+        "torsoLen=sw*1.18",
+        "character-blueprint-poc-v0.5.0",
+    ]
     missing=[m for m in required if m not in text]
     assert not missing, f'deployer/runtime contract drift: missing={missing}'
 
@@ -127,7 +134,7 @@ def main() -> int:
     assert_deployer_contract()
     upper=proxy_spec(fixture_upper_body_portrait()); full=proxy_spec(fixture_full_body_standing())
     assert_upper_body(upper); assert_full_body(full)
-    result={'ok':True,'suite':'character-blueprint-geometry-regression/v1','cases':{'portrait_upperbody_regression_01':{'coverage':upper['coverage'],'parts':upper['parts'],'torso_verticality':round(abs(upper['torso_axis'][1]),4),'torso_to_shoulder':round(upper['torso_len']/upper['shoulder_width'],4)},'standing_fullbody_control_01':{'coverage':full['coverage'],'parts':full['parts']}}}
+    result={'ok':True,'suite':'character-blueprint-geometry-regression/v2','envelope':'silhouette-envelope-v0.5','cases':{'portrait_upperbody_regression_01':{'coverage':upper['coverage'],'parts':upper['parts'],'torso_verticality':round(abs(upper['torso_axis'][1]),4),'torso_to_shoulder':round(upper['torso_len']/upper['shoulder_width'],4)},'standing_fullbody_control_01':{'coverage':full['coverage'],'parts':full['parts']}}}
     print(json.dumps(result,ensure_ascii=False,sort_keys=True)); return 0
 
 
