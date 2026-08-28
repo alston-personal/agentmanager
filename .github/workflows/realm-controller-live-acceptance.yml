@@ -11,6 +11,7 @@ on:
       - 'scripts/patch_realm_fabric_deployment_advance.py'
       - 'scripts/patch_bootstrap_control_controller_probe.py'
       - 'scripts/controller_surface_inspect_vopc5750.sh'
+      - 'scripts/repair_antigravity_relay_user.sh'
       - 'tests/test_controller_service.py'
 
 permissions:
@@ -45,6 +46,8 @@ jobs:
           grep -q "'/v1/controller/dispatch'" agent_core/realm_server.py
           grep -q 'agentos.realm-fabric.advance_deployment' agentos_node/action_relay.py
           grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' agentos_node/bootstrap_control.py
+          grep -q 'realm_fabric_deploy_authority_separation_v1' scripts/repair_antigravity_relay_user.sh
+          ! grep -q 'systemctl --user restart agentos-realm-fabric.service' scripts/repair_antigravity_relay_user.sh
           python3 -m unittest tests.test_controller_service -v
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -76,6 +79,8 @@ jobs:
           grep -q "'/v1/controller/dispatch'" agent_core/realm_server.py
           grep -q 'agentos.realm-fabric.advance_deployment' agentos_node/action_relay.py
           grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' agentos_node/bootstrap_control.py
+          grep -q 'realm_fabric_deploy_authority_separation_v1' scripts/repair_antigravity_relay_user.sh
+          ! grep -q 'systemctl --user restart agentos-realm-fabric.service' scripts/repair_antigravity_relay_user.sh
           python3 -m unittest tests.test_controller_service -v
           echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
