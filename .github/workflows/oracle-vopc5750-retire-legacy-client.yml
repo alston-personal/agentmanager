@@ -1,0 +1,92 @@
+name: Oracle vopc5750 Retire Legacy Client
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-retire-legacy-client.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Queue guarded legacy retirement
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >/tmp/vopc5750-retire-task.txt
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          node='vopc5750'
+          tid='retire-legacy-client-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $taskName='AgentOS Thin Client'
+          $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+          if($task.State -ne 'Running'){ throw 'managed Thin Client task is not Running' }
+          $boundary=$info.LastRunTime.AddSeconds(-15)
+          $clients=@(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -match '^python' -and $_.CommandLine -like '*-m agentos_node.client_cli run*'
+          })
+          $managed=@($clients | Where-Object { $_.CreationDate -ge $boundary })
+          $legacy=@($clients | Where-Object { $_.CreationDate -lt $boundary })
+          if($managed.Count -lt 1){ throw 'no managed Thin Client process found after scheduled-task boundary' }
+          $managedIds=@($managed | ForEach-Object { [int]$_.ProcessId })
+          $legacyIds=@($legacy | ForEach-Object { [int]$_.ProcessId })
+          Write-Output ('managed_client_pids=' + ($managedIds -join ','))
+          Write-Output ('legacy_client_pids=' + ($legacyIds -join ','))
+          if($legacyIds.Count -gt 0){
+            $idArgs=($legacyIds -join ',')
+            $cleanup="Start-Sleep -Seconds 5; `$ids=@($idArgs); foreach(`$id in `$ids){ `$p=Get-CimInstance Win32_Process -Filter ('ProcessId=' + `$id) -ErrorAction SilentlyContinue; if(`$null -ne `$p -and `$p.CommandLine -like '*-m agentos_node.client_cli run*'){ Stop-Process -Id `$id -Force -ErrorAction SilentlyContinue } }"
+            Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cleanup)
+            Write-Output 'legacy_client_retirement=scheduled'
+          } else {
+            Write-Output 'legacy_client_retirement=already-clean'
+          }
+          Write-Output 'agentos_duplicate_client_guard=PASS'
+          '''
+          RealmFabricStore().queue_task(node,{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          print(tid)
+          PY
+      - name: Wait for receipt and stable heartbeat
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(cat /tmp/vopc5750-retire-task.txt)
+          for i in $(seq 1 30); do
+            python3 - "$TASK" <<'PY' && break || true
+          import json,sys
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if not r: raise SystemExit(1)
+          print(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True))
+          if r.get('ok') is True and int(r.get('returncode') or 0)==0 and 'agentos_duplicate_client_guard=PASS' in str(r.get('stdout') or ''):
+              raise SystemExit(0)
+          raise SystemExit(2)
+          PY
+            sleep 2
+          done
+          sleep 9
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+          if not node or node.get('status')!='online': raise SystemExit('node not online after legacy retirement')
+          print(json.dumps({'heartbeat_age_seconds':node.get('heartbeat_age_seconds'),'uptime_seconds':node.get('uptime_seconds'),'runtime':node.get('runtime'),'capabilities':node.get('capabilities'),'surface_inventory':node.get('surface_inventory')},ensure_ascii=False,indent=2,sort_keys=True))
+          PY
