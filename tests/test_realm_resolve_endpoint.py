@@ -54,11 +54,14 @@ class TestRealmResolveEndpoint(unittest.TestCase):
             "role": "client",
             "hostname": "chatgpt-web",
             "platform": "web",
-            "release": "test",
+            "platform_release": "test",
             "capabilities": ["cognition.interactive"],
-            "tool_presence": [],
-            "surface_inventory": ["chat"],
-            "status": "online",
+            "tool_presence": {},
+            "surface_inventory": {
+                "surfaces": [
+                    {"provider": "chatgpt-web", "kind": "chat"},
+                ]
+            },
         }
         return self.fabric.enroll(
             invite_id=invite["invite_id"],
