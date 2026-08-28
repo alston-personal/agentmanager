@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 12
     env:
       AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      REALM_ROOT: /home/ubuntu/.local/share/agentos/realm-fabric
+      REALM_ROOT: ${{ github.workspace }}/.realm-fabric-runtime
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           REF="$GITHUB_SHA"
+          REALM_ROOT="$HOME/.local/share/agentos/realm-fabric"
           RELEASE="$REALM_ROOT/releases/$REF"
           CURRENT="$REALM_ROOT/current"
           UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
