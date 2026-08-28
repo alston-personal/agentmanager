@@ -1,0 +1,43 @@
+{
+  "agentos_social": null,
+  "credential_stores": [
+    {
+      "credential_refs": null,
+      "exists": false,
+      "mode": null,
+      "owner": null,
+      "path": "/home/ubuntu/.agentos/social-credentials.json"
+    },
+    {
+      "credential_refs": null,
+      "exists": false,
+      "mode": null,
+      "owner": null,
+      "path": "/home/agentos-node/.agentos/social-credentials.json"
+    }
+  ],
+  "runner": {
+    "home": "/home/agentos-node",
+    "user": "agentos-node"
+  },
+  "schema": "agentos.social-runtime-inventory/v0.1",
+  "secret_values_collected": false,
+  "zeus_directories": [],
+  "zeus_env_files": [
+    {
+      "exists": true,
+      "mode": "0o664",
+      "owner": {
+        "gid": 1005,
+        "uid": 1001
+      },
+      "path": "/home/ubuntu/agent-data/secrets/zeus-writer.env",
+      "relevant_key_names": [
+        "SOC_FB_PAGE_ID",
+        "SOC_FB_TOKEN",
+        "SOC_IG_TOKEN",
+        "SOC_THREADS_TOKEN"
+      ]
+    }
+  ]
+}

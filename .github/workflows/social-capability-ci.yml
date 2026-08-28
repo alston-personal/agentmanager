@@ -1,0 +1,62 @@
+name: Social Capability CI
+
+on:
+  push:
+    branches:
+      - feature/social-capability
+    paths:
+      - 'agentos_node/social_capability.py'
+      - 'agentos_node/social_cli.py'
+      - 'tests/test_social_capability.py'
+      - 'pyproject.toml'
+      - '.github/workflows/social-capability-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'agentos_node/social_capability.py'
+      - 'agentos_node/social_cli.py'
+      - 'tests/test_social_capability.py'
+      - 'pyproject.toml'
+      - '.github/workflows/social-capability-ci.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package and test dependency
+        run: python -m pip install -e . pytest
+      - name: Verify CLI is installed
+        run: agentos-social --help >/dev/null
+      - name: Run social capability tests
+        run: python -m pytest -q tests/test_social_capability.py
+      - name: Secret boundary static guard
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          path = Path('agentos_node/social_capability.py')
+          source = path.read_text(encoding='utf-8')
+          tree = ast.parse(source)
+
+          # The receipt constructor itself must not expose a secret-bearing argument.
+          receipt = next(
+              node for node in ast.walk(tree)
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == '_receipt'
+          )
+          argument_names = {
+              arg.arg for arg in [*receipt.args.posonlyargs, *receipt.args.args, *receipt.args.kwonlyargs]
+          }
+          forbidden_arguments = {'access_token', 'token', 'client_secret', 'app_secret', 'credential_values'}
+          assert argument_names.isdisjoint(forbidden_arguments), argument_names & forbidden_arguments
+
+          # No direct assignment of access_token into a receipt mapping is allowed.
+          assert 'receipt["access_token"]' not in source
+          assert "receipt['access_token']" not in source
+          PY

@@ -1,0 +1,8 @@
+{
+  "matching_key_names": [
+    "SOC_THREADS_TOKEN"
+  ],
+  "schema": "agentos.threads-oauth-inventory/v0.1",
+  "source_exists": true,
+  "values_collected": false
+}

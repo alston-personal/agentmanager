@@ -1,0 +1,5 @@
+{
+  "schema": "agentos.social-runtime-command/v0.1",
+  "action": "social.runtime.bootstrap",
+  "nonce": "instagram-identity-discovery-20260827"
+}

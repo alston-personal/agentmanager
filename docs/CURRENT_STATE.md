@@ -26,6 +26,11 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
+| Governed social capability executor | Implemented + unit-tested on feature branch | `agentos_node/social_capability.py`, `agentos_node/social_cli.py` | `tests/test_social_capability.py`, Social Capability CI |
+| Facebook social identity via credential reference | Verified read-only on Core | `agentos_node/social_capability.py` | `.agentos/evidence/social-runtime-bootstrap-current.json` |
+| Instagram social identity via connected Facebook Page discovery | Verified read-only on Core | `agentos_node/social_capability.py` | `.agentos/evidence/social-runtime-bootstrap-current.json` |
+| Threads social identity | Implemented, credential currently invalid | `agentos_node/social_capability.py` | Core identity probe reports the legacy token expired on 2026-06-23; reauthorization is required before any real write verification |
+| Social publish/reply governance | Implemented gate; real-world Threads write not yet re-verified | `agentos_node/social_capability.py`, `agentos_node/social_cli.py` | unit tests require explicit `--allow-write`; no post-migration real write has been performed |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
 | Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
 | Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows |
@@ -47,6 +52,10 @@ Tool results and execution evidence can inform decisions, but they do not silent
 
 The presence of a mutation tool, a mergeable pull request, or passing CI does not authorize a protected-branch mutation. Agents must stop at `AWAITING_HUMAN_APPROVAL` until an explicit human authorization exists. See `.agent/governance/protected_branches.yaml` and `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`.
 
+### Social credentials belong to the executor boundary
+
+Product code such as Zeus Writer or Vendor Reputation may request a social capability by credential reference, but must not own, print, or resolve platform access tokens. AgentOS social receipts may contain a credential reference and verified platform identity metadata, but never the underlying secret value. Real social writes require an explicit write gate and platform-specific controlled-write evidence before a product fallback can be removed.
+
 ### Discover before invent
 
 Reusable/cross-project work should resolve existing responsibility and resources before creating parallel implementations. See `docs/AGENTOS_NODE.md` and the Governance Directory.
@@ -64,9 +73,21 @@ Early documentation centered on:
 - manual `/report` handoff;
 - Logic/Data separation as the main architectural idea.
 
-Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, and explicit authority boundaries for protected mutations.
+Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, and a governed reusable social-capability boundary under feature validation.
 
 Old documents that describe only the memory/pulse era must be treated as historical unless they link back to this file.
+
+## Current social-capability boundary
+
+The social capability is intentionally asymmetric while migration evidence is incomplete:
+
+- Facebook identity is verified through an executor-local credential reference.
+- Instagram identity is verified and can discover the connected Instagram Business Account from the configured Facebook Page.
+- Threads execution code exists, but the migrated legacy credential is expired; identity therefore fails closed until reauthorization.
+- Facebook and Instagram write paths remain disabled until each receives its own controlled-publish evidence.
+- Threads publish/reply requires explicit write approval and must receive a new real controlled-publish PASS before Zeus Writer's temporary direct Threads fallback is removed.
+
+The executor-local credential store is deployed with mode `0600`. Legacy Zeus secret files remain temporarily intact for reversible migration; they are not evidence that product code is allowed to continue owning social credentials indefinitely.
 
 ## Current research boundary: Cognitive IR
 

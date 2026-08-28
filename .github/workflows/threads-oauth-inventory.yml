@@ -1,0 +1,66 @@
+name: Threads OAuth Inventory
+
+on:
+  push:
+    branches:
+      - feature/social-capability
+    paths:
+      - '.github/workflows/threads-oauth-inventory.yml'
+      - '.agentos/commands/threads-oauth-inventory.json'
+
+permissions:
+  contents: write
+
+jobs:
+  inventory:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/social-capability
+      - name: Inspect key names only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          source = Path('/home/ubuntu/agent-data/secrets/zeus-writer.env')
+          names = []
+          if source.is_file():
+              for raw in source.read_text(encoding='utf-8', errors='replace').splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key = line.split('=', 1)[0].strip()
+                  upper = key.upper()
+                  if ('THREAD' in upper or 'META' in upper or 'FACEBOOK' in upper) and any(
+                      word in upper for word in ('APP', 'CLIENT', 'SECRET', 'REDIRECT', 'CALLBACK', 'TOKEN')
+                  ):
+                      names.append(key)
+          payload = {
+              'schema': 'agentos.threads-oauth-inventory/v0.1',
+              'source_exists': source.is_file(),
+              'matching_key_names': sorted(set(names)),
+              'values_collected': False,
+          }
+          Path('.agentos/evidence/threads-oauth-inventory-current.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+      - name: Publish secret-free evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-oauth-inventory-current.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(social): record Threads OAuth key inventory'
+          git push origin HEAD:feature/social-capability
