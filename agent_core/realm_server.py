@@ -1,14 +1,78 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
+import shutil
+import socket
+import threading
+import time
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
+from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def _core_node_manifest(realm_id: str) -> dict[str, Any]:
+    node_id = str(os.environ.get('AGENTOS_CORE_NODE_ID') or 'oracle-core-node').strip()
+    if not node_id:
+        raise ValueError('AGENTOS_CORE_NODE_ID cannot be empty')
+    tools = {
+        name: bool(shutil.which(name))
+        for name in ('git', 'python3', 'curl', 'systemctl')
+    }
+    return {
+        'schema': 'agentos.node-manifest/v0.1',
+        'realm_id': realm_id,
+        'node_id': node_id,
+        'role': 'core',
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'platform_release': platform.release(),
+        'capabilities': [
+            'agentos.governance.read',
+            'agentos.one.resolve',
+            'agentos.realm.fabric',
+        ],
+        'tool_presence': tools,
+        'surface_inventory': {'surfaces': []},
+        'observed_at': _utc_now(),
+    }
+
+
+def _core_node_heartbeat(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'schema': 'agentos.node-heartbeat/v0.1',
+        'realm_id': manifest['realm_id'],
+        'node_id': manifest['node_id'],
+        'status': 'online',
+        'observed_at': _utc_now(),
+        'uptime_seconds': None,
+        'surface_count': len((manifest.get('surface_inventory') or {}).get('surfaces') or []),
+        'manifest': {**manifest, 'observed_at': _utc_now()},
+    }
+
+
+def _run_core_node_heartbeat(registry: NodeRegistry, manifest: dict[str, Any], stop: threading.Event) -> None:
+    interval = max(5, int(os.environ.get('AGENTOS_CORE_HEARTBEAT_SECONDS', '10')))
+    while not stop.is_set():
+        try:
+            registry.record_heartbeat(_core_node_heartbeat(manifest))
+        except Exception:
+            # The HTTP service must remain available even if the observational
+            # node map cannot be refreshed; the next interval retries.
+            pass
+        stop.wait(interval)
 
 
 class RealmRequestHandler(BaseHTTPRequestHandler):
@@ -168,8 +232,29 @@ class RealmHTTPServer(ThreadingHTTPServer):
 
 
 def serve(*, host: str = '127.0.0.1', port: int = 8780, fabric: RealmFabricStore | None = None) -> None:
-    server = RealmHTTPServer((host, port), fabric or RealmFabricStore())
+    store = fabric or RealmFabricStore()
+    realm = store.load()
+    realm_id = str(realm.get('realm_id') or '').strip()
+    if not realm_id:
+        raise ValueError('initialize Realm before serving')
+
+    registry = store.node_registry
+    manifest = _core_node_manifest(realm_id)
+    registry.register_manifest(manifest)
+    registry.record_heartbeat(_core_node_heartbeat(manifest))
+    stop = threading.Event()
+    heartbeat = threading.Thread(
+        target=_run_core_node_heartbeat,
+        args=(registry, manifest, stop),
+        name='agentos-core-node-heartbeat',
+        daemon=True,
+    )
+    heartbeat.start()
+
+    server = RealmHTTPServer((host, port), store)
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
+        stop.set()
+        heartbeat.join(timeout=2)
         server.server_close()
