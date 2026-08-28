@@ -1,0 +1,170 @@
+name: Deploy Realm Fabric Fenced
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-realm-fabric-fenced.yml'
+      - 'scripts/patch_realm_fabric_deployment_fence.py'
+      - 'scripts/patch_action_relay_receipt_envelope.py'
+      - 'scripts/install_realm_fabric_via_action_relay.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: realm-fabric-fenced-deploy
+  cancel-in-progress: false
+
+jobs:
+  compile-fence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compile deployment fence into Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python3 scripts/patch_action_relay_receipt_envelope.py
+          python3 scripts/patch_realm_fabric_deployment_fence.py
+          python3 -m py_compile agentos_node/action_relay.py
+          grep -q 'governed_receipt_reserved_fields_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_deployment_fence_v1' agentos_node/action_relay.py
+          grep -q 'agentos.realm-fabric.claim_deployment' agentos_node/action_relay.py
+          grep -q 'agentos.realm-fabric.deployment_status' agentos_node/action_relay.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(agentos): compile Realm Fabric deployment fence'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+  deploy:
+    needs: compile-fence
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      AGENTOS_REALM_FABRIC_LEASE_OWNER: agentos-core-mainline
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refresh exact fenced source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          grep -q 'realm_fabric_deployment_fence_v1' agentos_node/action_relay.py
+          grep -q 'governed_receipt_reserved_fields_v1' agentos_node/action_relay.py
+          echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Refresh ubuntu Action Relay runtime with fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
+          if grep -q 'realm_fabric_deployment_fence_v1' "$runtime" 2>/dev/null \
+             && grep -q 'governed_receipt_reserved_fields_v1' "$runtime" 2>/dev/null; then
+            echo 'action_relay_deployment_fence=ALREADY_READY'
+            exit 0
+          fi
+          tmp=/tmp/bootstrap-action-relay-fence-safe.sh
+          sed \
+            -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
+            -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
+            scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
+          chmod 700 "$tmp"
+          bash "$tmp"
+          grep -q 'realm_fabric_deployment_fence_v1' "$runtime"
+          grep -q 'governed_receipt_reserved_fields_v1' "$runtime"
+          echo 'action_relay_deployment_fence=READY_AFTER_REFRESH'
+
+      - name: Deploy desired Core generation through CAS fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/install_realm_fabric_via_action_relay.py
+
+      - name: Assert converged generation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          r=json.load(open('.agentos/evidence/realm-fabric-install-current.json'))
+          required=('desired_core_commit','observed_core_commit','deployment_generation','lease_owner','deployment_status')
+          for key in required:
+              assert key in r, (key,r)
+          expected=os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT']
+          assert r['desired_core_commit'] == expected, r
+          assert r['observed_core_commit'] == expected, r
+          assert int(r['deployment_generation']) > 0, r
+          assert r['lease_owner'] == os.environ['AGENTOS_REALM_FABRIC_LEASE_OWNER'], r
+          assert r['deployment_status'] == 'converged', r
+          s=r.get('deployment_status_receipt') or {}
+          assert s.get('deployment_status') == 'converged', s
+          assert s.get('desired_core_commit') == expected, s
+          assert s.get('observed_core_commit') == expected, s
+          print(json.dumps({k:r[k] for k in required}, indent=2))
+          PY
+
+      - name: Prove stale unfenced deployment is rejected without live mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          sys.path.insert(0,'.')
+          from agentos_node.action_relay import ActionRelayClient
+          spool=Path('/home/ubuntu/agent-data/runtime/action-relay')
+          state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text())
+          before=state['observed_core_commit']
+          client=ActionRelayClient(spool)
+          # Old callers supplied only source_commit. New primitive must reject before any restart.
+          payload=client.submit('agentos.realm-fabric.install_release', {'source_commit':'6ea6276f6b0dc065667853dbde05e6712193b380'})
+          deadline=time.time()+60
+          receipt=None
+          while time.time()<deadline:
+              try:
+                  receipt=client.receipt(payload['capsule_id'])
+              except ValueError:
+                  receipt=None
+              if receipt is not None: break
+              time.sleep(1)
+          assert receipt is not None, 'no rejection receipt'
+          assert receipt.get('ok') is False, receipt
+          after=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text())
+          assert after.get('observed_core_commit') == before, after
+          print(json.dumps({'rejected':receipt,'observed_core_commit':after.get('observed_core_commit')}, indent=2))
+          PY
+
+      - name: Publish deployment authority evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .agentos/evidence/realm-fabric-install-current.json || exit 0
+          cp .agentos/evidence/realm-fabric-install-current.json /tmp/realm-fabric-generation-fence.json
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p .agentos/evidence
+          cp /tmp/realm-fabric-generation-fence.json .agentos/evidence/realm-fabric-generation-fence.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/realm-fabric-generation-fence.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): attest fenced Core deployment generation'
+          git pull --rebase origin main
+          git push origin HEAD:main
