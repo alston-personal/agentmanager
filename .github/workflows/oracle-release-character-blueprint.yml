@@ -27,22 +27,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate semantic-parts Character Blueprint source
+      - name: Validate image-to-3D Character Blueprint source
         shell: bash
         run: |
           set -euo pipefail
           PAGE=web_assets/character-blueprint-poc.html
           DEPLOY=scripts/deploy_character_blueprint_poc.py
-          grep -q 'data-version="0.3.0"' "$PAGE"
-          grep -q 'character-blueprint-ir/v0.3' "$PAGE"
-          grep -q 'ImageSegmenter' "$PAGE"
-          grep -q 'semantic-region-mask' "$PAGE"
-          grep -q 'user-confirmed-semantics' "$PAGE"
-          grep -q '開始區域標註' "$PAGE"
-          grep -q '匯出透明 PNG' "$PAGE"
+          grep -q 'data-version="0.4.0"' "$PAGE"
+          grep -q 'character-blueprint-ir/v0.4' "$PAGE"
+          grep -q 'threeDProxy:true' "$PAGE"
+          grep -q 'interactivePartLinking:true' "$PAGE"
+          grep -q 'OrbitControls' "$PAGE"
+          grep -q '丟一張角色圖，先把她立起來' "$PAGE"
+          grep -q '3D Blueprint' "$PAGE"
+          grep -q '技術細節 / Character IR' "$PAGE"
           grep -q 'llm_tokens: 0' "$PAGE"
           grep -q '/poc/character-blueprint/' "$DEPLOY"
-          echo 'character_blueprint_v03_source=PASS'
+          echo 'character_blueprint_v04_source=PASS'
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -73,34 +74,36 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1]); sha=sys.argv[2]; receipt=Path(sys.argv[3])
           rels=['scripts/deploy_character_blueprint_poc.py','web_assets/character-blueprint-poc.html']
-          data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.3','source_commit':sha,'runtime_root':str(root),'sha256':{r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}}
+          data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.4','source_commit':sha,'runtime_root':str(root),'sha256':{r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}}
           receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n'); print(json.dumps(data,sort_keys=True))
           PY
           cd "$RUNTIME"
           /usr/bin/python3 scripts/deploy_character_blueprint_poc.py | tee /tmp/character-blueprint-release.json
           grep -q '"ok": true' /tmp/character-blueprint-release.json
-          grep -q 'character-blueprint-poc-v0.3' /tmp/character-blueprint-release.json
+          grep -q 'character-blueprint-poc-v0.4' /tmp/character-blueprint-release.json
+          grep -q '"three_d_proxy": true' /tmp/character-blueprint-release.json
           rm -rf "$STAGE"
-          echo 'character_blueprint_v03_deploy=PASS'
+          echo 'character_blueprint_v04_deploy=PASS'
           REMOTE
 
-      - name: Public v0.3 acceptance rejects older or fallback page
+      - name: Public v0.4 demo acceptance
         shell: bash
         run: |
           set -euo pipefail
           URL=https://studio.milkcat.org/poc/character-blueprint/
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$URL" -o /tmp/character-blueprint-public
-          grep -q 'meta name="character-blueprint-poc" content="v0.3.0"' /tmp/character-blueprint-public
-          grep -q '<title>Character Blueprint POC v0.3</title>' /tmp/character-blueprint-public
-          grep -q 'character-blueprint-ir/v0.3' /tmp/character-blueprint-public
-          grep -q 'semantic-region-mask' /tmp/character-blueprint-public
-          grep -q 'user-confirmed-semantics' /tmp/character-blueprint-public
-          grep -q '開始區域標註' /tmp/character-blueprint-public
-          grep -q '匯出透明 PNG' /tmp/character-blueprint-public
-          grep -q 'llm_tokens: 0' /tmp/character-blueprint-public
-          ! grep -q '<title>Character Blueprint POC v0.2</title>' /tmp/character-blueprint-public
+          grep -q 'meta name="character-blueprint-poc" content="v0.4.0"' /tmp/character-blueprint-public
+          grep -q '<title>Character Blueprint POC v0.4</title>' /tmp/character-blueprint-public
+          grep -q 'character-blueprint-ir/v0.4' /tmp/character-blueprint-public
+          grep -q 'threeDProxy:true' /tmp/character-blueprint-public
+          grep -q 'interactivePartLinking:true' /tmp/character-blueprint-public
+          grep -q 'OrbitControls' /tmp/character-blueprint-public
+          grep -q '丟一張角色圖，先把她立起來' /tmp/character-blueprint-public
+          grep -q '3D Blueprint' /tmp/character-blueprint-public
+          grep -q '技術細節 / Character IR' /tmp/character-blueprint-public
+          ! grep -q '<title>Character Blueprint POC v0.3</title>' /tmp/character-blueprint-public
           if grep -q 'Milkcat Studio Portal' /tmp/character-blueprint-public && ! grep -q 'character-blueprint-poc' /tmp/character-blueprint-public; then
             echo 'ERROR: Studio homepage fallback detected' >&2; exit 1
           fi
-          echo 'public_character_blueprint_v03_identity=PASS'
-          echo 'semantic_parts_features=PASS'
+          echo 'public_character_blueprint_v04_identity=PASS'
+          echo 'interactive_3d_demo_contract=PASS'
