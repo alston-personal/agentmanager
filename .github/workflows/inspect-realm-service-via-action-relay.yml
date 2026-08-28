@@ -10,7 +10,7 @@ on:
       - 'scripts/repair_antigravity_relay_user.sh'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   compile:
