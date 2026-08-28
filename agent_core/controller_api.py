@@ -39,17 +39,13 @@ class ControllerService:
             'realm_tool_presence': list(node_map.get('realm_tool_presence') or []),
             'realm_surface_providers': list(node_map.get('realm_surface_providers') or []),
             'runtime_ota': self.ota_policy.load(),
+            'runtime_converged_count': node_map.get('runtime_converged_count', 0),
+            'runtime_drifted_count': node_map.get('runtime_drifted_count', 0),
+            'runtime_unknown_count': node_map.get('runtime_unknown_count', 0),
         }
 
     def nodes(self) -> dict[str, Any]:
-        node_map = self.fabric.node_registry.node_map()
-        policy = self.ota_policy.load()
-        result = dict(node_map)
-        result['nodes'] = [RuntimeOTAPolicyStore.annotate_node(node, policy) for node in node_map.get('nodes') or []]
-        result['runtime_ota'] = policy
-        result['runtime_converged_count'] = sum(1 for node in result['nodes'] if node.get('runtime_status') == 'converged')
-        result['runtime_drifted_count'] = sum(1 for node in result['nodes'] if node.get('runtime_status') == 'drifted')
-        return result
+        return self.fabric.node_registry.node_map()
 
     def node(self, node_id: str) -> dict[str, Any]:
         node_id = str(node_id or '').strip()
@@ -87,6 +83,7 @@ $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
 $base='https://raw.githubusercontent.com/alston-personal/agentmanager/SOURCE_COMMIT'
 $files=@(
   'agentos_node/thin_client.py',
+  'agentos_node/runtime_provenance.py',
   'agentos_node/interactive_desktop.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py',
@@ -132,14 +129,23 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
         source_ref = str(request.get('source_ref') or 'feature/realm-node-fabric-readiness').strip()
         auto_converge = bool(request.get('auto_converge', False))
         policy = self.ota_policy.set_desired(source_commit=source_commit, source_ref=source_ref, auto_converge=auto_converge)
-        selected = [
-            node for node in self.nodes().get('nodes') or []
-            if node.get('role') == 'client' and node.get('status') == 'online' and 'shell.exec' in set(node.get('capabilities') or [])
-        ]
-        results: list[dict[str, Any]] = []
         rollout_id = str(request.get('task_id') or '').strip() or 'ota_' + secrets.token_hex(8)
-        for node in selected:
-            node_id = str(node['node_id'])
+        results: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for node in self.nodes().get('nodes') or []:
+            node_id = str(node.get('node_id') or '')
+            if node.get('role') != 'client':
+                skipped.append({'node_id': node_id, 'reason': 'not_client'})
+                continue
+            if node.get('status') != 'online':
+                skipped.append({'node_id': node_id, 'reason': 'offline'})
+                continue
+            if node.get('runtime_status') == 'converged':
+                skipped.append({'node_id': node_id, 'reason': 'already_converged'})
+                continue
+            if 'shell.exec' not in set(node.get('capabilities') or []):
+                skipped.append({'node_id': node_id, 'reason': 'missing_maintenance_capability'})
+                continue
             task_id = f'{rollout_id}_{node_id}'
             existing = self._existing_task(task_id)
             if existing is not None:
@@ -154,8 +160,44 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             'action': 'realm.runtime.rollout',
             'rollout_id': rollout_id,
             'policy': policy,
-            'selected_node_count': len(selected),
+            'queued_node_count': len(results),
+            'skipped_node_count': len(skipped),
             'nodes': results,
+            'skipped': skipped,
+        }
+
+    def verify_runtime_rollout(self, rollout_id: str) -> dict[str, Any]:
+        rollout_id = str(rollout_id or '').strip()
+        if not rollout_id:
+            raise ValueError('rollout_id is required')
+        policy = self.ota_policy.load()
+        desired = str(policy.get('desired_source_commit') or '')
+        nodes = [node for node in self.nodes().get('nodes') or [] if node.get('role') == 'client']
+        observations: list[dict[str, Any]] = []
+        for node in nodes:
+            node_id = str(node.get('node_id') or '')
+            task_id = f'{rollout_id}_{node_id}'
+            receipt = self.fabric.get_receipt(task_id)
+            observations.append({
+                'node_id': node_id,
+                'task_id': task_id,
+                'task_receipt_ok': None if receipt is None else bool(receipt.get('ok')),
+                'observed_runtime_commit': (node.get('runtime') or {}).get('source_commit'),
+                'desired_runtime_commit': desired or None,
+                'runtime_status': node.get('runtime_status'),
+                'converged': node.get('runtime_status') == 'converged',
+            })
+        converged = [item for item in observations if item['converged']]
+        pending = [item for item in observations if not item['converged']]
+        return {
+            'schema': 'agentos.realm-runtime-rollout-receipt/v0.1',
+            'ok': not pending,
+            'rollout_id': rollout_id,
+            'desired_runtime_commit': desired or None,
+            'client_node_count': len(observations),
+            'converged_node_count': len(converged),
+            'pending_node_count': len(pending),
+            'nodes': observations,
         }
 
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
