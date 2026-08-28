@@ -184,25 +184,49 @@ def _parse_time(value: str | None) -> datetime:
 
 def arbitrate_heads(heads: Iterable[dict[str, Any]], *, now: datetime | None = None,
                     fresh_seconds: int = DEFAULT_FRESH_SECONDS) -> dict[str, Any]:
-    """Prefer fresh execution evidence and expose disagreements instead of hiding them."""
+    """Prefer fresh valid execution evidence and expose disagreements.
+
+    Evidence with a collection error is retained for diagnostics but is never
+    allowed to outrank valid project state merely because it was observed more
+    recently.
+    """
     now = now or utc_now()
     source_rank = {"local-git": 300, "execution-receipt": 290, "remote-git": 200, "release": 150, "status-md": 100}
     normalized = [dict(h) for h in heads if isinstance(h, dict)]
     if not normalized:
-        return {"winner": None, "fresh": False, "conflicts": [], "reason": "no_evidence"}
+        return {"winner": None, "fresh": False, "conflicts": [], "invalid_evidence": [], "reason": "no_evidence"}
+
+    valid: list[dict[str, Any]] = []
+    invalid: list[dict[str, Any]] = []
     for h in normalized:
         ts = _parse_time(h.get("observed_at") or h.get("timestamp") or h.get("updated_at"))
         age = max(0.0, (now - ts).total_seconds())
         h["age_seconds"] = age
         h["fresh"] = age <= fresh_seconds
         h["source_rank"] = source_rank.get(str(h.get("source")), 0)
-    fresh = [h for h in normalized if h["fresh"]]
-    pool = fresh or normalized
-    winner = max(pool, key=lambda h: (h["source_rank"], _parse_time(h.get("observed_at") or h.get("timestamp") or h.get("updated_at"))))
+        h["confidence"] = float(h.get("confidence", 1.0) or 0.0)
+        if h.get("error"):
+            h["source_rank"] = -1
+            invalid.append(h)
+        else:
+            valid.append(h)
+
+    pool_base = valid or normalized
+    fresh = [h for h in pool_base if h.get("fresh") and not h.get("error")]
+    pool = fresh or pool_base
+    winner = max(
+        pool,
+        key=lambda h: (
+            h.get("source_rank", -1),
+            h.get("confidence", 0.0),
+            _parse_time(h.get("observed_at") or h.get("timestamp") or h.get("updated_at")),
+        ),
+    )
+
     conflicts = []
     winner_head = winner.get("local_head") or winner.get("remote_head")
     winner_version = winner.get("version")
-    for h in normalized:
+    for h in valid:
         if h is winner:
             continue
         other_head = h.get("local_head") or h.get("remote_head")
@@ -211,8 +235,14 @@ def arbitrate_heads(heads: Iterable[dict[str, Any]], *, now: datetime | None = N
             conflicts.append({"source": h.get("source"), "node": h.get("node"), "head": other_head,
                               "version": h.get("version"), "fresh": h.get("fresh"),
                               "age_seconds": h.get("age_seconds")})
-    return {"winner": winner, "fresh": bool(winner.get("fresh")), "conflicts": conflicts,
-            "reason": "fresh_trust_rank" if fresh else "all_evidence_stale"}
+
+    return {
+        "winner": winner,
+        "fresh": bool(winner.get("fresh")),
+        "conflicts": conflicts,
+        "invalid_evidence": invalid,
+        "reason": "fresh_trust_rank" if fresh else ("all_valid_evidence_stale" if valid else "no_valid_evidence"),
+    }
 
 
 def main() -> int:
