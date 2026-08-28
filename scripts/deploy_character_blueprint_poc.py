@@ -38,7 +38,7 @@ def main() -> int:
     validate(source_text)
 
     TARGET.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(prefix='.character-blueprint-', dir=str(TARGET.parent)))
+    tmp: Path | None = Path(tempfile.mkdtemp(prefix='.character-blueprint-', dir=str(TARGET.parent)))
     try:
         index = tmp / 'index.html'
         shutil.copy2(SOURCE, index)
@@ -51,11 +51,11 @@ def main() -> int:
         if TARGET.exists():
             TARGET.rename(backup)
         tmp.rename(TARGET)
-        tmp = Path()
+        tmp = None
         if backup.exists():
             shutil.rmtree(backup)
     finally:
-        if tmp and tmp.exists():
+        if tmp is not None and tmp.exists():
             shutil.rmtree(tmp)
 
     deployed = TARGET / 'index.html'
