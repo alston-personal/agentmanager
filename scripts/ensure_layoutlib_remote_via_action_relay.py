@@ -4,7 +4,7 @@ import json, sys, time
 from pathlib import Path
 
 ROOT = Path.cwd()
-RUNTIME = Path('/home/ubuntu/.local/share/agentos/action-runtime')
+RUNTIME = Path('/home/ubuntu/.local/share/agentos/action-relay-runtime')
 SPOOL = Path('/home/ubuntu/agent-data/runtime/action-relay')
 OUT = ROOT / '.agentos/evidence/layoutlib-remote-action-relay.txt'
 ACTION = 'github.repo.ensure_layoutlib'
