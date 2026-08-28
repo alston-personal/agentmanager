@@ -642,16 +642,24 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
             if not health or health.get('status') != 200:
                 return {'ok': False, 'stage': 'health', 'source_commit': source_commit, 'health': health, 'steps': steps}
 
-            tmp_link = realm_root / f'.current-{source_commit}'
-            tmp_link.unlink(missing_ok=True)
-            tmp_link.symlink_to(release)
-            tmp_link.replace(current)
+            current_pointer_mode = 'symlink'
+            if current.exists() and not current.is_symlink():
+                # Preserve the legacy real directory. The systemd unit already
+                # points at this exact versioned release, so replacing a live
+                # directory just to normalize the pointer would be destructive.
+                current_pointer_mode = 'legacy_directory_preserved'
+            else:
+                tmp_link = realm_root / f'.current-{source_commit}'
+                tmp_link.unlink(missing_ok=True)
+                tmp_link.symlink_to(release)
+                tmp_link.replace(current)
             return {
                 'ok': True,
                 'source_commit': source_commit,
                 'realm_id': realm_id,
                 'release': str(release),
                 'current': str(current),
+                'current_pointer_mode': current_pointer_mode,
                 'service': 'agentos-realm-fabric.service',
                 'endpoint': 'http://127.0.0.1:8780',
                 'health': health,
