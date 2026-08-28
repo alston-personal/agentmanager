@@ -1,0 +1,37 @@
+name: Patch Action Relay ArcanaForge
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-action-relay-arcanaforge.yml'
+      - 'scripts/patch_action_relay_arcanaforge.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply deterministic narrow ArcanaForge action patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_action_relay_arcanaforge.py
+          python3 -m py_compile agentos_node/action_relay.py
+          grep -q 'github.repo.ensure_arcanaforge' agentos_node/action_relay.py
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(agentos): add governed ArcanaForge remote action'
+          git pull --rebase origin main
+          git push origin HEAD:main
