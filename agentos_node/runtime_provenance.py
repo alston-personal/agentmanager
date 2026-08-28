@@ -26,7 +26,7 @@ def observe_runtime() -> dict[str, Any]:
     payload: dict[str, Any] = {'schema': SCHEMA, 'provenance_path': str(path)}
     if path.is_file():
         try:
-            data = json.loads(path.read_text(encoding='utf-8'))
+            data = json.loads(path.read_text(encoding='utf-8-sig'))
         except (OSError, json.JSONDecodeError) as exc:
             payload['status'] = 'invalid'
             payload['error'] = f'{type(exc).__name__}: {exc}'
