@@ -1,0 +1,48 @@
+{
+  "schema": "character-blueprint-benchmark-providers/v0.1",
+  "providers": {
+    "character-blueprint": {
+      "kind": "public-browser",
+      "url": "https://studio.milkcat.org/poc/character-blueprint/",
+      "credential_env": null,
+      "preferred_output": "benchmark evidence bundle"
+    },
+    "meshy": {
+      "kind": "async-http-api",
+      "base_url": "https://api.meshy.ai",
+      "create_endpoint": "/openapi/v1/image-to-3d",
+      "retrieve_endpoint": "/openapi/v1/image-to-3d/{id}",
+      "credential_env": "MESHY_API_KEY",
+      "input_mode": "image_url-or-data-uri",
+      "preferred_output": "glb",
+      "benchmark_role": "primary-commercial-baseline"
+    },
+    "rodin": {
+      "kind": "async-http-api",
+      "base_url": "https://api.hyper3d.com/api/v2",
+      "create_endpoint": "/rodin",
+      "credential_env": "RODIN_API_KEY",
+      "input_mode": "multipart-images",
+      "max_images": 5,
+      "preferred_output": "glb",
+      "benchmark_role": "quality-ceiling"
+    },
+    "tripo": {
+      "kind": "async-http-api",
+      "base_url": "https://openapi.tripo3d.ai/v3",
+      "create_endpoint": "/generation/image-to-model",
+      "retrieve_endpoint": "/tasks/{task_id}",
+      "credential_env": "TRIPO_API_KEY",
+      "input_mode": "url-file-token-or-task-id",
+      "preferred_output": "glb",
+      "repeatability": "pin model and seed",
+      "benchmark_role": "independent-sanity-baseline"
+    }
+  },
+  "fixture_v0": {
+    "case_id": "real-person-fullbody",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/c/c3/Man-standing.jpg",
+    "license": "Public domain (Wikimedia Commons source; verify provenance metadata when freezing the fixture)",
+    "purpose": "initial pipeline baseline only"
+  }
+}
