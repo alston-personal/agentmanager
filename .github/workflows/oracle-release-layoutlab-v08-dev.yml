@@ -90,8 +90,9 @@ jobs:
           grep -q 'semantic-tools.js?v=0.8-dev' /tmp/layoutlab-v08-poc
           grep -q 'LayoutLib Semantic Editor v0.8.0-dev' /tmp/layoutlib-semantic-editor
           grep -q "selectButton.style.display='none'" /tmp/layoutlab-semantic-tools
-          grep -q "if(mode==='none')oldSetMode('select')" /tmp/layoutlab-semantic-tools
-          grep -q "doorButton.textContent='＋ 門'" /tmp/layoutlab-semantic-tools
-          grep -q "windowButton.textContent='＋ 窗'" /tmp/layoutlab-semantic-tools
+          grep -q "interactionInvariant:'exclusive-persistent-tool-focus/v1'" /tmp/layoutlab-semantic-tools
+          grep -q "doorButton.onclick=()=>setMode(mode==='door'?'select':'door')" /tmp/layoutlab-semantic-tools
+          grep -q "windowButton.onclick=()=>setMode(mode==='window'?'select':'window')" /tmp/layoutlab-semantic-tools
+          grep -q "工具仍保持 focus" /tmp/layoutlab-semantic-tools
           grep -q "badge.textContent='v0.8-dev'" /tmp/layoutlab-semantic-tools
           echo 'public_layoutlab_v08_poc=PASS'
