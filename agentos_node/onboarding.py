@@ -69,9 +69,13 @@ Write-Output 'agentos_supervisor_ready=true'
 """
 
 
+def _non_windows_lifecycle() -> dict[str, Any]:
+    return {'schema': 'agentos.node-lifecycle/v0.1', 'platform': platform.system(), 'applicable': False, 'supervisor_ready': True}
+
+
 def install_windows_node_supervisor(*, install_root: Path | None = None, launcher: Path | None = None) -> dict[str, Any]:
     if platform.system() != 'Windows':
-        return {'schema': 'agentos.node-lifecycle/v0.1', 'platform': platform.system(), 'applicable': False, 'supervisor_ready': True}
+        return _non_windows_lifecycle()
     root = Path(install_root or windows_node_install_root())
     client_launcher = Path(launcher or (root / 'agentos-client.cmd'))
     result = subprocess.run(
@@ -79,6 +83,35 @@ def install_windows_node_supervisor(*, install_root: Path | None = None, launche
         capture_output=True,
         text=True,
         timeout=45,
+        check=False,
+    )
+    ready = result.returncode == 0 and 'agentos_supervisor_ready=true' in result.stdout
+    return {
+        'schema': 'agentos.node-lifecycle/v0.1',
+        'platform': 'Windows',
+        'applicable': True,
+        'supervisor_ready': ready,
+        'thin_client_task': WINDOWS_THIN_CLIENT_TASK,
+        'watchdog_task': WINDOWS_WATCHDOG_TASK,
+        'returncode': result.returncode,
+        'stderr': result.stderr[-2000:],
+    }
+
+
+def check_windows_node_supervisor() -> dict[str, Any]:
+    if platform.system() != 'Windows':
+        return _non_windows_lifecycle()
+    script = f"""$client=Get-ScheduledTask -TaskName '{WINDOWS_THIN_CLIENT_TASK}' -ErrorAction SilentlyContinue
+$watchdog=Get-ScheduledTask -TaskName '{WINDOWS_WATCHDOG_TASK}' -ErrorAction SilentlyContinue
+if ($null -eq $client -or $null -eq $watchdog) {{ exit 2 }}
+if ($client.State -ne 'Running') {{ exit 3 }}
+Write-Output 'agentos_supervisor_ready=true'
+"""
+    result = subprocess.run(
+        ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+        capture_output=True,
+        text=True,
+        timeout=15,
         check=False,
     )
     ready = result.returncode == 0 and 'agentos_supervisor_ready=true' in result.stdout
