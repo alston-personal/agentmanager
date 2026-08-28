@@ -146,13 +146,13 @@ jobs:
           set -euo pipefail
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Fetch pinned MediaPipe real-person fixture
+      - name: Fetch public-domain real-person fixture
         shell: bash
         run: |
           set -euo pipefail
-          FIXTURE=/tmp/character-blueprint-mediapipe-pose.jpg
+          FIXTURE=/tmp/character-blueprint-standing-person.jpg
           curl -fL --retry 5 --retry-delay 2 \
-            'https://raw.githubusercontent.com/google-ai-edge/mediapipe/a55582d702d1a2c58cd3eaf451cb8a8bd60b039b/mediapipe/tasks/testdata/vision/pose.jpg' \
+            'https://upload.wikimedia.org/wikipedia/commons/c/c3/Man-standing.jpg' \
             -o "$FIXTURE"
           test "$(wc -c < "$FIXTURE")" -gt 10000
           file "$FIXTURE" | grep -qi 'JPEG image data'
@@ -161,7 +161,7 @@ jobs:
         shell: bash
         env:
           CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
-          CHARACTER_BLUEPRINT_FIXTURE: /tmp/character-blueprint-mediapipe-pose.jpg
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/character-blueprint-standing-person.jpg
         run: |
           set -euo pipefail
           node scripts/character_blueprint_browser_smoke.mjs | tee /tmp/character-blueprint-browser-smoke.json
@@ -172,4 +172,4 @@ jobs:
           grep -q '"schema": "character-blueprint-ir/v0.4"' /tmp/character-blueprint-browser-smoke.json
           echo 'character_blueprint_real_image_e2e=PASS'
 
-# Real-image MediaPipe E2E release gate.
+# Real-image public-domain E2E release gate.
