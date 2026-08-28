@@ -12,6 +12,36 @@ from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy,
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
 
 
+_RUN_MUTEX_HANDLE: object | None = None
+
+
+def _acquire_run_guard(node_id: str) -> bool:
+    """Keep one persistent Thin Client daemon per Windows node identity."""
+    if os.name != 'nt':
+        return True
+    import ctypes
+    from ctypes import wintypes
+
+    global _RUN_MUTEX_HANDLE
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    create_mutex = kernel32.CreateMutexW
+    create_mutex.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    create_mutex.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    name = 'Local\\AgentOS-ThinClient-' + ''.join(ch if ch.isalnum() or ch in '._-' else '_' for ch in node_id)
+    handle = create_mutex(None, False, name)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), 'CreateMutexW failed')
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        close_handle(handle)
+        return False
+    _RUN_MUTEX_HANDLE = handle
+    return True
+
+
 def _default_config() -> Path:
     root = os.environ.get('AGENTOS_CLIENT_HOME')
     if root:
@@ -123,6 +153,9 @@ def main() -> int:
         return 0
 
     config = ClientConfig.load(args.config)
+    if args.command == 'run' and not _acquire_run_guard(config.node_id):
+        print(f'[agentos-client] another daemon already owns node identity: {config.node_id}', flush=True)
+        return 3
     transport = build_client(config, policy)
     if args.command == 'manifest':
         print(render_json(transport.client.capability_manifest()))
