@@ -69,9 +69,25 @@ jobs:
           }
           trap rollback EXIT
 
-          python3 -m venv "$RELEASE/venv"
-          "$RELEASE/venv/bin/python" -m pip install --upgrade pip >/dev/null
-          "$RELEASE/venv/bin/python" -m pip install "$GITHUB_WORKSPACE"
+          # Versioned source snapshot. Avoid python3-venv/ensurepip so deployment
+          # does not require host package mutation or sudo on the self-hosted runner.
+          rm -rf "$RELEASE/agent_core" "$RELEASE/agentos_node" "$RELEASE/runtime_core" "$RELEASE/bin"
+          cp -a agent_core "$RELEASE/agent_core"
+          cp -a agentos_node "$RELEASE/agentos_node"
+          [ -d runtime_core ] && cp -a runtime_core "$RELEASE/runtime_core"
+          mkdir -p "$RELEASE/bin"
+          cat > "$RELEASE/bin/agentos-one" <<EOF
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export PYTHONPATH="$RELEASE${PYTHONPATH:+:$PYTHONPATH}"
+          exec /usr/bin/python3 -m agent_core.realm_cli "\$@"
+          EOF
+          chmod 0755 "$RELEASE/bin/agentos-one"
+          PYTHONPATH="$RELEASE${PYTHONPATH:+:$PYTHONPATH}" /usr/bin/python3 -m py_compile \
+            "$RELEASE/agent_core/realm_cli.py" \
+            "$RELEASE/agent_core/realm_server.py" \
+            "$RELEASE/agent_core/resolve_facade.py"
+          "$RELEASE/bin/agentos-one" --help >/dev/null
 
           REALM_ID=realm-alston
           LIVE_ENV=/home/ubuntu/agentmanager/.env
@@ -79,7 +95,7 @@ jobs:
             configured=$(grep -E '^AGENTOS_REALM_ID=' "$LIVE_ENV" | tail -n1 | cut -d= -f2- || true)
             [ -n "$configured" ] && REALM_ID="$configured"
           fi
-          AGENT_DATA_ROOT="$AGENT_DATA_ROOT" "$RELEASE/venv/bin/agentos-one" init --realm-id "$REALM_ID"
+          AGENT_DATA_ROOT="$AGENT_DATA_ROOT" "$RELEASE/bin/agentos-one" init --realm-id "$REALM_ID"
 
           cat > "$UNIT" <<EOF
           [Unit]
@@ -89,7 +105,7 @@ jobs:
           [Service]
           Type=simple
           Environment=AGENT_DATA_ROOT=$AGENT_DATA_ROOT
-          ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
+          ExecStart=$RELEASE/bin/agentos-one serve --host 127.0.0.1 --port 8780
           Restart=always
           RestartSec=5
           StandardOutput=append:$AGENT_DATA_ROOT/logs/realm-fabric.log
@@ -110,7 +126,7 @@ jobs:
           systemctl --user is-active agentos-realm-fabric.service
 
           ln -sfn "$RELEASE" "$CURRENT"
-          test -x "$CURRENT/venv/bin/agentos-one"
+          test -x "$CURRENT/bin/agentos-one"
           echo "realm_fabric_release=$RELEASE"
           echo "realm_fabric_current=$CURRENT"
           echo "realm_fabric_port=8780"
