@@ -18,47 +18,43 @@ jobs:
       AGENT_DATA_ROOT: /home/ubuntu/agent-data
     steps:
       - uses: actions/checkout@v4
-      - name: Read-only canonical data provenance and project inventory
+      - name: Read-only current Project Store authority
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, os, subprocess
+          import json
           from pathlib import Path
+          try:
+              import yaml
+          except Exception as exc:
+              raise SystemExit('PyYAML unavailable: '+str(exc))
 
-          data=Path('/home/ubuntu/agent-data')
-          projects=data/'projects'
-          print('data_exists=',data.is_dir())
-          print('data_is_git=',(data/'.git').exists())
-          if (data/'.git').exists():
-              def git(*args):
-                  p=subprocess.run(['git','-c',f'safe.directory={data}','-C',str(data),*args],text=True,capture_output=True)
-                  return {'rc':p.returncode,'stdout':p.stdout.strip()[-4000:],'stderr':p.stderr.strip()[-2000:]}
-              print('data_head=',json.dumps(git('rev-parse','HEAD'),ensure_ascii=False))
-              print('data_branch=',json.dumps(git('branch','--show-current'),ensure_ascii=False))
-              print('data_status=',json.dumps(git('status','--short','--untracked-files=no'),ensure_ascii=False))
-              print('data_log=',json.dumps(git('log','-5','--format=%H %cI %s'),ensure_ascii=False))
-          if projects.is_dir():
-              print('projects_mtime=',projects.stat().st_mtime)
-              print('project_dirs=',json.dumps(sorted(p.name for p in projects.iterdir() if p.is_dir()),ensure_ascii=False))
-
-          for name in ('agentmanager','agentos-core','layoutlib'):
-              p=projects/name
+          root=Path('/home/ubuntu/agent-data/projects')
+          allowed=(
+              'id','project_id','name','display_name','aliases','schema','version','status','type','kind','description',
+              'repo','repository','source','branch','canonical_path','checkout','node','node_id','runtime','deployment',
+              'state','state_document','checkpoint','continuity','current_goal','goal','next_action','owner','supersedes',
+              'created_at','updated_at','last_verified_at'
+          )
+          for name in ('agentmanager','layoutlib'):
+              p=root/name
               print(f'=== {name} ===')
-              print('exists=',p.is_dir())
-              if not p.is_dir(): continue
-              print('mtime=',p.stat().st_mtime)
-              entries=[]
-              for x in sorted(p.iterdir(),key=lambda z:z.name):
-                  entries.append({'name':x.name,'type':'dir' if x.is_dir() else 'file','size':x.stat().st_size if x.is_file() else None,'mtime':x.stat().st_mtime})
-              print('direct_entries=',json.dumps(entries,ensure_ascii=False,indent=2))
-              for rel in ('project.json','status.json','execution.json','execution-head.json','ir/latest.json','ir/checkpoint-000003.json'):
-                  f=p/rel
-                  if not f.is_file(): continue
-                  try: obj=json.loads(f.read_text(encoding='utf-8'))
-                  except Exception as exc:
-                      print('json_error=',rel,type(exc).__name__); continue
+              y=p/'project.yaml'
+              print('project_yaml_exists=',y.is_file())
+              if y.is_file():
+                  obj=yaml.safe_load(y.read_text(encoding='utf-8'))
                   if isinstance(obj,dict):
-                      keys=('schema','project_id','project','id','name','status','repo','repository','branch','node','node_id','goal','current_goal','next_action','head','local_head','version','updated_at','observed_at')
-                      print('record=',rel,json.dumps({k:obj.get(k) for k in keys if k in obj},ensure_ascii=False,sort_keys=True))
+                      print('project_yaml_keys=',json.dumps(sorted(obj.keys()),ensure_ascii=False))
+                      print('project_yaml_summary=',json.dumps({k:obj.get(k) for k in allowed if k in obj},ensure_ascii=False,sort_keys=True,indent=2))
+              s=p/'STATUS.md'
+              print('status_md_exists=',s.is_file())
+              if s.is_file():
+                  lines=[]
+                  for raw in s.read_text(encoding='utf-8').splitlines():
+                      line=raw.strip()
+                      if line.startswith('#') or any(tok in line.lower() for tok in ('status','project','goal','next','repo','branch','checkpoint','current','canonical')):
+                          lines.append(raw[:500])
+                      if len(lines)>=30: break
+                  print('status_signals=',json.dumps(lines,ensure_ascii=False,indent=2))
           PY
