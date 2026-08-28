@@ -1,0 +1,30 @@
+{
+  "action": "agentos.controller.surface-inspect-vopc5750",
+  "completed_at": "2026-08-28T08:18:18Z",
+  "executor_uid": 1001,
+  "executor_user": "ubuntu",
+  "ok": true,
+  "request_id": "issue64-final-33154757412-20260828T081736Z",
+  "schema": "agentos.bootstrap-receipt/v1",
+  "script_sha256": "037aae6c771600e435e1f4b4ddf3c78b9e0bd64e6b5859c76d26da575bfccf4d",
+  "started_at": "2026-08-28T08:18:18Z",
+  "steps": [
+    {
+      "returncode": 0,
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   df2eadd..7addbbd  main       -> origin/main\n",
+      "stdout": "",
+      "step": "git_fetch"
+    },
+    {
+      "returncode": 0,
+      "stderr": "",
+      "step": "git_show_script"
+    },
+    {
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "controller_dispatch_http_code=400\n{\"error\": \"ValueError: target node does not advertise capability: agent.surface.inspect\", \"ok\": false}controller_service_entered=PASS\ncontroller_dispatch_outcome=NODE_CAPABILITY_NOT_ADVERTISED\n",
+      "step": "run_script"
+    }
+  ]
+}
