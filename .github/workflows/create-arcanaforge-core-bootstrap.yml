@@ -1,0 +1,41 @@
+name: Create ArcanaForge Core Bootstrap
+
+on:
+  push:
+    paths:
+      - '.github/workflows/create-arcanaforge-core-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    runs-on: self-hosted
+    timeout-minutes: 3
+    steps:
+      - name: Ensure ArcanaForge private repository exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo='alston-personal/arcanaforge'
+          if /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json 2>/tmp/arcanaforge-view.err; then
+            python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/arcanaforge-view.json'))
+          assert x.get('nameWithOwner') == 'alston-personal/arcanaforge'
+          assert x.get('isPrivate') is True
+          print('arcanaforge_remote=EXISTS_PRIVATE')
+          PY
+            exit 0
+          fi
+          /usr/bin/gh repo create "$repo" \
+            --private \
+            --description 'Symbolic collection generator: SymbolicSystem × Subject × Style, initially Tarot + I Ching, packaging outputs for Divination OS'
+          /usr/bin/gh repo view "$repo" --json nameWithOwner,isPrivate >/tmp/arcanaforge-view.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/arcanaforge-view.json'))
+          assert x.get('nameWithOwner') == 'alston-personal/arcanaforge'
+          assert x.get('isPrivate') is True
+          print('arcanaforge_remote=CREATED_PRIVATE')
+          PY
