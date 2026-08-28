@@ -4,7 +4,8 @@
   "action": "project.mvp.rc1",
   "workspace": "/home/ubuntu/agentmanager/workspace/metashield-protocol/",
   "requested_by": "chatgpt-web",
-  "requested_at": "2026-08-28T10:38:00+08:00",
+  "requested_at": "2026-08-28T10:46:00+08:00",
+  "dispatch_nonce": 2,
   "phases": [
     {
       "id": "phase-1-product-surface-and-contract",
