@@ -47,7 +47,10 @@ if receipt is None:
     OUT.write_text('\n'.join(lines)+'\n',encoding='utf-8')
     raise SystemExit(3)
 lines.append(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True))
-result=receipt.get('result') or {}
+
+# Action Relay action receipts expose the action result fields at the top level.
+# Keep backward compatibility with an older nested-result envelope if encountered.
+result = receipt.get('result') if isinstance(receipt.get('result'), dict) else receipt
 checks = {
     'receipt_ok': receipt.get('ok') is True,
     'repository': result.get('repository') == REPOSITORY,
