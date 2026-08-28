@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from typing import Any
 
@@ -15,17 +16,12 @@ CONTROLLER_ACTION_CAPABILITY = {
     'desktop.windows.inspect': 'desktop.windows.inspect',
     'desktop.screenshot': 'desktop.screenshot',
     'desktop.open_url': 'desktop.open_url',
+    'node.runtime.converge': 'shell.exec',
 }
 
 
 class ControllerService:
-    """Governed controller-side facade for ONE.
-
-    This intentionally exposes only low-risk/read-oriented actions in v0.1.
-    Arbitrary shell, writes, keyboard/mouse input and context injection stay
-    outside the controller surface until a stronger approval/scoping contract
-    exists.
-    """
+    """Governed controller-side facade for ONE."""
 
     def __init__(self, fabric: RealmFabricStore):
         self.fabric = fabric
@@ -49,8 +45,7 @@ class ControllerService:
         node_id = str(node_id or '').strip()
         if not node_id:
             raise ValueError('node_id is required')
-        nodes = list(self.nodes().get('nodes') or [])
-        node = next((item for item in nodes if item.get('node_id') == node_id), None)
+        node = next((item for item in self.nodes().get('nodes') or [] if item.get('node_id') == node_id), None)
         if node is None:
             raise KeyError(node_id)
         return node
@@ -59,22 +54,59 @@ class ControllerService:
         data = self.fabric.load()
         receipt = (data.get('receipts') or {}).get(task_id)
         if isinstance(receipt, dict):
-            return {
-                'state': 'completed',
-                'node_id': receipt.get('node_id'),
-                'action': receipt.get('action'),
-                'queued_at': None,
-            }
+            return {'state': 'completed', 'node_id': receipt.get('node_id'), 'action': receipt.get('action'), 'queued_at': None}
         for queued_node_id, queue in (data.get('tasks') or {}).items():
             for task in queue or []:
                 if isinstance(task, dict) and task.get('task_id') == task_id:
                     return {
                         'state': 'queued',
                         'node_id': queued_node_id,
-                        'action': task.get('action'),
+                        'action': task.get('controller_action') or task.get('action'),
                         'queued_at': task.get('queued_at'),
                     }
         return None
+
+    @staticmethod
+    def _runtime_convergence_task(task_id: str, source_commit: str) -> dict[str, Any]:
+        if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
+            raise ValueError('source_commit must be a 40-character lowercase git SHA')
+        script = r'''$ErrorActionPreference='Stop'
+$install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+$base='https://raw.githubusercontent.com/alston-personal/agentmanager/SOURCE_COMMIT'
+$files=@(
+  'agentos_node/thin_client.py',
+  'agentos_node/interactive_desktop.py',
+  'agentos_node/thin_client_transport.py',
+  'agentos_node/client_cli.py',
+  'agentos_node/agent_surfaces.py',
+  'agentos_node/session_bridge.py',
+  'agentos_node/onboarding.py'
+)
+foreach($rel in $files){
+  $dest=Join-Path $install ($rel -replace '/','\\')
+  $parent=Split-Path -Parent $dest
+  New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
+}
+$taskName='AgentOS Thin Client'
+Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
+Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction Stop | Out-Null
+$restart="Start-Sleep -Seconds 5; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName '$taskName'"
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
+Write-Output 'agentos_runtime_converge=PASS'
+Write-Output 'agentos_watchdog_preserved=PASS'
+Write-Output 'agentos_source_commit=SOURCE_COMMIT'
+'''.replace('SOURCE_COMMIT', source_commit)
+        return {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': task_id,
+            'action': 'shell.exec',
+            'controller_action': 'node.runtime.converge',
+            'executable': 'powershell',
+            'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+            'timeout_seconds': 60,
+            'cognition_ids_used': [],
+        }
 
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
         node = self.node(node_id)
@@ -84,45 +116,40 @@ class ControllerService:
         required_capability = CONTROLLER_ACTION_CAPABILITY.get(action)
         if required_capability is None:
             raise PermissionError(f'controller action not permitted: {action}')
-        capabilities = set(node.get('capabilities') or [])
-        if required_capability not in capabilities:
+        if required_capability not in set(node.get('capabilities') or []):
             raise ValueError(f'node lacks capability: {required_capability}')
 
         task_id = str(request.get('task_id') or '').strip() or 'ctl_' + secrets.token_hex(12)
         existing = self._existing_task(task_id)
         if existing is not None:
-            if existing.get('node_id') != node_id or existing.get('action') != action:
+            existing_action = str(existing.get('action') or '')
+            compatible = existing_action == action or (action == 'node.runtime.converge' and existing_action == 'shell.exec')
+            if existing.get('node_id') != node_id or not compatible:
                 raise ValueError(f'task_id already belongs to another request: {task_id}')
             return {
-                'schema': 'agentos.controller-dispatch/v0.1',
-                'ok': True,
-                'node_id': node_id,
-                'task_id': task_id,
-                'action': action,
-                'queued_at': existing.get('queued_at'),
-                'state': existing.get('state'),
-                'reused': True,
+                'schema': 'agentos.controller-dispatch/v0.1', 'ok': True, 'node_id': node_id,
+                'task_id': task_id, 'action': action, 'queued_at': existing.get('queued_at'),
+                'state': existing.get('state'), 'reused': True,
             }
 
-        task: dict[str, Any] = {
-            'schema': 'agentos.node-task/v0.1',
-            'task_id': task_id,
-            'action': action,
-            'cognition_ids_used': list(request.get('cognition_ids_used') or []),
-        }
-        for key in ('provider', 'session_id', 'request_id', 'payload', 'url', 'quality'):
-            if key in request:
-                task[key] = request[key]
+        if action == 'node.runtime.converge':
+            task = self._runtime_convergence_task(task_id, str(request.get('source_commit') or '').strip())
+        else:
+            task = {
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': task_id,
+                'action': action,
+                'cognition_ids_used': list(request.get('cognition_ids_used') or []),
+            }
+            for key in ('provider', 'session_id', 'request_id', 'payload', 'url', 'quality'):
+                if key in request:
+                    task[key] = request[key]
+
         queued = self.fabric.queue_task(node_id, task)
         return {
-            'schema': 'agentos.controller-dispatch/v0.1',
-            'ok': True,
-            'node_id': node_id,
-            'task_id': task_id,
-            'action': action,
-            'queued_at': queued.get('queued_at'),
-            'state': 'queued',
-            'reused': False,
+            'schema': 'agentos.controller-dispatch/v0.1', 'ok': True, 'node_id': node_id,
+            'task_id': task_id, 'action': action, 'queued_at': queued.get('queued_at'),
+            'state': 'queued', 'reused': False,
         }
 
     def discover(self, node_id: str) -> dict[str, Any]:
