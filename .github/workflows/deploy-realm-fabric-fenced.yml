@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/deploy-realm-fabric-fenced.yml'
       - 'scripts/patch_realm_fabric_deployment_fence.py'
+      - 'scripts/patch_realm_fabric_lease_immutability.py'
       - 'scripts/patch_action_relay_receipt_envelope.py'
       - 'scripts/install_realm_fabric_via_action_relay.py'
 
@@ -14,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: realm-fabric-fenced-deploy
+  group: realm-fabric-deployment-authority
   cancel-in-progress: false
 
 jobs:
@@ -33,9 +34,11 @@ jobs:
           git reset --hard origin/main
           python3 scripts/patch_action_relay_receipt_envelope.py
           python3 scripts/patch_realm_fabric_deployment_fence.py
+          python3 scripts/patch_realm_fabric_lease_immutability.py
           python3 -m py_compile agentos_node/action_relay.py
           grep -q 'governed_receipt_reserved_fields_v1' agentos_node/action_relay.py
           grep -q 'realm_fabric_deployment_fence_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_lease_immutability_v1' agentos_node/action_relay.py
           grep -q 'agentos.realm-fabric.claim_deployment' agentos_node/action_relay.py
           grep -q 'agentos.realm-fabric.deployment_status' agentos_node/action_relay.py
           git config user.name 'github-actions[bot]'
@@ -66,6 +69,7 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           grep -q 'realm_fabric_deployment_fence_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_lease_immutability_v1' agentos_node/action_relay.py
           grep -q 'governed_receipt_reserved_fields_v1' agentos_node/action_relay.py
           echo "AGENTOS_REALM_FABRIC_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
@@ -75,6 +79,7 @@ jobs:
           set -euo pipefail
           runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
           if grep -q 'realm_fabric_deployment_fence_v1' "$runtime" 2>/dev/null \
+             && grep -q 'realm_fabric_lease_immutability_v1' "$runtime" 2>/dev/null \
              && grep -q 'governed_receipt_reserved_fields_v1' "$runtime" 2>/dev/null; then
             echo 'action_relay_deployment_fence=ALREADY_READY'
             exit 0
@@ -87,6 +92,7 @@ jobs:
           chmod 700 "$tmp"
           bash "$tmp"
           grep -q 'realm_fabric_deployment_fence_v1' "$runtime"
+          grep -q 'realm_fabric_lease_immutability_v1' "$runtime"
           grep -q 'governed_receipt_reserved_fields_v1' "$runtime"
           echo 'action_relay_deployment_fence=READY_AFTER_REFRESH'
 
@@ -132,7 +138,6 @@ jobs:
           state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text())
           before=state['observed_core_commit']
           client=ActionRelayClient(spool)
-          # Old callers supplied only source_commit. New primitive must reject before any restart.
           payload=client.submit('agentos.realm-fabric.install_release', {'source_commit':'6ea6276f6b0dc065667853dbde05e6712193b380'})
           deadline=time.time()+60
           receipt=None
