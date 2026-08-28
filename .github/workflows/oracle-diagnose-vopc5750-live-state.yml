@@ -1,0 +1,49 @@
+name: Oracle Diagnose vopc5750 Live State
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-diagnose-vopc5750-live-state.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Inspect live vopc5750 state
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          node_id='vopc5750'
+          fabric=RealmFabricStore().load()
+          registry=NodeRegistry().node_map()
+          node=next((n for n in registry.get('nodes',[]) if n.get('node_id')==node_id), None)
+          pending=list(fabric.get('tasks',{}).get(node_id,[]))
+          receipts=fabric.get('receipts',{})
+          relevant_receipts={k:v for k,v in receipts.items() if str(v.get('node_id') or '')==node_id}
+          print(json.dumps({
+            'node': node,
+            'fabric_node': fabric.get('nodes',{}).get(node_id),
+            'pending_task_count': len(pending),
+            'pending_tasks': pending[-10:],
+            'recent_receipts': list(relevant_receipts.values())[-10:],
+          }, ensure_ascii=False, indent=2, sort_keys=True))
+          PY
