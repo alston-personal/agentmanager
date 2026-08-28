@@ -219,6 +219,47 @@ def _ensure_arcanaforge_remote(params: dict[str, Any]) -> dict[str, Any]:
     )
     return {"ok": ok, "repository": repo, "created": created, "auth": auth, "view": view, "create": create}
 
+
+def _ensure_layoutlib_remote(params: dict[str, Any]) -> dict[str, Any]:
+    """Ensure the one allowlisted LayoutLib repository exists as private.
+
+    This capability is intentionally narrow: no arbitrary repository name,
+    visibility, description, command, or shell text is accepted. Execution is
+    performed only by the ubuntu Action Relay GitHub identity.
+    """
+    if params not in ({}, {"repository": "alston-personal/layoutlib"}):
+        raise ValueError("unexpected parameters")
+    repo = "alston-personal/layoutlib"
+    description = "LayoutLib spatial layout library with the Layout Lab reference demo"
+    auth = _run(["/usr/bin/gh", "auth", "status"], cwd=Path.home(), timeout=20)
+    if auth["returncode"] != 0:
+        return {"ok": False, "repository": repo, "auth": auth, "created": False, "error": "ubuntu GitHub identity is not authenticated"}
+
+    view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,isPrivate,description"], cwd=Path.home(), timeout=20)
+    created = False
+    create = None
+    if view["returncode"] != 0:
+        create = _run([
+            "/usr/bin/gh", "repo", "create", repo,
+            "--private",
+            "--description", description,
+        ], cwd=Path.home(), timeout=30)
+        if create["returncode"] != 0:
+            return {"ok": False, "repository": repo, "auth": auth, "view_before": view, "create": create, "created": False}
+        created = True
+        view = _run(["/usr/bin/gh", "repo", "view", repo, "--json", "nameWithOwner,isPrivate,description"], cwd=Path.home(), timeout=20)
+
+    try:
+        meta = json.loads(view.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    ok = (
+        view["returncode"] == 0
+        and meta.get("nameWithOwner") == repo
+        and meta.get("isPrivate") is True
+    )
+    return {"ok": ok, "repository": repo, "created": created, "auth": auth, "view": view, "create": create}
+
 def _seed_verify_studio_web_remote(params: dict[str, Any]) -> dict[str, Any]:
     """Push the one governed Studio Web checkout and prove remote rebuildability."""
     if params not in ({}, {"repository": "alston-personal/studio-web"}):
@@ -349,6 +390,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "layoutlab.static.deploy": _layoutlab_static_deploy,
     "github.repo.ensure_studio_web": _ensure_studio_web_remote,
     "github.repo.ensure_arcanaforge": _ensure_arcanaforge_remote,
+    "github.repo.ensure_layoutlib": _ensure_layoutlib_remote,
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
