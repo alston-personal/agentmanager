@@ -130,6 +130,31 @@ class ThinClientTransport:
         query = urllib.parse.urlencode({'node_id': self.config.node_id})
         return self._request(self.config.one_url + '/v1/bootstrap?' + query, token=self.config.node_token)
 
+    def resolve(self, project: str, *, intent: str = 'continue') -> dict[str, Any]:
+        """Resolve canonical project continuation state through ONE.
+
+        The client does not inspect GitHub, local workspaces, application identity
+        registries, or memory files to reconstruct project truth. ONE/AgentOS is
+        the authority for composing the continuation envelope.
+        """
+        if not self.config:
+            raise RuntimeError('client is not enrolled')
+        project = str(project or '').strip()
+        if not project:
+            raise ValueError('project is required')
+        body = {
+            'schema': 'agentos.resolve-request/v1',
+            'node_id': self.config.node_id,
+            'intent': intent,
+            'project': project,
+        }
+        return self._request(
+            self.config.one_url + '/v1/resolve',
+            method='POST',
+            body=body,
+            token=self.config.node_token,
+        )
+
     def submit_benchmark(self, report: dict[str, Any]) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
