@@ -17,14 +17,14 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 10
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
       SOURCE_SHA: 9b9c3b3630a808c6020ce83657f23f479969095f
+      DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,17 +32,6 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Derive deploy host
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${N8N_BASE_URL:-}"
-          DEPLOY_HOST="${N8N_BASE_URL#*://}"
-          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
-          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-          test -n "$DEPLOY_HOST"
-          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
 
       - name: Build pinned canonical Studio Web and publish narrow scope
         shell: bash
