@@ -3,41 +3,54 @@
 Status: RELEASE COMPLETE — production closed loop deployed and editor semantic ownership corrected
 Date: 2026-08-27
 
-## Canonical project identity
+## Project identity incident quarantine
 
-This section is the authoritative locator for cross-session/project recovery. Agents must resolve this identity before searching for a repository named `layoutlib`.
+The project-locator block added by commit `27997624b40e34c1e3965fe92a5e6a8a61912a15` is **not authoritative** for Project Identity or Source Authority.
 
-- Canonical project id: `layoutlib`
-- Human aliases: `LayoutLib`, `3D LayoutLib`, `Layout Lab`
-- Product/library distinction: `LayoutLib` is the semantic/execution library; `Layout Lab` is its browser demo/validation and production surface.
-- Source repository: `alston-personal/agentmanager`
-- Canonical branch: `main`
-- Source-of-truth execution state: `docs/LAYOUTLIB_V0_7_EXECUTION_STATE.md`
-- Production release: `v0.7.9`
-- Production URL: `https://studio.milkcat.org/layout-lab/`
-- Release workflow: `.github/workflows/oracle-release-layoutlab-v07.yml`
-- Workflow display name: `Oracle Release Layout Lab v0.7`
-- Verified successful v0.7.9 release run: `33044098450`
-- Governed Oracle action runtime root: `/home/ubuntu/.local/share/agentos/action-runtime`
-- Runtime refresh receipt: `/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v07.json`
-- Production static publish target: `/home/ubuntu/zeus-writer/website/dist/layout-lab`
-- Capability gateway: `127.0.0.1:8767`
-- Historical parser demo boundary: `127.0.0.1:8766`
-- Standalone studio-web candidate checkout: `/home/agentos-node/projects/studio-web` (not production cutover; do not confuse with the production publish target)
+That commit incorrectly promoted a recovery inference into canonical truth by declaring `alston-personal/agentmanager` to be the LayoutLib source repository. The repository currently contains substantial LayoutLib/Layout Lab history and was used by historical release workflows, but that fact alone does not prove it is the intended canonical project repository.
 
-Important commit lineage:
+Until AgentOS resolves LayoutLib through a complete Governance Directory `project://layoutlib` entity, agents must treat the following as historical/observed deployment evidence only:
+
+- observed project id/alias candidates: `layoutlib`, `LayoutLib`, `3D LayoutLib`, `Layout Lab`;
+- observed source-history location: `alston-personal/agentmanager`;
+- observed branch used by historical release flow: `main`;
+- observed production release: `v0.7.9`;
+- observed production URL: `https://studio.milkcat.org/layout-lab/`;
+- observed release workflow: `.github/workflows/oracle-release-layoutlab-v07.yml`;
+- observed successful v0.7.9 release run: `33044098450`;
+- observed governed Oracle action runtime root: `/home/ubuntu/.local/share/agentos/action-runtime`;
+- observed runtime refresh receipt: `/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-layoutlab-v07.json`;
+- observed production static publish target: `/home/ubuntu/zeus-writer/website/dist/layout-lab`;
+- observed capability gateway: `127.0.0.1:8767`;
+- observed historical parser demo boundary: `127.0.0.1:8766`;
+- observed standalone studio-web candidate checkout: `/home/agentos-node/projects/studio-web`.
+
+These locations represent different concepts and must not be collapsed:
+
+`Canonical Project Path != Runtime Path != Deployment Target != Web Publish Directory`
+
+Likewise, `LayoutLib` is the semantic/execution library while `Layout Lab` is a reference/demo/validation surface. The demo surface must not become project identity authority.
+
+### Mutation gate
+
+Until Project Resolution Integrity is complete, project mutation must stop. A valid resolver result must provide canonical:
+
+- project identity/aliases;
+- source repository;
+- branch;
+- checkout path;
+- owning node;
+- state/checkpoint authority.
+
+The Core resolver exposes this through `agentos.project-resolution/v1` and `integrity.mutation_allowed`. Historical commit locations, deploy scripts, website publish paths, model memory, and application identity files must not be used to fill missing authority fields.
+
+Important historical commit lineage remains useful as evidence, not identity authority:
 
 - `8dd61bc9664db7867db5d3cdf51da1b0a2162443` — earlier Layout Lab source baseline during studio-web separation work.
 - `f16fdf3648648ef79ceeeb60c6d27a1251185874` — drag-to-move wired through `LayoutLibEditor`.
 - `3ad667f1a20dd6ffdb76750d4fec8fb5e06f647a` — preserve v0.7 UI adapter identity contract.
 - `cc5ea0106fa41fd7429c693b0a7f60a09577de6d` — record library ownership correction and v0.7.9.
 - `e8efc4ed7cbd41839f960373f79c5fb6a5f82375` — improve door evidence with leaf and swing geometry; latest recovered LayoutLib semantic work checkpoint from 2026-08-27.
-
-Recovery rule:
-
-`project alias -> canonical id layoutlib -> alston-personal/agentmanager@main -> this execution-state file -> workflow/runtime/publish locators -> latest layoutlib commit lineage`
-
-Do **not** infer that a repository named `layoutlib` must exist. Do **not** treat `/home/agentos-node/projects/studio-web` as the production checkout. The production release is built from `agentmanager@main`, refreshed into the governed runtime, then published to `/home/ubuntu/zeus-writer/website/dist/layout-lab`.
 
 ## Goal
 
