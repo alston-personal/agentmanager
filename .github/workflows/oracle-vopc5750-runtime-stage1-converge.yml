@@ -1,0 +1,119 @@
+name: Oracle vopc5750 Runtime Stage1 Converge
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-runtime-stage1-converge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  converge:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Queue non-disruptive runtime stage
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          REF=$(git rev-parse HEAD)
+          python3 - "$REF" <<'PY' >/tmp/vopc5750-stage1-task.txt
+          import re,sys,time
+          from agent_core.realm_fabric import RealmFabricStore
+          ref=sys.argv[1]
+          assert re.fullmatch(r'[0-9a-f]{40}',ref)
+          node='vopc5750'
+          tid='runtime-stage1-'+node+'-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $base='https://raw.githubusercontent.com/alston-personal/agentmanager/REF'
+          $files=@(
+            'agentos_node/thin_client.py',
+            'agentos_node/runtime_provenance.py',
+            'agentos_node/interactive_desktop.py',
+            'agentos_node/thin_client_transport.py',
+            'agentos_node/client_cli.py',
+            'agentos_node/agent_surfaces.py',
+            'agentos_node/session_bridge.py',
+            'agentos_node/onboarding.py'
+          )
+          foreach($rel in $files){
+            $dest=Join-Path $install ($rel -replace '/','\')
+            $parent=Split-Path -Parent $dest
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
+          }
+          $prov=[ordered]@{
+            schema='agentos.thin-client-runtime/v0.1'
+            source_ref='feature/realm-node-fabric-readiness'
+            source_commit='REF'
+            installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            install_mode='stage1-preserve-running-client'
+          }
+          $prov | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $install 'runtime-provenance.json')
+
+          $watchdogName='AgentOS Thin Client Watchdog'
+          $watchdog=Join-Path $install 'agentos-thin-client-watchdog.ps1'
+          $watchdogState='existing'
+          if ($null -eq (Get-ScheduledTask -TaskName $watchdogName -ErrorAction SilentlyContinue)) {
+            @"
+          `$ErrorActionPreference='Stop'
+          `$taskName='AgentOS Thin Client'
+          `$task=Get-ScheduledTask -TaskName `$taskName -ErrorAction SilentlyContinue
+          if (`$null -eq `$task) { exit 2 }
+          if (`$task.State -ne 'Running') {
+            Start-ScheduledTask -TaskName `$taskName
+            Start-Sleep -Seconds 3
+            `$state=(Get-ScheduledTask -TaskName `$taskName).State
+            if (`$state -ne 'Running') { exit 3 }
+          }
+          exit 0
+          "@ | Set-Content -Encoding UTF8 -Path $watchdog
+            $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`"" -WorkingDirectory $install
+            $watchdogTrigger=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+            $watchdogSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+            Register-ScheduledTask -TaskName $watchdogName -Action $watchdogAction -Trigger $watchdogTrigger -Settings $watchdogSettings -Description 'AgentOS OS-level watchdog; restarts Thin Client when it is not running' | Out-Null
+            $watchdogState='created'
+          }
+          Write-Output 'agentos_runtime_stage1=PASS'
+          Write-Output ('agentos_source_commit=REF')
+          Write-Output ('agentos_watchdog_state=' + $watchdogState)
+          '''.replace('REF',ref)
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':90,'cognition_ids_used':[]}
+          RealmFabricStore().queue_task(node,task)
+          print(tid)
+          PY
+      - name: Wait for stage receipt
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TASK=$(cat /tmp/vopc5750-stage1-task.txt)
+          for i in $(seq 1 60); do
+            python3 - "$TASK" <<'PY' && exit 0 || true
+          import json,sys
+          from agent_core.realm_fabric import RealmFabricStore
+          r=RealmFabricStore().get_receipt(sys.argv[1])
+          if not r: raise SystemExit(1)
+          print(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True))
+          if r.get('ok') is True and int(r.get('returncode') or 0)==0 and 'agentos_runtime_stage1=PASS' in str(r.get('stdout') or ''):
+              raise SystemExit(0)
+          raise SystemExit(2)
+          PY
+            sleep 2
+          done
+          echo 'stage1 receipt timeout' >&2
+          exit 1
