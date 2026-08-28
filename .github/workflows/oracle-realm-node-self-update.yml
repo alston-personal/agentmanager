@@ -2,11 +2,13 @@ name: Oracle Realm Node Self Update
 
 on:
   push:
+    branches:
+      - feature/realm-node-fabric-readiness
     paths:
       - '.agentos/commands/realm-node-self-update.json'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: oracle-realm-node-self-update
@@ -60,6 +62,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path $parent | Out-Null
             Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri "$base/$rel" -OutFile $dest
           }
+
           $launcher=Join-Path $install 'agentos-client.cmd'
           $taskName='AgentOS Thin Client'
           $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$launcher`" run" -WorkingDirectory $install
@@ -67,15 +70,38 @@ jobs:
           $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
           Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
 
-          # Do not Start-ScheduledTask while this update is still executing inside the
-          # currently-running scheduled-task instance. Windows may ignore the start,
-          # after which killing the old daemon leaves the node offline. Instead, let
-          # this command return its receipt first, then use a detached helper to stop
-          # the old scheduled-task instance and start a fresh one.
+          # Independent OS-level watchdog. It does not depend on ONE or the Thin Client,
+          # so a dead Thin Client can recover without remote intervention.
+          $watchdog=Join-Path $install 'agentos-thin-client-watchdog.ps1'
+          @"
+          `$ErrorActionPreference='Stop'
+          `$taskName='AgentOS Thin Client'
+          `$task=Get-ScheduledTask -TaskName `$taskName -ErrorAction SilentlyContinue
+          if (`$null -eq `$task) { exit 2 }
+          if (`$task.State -ne 'Running') {
+            Start-ScheduledTask -TaskName `$taskName
+            Start-Sleep -Seconds 3
+            `$state=(Get-ScheduledTask -TaskName `$taskName).State
+            if (`$state -ne 'Running') { exit 3 }
+          }
+          exit 0
+          "@ | Set-Content -Encoding UTF8 -Path $watchdog
+
+          $watchdogName='AgentOS Thin Client Watchdog'
+          $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`"" -WorkingDirectory $install
+          $watchdogTrigger=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+          $watchdogSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
+          Register-ScheduledTask -TaskName $watchdogName -Action $watchdogAction -Trigger $watchdogTrigger -Settings $watchdogSettings -Description 'AgentOS OS-level watchdog; restarts Thin Client when it is not running' -Force | Out-Null
+
+          # Let this task return its receipt before replacing the currently executing
+          # Thin Client instance. Even if the deferred restart fails, the watchdog will
+          # independently recover it within one minute.
           $restart = "Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$taskName'"
           Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
+
           Write-Output ('agentos_runtime_ref=REF')
           Write-Output 'agentos_restart=deferred-stop-start'
+          Write-Output 'agentos_watchdog=installed'
           '''.replace('REF',ref)
           task_id='self-update-runtime-'+node_id+'-'+str(int(time.time()))
           task={
@@ -95,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           TASK=$(python3 -c "import json; print(json.load(open('/tmp/realm-node-self-update-result.json'))['task']['task_id'])")
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             python3 - "$TASK" <<'PY' && exit 0 || true
           import sys
           from agent_core.realm_fabric import RealmFabricStore
@@ -111,17 +137,10 @@ jobs:
           echo 'self update receipt timeout' >&2
           exit 1
 
-      - name: Publish non-secret evidence
+      - name: Report non-secret evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           test -f /tmp/realm-node-self-update-result.json || exit 0
-          mkdir -p .agentos/evidence
-          cp /tmp/realm-node-self-update-result.json .agentos/evidence/realm-node-self-update-current.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-node-self-update-current.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record first-node runtime self update'
-          git push origin HEAD:main
+          cat /tmp/realm-node-self-update-result.json
