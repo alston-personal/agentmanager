@@ -1,0 +1,92 @@
+name: Character Blueprint Benchmark Capture
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/character-blueprint-benchmark.yml'
+      - 'scripts/character_blueprint_benchmark_capture.mjs'
+      - 'benchmarks/character-blueprint/benchmark-v0.1.json'
+      - 'benchmarks/character-blueprint/providers-v0.1.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: character-blueprint-benchmark
+  cancel-in-progress: true
+
+jobs:
+  capture-character-blueprint-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate benchmark contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path('benchmarks/character-blueprint/benchmark-v0.1.json').read_text())
+          providers=json.loads(Path('benchmarks/character-blueprint/providers-v0.1.json').read_text())
+          assert manifest['schema']=='character-blueprint-benchmark/v0.1'
+          assert providers['schema']=='character-blueprint-benchmark-providers/v0.1'
+          assert {'character-blueprint','meshy','rodin','tripo'} <= set(providers['providers'])
+          assert manifest['evidence_views']==['front','yaw45','right','back']
+          print('character_blueprint_benchmark_contract=PASS')
+          PY
+
+      - name: Install Playwright Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Fetch frozen baseline fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE=/tmp/character-blueprint-benchmark-person.jpg
+          curl -fL --retry 5 --retry-delay 2 \
+            'https://upload.wikimedia.org/wikipedia/commons/c/c3/Man-standing.jpg' \
+            -o "$FIXTURE"
+          test "$(wc -c < "$FIXTURE")" -gt 10000
+          file "$FIXTURE" | grep -qi 'JPEG image data'
+          sha256sum "$FIXTURE"
+
+      - name: Capture public Character Blueprint baseline
+        shell: bash
+        env:
+          CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/character-blueprint-benchmark-person.jpg
+          CHARACTER_BLUEPRINT_CASE_ID: real-person-fullbody
+          CHARACTER_BLUEPRINT_BENCHMARK_OUT: benchmark-artifacts/character-blueprint/real-person-fullbody/v0.5
+        run: |
+          set -euo pipefail
+          node scripts/character_blueprint_benchmark_capture.mjs | tee /tmp/character-blueprint-benchmark.json
+          grep -q '"ok": true' /tmp/character-blueprint-benchmark.json
+          grep -q 'character-blueprint-benchmark-capture/v0.1' /tmp/character-blueprint-benchmark.json
+          OUT=benchmark-artifacts/character-blueprint/real-person-fullbody/v0.5
+          test -s "$OUT/result.json"
+          test -s "$OUT/character-ir.json"
+          for view in front yaw45 right back; do test -s "$OUT/$view.png"; done
+          grep -q 'character-blueprint-ir/v0.5' "$OUT/character-ir.json"
+          grep -q 'threejs-silhouette-envelope/v0.5' "$OUT/result.json"
+          echo 'character_blueprint_benchmark_baseline=PASS'
+
+      - name: Upload benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-blueprint-benchmark-real-person-fullbody-v05
+          path: benchmark-artifacts/character-blueprint/real-person-fullbody/v0.5/
+          if-no-files-found: error
+          retention-days: 30
