@@ -1019,6 +1019,47 @@ def _install_realm_fabric_release(params: dict[str, Any]) -> dict[str, Any]:
             _run(['git', '-c', f'safe.directory={repo}', '-C', str(repo), 'worktree', 'remove', '--force', str(checkout)], cwd=repo, timeout=30)
             _deployment_guard.close()
 
+
+# realm_fabric_service_attestation_v1
+def _inspect_realm_fabric_service(params: dict[str, Any]) -> dict[str, Any]:
+    if params not in ({},):
+        raise ValueError('unexpected parameters')
+    steps=[]
+    show=_run([
+        'systemctl','--user','show','agentos-realm-fabric.service',
+        '--property=ActiveState','--property=SubState','--property=MainPID',
+        '--property=ExecMainStatus','--property=ExecMainCode','--property=ExecStart',
+    ], cwd=Path.home(), timeout=15)
+    steps.append({'step':'systemd_show',**show})
+    status=_run(['systemctl','--user','status','agentos-realm-fabric.service','--no-pager','-l'], cwd=Path.home(), timeout=15)
+    steps.append({'step':'systemd_status',**status})
+    proc=_run(['pgrep','-af','agent_core.realm_cli serve'], cwd=Path.home(), timeout=10)
+    steps.append({'step':'processes',**proc})
+    log_path=Path('/home/ubuntu/agent-data/logs/realm-fabric.log')
+    log_tail=''
+    if log_path.is_file():
+        try:
+            lines=log_path.read_text(encoding='utf-8',errors='replace').splitlines()
+            log_tail='\n'.join(lines[-160:])[-20000:]
+        except OSError as exc:
+            log_tail=type(exc).__name__+': '+str(exc)
+    fields={}
+    for raw in (show.get('stdout') or '').splitlines():
+        if '=' in raw:
+            k,v=raw.split('=',1); fields[k]=v
+    return {
+        'ok': True,
+        'service': 'agentos-realm-fabric.service',
+        'configured_core_commit': _observed_realm_commit(),
+        'active_state': fields.get('ActiveState'),
+        'sub_state': fields.get('SubState'),
+        'main_pid': int(fields.get('MainPID') or 0),
+        'exec_main_status': fields.get('ExecMainStatus'),
+        'exec_main_code': fields.get('ExecMainCode'),
+        'log_tail': log_tail,
+        'steps': steps,
+    }
+
 def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "layoutlab-api"}): raise ValueError("unexpected parameters")
     return _restart_user_service("layoutlab-api.service")
@@ -1041,6 +1082,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "agentos.antigravity.restart": _antigravity_restart,
     "agentos.realm-fabric.claim_deployment": _claim_realm_fabric_deployment,
     "agentos.realm-fabric.deployment_status": _realm_fabric_deployment_status,
+    "agentos.realm-fabric.inspect_service": _inspect_realm_fabric_service,
     "agentos.realm-fabric.advance_deployment": _advance_realm_fabric_deployment,
     "agentos.realm-fabric.install_release": _install_realm_fabric_release,
     "agentos.project.register_core": _register_agentos_core_project,
