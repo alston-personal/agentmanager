@@ -1,0 +1,93 @@
+name: Oracle Release Layout Lab v0.8 Dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-layoutlab-v08-dev.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layoutlab-v08-dev
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy canonical LayoutLib semantic editor preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE'
+          set -euo pipefail
+          TMP=$(mktemp -d /tmp/layoutlab-v08-dev-XXXXXX)
+          trap 'rm -rf "$TMP"' EXIT
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone alston-personal/layoutlib "$TMP/layoutlib" -- --depth=1
+          LL="$TMP/layoutlib"
+          LL_SHA=$(/usr/bin/git -C "$LL" rev-parse HEAD)
+          REL="$LL/release/v0.7.9"
+          TARGET=/home/ubuntu/zeus-writer/website/dist/layout-lab-dev
+          test -f "$REL/manifest.json"
+          test -f "$LL/src/semantic-editor.js"
+          test -f "$LL/examples/layout-lab/semantic-tools.js"
+          rm -rf "$TARGET" && mkdir -p "$TARGET"
+          install -m 0644 "$REL/layoutlab_v0_5.html" "$TARGET/index.html"
+          for f in layoutlib-browser-v0.5.js layoutlib-spatial-semantics-v0.1.js layoutlib-editor-v0.7.js layoutlab-editor-ui-v0.7.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
+            install -m 0644 "$REL/$f" "$TARGET/$f"
+          done
+          install -m 0644 "$LL/src/semantic-editor.js" "$TARGET/semantic-editor.js"
+          install -m 0644 "$LL/examples/layout-lab/semantic-tools.js" "$TARGET/semantic-tools.js"
+          python3 - "$TARGET/index.html" "$LL_SHA" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); sha=sys.argv[2]
+          text=p.read_text()
+          tags='''
+          <script src="./layoutlib-spatial-semantics-v0.1.js"></script>
+          <script src="./layoutlib-editor-v0.7.js"></script>
+          <script src="./layoutlab-editor-ui-v0.7.js"></script>
+          <script src="./layoutlab-capability-bridge-v0.7.js"></script>
+          <script src="./semantic-editor.js?v=0.8-dev"></script>
+          <script src="./layoutlab-v0.7-release-fix.js?v=0.7.9"></script>
+          <script src="./semantic-tools.js?v=0.8-dev"></script>
+          <meta name="layoutlib-commit" content="'''+sha+'''">
+          '''
+          if 'semantic-tools.js?v=0.8-dev' not in text:
+              text=text.replace('</body>',tags+'\n</body>')
+          p.write_text(text)
+          PY
+          chmod 0755 "$TARGET"; chmod 0644 "$TARGET"/*
+          echo "layoutlib_commit=$LL_SHA"
+          echo "layoutlab_v08_dev_deploy=PASS"
+          REMOTE
+      - name: Public v0.8 dev acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org/layout-lab-dev
+          curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v08-dev
+          curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-editor.js?v=0.8-dev" -o /tmp/layoutlib-semantic-editor
+          curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-tools.js?v=0.8-dev" -o /tmp/layoutlab-semantic-tools
+          grep -q 'semantic-editor.js?v=0.8-dev' /tmp/layoutlab-v08-dev
+          grep -q 'semantic-tools.js?v=0.8-dev' /tmp/layoutlab-v08-dev
+          grep -q 'LayoutLib Semantic Editor v0.8.0-dev' /tmp/layoutlib-semantic-editor
+          grep -q "doorButton.textContent='＋ 門'" /tmp/layoutlab-semantic-tools
+          grep -q "windowButton.textContent='＋ 窗'" /tmp/layoutlab-semantic-tools
+          grep -q "badge.textContent='v0.8-dev'" /tmp/layoutlab-semantic-tools
+          echo 'public_layoutlab_v08_dev=PASS'
