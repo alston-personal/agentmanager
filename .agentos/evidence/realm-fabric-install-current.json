@@ -1,7 +1,7 @@
 {
   "action": "agentos.realm-fabric.install_release",
-  "capsule_id": "action-5bbd316c6b134254aaa1b8515a4821ac",
-  "completed_at": "2026-08-28T06:43:24Z",
+  "capsule_id": "action-990104709d5947fcaa08cd85e01157c1",
+  "completed_at": "2026-08-28T06:47:23Z",
   "current": "/home/ubuntu/.local/share/agentos/realm-fabric/current",
   "current_pointer_mode": "legacy_directory_preserved",
   "endpoint": "http://127.0.0.1:8780",
@@ -10,20 +10,20 @@
     "body": "{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}",
     "status": 200
   },
-  "main_pid_after": 1787887,
-  "main_pid_before": 1787692,
+  "main_pid_after": 1791404,
+  "main_pid_before": 1787887,
   "ok": true,
   "process_identity_attested": true,
   "realm_id": "realm-alston",
-  "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/b4fcd8ef16cc10335d4d5a756279b74777f28253",
+  "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/7d1d2be9ec07f21862568eb58944abe1258d994e",
   "resolve_auth_probe": {
     "body": "{\"error\": \"PermissionError: missing bearer credential\", \"ok\": false}",
     "status": 401
   },
   "schema": "agentos.action-receipt/v1",
   "service": "agentos-realm-fabric.service",
-  "source_commit": "b4fcd8ef16cc10335d4d5a756279b74777f28253",
-  "started_at": "2026-08-28T06:43:22Z",
+  "source_commit": "7d1d2be9ec07f21862568eb58944abe1258d994e",
+  "started_at": "2026-08-28T06:47:21Z",
   "steps": [
     {
       "argv": [
@@ -34,10 +34,10 @@
         "/home/ubuntu/agentmanager",
         "fetch",
         "origin",
-        "b4fcd8ef16cc10335d4d5a756279b74777f28253"
+        "7d1d2be9ec07f21862568eb58944abe1258d994e"
       ],
       "returncode": 0,
-      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            b4fcd8ef16cc10335d4d5a756279b74777f28253 -> FETCH_HEAD\n",
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            7d1d2be9ec07f21862568eb58944abe1258d994e -> FETCH_HEAD\n",
       "stdout": "",
       "step": "fetch_source_commit"
     },
@@ -51,17 +51,17 @@
         "worktree",
         "add",
         "--detach",
-        "/tmp/realm-fabric-release-uzrizjho/source",
-        "b4fcd8ef16cc10335d4d5a756279b74777f28253"
+        "/tmp/realm-fabric-release-z8pe3z8k/source",
+        "7d1d2be9ec07f21862568eb58944abe1258d994e"
       ],
       "returncode": 0,
       "stderr": "",
-      "stdout": "Preparing worktree (detached HEAD b4fcd8e)\nHEAD is now at b4fcd8e fix(agentos): bind project registration to deployed Core release\n",
+      "stdout": "Preparing worktree (detached HEAD 7d1d2be)\nHEAD is now at 7d1d2be fix(agentos): repair Governance shared write boundary\n",
       "step": "materialize_source"
     },
     {
       "argv": [
-        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/b4fcd8ef16cc10335d4d5a756279b74777f28253/bin/agentos-one",
+        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/7d1d2be9ec07f21862568eb58944abe1258d994e/bin/agentos-one",
         "--help"
       ],
       "returncode": 0,
@@ -71,7 +71,7 @@
     },
     {
       "argv": [
-        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/b4fcd8ef16cc10335d4d5a756279b74777f28253/bin/agentos-one",
+        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/7d1d2be9ec07f21862568eb58944abe1258d994e/bin/agentos-one",
         "init",
         "--realm-id",
         "realm-alston"
@@ -105,13 +105,8 @@
       "step": "enable_service"
     },
     {
-      "main_pid_before": 1787692,
+      "main_pid_before": 1787887,
       "observations": [
-        {
-          "returncode": 3,
-          "state": "deactivating",
-          "stderr": ""
-        },
         {
           "returncode": 0,
           "state": "active",
