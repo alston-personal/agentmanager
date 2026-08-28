@@ -157,3 +157,5 @@ jobs:
           grep -q 'visibility-gated-v0.4.1' /tmp/character-blueprint-browser-smoke.json
           grep -q '"coverage": "upper_body"' /tmp/character-blueprint-browser-smoke.json
           echo 'character_blueprint_browser_e2e=PASS'
+
+# Authoritative browser E2E release trigger.
