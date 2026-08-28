@@ -184,19 +184,108 @@ Canonical state / validated memory
 
 The Wiki/Palace should never silently overwrite canonical state. Promotion back into durable memory/state requires validation/provenance.
 
-## 8. Immediate Core priorities exposed by this review
+## 8. ChatGPT Web -> ONE -> AgentOS canonical query path
 
-1. Query the **live** NodeRegistry and publish its output as the authoritative Realm Node Map.
-2. Verify whether PC and ChatGPT Web are actually enrolled nodes versus conceptual surfaces.
-3. Audit Governance Directory `kind=project` entries and project resolver behavior before creating any new Project Registry.
-4. Reconcile the operational `agentos.ir/v1` continuation envelope with the research-level Cognitive IR definition.
-5. Audit L1/L2/L3 memory code/data paths and explicitly map them to current State/Cognition/Work architecture.
-6. Decide whether Wiki/Memory Palace remain named subsystems or become projections/indexes over the memory/state system.
-7. Add Event/Trigger/Attention Fabric and the cognition-to-reflex promotion pipeline before attempting broad autonomous node cognition.
-8. Define evidence thresholds and governance rules for promoting repeated cognitive solutions into reusable capabilities/reflexes.
-9. Build Core Console only after the underlying registry/read APIs are authoritative; start read-only.
+A cross-chat failure exposed an architectural error: a ChatGPT conversation attempted to understand AgentOS by searching the `agentmanager` GitHub source tree and discovering implementation details such as `register_project.py`. This is the wrong control-plane path.
 
-## 9. Anti-drift rule
+The normal continuation path must be:
+
+```text
+user says "continue" / names a project
+        -> ChatGPT Web Node
+        -> ONE
+        -> AgentOS Gateway
+        -> canonical resolver(s)
+        -> current project/session + canonical state + execution head + capabilities
+        -> cognitive executor continues work
+```
+
+GitHub, Oracle workspaces, `my-agent-data`, receipts, SQLite/JSON stores, scripts, and source code are **behind AgentOS** as implementation, evidence, or world-state sources. They are not the cognitive executor's primary route for rediscovering what AgentOS is or what project is current.
+
+The cognitive surface should not need to know whether a resolver is implemented with `register_project.py`, SQLite, JSON, GitHub Actions, a daemon, or another backend. A target interface is conceptually similar to:
+
+```text
+agentos.resolve(user_intent)
+```
+
+returning a canonical envelope such as:
+
+```yaml
+project:
+  id: metashield-protocol
+  aliases: [chamber, echo]
+active_goal: ...
+execution_head:
+  node: ...
+  workspace: ...
+  branch: ...
+  commit: ...
+capabilities:
+  project_registry: available
+  continuation_state: available
+  execution_receipt: available
+next_action: ...
+```
+
+### Architectural invariant
+
+> **Use AgentOS; do not rediscover AgentOS from its source code.**
+
+Direct source/evidence inspection remains valid for debugging, verification, implementation work, or when AgentOS itself reports missing/ambiguous state. It must not be the default continuation mechanism.
+
+### Acceptance test for ChatGPT Web Node closure
+
+Open a completely new ChatGPT conversation, potentially on another computer, and enter only:
+
+```text
+繼續 metashield-protocol
+```
+
+**PASS:** the ChatGPT Web Node obtains through ONE/AgentOS, without rediscovery, at least:
+
+- canonical project ID and aliases (`metashield-protocol` / Chamber / Echo)
+- current active goal
+- current execution head
+- last relevant receipt/evidence pointer
+- available capabilities/authority relevant to continuation
+- next action / continuation state
+
+**FAIL:** the conversation must first search GitHub, search generic memory, guess the repository, ask whether Chamber/Echo means MetaShield, inspect AgentOS source code, or otherwise reconstruct project identity outside the AgentOS control plane.
+
+This acceptance test is device-independent: changing browser session or physical computer must not change the canonical project resolution result.
+
+### Priority correction
+
+`execution-head` work remains valuable but is a downstream subsystem. It must not be mistaken for the highest-priority closure item. The immediate architectural objective is the complete query path:
+
+```text
+ChatGPT Web Node
+        -> ONE
+        -> AgentOS Gateway
+             |- project.resolve
+             |- state.resolve
+             |- continuation.resolve
+             |- capability.resolve
+             `- execution_head.resolve
+```
+
+Only after this path is real can `/goal 把 chatgpt node 完成並接入 one` be considered closed.
+
+## 9. Immediate Core priorities exposed by this review
+
+1. **Close and prove the ChatGPT Web Node -> ONE -> AgentOS canonical query path.** This is now the highest-priority acceptance boundary.
+2. Query the **live** NodeRegistry and publish its output as the authoritative Realm Node Map.
+3. Verify whether PC and ChatGPT Web are actually enrolled nodes versus conceptual surfaces.
+4. Audit Governance Directory `kind=project` entries and project resolver behavior as inputs behind AgentOS, not as a substitute for using AgentOS.
+5. Ensure `project.resolve`, `state.resolve`, `continuation.resolve`, `capability.resolve`, and `execution_head.resolve` produce one canonical continuation envelope.
+6. Reconcile the operational `agentos.ir/v1` continuation envelope with the research-level Cognitive IR definition.
+7. Audit L1/L2/L3 memory code/data paths and explicitly map them to current State/Cognition/Work architecture.
+8. Decide whether Wiki/Memory Palace remain named subsystems or become projections/indexes over the memory/state system.
+9. Add Event/Trigger/Attention Fabric and the cognition-to-reflex promotion pipeline before attempting broad autonomous node cognition.
+10. Define evidence thresholds and governance rules for promoting repeated cognitive solutions into reusable capabilities/reflexes.
+11. Build Core Console only after the underlying registry/read APIs are authoritative; start read-only.
+
+## 10. Anti-drift rule
 
 Before implementing a new Core mechanism, ask:
 
@@ -205,3 +294,4 @@ Before implementing a new Core mechanism, ask:
 3. Is the proposed mechanism Core, research, or an application-specific consumer?
 4. What executable evidence will prove it works?
 5. Which canonical document must change with the implementation?
+6. Am I using AgentOS through its control plane, or bypassing it and reconstructing truth from GitHub/source/memory?
