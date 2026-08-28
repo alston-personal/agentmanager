@@ -8,6 +8,7 @@ on:
       - '.github/workflows/oracle-release-character-blueprint.yml'
       - 'web_assets/character-blueprint-poc.html'
       - 'scripts/deploy_character_blueprint_poc.py'
+      - 'scripts/character_blueprint_geometry_selftest.py'
 
 permissions:
   contents: read
@@ -47,6 +48,16 @@ jobs:
           grep -q '/poc/character-blueprint/' "$DEPLOY"
           echo 'character_blueprint_v041_source=PASS'
 
+      - name: Geometry regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/character_blueprint_geometry_selftest.py | tee /tmp/character-blueprint-regression.json
+          grep -q '"ok": true' /tmp/character-blueprint-regression.json
+          grep -q 'portrait_upperbody_regression_01' /tmp/character-blueprint-regression.json
+          grep -q '"coverage": "upper_body"' /tmp/character-blueprint-regression.json
+          echo 'character_blueprint_geometry_regression=PASS'
+
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -58,7 +69,7 @@ jobs:
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           STAGE=/tmp/character-blueprint-${GITHUB_RUN_ID}
-          tar czf - scripts/deploy_character_blueprint_poc.py web_assets/character-blueprint-poc.html \
+          tar czf - scripts/deploy_character_blueprint_poc.py scripts/character_blueprint_geometry_selftest.py web_assets/character-blueprint-poc.html \
           | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               "rm -rf '$STAGE' && mkdir -p '$STAGE' && tar xzf - -C '$STAGE'"
 
@@ -70,16 +81,19 @@ jobs:
           RECEIPT=/home/ubuntu/agent-data/runtime/action-relay/runtime-refresh-character-blueprint.json
           mkdir -p "$RUNTIME/scripts" "$RUNTIME/web_assets" "$(dirname "$RECEIPT")"
           install -m 0755 "$STAGE/scripts/deploy_character_blueprint_poc.py" "$RUNTIME/scripts/deploy_character_blueprint_poc.py"
+          install -m 0755 "$STAGE/scripts/character_blueprint_geometry_selftest.py" "$RUNTIME/scripts/character_blueprint_geometry_selftest.py"
           install -m 0644 "$STAGE/web_assets/character-blueprint-poc.html" "$RUNTIME/web_assets/character-blueprint-poc.html"
           python3 - "$RUNTIME" "$SHA" "$RECEIPT" <<'PY'
           import hashlib,json,sys
           from pathlib import Path
           root=Path(sys.argv[1]); sha=sys.argv[2]; receipt=Path(sys.argv[3])
-          rels=['scripts/deploy_character_blueprint_poc.py','web_assets/character-blueprint-poc.html']
+          rels=['scripts/deploy_character_blueprint_poc.py','scripts/character_blueprint_geometry_selftest.py','web_assets/character-blueprint-poc.html']
           data={'schema':'agentos.runtime-refresh-receipt/v1','ok':True,'scope':'character-blueprint-poc-v0.4.1','source_commit':sha,'runtime_root':str(root),'sha256':{r:hashlib.sha256((root/r).read_bytes()).hexdigest() for r in rels}}
           receipt.write_text(json.dumps(data,sort_keys=True,indent=2)+'\n'); print(json.dumps(data,sort_keys=True))
           PY
           cd "$RUNTIME"
+          /usr/bin/python3 scripts/character_blueprint_geometry_selftest.py | tee /tmp/character-blueprint-regression-runtime.json
+          grep -q '"ok": true' /tmp/character-blueprint-regression-runtime.json
           /usr/bin/python3 scripts/deploy_character_blueprint_poc.py | tee /tmp/character-blueprint-release.json
           grep -q '"ok": true' /tmp/character-blueprint-release.json
           grep -q 'character-blueprint-poc-v0.4.1' /tmp/character-blueprint-release.json
