@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/issue64-recover-controller-live.yml'
       - 'scripts/patch_realm_fabric_effective_unit_fence.py'
+      - 'scripts/patch_realm_fabric_deployment_renew.py'
 
 permissions:
   contents: write
@@ -23,22 +24,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Compile effective-unit deployment fence
+      - name: Compile effective-unit fence and lease renewal
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin main
           git reset --hard origin/main
           python3 scripts/patch_realm_fabric_effective_unit_fence.py
+          python3 scripts/patch_realm_fabric_deployment_renew.py
           python3 scripts/patch_bootstrap_control_controller_probe.py
           python3 -m py_compile agentos_node/action_relay.py agentos_node/bootstrap_control.py
           grep -q 'realm_fabric_effective_unit_fence_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_deployment_renew_v1' agentos_node/action_relay.py
+          grep -q 'agentos.realm-fabric.renew_deployment' agentos_node/action_relay.py
           grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' agentos_node/bootstrap_control.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add agentos_node/action_relay.py agentos_node/bootstrap_control.py
           if ! git diff --cached --quiet; then
-            git commit -m 'fix(agentos): fence effective Realm systemd generation'
+            git commit -m 'fix(agentos): compile Issue 64 deployment recovery contract'
             git pull --rebase origin main
             git push origin HEAD:main
           fi
@@ -61,6 +65,7 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
           grep -q 'realm_fabric_effective_unit_fence_v1' agentos_node/action_relay.py
+          grep -q 'realm_fabric_deployment_renew_v1' agentos_node/action_relay.py
           grep -q 'ACTION_CONTROLLER_SURFACE_INSPECT_VOPC5750' agentos_node/bootstrap_control.py
 
       - name: Refresh ubuntu Action Relay only
@@ -68,7 +73,8 @@ jobs:
         run: |
           set -euo pipefail
           runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
-          if ! grep -q 'realm_fabric_effective_unit_fence_v1' "$runtime" 2>/dev/null; then
+          if ! grep -q 'realm_fabric_effective_unit_fence_v1' "$runtime" 2>/dev/null \
+             || ! grep -q 'realm_fabric_deployment_renew_v1' "$runtime" 2>/dev/null; then
             tmp=/tmp/bootstrap-action-relay-issue64.sh
             sed \
               -e 's|RECEIPT="$BRIDGE/$REQUEST_ID.receipt.json"|RECEIPT="/tmp/$REQUEST_ID.receipt.json"|' \
@@ -78,10 +84,11 @@ jobs:
             bash "$tmp" || true
           fi
           grep -q 'realm_fabric_effective_unit_fence_v1' "$runtime"
+          grep -q 'realm_fabric_deployment_renew_v1' "$runtime"
           test -n "$(pgrep -f 'agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay' || true)"
           echo issue64_deploy_executor=READY
 
-      - name: Retry desired generation 2 through fenced installer
+      - name: Renew and retry desired generation 2
         shell: bash
         run: |
           set -euo pipefail
@@ -97,18 +104,34 @@ jobs:
           assert generation == 2,state
           assert owner == 'agentos-core-mainline',state
           c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
-          cap=c.submit('agentos.realm-fabric.install_release',{
+
+          def wait(action, params, attempts=180):
+              cap=c.submit(action,params); cid=cap['capsule_id']; rec=None
+              for _ in range(attempts):
+                  rec=c.receipt(cid)
+                  if rec is not None: return rec
+                  time.sleep(.5)
+              raise SystemExit(action+' receipt timeout')
+
+          renewed=wait('agentos.realm-fabric.renew_deployment',{
+              'desired_core_commit':desired,
+              'deployment_generation':generation,
+              'lease_owner':owner,
+              'lease_seconds':900,
+          })
+          print(json.dumps({'renew_receipt':renewed},ensure_ascii=False,indent=2))
+          assert renewed.get('schema')=='agentos.action-receipt/v1',renewed
+          assert renewed.get('ok') is True,renewed
+          assert renewed.get('desired_core_commit')==desired,renewed
+          assert int(renewed.get('deployment_generation') or 0)==generation,renewed
+          assert renewed.get('lease_owner')==owner,renewed
+
+          rec=wait('agentos.realm-fabric.install_release',{
               'source_commit': desired,
               'desired_core_commit': desired,
               'deployment_generation': generation,
               'lease_owner': owner,
           })
-          cid=cap['capsule_id']; rec=None
-          for _ in range(180):
-              rec=c.receipt(cid)
-              if rec is not None: break
-              time.sleep(.5)
-          if rec is None: raise SystemExit('install receipt timeout')
           print(json.dumps(rec,ensure_ascii=False,indent=2))
           Path('/tmp/issue64-install-receipt.json').write_text(json.dumps(rec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           assert rec.get('schema')=='agentos.action-receipt/v1',rec
