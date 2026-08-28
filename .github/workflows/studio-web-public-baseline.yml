@@ -24,6 +24,8 @@ jobs:
           BASE=https://studio.milkcat.org
           paths=(
             '/'
+            '/poc/'
+            '/vendors/'
             '/dashboard'
             '/layout-lab/'
             '/prophecy/'
@@ -61,6 +63,9 @@ jobs:
               rm -f "$tmp" "$headers"
             done
             echo '=== IDENTITY GUARDS ==='
+            curl -L -fsS "$BASE/poc/" | grep -Fq 'Studio POC'
+            curl -L -fsS "$BASE/poc/" | grep -Fq 'Vendor Reputation Index'
+            curl -L -fsS "$BASE/vendors/" | grep -Fq 'Vendor Reputation · MVP'
             curl -L -fsS "$BASE/layout-lab/" | grep -Fq 'Layout Lab'
             curl -L -fsS "$BASE/layout-lab/" | grep -Fq 'Analyze layout'
             curl -L -fsS "$BASE/prophecy/" | grep -Fq '全球預言驗證中心'
