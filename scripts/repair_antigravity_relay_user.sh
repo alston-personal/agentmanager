@@ -33,12 +33,15 @@ git -C "$REPO" show origin/main:agentos_node/antigravity_relay.py > "$TMPDIR/ant
 git -C "$REPO" show origin/main:agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 git -C "$REPO" show origin/main:scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
 
-# Realm Fabric is intentionally tiny and stdlib-only. Materialize only its canonical
-# modules rather than merging or cleaning the live checkout. Device enrollment uses
-# request -> human approval -> claim, so no enrollment secret enters GitHub control.
+# Realm Fabric runtime must materialize the full canonical dependency closure used by
+# realm_cli -> realm_server. Keep this explicit and deterministic rather than copying
+# the whole mutable source tree.
 git -C "$REPO" show origin/main:agent_core/__init__.py > "$TMPDIR/agent_core_init.py"
 git -C "$REPO" show origin/main:agent_core/node_registry.py > "$TMPDIR/node_registry.py"
 git -C "$REPO" show origin/main:agent_core/realm_fabric.py > "$TMPDIR/realm_fabric.py"
+git -C "$REPO" show origin/main:agent_core/node_bootstrap.py > "$TMPDIR/node_bootstrap.py"
+git -C "$REPO" show origin/main:agent_core/governance_directory.py > "$TMPDIR/governance_directory.py"
+git -C "$REPO" show origin/main:agent_core/resolve_facade.py > "$TMPDIR/resolve_facade.py"
 git -C "$REPO" show origin/main:agent_core/realm_server.py > "$TMPDIR/realm_server.py"
 git -C "$REPO" show origin/main:agent_core/realm_cli.py > "$TMPDIR/realm_cli.py"
 
@@ -48,9 +51,15 @@ install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/ant
 install -m 0664 "$TMPDIR/agent_core_init.py" "$REALM_RUNTIME/agent_core/__init__.py"
 install -m 0664 "$TMPDIR/node_registry.py" "$REALM_RUNTIME/agent_core/node_registry.py"
 install -m 0664 "$TMPDIR/realm_fabric.py" "$REALM_RUNTIME/agent_core/realm_fabric.py"
+install -m 0664 "$TMPDIR/node_bootstrap.py" "$REALM_RUNTIME/agent_core/node_bootstrap.py"
+install -m 0664 "$TMPDIR/governance_directory.py" "$REALM_RUNTIME/agent_core/governance_directory.py"
+install -m 0664 "$TMPDIR/resolve_facade.py" "$REALM_RUNTIME/agent_core/resolve_facade.py"
 install -m 0664 "$TMPDIR/realm_server.py" "$REALM_RUNTIME/agent_core/realm_server.py"
 install -m 0664 "$TMPDIR/realm_cli.py" "$REALM_RUNTIME/agent_core/realm_cli.py"
 test -f "$REALM_RUNTIME/agent_core/realm_cli.py"
+test -f "$REALM_RUNTIME/agent_core/node_bootstrap.py"
+test -f "$REALM_RUNTIME/agent_core/resolve_facade.py"
+test -f "$REALM_RUNTIME/agent_core/governance_directory.py"
 
 for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
   mkdir -p "$d"
