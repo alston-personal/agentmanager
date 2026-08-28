@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-25T14:57:07Z
+timestamp_utc=2026-08-28T07:04:09Z
 runner_identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 hostname=instance-20260129-0852
 === ACTIVE WEB CONFIG ===
@@ -207,6 +207,25 @@ server {
         return 301 https://$host/acas/;
     }
 
+    # BEGIN LAYOUTLIB CAPABILITY GATEWAY V0.7
+    # LayoutLib capability convergence gateway
+    # Include inside the studio.milkcat.org TLS server block.
+    #
+    # Browser uses ./api from /layout-lab/, therefore this public route maps
+    # /layout-lab/api/... to the capability gateway's root paths.
+    location /layout-lab/api/ {
+        proxy_pass http://127.0.0.1:8767/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 512k;
+        proxy_read_timeout 15s;
+        proxy_send_timeout 15s;
+    }
+    # END LAYOUTLIB CAPABILITY GATEWAY V0.7
+
     error_page 404 /index.html;
 }
 === WEBSITE SOURCE / BUILD OWNERSHIP ===
@@ -284,33 +303,31 @@ symlink /home/ubuntu/zeus-writer/website/node_modules/astro -> .pnpm/astro@6.3.5
 /home/ubuntu/zeus-writer/website/.astro/content.d.ts:185:	export type ContentConfig = typeof import("../src/content.config.js");
 === LISTENERS ===
 State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                                   
-LISTEN 0      4096       127.0.0.1:32911      0.0.0.0:*                                             
-LISTEN 0      4096       127.0.0.1:34709      0.0.0.0:*                                             
-LISTEN 0      511        127.0.0.1:34653      0.0.0.0:*                                             
-LISTEN 0      4096       127.0.0.1:34305      0.0.0.0:*                                             
 LISTEN 0      511        127.0.0.1:3011       0.0.0.0:*                                             
 LISTEN 0      511        127.0.0.1:18791      0.0.0.0:*                                             
 LISTEN 0      511        127.0.0.1:18789      0.0.0.0:*                                             
 LISTEN 0      4096       127.0.0.1:20241      0.0.0.0:*    users:(("cloudflared",pid=3335408,fd=11))
-LISTEN 0      511        127.0.0.1:38117      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:36961      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:38069      0.0.0.0:*                                             
 LISTEN 0      4096       127.0.0.1:37931      0.0.0.0:*                                             
 LISTEN 0      5          127.0.0.1:8085       0.0.0.0:*                                             
-LISTEN 0      4096       127.0.0.1:39959      0.0.0.0:*                                             
+LISTEN 0      2048       127.0.0.1:8000       0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:40411      0.0.0.0:*                                             
 LISTEN 0      4096         0.0.0.0:5678       0.0.0.0:*                                             
+LISTEN 0      5          127.0.0.1:8767       0.0.0.0:*    users:(("python3",pid=943327,fd=3))      
 LISTEN 0      5          127.0.0.1:8766       0.0.0.0:*    users:(("python3",pid=3335386,fd=3))     
 LISTEN 0      5          127.0.0.1:8765       0.0.0.0:*                                             
-LISTEN 0      511        127.0.0.1:25181      0.0.0.0:*                                             
+LISTEN 0      5          127.0.0.1:8780       0.0.0.0:*                                             
 LISTEN 0      5          127.0.0.1:8775       0.0.0.0:*                                             
-LISTEN 0      511        127.0.0.1:24852      0.0.0.0:*                                             
-LISTEN 0      511        127.0.0.1:42311      0.0.0.0:*                                             
-LISTEN 0      4096       127.0.0.1:44023      0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:43899      0.0.0.0:*                                             
 LISTEN 0      511          0.0.0.0:8099       0.0.0.0:*                                             
 LISTEN 0      2048         0.0.0.0:8090       0.0.0.0:*                                             
 LISTEN 0      5            0.0.0.0:8088       0.0.0.0:*                                             
 LISTEN 0      4096         0.0.0.0:8080       0.0.0.0:*                                             
 LISTEN 0      5            0.0.0.0:8087       0.0.0.0:*                                             
+LISTEN 0      511        127.0.0.1:43403      0.0.0.0:*                                             
 LISTEN 0      4096       127.0.0.1:11434      0.0.0.0:*                                             
-LISTEN 0      4096       127.0.0.1:45709      0.0.0.0:*                                             
+LISTEN 0      4096       127.0.0.1:44073      0.0.0.0:*                                             
 LISTEN 0      50           0.0.0.0:139        0.0.0.0:*                                             
 LISTEN 0      4096         0.0.0.0:111        0.0.0.0:*                                             
 LISTEN 0      511          0.0.0.0:80         0.0.0.0:*                                             
@@ -333,59 +350,61 @@ LISTEN 0      511                *:3010             *:*
 LISTEN 0      511                *:3000             *:*                                             
 LISTEN 0      511                *:3005             *:*                                             
 === RELEVANT PROCESSES ===
-agentos+ agentos+ 2790389       1  1-06:21:12 /bin/bash /home/agentos-node/runner/runsvc.sh
-agentos+ agentos+ 2790392 2790389  1-06:21:12 ./externals/node20/bin/node ./bin/RunnerService.js
-agentos+ agentos+ 2790404 2790392  1-06:21:12 /home/agentos-node/runner/bin/Runner.Listener run --startuptype service
-agentos+ agentos+ 3335386       1    06:37:39 /usr/bin/python3 /home/agentos-node/projects/layoutlib/web_demo/server.py --host 127.0.0.1 --port 8766
-agentos+ agentos+ 3335408       1    06:37:39 /home/agentos-node/.local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8766
-agentos+ agentos+ 3600914 2790404       00:03 /home/agentos-node/runner/bin/Runner.Worker spawnclient 156 159
-agentos+ agentos+ 3601122 3600914       00:00 /usr/bin/bash --noprofile --norc -e -o pipefail /home/agentos-node/runner/_work/_temp/e207e47e-38fe-45c1-9ca6-bf4e4beecd0f.sh
-opc      opc         1881    1732 95-13:35:31 node /usr/local/bin/n8n
-opc      opc       233341    1881 55-14:28:33 node --disallow-code-generation-from-strings --disable-proto=delete /usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+task-runner@file+packages+@n8n+task-runner_@opentelemetry+api@1.9.0_@opentelemetry_c2ea36637674b99f45b42fa0a37672ba/node_modules/@n8n/task-runner/dist/start.js
-root     root         836       1 95-13:35:45 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
-root     root         987       1 95-13:35:44 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
-ubuntu   ubuntu    176130 3815324  5-06:42:02 python3 /home/ubuntu/acas/run_demo.py
-ubuntu   ubuntu    183021  183009  5-06:30:56 sh -c next start -p 3010
-ubuntu   ubuntu    183022  183021  5-06:30:56 next-server (v16.2.9)
-ubuntu   ubuntu    384625    1027 75-13:02:04 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/core_services/session_syncer.py
-ubuntu   ubuntu    472462    1027 48-07:03:11 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
-ubuntu   ubuntu    472463  472462 48-07:03:11 /bin/sh -c python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
-ubuntu   ubuntu    472465  472463 48-07:03:11 python3 scripts/pulse.py --agent Architect --task Heartbeat Monitor --status active
-ubuntu   ubuntu    560797       1 91-11:34:37 python3 scripts/server.py
-ubuntu   ubuntu    561151    1027 55-06:30:00 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/tg_bridge.py
-ubuntu   ubuntu   1340700    1027 77-07:17:41 /usr/bin/node /home/ubuntu/openclaw/dist/index.js gateway --port 18789
-ubuntu   ubuntu   1442630       1 54-10:00:28 /usr/bin/python3 /home/ubuntu/.local/bin/litellm --config ./config.yml --port 4000 --max_tokens 256
-ubuntu   ubuntu   2527463    1027 74-14:06:32 /home/ubuntu/agentmanager/.venv/bin/python /home/ubuntu/agentmanager/scripts/os_watchdog.py
-ubuntu   ubuntu   2541312 2541305  1-14:31:20 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/server-main.js --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms
-ubuntu   ubuntu   2541357 2541312  1-14:31:19 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
-ubuntu   ubuntu   2541364 2541312  1-14:31:19 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
-ubuntu   ubuntu   2541389 2541357  1-14:31:17 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-6b7891f61e1c53de75eb.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
-ubuntu   ubuntu   2541390 2541357  1-14:31:17 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/c3fb7a050f5ca286d63c/tscancellation-3a5130c03dca555b2485.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
-ubuntu   ubuntu   2541403 2541390  1-14:31:17 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
-ubuntu   ubuntu   2541473 2541312  1-14:31:15 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=ptyHost --logsPath /home/ubuntu/.antigravity-ide-server/data/logs/20260824T082547
-ubuntu   ubuntu   2541682 2541357  1-14:31:07 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=2541357
-ubuntu   ubuntu   2541688 2541357  1-14:31:07 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=2541357
-ubuntu   ubuntu   2542123 2541357  1-14:29:58 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=2541357
-ubuntu   ubuntu   2657527    1027  1-07:09:29 /usr/bin/python3 scripts/distributed_gateway.py
-ubuntu   ubuntu   2657535    1027  1-07:09:29 /usr/bin/python3 scripts/provider_bridge.py
-ubuntu   ubuntu   2770227 2770188  7-06:37:19 sh -c next start
-ubuntu   ubuntu   2770228 2770227  7-06:37:19 next-server (v16.1.6)
-ubuntu   ubuntu   2770238 2770195  7-06:37:19 sh -c next start -p 3005
-ubuntu   ubuntu   2770239 2770238  7-06:37:19 next-server (v16.1.5)
-ubuntu   ubuntu   2770247 3815324  7-06:37:19 node /home/ubuntu/hanzi-gene-database/server.js
-ubuntu   ubuntu   2986846       1 32-11:08:21 /usr/bin/node /home/ubuntu/ip-genome-studio/server.mjs
-ubuntu   ubuntu   3036605 2541312    14:43:14 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
-ubuntu   ubuntu   3036616 2541312    14:43:14 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
-ubuntu   ubuntu   3036677 3036605    14:43:12 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/markdown-language-features/dist/serverWorkerMain --node-ipc --clientProcessId=3036605
-ubuntu   ubuntu   3037870 3036605    14:42:57 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=3036605
-ubuntu   ubuntu   3037915 3036605    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/8e390915e77f29df6b96/tscancellation-65afaac2814184ea852e.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
-ubuntu   ubuntu   3037916 3036605    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/8e390915e77f29df6b96/tscancellation-6229d123100d6b96bf3e.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
-ubuntu   ubuntu   3037929 3037916    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
-ubuntu   ubuntu   3037936 3036605    14:42:52 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=3036605
-ubuntu   ubuntu   3037942 3036605    14:42:51 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=3036605
-ubuntu   ubuntu   3451574 3815324  6-10:31:08 node /home/ubuntu/metashield-protocol/api/server.js
-ubuntu   ubuntu   3571553    1027       34:21 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
-ubuntu   ubuntu   3573857       1       30:48 /usr/bin/python3 fortune_server.py
+agentos+ agentos+  943327       1  1-04:30:01 /usr/bin/python3 -m agentos_node.capability_http --host 127.0.0.1 --port 8767 --root /var/lib/agentos-capabilities
+agentos+ agentos+ 1801530 2790404       00:04 /home/agentos-node/runner/bin/Runner.Worker spawnclient 158 161
+agentos+ agentos+ 1801711 1801530       00:00 /usr/bin/bash --noprofile --norc -e -o pipefail /home/agentos-node/runner/_work/_temp/9a3789ae-61e3-468f-ad8f-9ed35c8af550.sh
+agentos+ agentos+ 2790389       1  3-22:28:14 /bin/bash /home/agentos-node/runner/runsvc.sh
+agentos+ agentos+ 2790392 2790389  3-22:28:14 ./externals/node20/bin/node ./bin/RunnerService.js
+agentos+ agentos+ 2790404 2790392  3-22:28:14 /home/agentos-node/runner/bin/Runner.Listener run --startuptype service
+agentos+ agentos+ 3335386       1  2-22:44:41 /usr/bin/python3 /home/agentos-node/projects/layoutlib/web_demo/server.py --host 127.0.0.1 --port 8766
+agentos+ agentos+ 3335408       1  2-22:44:41 /home/agentos-node/.local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8766
+opc      opc         1881    1732 98-05:42:33 node /usr/local/bin/n8n
+opc      opc       233341    1881 58-06:35:35 node --disallow-code-generation-from-strings --disable-proto=delete /usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+task-runner@file+packages+@n8n+task-runner_@opentelemetry+api@1.9.0_@opentelemetry_c2ea36637674b99f45b42fa0a37672ba/node_modules/@n8n/task-runner/dist/start.js
+root     root         836       1 98-05:42:47 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+root     root         987       1 98-05:42:46 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+root     ubuntu   1796716    1027       08:53 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+root     ubuntu   1796776    1027       08:50 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+ubuntu   ubuntu    166531  166520  2-00:54:20 sh -c next start
+ubuntu   ubuntu    166532  166531  2-00:54:20 next-server (v16.1.6)
+ubuntu   ubuntu    176130 3815324  7-22:49:04 python3 /home/ubuntu/acas/run_demo.py
+ubuntu   ubuntu    183021  183009  7-22:37:58 sh -c next start -p 3010
+ubuntu   ubuntu    183022  183021  7-22:37:58 next-server (v16.2.9)
+ubuntu   ubuntu    384625    1027 78-05:09:06 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/core_services/session_syncer.py
+ubuntu   ubuntu    472462    1027 50-23:10:13 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/chronos.py
+ubuntu   ubuntu    472463  472462 50-23:10:13 /bin/sh -c python3 scripts/pulse.py --agent Architect --task 'Heartbeat Monitor' --status active
+ubuntu   ubuntu    472465  472463 50-23:10:13 python3 scripts/pulse.py --agent Architect --task Heartbeat Monitor --status active
+ubuntu   ubuntu    555367       1  1-14:27:56 /usr/bin/python3 fortune_server.py
+ubuntu   ubuntu    560797       1 94-03:41:39 python3 scripts/server.py
+ubuntu   ubuntu    561151    1027 57-22:37:02 /home/ubuntu/agentmanager/.venv/bin/python3 scripts/tg_bridge.py
+ubuntu   ubuntu   1200604 1200593    21:37:27 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/server-main.js --start-server --host=127.0.0.1 --port=0 --connection-token-file /home/ubuntu/.antigravity-ide-server/.ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8.token --telemetry-level off --enable-remote-auto-shutdown --accept-server-license-terms
+ubuntu   ubuntu   1200693 1200604    21:37:23 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=ptyHost --logsPath /home/ubuntu/.antigravity-ide-server/data/logs/20260827T172642
+ubuntu   ubuntu   1201564 1200604    21:36:29 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --dns-result-order=ipv4first /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=extensionHost --transformURIs --useHostProxy=false
+ubuntu   ubuntu   1201575 1200604    21:36:29 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/out/bootstrap-fork --type=fileWatcher
+ubuntu   ubuntu   1201602 1201564    21:36:27 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/markdown-language-features/dist/serverWorkerMain --node-ipc --clientProcessId=1201564
+ubuntu   ubuntu   1202728 1201564    21:36:10 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/json-language-features/server/dist/node/jsonServerMain --node-ipc --clientProcessId=1201564
+ubuntu   ubuntu   1202791 1201564    21:36:05 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic --useInferredProjectPerProjectRoot --disableAutomaticTypingAcquisition --cancellationPipeName /tmp/vscode-typescript1001/2862a12bc35697ffb4ea/tscancellation-70cb8016ddecac54e7b3.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   ubuntu   1202792 1201564    21:36:05 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node --max-old-space-size=3072 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot --enableTelemetry --cancellationPipeName /tmp/vscode-typescript1001/2862a12bc35697ffb4ea/tscancellation-c1419fb36c0f60814a72.tmp* --locale en --noGetErrOnBackgroundUpdate --canUseWatchEvents --validateDefaultNpmLocation --useNodeIpc
+ubuntu   ubuntu   1202805 1201564    21:36:05 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/css-language-features/server/dist/node/cssServerMain --node-ipc --clientProcessId=1201564
+ubuntu   ubuntu   1202812 1202792    21:36:05 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typingsInstaller.js --globalTypingsCacheLocation /home/ubuntu/.cache/typescript/5.9 --enableTelemetry --typesMapLocation /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/node_modules/typescript/lib/typesMap.json --validateDefaultNpmLocation
+ubuntu   ubuntu   1202823 1201564    21:36:04 /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/node /home/ubuntu/.antigravity-ide-server/bin/2.5.5-ecfbad74d93962fc8ca485d93ab9b4f3d4cb6cf8/extensions/html-language-features/server/dist/node/htmlServerMain --node-ipc --clientProcessId=1201564
+ubuntu   ubuntu   1340700    1027 79-23:24:43 /usr/bin/node /home/ubuntu/openclaw/dist/index.js gateway --port 18789
+ubuntu   ubuntu   1344956    1027    15:16:42 /usr/bin/python3 scripts/provider_bridge.py
+ubuntu   ubuntu   1351013    1027    15:04:59 /usr/bin/python3 scripts/distributed_gateway.py
+ubuntu   ubuntu   1351017    1027    15:04:59 /usr/bin/python3 scripts/agentos_node_daemon.py
+ubuntu   ubuntu   1351041    1027    15:04:58 /usr/bin/python3 scripts/agentos_mcp_server.py
+ubuntu   ubuntu   1442630       1 57-02:07:30 /usr/bin/python3 /home/ubuntu/.local/bin/litellm --config ./config.yml --port 4000 --max_tokens 256
+ubuntu   agentos  1796718 1796716       08:53 sh -c /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  1796720 1796718       08:53 /usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay
+ubuntu   agentos  1796777 1796776       08:50 sh -c /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+ubuntu   agentos  1796778 1796777       08:50 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+ubuntu   ubuntu   1796853    1027       08:45 /usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780
+ubuntu   ubuntu   1796855    1027       08:45 /usr/bin/python3 -m agent_core.control_inbox_bridge
+ubuntu   ubuntu   2527463    1027 77-06:13:34 /home/ubuntu/agentmanager/.venv/bin/python /home/ubuntu/agentmanager/scripts/os_watchdog.py
+ubuntu   ubuntu   2770238 2770195  9-22:44:21 sh -c next start -p 3005
+ubuntu   ubuntu   2770239 2770238  9-22:44:21 next-server (v16.1.5)
+ubuntu   ubuntu   2770247 3815324  9-22:44:21 node /home/ubuntu/hanzi-gene-database/server.js
+ubuntu   ubuntu   2986846       1 35-03:15:23 /usr/bin/node /home/ubuntu/ip-genome-studio/server.mjs
+ubuntu   ubuntu   3451574 3815324  9-02:38:10 node /home/ubuntu/metashield-protocol/api/server.js
 === USER SYSTEMD UNITS ===
 --- UNIT /home/ubuntu/.config/systemd/user/agent-maintenance.service
 Description=AgentOS Periodic Maintenance and Watchdog
@@ -394,8 +413,10 @@ EnvironmentFile=/home/ubuntu/agentmanager/.env
 ExecStart=/home/ubuntu/agentmanager/.venv/bin/python3 scripts/maintenance.py
 --- UNIT /home/ubuntu/.config/systemd/user/agentos-action-relay.service
 Description=AgentOS Governed Action Relay (ubuntu identity, agentos boundary)
-WorkingDirectory=/home/ubuntu/.local/share/agentos/action-runtime
-Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime
+WorkingDirectory=/home/ubuntu/.local/share/agentos/action-relay-runtime
+Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/action-relay-runtime
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 UMask=0007
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root /home/ubuntu/agent-data/runtime/action-relay'
 Restart=on-failure
@@ -406,6 +427,21 @@ Environment=PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext
 UMask=0007
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay'
 Restart=on-failure
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-chatgpt-mcp.service
+Description=AgentOS ChatGPT Cloud Node MCP
+WorkingDirectory=/home/ubuntu/agentos-distributed
+Environment=PYTHONPATH=/home/ubuntu/agentos-distributed
+Environment=AGENTOS_CONTROL_PLANE_URL=http://127.0.0.1:8765
+Environment=AGENTOS_CHATGPT_RUNTIME_ID=chatgpt-web
+Environment=AGENTOS_MCP_HOST=127.0.0.1
+Environment=AGENTOS_MCP_PORT=8000
+Environment=AGENTOS_MCP_PATH=/mcp
+EnvironmentFile=-/home/ubuntu/agentmanager/.env
+EnvironmentFile=-/home/ubuntu/.agentos.secrets
+EnvironmentFile=-/home/ubuntu/.config/agentos/chatgpt-cloud.env
+ExecStart=/usr/bin/python3 scripts/agentos_mcp_server.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-control-inbox.service
 --- UNIT /home/ubuntu/.config/systemd/user/agentos-control-plane.service
 Description=Distributed AgentOS Control Plane and Runtime Dispatcher
 WorkingDirectory=/home/ubuntu/agentos-distributed
@@ -416,6 +452,20 @@ EnvironmentFile=-/home/ubuntu/.config/agentos/distributed.env
 EnvironmentFile=-/home/ubuntu/.agentos.secrets
 ExecStart=/usr/bin/python3 scripts/distributed_gateway.py
 Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-node.service
+Description=AgentOS Oracle Native Execution Node
+WorkingDirectory=/home/ubuntu/agentos-distributed
+Environment=AGENT_PROJECT_ROOT=/home/ubuntu/agentos-distributed
+Environment=PYTHONPATH=/home/ubuntu/agentos-distributed
+Environment=AGENTOS_CONTROL_PLANE_URL=http://127.0.0.1:8765
+Environment=AGENTOS_RUNTIME_ID=oracle-core-node
+Environment=AGENTOS_PROJECT_PATHS_FILE=/home/ubuntu/.config/agentos/project-paths.json
+Environment=AGENTOS_PROJECT_TESTS_FILE=/home/ubuntu/.config/agentos/project-tests.json
+EnvironmentFile=-/home/ubuntu/agentmanager/.env
+EnvironmentFile=-/home/ubuntu/.config/agentos/distributed.env
+EnvironmentFile=-/home/ubuntu/.agentos.secrets
+ExecStart=/usr/bin/python3 scripts/agentos_node_daemon.py
+Restart=always
 --- UNIT /home/ubuntu/.config/systemd/user/agentos-provider-bridge.service
 Description=Distributed AgentOS Provider Bridge
 WorkingDirectory=/home/ubuntu/agentos-distributed
@@ -425,6 +475,13 @@ EnvironmentFile=-/home/ubuntu/agentmanager/.env
 EnvironmentFile=-/home/ubuntu/.config/agentos/distributed.env
 EnvironmentFile=-/home/ubuntu/.agentos.secrets
 ExecStart=/usr/bin/python3 scripts/provider_bridge.py
+Restart=always
+--- UNIT /home/ubuntu/.config/systemd/user/agentos-realm-fabric.service
+Description=AgentOS ONE Realm Fabric
+Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
+Environment=PYTHONNOUSERSITE=1
+WorkingDirectory=/home/ubuntu/.local/share/agentos/realm-fabric/releases/9633441e2216537b043f5bcc0db0bdd759834438
+ExecStart=/home/ubuntu/.local/share/agentos/realm-fabric/releases/9633441e2216537b043f5bcc0db0bdd759834438/bin/agentos-one serve --host 127.0.0.1 --port 8780
 Restart=always
 --- UNIT /home/ubuntu/.config/systemd/user/cat-ink-syncer.service
 Description=AgentOS Cat-Ink Session Syncer
@@ -495,8 +552,8 @@ Restart=always
 === AGENTOS WORKFLOW / DEPLOYMENT COUPLING ===
 === PUBLIC BASELINE ===
 path=/ status=200 bytes=11733 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\>\ \<head\>\<meta\ charset=\"UTF-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\"\>\<link\ rel=\"icon\"\ type=\"image/svg+xml\"\ href=\"/favicon.svg\"\>\<link\ re
-path=/dashboard status=200 bytes=6979 marker=\<\!DOCTYPE\ html\>\<\!--_17kq_xvmdeUiFucYz_P1--\>\<html\ lang=\"en\"\>\<head\>\<meta\ charSet=\"utf-8\"/\>\<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1\"/\>\<link\ rel=\"stylesheet\"\ 
-path=/layout-lab/ status=200 bytes=11733 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\>\ \<head\>\<meta\ charset=\"UTF-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\"\>\<link\ rel=\"icon\"\ type=\"image/svg+xml\"\ href=\"/favicon.svg\"\>\<link\ re
+path=/dashboard status=200 bytes=6979 marker=\<\!DOCTYPE\ html\>\<\!--3kAMqyosKLvG0x4vphJmO--\>\<html\ lang=\"en\"\>\<head\>\<meta\ charSet=\"utf-8\"/\>\<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1\"/\>\<link\ rel=\"stylesheet\"\ 
+path=/layout-lab/ status=200 bytes=25693 marker=\<\!doctype\ html\>\<html\ lang=\"zh-Hant\"\>\<head\>\<meta\ charset=\"utf-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\,initial-scale=1\"\>\<title\>Layout\ Lab\ \|\ Milkcat\ Studio\</title\>\<style\>
 path=/prophecy/ status=200 bytes=13414 marker=\<\!DOCTYPE\ html\>\ \<html\ lang=\"zh-TW\"\>\ \<head\>\ \<meta\ charset=\"UTF-8\"\>\ \<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1.0\"\>\ \<title\>全球預言驗證中心\ \|\ Prophecy\ 
 path=/novels/ status=200 bytes=11733 marker=\<\!DOCTYPE\ html\>\<html\ lang=\"zh-TW\"\>\ \<head\>\<meta\ charset=\"UTF-8\"\>\<meta\ name=\"viewport\"\ content=\"width=device-width\"\>\<link\ rel=\"icon\"\ type=\"image/svg+xml\"\ href=\"/favicon.svg\"\>\<link\ re
 path=/ipgenome status=200 bytes=26639 marker=\<\!doctype\ html\>\ \<html\ lang=\"zh-Hant\"\>\ \<head\>\ \<meta\ charset=\"utf-8\"\ /\>\ \<meta\ name=\"viewport\"\ content=\"width=device-width\,\ initial-scale=1\"\ /\>\ \<title\>IP\ Genome\ Studio\</title\>\ \<style\>
