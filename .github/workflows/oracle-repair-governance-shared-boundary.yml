@@ -1,0 +1,63 @@
+name: Repair Governance Shared Boundary
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-repair-governance-shared-boundary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guarded one-time Governance directory boundary repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/home/ubuntu/agent-data/governance
+          target="$root/directory.json"
+
+          test -d "$root"
+          test -f "$target"
+          test ! -e "$root/directory.tmp"
+
+          owner=$(stat -c '%U' "$root")
+          group=$(stat -c '%G' "$root")
+          mode=$(stat -c '%a' "$root")
+          file_owner=$(stat -c '%U' "$target")
+          file_group=$(stat -c '%G' "$target")
+
+          echo "before=$owner:$group $mode $root"
+          echo "directory_json=$file_owner:$file_group $(stat -c '%a' "$target")"
+
+          test "$owner" = 'agentos-node'
+          test "$group" = 'agentos'
+          test "$mode" = '2755'
+          test "$file_group" = 'agentos'
+
+          # Exact boundary repair only: preserve owner/group/setgid and grant the shared
+          # AgentOS group permission to create atomic temp files in this directory.
+          chmod 2775 "$root"
+
+          after=$(stat -c '%U:%G %a' "$root")
+          echo "after=$after $root"
+          test "$after" = 'agentos-node:agentos 2775'
+
+          # Do not write Governance state here. Prove only that ubuntu+agentos will have
+          # directory-level rwx through the resulting Unix mode bits.
+          python3 - <<'PY'
+          import os, stat
+          p='/home/ubuntu/agent-data/governance'
+          st=os.stat(p)
+          mode=stat.S_IMODE(st.st_mode)
+          assert mode == 0o2775, oct(mode)
+          assert mode & stat.S_IWGRP, oct(mode)
+          assert mode & stat.S_IXGRP, oct(mode)
+          print('governance_shared_boundary=PASS')
+          PY
