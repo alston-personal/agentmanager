@@ -1,0 +1,199 @@
+name: Oracle Refresh Threads Long-Lived Token
+
+on:
+  schedule:
+    # Weekly. Threads long-lived tokens are ~60 days and become refreshable after 24h.
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threads-token-refresh-oracle
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Refresh Threads token safely on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - <<'PY'
+          import json
+          import os
+          import re
+          import shutil
+          import sys
+          import tempfile
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          ENV_PATH = Path('/home/ubuntu/agent-data/secrets/zeus-writer.env')
+          STATE_PATH = Path('/home/ubuntu/agent-data/runtime/threads-token-refresh.json')
+          BACKUP_DIR = Path('/home/ubuntu/agent-data/secrets/backups')
+          TOKEN_KEY = 'SOC_THREADS_TOKEN'
+          BASE = 'https://graph.threads.net'
+
+          def now_iso():
+              return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+          def write_state(payload):
+              STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+              tmp = STATE_PATH.with_suffix('.tmp')
+              tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+              os.chmod(tmp, 0o600)
+              os.replace(tmp, STATE_PATH)
+
+          def api_get(path, params):
+              url = f"{BASE}{path}?{urlencode(params)}"
+              req = Request(url, method='GET', headers={'Accept': 'application/json'})
+              try:
+                  with urlopen(req, timeout=30) as res:
+                      body = res.read().decode('utf-8', 'replace')
+                      data = json.loads(body) if body.strip() else {}
+                      return res.status, data
+              except HTTPError as e:
+                  body = e.read().decode('utf-8', 'replace')
+                  try:
+                      data = json.loads(body) if body.strip() else {}
+                  except Exception:
+                      data = {'error': {'message': body[:500]}}
+                  return e.code, data
+
+          if not ENV_PATH.is_file():
+              raise SystemExit(f'missing secret env: {ENV_PATH}')
+
+          text = ENV_PATH.read_text(encoding='utf-8')
+          m = re.search(r'(?m)^SOC_THREADS_TOKEN=(.*)$', text)
+          if not m or not m.group(1).strip():
+              raise SystemExit('SOC_THREADS_TOKEN missing from zeus-writer.env')
+          old_token = m.group(1).strip().strip('"').strip("'")
+
+          # Verify the current token before attempting refresh. Never print the token.
+          ident_status, ident = api_get('/v1.0/me', {
+              'fields': 'id,username',
+              'access_token': old_token,
+          })
+          if ident_status != 200 or 'id' not in ident:
+              write_state({
+                  'schema': 'agentos.threads-token-refresh/v1',
+                  'checked_at': now_iso(),
+                  'ok': False,
+                  'stage': 'preflight_identity',
+                  'http_status': ident_status,
+                  'error': (ident.get('error') or {}).get('message', 'identity check failed')[:500],
+              })
+              raise SystemExit('Threads token preflight identity failed')
+
+          refresh_status, refreshed = api_get('/refresh_access_token', {
+              'grant_type': 'th_refresh_token',
+              'access_token': old_token,
+          })
+
+          if refresh_status != 200:
+              err = refreshed.get('error') or {}
+              message = str(err.get('message', 'refresh failed'))
+              # A newly issued long-lived token cannot be refreshed until it is at least 24h old.
+              # Treat that documented timing window as a harmless skip; all other failures stay red.
+              too_young = ('24' in message and ('hour' in message.lower() or 'hours' in message.lower()))
+              state = {
+                  'schema': 'agentos.threads-token-refresh/v1',
+                  'checked_at': now_iso(),
+                  'ok': bool(too_young),
+                  'status': 'skipped-token-too-young' if too_young else 'refresh-failed',
+                  'username': ident.get('username'),
+                  'user_id': ident.get('id'),
+                  'http_status': refresh_status,
+                  'error_code': err.get('code'),
+                  'error_subcode': err.get('error_subcode'),
+                  'error': message[:500],
+              }
+              write_state(state)
+              if too_young:
+                  print('threads_token_refresh=SKIP token_too_young')
+                  raise SystemExit(0)
+              raise SystemExit(f'Threads token refresh failed: HTTP {refresh_status}')
+
+          new_token = refreshed.get('access_token') or old_token
+          expires_in = refreshed.get('expires_in')
+
+          # Validate the refreshed credential before touching persistent secrets.
+          post_status, post_ident = api_get('/v1.0/me', {
+              'fields': 'id,username',
+              'access_token': new_token,
+          })
+          if post_status != 200 or post_ident.get('id') != ident.get('id'):
+              write_state({
+                  'schema': 'agentos.threads-token-refresh/v1',
+                  'checked_at': now_iso(),
+                  'ok': False,
+                  'stage': 'post_refresh_identity',
+                  'http_status': post_status,
+                  'username': ident.get('username'),
+                  'user_id': ident.get('id'),
+              })
+              raise SystemExit('Refreshed Threads token failed identity validation')
+
+          rotated = new_token != old_token
+          backup_path = None
+          if rotated:
+              BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+              stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+              backup_path = BACKUP_DIR / f'zeus-writer.env.{stamp}.before-threads-refresh'
+              shutil.copy2(ENV_PATH, backup_path)
+              os.chmod(backup_path, 0o600)
+
+              replacement = f'{TOKEN_KEY}={new_token}'
+              new_text = re.sub(r'(?m)^SOC_THREADS_TOKEN=.*$', replacement, text, count=1)
+              fd, tmp_name = tempfile.mkstemp(prefix='.zeus-writer.env.', dir=str(ENV_PATH.parent), text=True)
+              try:
+                  with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                      f.write(new_text)
+                  st = ENV_PATH.stat()
+                  os.chmod(tmp_name, st.st_mode & 0o777)
+                  try:
+                      os.chown(tmp_name, st.st_uid, st.st_gid)
+                  except PermissionError:
+                      pass
+                  os.replace(tmp_name, ENV_PATH)
+              finally:
+                  if os.path.exists(tmp_name):
+                      os.unlink(tmp_name)
+
+          expires_at = None
+          if isinstance(expires_in, (int, float)):
+              expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+          state = {
+              'schema': 'agentos.threads-token-refresh/v1',
+              'checked_at': now_iso(),
+              'ok': True,
+              'status': 'refreshed',
+              'username': post_ident.get('username'),
+              'user_id': post_ident.get('id'),
+              'rotated': rotated,
+              'expires_in_seconds': expires_in,
+              'expires_at_estimate': expires_at,
+              'backup_created': bool(backup_path),
+          }
+          write_state(state)
+          print(f"threads_token_refresh=PASS username={post_ident.get('username')} rotated={str(rotated).lower()} expires_at={expires_at or 'unknown'}")
+          PY
