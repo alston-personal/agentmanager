@@ -1,178 +1,19 @@
 {
-  "action": "agentos.realm-fabric.install_release",
-  "capsule_id": "action-9900400130bb4d7c9b4ec16b41366915",
-  "claim_receipt": {
+  "claim": {
     "action": "agentos.realm-fabric.claim_deployment",
-    "capsule_id": "action-821d92e75c01444d8260e33982f035e6",
-    "completed_at": "2026-08-28T06:55:22Z",
+    "capsule_id": "action-c847b37363fa42a7a318a885c200053b",
+    "completed_at": "2026-08-28T06:55:41Z",
     "deployment_generation": 1,
-    "deployment_status": "desired",
-    "desired_core_commit": "9633441e2216537b043f5bcc0db0bdd759834438",
-    "executor_user": "ubuntu",
-    "lease_expires_at": "2026-08-28T07:10:22.188642+00:00",
-    "lease_owner": "agentos-core-mainline",
-    "observed_core_commit": null,
-    "ok": true,
-    "result_schema": "agentos.core-deployment/v1",
-    "schema": "agentos.action-receipt/v1",
-    "started_at": "2026-08-28T06:55:22Z",
-    "updated_at": "2026-08-28T06:55:22.188642+00:00"
-  },
-  "completed_at": "2026-08-28T06:55:24Z",
-  "current": "/home/ubuntu/.local/share/agentos/realm-fabric/current",
-  "current_pointer_mode": "legacy_directory_preserved",
-  "deployment_generation": 1,
-  "deployment_status": "converged",
-  "deployment_status_receipt": {
-    "action": "agentos.realm-fabric.deployment_status",
-    "capsule_id": "action-2d88b444921b4033a2323dd4e390fcba",
-    "completed_at": "2026-08-28T06:55:25Z",
-    "deployment_generation": 1,
-    "deployment_status": "converged",
+    "deployment_status": "rejected_lease",
     "desired_core_commit": "9633441e2216537b043f5bcc0db0bdd759834438",
     "executor_user": "ubuntu",
     "lease_expires_at": "2026-08-28T07:10:22.188642+00:00",
     "lease_owner": "agentos-core-mainline",
     "observed_core_commit": "9633441e2216537b043f5bcc0db0bdd759834438",
-    "ok": true,
-    "result_schema": "agentos.core-deployment/v1",
+    "ok": false,
     "schema": "agentos.action-receipt/v1",
-    "started_at": "2026-08-28T06:55:25Z",
-    "updated_at": "2026-08-28T06:55:24.719376+00:00"
+    "started_at": "2026-08-28T06:55:41Z"
   },
-  "desired_core_commit": "9633441e2216537b043f5bcc0db0bdd759834438",
-  "endpoint": "http://127.0.0.1:8780",
-  "executor_user": "ubuntu",
-  "health": {
-    "body": "{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}",
-    "status": 200
-  },
-  "lease_expires_at": "2026-08-28T07:10:22.188642+00:00",
-  "lease_owner": "agentos-core-mainline",
-  "main_pid_after": 1796853,
-  "main_pid_before": 1796661,
-  "observed_core_commit": "9633441e2216537b043f5bcc0db0bdd759834438",
-  "ok": true,
-  "process_identity_attested": true,
-  "realm_id": "realm-alston",
-  "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/9633441e2216537b043f5bcc0db0bdd759834438",
-  "resolve_auth_probe": {
-    "body": "{\"error\": \"PermissionError: missing bearer credential\", \"ok\": false}",
-    "status": 401
-  },
-  "schema": "agentos.action-receipt/v1",
-  "service": "agentos-realm-fabric.service",
-  "source_commit": "9633441e2216537b043f5bcc0db0bdd759834438",
-  "started_at": "2026-08-28T06:55:23Z",
-  "steps": [
-    {
-      "argv": [
-        "git",
-        "-c",
-        "safe.directory=/home/ubuntu/agentmanager",
-        "-C",
-        "/home/ubuntu/agentmanager",
-        "fetch",
-        "origin",
-        "9633441e2216537b043f5bcc0db0bdd759834438"
-      ],
-      "returncode": 0,
-      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            9633441e2216537b043f5bcc0db0bdd759834438 -> FETCH_HEAD\n",
-      "stdout": "",
-      "step": "fetch_source_commit"
-    },
-    {
-      "argv": [
-        "git",
-        "-c",
-        "safe.directory=/home/ubuntu/agentmanager",
-        "-C",
-        "/home/ubuntu/agentmanager",
-        "worktree",
-        "add",
-        "--detach",
-        "/tmp/realm-fabric-release-1pevt8w8/source",
-        "9633441e2216537b043f5bcc0db0bdd759834438"
-      ],
-      "returncode": 0,
-      "stderr": "",
-      "stdout": "Preparing worktree (detached HEAD 9633441)\nHEAD is now at 9633441 evidence(agentos): governed Core project authority\n",
-      "step": "materialize_source"
-    },
-    {
-      "argv": [
-        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/9633441e2216537b043f5bcc0db0bdd759834438/bin/agentos-one",
-        "--help"
-      ],
-      "returncode": 0,
-      "stderr": "",
-      "stdout": "usage: agentos-one [-h] {init,invite,approve,serve,task,receipt,nodes} ...\n\npositional arguments:\n  {init,invite,approve,serve,task,receipt,nodes}\n\noptions:\n  -h, --help            show this help message and exit\n",
-      "step": "verify_launcher"
-    },
-    {
-      "argv": [
-        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/9633441e2216537b043f5bcc0db0bdd759834438/bin/agentos-one",
-        "init",
-        "--realm-id",
-        "realm-alston"
-      ],
-      "returncode": 0,
-      "stderr": "",
-      "stdout": "{\n  \"realm_id\": \"realm-alston\"\n}\n",
-      "step": "init_realm"
-    },
-    {
-      "argv": [
-        "systemctl",
-        "--user",
-        "daemon-reload"
-      ],
-      "returncode": 0,
-      "stderr": "",
-      "stdout": "",
-      "step": "daemon_reload"
-    },
-    {
-      "argv": [
-        "systemctl",
-        "--user",
-        "enable",
-        "agentos-realm-fabric.service"
-      ],
-      "returncode": 0,
-      "stderr": "",
-      "stdout": "",
-      "step": "enable_service"
-    },
-    {
-      "main_pid_before": 1796661,
-      "observations": [
-        {
-          "returncode": 3,
-          "state": "deactivating",
-          "stderr": ""
-        },
-        {
-          "returncode": 0,
-          "state": "active",
-          "stderr": ""
-        }
-      ],
-      "ok": true,
-      "restart": {
-        "argv": [
-          "systemctl",
-          "--user",
-          "--no-block",
-          "restart",
-          "agentos-realm-fabric.service"
-        ],
-        "returncode": 0,
-        "stderr": "",
-        "stdout": ""
-      },
-      "service": "agentos-realm-fabric.service",
-      "step": "restart_service"
-    }
-  ]
+  "ok": false,
+  "stage": "claim"
 }
