@@ -66,7 +66,8 @@ Target loop:
 node/event source
     -> event envelope
     -> Trigger Registry / Attention Gate
-    -> governance/policy
+    -> reflex / deterministic handling
+    -> if unresolved or novel: governance/policy
     -> ONE capability/executor resolution
     -> cognitive executor
     -> plan/action
@@ -78,6 +79,49 @@ node/event source
 This is the missing bridge from a passive chat-driven system toward the "everything can have a brain" goal. Nodes should publish events; policy decides which events deserve cognition and which executor should handle them. The system must not depend on keeping a ChatGPT browser tab awake as a daemon.
 
 Potential event classes: heartbeat/state changes, filesystem/repo changes, task completion/failure, browser/UI events, external webhooks/connectors, scheduled events, device/sensor signals, and explicit user messages. Every action remains subject to capability and authority rules.
+
+### Reflex-first cognition hierarchy
+
+AgentOS Core should behave more like a spinal cord plus nervous system than a system that invokes an LLM for every event:
+
+```text
+L0 Signal      -> event/sensor/input
+L1 Reflex      -> deterministic rule/state-machine handling
+L2 Deliberation-> bounded planner/solver/policy logic
+L3 Cognition   -> LLM / multimodal / high-cost reasoning
+```
+
+**Core principle:** `Reflex first, cognition when necessary.`
+
+Higher cognition is more expensive, slower, and more powerful, so escalation should also carry stronger governance, authority, evidence, and audit requirements.
+
+### Cognition-to-reflex learning loop
+
+Calling the brain repeatedly for the same class of problem is a signal that AgentOS has not yet internalized the experience. Successful high-level reasoning should be eligible for abstraction into a reusable lower-level capability.
+
+Target learning loop:
+
+```text
+novel / unresolved event
+      -> cognitive executor
+      -> reasoning + action
+      -> receipt / outcome / evidence
+      -> repeated successful pattern detected
+      -> abstract candidate skill/policy/reflex
+      -> validate / test / govern
+      -> promote into Capability Registry / reflex layer
+      -> future matching events resolve without cognition
+```
+
+This means AgentOS does not merely accumulate memories; it should gradually **compile repeated cognition into capabilities**.
+
+Promotion must not happen from one successful anecdote. A candidate reflex/skill requires sufficient evidence, generalization boundaries, tests, failure handling, provenance, authority constraints, and rollback. Governance may tighten automatically but must not silently grant broader authority while promoting a learned capability.
+
+The long-term efficiency objective is therefore:
+
+> **Think when necessary; learn from thinking; stop thinking about what has become a reliable skill.**
+
+This is a Core architectural invariant and a bridge between memory, Cognitive IR, receipts/evidence, capability discovery, and the reflex layer.
 
 ## 5. Project Identity / Registry status
 
@@ -148,8 +192,9 @@ The Wiki/Palace should never silently overwrite canonical state. Promotion back 
 4. Reconcile the operational `agentos.ir/v1` continuation envelope with the research-level Cognitive IR definition.
 5. Audit L1/L2/L3 memory code/data paths and explicitly map them to current State/Cognition/Work architecture.
 6. Decide whether Wiki/Memory Palace remain named subsystems or become projections/indexes over the memory/state system.
-7. Add Event/Trigger Fabric design (Trigger Registry + Attention Gate) before attempting autonomous node cognition.
-8. Build Core Console only after the underlying registry/read APIs are authoritative; start read-only.
+7. Add Event/Trigger/Attention Fabric and the cognition-to-reflex promotion pipeline before attempting broad autonomous node cognition.
+8. Define evidence thresholds and governance rules for promoting repeated cognitive solutions into reusable capabilities/reflexes.
+9. Build Core Console only after the underlying registry/read APIs are authoritative; start read-only.
 
 ## 9. Anti-drift rule
 
