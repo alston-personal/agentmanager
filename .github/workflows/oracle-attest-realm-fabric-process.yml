@@ -1,0 +1,80 @@
+name: Attest Realm Fabric Process Identity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-attest-realm-fabric-process.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only live process attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== UNIT FILE ==='
+          unit=/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service
+          test -r "$unit"
+          cat "$unit"
+          expected=$(sed -n 's/^ExecStart=//p' "$unit")
+          echo "expected_exec=$expected"
+
+          echo '=== LISTENER ==='
+          ss -ltnp 2>/dev/null | grep ':8780' || true
+          echo '=== CANDIDATE PROCESSES ==='
+          pgrep -af 'agent_core.realm_cli.*serve.*8780|agentos-one.*serve.*8780|realm.*8780' || true
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os
+          rows=[]
+          for proc in Path('/proc').iterdir():
+              if not proc.name.isdigit(): continue
+              try:
+                  raw=(proc/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+              except Exception: continue
+              if 'agent_core.realm_cli' not in raw and 'agentos-one' not in raw: continue
+              if '8780' not in raw: continue
+              row={'pid':int(proc.name),'cmdline':raw}
+              for key in ('cwd','exe'):
+                  try: row[key]=os.readlink(proc/key)
+                  except Exception as exc: row[key]=f'<{type(exc).__name__}>'
+              try:
+                  env=(proc/'environ').read_bytes().split(b'\0')
+                  vals={}
+                  for item in env:
+                      if b'=' not in item: continue
+                      k,v=item.split(b'=',1)
+                      if k in (b'PYTHONPATH',b'AGENT_DATA_ROOT',b'AGENTOS_CORE_NODE_ID'):
+                          vals[k.decode()]=v.decode('utf-8','replace')
+                  row['env']=vals
+              except Exception as exc: row['env_error']=type(exc).__name__
+              rows.append(row)
+          print(json.dumps(rows,ensure_ascii=False,indent=2))
+          if not rows:
+              raise SystemExit('no Realm Fabric listener process identifiable')
+          PY
+
+          echo '=== HTTP ==='
+          curl -sS -i --max-time 3 http://127.0.0.1:8780/v1/health
+          echo
+          curl -sS -i --max-time 3 -H 'Content-Type: application/json' \
+            -d '{"schema":"agentos.resolve-request/v1","node_id":"oracle-attestation","intent":"continue","project":"agentos-core"}' \
+            http://127.0.0.1:8780/v1/resolve
+          echo
+
+          echo '=== NODE MAP AFTER SETTLE ==='
+          sleep 12
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          print(json.dumps(NodeRegistry().node_map(),ensure_ascii=False,indent=2))
+          PY
