@@ -6,26 +6,21 @@ from pathlib import Path
 
 import yaml
 
-
 def read_file(path):
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
     return ""
 
-
 def read_json(path):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def short_sha(value):
-    return str(value)[:12] if value else "-"
-
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                value = json.load(f)
+            return value if isinstance(value, dict) else {}
+        except Exception:
+            return {}
+    return {}
 
 def main():
     if len(sys.argv) < 2:
@@ -36,7 +31,7 @@ def main():
     project_yaml_path = Path(project_dir) / "project.yaml"
     status_path = os.path.join(project_dir, "STATUS.md")
     short_term_path = os.path.join(project_dir, "memory", "SHORT_TERM.md")
-    execution_head_path = os.path.join(project_dir, "execution-head.json")
+    execution_path = os.path.join(project_dir, "execution-head.json")
 
     if not os.path.exists(status_path):
         print(f"❌ Error: Not a project directory (STATUS.md missing at {project_dir})")
@@ -44,7 +39,7 @@ def main():
 
     status_content = read_file(status_path)
     short_term_content = read_file(short_term_path)
-    execution = read_json(execution_head_path)
+    execution = read_json(execution_path)
     project_yaml = {}
     if project_yaml_path.exists():
         try:
@@ -80,24 +75,23 @@ def main():
 
     print(f"\n📍 STATUS SUMMARY:\n{summary}")
 
-    if execution:
-        print("\n⚙️ EXECUTION HEAD (runtime evidence):")
-        print(f"  Node:        {execution.get('node') or '-'}")
-        print(f"  Workspace:   {execution.get('workspace') or '-'}")
-        print(f"  Branch:      {execution.get('branch') or '-'}")
-        print(f"  Version:     {execution.get('version') or '-'}")
-        print(f"  Local HEAD:  {short_sha(execution.get('local_head'))}")
-        print(f"  Upstream:    {execution.get('upstream') or '-'}")
-        print(f"  Remote HEAD: {short_sha(execution.get('remote_head'))}")
-        print(f"  Ahead/Behind:{execution.get('ahead')} / {execution.get('behind')}")
-        print(f"  Dirty:       {execution.get('dirty')}")
-        print(f"  Latest Tag:  {execution.get('latest_tag') or '-'}")
-        print(f"  Observed:    {execution.get('observed_at') or '-'}")
-        if execution.get("error"):
-            print(f"  ⚠ Collector error: {execution.get('error')}")
-        if isinstance(execution.get("ahead"), int) and execution["ahead"] > 0:
-            print(f"  ⚠ LOCAL EXECUTION IS {execution['ahead']} COMMIT(S) AHEAD OF REMOTE.")
-            print("    Do not treat the remote branch or STATUS.md as the current implementation head.")
+    if execution.get("local_head"):
+        print("\n🧭 RESOLVED EXECUTION HEAD:")
+        print(f"  Source: {execution.get('source') or 'execution-receipt'}")
+        if execution.get("receipt_kind"):
+            print(f"  Receipt: {execution.get('receipt_kind')}")
+        print(f"  Branch: {execution.get('branch') or 'unknown'}")
+        print(f"  Head: {execution.get('local_head')}")
+        if execution.get("version"):
+            print(f"  Version: {execution.get('version')}")
+        if execution.get("latest_tag"):
+            print(f"  Latest tag: {execution.get('latest_tag')}")
+        if execution.get("ahead") is not None:
+            print(f"  Ahead of upstream: {execution.get('ahead')}")
+        if execution.get("verification_state"):
+            print(f"  Verification: {execution.get('verification_state')}")
+        if execution.get("observed_at"):
+            print(f"  Observed: {execution.get('observed_at')}")
 
     if provided or required:
         print("\n🧩 CAPABILITY DECLARATIONS:")
@@ -111,25 +105,21 @@ def main():
                 print(f"    - {item}")
 
     print("\n📅 CORE ROADMAP (from STATUS.md):")
-    for t in todos[:5]:
-        print(f"  {t}")
+    for t in todos[:5]: print(f"  {t}")
 
     print("\n🚧 ACTIVE SESSION TASKS (from SHORT_TERM.md):")
-    for t in active_tasks[:5]:
-        print(f"  {t}")
+    for t in active_tasks[:5]: print(f"  {t}")
 
     print("\n💡 ADVICE FOR THE AGENT:")
-    if execution and execution.get("local_head"):
-        print("  1. Treat the fresh execution receipt as implementation evidence; surface any drift from remote/STATUS.")
-        print("  2. Continue from the active local workspace unless a fresher trusted receipt supersedes it.")
-        print("  3. Update STATUS.md after major success; do not use it to overwrite a newer execution head.")
+    if execution.get("local_head"):
+        print("  1. Treat the execution-head receipt as fresher execution evidence than an older STATUS.md summary.")
+        print("  2. If verification is pending-node-attestation, replace it with a node-collected receipt before risky writes/releases.")
+        print("  3. Continue from active session tasks; update STATUS.md after major successes.")
     else:
-        print("  1. No valid execution receipt is available; inspect the registered workspace before assuming GitHub is current.")
-        print("  2. Focus on the first [ ] task in the 'Active Session' list.")
-        print("  3. Update the 'Activity Log' in STATUS.md after every major success.")
-    print("  4. Run '/report' before leaving to ensure context is passed to the next agent.")
+        print("  1. Focus on the first [ ] task in the 'Active Session' list.")
+        print("  2. Update the 'Activity Log' in STATUS.md after every major success.")
+        print("  3. Run '/report' before leaving to ensure context is passed to the next agent.")
     print("="*40 + "\n")
-
 
 if __name__ == "__main__":
     main()
