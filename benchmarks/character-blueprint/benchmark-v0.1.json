@@ -1,0 +1,46 @@
+{
+  "schema": "character-blueprint-benchmark/v0.1",
+  "systems": [
+    {"id":"character-blueprint","role":"system-under-test"},
+    {"id":"meshy","role":"primary-commercial-baseline"},
+    {"id":"rodin","role":"quality-ceiling"},
+    {"id":"tripo","role":"independent-sanity-baseline"}
+  ],
+  "cases": [
+    {"id":"fullbody-front-clean","required":true,"asset":null,"license":null},
+    {"id":"upperbody-portrait","required":true,"asset":null,"license":null},
+    {"id":"anime-fullbody","required":true,"asset":null,"license":null},
+    {"id":"real-person-fullbody","required":true,"asset":null,"license":null},
+    {"id":"occluded-character","required":true,"asset":null,"license":null},
+    {"id":"loose-garment","required":true,"asset":null,"license":null},
+    {"id":"accessory-character","required":true,"asset":null,"license":null},
+    {"id":"three-quarter-pose","required":true,"asset":null,"license":null}
+  ],
+  "evidence_views": ["front","yaw45","right","back"],
+  "metrics": {
+    "source_view_fidelity": {"scale":[0,5],"group":"reconstruction"},
+    "novel_view_plausibility": {"scale":[0,5],"group":"reconstruction"},
+    "semantic_fidelity": {"scale":[0,5],"group":"reconstruction"},
+    "geometry_quality": {"scale":[0,5],"group":"reconstruction"},
+    "uncertainty_honesty": {"scale":[0,5],"group":"system"},
+    "editability_traceability": {"scale":[0,5],"group":"system"},
+    "determinism": {"scale":[0,5],"group":"system"},
+    "cost_latency_privacy": {"scale":[0,5],"group":"system"}
+  },
+  "result_template": {
+    "case_id": null,
+    "system_id": null,
+    "model_version": null,
+    "settings": {},
+    "source_sha256": null,
+    "started_at": null,
+    "duration_seconds": null,
+    "credits": null,
+    "estimated_cost_usd": null,
+    "model_path": null,
+    "renders": {"front":null,"yaw45":null,"right":null,"back":null},
+    "geometry": {"vertices":null,"faces":null,"components":null},
+    "scores": {},
+    "notes": []
+  }
+}
