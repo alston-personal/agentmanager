@@ -26,6 +26,20 @@ jobs:
           cat "$unit"
           expected=$(sed -n 's/^ExecStart=//p' "$unit")
           echo "expected_exec=$expected"
+          launcher=$(printf '%s\n' "$expected" | awk '{print $1}')
+          release=$(dirname "$(dirname "$launcher")")
+          echo "release=$release"
+
+          echo '=== RELEASE CONTENT ==='
+          test -r "$launcher"
+          cat "$launcher"
+          test -r "$release/agent_core/realm_server.py"
+          grep -n "'/v1/resolve'\|oracle-core-node\|_run_core_node_heartbeat" "$release/agent_core/realm_server.py" || true
+          PYTHONPATH="$release" /usr/bin/python3 - <<'PY'
+          import agent_core.realm_server as r
+          print('release_import_file='+str(r.__file__))
+          print('has_core_manifest='+str(hasattr(r,'_core_node_manifest')))
+          PY
 
           echo '=== LISTENER ==='
           ss -ltnp 2>/dev/null | grep ':8780' || true
