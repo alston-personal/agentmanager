@@ -11,20 +11,23 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def project_entity(project_id: str, *, name: str | None = None, aliases=None) -> dict:
+def project_entity(project_id: str, *, name: str | None = None, aliases=None, implementation=None, metadata=None) -> dict:
+    merged_metadata = {"aliases": list(aliases or [])}
+    if metadata:
+        merged_metadata.update(metadata)
     return {
         "id": f"project://{project_id}",
         "kind": "project",
         "name": name or project_id,
         "owns": [],
         "provides": [],
-        "implementation": {},
+        "implementation": implementation or {},
         "authority": {"exclusive": False},
         "state": "observed",
         "owner": None,
         "supersedes": None,
         "last_verified_at": None,
-        "metadata": {"aliases": list(aliases or [])},
+        "metadata": merged_metadata,
     }
 
 
@@ -64,6 +67,8 @@ class TestResolveFacade(unittest.TestCase):
         self.assertEqual(resolved["resolution"], "alias")
         self.assertEqual(resolved["identity_source"], "governance-directory")
         self.assertIn("chamber", resolved["aliases"])
+        self.assertFalse(resolved["integrity"]["mutation_allowed"])
+        self.assertEqual(resolved["resolution_receipt"]["schema"], "agentos.project-resolution/v1")
 
     def test_application_identity_registry_does_not_create_project_alias(self):
         self.write_governance()
@@ -94,6 +99,8 @@ class TestResolveFacade(unittest.TestCase):
         self.assertEqual(resolved["id"], "metashield-protocol")
         self.assertEqual(resolved["aliases"], [])
         self.assertEqual(resolved["identity_source"], "project-data-exact-id-fallback")
+        self.assertFalse(resolved["integrity"]["mutation_allowed"])
+        self.assertEqual(resolved["resolution_receipt"]["confidence"]["source"], 0.0)
 
     def test_ambiguous_alias_is_rejected_instead_of_guessed(self):
         self.write_governance(
@@ -107,6 +114,41 @@ class TestResolveFacade(unittest.TestCase):
                 governance_path=self.gov,
                 data_root=self.root,
             )
+
+    def test_complete_project_authority_allows_mutation(self):
+        self.write_governance(
+            project_entity(
+                "layoutlib",
+                aliases=["LayoutLib", "3D LayoutLib"],
+                implementation={
+                    "source": {
+                        "repo": "alston-personal/layoutlib",
+                        "branch": "main",
+                        "canonical_path": "/srv/agentos/projects/layoutlib",
+                        "node": "oracle-core-node",
+                    },
+                    "runtime": {"node": "oracle-core-node", "path": "/srv/agentos/runtime/layoutlib"},
+                    "deployment": {"workflow": "release-layoutlib.yml"},
+                },
+                metadata={
+                    "state": {"document": "projects/layoutlib/continuity/latest.json"},
+                    "surfaces": [{"id": "layout-lab", "type": "demo"}],
+                },
+            )
+        )
+
+        resolved = resolve_project_identity(
+            "LayoutLib",
+            governance_path=self.gov,
+            data_root=self.root,
+        )
+
+        self.assertTrue(resolved["integrity"]["complete"])
+        self.assertTrue(resolved["integrity"]["mutation_allowed"])
+        self.assertEqual(resolved["source"]["repo"], "alston-personal/layoutlib")
+        self.assertEqual(resolved["source"]["canonical_path"], "/srv/agentos/projects/layoutlib")
+        self.assertEqual(resolved["resolution_receipt"]["confidence"]["identity"], 1.0)
+        self.assertEqual(resolved["resolution_receipt"]["confidence"]["source"], 1.0)
 
     def test_continuation_envelope_composes_ir_and_execution_head(self):
         self.write_governance(project_entity("agentos-core", aliases=["core"]))
@@ -152,6 +194,9 @@ class TestResolveFacade(unittest.TestCase):
 
         self.assertEqual(result["schema"], "agentos.resolve/v1")
         self.assertEqual(result["project"]["id"], "agentos-core")
+        self.assertEqual(result["project_resolution"]["schema"], "agentos.project-resolution/v1")
+        self.assertFalse(result["mutation_allowed"])
+        self.assertFalse(result["availability"]["project_integrity"])
         self.assertEqual(result["active_goal"], "close ChatGPT Web -> ONE resolve path")
         self.assertEqual(result["execution_head"]["local_head"], "abc123")
         self.assertEqual(result["continuation"]["ir_id"], "ir_test")
