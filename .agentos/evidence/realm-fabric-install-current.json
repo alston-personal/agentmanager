@@ -1,7 +1,7 @@
 {
   "action": "agentos.realm-fabric.install_release",
-  "capsule_id": "action-2b07a63954a84cafa8071ab093f46af4",
-  "completed_at": "2026-08-28T06:25:33Z",
+  "capsule_id": "action-bdd00f5842934acf83a360a3e3eb4c11",
+  "completed_at": "2026-08-28T06:31:23Z",
   "current": "/home/ubuntu/.local/share/agentos/realm-fabric/current",
   "current_pointer_mode": "legacy_directory_preserved",
   "endpoint": "http://127.0.0.1:8780",
@@ -10,13 +10,20 @@
     "body": "{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}",
     "status": 200
   },
+  "main_pid_after": 1779712,
+  "main_pid_before": 1779512,
   "ok": true,
+  "process_identity_attested": true,
   "realm_id": "realm-alston",
-  "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/8e80014490dff7d4ba1a4b2814ce13a8215fedf9",
+  "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/6ea6276f6b0dc065667853dbde05e6712193b380",
+  "resolve_auth_probe": {
+    "body": "{\"error\": \"PermissionError: missing bearer credential\", \"ok\": false}",
+    "status": 401
+  },
   "schema": "agentos.action-receipt/v1",
   "service": "agentos-realm-fabric.service",
-  "source_commit": "8e80014490dff7d4ba1a4b2814ce13a8215fedf9",
-  "started_at": "2026-08-28T06:25:31Z",
+  "source_commit": "6ea6276f6b0dc065667853dbde05e6712193b380",
+  "started_at": "2026-08-28T06:31:21Z",
   "steps": [
     {
       "argv": [
@@ -27,10 +34,10 @@
         "/home/ubuntu/agentmanager",
         "fetch",
         "origin",
-        "8e80014490dff7d4ba1a4b2814ce13a8215fedf9"
+        "6ea6276f6b0dc065667853dbde05e6712193b380"
       ],
       "returncode": 0,
-      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            8e80014490dff7d4ba1a4b2814ce13a8215fedf9 -> FETCH_HEAD\n",
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            6ea6276f6b0dc065667853dbde05e6712193b380 -> FETCH_HEAD\n",
       "stdout": "",
       "step": "fetch_source_commit"
     },
@@ -44,17 +51,17 @@
         "worktree",
         "add",
         "--detach",
-        "/tmp/realm-fabric-release-noim55xi/source",
-        "8e80014490dff7d4ba1a4b2814ce13a8215fedf9"
+        "/tmp/realm-fabric-release-3rlm2ro0/source",
+        "6ea6276f6b0dc065667853dbde05e6712193b380"
       ],
       "returncode": 0,
       "stderr": "",
-      "stdout": "Preparing worktree (detached HEAD 8e80014)\nHEAD is now at 8e80014 feat(agentos): register Realm Fabric as persistent Core node\n",
+      "stdout": "Preparing worktree (detached HEAD 6ea6276)\nHEAD is now at 6ea6276 fix(agentos): attest exact Realm Fabric release process\n",
       "step": "materialize_source"
     },
     {
       "argv": [
-        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/8e80014490dff7d4ba1a4b2814ce13a8215fedf9/bin/agentos-one",
+        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/6ea6276f6b0dc065667853dbde05e6712193b380/bin/agentos-one",
         "--help"
       ],
       "returncode": 0,
@@ -64,7 +71,7 @@
     },
     {
       "argv": [
-        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/8e80014490dff7d4ba1a4b2814ce13a8215fedf9/bin/agentos-one",
+        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/6ea6276f6b0dc065667853dbde05e6712193b380/bin/agentos-one",
         "init",
         "--realm-id",
         "realm-alston"
@@ -98,6 +105,7 @@
       "step": "enable_service"
     },
     {
+      "main_pid_before": 1779512,
       "observations": [
         {
           "returncode": 3,
