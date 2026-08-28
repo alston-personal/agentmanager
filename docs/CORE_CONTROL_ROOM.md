@@ -1,18 +1,20 @@
 # AgentOS Core Control Room
 
 **Status date:** 2026-08-28  
-**Purpose:** canonical development-thread map for AgentOS Core. This file captures current synthesis, open architectural questions, Realm/Node observations, and decisions that should not remain trapped in chat history.
+**Purpose:** canonical development-thread map for AgentOS Core. This file captures current synthesis, live runtime boundaries, Node Map/capability state, Project Identity, memory/IR, governance, receipts/evidence, deprecated paths, and next architectural work.
 
-> Implementation truth still belongs to `docs/CURRENT_STATE.md` plus executable code/tests/evidence. When this file conflicts with implementation evidence, evidence wins and this file must be corrected.
+> Implementation truth belongs to executable code/tests/evidence plus `docs/CURRENT_STATE.md`. When this file conflicts with verified runtime evidence, evidence wins and this file must be corrected.
 
 ## 1. Documentation discipline
 
 - AgentOS Core architecture and implementation discussion has one canonical development thread.
 - Important decisions must be persisted to repository documentation; chat is not a source of truth.
 - `docs/CURRENT_STATE.md` = authoritative implementation/research reality map.
-- `docs/CORE_CONTROL_ROOM.md` = current development synthesis, active questions, Node Map view, and next architectural work.
-- Architecture-sensitive changes should continue to be covered by Documentation Reality Guard.
-- Periodically consolidate, deduplicate, and retire stale documentation rather than creating parallel narratives.
+- `docs/CORE_CONTROL_ROOM.md` = development synthesis, active boundaries, Node Map view, and next work.
+- `docs/CORE_DEPLOYMENT_AUTHORITY.md` = canonical live Core generation/lease contract.
+- `docs/AGENTOS_NODE.md` = node-local discovery/capability contract.
+- Architecture-sensitive changes remain subject to Documentation Reality Guard.
+- Prefer consolidation and retirement over creating parallel architecture narratives.
 
 ## 2. Realm / Node Map
 
@@ -20,278 +22,304 @@
 
 `agent_core/node_registry.py` implements a persistent ONE-side Realm Node Map with node manifests, capabilities, tool presence, surface inventory, heartbeat freshness, online/offline derivation, and Realm-level capability aggregation.
 
-### Currently evidenced nodes
+### Node truth rules
 
-| Node | Classification | Evidence status | Known / expected capabilities |
-|---|---|---|---|
-| `oracle-core-node` | Core runtime node | **Observed/verified in recent continuation execution** | AgentOS Core runtime, allowlisted Core task execution, control-plane participation |
-| ChatGPT Web logical node | Intended cognitive/browser node | **Not yet verified as an enrolled/heartbeat node** | Interactive cognition, user-facing conversation; future bridge/surface capabilities |
-| User PC | Candidate client node | **Not yet proven here as a distinct current Realm registry entry** | Local tools/runtime depending on installed client/bridge |
+- Conceptual/logical surfaces are not automatically live Realm nodes.
+- A node becomes operationally real only through enrollment/registry state and fresh runtime evidence.
+- Capability advertisement is descriptive, not an authority grant.
+- Transport reachability, ControllerService reachability, node capability availability, and mutation authority are four separate states.
+- The authoritative node count/status comes from live NodeRegistry state, never from a diagram or conversation assumption.
 
-**Important:** Do not count conceptual/logical nodes as live Realm nodes. The authoritative runtime count must come from the live `AGENT_DATA_ROOT/realm/nodes.json` / `NodeRegistry.node_map()` output, not conversation assumptions.
+### Current evidenced roles
+
+| Node / surface | Classification | Current interpretation |
+|---|---|---|
+| `oracle-core-node` | Core runtime node | Verified Core/ONE participant and canonical Core source/runtime authority node |
+| ChatGPT Web logical node | Cognitive/user surface | Architectural client surface; do not call it an enrolled live Realm node without registry + heartbeat evidence |
+| User PC / thin node | Candidate/edge node | Must be proven through node enrollment, capability advertisement, heartbeat provenance, and readiness evidence |
+| `vopc5750` | Node Golden Path target | Core dispatch now reaches ControllerService; `agent.surface.inspect` capability convergence remains a Node responsibility when not advertised |
 
 ### Node Map target fields
 
 - `node_id`, role, platform/hostname
-- reported/effective status and heartbeat age
+- reported/effective status and heartbeat age/provenance
 - capabilities
 - tool presence
 - surface inventory/providers
-- authority/trust constraints (to be integrated from governance)
+- authority/trust constraints
 - optional benchmark/cost/latency metadata
+- runtime/version provenance where needed for convergence debugging
 
-## 3. AgentOS Core Console / website
+## 3. Capability model
 
-A Core website is desirable, but should start as a **read-only Console / Observatory**, not as a replacement for all development surfaces.
-
-MVP views:
-
-1. Realm Node Map + capabilities/status
-2. Project/Governance/Resource registries
-3. Canonical docs + ADR/decision index
-4. Roles, executors, services and ownership
-5. Tasks, receipts and evidence
-6. Memory / continuation / IR observability
-7. Governance state and warnings
-
-Do not make embedding ChatGPT Web itself a Core dependency. ChatGPT/GPT web experiences are product surfaces; the Core Console should use a replaceable cognitive-executor interface. A first-party/API-backed chat surface can be added later without making one browser tab the system brain.
-
-## 4. Brain / event-trigger architecture
-
-Current interactive cognition is heavily driven by ChatGPT sessions, but the AgentOS architectural brain must not equal ChatGPT Web.
-
-Target loop:
+AgentOS must keep these questions distinct:
 
 ```text
-node/event source
-    -> event envelope
-    -> Trigger Registry / Attention Gate
-    -> reflex / deterministic handling
-    -> if unresolved or novel: governance/policy
-    -> ONE capability/executor resolution
-    -> cognitive executor
-    -> plan/action
-    -> node capability execution
-    -> receipt/evidence
-    -> canonical-state / memory consolidation
+Does the node advertise the capability?
+Can ONE route to the node?
+Does policy/authority allow the effect?
+Did execution actually succeed?
 ```
 
-This is the missing bridge from a passive chat-driven system toward the "everything can have a brain" goal. Nodes should publish events; policy decides which events deserve cognition and which executor should handle them. The system must not depend on keeping a ChatGPT browser tab awake as a daemon.
+A missing advertised capability should produce a node/capability outcome, not masquerade as a Core route failure. Issue #64 proved this distinction: the final real-path probe reached ControllerService and returned a node-level `NODE_CAPABILITY_NOT_ADVERTISED` outcome instead of the previous Core HTTP 404.
 
-Potential event classes: heartbeat/state changes, filesystem/repo changes, task completion/failure, browser/UI events, external webhooks/connectors, scheduled events, device/sensor signals, and explicit user messages. Every action remains subject to capability and authority rules.
+Repeated successful high-level reasoning may become a candidate skill/reflex, but capability promotion requires tests, provenance, failure boundaries, authority constraints, and rollback. Capability growth must never silently widen authority.
 
-### Reflex-first cognition hierarchy
+## 4. Canonical Project Identity
 
-AgentOS Core should behave more like a spinal cord plus nervous system than a system that invokes an LLM for every event:
+The earlier claim that canonical Project Identity was unproven is now stale.
+
+AgentOS now has an explicit canonical project registration contract in `agent_core/project_store.py` using:
 
 ```text
-L0 Signal      -> event/sensor/input
-L1 Reflex      -> deterministic rule/state-machine handling
-L2 Deliberation-> bounded planner/solver/policy logic
-L3 Cognition   -> LLM / multimodal / high-cost reasoning
+agentos.project/v1
 ```
 
-**Core principle:** `Reflex first, cognition when necessary.`
+Core invariants:
 
-Higher cognition is more expensive, slower, and more powerful, so escalation should also carry stronger governance, authority, evidence, and audit requirements.
+- `project_id` is a stable logical identity.
+- project identity is independent from repository name, branch, checkout path, runtime path, deployment target, and state storage.
+- aliases are explicit project metadata, not alternate authorities.
+- source authority is explicit: `repo`, `branch`, `canonical_path`, `node`.
+- canonical project state location is explicit.
+- compatibility fields are projections for older readers, not independent authority.
+- registration projects identity into Governance Directory as `project://<project_id>`.
+- canonical resolution must fail closed for mutation when source/integrity requirements are incomplete.
 
-### Cognition-to-reflex learning loop
+`agentos-core` has governed registration/evidence and tests proving identity/repository/checkout separation.
 
-Calling the brain repeatedly for the same class of problem is a signal that AgentOS has not yet internalized the experience. Successful high-level reasoning should be eligible for abstraction into a reusable lower-level capability.
+### Project continuation rule
 
-Target learning loop:
+The normal path for `continue <project>` must be:
 
 ```text
-novel / unresolved event
-      -> cognitive executor
-      -> reasoning + action
-      -> receipt / outcome / evidence
-      -> repeated successful pattern detected
-      -> abstract candidate skill/policy/reflex
-      -> validate / test / govern
-      -> promote into Capability Registry / reflex layer
-      -> future matching events resolve without cognition
+user / cognitive surface
+  -> ONE
+  -> AgentOS resolver
+  -> canonical Project Identity
+  -> state / continuation / capability / execution-head resolution
+  -> continuation envelope
 ```
 
-This means AgentOS does not merely accumulate memories; it should gradually **compile repeated cognition into capabilities**.
+GitHub/source scanning remains valid for debugging and implementation work, but is not the normal project-identity discovery mechanism.
 
-Promotion must not happen from one successful anecdote. A candidate reflex/skill requires sufficient evidence, generalization boundaries, tests, failure handling, provenance, authority constraints, and rollback. Governance may tighten automatically but must not silently grant broader authority while promoting a learned capability.
+## 5. ChatGPT Web -> ONE -> AgentOS canonical query path
 
-The long-term efficiency objective is therefore:
+A cross-chat failure previously exposed an architectural error: a conversation tried to reconstruct AgentOS/project state by searching source code. That is not the intended control-plane path.
 
-> **Think when necessary; learn from thinking; stop thinking about what has become a reliable skill.**
+Architectural invariant:
 
-This is a Core architectural invariant and a bridge between memory, Cognitive IR, receipts/evidence, capability discovery, and the reflex layer.
+> **Use AgentOS; do not rediscover AgentOS from its source code.**
 
-## 5. Project Identity / Registry status
-
-AgentOS **does already have registry infrastructure capable of representing projects**:
-
-- `GovernanceDirectory.VALID_KINDS` includes `project`.
-- Governance Directory provides identity, ownership/provides, implementation, authority, lifecycle state and metadata.
-- Resource Registry separately tracks registered world/resources and their observed/verification state.
-
-However, as of this review, no evidence has yet been found that a **canonical Project Identity contract** with stable `project_id` + aliases + repo/workspace/service/product mapping is consistently populated and used by every project resolver.
-
-Therefore the current problem should be framed as:
-
-> registry primitives exist; canonical project-identity population/resolution is not yet proven end-to-end.
-
-This distinction must be tested before adding another registry.
-
-## 6. Three-layer memory and IR
-
-Historical three-layer memory model remains conceptually useful:
-
-- **L1 — immediate / working memory:** active task, active context, execution state, short-lived reconstructable data.
-- **L2 — project / mid-term memory:** project state, decisions, facts, unresolved questions, frontier and continuation knowledge.
-- **L3 — long-term / cross-project memory:** stable knowledge, preferences, lessons, reusable patterns and domain knowledge.
-
-Current AgentOS has evolved beyond an early `SHORT_TERM.md` / `LONG_TERM.md` memory-only model. Production/research documentation now separates canonical project state, cognitive state, work/deferred state, governance state and execution evidence.
-
-**IR = Intermediate Representation.** In AgentOS, Cognitive IR means a model-independent portable representation of the current working position for continuation across models/executors.
-
-IR should **not** become a fourth memory layer and should not replace memory. Preferred relationship:
-
-```text
-L1/L2/L3 + canonical/project/work state
-       -> retrieve / reconcile / compile
-       -> Cognitive IR / continuation package
-       -> Context Adapter / executor
-       -> execution + receipts
-       -> validated consolidation back to state/memory
-```
-
-The repo currently marks model-independent Cognitive IR as **Research**, while recent continuity data already uses an `agentos.ir/v1` continuation envelope operationally. These must be distinguished: an operational IR-shaped handoff schema exists; the stronger claim of generally sufficient cross-model Cognitive IR is not yet proven.
-
-## 7. LLM Wiki / Memory Palace
-
-Current evidence does not support treating either as a finished standalone Core subsystem.
-
-- Earlier design discussions contained a `knowledge/` concept described as Wiki-like persistent knowledge.
-- No verified current implementation named `LLM Wiki` or `Memory Palace` has been established in this review.
-- They should therefore be treated as **knowledge/navigation concepts**, not as separate sources of canonical truth.
-
-If retained, their proper relationship is:
-
-```text
-Canonical state / validated memory
-      -> human/LLM-readable knowledge projection (Wiki)
-      -> associative/navigation/index layer (Memory Palace)
-      -> retrieval
-      -> IR compilation
-```
-
-The Wiki/Palace should never silently overwrite canonical state. Promotion back into durable memory/state requires validation/provenance.
-
-## 8. ChatGPT Web -> ONE -> AgentOS canonical query path
-
-A cross-chat failure exposed an architectural error: a ChatGPT conversation attempted to understand AgentOS by searching the `agentmanager` GitHub source tree and discovering implementation details such as `register_project.py`. This is the wrong control-plane path.
-
-The normal continuation path must be:
-
-```text
-user says "continue" / names a project
-        -> ChatGPT Web Node
-        -> ONE
-        -> AgentOS Gateway
-        -> canonical resolver(s)
-        -> current project/session + canonical state + execution head + capabilities
-        -> cognitive executor continues work
-```
-
-GitHub, Oracle workspaces, `my-agent-data`, receipts, SQLite/JSON stores, scripts, and source code are **behind AgentOS** as implementation, evidence, or world-state sources. They are not the cognitive executor's primary route for rediscovering what AgentOS is or what project is current.
-
-The cognitive surface should not need to know whether a resolver is implemented with `register_project.py`, SQLite, JSON, GitHub Actions, a daemon, or another backend. A target interface is conceptually similar to:
+The cognitive surface should depend on a replaceable AgentOS resolve interface, conceptually:
 
 ```text
 agentos.resolve(user_intent)
 ```
 
-returning a canonical envelope such as:
+returning a canonical envelope with project identity, active goal, execution head, relevant capabilities/authority, evidence pointers, and next action.
 
-```yaml
-project:
-  id: metashield-protocol
-  aliases: [chamber, echo]
-active_goal: ...
-execution_head:
-  node: ...
-  workspace: ...
-  branch: ...
-  commit: ...
-capabilities:
-  project_registry: available
-  continuation_state: available
-  execution_receipt: available
-next_action: ...
-```
+Project Identity is now materially stronger than when this requirement was first written, but the strongest cross-device/new-chat acceptance remains a separate end-to-end closure test.
 
-### Architectural invariant
+## 6. Memory, continuation state, and Cognitive IR
 
-> **Use AgentOS; do not rediscover AgentOS from its source code.**
+Historical three-layer memory remains conceptually useful:
 
-Direct source/evidence inspection remains valid for debugging, verification, implementation work, or when AgentOS itself reports missing/ambiguous state. It must not be the default continuation mechanism.
+- **L1 — immediate / working:** active task, execution state, reconstructable local context.
+- **L2 — project / continuation:** decisions, project facts, unresolved questions, frontier, next direction.
+- **L3 — long-term / cross-project:** stable knowledge, preferences, reusable patterns, lessons.
 
-### Acceptance test for ChatGPT Web Node closure
+Current AgentOS is broader than the old `SHORT_TERM.md` / `LONG_TERM.md` memory model. Canonical project state, continuation/work state, governance state, runtime state, receipts/evidence, and validated knowledge are separate concerns.
 
-Open a completely new ChatGPT conversation, potentially on another computer, and enter only:
+### IR boundary
+
+`IR = Intermediate Representation`.
+
+An operational `agentos.ir/v1`-shaped handoff envelope may exist and be useful. That is not the same claim as a generally sufficient model-independent Cognitive IR for arbitrary model/executor switching.
+
+Preferred relationship:
 
 ```text
-繼續 metashield-protocol
+L1/L2/L3 + canonical/project/work state
+       -> retrieve / reconcile / compile
+       -> continuation IR
+       -> Context Adapter / executor
+       -> execution + receipts
+       -> validated consolidation back to state/memory
 ```
 
-**PASS:** the ChatGPT Web Node obtains through ONE/AgentOS, without rediscovery, at least:
+Cognitive IR remains **Research** until a repeatable cross-model benchmark proves preservation of active goal, constraints/decisions, rejected paths, open questions, and next direction.
 
-- canonical project ID and aliases (`metashield-protocol` / Chamber / Echo)
-- current active goal
-- current execution head
-- last relevant receipt/evidence pointer
-- available capabilities/authority relevant to continuation
-- next action / continuation state
+IR is not a fourth memory layer and must not become a competing source of truth.
 
-**FAIL:** the conversation must first search GitHub, search generic memory, guess the repository, ask whether Chamber/Echo means MetaShield, inspect AgentOS source code, or otherwise reconstruct project identity outside the AgentOS control plane.
+## 7. Governance model
 
-This acceptance test is device-independent: changing browser session or physical computer must not change the canonical project resolution result.
+Core governance now needs to be read as several orthogonal authorities rather than one generic permission flag:
 
-### Priority correction
+- responsibility/provider authority — Governance Directory;
+- project/source/state authority — canonical Project Identity + Governance projection;
+- protected-branch authority — explicit branch governance;
+- runtime deployment authority — Core deployment generation/lease state;
+- node capability advertisement — NodeRegistry;
+- effect/execution authorization — capability-specific governance/policy;
+- evidence acceptance — receipts/tests/live path proof.
 
-`execution-head` work remains valuable but is a downstream subsystem. It must not be mistaken for the highest-priority closure item. The immediate architectural objective is the complete query path:
+Core rule:
+
+> **Capability does not imply authority. Identity does not imply lifecycle ownership. Passing CI does not imply live mutation authority.**
+
+This is especially important for Core deployment: logical equality of `lease_owner` no longer permits generation advance while a lease is active.
+
+## 8. Core runtime / deployment status
+
+Realm Fabric is a single live Core service governed by:
 
 ```text
-ChatGPT Web Node
-        -> ONE
-        -> AgentOS Gateway
-             |- project.resolve
-             |- state.resolve
-             |- continuation.resolve
-             |- capability.resolve
-             `- execution_head.resolve
+/home/ubuntu/agent-data/governance/core-deployment.json
 ```
 
-Only after this path is real can `/goal 把 chatgpt node 完成並接入 one` be considered closed.
+Current deployment model:
 
-## 9. Immediate Core priorities exposed by this review
+```text
+claim next generation
+  -> install exact claimed release
+  -> attest observed release
+  -> converge
+  -> release / expire ownership before another generation advance
+```
 
-1. **Close and prove the ChatGPT Web Node -> ONE -> AgentOS canonical query path.** This is now the highest-priority acceptance boundary.
-2. Query the **live** NodeRegistry and publish its output as the authoritative Realm Node Map.
-3. Verify whether PC and ChatGPT Web are actually enrolled nodes versus conceptual surfaces.
-4. Audit Governance Directory `kind=project` entries and project resolver behavior as inputs behind AgentOS, not as a substitute for using AgentOS.
-5. Ensure `project.resolve`, `state.resolve`, `continuation.resolve`, `capability.resolve`, and `execution_head.resolve` produce one canonical continuation envelope.
-6. Reconcile the operational `agentos.ir/v1` continuation envelope with the research-level Cognitive IR definition.
-7. Audit L1/L2/L3 memory code/data paths and explicitly map them to current State/Cognition/Work architecture.
-8. Decide whether Wiki/Memory Palace remain named subsystems or become projections/indexes over the memory/state system.
-9. Add Event/Trigger/Attention Fabric and the cognition-to-reflex promotion pipeline before attempting broad autonomous node cognition.
-10. Define evidence thresholds and governance rules for promoting repeated cognitive solutions into reusable capabilities/reflexes.
-11. Build Core Console only after the underlying registry/read APIs are authoritative; start read-only.
+The installer does not own generation transition.
 
-## 10. Anti-drift rule
+An active lease blocks generation advance even for the same owner. This closes the delayed-workflow/same-owner race discovered during the 2026-08-28 Node Golden Path incident.
+
+For exact contract details see `docs/CORE_DEPLOYMENT_AUTHORITY.md`.
+
+### Issue #64 closure boundary
+
+The final real transport acceptance proved:
+
+```text
+Bootstrap Control Inbox
+  -> Oracle bridge / ONE
+  -> POST /v1/controller/dispatch
+  -> ControllerService
+```
+
+Core-level HTTP 404 was eliminated. Final outcome moved to the expected Node layer (`NODE_CAPABILITY_NOT_ADVERTISED` for `agent.surface.inspect`). Evidence is persisted in:
+
+```text
+.agentos/evidence/issue-64/control-inbox.json
+```
+
+Therefore Node work must not reopen the Core route incident unless fresh evidence shows regression.
+
+## 9. Receipts and evidence
+
+Receipts are first-class architecture artifacts, not incidental logs.
+
+Evidence levels should be interpreted carefully:
+
+1. code exists;
+2. unit/contract test passes;
+3. governed workflow completes;
+4. runtime state attests intended generation/process;
+5. real transport path reaches intended subsystem;
+6. target capability executes and produces expected outcome.
+
+A lower layer must not be described as proof of a higher layer.
+
+Examples:
+
+- `/health` proves liveness, not correct controller dispatch;
+- process PID proves a process exists, not that the expected release is deployed;
+- a workflow success proves its steps passed, not necessarily that a downstream node capability exists;
+- `NODE_CAPABILITY_NOT_ADVERTISED` after ControllerService entry is valid Core-route evidence but not Node readiness evidence.
+
+Architecture-sensitive acceptance should preserve receipts/evidence under `.agentos/evidence/` when practical.
+
+## 10. Brain / event-trigger architecture
+
+AgentOS architectural cognition must not equal a permanently open ChatGPT Web session.
+
+Target loop:
+
+```text
+node/event source
+  -> event envelope
+  -> Trigger Registry / Attention Gate
+  -> L1 reflex / deterministic handling
+  -> L2 bounded deliberation / policy
+  -> L3 cognition when necessary
+  -> ONE capability/executor resolution
+  -> governed action
+  -> receipt/evidence
+  -> canonical-state / memory consolidation
+```
+
+Core principle:
+
+> **Reflex first, cognition when necessary.**
+
+Successful recurring cognitive solutions may be compiled downward into governed capabilities/reflexes only after evidence and generalization tests.
+
+## 11. Core Console / Observatory
+
+A Core website remains desirable as a **read-only Console / Observatory** first, not as another source of truth.
+
+MVP views:
+
+1. Realm Node Map + capabilities/status/provenance
+2. Project/Governance/Resource registries
+3. Canonical docs + decision index
+4. Roles, executors, services and ownership
+5. Tasks, receipts and evidence
+6. Memory / continuation / IR observability
+7. Core deployment generation/lease state
+8. Governance state and warnings
+
+Do not make embedding ChatGPT Web a Core dependency. The Console consumes canonical read APIs; it does not become the brain or authority store.
+
+## 12. Deprecated / historical paths
+
+Do not present these as current canonical architecture:
+
+- `SHORT_TERM.md` / `LONG_TERM.md` as the complete memory system;
+- pulse files / brain dumps as canonical state;
+- manual `/report` as the sole continuity mechanism;
+- repository or checkout path as Project Identity;
+- GitHub/source rediscovery as the normal `continue <project>` path;
+- conceptual nodes counted as live NodeRegistry entries;
+- capability advertisement interpreted as execution authority;
+- process PID or `/health` alone as Core acceptance;
+- installer-side implicit deployment-generation advance;
+- same-owner active-lease generation advance;
+- legacy unfenced Core deploy calls;
+- runtime-generation systemd drop-ins treated as canonical authority when deployment state exists;
+- Wiki/Memory Palace treated as independent canonical stores without verified implementation/authority semantics.
+
+Compatibility readers/adapters may remain temporarily but must not become parallel authorities.
+
+## 13. Immediate Core priorities
+
+1. Finish and repeatedly prove the new-chat / cross-device `ChatGPT Web -> ONE -> AgentOS resolve` path using canonical Project Identity rather than source rediscovery.
+2. Publish live NodeRegistry output as the authoritative Realm Node Map and clearly distinguish enrolled nodes from logical surfaces.
+3. Complete Node capability/heartbeat/runtime convergence for Golden Path nodes without conflating node failures with Core routing failures.
+4. Extend canonical project registration/resolution to projects beyond `agentos-core`, preserving stable project IDs and explicit source authority.
+5. Reconcile operational continuation envelopes with research-level Cognitive IR and design a repeatable cross-model benchmark.
+6. Map L1/L2/L3 memory concepts to concrete current State/Cognition/Work stores and remove remaining ambiguous legacy-memory claims.
+7. Strengthen receipt/evidence indexing so Console/agents can answer “what is proven, by which path, at which generation?” without scanning workflows manually.
+8. Design Event/Trigger/Attention Fabric and cognition-to-reflex promotion with explicit governance thresholds.
+9. Build the read-only Core Console only over authoritative registries/APIs.
+
+## 14. Anti-drift questions
 
 Before implementing a new Core mechanism, ask:
 
 1. Does an existing registry/state/manager already own this responsibility?
 2. Is the problem missing data/population/resolution rather than missing architecture?
-3. Is the proposed mechanism Core, research, or an application-specific consumer?
-4. What executable evidence will prove it works?
-5. Which canonical document must change with the implementation?
-6. Am I using AgentOS through its control plane, or bypassing it and reconstructing truth from GitHub/source/memory?
+3. Is the proposed mechanism Core, research, compatibility, or application-specific?
+4. Which authority is being exercised: identity, capability, effect, branch, deployment generation, or evidence acceptance?
+5. What executable/live evidence will prove the intended layer?
+6. Which canonical document must change with the implementation?
+7. Am I using AgentOS through its control plane, or bypassing it and reconstructing truth from source/memory?
+8. Am I accidentally promoting compatibility metadata into a second source of truth?
