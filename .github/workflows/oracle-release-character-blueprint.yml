@@ -9,6 +9,7 @@ on:
       - 'web_assets/character-blueprint-poc.html'
       - 'scripts/deploy_character_blueprint_poc.py'
       - 'scripts/character_blueprint_geometry_selftest.py'
+      - 'scripts/character_blueprint_browser_smoke.mjs'
 
 permissions:
   contents: read
@@ -45,6 +46,7 @@ jobs:
           grep -q '"llm_tokens":0' "$PAGE"
           grep -q 'visibility-gated-v0.4.1' "$DEPLOY"
           grep -q 'character-blueprint-poc-v0.4.1' "$DEPLOY"
+          grep -q 'browserSelfTest:true' "$DEPLOY"
           grep -q '/poc/character-blueprint/' "$DEPLOY"
           echo 'character_blueprint_v041_source=PASS'
 
@@ -98,6 +100,7 @@ jobs:
           grep -q '"ok": true' /tmp/character-blueprint-release.json
           grep -q 'character-blueprint-poc-v0.4.1' /tmp/character-blueprint-release.json
           grep -q '"three_d_proxy": true' /tmp/character-blueprint-release.json
+          grep -q '"browser_self_test": true' /tmp/character-blueprint-release.json
           grep -q '"visibility_gated_body_frame": true' /tmp/character-blueprint-release.json
           rm -rf "$STAGE"
           echo 'character_blueprint_v041_deploy=PASS'
@@ -114,6 +117,8 @@ jobs:
           grep -q 'character-blueprint-ir/v0.4' /tmp/character-blueprint-public
           grep -q 'threeDProxy:true' /tmp/character-blueprint-public
           grep -q 'interactivePartLinking:true' /tmp/character-blueprint-public
+          grep -q 'browserSelfTest:true' /tmp/character-blueprint-public
+          grep -q 'selfTestLandmarks' /tmp/character-blueprint-public
           grep -q 'OrbitControls' /tmp/character-blueprint-public
           grep -q 'visibility-gated-v0.4.1' /tmp/character-blueprint-public
           grep -q '丟一張角色圖，先把她立起來' /tmp/character-blueprint-public
@@ -125,3 +130,30 @@ jobs:
           fi
           echo 'public_character_blueprint_v041_identity=PASS'
           echo 'upper_body_proxy_contract=PASS'
+
+  browser-e2e:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Run public Character Blueprint browser smoke
+        shell: bash
+        env:
+          CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
+        run: |
+          set -euo pipefail
+          node scripts/character_blueprint_browser_smoke.mjs | tee /tmp/character-blueprint-browser-smoke.json
+          grep -q '"ok": true' /tmp/character-blueprint-browser-smoke.json
+          grep -q 'visibility-gated-v0.4.1' /tmp/character-blueprint-browser-smoke.json
+          grep -q '"coverage": "upper_body"' /tmp/character-blueprint-browser-smoke.json
+          echo 'character_blueprint_browser_e2e=PASS'
