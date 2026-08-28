@@ -1,9 +1,130 @@
 {
-  "capsule_id": "action-9e72ccd25c5f4784a19d0f6e24b66b32",
-  "completed_at": "2026-08-28T06:13:22Z",
-  "error": "IsADirectoryError: [Errno 21] Is a directory: '/home/ubuntu/.local/share/agentos/realm-fabric/.current-23a49f8f8bb7fafb7dd5f76116bd9f271172529d' -> '/home/ubuntu/.local/share/agentos/realm-fabric/current'",
+  "action": "agentos.realm-fabric.install_release",
+  "capsule_id": "action-408fc712406744a2ba24268dc0a2a9b8",
+  "completed_at": "2026-08-28T06:15:21Z",
+  "current": "/home/ubuntu/.local/share/agentos/realm-fabric/current",
+  "current_pointer_mode": "legacy_directory_preserved",
+  "endpoint": "http://127.0.0.1:8780",
   "executor_user": "ubuntu",
-  "ok": false,
+  "health": {
+    "body": "{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}",
+    "status": 200
+  },
+  "ok": true,
+  "realm_id": "realm-alston",
+  "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/a390fa21676392d555e674a9a2aaa1479cda63d8",
   "schema": "agentos.action-receipt/v1",
-  "started_at": "2026-08-28T06:13:20Z"
+  "service": "agentos-realm-fabric.service",
+  "source_commit": "a390fa21676392d555e674a9a2aaa1479cda63d8",
+  "started_at": "2026-08-28T06:15:20Z",
+  "steps": [
+    {
+      "argv": [
+        "git",
+        "-c",
+        "safe.directory=/home/ubuntu/agentmanager",
+        "-C",
+        "/home/ubuntu/agentmanager",
+        "fetch",
+        "origin",
+        "a390fa21676392d555e674a9a2aaa1479cda63d8"
+      ],
+      "returncode": 0,
+      "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            a390fa21676392d555e674a9a2aaa1479cda63d8 -> FETCH_HEAD\n",
+      "stdout": "",
+      "step": "fetch_source_commit"
+    },
+    {
+      "argv": [
+        "git",
+        "-c",
+        "safe.directory=/home/ubuntu/agentmanager",
+        "-C",
+        "/home/ubuntu/agentmanager",
+        "worktree",
+        "add",
+        "--detach",
+        "/tmp/realm-fabric-release-4huaj5yv/source",
+        "a390fa21676392d555e674a9a2aaa1479cda63d8"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "Preparing worktree (detached HEAD a390fa2)\nHEAD is now at a390fa2 fix(agentos): preserve legacy Realm Fabric current pointer\n",
+      "step": "materialize_source"
+    },
+    {
+      "argv": [
+        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/a390fa21676392d555e674a9a2aaa1479cda63d8/bin/agentos-one",
+        "--help"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "usage: agentos-one [-h] {init,invite,approve,serve,task,receipt,nodes} ...\n\npositional arguments:\n  {init,invite,approve,serve,task,receipt,nodes}\n\noptions:\n  -h, --help            show this help message and exit\n",
+      "step": "verify_launcher"
+    },
+    {
+      "argv": [
+        "/home/ubuntu/.local/share/agentos/realm-fabric/releases/a390fa21676392d555e674a9a2aaa1479cda63d8/bin/agentos-one",
+        "init",
+        "--realm-id",
+        "realm-alston"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"realm_id\": \"realm-alston\"\n}\n",
+      "step": "init_realm"
+    },
+    {
+      "argv": [
+        "systemctl",
+        "--user",
+        "daemon-reload"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "",
+      "step": "daemon_reload"
+    },
+    {
+      "argv": [
+        "systemctl",
+        "--user",
+        "enable",
+        "agentos-realm-fabric.service"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "",
+      "step": "enable_service"
+    },
+    {
+      "observations": [
+        {
+          "returncode": 3,
+          "state": "deactivating",
+          "stderr": ""
+        },
+        {
+          "returncode": 0,
+          "state": "active",
+          "stderr": ""
+        }
+      ],
+      "ok": true,
+      "restart": {
+        "argv": [
+          "systemctl",
+          "--user",
+          "--no-block",
+          "restart",
+          "agentos-realm-fabric.service"
+        ],
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      "service": "agentos-realm-fabric.service",
+      "step": "restart_service"
+    }
+  ]
 }
