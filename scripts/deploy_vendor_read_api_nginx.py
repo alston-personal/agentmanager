@@ -139,19 +139,26 @@ def find_studio_server(lines):
         if server_start is not None and depth < server_depth:
             block = '\n'.join(lines[server_start:idx + 1])
             if 'server_name' in block and 'studio.milkcat.org' in block:
-                is_https = ('listen 443' in block) or ('ssl_certificate' in block)
-                candidates.append((server_start, idx, is_https))
+                listens = []
+                for raw in block.splitlines():
+                    s = raw.strip()
+                    if s.startswith('listen ') and ';' in s:
+                        listens.append(s[len('listen '):].split(';', 1)[0].strip())
+                is_443 = any(x == '443' or x.startswith('443 ') or x.startswith('[::]:443') for x in listens)
+                has_cookie_guard = 'location /api/cookies' in block or 'location = /api/cookies' in block
+                candidates.append((server_start, idx, is_443, has_cookie_guard))
             server_start = None
             server_depth = None
 
     https = [c for c in candidates if c[2]]
+    guarded = [c for c in https if c[3]]
+    if len(guarded) == 1:
+        return guarded[0][0], guarded[0][1]
     if len(https) == 1:
         return https[0][0], https[0][1]
     if len(https) > 1:
-        raise RuntimeError('multiple studio HTTPS server blocks found')
-    if len(candidates) == 1:
-        return candidates[0][0], candidates[0][1]
-    raise RuntimeError('studio HTTPS server block not found')
+        raise RuntimeError('multiple studio 443 server blocks found')
+    raise RuntimeError('studio 443 server block not found')
 
 
 def strip_existing_marker(text: str) -> str:
