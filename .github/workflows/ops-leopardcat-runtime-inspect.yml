@@ -26,66 +26,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${DEPLOY_USER:-}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          echo 'schema=leopardcat.production-runtime-inspection/v2'
-          echo "hostname=$(hostname)"
-          echo "executor_user=$(id -un)"
-          echo '=== LISTENER_8088 ==='
-          ss -ltnp 2>/dev/null | grep -E '[:.]8088([[:space:]]|$)' || true
-
-          pid=''
-          if command -v lsof >/dev/null 2>&1; then
-            pid="$(lsof -nP -t -iTCP:8088 -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
-          fi
-          if test -z "$pid" && command -v fuser >/dev/null 2>&1; then
-            pid="$(fuser 8088/tcp 2>/dev/null | awk '{print $1}' || true)"
-          fi
-          if test -z "$pid"; then
-            pid="$(ss -ltnp 2>/dev/null | awk '/:8088[[:space:]]/ { if (match($0,/pid=[0-9]+/)) { print substr($0,RSTART+4,RLENGTH-4); exit } }' || true)"
-          fi
+          echo 'schema=leopardcat.production-runtime-inspection/v3'
+          pid="$(lsof -nP -t -iTCP:8088 -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
           echo "listener_pid=${pid:-none}"
-
-          repo=''
           if test -n "$pid" && test -d "/proc/$pid"; then
-            echo '=== PROCESS ==='
             ps -p "$pid" -o pid=,ppid=,user=,lstart=,args= || true
-            cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
-            exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
-            echo "process_cwd=${cwd:-unknown}"
-            echo "process_exe=${exe:-unknown}"
-            echo '=== CGROUP ==='
-            cat "/proc/$pid/cgroup" 2>/dev/null || true
-            if test -n "$cwd"; then
-              repo="$(git -c safe.directory='*' -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
-            fi
+            echo "process_cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+            echo "fd0=$(readlink -f "/proc/$pid/fd/0" 2>/dev/null || true)"
+            echo "fd1=$(readlink -f "/proc/$pid/fd/1" 2>/dev/null || true)"
+            echo "fd2=$(readlink -f "/proc/$pid/fd/2" 2>/dev/null || true)"
           fi
-
-          if test -n "$repo"; then
-            echo '=== REPOSITORY ==='
-            echo "repo_root=$repo"
-            echo "repo_head=$(git -c safe.directory="$repo" -C "$repo" rev-parse HEAD 2>/dev/null || true)"
-            echo "repo_branch=$(git -c safe.directory="$repo" -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-            dirty_count="$(git -c safe.directory="$repo" -C "$repo" status --porcelain 2>/dev/null | wc -l | tr -d ' ' || true)"
-            echo "repo_dirty_count=${dirty_count:-unknown}"
-            echo '=== DIRTY_PATHS_ONLY ==='
-            git -c safe.directory="$repo" -C "$repo" status --porcelain=v1 2>/dev/null | sed -E 's/^(.{2}) (.*)$/status=\1 path=\2/' || true
-            echo '=== TRACKED_DIRTY_PATHS_ONLY ==='
-            git -c safe.directory="$repo" -C "$repo" diff --name-only 2>/dev/null | sed 's/^/path=/' || true
-            echo '=== UNTRACKED_PATHS_ONLY ==='
-            git -c safe.directory="$repo" -C "$repo" ls-files --others --exclude-standard 2>/dev/null | sed 's/^/path=/' || true
-            echo "repo_origin=$(git -c safe.directory="$repo" -C "$repo" remote get-url origin 2>/dev/null | sed -E 's#(https?://)[^/@]+:[^/@]+@#\1***:***@#' || true)"
-          else
-            echo 'repo_root=unresolved_from_process_cwd'
+          repo="/home/$(id -un)/leopardcat-tarot"
+          if test -d "$repo/.git"; then
+            echo "repo_head=$(git -c safe.directory="$repo" -C "$repo" rev-parse HEAD)"
+            echo 'dirty_paths:'
+            git -c safe.directory="$repo" -C "$repo" status --porcelain=v1
           fi
-
-          echo '=== USER_SERVICES ==='
-          systemctl --user --no-pager --type=service --state=running 2>/dev/null | grep -Ei 'leopard|tarot|fortune|8088' || true
-          echo '=== SYSTEM_SERVICES ==='
-          systemctl --no-pager --type=service --state=running 2>/dev/null | grep -Ei 'leopard|tarot|fortune|8088' || true
-
-          echo '=== AI_POLICY_LOCAL ==='
-          curl -sS --max-time 5 http://127.0.0.1:8088/api/v1/ai-policy || true
-          echo
           REMOTE
