@@ -19,7 +19,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       SERVICE_REPO: alston-personal/vendor-reputation-service
-      SERVICE_SHA: c1bcd3f23240bee2bc807ea89f9704e93bc6c3aa
+      SERVICE_SHA: 6be39b69a9a4331bcf84b60d4ff367efbcfc8b76
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
@@ -71,7 +71,6 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8765/healthz >/dev/null
 
-          # Identify the richest private Threads evidence JSON by unique threads.net permalinks.
           PICK=$(python3 - <<'PY'
           import json
           from pathlib import Path
@@ -100,28 +99,19 @@ jobs:
           IMPORT_JSON='{"skipped":true,"reason":"no-private-evidence-file"}'
           if [ -n "$PICK" ] && [ -f "$PICK" ]; then
             set +e
-            IMPORT_JSON=$(docker compose exec -T \
-              -e VENDOR_DATABASE_URL="postgresql://vendor_service:${VENDOR_DB_PASSWORD}@db:5432/vendor_reputation" \
-              api python /srv/app/scripts/import_private_threads_evidence.py "/host-evidence.json" 2>/tmp/vendor-import.err)
+            IMPORT_JSON=$(docker compose run --rm -T \
+              -v "$PICK:/private-evidence.json:ro" \
+              api python /srv/app/scripts/import_private_threads_evidence.py /private-evidence.json 2>/tmp/vendor-import.err)
             RC=$?
             set -e
             if [ "$RC" -ne 0 ]; then
-              # Run importer on host in a throwaway container with the private evidence mounted read-only.
-              set +e
-              IMPORT_JSON=$(docker compose run --rm -T \
-                -v "$PICK:/private-evidence.json:ro" \
-                api python /srv/app/scripts/import_private_threads_evidence.py /private-evidence.json 2>/tmp/vendor-import.err)
-              RC=$?
-              set -e
-              if [ "$RC" -ne 0 ]; then
-                IMPORT_JSON=$(python3 - <<'PY'
+              IMPORT_JSON=$(python3 - <<'PY'
           import json
           from pathlib import Path
           e=Path('/tmp/vendor-import.err')
           print(json.dumps({'skipped':True,'reason':'importer-failed','stderr_length':len(e.read_text()) if e.exists() else 0}))
           PY
-                )
-              fi
+              )
             fi
           fi
 
