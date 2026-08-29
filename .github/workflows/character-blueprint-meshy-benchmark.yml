@@ -8,6 +8,9 @@ on:
       - '.github/workflows/character-blueprint-meshy-benchmark.yml'
       - 'scripts/character_blueprint_meshy_benchmark.py'
       - 'scripts/character_blueprint_glb_render.mjs'
+      - 'scripts/character_blueprint_benchmark_capture.mjs'
+      - 'scripts/character_glb_to_ir.py'
+      - 'scripts/character_ir_reconcile.py'
       - 'benchmarks/character-blueprint/providers-v0.1.json'
 
 permissions:
@@ -26,12 +29,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate Meshy benchmark adapter
+      - name: Validate Meshy benchmark adapter and round-trip tools
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/character_blueprint_meshy_benchmark.py
+          python3 -m py_compile \
+            scripts/character_blueprint_meshy_benchmark.py \
+            scripts/character_glb_to_ir.py \
+            scripts/character_ir_reconcile.py
           node --check scripts/character_blueprint_glb_render.mjs
+          node --check scripts/character_blueprint_benchmark_capture.mjs
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -79,6 +86,19 @@ jobs:
           test "$(wc -c < "$FIXTURE")" -gt 10000
           file "$FIXTURE" | grep -qi 'JPEG image data'
 
+      - name: Capture source Image to Character IR evidence
+        if: steps.key.outputs.available == 'true'
+        shell: bash
+        env:
+          CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/character-blueprint-benchmark-person.jpg
+          CHARACTER_BLUEPRINT_CASE_ID: real-person-fullbody
+          CHARACTER_BLUEPRINT_BENCHMARK_OUT: benchmark-artifacts/meshy/real-person-fullbody/source-ir
+        run: |
+          set -euo pipefail
+          node scripts/character_blueprint_benchmark_capture.mjs
+          test -s benchmark-artifacts/meshy/real-person-fullbody/source-ir/character-ir.json
+
       - name: Run Meshy Image-to-3D benchmark
         if: steps.key.outputs.available == 'true'
         shell: bash
@@ -108,11 +128,29 @@ jobs:
           grep -q 'threejs-glb-canonical/v0.1' "$OUT/result.json"
           echo 'meshy_character_benchmark=PASS'
 
+      - name: Meshy GLB to 3D-derived IR and reconcile
+        if: steps.key.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=benchmark-artifacts/meshy/real-person-fullbody/meshy-7
+          python3 scripts/character_glb_to_ir.py \
+            --input-glb "$OUT/model.glb" \
+            --output "$OUT/ir-from-3d.json"
+          python3 scripts/character_ir_reconcile.py \
+            --image-ir benchmark-artifacts/meshy/real-person-fullbody/source-ir/character-ir.json \
+            --three-d-ir "$OUT/ir-from-3d.json" \
+            --output "$OUT/reconciliation.json"
+          test -s "$OUT/ir-from-3d.json"
+          test -s "$OUT/reconciliation.json"
+          grep -q 'character-ir-reconciliation/v0.1' "$OUT/reconciliation.json"
+          echo 'meshy_character_ir_roundtrip=PASS'
+
       - name: Upload Meshy benchmark evidence
         if: steps.key.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: character-blueprint-benchmark-meshy-real-person-fullbody
-          path: benchmark-artifacts/meshy/real-person-fullbody/meshy-7/
+          path: benchmark-artifacts/meshy/real-person-fullbody/
           if-no-files-found: error
           retention-days: 30
