@@ -8,6 +8,7 @@ from pathlib import Path
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "origin/main"
 HEAD = sys.argv[2] if len(sys.argv) > 2 else "HEAD"
+SELF = Path(__file__).resolve()
 
 # Only changed repository automation/code needs to be checked. Existing legacy
 # paths can be retired incrementally without making this guard impossible to
@@ -30,7 +31,16 @@ violations: list[str] = []
 for path in changed:
     if not path.exists() or path.is_dir():
         continue
-    if not (str(path).startswith(".github/workflows/") or str(path).startswith("scripts/") or str(path).startswith("agent_") or str(path).startswith("agentos_")):
+    # The detector necessarily contains the forbidden tokens in its regexes;
+    # do not classify its own source text as a publication bypass.
+    if path.resolve() == SELF:
+        continue
+    if not (
+        str(path).startswith(".github/workflows/")
+        or str(path).startswith("scripts/")
+        or str(path).startswith("agent_")
+        or str(path).startswith("agentos_")
+    ):
         continue
     try:
         text = path.read_text(encoding="utf-8")
