@@ -1,0 +1,13 @@
+{
+  "schema": "agentos.relay-smoke/v1",
+  "receipt_exists": true,
+  "ok": false,
+  "receipt_ok": false,
+  "stdout_exact_match": false,
+  "stdout_length": 0,
+  "stderr_length": 66,
+  "returncode": 124,
+  "timed_out": true,
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.247-linux-arm64/resources/native-binary/claude",
+  "executor_user": "ubuntu"
+}
