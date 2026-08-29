@@ -1,0 +1,81 @@
+{
+  "schema": "agentos.claude-executor-probe/v1",
+  "binary_found": true,
+  "binary_path": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.247-linux-arm64/resources/native-binary/claude",
+  "binary_version_dir": "extensions",
+  "tests": [
+    {
+      "name": "version",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed_ms": 11,
+      "stdout_length": 22,
+      "stderr_length": 0,
+      "stdout_sha256_16": "31b4339f09560aab",
+      "stderr_sha256_16": "e3b0c44298fc1c14",
+      "signals": {
+        "auth": false,
+        "api_key": false,
+        "network": false,
+        "permission": false,
+        "tty": false,
+        "invalid_option": false
+      }
+    },
+    {
+      "name": "help",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed_ms": 383,
+      "stdout_length": 16886,
+      "stderr_length": 0,
+      "stdout_sha256_16": "71ad650f59e08ae4",
+      "stderr_sha256_16": "e3b0c44298fc1c14",
+      "signals": {
+        "auth": true,
+        "api_key": true,
+        "network": true,
+        "permission": true,
+        "tty": true,
+        "invalid_option": false
+      }
+    },
+    {
+      "name": "print_stdin",
+      "returncode": 124,
+      "timed_out": true,
+      "elapsed_ms": 15018,
+      "stdout_length": 0,
+      "stderr_length": 0,
+      "stdout_sha256_16": "e3b0c44298fc1c14",
+      "stderr_sha256_16": "e3b0c44298fc1c14",
+      "signals": {
+        "auth": false,
+        "api_key": false,
+        "network": false,
+        "permission": false,
+        "tty": false,
+        "invalid_option": false
+      }
+    },
+    {
+      "name": "print_argv",
+      "returncode": 124,
+      "timed_out": true,
+      "elapsed_ms": 15024,
+      "stdout_length": 0,
+      "stderr_length": 0,
+      "stdout_sha256_16": "e3b0c44298fc1c14",
+      "stderr_sha256_16": "e3b0c44298fc1c14",
+      "signals": {
+        "auth": false,
+        "api_key": false,
+        "network": false,
+        "permission": false,
+        "tty": false,
+        "invalid_option": false
+      }
+    }
+  ],
+  "raw_output_committed": false
+}
