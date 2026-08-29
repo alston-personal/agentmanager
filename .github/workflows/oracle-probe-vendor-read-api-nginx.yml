@@ -46,12 +46,10 @@ jobs:
               raise SystemExit(1)
 
           current_file=None
-          blocks=[]
           file_hits={}
           api_locations=[]
           studio_server_files=[]
-          lines=out.splitlines()
-          for line in lines:
+          for line in out.splitlines():
               m=re.match(r'^# configuration file (.+):$',line.strip())
               if m:
                   current_file=m.group(1)
@@ -63,7 +61,6 @@ jobs:
               if current_file and '18765' in line:
                   file_hits.setdefault(current_file,[]).append('contains_18765')
 
-          # Discover enabled config topology without exposing contents.
           paths=[]
           for root in ('/etc/nginx/sites-enabled','/etc/nginx/conf.d','/etc/nginx/sites-available'):
               p=Path(root)
@@ -75,7 +72,6 @@ jobs:
                           target=None
                       paths.append({'path':str(x),'is_symlink':x.is_symlink(),'target':target})
 
-          # Probe current localhost service and public candidate path without mutation.
           import urllib.request, urllib.error
           def probe(url, method='GET'):
               req=urllib.request.Request(url,method=method)
