@@ -1,0 +1,220 @@
+name: Oracle Extract Threads Public Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-extract-threads-public-evidence.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-public-evidence-extract
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Extract public Threads evidence without login
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/threads-public-evidence-summary.json
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - <<'PY' > "$OUT"
+          import hashlib
+          import html
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          URL='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+          SHORTCODE='DcWVvpwGTSh'
+          PRIVATE_DIR=Path('/home/ubuntu/agent-data/runtime/vendor-reputation')
+          PRIVATE_OUT=PRIVATE_DIR / f'threads-{SHORTCODE}-public-evidence.json'
+          RAW_OUT=PRIVATE_DIR / f'threads-{SHORTCODE}-public.html'
+
+          class Scripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.scripts=[]
+                  self._capture=False
+                  self._attrs={}
+                  self._buf=[]
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower()=='script':
+                      self._capture=True
+                      self._attrs=dict(attrs)
+                      self._buf=[]
+              def handle_data(self, data):
+                  if self._capture:
+                      self._buf.append(data)
+              def handle_endtag(self, tag):
+                  if tag.lower()=='script' and self._capture:
+                      self.scripts.append((self._attrs, ''.join(self._buf)))
+                      self._capture=False
+                      self._attrs={}
+                      self._buf=[]
+
+          req=Request(URL, headers={'User-Agent':'Mozilla/5.0'})
+          with urlopen(req, timeout=30) as r:
+              body=r.read(4_000_000)
+              status=r.status
+              content_type=r.headers.get('content-type')
+          text=body.decode('utf-8','replace')
+
+          PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
+          RAW_OUT.write_text(text, encoding='utf-8')
+          os.chmod(RAW_OUT, 0o600)
+
+          parser=Scripts(); parser.feed(text)
+          json_docs=[]
+          parse_errors=0
+          for attrs, content in parser.scripts:
+              c=html.unescape(content).strip()
+              if not c or c[0] not in '[{':
+                  continue
+              try:
+                  json_docs.append(json.loads(c))
+              except Exception:
+                  parse_errors += 1
+
+          candidates=[]
+          seen=set()
+          def walk(x, path=''):
+              if isinstance(x, dict):
+                  # Generic Threads-like object: preserve only public fields relevant to evidence.
+                  txt=x.get('text')
+                  username=x.get('username')
+                  permalink=x.get('permalink')
+                  timestamp=x.get('timestamp')
+                  shortcode=x.get('shortcode')
+                  obj_id=x.get('id')
+                  if isinstance(txt, str) and txt.strip() and any(v is not None for v in (username, permalink, shortcode, obj_id)):
+                      key=(str(obj_id), str(permalink), txt.strip())
+                      if key not in seen:
+                          seen.add(key)
+                          candidates.append({
+                              'id': obj_id,
+                              'username': username,
+                              'text': txt.strip(),
+                              'timestamp': timestamp,
+                              'permalink': permalink,
+                              'shortcode': shortcode,
+                              'is_reply': x.get('is_reply'),
+                              'has_replies': x.get('has_replies'),
+                              'root_post': x.get('root_post'),
+                              'replied_to': x.get('replied_to'),
+                              '_json_path': path,
+                          })
+                  for k,v in x.items():
+                      walk(v, f'{path}/{k}')
+              elif isinstance(x, list):
+                  for i,v in enumerate(x):
+                      walk(v, f'{path}/{i}')
+
+          for i,doc in enumerate(json_docs):
+              walk(doc, f'/script_json/{i}')
+
+          # Some Threads payloads are embedded as escaped strings inside larger script blocks.
+          # Record signal counts only; do not use regex-created text as evidence unless paired by parsed JSON.
+          signal={
+              'literal_shortcode_occurrences': text.count(SHORTCODE),
+              'text_key_occurrences': len(re.findall(r'\\?"text\\?"\s*:', text)),
+              'username_key_occurrences': len(re.findall(r'\\?"username\\?"\s*:', text)),
+              'is_reply_occurrences': text.count('is_reply'),
+              'replied_to_occurrences': text.count('replied_to'),
+          }
+
+          root=[]; replies=[]; unknown=[]
+          for item in candidates:
+              if item.get('shortcode') == SHORTCODE or SHORTCODE in str(item.get('permalink') or ''):
+                  root.append(item)
+              elif item.get('is_reply') is True or item.get('root_post') or item.get('replied_to'):
+                  replies.append(item)
+              else:
+                  unknown.append(item)
+
+          private={
+              'schema':'agentos.social-receipt/v0.1',
+              'capability':'social.threads.public-page.read',
+              'source':URL,
+              'observed_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'acquisition':{
+                  'method':'public_http_embedded_json',
+                  'authenticated':False,
+                  'login_bypass':False,
+                  'http_status':status,
+              },
+              'root_candidates':root,
+              'reply_candidates':replies,
+              'other_thread_objects':unknown,
+          }
+          PRIVATE_OUT.write_text(json.dumps(private, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+          os.chmod(PRIVATE_OUT, 0o600)
+
+          def hashes(items):
+              return [hashlib.sha256((str(x.get('username'))+'\n'+str(x.get('text'))).encode()).hexdigest()[:16] for x in items[:20]]
+
+          summary={
+              'schema':'agentos.threads-public-evidence-summary/v1',
+              'checked_at':private['observed_at'],
+              'source':URL,
+              'http_status':status,
+              'content_type':content_type,
+              'bytes_read':len(body),
+              'script_count':len(parser.scripts),
+              'parsed_json_documents':len(json_docs),
+              'json_parse_errors':parse_errors,
+              'structured_candidates':len(candidates),
+              'root_candidates':len(root),
+              'reply_candidates':len(replies),
+              'other_thread_objects':len(unknown),
+              'reply_evidence_hashes':hashes(replies),
+              'signals':signal,
+              'private_receipt_path':str(PRIVATE_OUT),
+              'raw_snapshot_path':str(RAW_OUT),
+              'public_comment_text_committed':False,
+              'token_used':False,
+              'login_attempted':False,
+              'anti_bot_bypass_attempted':False,
+          }
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          PY
+
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+
+      - name: Commit sanitized extraction summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/threads-public-evidence-summary.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-public-evidence-summary.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(threads): public vendor evidence extraction summary'
+          git push
