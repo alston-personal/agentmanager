@@ -1,0 +1,76 @@
+name: Issue 71 NodeRegistry Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent_core/node_registry.py'
+      - 'tests/test_node_registry_concurrency.py'
+      - '.github/workflows/issue-71-node-registry-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-71-node-registry-regression
+  cancel-in-progress: false
+
+jobs:
+  regression:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run focused NodeRegistry tests
+        id: tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q tests/test_node_registry_concurrency.py
+          python3 - <<'PY'
+          import json, tempfile
+          from pathlib import Path
+          from agent_core.node_registry import NodeRegistry
+
+          with tempfile.TemporaryDirectory() as td:
+              p=Path(td)/'nodes.json'
+              r=NodeRegistry(p)
+              r.record_heartbeat({
+                  'schema':'agentos.node-heartbeat/v0.1',
+                  'realm_id':'realm-test','node_id':'vopc5750','status':'online',
+                  'manifest':{
+                      'schema':'agentos.node-manifest/v0.1','realm_id':'realm-test','node_id':'vopc5750','role':'client',
+                      'hostname':'vopc5750','platform':'windows','platform_release':'test',
+                      'capabilities':['agent.surface.inspect'],'tool_presence':{},'surface_inventory':{},
+                      'runtime':{'source_commit':'c3c80a2676f1a2f8cfeec00cacce4788094817f1','source_ref':'feature/realm-node-fabric-readiness','status':'observed'}
+                  }
+              })
+              data=json.loads(p.read_text(encoding='utf-8'))
+              assert data['nodes']['vopc5750']['runtime']['source_commit']
+              print('issue71_json_integrity=PASS')
+              print('issue70_runtime_persistence=PASS')
+          PY
+
+      - name: Report focused regression to Issue 71
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.tests.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf -v body '%s\n' \
+            '<!-- agentos-issue-71-regression -->' \
+            'Issue #71 focused NodeRegistry regression completed.' \
+            '' \
+            "- workflow commit: ${GITHUB_SHA}" \
+            "- focused regression: ${OUTCOME}" \
+            "- run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '' \
+            'This gate tests the transaction-safe writer and Issue #70 runtime provenance persistence. It does not mutate the live registry.'
+          gh api "repos/${GITHUB_REPOSITORY}/issues/71/comments" -f body="$body"
