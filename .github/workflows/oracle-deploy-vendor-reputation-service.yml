@@ -19,7 +19,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       SERVICE_REPO: alston-personal/vendor-reputation-service
-      SERVICE_SHA: 6be39b69a9a4331bcf84b60d4ff367efbcfc8b76
+      SERVICE_SHA: 26d5ff95348745004219afdef8b92366dd42e433
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
@@ -38,7 +38,6 @@ jobs:
           REPO="$1"; SHA="$2"
           BASE=/home/ubuntu/vendor-reputation-service
           SECRET=/home/ubuntu/agent-data/secrets/vendor-reputation.env
-          RUNTIME=/home/ubuntu/agent-data/runtime/vendor-reputation
 
           command -v docker >/dev/null
           docker compose version >/dev/null
@@ -66,14 +65,15 @@ jobs:
           docker compose up -d --build
 
           for i in $(seq 1 40); do
-            if curl -fsS http://127.0.0.1:8765/healthz >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:18765/healthz >/dev/null; then break; fi
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8765/healthz >/dev/null
+          curl -fsS http://127.0.0.1:18765/healthz >/dev/null
 
           PICK=$(python3 - <<'PY'
           import json
           from pathlib import Path
+          from urllib.parse import urlsplit
           root=Path('/home/ubuntu/agent-data/runtime/vendor-reputation')
           best=(0,None)
           def walk(x):
@@ -82,15 +82,23 @@ jobs:
                   for v in x.values(): yield from walk(v)
               elif isinstance(x,list):
                   for v in x: yield from walk(v)
+          def canonical(v):
+              if not isinstance(v,str): return None
+              try: p=urlsplit(v.strip())
+              except ValueError: return None
+              if (p.hostname or '').lower() not in {'threads.com','www.threads.com','threads.net','www.threads.net'}: return None
+              path=p.path.rstrip('/')
+              if '/post/' not in path: return None
+              return 'https://www.threads.com'+path
           for p in root.glob('*.json'):
               try: obj=json.loads(p.read_text())
               except Exception: continue
               urls=set()
               for d in walk(obj):
                   for k in ('permalink','sourceUrl','source_url','url','href'):
-                      v=d.get(k)
-                      if isinstance(v,str) and 'threads.net' in v and '/post/' in v:
-                          urls.add(v)
+                      u=canonical(d.get(k))
+                      if u: urls.add(u)
+              urls.discard('https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh')
               if len(urls)>best[0]: best=(len(urls),p)
           print(str(best[1]) if best[1] else '')
           PY
@@ -115,7 +123,7 @@ jobs:
             fi
           fi
 
-          STATUS=$(curl -fsS http://127.0.0.1:8765/v1/status)
+          STATUS=$(curl -fsS http://127.0.0.1:18765/v1/status)
           python3 - "$SHA" "$PICK" "$IMPORT_JSON" "$STATUS" <<'PY'
           import json,sys
           sha,pick,imp,status=sys.argv[1:]
@@ -126,7 +134,7 @@ jobs:
             'schema':'milkcat.vendor-service-deploy/v1',
             'source_sha':sha,
             'api_health':True,
-            'api_bind':'127.0.0.1:8765',
+            'api_bind':'127.0.0.1:18765',
             'db_bind':'127.0.0.1:55432',
             'private_evidence_selected':bool(pick),
             'private_evidence_filename':pick.rsplit('/',1)[-1] if pick else None,
