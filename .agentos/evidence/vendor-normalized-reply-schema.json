@@ -1,0 +1,80 @@
+{
+  "schema": "milkcat.normalized-reply-schema-meta/v1",
+  "row_count": 33,
+  "fields": [
+    {
+      "name": "duplicate_dom_candidates",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "int"
+      ]
+    },
+    {
+      "name": "evidence_id",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    },
+    {
+      "name": "evidence_signal",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    },
+    {
+      "name": "extracted_vendor",
+      "present": 33,
+      "nonempty": 0,
+      "types": [
+        "NoneType"
+      ]
+    },
+    {
+      "name": "original_text_block",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    },
+    {
+      "name": "review_status",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    },
+    {
+      "name": "source_author",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    },
+    {
+      "name": "source_type",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    },
+    {
+      "name": "source_url",
+      "present": 33,
+      "nonempty": 33,
+      "types": [
+        "str"
+      ]
+    }
+  ],
+  "raw_values_emitted": false,
+  "core_modified": false
+}
