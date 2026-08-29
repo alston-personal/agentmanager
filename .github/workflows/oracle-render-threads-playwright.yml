@@ -1,0 +1,144 @@
+name: Oracle Render Threads With Playwright
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-render-threads-playwright.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-playwright-render
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Provision scoped Chromium and render public Threads page
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/threads-playwright-render-summary.json
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' > "$OUT"
+          set -euo pipefail
+          export PLAYWRIGHT_BROWSERS_PATH=/home/ubuntu/agent-data/runtime/playwright-browsers
+          mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" /home/ubuntu/agent-data/runtime/vendor-reputation
+          FREE_KB=$(df -Pk /home/ubuntu/agent-data | awk 'NR==2{print $4}')
+          if [ "${FREE_KB:-0}" -lt 1048576 ]; then
+            python3 - <<'PY'
+          import json
+          print(json.dumps({'schema':'agentos.threads-playwright-render/v1','ok':False,'stage':'disk_preflight','reason':'less_than_1GiB_free'},indent=2))
+          PY
+            exit 0
+          fi
+
+          INSTALL_STATUS=existing
+          if ! find "$PLAYWRIGHT_BROWSERS_PATH" -maxdepth 2 -type f \( -name chrome -o -name chromium \) -print -quit | grep -q .; then
+            INSTALL_STATUS=installed
+            python3 -m playwright install chromium >/tmp/threads-playwright-install.log 2>&1 || {
+              python3 - <<'PY'
+          import json
+          print(json.dumps({'schema':'agentos.threads-playwright-render/v1','ok':False,'stage':'browser_install','reason':'playwright_install_failed'},indent=2))
+          PY
+              exit 0
+            }
+          fi
+
+          python3 - "$INSTALL_STATUS" <<'PY'
+          import asyncio, hashlib, json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from playwright.async_api import async_playwright
+
+          URL='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+          PRIVATE_DIR=Path('/home/ubuntu/agent-data/runtime/vendor-reputation')
+          HTML_OUT=PRIVATE_DIR/'threads-DcWVvpwGTSh-rendered.html'
+          TEXT_OUT=PRIVATE_DIR/'threads-DcWVvpwGTSh-rendered-text.json'
+          install_status=sys.argv[1]
+
+          async def main():
+              async with async_playwright() as p:
+                  browser=await p.chromium.launch(headless=True)
+                  page=await browser.new_page(viewport={'width':1280,'height':1600})
+                  response=await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
+                  await page.wait_for_timeout(8000)
+                  # Public interaction only: scroll to trigger lazy loading. No login, no reply posting, no anti-bot bypass.
+                  for _ in range(6):
+                      await page.mouse.wheel(0, 1400)
+                      await page.wait_for_timeout(1200)
+                  html=await page.content()
+                  body_text=await page.locator('body').inner_text()
+                  links=await page.locator('a').evaluate_all("els => els.map(a => ({text:(a.innerText||'').trim(),href:a.href})).filter(x=>x.text||x.href)")
+                  HTML_OUT.write_text(html,encoding='utf-8'); os.chmod(HTML_OUT,0o600)
+                  lines=[]; seen=set()
+                  for s in body_text.splitlines():
+                      s=' '.join(s.split())
+                      if s and s not in seen:
+                          seen.add(s); lines.append(s)
+                  private={
+                      'schema':'agentos.threads-rendered-public-text/v1',
+                      'source':URL,
+                      'observed_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+                      'text_lines':lines,
+                      'links':links,
+                  }
+                  TEXT_OUT.write_text(json.dumps(private,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); os.chmod(TEXT_OUT,0o600)
+                  def h(s): return hashlib.sha256(s.encode()).hexdigest()[:16]
+                  likely=[s for s in lines if len(s)>=12]
+                  summary={
+                      'schema':'agentos.threads-playwright-render/v1',
+                      'ok':True,
+                      'checked_at':private['observed_at'],
+                      'browser_install_status':install_status,
+                      'http_status':response.status if response else None,
+                      'final_url':page.url,
+                      'html_bytes':len(html.encode()),
+                      'unique_text_lines':len(lines),
+                      'substantial_text_lines':len(likely),
+                      'substantial_text_hashes':[h(s) for s in likely[:40]],
+                      'links_count':len(links),
+                      'threads_profile_links':sum(1 for x in links if '/@' in str(x.get('href',''))),
+                      'contains_target_username':('nico1e.16' in body_text.lower()),
+                      'contains_reply_ui_words':('reply' in body_text.lower() or '回覆' in body_text),
+                      'contains_login_prompt':('log in' in body_text.lower() or '登入' in body_text),
+                      'private_rendered_html':str(HTML_OUT),
+                      'private_rendered_text':str(TEXT_OUT),
+                      'token_used':False,
+                      'login_attempted':False,
+                      'anti_bot_bypass_attempted':False,
+                      'public_text_committed':False,
+                  }
+                  print(json.dumps(summary,ensure_ascii=False,indent=2))
+                  await browser.close()
+          asyncio.run(main())
+          PY
+          REMOTE
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+      - name: Commit sanitized render summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/threads-playwright-render-summary.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-playwright-render-summary.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(threads): playwright render summary'
+          git push
