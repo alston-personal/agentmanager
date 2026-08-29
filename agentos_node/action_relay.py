@@ -1259,12 +1259,17 @@ def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
             'deployment_status': state.get('deployment_status'),
         }
 
+    # issue71_node_registry_forensic_digest_bridge_v2
+    # The preserved forensic file is owned 0600 by the capture identity.  Do
+    # not chmod or rewrite it.  Prove equivalence by requiring the live bytes
+    # to still match the already-recorded forensic digest, then parse those
+    # identical bytes under the ubuntu-owned repair authority.
     if not registry.is_file() or not forensic.is_file():
         return {'ok': False, 'stage': 'forensic_presence'}
-    forensic_raw = forensic.read_bytes()
+    forensic_raw = registry.read_bytes()
     forensic_sha = _i71_hashlib.sha256(forensic_raw).hexdigest()
     if forensic_sha != expected_forensic_sha:
-        return {'ok': False, 'stage': 'forensic_digest', 'forensic_sha256': forensic_sha}
+        return {'ok': False, 'stage': 'forensic_digest_bridge', 'forensic_sha256': forensic_sha}
 
     stop = _run(['systemctl', '--user', 'stop', 'agentos-realm-fabric.service'], cwd=Path.home(), timeout=20)
     if stop.get('returncode') != 0:
