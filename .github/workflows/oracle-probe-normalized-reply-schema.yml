@@ -1,0 +1,68 @@
+name: Oracle Probe Normalized Reply Schema
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-normalized-reply-schema.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect keys and non-empty counts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY' > .agentos/evidence/vendor-normalized-reply-schema.json
+          import json
+          from collections import Counter
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-normalized-replies.json')
+          obj=json.loads(p.read_text())
+          rows=obj.get('normalized_replies') or []
+          keys=Counter(); nonempty=Counter(); types={}
+          for r in rows:
+              if not isinstance(r,dict): continue
+              for k,v in r.items():
+                  keys[k]+=1
+                  if v not in (None,'',[],{}): nonempty[k]+=1
+                  types.setdefault(k,set()).add(type(v).__name__)
+          print(json.dumps({
+            'schema':'milkcat.normalized-reply-schema-meta/v1',
+            'row_count':len(rows),
+            'fields':[
+              {'name':k,'present':keys[k],'nonempty':nonempty[k],'types':sorted(types.get(k,set()))}
+              for k in sorted(keys)
+            ],
+            'raw_values_emitted':False,
+            'core_modified':False
+          },ensure_ascii=False,indent=2))
+          PY
+          python3 -m json.tool .agentos/evidence/vendor-normalized-reply-schema.json >/dev/null
+          cat .agentos/evidence/vendor-normalized-reply-schema.json
+      - name: Commit sanitized schema metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-normalized-reply-schema.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): normalized reply schema metadata'
+          git push
