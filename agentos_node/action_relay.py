@@ -1279,8 +1279,9 @@ def _issue71_repair_node_registry(params: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = registry.read_bytes()
         pre_sha = _i71_hashlib.sha256(raw).hexdigest()
+        # issue71_node_registry_ubuntu_preserve_v3
         stamp = _i71_datetime.now(_i71_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        preserve_dir = data_root / 'forensics/issue-71' / stamp
+        preserve_dir = Path.home() / '.local/state/agentos/forensics/issue-71' / stamp
         preserve_dir.mkdir(parents=True, exist_ok=False)
         preserve = preserve_dir / 'nodes.pre-repair.json'
         preserve.write_bytes(raw)
