@@ -84,7 +84,7 @@ jobs:
           token = m.group(1).strip().strip('"').strip("'")
 
           result = {
-              'schema': 'agentos.threads-vendor-source-probe/v1',
+              'schema': 'agentos.threads-vendor-source-probe/v2',
               'checked_at': now_iso(),
               'target': {
                   'username': USERNAME,
@@ -107,17 +107,18 @@ jobs:
               print(json.dumps(result, ensure_ascii=False, indent=2))
               raise SystemExit(2)
 
+          # Meta's current public profile lookup example accepts username only; do not request /me-only fields.
           s, profile = api_get('/profile_lookup', {
               'username': USERNAME,
-              'fields': 'id,username,name',
               'access_token': token,
           })
-          result['profile_lookup'] = {'ok': s == 200 and 'id' in profile, 'http_status': s}
+          result['profile_lookup'] = {'ok': s == 200, 'http_status': s}
           if s == 200:
+              # Shape is intentionally recorded only as non-sensitive field names/known public identity values.
               result['profile_lookup'].update({
-                  'user_id': profile.get('id'),
-                  'username': profile.get('username'),
-                  'name': profile.get('name'),
+                  'username': profile.get('username') if isinstance(profile, dict) else None,
+                  'name': profile.get('name') if isinstance(profile, dict) else None,
+                  'response_keys': sorted(profile.keys()) if isinstance(profile, dict) else [],
               })
           else:
               result['profile_lookup'].update(err_summary(s, profile))
@@ -160,6 +161,32 @@ jobs:
           if last_posts_error:
               result['profile_posts'].update(last_posts_error)
 
+          # Independently probe Discover Threads. This distinguishes profile-discovery permission from keyword-search permission.
+          ks, kdata = api_get('/keyword_search', {
+              'q': SHORTCODE,
+              'search_type': 'RECENT',
+              'fields': 'id,username,permalink,timestamp,shortcode,has_replies',
+              'limit': 50,
+              'access_token': token,
+          })
+          keyword_rows = kdata.get('data') or [] if isinstance(kdata, dict) else []
+          keyword_target = None
+          for p in keyword_rows:
+              if p.get('shortcode') == SHORTCODE or SHORTCODE in str(p.get('permalink','')):
+                  keyword_target = p
+                  break
+          result['keyword_search'] = {
+              'ok': ks == 200 and isinstance(kdata, dict) and 'data' in kdata,
+              'http_status': ks,
+              'results_checked': len(keyword_rows),
+              'target_found': bool(keyword_target),
+          }
+          if ks != 200:
+              result['keyword_search'].update(err_summary(ks, kdata))
+
+          if target is None and keyword_target is not None:
+              target = keyword_target
+
           if target:
               tid = target.get('id')
               result['target_post'] = {
@@ -192,7 +219,9 @@ jobs:
 
           result['capability_summary'] = {
               'third_party_profile_read': bool(result.get('profile_lookup',{}).get('ok')),
-              'third_party_post_discovery': bool(result.get('profile_posts',{}).get('target_found')),
+              'third_party_profile_posts_read': bool(result.get('profile_posts',{}).get('ok')),
+              'keyword_search_read': bool(result.get('keyword_search',{}).get('ok')),
+              'target_post_discovered': bool(result.get('target_post')),
               'third_party_top_level_replies_read': bool(result.get('replies',{}).get('ok')),
               'third_party_full_conversation_read': bool(result.get('conversation',{}).get('ok')),
           }
