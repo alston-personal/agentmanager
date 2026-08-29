@@ -14,7 +14,7 @@ permissions:
 jobs:
   start:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,3 +101,88 @@ jobs:
           done
           echo 'stage2 exact heartbeat convergence timeout' >&2
           exit 1
+
+      - name: Persist discovery and readiness regression
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          node='vopc5750'
+          store=RealmFabricStore()
+
+          def wait_receipt(task_id, attempts=60):
+              for _ in range(attempts):
+                  receipt=store.get_receipt(task_id)
+                  if receipt:
+                      return receipt
+                  time.sleep(2)
+              raise SystemExit(f'receipt timeout: {task_id}')
+
+          discovery_id='golden-discovery-'+str(int(time.time()))
+          store.queue_task(node,{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':discovery_id,
+              'action':'agent.surface.inspect',
+              'cognition_ids_used':[],
+          })
+          discovery=wait_receipt(discovery_id,30)
+          print('golden_discovery_receipt='+json.dumps(discovery,ensure_ascii=False,sort_keys=True))
+          if discovery.get('ok') is not True or discovery.get('action')!='agent.surface.inspect':
+              raise SystemExit('golden discovery failed')
+          if not isinstance(discovery.get('surface_inventory'),dict):
+              raise SystemExit('golden discovery missing surface inventory')
+          print('golden_discovery=PASS')
+
+          verify_id='golden-readiness-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $launcher=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-client.cmd'
+          if(-not (Test-Path $launcher)){ throw "missing launcher: $launcher" }
+          & $launcher verify
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          '''
+          store.queue_task(node,{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':verify_id,
+              'action':'shell.exec',
+              'executable':'powershell',
+              'argv':['-NoProfile','-NonInteractive','-Command',ps],
+              'cwd':r'C:\Users\alston.huang\AgentOS',
+              'timeout_seconds':90,
+              'cognition_ids_used':[],
+          })
+          readiness=wait_receipt(verify_id,60)
+          print('golden_readiness_receipt='+json.dumps(readiness,ensure_ascii=False,sort_keys=True))
+          if readiness.get('ok') is not True or int(readiness.get('returncode') or 0)!=0:
+              raise SystemExit('agentos-client verify failed')
+
+          observed=None
+          for _ in range(30):
+              observed=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')==node),None)
+              benchmark=(observed or {}).get('benchmark') or {}
+              if benchmark.get('schema')=='agentos.one-uplift-report/v0.1' and benchmark.get('report_kind')=='readiness-regression':
+                  break
+              time.sleep(2)
+          benchmark=(observed or {}).get('benchmark') or {}
+          print('golden_benchmark='+json.dumps(benchmark,ensure_ascii=False,sort_keys=True))
+          if benchmark.get('schema')!='agentos.one-uplift-report/v0.1':
+              raise SystemExit('readiness benchmark not persisted')
+          if benchmark.get('report_kind')!='readiness-regression':
+              raise SystemExit('unexpected benchmark kind')
+          if benchmark.get('node_ready') is not True:
+              raise SystemExit('node_ready is not true')
+          lifecycle=benchmark.get('lifecycle') or {}
+          if lifecycle.get('supervisor_ready') is not True:
+              raise SystemExit('lifecycle supervisor is not ready')
+          if benchmark.get('regressed_dimensions') != 0:
+              raise SystemExit('readiness regression detected')
+          print('golden_readiness_regression=PASS')
+          print('golden_benchmark_persisted=PASS')
+          print('node_ready=true')
+          PY
