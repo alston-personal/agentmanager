@@ -1,0 +1,104 @@
+{
+  "schema": "milkcat.vendor-nginx-probe/v1",
+  "nginx_t_ok": true,
+  "studio_server_files": [
+    "/etc/nginx/sites-enabled/studio.milkcat.org"
+  ],
+  "existing_api_locations": [
+    {
+      "file": "/etc/nginx/sites-enabled/leopard",
+      "directive": "location /api/ {"
+    },
+    {
+      "file": "/etc/nginx/sites-enabled/studio.milkcat.org",
+      "directive": "location /api/cookies {"
+    }
+  ],
+  "contains_vendor_upstream_reference": false,
+  "nginx_config_entries": [
+    {
+      "path": "/etc/nginx/sites-enabled/leopard",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-enabled/n8n",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-enabled/studio.milkcat.org",
+      "is_symlink": true,
+      "target": "/etc/nginx/sites-available/studio.milkcat.org"
+    },
+    {
+      "path": "/etc/nginx/sites-enabled/test.cat.org",
+      "is_symlink": true,
+      "target": "/etc/nginx/sites-available/test.cat.org"
+    },
+    {
+      "path": "/etc/nginx/sites-enabled/vault",
+      "is_symlink": true,
+      "target": "/etc/nginx/sites-available/vault"
+    },
+    {
+      "path": "/etc/nginx/sites-available/default",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/leopard",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/leopard-dev",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/n8n",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/studio.milkcat.org",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/studio.milkcat.org.bak.20260617",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/studio.milkcat.org.layoutlib-v07.20260827103406.bak",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/test.cat.org",
+      "is_symlink": false,
+      "target": null
+    },
+    {
+      "path": "/etc/nginx/sites-available/vault",
+      "is_symlink": false,
+      "target": null
+    }
+  ],
+  "local_vendor_status": {
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "public_candidate_get": {
+    "status": 200,
+    "content_type": "text/html"
+  },
+  "public_candidate_post": {
+    "status": 405,
+    "content_type": "text/html"
+  },
+  "mutated": false,
+  "core_modified": false
+}
