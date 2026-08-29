@@ -1,0 +1,20 @@
+name: Mainline Governance Guard
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch main
+        run: git fetch origin main
+      - name: Reject new direct-main mutation paths
+        run: python3 scripts/check_mainline_governance.py origin/main HEAD
