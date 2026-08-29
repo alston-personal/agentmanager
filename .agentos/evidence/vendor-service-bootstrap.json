@@ -1,0 +1,14 @@
+{
+  "schema": "milkcat.vendor-service-bootstrap/v1",
+  "oracle_path": "/home/ubuntu/vendor-reputation-service",
+  "git_initialized": true,
+  "gh_installed": true,
+  "gh_auth_ok": true,
+  "gh_user": "alstonhuang",
+  "repo_created": true,
+  "repo_url": "https://github.com/alston-personal/vendor-reputation-service",
+  "repo_error": null,
+  "core_modified": false,
+  "domain_schema_written": true,
+  "api_spec_written": true
+}
