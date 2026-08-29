@@ -76,6 +76,11 @@ class NodeRegistry:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
+            # node_registry_shared_observability_v1: the registry is Realm
+            # control-plane state, not a secret. Keep owner write + agentos
+            # group read across atomic replacement so governed observers such
+            # as the self-hosted runner do not lose read access after a write.
+            os.chmod(tmp, 0o640)
             os.replace(tmp, self.path)
             dir_fd = os.open(self.path.parent, os.O_RDONLY)
             try:
