@@ -1,0 +1,159 @@
+name: Issue 71 NodeRegistry Forensics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/issue-71-node-registry-forensics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: agentos-issue-71-node-registry-forensics
+  cancel-in-progress: false
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate Oracle connection configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in DEPLOY_HOST_SOURCE DEPLOY_USER; do
+            test -n "${!key:-}" || { echo "Missing deployment setting: $key"; exit 2; }
+          done
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Preserve and inspect malformed live registry
+        id: forensic
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
+          REGISTRY="$DATA_ROOT/realm/nodes.json"
+          test -f "$REGISTRY" || { echo "registry_missing=$REGISTRY"; exit 3; }
+
+          TS="$(date -u +%Y%m%dT%H%M%SZ)"
+          FORENSIC_DIR="$DATA_ROOT/forensics/issue-71/$TS"
+          mkdir -p "$FORENSIC_DIR"
+          COPY="$FORENSIC_DIR/nodes.json"
+          cp --preserve=mode,timestamps "$REGISTRY" "$COPY"
+          chmod 600 "$COPY"
+
+          echo "forensic_copy=$COPY"
+          echo "registry_size=$(stat -c %s "$REGISTRY")"
+          echo "registry_mtime=$(stat -c %y "$REGISTRY")"
+          echo "registry_sha256=$(sha256sum "$REGISTRY" | awk '{print $1}')"
+          echo "copy_sha256=$(sha256sum "$COPY" | awk '{print $1}')"
+
+          python3 - "$REGISTRY" <<'PY'
+          import hashlib, json, pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          raw = p.read_bytes()
+          print(f"utf8_bytes={len(raw)}")
+          try:
+              text = raw.decode("utf-8")
+          except UnicodeDecodeError as exc:
+              print(f"diagnosis=invalid_utf8 offset={exc.start}")
+              raise SystemExit(0)
+
+          dec = json.JSONDecoder()
+          i = 0
+          objects = []
+          while True:
+              while i < len(text) and text[i].isspace():
+                  i += 1
+              if i >= len(text):
+                  break
+              start = i
+              try:
+                  obj, end = dec.raw_decode(text, i)
+              except json.JSONDecodeError as exc:
+                  tail = text[i:]
+                  print(f"parse_failure_offset={exc.pos}")
+                  print(f"parse_failure_line={exc.lineno}")
+                  print(f"parse_failure_col={exc.colno}")
+                  print(f"remaining_chars={len(tail)}")
+                  print(f"remaining_sha256={hashlib.sha256(tail.encode('utf-8')).hexdigest()}")
+                  break
+              objects.append((start, end, obj))
+              i = end
+
+          print(f"top_level_json_values={len(objects)}")
+          for idx, (start, end, obj) in enumerate(objects, 1):
+              typ = type(obj).__name__
+              schema = obj.get("schema") if isinstance(obj, dict) else None
+              realm_id = obj.get("realm_id") if isinstance(obj, dict) else None
+              nodes = obj.get("nodes") if isinstance(obj, dict) else None
+              node_count = len(nodes) if isinstance(nodes, dict) else None
+              print(f"value_{idx}=start:{start},end:{end},type:{typ},schema:{schema},realm_id:{realm_id},node_count:{node_count}")
+
+          if len(objects) == 1 and i >= len(text):
+              print("diagnosis=single_valid_json")
+          elif len(objects) > 1 and i >= len(text):
+              print("diagnosis=concatenated_json_values")
+          elif objects:
+              print("diagnosis=valid_json_followed_by_malformed_or_trailing_data")
+          else:
+              print("diagnosis=no_complete_top_level_json_value")
+          PY
+
+          echo "writer_scan_begin"
+          cd "$ROOT"
+          grep -RInE --exclude-dir=.git --exclude='*.pyc' \
+            '(nodes\.json|node_registry|\.tmp.*replace|replace\(.*nodes)' \
+            agent_core agentos_node scripts .github 2>/dev/null | head -n 250 || true
+          echo "writer_scan_end"
+
+          echo "service_process_snapshot_begin"
+          ps -eo pid,ppid,lstart,cmd | grep -E 'agentos|realm_server|thin_client' | grep -v grep | head -n 100 || true
+          echo "service_process_snapshot_end"
+          REMOTE
+
+      - name: Report forensic run to Issue 71
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.forensic.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body=$(cat <<EOF
+          <!-- agentos-issue-71-forensic-run -->
+          Issue #71 forensic capture workflow completed.
+
+          - workflow commit: `${GITHUB_SHA}`
+          - forensic step: `${OUTCOME}`
+          - original live registry mutation: `false`
+          - forensic preservation requested: `true`
+          - run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Detailed diagnosis is in the workflow log. No registry repair is performed by this workflow.
+          EOF
+          )
+          gh api "repos/${GITHUB_REPOSITORY}/issues/71/comments" -f body="$body"
