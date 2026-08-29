@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.threads-public-evidence-summary/v1",
+  "checked_at": "2026-08-29T01:20:29Z",
+  "source": "https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh",
+  "http_status": 200,
+  "content_type": "text/html; charset=\"utf-8\"",
+  "bytes_read": 563439,
+  "script_count": 68,
+  "parsed_json_documents": 32,
+  "json_parse_errors": 0,
+  "structured_candidates": 0,
+  "root_candidates": 0,
+  "reply_candidates": 0,
+  "other_thread_objects": 0,
+  "reply_evidence_hashes": [],
+  "signals": {
+    "literal_shortcode_occurrences": 8,
+    "text_key_occurrences": 0,
+    "username_key_occurrences": 0,
+    "is_reply_occurrences": 2,
+    "replied_to_occurrences": 0
+  },
+  "private_receipt_path": "/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-public-evidence.json",
+  "raw_snapshot_path": "/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-public.html",
+  "public_comment_text_committed": false,
+  "token_used": false,
+  "login_attempted": false,
+  "anti_bot_bypass_attempted": false
+}
