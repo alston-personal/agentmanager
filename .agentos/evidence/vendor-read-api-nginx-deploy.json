@@ -2,7 +2,7 @@
   "schema": "milkcat.vendor-read-api-nginx-deploy/v1",
   "ok": false,
   "error_type": "RuntimeError",
-  "error_length": 36,
+  "error_length": 41,
   "rolled_back_on_failure": true,
   "raw_data_emitted": false,
   "core_modified": false
