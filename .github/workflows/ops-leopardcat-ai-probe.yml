@@ -1,0 +1,50 @@
+name: Ops LeopardCat AI Probe
+
+on:
+  push:
+    branches: [ops/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/ops-leopardcat-ai-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: One safe production AI request
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/request.json <<'JSON'
+          {
+            "method": "tarot",
+            "persona": "leopardcat",
+            "question": "PRODUCTION_AI_HEALTH_CHECK",
+            "lang": "zh-TW",
+            "seed": "production-ai-health-check-post-deploy",
+            "input": {"deck_id": "leopardcat", "spread": "single"}
+          }
+          JSON
+          status="$(curl -sS -o /tmp/response.json -w '%{http_code}' -H 'Content-Type: application/json' --data-binary @/tmp/request.json https://leopardcat-tarot.milkcat.org/api/v1/readings)"
+          python3 - "$status" <<'PY'
+          import json,sys
+          from pathlib import Path
+          status=int(sys.argv[1])
+          data=json.loads(Path('/tmp/response.json').read_text())
+          safe={
+            'http_status':status,
+            'error':data.get('error'),
+            'code':data.get('code'),
+            'retryable':data.get('retryable'),
+            'reading_present':bool(data.get('reading')),
+            'privacy':data.get('privacy'),
+            'method':data.get('method'),
+            'persona':data.get('persona'),
+          }
+          print(json.dumps(safe,ensure_ascii=False,sort_keys=True))
+          assert status in (200,503),safe
+          if status==503: assert data.get('error')=='ai_unavailable',safe
+          PY
