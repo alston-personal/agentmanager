@@ -1,0 +1,26 @@
+{
+  "action": "agentos.maintenance.issue71_repair_node_registry",
+  "capsule_id": "action-a273c034a20e4028b98ce42c47388219",
+  "completed_at": "2026-08-29T11:20:26Z",
+  "deployment_generation": 3,
+  "desired_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+  "executor_user": "ubuntu",
+  "forensic_sha256": "d9087bdecd1f2afdbddfde6a81673d35006df17f0e273053367fd4b5d1997a45",
+  "lease_status": "released",
+  "node_count": 2,
+  "node_ids": [
+    "oracle-core-node",
+    "vopc5750"
+  ],
+  "observed_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+  "ok": true,
+  "post_repair_sha256": "ded6c3ae8bc7172579cc37fd0faaa5eee6d9090bf2845ff4729991107b9d9615",
+  "pre_repair_copy": "/home/ubuntu/.local/state/agentos/forensics/issue-71/20260829T112026Z/nodes.pre-repair.json",
+  "pre_repair_sha256": "d9087bdecd1f2afdbddfde6a81673d35006df17f0e273053367fd4b5d1997a45",
+  "realm_id": "realm-alston",
+  "realm_service_stopped": true,
+  "repair_mode": "forensic_first_valid_object",
+  "schema": "agentos.action-receipt/v1",
+  "stage": "repaired",
+  "started_at": "2026-08-29T11:20:26Z"
+}

@@ -1,0 +1,203 @@
+{
+  "accepted_at": "2026-08-29T11:23:48.433283+00:00",
+  "controller_receipt": {
+    "action": "agentos.controller.surface-inspect-vopc5750",
+    "completed_at": "2026-08-29T11:23:47Z",
+    "executor_uid": 1001,
+    "executor_user": "ubuntu",
+    "ok": true,
+    "request_id": "issue71-resume-33249997428-20260829T112340Z",
+    "schema": "agentos.bootstrap-receipt/v1",
+    "script_sha256": "037aae6c771600e435e1f4b4ddf3c78b9e0bd64e6b5859c76d26da575bfccf4d",
+    "started_at": "2026-08-29T11:23:46Z",
+    "steps": [
+      {
+        "returncode": 0,
+        "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            main       -> FETCH_HEAD\n   653bcf1..210edce  main       -> origin/main\n",
+        "stdout": "",
+        "step": "git_fetch"
+      },
+      {
+        "returncode": 0,
+        "stderr": "",
+        "step": "git_show_script"
+      },
+      {
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "controller_dispatch_http_code=200\n{\"action\": \"agent.surface.inspect\", \"advertised_capability\": true, \"controller_entered\": true, \"dispatch_id\": \"dispatch-4fbe0b7427274822be8ba6b66bf616f4\", \"node_id\": \"vopc5750\", \"node_status\": \"online\", \"ok\": true, \"queue_schema\": \"agentos.node-task/v0.1\", \"queued_at\": \"2026-08-29T11:23:47Z\", \"schema\": \"agentos.controller-dispatch-receipt/v0.1\", \"task_id\": \"task-106afeeb20354849a50b24d563b68efe\"}controller_service_entered=PASS\ncontroller_dispatch_outcome=TASK_QUEUED\ncontroller_task_id=task-106afeeb20354849a50b24d563b68efe\n",
+        "step": "run_script"
+      }
+    ]
+  },
+  "deployment_generation": 4,
+  "deployment_status": "converged",
+  "gates": {
+    "client_resume_allowed": true,
+    "controller_service_regression": true,
+    "issue70_real_postinstall_vopc_runtime_source_commit": true,
+    "issue71_concurrent_regression": true,
+    "issue71_forensic_preserved": true,
+    "issue71_governed_registry_repair": true,
+    "issue71_repeated_live_reads_valid": true
+  },
+  "lease_status": "released",
+  "live_core_commit": "2fd2d052a3453aec8e3ec01f17fc48e1b1f94199",
+  "repair_receipt": {
+    "action": "agentos.maintenance.issue71_repair_node_registry",
+    "capsule_id": "action-a273c034a20e4028b98ce42c47388219",
+    "completed_at": "2026-08-29T11:20:26Z",
+    "deployment_generation": 3,
+    "desired_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+    "executor_user": "ubuntu",
+    "forensic_sha256": "d9087bdecd1f2afdbddfde6a81673d35006df17f0e273053367fd4b5d1997a45",
+    "lease_status": "released",
+    "node_count": 2,
+    "node_ids": [
+      "oracle-core-node",
+      "vopc5750"
+    ],
+    "observed_core_commit": "dedca4b1894987c4ed23fa43c442dbc11810b623",
+    "ok": true,
+    "post_repair_sha256": "ded6c3ae8bc7172579cc37fd0faaa5eee6d9090bf2845ff4729991107b9d9615",
+    "pre_repair_copy": "/home/ubuntu/.local/state/agentos/forensics/issue-71/20260829T112026Z/nodes.pre-repair.json",
+    "pre_repair_sha256": "d9087bdecd1f2afdbddfde6a81673d35006df17f0e273053367fd4b5d1997a45",
+    "realm_id": "realm-alston",
+    "realm_service_stopped": true,
+    "repair_mode": "forensic_first_valid_object",
+    "schema": "agentos.action-receipt/v1",
+    "stage": "repaired",
+    "started_at": "2026-08-29T11:20:26Z"
+  },
+  "runtime_acceptance": {
+    "capabilities": [
+      "agent.chat",
+      "agent.surface.inspect",
+      "code.edit",
+      "context.harvest",
+      "desktop.keyboard",
+      "desktop.mouse",
+      "desktop.open_url",
+      "desktop.screenshot",
+      "desktop.session.inspect",
+      "desktop.windows.inspect",
+      "filesystem.read",
+      "filesystem.write",
+      "ide.inspect",
+      "node.runtime.converge",
+      "process.inspect",
+      "shell.exec",
+      "tool.presence"
+    ],
+    "last_heartbeat_at": "2026-08-29T11:23:07Z",
+    "node_id": "vopc5750",
+    "node_map_runtime": {
+      "install_mode": "provenance-repair-no-restart",
+      "installed_at": "2026-08-28T11:04:22Z",
+      "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+      "schema": "agentos.thin-client-runtime/v0.1",
+      "source_commit": "c3c80a2676f1a2f8cfeec00cacce4788094817f1",
+      "source_ref": "feature/realm-node-fabric-readiness",
+      "status": "observed"
+    },
+    "node_map_status": "online",
+    "post_install_registry_mtime": 1788002587.571534,
+    "proof": "registry became agentos-group-readable only after a post-install write by the new NodeRegistry writer",
+    "registry_last_sha256": "2914cab09b9c241db5a71d00d5ed1ae7a33efc7d8c7ee2db5251032b760b68c2",
+    "registry_mode": "0o640",
+    "registry_valid_sample_count": 8,
+    "runtime": {
+      "install_mode": "provenance-repair-no-restart",
+      "installed_at": "2026-08-28T11:04:22Z",
+      "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+      "schema": "agentos.thin-client-runtime/v0.1",
+      "source_commit": "c3c80a2676f1a2f8cfeec00cacce4788094817f1",
+      "source_ref": "feature/realm-node-fabric-readiness",
+      "status": "observed"
+    },
+    "schema": "agentos.issue-70-node-runtime-acceptance/v1",
+    "surface_count": 4,
+    "surface_inventory": {
+      "capabilities": [
+        "agent.chat",
+        "code.edit",
+        "ide.inspect"
+      ],
+      "providers": [
+        "claude-code",
+        "codex",
+        "cursor",
+        "vscode"
+      ],
+      "schema": "agentos.surface-inventory/v0.1",
+      "surface_count": 4,
+      "surfaces": [
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "claude-code",
+          "running": true,
+          "surface_id": "agent-runtime:claude-code"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "codex",
+          "running": true,
+          "surface_id": "agent-runtime:codex"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+          "kind": "ide-agent",
+          "metadata": {
+            "executable_name": "cursor",
+            "session_bridge": null
+          },
+          "provider": "cursor",
+          "running": false,
+          "surface_id": "ide-agent:cursor"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "code.edit",
+            "ide.inspect"
+          ],
+          "executable": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+          "kind": "ide",
+          "metadata": {
+            "executable_name": "code",
+            "session_bridge": null
+          },
+          "provider": "vscode",
+          "running": false,
+          "surface_id": "ide:vscode"
+        }
+      ]
+    }
+  },
+  "schema": "agentos.issue-71-70-live-acceptance/v1"
+}

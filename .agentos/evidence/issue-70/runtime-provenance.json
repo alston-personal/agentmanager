@@ -1,0 +1,130 @@
+{
+  "capabilities": [
+    "agent.chat",
+    "agent.surface.inspect",
+    "code.edit",
+    "context.harvest",
+    "desktop.keyboard",
+    "desktop.mouse",
+    "desktop.open_url",
+    "desktop.screenshot",
+    "desktop.session.inspect",
+    "desktop.windows.inspect",
+    "filesystem.read",
+    "filesystem.write",
+    "ide.inspect",
+    "node.runtime.converge",
+    "process.inspect",
+    "shell.exec",
+    "tool.presence"
+  ],
+  "last_heartbeat_at": "2026-08-29T11:23:07Z",
+  "node_id": "vopc5750",
+  "node_map_runtime": {
+    "install_mode": "provenance-repair-no-restart",
+    "installed_at": "2026-08-28T11:04:22Z",
+    "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+    "schema": "agentos.thin-client-runtime/v0.1",
+    "source_commit": "c3c80a2676f1a2f8cfeec00cacce4788094817f1",
+    "source_ref": "feature/realm-node-fabric-readiness",
+    "status": "observed"
+  },
+  "node_map_status": "online",
+  "post_install_registry_mtime": 1788002587.571534,
+  "proof": "registry became agentos-group-readable only after a post-install write by the new NodeRegistry writer",
+  "registry_last_sha256": "2914cab09b9c241db5a71d00d5ed1ae7a33efc7d8c7ee2db5251032b760b68c2",
+  "registry_mode": "0o640",
+  "registry_valid_sample_count": 8,
+  "runtime": {
+    "install_mode": "provenance-repair-no-restart",
+    "installed_at": "2026-08-28T11:04:22Z",
+    "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+    "schema": "agentos.thin-client-runtime/v0.1",
+    "source_commit": "c3c80a2676f1a2f8cfeec00cacce4788094817f1",
+    "source_ref": "feature/realm-node-fabric-readiness",
+    "status": "observed"
+  },
+  "schema": "agentos.issue-70-node-runtime-acceptance/v1",
+  "surface_count": 4,
+  "surface_inventory": {
+    "capabilities": [
+      "agent.chat",
+      "code.edit",
+      "ide.inspect"
+    ],
+    "providers": [
+      "claude-code",
+      "codex",
+      "cursor",
+      "vscode"
+    ],
+    "schema": "agentos.surface-inventory/v0.1",
+    "surface_count": 4,
+    "surfaces": [
+      {
+        "attachable": false,
+        "capabilities": [
+          "agent.chat",
+          "code.edit"
+        ],
+        "executable": null,
+        "kind": "agent-runtime",
+        "metadata": {
+          "executable_name": null,
+          "session_bridge": null
+        },
+        "provider": "claude-code",
+        "running": true,
+        "surface_id": "agent-runtime:claude-code"
+      },
+      {
+        "attachable": false,
+        "capabilities": [
+          "agent.chat",
+          "code.edit"
+        ],
+        "executable": null,
+        "kind": "agent-runtime",
+        "metadata": {
+          "executable_name": null,
+          "session_bridge": null
+        },
+        "provider": "codex",
+        "running": true,
+        "surface_id": "agent-runtime:codex"
+      },
+      {
+        "attachable": false,
+        "capabilities": [
+          "agent.chat",
+          "code.edit"
+        ],
+        "executable": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+        "kind": "ide-agent",
+        "metadata": {
+          "executable_name": "cursor",
+          "session_bridge": null
+        },
+        "provider": "cursor",
+        "running": false,
+        "surface_id": "ide-agent:cursor"
+      },
+      {
+        "attachable": false,
+        "capabilities": [
+          "code.edit",
+          "ide.inspect"
+        ],
+        "executable": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+        "kind": "ide",
+        "metadata": {
+          "executable_name": "code",
+          "session_bridge": null
+        },
+        "provider": "vscode",
+        "running": false,
+        "surface_id": "ide:vscode"
+      }
+    ]
+  }
+}
