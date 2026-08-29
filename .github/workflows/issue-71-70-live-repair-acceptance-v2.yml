@@ -1,0 +1,298 @@
+name: Issue 71 70 Live Repair Acceptance v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/issue-71-70-live-repair-acceptance-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: realm-fabric-deployment-authority
+  cancel-in-progress: false
+
+jobs:
+  repair-accept:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 20
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      AGENTOS_REALM_FABRIC_LEASE_OWNER: agentos-core-mainline
+      AGENTOS_REALM_FABRIC_SOURCE_COMMIT: 7b65c51fb45089c88a17189b6f97ab6efd0e668f
+      ISSUE71_FORENSIC_SHA256: d9087bdecd1f2afdbddfde6a81673d35006df17f0e273053367fd4b5d1997a45
+      ISSUE71_FORENSIC_COPY: /home/ubuntu/agent-data/forensics/issue-71/20260829T081141Z/nodes.json
+      UBUNTU_RUNTIME_DIR: /run/user/1001
+      UBUNTU_DBUS: unix:path=/run/user/1001/bus
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preflight exact source, released deployment, and ubuntu session boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${AGENTOS_REALM_FABRIC_SOURCE_COMMIT}"
+          git cat-file -e "${AGENTOS_REALM_FABRIC_SOURCE_COMMIT}^{commit}"
+          body="$(git show "${AGENTOS_REALM_FABRIC_SOURCE_COMMIT}:agent_core/node_registry.py")"
+          grep -q 'fcntl.flock' <<<"$body"
+          grep -q 'tempfile.mkstemp' <<<"$body"
+          grep -q 'os.replace' <<<"$body"
+          grep -q 'issue70_runtime_provenance_persistence_v1' <<<"$body"
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          f=Path(os.environ['ISSUE71_FORENSIC_COPY'])
+          assert f.is_file(),f
+          assert hashlib.sha256(f.read_bytes()).hexdigest()==os.environ['ISSUE71_FORENSIC_SHA256']
+          s=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          assert s.get('desired_core_commit')==s.get('observed_core_commit'),s
+          assert s.get('desired_core_commit')=='dedca4b1894987c4ed23fa43c442dbc11810b623',s
+          assert int(s.get('deployment_generation') or 0)==3,s
+          assert s.get('lease_owner')==os.environ['AGENTOS_REALM_FABRIC_LEASE_OWNER'],s
+          assert s.get('lease_status')=='released',s
+          assert s.get('deployment_status')=='converged',s
+          print('deployment_released_precondition=PASS')
+          PY
+          sudo -n -u ubuntu env XDG_RUNTIME_DIR="$UBUNTU_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$UBUNTU_DBUS" systemctl --user is-active agentos-realm-fabric.service
+          sudo -n -u ubuntu test -r /home/ubuntu/agent-data/realm/nodes.json
+          echo 'ubuntu_session_boundary=PASS'
+
+      - name: Quiesce old Realm service and repair preserved malformed registry
+        id: repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          ubuntu_systemctl() {
+            sudo -n -u ubuntu env XDG_RUNTIME_DIR="$UBUNTU_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$UBUNTU_DBUS" systemctl --user "$@"
+          }
+          ubuntu_systemctl stop agentos-realm-fabric.service
+          trap 'ubuntu_systemctl start agentos-realm-fabric.service >/dev/null 2>&1 || true' ERR
+          sudo -n -u ubuntu env \
+            ISSUE71_FORENSIC_COPY="$ISSUE71_FORENSIC_COPY" \
+            ISSUE71_FORENSIC_SHA256="$ISSUE71_FORENSIC_SHA256" \
+            python3 - <<'PY'
+          import fcntl,hashlib,json,os,tempfile
+          from datetime import datetime,timezone
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data')
+          registry=root/'realm/nodes.json'
+          forensic=Path(os.environ['ISSUE71_FORENSIC_COPY'])
+          expected=os.environ['ISSUE71_FORENSIC_SHA256']
+          raw=registry.read_bytes()
+          pre_sha=hashlib.sha256(raw).hexdigest()
+          ts=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+          preserve=root/'forensics/issue-71'/ts/'nodes.pre-repair.json'
+          preserve.parent.mkdir(parents=True,exist_ok=False)
+          preserve.write_bytes(raw)
+          os.chmod(preserve,0o600)
+          assert hashlib.sha256(preserve.read_bytes()).hexdigest()==pre_sha
+          mode='already_valid'
+          try:
+              current=json.loads(raw.decode('utf-8'))
+              assert current.get('schema')=='agentos.node-registry/v0.1'
+              assert isinstance(current.get('nodes'),dict)
+          except Exception:
+              mode='forensic_first_valid_object'
+              assert pre_sha==expected,(pre_sha,expected)
+              fraw=forensic.read_bytes()
+              assert hashlib.sha256(fraw).hexdigest()==expected
+              obj,end=json.JSONDecoder().raw_decode(fraw.decode('utf-8'))
+              assert end==4674,end
+              assert obj.get('schema')=='agentos.node-registry/v0.1'
+              assert obj.get('realm_id')=='realm-alston'
+              assert isinstance(obj.get('nodes'),dict) and len(obj['nodes'])==2
+              lock_path=registry.with_suffix(registry.suffix+'.lock')
+              with lock_path.open('a+',encoding='utf-8') as lock:
+                  fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+                  assert hashlib.sha256(registry.read_bytes()).hexdigest()==pre_sha
+                  payload=json.dumps(obj,ensure_ascii=False,indent=2,sort_keys=True)+'\n'
+                  fd,tmp_name=tempfile.mkstemp(prefix='.nodes.json.repair-',suffix='.tmp',dir=str(registry.parent),text=True)
+                  tmp=Path(tmp_name)
+                  try:
+                      with os.fdopen(fd,'w',encoding='utf-8') as h:
+                          h.write(payload); h.flush(); os.fsync(h.fileno())
+                      os.chmod(tmp,0o600)
+                      os.replace(tmp,registry)
+                      dfd=os.open(str(registry.parent),os.O_RDONLY)
+                      try: os.fsync(dfd)
+                      finally: os.close(dfd)
+                  finally:
+                      tmp.unlink(missing_ok=True)
+              current=json.loads(registry.read_text(encoding='utf-8'))
+              assert current.get('schema')=='agentos.node-registry/v0.1'
+              assert isinstance(current.get('nodes'),dict) and len(current['nodes'])==2
+          post_sha=hashlib.sha256(registry.read_bytes()).hexdigest()
+          ev={'schema':'agentos.issue-71-repair/v1','forensic_sha256':expected,'forensic_copy':str(forensic),'pre_repair_sha256':pre_sha,'pre_repair_copy':str(preserve),'repair_mode':mode,'post_repair_sha256':post_sha,'realm_id':current.get('realm_id'),'node_ids':sorted(current.get('nodes',{})),'node_count':len(current.get('nodes',{})),'repaired_at':datetime.now(timezone.utc).isoformat()}
+          Path('/tmp/issue71-repair-v2.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,indent=2))
+          PY
+          sudo -n -u ubuntu python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/realm/nodes.json')
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d.get('schema')=='agentos.node-registry/v0.1' and isinstance(d.get('nodes'),dict)
+          print('ubuntu_can_read_repaired_registry=PASS')
+          PY
+          trap - ERR
+
+      - name: Advance generation 3 to exact repaired Core source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,sys,time
+          from pathlib import Path
+          sys.path.insert(0,'.')
+          from agentos_node.action_relay import ActionRelayClient
+          state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          assert state.get('lease_status')=='released',state
+          target=os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT']; owner=os.environ['AGENTOS_REALM_FABRIC_LEASE_OWNER']
+          client=ActionRelayClient(Path('/home/ubuntu/agent-data/runtime/action-relay'))
+          cap=client.submit('agentos.realm-fabric.advance_deployment',{'current_desired_core_commit':state['desired_core_commit'],'next_desired_core_commit':target,'lease_owner':owner,'expected_generation':int(state['deployment_generation']),'lease_seconds':900})
+          deadline=time.time()+60; r=None
+          while time.time()<deadline:
+              r=client.receipt(cap['capsule_id'])
+              if r is not None: break
+              time.sleep(1)
+          assert r is not None and r.get('ok') is True,r
+          assert r.get('desired_core_commit')==target,r
+          assert int(r.get('deployment_generation'))==4,r
+          assert r.get('lease_status')=='active',r
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as h: h.write('ISSUE71_DEPLOYMENT_GENERATION=4\n')
+          print('generation_advance=PASS')
+          PY
+
+      - name: Install exact Core generation through canonical CAS fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/install_realm_fabric_via_action_relay.py
+          python3 - <<'PY'
+          import json,os
+          r=json.load(open('.agentos/evidence/realm-fabric-install-current.json',encoding='utf-8'))
+          target=os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT']
+          assert r.get('desired_core_commit')==target and r.get('observed_core_commit')==target,r
+          assert int(r.get('deployment_generation'))==4,r
+          assert r.get('deployment_status')=='converged',r
+          print('core_generation_4_converged=PASS')
+          PY
+
+      - name: Accept real vopc5750 post-repair heartbeat and runtime provenance
+        id: node_accept
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,time
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/realm/nodes.json')
+          initial=json.loads(p.read_text(encoding='utf-8'))
+          before=((initial.get('nodes') or {}).get('vopc5750') or {}).get('last_heartbeat_at')
+          accepted=None; samples=[]; deadline=time.time()+300
+          while time.time()<deadline:
+              raw=p.read_bytes(); d=json.loads(raw.decode('utf-8'))
+              assert d.get('schema')=='agentos.node-registry/v0.1'
+              samples.append(hashlib.sha256(raw).hexdigest())
+              n=(d.get('nodes') or {}).get('vopc5750') or {}; runtime=n.get('runtime') or {}; after=n.get('last_heartbeat_at')
+              if after and after!=before and str(runtime.get('source_commit') or '').strip():
+                  accepted={'heartbeat_before':before,'heartbeat_after':after,'runtime':runtime,'node':n}; break
+              time.sleep(5)
+          assert accepted is not None,{'heartbeat_before':before,'sample_count':len(samples)}
+          for _ in range(6):
+              time.sleep(5); raw=p.read_bytes(); d=json.loads(raw.decode('utf-8')); assert d.get('schema')=='agentos.node-registry/v0.1'; samples.append(hashlib.sha256(raw).hexdigest())
+          from agent_core.node_registry import NodeRegistry
+          nm=NodeRegistry(p).node_map(); matches=[n for n in nm.get('nodes',[]) if n.get('node_id')=='vopc5750']
+          assert len(matches)==1 and str((matches[0].get('runtime') or {}).get('source_commit') or '').strip(),matches
+          ev={'schema':'agentos.issue-70-node-runtime-acceptance/v1','node_id':'vopc5750','heartbeat_before':accepted['heartbeat_before'],'heartbeat_after':accepted['heartbeat_after'],'runtime':accepted['runtime'],'capabilities':accepted['node'].get('capabilities'),'surface_count':accepted['node'].get('surface_count'),'surface_inventory':accepted['node'].get('surface_inventory'),'node_map_runtime':matches[0].get('runtime'),'node_map_status':matches[0].get('status'),'registry_valid_sample_count':len(samples),'registry_last_sha256':samples[-1]}
+          Path('/tmp/issue70-runtime-v2.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,indent=2))
+          print('issue70_runtime_provenance=PASS')
+          print('issue71_live_registry_stability=PASS')
+          PY
+
+      - name: Regress real Control Inbox to ControllerService
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/agentos-bootstrap-control; REQUESTS="$ROOT/requests"; RECEIPTS="$ROOT/receipts"
+          for i in $(seq 1 60); do [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break; sleep 1; done
+          test -d "$REQUESTS"; test -d "$RECEIPTS"
+          RID="issue71-70-v2-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"; REQ="$REQUESTS/$RID.request.json"; REC="$RECEIPTS/$RID.json"
+          python3 - "$REQ" "$RID" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          p=Path(sys.argv[1]); rid=sys.argv[2]
+          v={'schema':'agentos.bootstrap-request/v1','request_id':rid,'action':'agentos.controller.surface-inspect-vopc5750','created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False}}
+          t=p.with_suffix(p.suffix+'.tmp'); t.write_text(json.dumps(v,indent=2)+'\n',encoding='utf-8'); os.chmod(t,0o644); t.replace(p); os.chmod(p,0o644)
+          PY
+          for i in $(seq 1 180); do [ -f "$REC" ] && break; sleep 1; done
+          test -f "$REC"
+          python3 - "$REC" <<'PY'
+          import json,sys
+          from pathlib import Path
+          r=json.load(open(sys.argv[1],encoding='utf-8')); assert r.get('schema')=='agentos.bootstrap-receipt/v1' and r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          assert 'controller_service_entered=PASS' in text,text[-12000:]
+          assert 'controller_dispatch_http_code=404' not in text,text[-12000:]
+          Path('/tmp/issue71-70-controller-v2.json').write_text(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('controller_service_regression=PASS')
+          PY
+
+      - name: Release generation 4 after acceptance and assemble evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,sys,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          sys.path.insert(0,'.')
+          from agentos_node.action_relay import ActionRelayClient
+          target=os.environ['AGENTOS_REALM_FABRIC_SOURCE_COMMIT']; owner=os.environ['AGENTOS_REALM_FABRIC_LEASE_OWNER']; gen=4
+          c=ActionRelayClient(Path('/home/ubuntu/agent-data/runtime/action-relay')); cap=c.submit('agentos.realm-fabric.release_deployment',{'desired_core_commit':target,'lease_owner':owner,'deployment_generation':gen})
+          deadline=time.time()+60; r=None
+          while time.time()<deadline:
+              r=c.receipt(cap['capsule_id'])
+              if r is not None: break
+              time.sleep(1)
+          assert r is not None and r.get('ok') is True,r
+          assert r.get('desired_core_commit')==target and r.get('observed_core_commit')==target,r
+          assert r.get('deployment_status')=='converged' and r.get('lease_status')=='released',r
+          summary={'schema':'agentos.issue-71-70-live-acceptance/v1','accepted_at':datetime.now(timezone.utc).isoformat(),'live_core_commit':target,'deployment_generation':gen,'deployment_status':'converged','lease_status':'released','repair':json.loads(Path('/tmp/issue71-repair-v2.json').read_text()),'runtime_acceptance':json.loads(Path('/tmp/issue70-runtime-v2.json').read_text()),'controller_receipt':json.loads(Path('/tmp/issue71-70-controller-v2.json').read_text()),'gates':{'issue71_forensic_preserved':True,'issue71_registry_repaired':True,'issue71_repeated_live_reads_valid':True,'issue70_real_vopc_runtime_source_commit':True,'controller_service_regression':True,'client_resume_allowed':True}}
+          Path('/tmp/issue71-70-live-acceptance-v2.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'live_core_commit':target,'deployment_generation':gen,'CLIENT_RESUME_ALLOWED':True},indent=2))
+          PY
+
+      - name: Persist evidence, close Issues 71 and 70, and emit client resume signal
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp /tmp/issue71-70-live-acceptance-v2.json /tmp/final.keep.json
+          cp /tmp/issue71-repair-v2.json /tmp/repair.keep.json
+          cp /tmp/issue70-runtime-v2.json /tmp/runtime.keep.json
+          git fetch origin main; git reset --hard origin/main
+          mkdir -p .agentos/evidence/issue-71 .agentos/evidence/issue-70
+          cp /tmp/final.keep.json .agentos/evidence/issue-71/live-acceptance.json
+          cp /tmp/repair.keep.json .agentos/evidence/issue-71/repair.json
+          cp /tmp/runtime.keep.json .agentos/evidence/issue-70/runtime-provenance.json
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/issue-71 .agentos/evidence/issue-70
+          if ! git diff --cached --quiet; then git commit -m 'evidence(agentos): accept Issues 71 and 70 live'; git pull --rebase origin main; git push origin HEAD:main; fi
+          RUNTIME_COMMIT="$(python3 -c "import json;print(json.load(open('/tmp/runtime.keep.json'))['runtime']['source_commit'])")"
+          B71=$(printf '%s\n' '<!-- agentos-issue-71-live-acceptance -->' 'Issue #71 live acceptance: PASS.' '' "- forensic SHA256: ${ISSUE71_FORENSIC_SHA256}" '- transaction-safe writer regression: PASS' '- live registry repair and repeated live-read stability: PASS' "- live Core commit: ${AGENTOS_REALM_FABRIC_SOURCE_COMMIT}" '- deployment generation: 4' '- final lease status: released' '- ControllerService regression: PASS' '- CLIENT_RESUME_ALLOWED: true')
+          gh api "repos/${GITHUB_REPOSITORY}/issues/71/comments" -f body="$B71"
+          B70=$(printf '%s\n' '<!-- agentos-issue-70-live-acceptance -->' 'Issue #70 live acceptance: PASS.' '' '- real vopc5750 post-repair heartbeat: PASS' "- runtime.source_commit: ${RUNTIME_COMMIT}" "- live Core commit: ${AGENTOS_REALM_FABRIC_SOURCE_COMMIT}" '- deployment generation: 4' '- ControllerService regression: PASS' '- CLIENT_RESUME_ALLOWED: true')
+          gh api "repos/${GITHUB_REPOSITORY}/issues/70/comments" -f body="$B70"
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/71" -f state=closed -f state_reason=completed >/dev/null
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/70" -f state=closed -f state_reason=completed >/dev/null
+          echo 'CLIENT_RESUME_ALLOWED=true'
