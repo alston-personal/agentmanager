@@ -1,0 +1,48 @@
+name: Oracle Bootstrap Vendor Service v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-bootstrap-vendor-service-v2.yml'
+      - 'scripts/bootstrap_vendor_service.py'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Bootstrap vendor service on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - < scripts/bootstrap_vendor_service.py \
+            > .agentos/evidence/vendor-service-bootstrap.json
+          python3 -m json.tool .agentos/evidence/vendor-service-bootstrap.json >/dev/null
+          cat .agentos/evidence/vendor-service-bootstrap.json
+      - name: Commit sanitized bootstrap evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-service-bootstrap.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): Oracle vendor service bootstrap'
+          git push
