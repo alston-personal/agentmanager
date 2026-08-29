@@ -1,7 +1,17 @@
 {
-  "schema": "agentos.threads-classification-diagnostic/v1",
-  "checked_at": "2026-08-29T01:32:18Z",
-  "input_exists": true,
+  "schema": "agentos.threads-classification-diagnostic/v2",
+  "checked_at": "2026-08-29T01:33:14Z",
+  "runner_uid": 1004,
+  "runner_gid": 1004,
+  "input": {
+    "exists": true,
+    "owner_uid": 1001,
+    "group_gid": 1005,
+    "mode": "0o600",
+    "size_bytes": 15332,
+    "runner_can_read": false,
+    "runner_can_write": false
+  },
   "output": {
     "exists": false
   },
@@ -10,24 +20,26 @@
       "file": "relay-801ccbf65c7b47fc92b12cd4066fd255.json",
       "mtime_utc": "2026-08-29T01:31:16Z",
       "ok": false,
-      "keys": [
-        "capsule_id",
-        "completed_at",
-        "executor",
-        "executor_user",
-        "ok",
-        "returncode",
-        "schema",
-        "started_at",
-        "stderr",
-        "stdout",
-        "timed_out"
-      ],
       "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.247-linux-arm64/resources/native-binary/claude",
-      "exit_code": null,
-      "error_type": null,
+      "executor_user": "ubuntu",
+      "returncode": 124,
+      "timed_out": true,
       "stdout_present": false,
-      "stderr_present": true
+      "stderr_present": true,
+      "stderr_length": 66,
+      "stderr_sha256_16": "f9e713f20e08f351",
+      "stderr_signals": {
+        "permission_denied": false,
+        "timed_out_text": false,
+        "timeout_text": true,
+        "not_found": false,
+        "no_such_file": false,
+        "invalid_argument": false,
+        "workspace": false,
+        "json": false,
+        "read": false,
+        "write": false
+      }
     }
   ],
   "private_text_exposed": false,
