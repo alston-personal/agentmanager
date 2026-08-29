@@ -1,4 +1,4 @@
-# Narrow production release for the canonical Studio Web vendor reputation MVP.
+# Narrow production release for the canonical Studio Web vendor reputation UI.
 name: Oracle Release Vendor Reputation Canonical
 
 on:
@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 9b9c3b3630a808c6020ce83657f23f479969095f
+      SOURCE_SHA: 214994caa93760c071b98f6a806841f38ba60a45
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -33,7 +33,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Build pinned canonical Studio Web and publish narrow scope
+      - name: Build pinned canonical Studio Web and publish vendors only
         shell: bash
         run: |
           set -euo pipefail
@@ -43,25 +43,18 @@ jobs:
           set -euo pipefail
           REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
           LIVE=/home/ubuntu/zeus-writer/website/dist
-          TMP=$(mktemp -d /tmp/vendor-reputation-release-XXXXXX)
+          TMP=$(mktemp -d /tmp/vendor-reputation-ui-release-XXXXXX)
           SRC="$TMP/studio-web"
           BACKUP=/home/ubuntu/agent-data/releases/studio-web/vendor-reputation/${SOURCE_SHA:0:12}-${RUN_ID}
           NEW_VENDOR="$LIVE/.vendors-${RUN_ID}"
-          POC_TMP="$LIVE/poc/.index-vendor-${RUN_ID}.html"
           DEPLOYED=0
 
           cleanup() {
             rm -rf "$TMP" "$NEW_VENDOR" 2>/dev/null || true
-            rm -f "$POC_TMP" 2>/dev/null || true
           }
           rollback() {
             set +e
             if [ "$DEPLOYED" = 1 ]; then
-              if [ -f "$BACKUP/poc-index.previous" ]; then
-                install -m 0644 "$BACKUP/poc-index.previous" "$LIVE/poc/index.html"
-              else
-                rm -f "$LIVE/poc/index.html"
-              fi
               rm -rf "$LIVE/vendors"
               if [ -d "$BACKUP/vendors.previous" ]; then
                 cp -a "$BACKUP/vendors.previous" "$LIVE/vendors"
@@ -83,24 +76,15 @@ jobs:
           npm install --no-package-lock --ignore-scripts
           npm run build
 
-          test -f dist/poc/index.html
-          grep -Fq 'Studio POC' dist/poc/index.html
-          grep -Fq 'Vendor Reputation Index' dist/poc/index.html
-          grep -Fq 'href="/vendors/"' dist/poc/index.html
-          test -f dist/poc/arcanaforge/index.html
-          grep -Fq '<title>ArcanaForge POC</title>' dist/poc/arcanaforge/index.html
-          test -f dist/poc/character-blueprint/index.html
-          grep -Fq '<title>Character Blueprint POC</title>' dist/poc/character-blueprint/index.html
           test -f dist/vendors/index.html
           grep -Fq 'Vendor Reputation · MVP' dist/vendors/index.html
           grep -Fq 'COMMUNITY VENDOR INDEX' dist/vendors/index.html
-          echo 'canonical_vendor_build=PASS'
+          grep -Fq '/api/vendor-reputation/v1/status' dist/vendors/index.html
+          grep -Fq '資料服務暫時無法取得' dist/vendors/index.html
+          ! grep -Fq 'uniqueReplies: 33' dist/vendors/index.html
+          echo 'canonical_vendor_live_consumer_build=PASS'
 
-          mkdir -p "$BACKUP" "$LIVE/poc"
-          chmod 0755 "$LIVE/poc"
-          if [ -f "$LIVE/poc/index.html" ]; then
-            cp -a "$LIVE/poc/index.html" "$BACKUP/poc-index.previous"
-          fi
+          mkdir -p "$BACKUP"
           if [ -d "$LIVE/vendors" ]; then
             cp -a "$LIVE/vendors" "$BACKUP/vendors.previous"
           fi
@@ -108,34 +92,38 @@ jobs:
           cp -a dist/vendors "$NEW_VENDOR"
           find "$NEW_VENDOR" -type d -exec chmod 0755 {} +
           find "$NEW_VENDOR" -type f -exec chmod 0644 {} +
-          install -m 0644 dist/poc/index.html "$POC_TMP"
-
           rm -rf "$LIVE/vendors"
           mv "$NEW_VENDOR" "$LIVE/vendors"
-          mv "$POC_TMP" "$LIVE/poc/index.html"
           DEPLOYED=1
 
-          # Verify through the real local nginx vhost before accepting the release.
-          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
-            https://studio.milkcat.org/poc/ -o "$TMP/poc-live"
-          grep -Fq 'Studio POC' "$TMP/poc-live"
-          grep -Fq 'Vendor Reputation Index' "$TMP/poc-live"
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/vendors/ -o "$TMP/vendors-live"
           grep -Fq 'Vendor Reputation · MVP' "$TMP/vendors-live"
           grep -Fq 'COMMUNITY VENDOR INDEX' "$TMP/vendors-live"
-          echo 'local_nginx_vendor_acceptance=PASS'
+          grep -Fq '/api/vendor-reputation/v1/status' "$TMP/vendors-live"
+          ! grep -Fq 'uniqueReplies: 33' "$TMP/vendors-live"
 
-          # Acceptance passed; preserve backup as rollback evidence and disable ERR rollback.
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/api/vendor-reputation/v1/status -o "$TMP/status-live"
+          python3 - "$TMP/status-live" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1]))
+          assert isinstance(data.get('evidence'),int)
+          assert isinstance(data.get('sourceAuthors'),int)
+          assert isinstance(data.get('vendors'),int)
+          PY
+          echo 'local_nginx_vendor_live_consumer_acceptance=PASS'
+
           trap - ERR
           printf '%s\n' \
-            "schema=studio-web.vendor-reputation-release/v1" \
+            "schema=studio-web.vendor-reputation-release/v2" \
             "source_repository=$REPO" \
             "source_sha=$SOURCE_SHA" \
-            "scope=/poc/index.html,/vendors/" \
+            "scope=/vendors/" \
+            "api=/api/vendor-reputation/v1/status" \
             "backup=$BACKUP" \
             "ok=true" > "$BACKUP/receipt.txt"
-          echo "vendor_reputation_deploy=PASS backup=$BACKUP"
+          echo "vendor_reputation_ui_deploy=PASS backup=$BACKUP"
           REMOTE
 
       - name: Public acceptance
@@ -143,11 +131,17 @@ jobs:
         run: |
           set -euo pipefail
           BASE=https://studio.milkcat.org
-          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/poc/" -o /tmp/poc-public
-          grep -Fq 'Studio POC' /tmp/poc-public
-          grep -Fq 'Vendor Reputation Index' /tmp/poc-public
-          grep -Fq 'href="/vendors/"' /tmp/poc-public
-          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/vendors/" -o /tmp/vendors-public
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/vendors/?_=$GITHUB_RUN_ID" -o /tmp/vendors-public
           grep -Fq 'Vendor Reputation · MVP' /tmp/vendors-public
           grep -Fq 'COMMUNITY VENDOR INDEX' /tmp/vendors-public
-          echo 'public_vendor_reputation=PASS'
+          grep -Fq '/api/vendor-reputation/v1/status' /tmp/vendors-public
+          ! grep -Fq 'uniqueReplies: 33' /tmp/vendors-public
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/api/vendor-reputation/v1/status?_=$GITHUB_RUN_ID" -o /tmp/vendor-status-public
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/vendor-status-public'))
+          assert data['evidence'] >= 0
+          assert data['sourceAuthors'] >= 0
+          assert data['vendors'] >= 0
+          PY
+          echo 'public_vendor_live_consumer=PASS'
