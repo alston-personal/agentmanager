@@ -1,0 +1,103 @@
+{
+  "schema": "milkcat.vendor-private-evidence-inventory/v1",
+  "files": [
+    {
+      "filename": "threads-DcWVvpwGTSh-normalized-replies.json",
+      "bytes": 15332,
+      "parse_ok": true,
+      "top_level": "object",
+      "top_keys": [
+        "normalized_replies",
+        "observed_at",
+        "schema",
+        "source_thread",
+        "unlinked_candidates"
+      ],
+      "dicts_scanned": 34,
+      "unique_post_permalinks": 33,
+      "unique_with_author": 0,
+      "unique_with_text": 0,
+      "unique_structured_author_text": 0
+    },
+    {
+      "filename": "threads-DcWVvpwGTSh-public-evidence.json",
+      "bytes": 431,
+      "parse_ok": true,
+      "top_level": "object",
+      "top_keys": [
+        "acquisition",
+        "capability",
+        "observed_at",
+        "other_thread_objects",
+        "reply_candidates",
+        "root_candidates",
+        "schema",
+        "source"
+      ],
+      "dicts_scanned": 2,
+      "unique_post_permalinks": 0,
+      "unique_with_author": 0,
+      "unique_with_text": 0,
+      "unique_structured_author_text": 0
+    },
+    {
+      "filename": "threads-DcWVvpwGTSh-rendered-text.json",
+      "bytes": 37377,
+      "parse_ok": true,
+      "top_level": "object",
+      "top_keys": [
+        "links",
+        "observed_at",
+        "schema",
+        "source",
+        "text_lines"
+      ],
+      "dicts_scanned": 186,
+      "unique_post_permalinks": 44,
+      "unique_with_author": 0,
+      "unique_with_text": 40,
+      "unique_structured_author_text": 0
+    },
+    {
+      "filename": "threads-DcWVvpwGTSh-reply-blocks.json",
+      "bytes": 46589,
+      "parse_ok": true,
+      "top_level": "object",
+      "top_keys": [
+        "acquisition",
+        "capability",
+        "dom_candidates",
+        "observed_at",
+        "reply_candidates",
+        "schema",
+        "source"
+      ],
+      "dicts_scanned": 112,
+      "unique_post_permalinks": 0,
+      "unique_with_author": 0,
+      "unique_with_text": 0,
+      "unique_structured_author_text": 0
+    },
+    {
+      "filename": "threads-DcWVvpwGTSh-visible-text.json",
+      "bytes": 1432,
+      "parse_ok": true,
+      "top_level": "object",
+      "top_keys": [
+        "all_unique_text_nodes",
+        "likely_content_text_nodes",
+        "observed_at",
+        "schema",
+        "source",
+        "substantial_text_nodes"
+      ],
+      "dicts_scanned": 1,
+      "unique_post_permalinks": 0,
+      "unique_with_author": 0,
+      "unique_with_text": 0,
+      "unique_structured_author_text": 0
+    }
+  ],
+  "raw_text_emitted": false,
+  "core_modified": false
+}
