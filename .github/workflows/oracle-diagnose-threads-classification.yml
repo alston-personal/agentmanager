@@ -1,0 +1,91 @@
+name: Oracle Diagnose Threads Classification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-diagnose-threads-classification.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect private classifier state without leaking evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/threads-classification-diagnostic.json
+          python3 - <<'PY' > "$OUT"
+          import json, os, time
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          RELAY=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          OUTPUT=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-vendor-candidates.json')
+          INPUT=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-normalized-replies.json')
+          now=time.time()
+          receipts=[]
+          for p in (RELAY/'receipts').glob('*.json'):
+              try:
+                  st=p.stat()
+                  if now-st.st_mtime > 900: continue
+                  d=json.loads(p.read_text(encoding='utf-8'))
+                  # Sanitize aggressively. Do not expose stdout/stderr content.
+                  receipts.append({
+                      'file':p.name,
+                      'mtime_utc':datetime.fromtimestamp(st.st_mtime,timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+                      'ok':d.get('ok'),
+                      'keys':sorted(d.keys()),
+                      'executor':d.get('executor') if isinstance(d.get('executor'),str) else None,
+                      'exit_code':d.get('exit_code'),
+                      'error_type':type(d.get('error')).__name__ if d.get('error') is not None else None,
+                      'stdout_present':bool(d.get('stdout')),
+                      'stderr_present':bool(d.get('stderr')),
+                  })
+              except Exception:
+                  continue
+          receipts.sort(key=lambda x:x['mtime_utc'],reverse=True)
+          output_meta={'exists':OUTPUT.is_file()}
+          if OUTPUT.is_file():
+              try:
+                  data=json.loads(OUTPUT.read_text(encoding='utf-8'))
+                  ev=data.get('evidence') or []
+                  output_meta.update({
+                      'valid_json':True,
+                      'schema':data.get('schema'),
+                      'evidence_records':len(ev),
+                      'all_pending':all(e.get('review_status')=='pending' for e in ev),
+                      'records_with_mentions':sum(1 for e in ev if e.get('vendor_mentions')),
+                  })
+              except Exception as e:
+                  output_meta.update({'valid_json':False,'parse_error_type':type(e).__name__})
+          result={
+              'schema':'agentos.threads-classification-diagnostic/v1',
+              'checked_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'input_exists':INPUT.is_file(),
+              'output':output_meta,
+              'recent_receipts':receipts[:12],
+              'private_text_exposed':False,
+              'vendor_names_exposed':False,
+          }
+          print(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+      - name: Commit sanitized diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-classification-diagnostic.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): Threads classification diagnostic'
+          git push
