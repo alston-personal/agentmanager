@@ -26,6 +26,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install focused test dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user pytest
+
       - name: Run focused NodeRegistry tests
         id: tests
         shell: bash
