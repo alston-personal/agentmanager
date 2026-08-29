@@ -1,8 +1,32 @@
 {
   "schema": "milkcat.vendor-canonical-evidence-reconcile/v1",
-  "ok": false,
-  "error_type": "RuntimeError",
-  "error_length": 37,
+  "service_head": "481520bf4a6f126debd60d23d572692902b98439",
+  "pending_target_before": 44,
+  "linked_mentions_before": 0,
+  "deleted_pending_target": 44,
+  "import": {
+    "schema": "milkcat.vendor-evidence-import/v1",
+    "dicts_scanned": 34,
+    "normalized_candidates": 33,
+    "unique_permalinks": 33,
+    "with_author": 33,
+    "with_text": 33,
+    "inserted": 33,
+    "updated": 0,
+    "raw_text_emitted": false
+  },
+  "status_after": {
+    "vendors": 0,
+    "evidence": 33,
+    "pendingEvidence": 33,
+    "pendingMentions": 0,
+    "sourceAuthors": 24
+  },
+  "target_evidence_after": 33,
+  "distinct_authors_after": 24,
+  "evidence_with_text_after": 33,
+  "canonical_input_filename": "threads-DcWVvpwGTSh-normalized-replies.json",
+  "expected_unique_replies": 33,
   "raw_evidence_committed": false,
   "core_modified": false
 }
