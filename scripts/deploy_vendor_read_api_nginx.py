@@ -128,24 +128,30 @@ def find_studio_server(lines):
     depth = 0
     server_start = None
     server_depth = None
-    has_domain = False
+    candidates = []
     for idx, line in enumerate(lines):
         stripped = line.strip()
         before = depth
         if server_start is None and stripped.startswith('server') and '{' in stripped:
             server_start = idx
             server_depth = before + line.count('{')
-            has_domain = False
-        if server_start is not None and 'server_name' in stripped and 'studio.milkcat.org' in stripped:
-            has_domain = True
         depth += brace_delta(line)
         if server_start is not None and depth < server_depth:
-            if has_domain:
-                return server_start, idx
+            block = '\n'.join(lines[server_start:idx + 1])
+            if 'server_name' in block and 'studio.milkcat.org' in block:
+                is_https = ('listen 443' in block) or ('ssl_certificate' in block)
+                candidates.append((server_start, idx, is_https))
             server_start = None
             server_depth = None
-            has_domain = False
-    raise RuntimeError('studio.milkcat.org server block not found')
+
+    https = [c for c in candidates if c[2]]
+    if len(https) == 1:
+        return https[0][0], https[0][1]
+    if len(https) > 1:
+        raise RuntimeError('multiple studio HTTPS server blocks found')
+    if len(candidates) == 1:
+        return candidates[0][0], candidates[0][1]
+    raise RuntimeError('studio HTTPS server block not found')
 
 
 def strip_existing_marker(text: str) -> str:
