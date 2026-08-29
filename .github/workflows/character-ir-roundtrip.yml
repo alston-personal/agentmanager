@@ -1,0 +1,84 @@
+name: Character IR Round-trip
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/character-ir-roundtrip.yml'
+      - 'scripts/character_ir_roundtrip.py'
+      - 'docs/CHARACTER_IR_ROUNDTRIP_V0.1.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: character-ir-roundtrip
+  cancel-in-progress: true
+
+jobs:
+  roundtrip-real-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright Chromium
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Fetch frozen real-person fixture
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-delay 2 \
+            'https://upload.wikimedia.org/wikipedia/commons/c/c3/Man-standing.jpg' \
+            -o /tmp/character-roundtrip-person.jpg
+          test "$(wc -c < /tmp/character-roundtrip-person.jpg)" -gt 10000
+
+      - name: Image to Character IR through production
+        env:
+          CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/character-roundtrip-person.jpg
+          CHARACTER_BLUEPRINT_CASE_ID: real-person-fullbody
+          CHARACTER_BLUEPRINT_BENCHMARK_OUT: benchmark-artifacts/character-roundtrip/source
+        run: |
+          set -euo pipefail
+          node scripts/character_blueprint_benchmark_capture.mjs
+          test -s benchmark-artifacts/character-roundtrip/source/character-ir.json
+
+      - name: Character IR to 3D representation to recovered IR
+        run: |
+          set -euo pipefail
+          python3 scripts/character_ir_roundtrip.py \
+            --input-ir benchmark-artifacts/character-roundtrip/source/character-ir.json \
+            --out-dir benchmark-artifacts/character-roundtrip/roundtrip \
+            | tee /tmp/roundtrip.json
+          grep -q '"ok": true' /tmp/roundtrip.json
+          test -s benchmark-artifacts/character-roundtrip/roundtrip/compiled-scene.json
+          test -s benchmark-artifacts/character-roundtrip/roundtrip/ir-from-3d.json
+          test -s benchmark-artifacts/character-roundtrip/roundtrip/roundtrip-report.json
+          python3 - <<'PY'
+          import json
+          p='benchmark-artifacts/character-roundtrip/roundtrip/roundtrip-report.json'
+          r=json.load(open(p))
+          s=r['diff']['summary']
+          assert r['schema']=='character-ir-roundtrip/v0.1'
+          assert s['changed_fields']==0
+          assert s['lost_fields']==0
+          assert s['preservation_ratio']==1.0
+          print('character_ir_roundtrip_v01=PASS', s)
+          PY
+
+      - name: Upload round-trip evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-ir-roundtrip-v01-real-person
+          path: benchmark-artifacts/character-roundtrip/
+          if-no-files-found: error
+          retention-days: 30
