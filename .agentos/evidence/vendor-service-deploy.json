@@ -1,0 +1,93 @@
+#0 building with "default" instance using docker driver
+
+#1 [api internal] load build definition from Dockerfile
+#1 transferring dockerfile: 265B done
+#1 DONE 0.0s
+
+#2 [api internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 1.8s
+
+#3 [api internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [api internal] load build context
+#4 transferring context: 16.32kB done
+#4 DONE 0.0s
+
+#5 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
+#5 resolve docker.io/library/python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217 0.0s done
+#5 sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217 10.37kB / 10.37kB done
+#5 sha256:dcac2e6d9d25d7803f92b44bb556cedfdc5695ef94fd76f5ab7a5e4b00effb94 1.75kB / 1.75kB done
+#5 sha256:afad9ec00dc415c9ed1dd4c4e298666211b2d8781db382a3a2df605617906a60 5.67kB / 5.67kB done
+#5 sha256:bf7af0229701decd1b9f42143504fc8f69e5664c37e57001d198e731e4f86c2e 0B / 30.16MB 0.1s
+#5 sha256:5464b19ed1ee5d08921783d6ab22ea2e275083781b4c0084da6a3902f1333d3c 0B / 1.28MB 0.1s
+#5 sha256:b6c7f0e51ad11686ee3d87d0a8138b46e86883dedbd347c73d26608f6e84c953 0B / 12.05MB 0.1s
+#5 sha256:bf7af0229701decd1b9f42143504fc8f69e5664c37e57001d198e731e4f86c2e 30.16MB / 30.16MB 0.3s
+#5 sha256:b6c7f0e51ad11686ee3d87d0a8138b46e86883dedbd347c73d26608f6e84c953 9.44MB / 12.05MB 0.4s
+#5 sha256:bf7af0229701decd1b9f42143504fc8f69e5664c37e57001d198e731e4f86c2e 30.16MB / 30.16MB 0.4s done
+#5 sha256:b6c7f0e51ad11686ee3d87d0a8138b46e86883dedbd347c73d26608f6e84c953 12.05MB / 12.05MB 0.5s done
+#5 extracting sha256:bf7af0229701decd1b9f42143504fc8f69e5664c37e57001d198e731e4f86c2e 0.1s
+#5 sha256:f288d289fc081180b7948cbd4aa88f1d2429973102661f283dad2339dec8b911 0B / 251B 0.5s
+#5 sha256:5464b19ed1ee5d08921783d6ab22ea2e275083781b4c0084da6a3902f1333d3c 1.28MB / 1.28MB 0.6s done
+#5 sha256:f288d289fc081180b7948cbd4aa88f1d2429973102661f283dad2339dec8b911 251B / 251B 0.6s done
+#5 extracting sha256:bf7af0229701decd1b9f42143504fc8f69e5664c37e57001d198e731e4f86c2e 0.8s done
+#5 extracting sha256:5464b19ed1ee5d08921783d6ab22ea2e275083781b4c0084da6a3902f1333d3c
+#5 extracting sha256:5464b19ed1ee5d08921783d6ab22ea2e275083781b4c0084da6a3902f1333d3c 0.1s done
+#5 extracting sha256:b6c7f0e51ad11686ee3d87d0a8138b46e86883dedbd347c73d26608f6e84c953
+#5 extracting sha256:b6c7f0e51ad11686ee3d87d0a8138b46e86883dedbd347c73d26608f6e84c953 0.5s done
+#5 extracting sha256:f288d289fc081180b7948cbd4aa88f1d2429973102661f283dad2339dec8b911 done
+#5 DONE 2.1s
+
+#6 [api 2/7] WORKDIR /srv/app
+#6 DONE 3.0s
+
+#7 [api 3/7] COPY pyproject.toml ./
+#7 DONE 0.0s
+
+#8 [api 4/7] RUN pip install --no-cache-dir .
+#8 2.038 Processing /srv/app
+#8 2.041   Installing build dependencies: started
+#8 3.286   Installing build dependencies: finished with status 'done'
+#8 3.287   Getting requirements to build wheel: started
+#8 3.565   Getting requirements to build wheel: finished with status 'error'
+#8 3.570   error: subprocess-exited-with-error
+#8 3.570   
+#8 3.570   × Getting requirements to build wheel did not run successfully.
+#8 3.570   │ exit code: 1
+#8 3.570   ╰─> [8 lines of output]
+#8 3.570       running egg_info
+#8 3.570       creating vendor_reputation_service.egg-info
+#8 3.570       writing vendor_reputation_service.egg-info/PKG-INFO
+#8 3.570       writing dependency_links to vendor_reputation_service.egg-info/dependency_links.txt
+#8 3.570       writing requirements to vendor_reputation_service.egg-info/requires.txt
+#8 3.570       writing top-level names to vendor_reputation_service.egg-info/top_level.txt
+#8 3.570       writing manifest file 'vendor_reputation_service.egg-info/SOURCES.txt'
+#8 3.570       error: package directory 'app' does not exist
+#8 3.570       [end of output]
+#8 3.570   
+#8 3.570   note: This error originates from a subprocess, and is likely not a problem with pip.
+#8 3.636 
+#8 3.636 [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+#8 3.636 [notice] To update, run: pip install --upgrade pip
+#8 3.638 error: subprocess-exited-with-error
+#8 3.638 
+#8 3.638 × Getting requirements to build wheel did not run successfully.
+#8 3.638 │ exit code: 1
+#8 3.638 ╰─> See above for output.
+#8 3.638 
+#8 3.638 note: This error originates from a subprocess, and is likely not a problem with pip.
+#8 ERROR: process "/bin/sh -c pip install --no-cache-dir ." did not complete successfully: exit code: 1
+------
+ > [api 4/7] RUN pip install --no-cache-dir .:
+3.636 
+3.636 [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+3.636 [notice] To update, run: pip install --upgrade pip
+3.638 error: subprocess-exited-with-error
+3.638 
+3.638 × Getting requirements to build wheel did not run successfully.
+3.638 │ exit code: 1
+3.638 ╰─> See above for output.
+3.638 
+3.638 note: This error originates from a subprocess, and is likely not a problem with pip.
+------
