@@ -1,0 +1,88 @@
+name: Oracle Probe Studio Server Blocks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-studio-server-blocks.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect studio server block metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'sudo -n python3 -' <<'PY' > .agentos/evidence/studio-server-blocks-probe.json
+          import json,re
+          from pathlib import Path
+          path=Path('/etc/nginx/sites-available/studio.milkcat.org')
+          text=path.read_text()
+          lines=text.splitlines()
+          blocks=[]
+          depth=0; start=None; start_depth=None
+          for i,line in enumerate(lines):
+              stripped=line.strip()
+              before=depth
+              if start is None and re.match(r'^server\s*\{', stripped):
+                  start=i; start_depth=before+line.count('{')
+              depth += line.count('{')-line.count('}')
+              if start is not None and depth < start_depth:
+                  b='\n'.join(lines[start:i+1])
+                  listens=[m.group(1).strip() for m in re.finditer(r'^\s*listen\s+([^;]+);',b,re.M)]
+                  names=[m.group(1).strip() for m in re.finditer(r'^\s*server_name\s+([^;]+);',b,re.M)]
+                  roots=[m.group(1).strip() for m in re.finditer(r'^\s*root\s+([^;]+);',b,re.M)]
+                  blocks.append({
+                    'ordinal':len(blocks),
+                    'start_line':start+1,
+                    'end_line':i+1,
+                    'listen':listens,
+                    'server_names':names,
+                    'has_studio_name':'studio.milkcat.org' in b,
+                    'has_ssl_certificate':bool(re.search(r'^\s*ssl_certificate\s+',b,re.M)),
+                    'has_default_server':'default_server' in b,
+                    'roots':roots,
+                    'has_api_cookies':bool(re.search(r'\blocation\s+(?:=\s*)?/api/cookies(?:\s|\{)',b)),
+                    'has_try_files':'try_files' in b,
+                    'has_vendor_location':'milkcat vendor reputation read api' in b,
+                    'location_count':len(re.findall(r'\blocation\b',b)),
+                  })
+                  start=None; start_depth=None
+          print(json.dumps({
+            'schema':'milkcat.studio-server-blocks-probe/v1',
+            'config':str(path),
+            'blocks':blocks,
+            'mutated':False,
+            'core_modified':False,
+          },ensure_ascii=False,indent=2))
+          PY
+          python3 -m json.tool .agentos/evidence/studio-server-blocks-probe.json >/dev/null
+          cat .agentos/evidence/studio-server-blocks-probe.json
+      - name: Commit sanitized probe
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/studio-server-blocks-probe.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/studio-server-blocks-probe.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): studio server block metadata'
+          git push
