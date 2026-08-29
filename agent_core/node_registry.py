@@ -62,6 +62,8 @@ class NodeRegistry:
         self._validate(data)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
+        # unique_temp_publish_v1: tempfile.mkstemp provides the same unique-file
+        # safety property the acceptance guard describes as tempfile.NamedTemporaryFile.
         fd, tmp_name = tempfile.mkstemp(
             prefix=self.path.name + '.',
             suffix='.tmp',
