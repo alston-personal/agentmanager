@@ -59,7 +59,7 @@ Rules: never invent vendor identity/region; if no identifiable vendor use vendor
             'constraints': ['private Oracle evidence only','no publication','no fabricated vendor identity or region'],
         },
         instruction=instruction,
-        workspace='/home/ubuntu/agentmanager',
+        workspace=str(BASE),
     )
     capsule_id = capsule['capsule_id']
     receipt = RELAY / 'receipts' / f'{capsule_id}.json'
