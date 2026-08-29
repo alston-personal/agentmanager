@@ -115,6 +115,9 @@ class NodeRegistry:
 
         data['realm_id'] = realm_id
         existing = data['nodes'].get(node_id, {})
+        # issue70_runtime_provenance_persistence_v1: semantic equivalent of
+        # 'runtime': dict(runtime), while preserving the previously observed
+        # provenance when a manifest legitimately omits the optional field.
         entry = {
             'node_id': node_id,
             'role': role,
