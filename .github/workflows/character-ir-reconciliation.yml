@@ -1,0 +1,75 @@
+name: Character IR Reconciliation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/character-ir-reconciliation.yml'
+      - 'scripts/character_ir_reconcile.py'
+      - 'scripts/character_glb_to_ir.py'
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build minimal source Character IR fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/reconcile
+          cat > /tmp/reconcile/image-ir.json <<'JSON'
+          {
+            "schema":"character-blueprint-ir/v0.5",
+            "inferred":{"parts":["head","body","left_arm","right_arm","left_leg","right_leg"]},
+            "assumed":{"backside":"unobserved","body_depth":"unknown-from-single-view"}
+          }
+          JSON
+
+      - name: Fetch and extract real human-shaped GLB
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 2 \
+            'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb' \
+            -o /tmp/reconcile/CesiumMan.glb
+          python3 scripts/character_glb_to_ir.py \
+            --input-glb /tmp/reconcile/CesiumMan.glb \
+            --output /tmp/reconcile/ir-from-3d.json
+
+      - name: Reconcile evidence without hallucinating semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p benchmark-artifacts/character-ir-reconciliation
+          python3 scripts/character_ir_reconcile.py \
+            --image-ir /tmp/reconcile/image-ir.json \
+            --three-d-ir /tmp/reconcile/ir-from-3d.json \
+            --output benchmark-artifacts/character-ir-reconciliation/report.json \
+            | tee /tmp/reconcile-output.json
+          grep -q '"ok": true' /tmp/reconcile-output.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('benchmark-artifacts/character-ir-reconciliation/report.json'))
+          assert r['schema']=='character-ir-reconciliation/v0.1'
+          assert r['canonical_update_policy']['automatic_promotions']==[]
+          assert r['summary']['image_part_count']==6
+          assert r['summary']['unresolved_3d_component_count']>=1
+          assert r['summary']['semantic_recovery_ratio']==0.0
+          assert r['semantic_comparison']['image_parts_not_recovered_from_3d']
+          print('character_ir_reconciliation_contract=PASS')
+          PY
+
+      - name: Upload reconciliation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-ir-reconciliation-v01
+          path: benchmark-artifacts/character-ir-reconciliation/
+          if-no-files-found: error
+          retention-days: 30
