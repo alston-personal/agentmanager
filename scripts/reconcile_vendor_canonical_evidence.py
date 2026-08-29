@@ -102,7 +102,8 @@ def main() -> int:
     before = int(psql(f"select count(*) from evidence where {target_where};") or 0)
     links = int(psql(
         "select count(*) from vendor_mentions m join evidence e on e.id=m.evidence_id "
-        f"where e.{target_where};"
+        "where e.source_type='threads_public_reply' and e.review_status='pending' "
+        f"and e.provenance->>'root'='{root_sql}';"
     ) or 0)
     if links != 0:
         raise RuntimeError(f"safety gate: {links} vendor mention links exist")
