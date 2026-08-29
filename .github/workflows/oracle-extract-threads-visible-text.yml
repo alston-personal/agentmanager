@@ -1,0 +1,107 @@
+name: Oracle Extract Threads Visible Text
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-extract-threads-visible-text.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Extract visible server-rendered text privately
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/threads-visible-text-summary.json
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY' > "$OUT"
+          import hashlib, json, os, re
+          from html.parser import HTMLParser
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          RAW=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-public.html')
+          PRIVATE=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-visible-text.json')
+          html=RAW.read_text(encoding='utf-8')
+
+          class Visible(HTMLParser):
+              def __init__(self):
+                  super().__init__(); self.skip=0; self.nodes=[]; self.stack=[]
+              def handle_starttag(self, tag, attrs):
+                  self.stack.append(tag.lower())
+                  if tag.lower() in ('script','style','svg','noscript'): self.skip += 1
+              def handle_endtag(self, tag):
+                  if tag.lower() in ('script','style','svg','noscript') and self.skip: self.skip -= 1
+                  if self.stack: self.stack.pop()
+              def handle_data(self, data):
+                  if self.skip: return
+                  s=' '.join(data.split())
+                  if s: self.nodes.append(s)
+
+          p=Visible(); p.feed(html)
+          # Deduplicate while preserving order. Keep all text privately for later evidence analysis.
+          unique=[]; seen=set()
+          for s in p.nodes:
+              if s not in seen:
+                  seen.add(s); unique.append(s)
+          substantial=[s for s in unique if len(s)>=12]
+          likely_content=[s for s in substantial if len(s)>=20 and not re.fullmatch(r'[\W_\d]+', s)]
+
+          PRIVATE.parent.mkdir(parents=True, exist_ok=True)
+          private={
+              'schema':'agentos.threads-visible-text/v1',
+              'source':'https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh',
+              'observed_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'all_unique_text_nodes':unique,
+              'substantial_text_nodes':substantial,
+              'likely_content_text_nodes':likely_content,
+          }
+          PRIVATE.write_text(json.dumps(private, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+          os.chmod(PRIVATE,0o600)
+
+          def h(s): return hashlib.sha256(s.encode()).hexdigest()[:16]
+          summary={
+              'schema':'agentos.threads-visible-text-summary/v1',
+              'checked_at':private['observed_at'],
+              'unique_text_nodes':len(unique),
+              'substantial_text_nodes':len(substantial),
+              'likely_content_text_nodes':len(likely_content),
+              'likely_content_hashes':[h(s) for s in likely_content[:30]],
+              'max_text_length':max([len(s) for s in unique] or [0]),
+              'contains_target_username':any('nico1e.16' in s.lower() for s in unique),
+              'contains_reply_ui_words':any(('reply' in s.lower() or '回覆' in s) for s in unique),
+              'private_text_path':str(PRIVATE),
+              'public_text_committed':False,
+          }
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          PY
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+      - name: Commit sanitized summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/threads-visible-text-summary.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-visible-text-summary.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(threads): visible text extraction summary'
+          git push
