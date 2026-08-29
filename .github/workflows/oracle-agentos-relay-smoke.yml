@@ -1,0 +1,76 @@
+name: Oracle AgentOS Relay Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-agentos-relay-smoke.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run deterministic relay smoke capsule
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext python3 - <<'PY' > .agentos/evidence/relay-smoke.json
+          import json,time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          relay=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          c=AntigravityRelayClient(str(relay))
+          p=c.submit(
+              project_id='agentos-relay-smoke',
+              canonical_ir={
+                  'goal':'Return one deterministic smoke-test token.',
+                  'acceptance':['stdout contains AGENTOS_SMOKE_OK'],
+                  'constraints':['do not use tools','do not read or write files','do not explain']
+              },
+              instruction='Return exactly AGENTOS_SMOKE_OK and nothing else. Do not use tools. Do not read or write files.',
+              workspace='/home/ubuntu/agentmanager')
+          receipt=relay/'receipts'/f"{p['capsule_id']}.json"
+          for _ in range(210):
+              if receipt.is_file(): break
+              time.sleep(1)
+          if not receipt.is_file():
+              result={'schema':'agentos.relay-smoke/v1','receipt_exists':False,'ok':False}
+          else:
+              r=json.loads(receipt.read_text())
+              out=str(r.get('stdout') or '').strip()
+              err=str(r.get('stderr') or '')
+              result={
+                  'schema':'agentos.relay-smoke/v1',
+                  'receipt_exists':True,
+                  'ok':r.get('ok') is True and out=='AGENTOS_SMOKE_OK',
+                  'receipt_ok':r.get('ok'),
+                  'stdout_exact_match':out=='AGENTOS_SMOKE_OK',
+                  'stdout_length':len(out),
+                  'stderr_length':len(err),
+                  'returncode':r.get('returncode'),
+                  'timed_out':r.get('timed_out'),
+                  'executor':r.get('executor'),
+                  'executor_user':r.get('executor_user'),
+              }
+          print(json.dumps(result,indent=2))
+          PY
+          cat .agentos/evidence/relay-smoke.json
+      - name: Commit sanitized smoke evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/relay-smoke.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/relay-smoke.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): relay executor smoke'
+          git push
