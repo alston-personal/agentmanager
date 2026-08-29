@@ -18,15 +18,29 @@ concurrency:
 jobs:
   classify:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Classify private normalized Threads evidence through AgentOS
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Classify private normalized Threads evidence through AgentOS batches
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/classify_threads_vendor_evidence.py
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - < scripts/classify_threads_vendor_evidence.py \
+            > .agentos/evidence/threads-vendor-classification-summary.json
+          python3 -m json.tool .agentos/evidence/threads-vendor-classification-summary.json >/dev/null
 
       - name: Commit sanitized classification summary
         if: always()
