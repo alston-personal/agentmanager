@@ -1,0 +1,169 @@
+name: Oracle Classify Threads Vendor Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-classify-threads-vendor-evidence.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: threads-vendor-evidence-classification
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ask AgentOS to classify normalized public evidence privately
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          SUMMARY=.agentos/evidence/threads-vendor-classification-summary.json
+          RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
+          RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
+          INPUT=/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-normalized-replies.json
+          OUTPUT=/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-vendor-candidates.json
+          test -s "$INPUT"
+
+          CAPSULE_ID=$(PYTHONPATH="$RUNTIME" python3 - "$INPUT" "$OUTPUT" <<'PY'
+          import sys
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          inp,out=sys.argv[1:3]
+          c=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          instruction=f'''Read the normalized public Threads reply evidence at {inp} and classify it for the Vendor Reputation Index.
+
+This is evidence extraction, NOT publication and NOT rating assignment.
+
+Write a JSON file to {out}. Do not print raw reply text to stdout/stderr. Do not copy raw reply text into the GitHub repo.
+
+Required output schema concept:
+{{
+  "schema": "agentos.vendor-evidence-classification/v1",
+  "source_thread": "https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh",
+  "classified_at": "ISO8601",
+  "evidence": [
+    {{
+      "evidence_id": "preserve input evidence_id",
+      "source_url": "preserve exact Threads reply permalink",
+      "source_author": "preserve input author",
+      "vendor_mentions": [
+        {{
+          "vendor_name": "only if explicitly supported by the reply text",
+          "aliases": [],
+          "service_category": "water/electricity/aircon/cleaning/renovation/moving/appliance-repair/other or null",
+          "region": "only if explicit or strongly grounded, otherwise null",
+          "signal": "positive|negative|mixed|neutral|unclear",
+          "confidence": 0.0,
+          "reason": "short paraphrase, no long quote"
+        }}
+      ],
+      "review_status": "pending"
+    }}
+  ]
+}}
+
+Rules:
+1. Never invent a vendor name from context. If no vendor is identifiable, vendor_mentions must be [].
+2. Never convert recommendation language into a star rating. This output has NO star-rating field.
+3. Preserve evidence provenance: exact input evidence_id and source_url.
+4. Do not merge two similar vendor names unless the evidence itself clearly supports the alias relationship. When uncertain, keep separate and flag low confidence.
+5. Do not infer a region from the user profile or unrelated context; only from the reply text or source thread context if explicit.
+6. Signal means the sentiment/recommendation expressed by that evidence only, not an overall vendor score.
+7. Every extracted mention remains review_status=pending. Nothing is approved for publication in this step.
+8. Keep original_text out of the classification output because the source evidence already exists privately in the input file.
+9. chmod the output 0600 if possible.
+10. stdout must contain ONLY a compact machine-readable summary line like: classification=PASS evidence=N mentions=M vendors=V pending=N. Do not include vendor names, authors, reply text, or tokens in stdout.
+
+Validate the output JSON before finishing.'''
+          p=c.submit(
+            project_id='vendor-reputation',
+            canonical_ir={
+              'goal':'Classify real public Threads replies into reviewable vendor evidence without inventing ratings.',
+              'acceptance':[
+                'all input evidence remains provenance-linked',
+                'no star ratings are inferred from prose',
+                'all extracted vendor mentions remain pending review',
+                'raw reply text is not emitted to public logs or repository',
+                'private classification JSON is valid'
+              ],
+              'constraints':[
+                'read normalized evidence from Oracle private runtime',
+                'write classification only to Oracle private runtime',
+                'no publication',
+                'no fabricated vendor identity or region'
+              ]
+            },
+            instruction=instruction,
+            workspace='/home/ubuntu/agentmanager')
+          print(p['capsule_id'])
+          PY
+          )
+
+          RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
+          for i in $(seq 1 720); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "receipt timeout"; exit 3; }
+
+          python3 - "$RECEIPT" "$OUTPUT" "$SUMMARY" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          receipt_path,output_path,summary_path=sys.argv[1:4]
+          r=json.load(open(receipt_path))
+          if r.get('ok') is not True:
+              raise SystemExit('AgentOS classification executor failed')
+          p=Path(output_path)
+          if not p.is_file():
+              raise SystemExit('classification output missing')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          ev=data.get('evidence') or []
+          mentions=[]
+          for e in ev:
+              assert e.get('review_status')=='pending', e.get('evidence_id')
+              for m in e.get('vendor_mentions') or []:
+                  if 'rating' in m or 'stars' in m or 'score' in m:
+                      raise SystemExit('forbidden inferred rating field present')
+                  assert m.get('vendor_name'), 'empty vendor name'
+                  assert m.get('signal') in {'positive','negative','mixed','neutral','unclear'}
+                  mentions.append(m)
+          vendors={str(m.get('vendor_name')).strip().casefold() for m in mentions if m.get('vendor_name')}
+          os.chmod(p,0o600)
+          summary={
+              'schema':'agentos.vendor-evidence-classification-summary/v1',
+              'ok':True,
+              'source_thread':data.get('source_thread'),
+              'evidence_records':len(ev),
+              'vendor_mentions':len(mentions),
+              'distinct_vendor_name_keys':len(vendors),
+              'pending_review_records':sum(1 for e in ev if e.get('review_status')=='pending'),
+              'positive_mentions':sum(1 for m in mentions if m.get('signal')=='positive'),
+              'negative_mentions':sum(1 for m in mentions if m.get('signal')=='negative'),
+              'mixed_mentions':sum(1 for m in mentions if m.get('signal')=='mixed'),
+              'neutral_or_unclear_mentions':sum(1 for m in mentions if m.get('signal') in {'neutral','unclear'}),
+              'private_output_path':str(p),
+              'raw_comment_text_committed':False,
+              'vendor_names_committed':False,
+              'publication_performed':False
+          }
+          Path(summary_path).write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(summary,ensure_ascii=False,indent=2))
+          PY
+
+      - name: Commit sanitized classification summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/threads-vendor-classification-summary.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/threads-vendor-classification-summary.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): Threads classification summary'
+          git push
