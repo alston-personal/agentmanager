@@ -1,0 +1,8 @@
+{
+  "schema": "milkcat.vendor-canonical-evidence-reconcile/v1",
+  "ok": false,
+  "error_type": "RuntimeError",
+  "error_length": 37,
+  "raw_evidence_committed": false,
+  "core_modified": false
+}
