@@ -1,0 +1,90 @@
+name: Oracle Probe Claude Executor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-claude-executor.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe Claude binary non-interactively
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY' > .agentos/evidence/claude-executor-probe.json
+          import glob, hashlib, json, os, subprocess, time
+          from pathlib import Path
+
+          bins=sorted(glob.glob('/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-*-linux-arm64/resources/native-binary/claude'))
+          if not bins:
+              print(json.dumps({'schema':'agentos.claude-executor-probe/v1','binary_found':False},indent=2)); raise SystemExit
+          binp=bins[-1]
+
+          def run(name,args,input_text=None,timeout=15):
+              t=time.time()
+              try:
+                  p=subprocess.run(args,input=input_text,text=True,capture_output=True,timeout=timeout,cwd='/home/ubuntu/agentmanager',env=os.environ.copy())
+                  out=p.stdout or ''; err=p.stderr or ''; timed=False; rc=p.returncode
+              except subprocess.TimeoutExpired as e:
+                  out=(e.stdout.decode() if isinstance(e.stdout,bytes) else (e.stdout or ''))
+                  err=(e.stderr.decode() if isinstance(e.stderr,bytes) else (e.stderr or ''))
+                  timed=True; rc=124
+              low=(err+'\n'+out).lower()
+              return {
+                'name':name,'returncode':rc,'timed_out':timed,'elapsed_ms':int((time.time()-t)*1000),
+                'stdout_length':len(out),'stderr_length':len(err),
+                'stdout_sha256_16':hashlib.sha256(out.encode()).hexdigest()[:16],
+                'stderr_sha256_16':hashlib.sha256(err.encode()).hexdigest()[:16],
+                'signals':{
+                  'auth':('auth' in low or 'login' in low or 'credential' in low),
+                  'api_key':('api key' in low or 'apikey' in low),
+                  'network':('network' in low or 'connect' in low or 'timeout' in low),
+                  'permission':('permission' in low or 'denied' in low),
+                  'tty':('tty' in low or 'terminal' in low or 'interactive' in low),
+                  'invalid_option':('unknown option' in low or 'unrecognized' in low or 'invalid option' in low),
+                }
+              }
+
+          tests=[]
+          tests.append(run('version',[binp,'--version'],timeout=8))
+          tests.append(run('help',[binp,'--help'],timeout=8))
+          common=[binp,'--bare','--print','--output-format','text','--effort','low']
+          tests.append(run('print_stdin',common,input_text='Return exactly AGENTOS_SMOKE_OK and nothing else.\n',timeout=15))
+          tests.append(run('print_argv',common+['Return exactly AGENTOS_SMOKE_OK and nothing else.'],timeout=15))
+          print(json.dumps({
+            'schema':'agentos.claude-executor-probe/v1','binary_found':True,
+            'binary_path':binp,'binary_version_dir':Path(binp).parts[-5] if len(Path(binp).parts)>=5 else None,
+            'tests':tests,'raw_output_committed':False
+          },indent=2))
+          PY
+          python3 -m json.tool .agentos/evidence/claude-executor-probe.json >/dev/null
+          cat .agentos/evidence/claude-executor-probe.json
+      - name: Commit sanitized probe
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/claude-executor-probe.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/claude-executor-probe.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos): probe Claude executor CLI'
+          git push
