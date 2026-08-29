@@ -1,0 +1,141 @@
+name: Ops LeopardCat Runtime Deploy
+
+on:
+  push:
+    branches: [ops/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/ops-leopardcat-runtime-deploy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      EXPECTED_OLD_SHA: f44db405678cd54ce42b944e71a37de033ed8234
+      TARGET_SHA: 2091d8912104646e1014b219d5f456e858e8a2b5
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Pinned fast-forward deploy with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "EXPECTED_OLD_SHA='$EXPECTED_OLD_SHA' TARGET_SHA='$TARGET_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          repo="/home/$(id -un)/leopardcat-tarot"
+          website="$repo/website"
+          gitc=(git -c safe.directory="$repo" -C "$repo")
+          backup="/tmp/leopardcat-runtime-backup-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+          mkdir -p "$backup"
+          old_pid=''
+          new_pid=''
+          switched=0
+
+          restore_old_runtime() {
+            rc=$?
+            trap - ERR
+            echo "rollback_triggered=true rc=$rc"
+            if test "$switched" = 1; then
+              if test -n "$new_pid"; then kill "$new_pid" 2>/dev/null || true; fi
+              sleep 1
+              "${gitc[@]}" reset --hard "$EXPECTED_OLD_SHA" || true
+              test -f "$backup/index.html" && cp -f "$backup/index.html" "$website/dist/index.html" || true
+              test -f "$backup/stats.json" && cp -f "$backup/stats.json" "$website/stats.json" || true
+              cd "$website"
+              nohup /usr/bin/python3 fortune_server.py </dev/null >/tmp/fortune_server.log 2>&1 &
+              rollback_pid=$!
+              sleep 2
+              if kill -0 "$rollback_pid" 2>/dev/null; then
+                echo "rollback_runtime_started=true"
+              else
+                echo "rollback_runtime_started=false"
+              fi
+            fi
+            exit "$rc"
+          }
+          trap restore_old_runtime ERR
+
+          echo 'schema=leopardcat.production-deploy/v1'
+          test -d "$repo/.git"
+          current="$("${gitc[@]}" rev-parse HEAD)"
+          branch="$("${gitc[@]}" rev-parse --abbrev-ref HEAD)"
+          echo "before_head=$current"
+          echo "before_branch=$branch"
+          test "$current" = "$EXPECTED_OLD_SHA"
+          test "$branch" = main
+
+          mapfile -t dirty < <("${gitc[@]}" status --porcelain=v1 | sed -E 's/^.. //')
+          for p in "${dirty[@]}"; do
+            case "$p" in
+              website/dist/index.html|website/stats.json) ;;
+              *) echo "unexpected_dirty_path=$p"; false ;;
+            esac
+          done
+          echo "approved_dirty_count=${#dirty[@]}"
+          cp -f "$website/dist/index.html" "$backup/index.html"
+          cp -f "$website/stats.json" "$backup/stats.json"
+
+          "${gitc[@]}" fetch origin main
+          remote="$("${gitc[@]}" rev-parse origin/main)"
+          echo "origin_main=$remote"
+          test "$remote" = "$TARGET_SHA"
+          "${gitc[@]}" merge-base --is-ancestor "$EXPECTED_OLD_SHA" "$TARGET_SHA"
+          "${gitc[@]}" merge --ff-only "$TARGET_SHA"
+          switched=1
+          test "$("${gitc[@]}" rev-parse HEAD)" = "$TARGET_SHA"
+
+          cd "$website"
+          python3 -m py_compile fortune_server.py divination/*.py
+          if ! test -x node_modules/.bin/vite; then npm ci; fi
+          npm run build
+          # stats.json is live mutable state, not a build artifact. Preserve its pre-deploy value.
+          cp -f "$backup/stats.json" "$website/stats.json"
+
+          old_pid="$(lsof -nP -t -iTCP:8088 -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
+          test -n "$old_pid"
+          echo "old_pid=$old_pid"
+          old_cwd="$(readlink -f "/proc/$old_pid/cwd" 2>/dev/null || true)"
+          test "$old_cwd" = "$website"
+          kill "$old_pid"
+          for _ in $(seq 1 20); do
+            kill -0 "$old_pid" 2>/dev/null || break
+            sleep 0.25
+          done
+          if kill -0 "$old_pid" 2>/dev/null; then echo old_process_did_not_exit=true; false; fi
+
+          nohup /usr/bin/python3 fortune_server.py </dev/null >/tmp/fortune_server.log 2>&1 &
+          new_pid=$!
+          echo "new_pid=$new_pid"
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8088/api/v1/ai-policy >/tmp/leopardcat-ai-policy.json 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          kill -0 "$new_pid"
+          test "$(lsof -nP -t -iTCP:8088 -sTCP:LISTEN 2>/dev/null | head -n1)" = "$new_pid"
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/leopardcat-ai-policy.json'))
+          assert p.get('provider')=='gemini',p
+          assert p.get('paid_fallback') is False,p
+          print(json.dumps({k:p.get(k) for k in ('cost_policy','provider','model','paid_fallback')},sort_keys=True))
+          PY
+          echo "after_head=$("${gitc[@]}" rev-parse HEAD)"
+          echo "deployment_verified=true"
+          trap - ERR
+          REMOTE
+
+      - name: Public policy acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 10 https://leopardcat-tarot.milkcat.org/api/v1/ai-policy \
+            | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("provider")=="gemini" and p.get("paid_fallback") is False; print(json.dumps({k:p.get(k) for k in ("cost_policy","provider","model","paid_fallback")},sort_keys=True))'
