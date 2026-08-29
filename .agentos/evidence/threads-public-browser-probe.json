@@ -1,0 +1,33 @@
+{
+  "schema": "agentos.threads-public-browser-probe/v1",
+  "checked_at": "2026-08-29T01:19:43Z",
+  "target_url": "https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh",
+  "writes_performed": false,
+  "login_attempted": false,
+  "anti_bot_bypass_attempted": false,
+  "binaries": {
+    "chromium": false,
+    "chromium-browser": false,
+    "google-chrome": false,
+    "google-chrome-stable": false,
+    "firefox": false,
+    "playwright": false,
+    "node": true,
+    "npx": true
+  },
+  "python_modules": {
+    "selenium": false,
+    "playwright": true
+  },
+  "public_http": {
+    "ok": true,
+    "status": 200,
+    "content_type": "text/html; charset=\"utf-8\"",
+    "bytes_read": 563481,
+    "contains_shortcode": true,
+    "contains_reply_word": true,
+    "contains_login_prompt": false
+  },
+  "browser_runtime_available": false,
+  "automation_runtime_available": true
+}
