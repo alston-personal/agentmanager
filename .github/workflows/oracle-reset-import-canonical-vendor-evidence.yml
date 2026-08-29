@@ -1,0 +1,127 @@
+name: Oracle Reset Import Canonical Vendor Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-reset-import-canonical-vendor-evidence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_SHA: 481520bf4a6f126debd60d23d572692902b98439
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Reconcile canonical 33-reply evidence set
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SERVICE_SHA" <<'REMOTE' > .agentos/evidence/vendor-canonical-evidence-reconcile.json
+          set -euo pipefail
+          SHA="$1"
+          BASE=/home/ubuntu/vendor-reputation-service
+          SECRET=/home/ubuntu/agent-data/secrets/vendor-reputation.env
+          INPUT=/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-normalized-replies.json
+          ROOT='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+          test -s "$SECRET"
+          test -s "$INPUT"
+          set -a; . "$SECRET"; set +a
+
+          git -C "$BASE" fetch --depth=1 origin "$SHA" >/tmp/vendor-reconcile-fetch.log 2>&1
+          git -C "$BASE" checkout --detach "$SHA" >/tmp/vendor-reconcile-checkout.log 2>&1
+          test "$(git -C "$BASE" rev-parse HEAD)" = "$SHA"
+          cd "$BASE"
+          docker compose up -d --build >/tmp/vendor-reconcile-compose.log 2>&1
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18765/healthz >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18765/healthz >/dev/null
+
+          # Safety gate: only the target root, only pending evidence, and no mention links.
+          BEFORE=$(docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atc \
+            "select count(*) from evidence where source_type='threads_public_reply' and review_status='pending' and provenance->>'root'='$ROOT';")
+          LINKS=$(docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atc \
+            "select count(*) from vendor_mentions m join evidence e on e.id=m.evidence_id where e.source_type='threads_public_reply' and e.review_status='pending' and e.provenance->>'root'='$ROOT';")
+          test "$LINKS" = "0"
+          DELETED=$(docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atc \
+            "with d as (delete from evidence where source_type='threads_public_reply' and review_status='pending' and provenance->>'root'='$ROOT' returning 1) select count(*) from d;")
+
+          set +e
+          IMPORT_OUT=$(docker compose run --rm -T \
+            -v "$INPUT:/private-evidence.json:ro" \
+            api python /srv/app/scripts/import_private_threads_evidence.py /private-evidence.json 2>/tmp/vendor-canonical-import.err)
+          RC=$?
+          set -e
+          test "$RC" = "0"
+          IMPORT_JSON=$(printf '%s\n' "$IMPORT_OUT" | python3 -c 'import sys,json; vals=[]
+for line in sys.stdin:
+    try: x=json.loads(line)
+    except Exception: continue
+    if isinstance(x,dict) and x.get("schema")=="milkcat.vendor-evidence-import/v1": vals.append(x)
+assert vals
+print(json.dumps(vals[-1],ensure_ascii=False))')
+
+          STATUS=$(curl -fsS http://127.0.0.1:18765/v1/status)
+          AUTHORS=$(docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atc \
+            "select count(distinct provenance->>'author') from evidence where source_type='threads_public_reply' and provenance->>'root'='$ROOT' and coalesce(provenance->>'author','')<>'';")
+          TEXTS=$(docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atc \
+            "select count(*) from evidence where source_type='threads_public_reply' and provenance->>'root'='$ROOT' and coalesce(original_text,'')<>'';")
+          TOTAL=$(docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atc \
+            "select count(*) from evidence where source_type='threads_public_reply' and provenance->>'root'='$ROOT';")
+
+          python3 - "$SHA" "$BEFORE" "$LINKS" "$DELETED" "$IMPORT_JSON" "$STATUS" "$AUTHORS" "$TEXTS" "$TOTAL" <<'PY'
+          import json,sys
+          sha,before,links,deleted,imp,status,authors,texts,total=sys.argv[1:]
+          result={
+            'schema':'milkcat.vendor-canonical-evidence-reconcile/v1',
+            'service_head':sha,
+            'pending_target_before':int(before),
+            'linked_mentions_before':int(links),
+            'deleted_pending_target':int(deleted),
+            'import':json.loads(imp),
+            'status_after':json.loads(status),
+            'target_evidence_after':int(total),
+            'distinct_authors_after':int(authors),
+            'evidence_with_text_after':int(texts),
+            'canonical_input_filename':'threads-DcWVvpwGTSh-normalized-replies.json',
+            'expected_unique_replies':33,
+            'raw_evidence_committed':False,
+            'core_modified':False,
+          }
+          assert result['target_evidence_after']==33, result
+          assert result['evidence_with_text_after']==33, result
+          assert result['import']['unique_permalinks']==33, result
+          print(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+          REMOTE
+          python3 -m json.tool .agentos/evidence/vendor-canonical-evidence-reconcile.json >/dev/null
+          cat .agentos/evidence/vendor-canonical-evidence-reconcile.json
+      - name: Commit sanitized reconciliation evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/vendor-canonical-evidence-reconcile.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-canonical-evidence-reconcile.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): canonical 33-reply reconciliation'
+          git push
