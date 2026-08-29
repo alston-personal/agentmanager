@@ -1,9 +1,26 @@
 {
   "schema": "milkcat.vendor-read-api-nginx-deploy/v1",
-  "ok": false,
-  "error_type": "RuntimeError",
-  "error_length": 41,
-  "rolled_back_on_failure": true,
+  "changed": true,
+  "nginx_test": "pass",
+  "reloaded": true,
+  "local_nginx_status": 200,
+  "local_nginx_vendors": 200,
+  "local_nginx_search": 200,
+  "public_status": 200,
+  "public_vendors": 200,
+  "public_search": 200,
+  "public_write_attempt": 405,
+  "evidence_before": 33,
+  "evidence_after": 33,
+  "whitelist": [
+    "/v1/status",
+    "/v1/vendors",
+    "/v1/search",
+    "/v1/vendors/{uuid}",
+    "/v1/vendors/{uuid}/evidence",
+    "/v1/vendors/{uuid}/reputation"
+  ],
+  "backup_created": "studio.milkcat.org.vendor-read-api.20260829T131221Z.bak",
   "raw_data_emitted": false,
   "core_modified": false
 }
