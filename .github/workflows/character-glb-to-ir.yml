@@ -1,0 +1,60 @@
+name: Character GLB to IR
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/character-glb-to-ir.yml'
+      - 'scripts/character_glb_to_ir.py'
+
+permissions:
+  contents: read
+
+jobs:
+  glb-to-ir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch human-shaped GLB fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-delay 2 \
+            'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb' \
+            -o /tmp/CesiumMan.glb
+          test "$(wc -c < /tmp/CesiumMan.glb)" -gt 10000
+
+      - name: Extract 3D-derived Character IR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p benchmark-artifacts/character-glb-to-ir
+          python3 scripts/character_glb_to_ir.py \
+            --input-glb /tmp/CesiumMan.glb \
+            --output benchmark-artifacts/character-glb-to-ir/cesium-man-ir.json \
+            | tee /tmp/glb-to-ir.json
+          grep -q '"ok": true' /tmp/glb-to-ir.json
+          python3 - <<'PY'
+          import json
+          p='benchmark-artifacts/character-glb-to-ir/cesium-man-ir.json'
+          d=json.load(open(p))
+          assert d['schema']=='character-3d-derived-ir/v0.2'
+          g=d['observed_3d']['geometry']
+          assert g['mesh_count'] >= 1
+          assert g['primitive_count'] >= 1
+          assert g['vertices_sum'] > 0
+          assert g['triangle_faces_sum'] > 0
+          assert d['evidence_class']=='observed_3d_geometry'
+          print('character_glb_to_ir=PASS', g)
+          PY
+
+      - name: Upload GLB-derived IR evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-glb-to-ir-cesium-man
+          path: benchmark-artifacts/character-glb-to-ir/
+          if-no-files-found: error
+          retention-days: 30
