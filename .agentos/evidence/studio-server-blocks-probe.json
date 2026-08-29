@@ -1,0 +1,88 @@
+{
+  "schema": "milkcat.studio-server-blocks-probe/v1",
+  "config": "/etc/nginx/sites-available/studio.milkcat.org",
+  "blocks": [
+    {
+      "ordinal": 0,
+      "start_line": 1,
+      "end_line": 21,
+      "listen": [
+        "3001 ssl"
+      ],
+      "server_names": [
+        "studio.milkcat.org"
+      ],
+      "has_studio_name": true,
+      "has_ssl_certificate": true,
+      "has_default_server": false,
+      "roots": [],
+      "has_api_cookies": false,
+      "has_try_files": false,
+      "has_vendor_location": false,
+      "location_count": 1
+    },
+    {
+      "ordinal": 1,
+      "start_line": 23,
+      "end_line": 33,
+      "listen": [
+        "8099"
+      ],
+      "server_names": [
+        "studio.milkcat.org"
+      ],
+      "has_studio_name": true,
+      "has_ssl_certificate": false,
+      "has_default_server": false,
+      "roots": [
+        "/home/ubuntu/prophecy-verifier"
+      ],
+      "has_api_cookies": false,
+      "has_try_files": true,
+      "has_vendor_location": false,
+      "location_count": 1
+    },
+    {
+      "ordinal": 2,
+      "start_line": 35,
+      "end_line": 39,
+      "listen": [
+        "80"
+      ],
+      "server_names": [
+        "studio.milkcat.org"
+      ],
+      "has_studio_name": true,
+      "has_ssl_certificate": false,
+      "has_default_server": false,
+      "roots": [],
+      "has_api_cookies": false,
+      "has_try_files": false,
+      "has_vendor_location": false,
+      "location_count": 0
+    },
+    {
+      "ordinal": 3,
+      "start_line": 41,
+      "end_line": 225,
+      "listen": [
+        "443 ssl"
+      ],
+      "server_names": [
+        "studio.milkcat.org"
+      ],
+      "has_studio_name": true,
+      "has_ssl_certificate": true,
+      "has_default_server": false,
+      "roots": [
+        "/home/ubuntu/zeus-writer/website/dist"
+      ],
+      "has_api_cookies": true,
+      "has_try_files": true,
+      "has_vendor_location": false,
+      "location_count": 19
+    }
+  ],
+  "mutated": false,
+  "core_modified": false
+}
