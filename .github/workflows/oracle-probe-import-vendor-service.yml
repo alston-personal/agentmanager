@@ -1,0 +1,171 @@
+name: Oracle Probe Import Vendor Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-import-vendor-service.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe running service and import private Threads evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE' > .agentos/evidence/vendor-service-runtime.json
+          set -euo pipefail
+          SECRET=/home/ubuntu/agent-data/secrets/vendor-reputation.env
+          test -s "$SECRET"
+          set -a
+          . "$SECRET"
+          set +a
+          python3 - <<'PY'
+          import json, os, subprocess, urllib.request
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          base = Path('/home/ubuntu/vendor-reputation-service')
+          runtime = Path('/home/ubuntu/agent-data/runtime/vendor-reputation')
+          root_url = 'https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+
+          def get_json(url):
+              try:
+                  with urllib.request.urlopen(url, timeout=8) as r:
+                      return r.status, json.loads(r.read().decode())
+              except Exception as exc:
+                  return None, {'error_type': type(exc).__name__}
+
+          def walk(x):
+              if isinstance(x, dict):
+                  yield x
+                  for v in x.values():
+                      yield from walk(v)
+              elif isinstance(x, list):
+                  for v in x:
+                      yield from walk(v)
+
+          def canonical(v):
+              if not isinstance(v, str):
+                  return None
+              try:
+                  p = urlsplit(v.strip())
+              except ValueError:
+                  return None
+              if (p.hostname or '').lower() not in {'threads.com','www.threads.com','threads.net','www.threads.net'}:
+                  return None
+              path = p.path.rstrip('/')
+              if '/post/' not in path:
+                  return None
+              return 'https://www.threads.com' + path
+
+          files = []
+          for p in runtime.glob('*.json'):
+              try:
+                  obj = json.loads(p.read_text())
+              except Exception:
+                  continue
+              urls = set()
+              for d in walk(obj):
+                  for key in ('permalink','sourceUrl','source_url','url','href'):
+                      u = canonical(d.get(key))
+                      if u:
+                          urls.add(u)
+              urls.discard(root_url)
+              files.append({'path': p, 'unique': len(urls), 'bytes': p.stat().st_size})
+          files.sort(key=lambda x: (x['unique'], x['bytes']), reverse=True)
+          pick = files[0]['path'] if files and files[0]['unique'] > 0 else None
+          selected_unique = files[0]['unique'] if pick else 0
+
+          health_code, health = get_json('http://127.0.0.1:18765/healthz')
+          before_code, before = get_json('http://127.0.0.1:18765/v1/status')
+
+          imp = {'skipped': True, 'reason': 'service-unhealthy' if health_code != 200 else 'no-private-evidence-file'}
+          import_rc = None
+          import_stderr_length = 0
+          if health_code == 200 and pick:
+              cmd = [
+                  'docker','compose','run','--rm','-T',
+                  '-v', f'{pick}:/private-evidence.json:ro',
+                  'api','python','/srv/app/scripts/import_private_threads_evidence.py','/private-evidence.json'
+              ]
+              p = subprocess.run(cmd, cwd=base, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=90, env=os.environ.copy())
+              import_rc = p.returncode
+              import_stderr_length = len(p.stderr or '')
+              parsed = None
+              for line in reversed((p.stdout or '').splitlines()):
+                  try:
+                      value = json.loads(line)
+                  except Exception:
+                      continue
+                  if isinstance(value, dict) and value.get('schema') == 'milkcat.vendor-evidence-import/v1':
+                      parsed = value
+                      break
+              imp = parsed or {
+                  'skipped': True,
+                  'reason': 'importer-output-unparseable' if p.returncode == 0 else 'importer-failed',
+                  'stdout_length': len(p.stdout or ''),
+              }
+
+          after_code, after = get_json('http://127.0.0.1:18765/v1/status')
+          head = subprocess.run(['git','-C',str(base),'rev-parse','HEAD'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout.strip()
+
+          result = {
+              'schema': 'milkcat.vendor-service-runtime/v1',
+              'service_head': head,
+              'health_http': health_code,
+              'health_ok': health_code == 200 and health.get('ok') is True,
+              'status_before_http': before_code,
+              'status_before': before,
+              'private_json_files_seen': len(files),
+              'private_evidence_selected': bool(pick),
+              'private_evidence_filename': pick.name if pick else None,
+              'selected_unique_permalinks': selected_unique,
+              'import_returncode': import_rc,
+              'import_stderr_length': import_stderr_length,
+              'import': imp,
+              'status_after_http': after_code,
+              'status_after': after,
+              'raw_evidence_committed': False,
+              'core_modified': False,
+          }
+          print(json.dumps(result, ensure_ascii=False, indent=2))
+          PY
+          REMOTE
+          python3 -m json.tool .agentos/evidence/vendor-service-runtime.json >/dev/null
+          cat .agentos/evidence/vendor-service-runtime.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('.agentos/evidence/vendor-service-runtime.json'))
+          assert x['health_ok'] is True, x
+          assert x['status_after_http'] == 200, x
+          PY
+      - name: Commit sanitized runtime evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/vendor-service-runtime.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-service-runtime.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): runtime service and private import'
+          git push
