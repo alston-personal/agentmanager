@@ -1,0 +1,39 @@
+{
+  "schema": "milkcat.vendor-service-runtime/v1",
+  "service_head": "26d5ff95348745004219afdef8b92366dd42e433",
+  "health_http": 200,
+  "health_ok": true,
+  "status_before_http": 200,
+  "status_before": {
+    "vendors": 0,
+    "evidence": 44,
+    "pendingEvidence": 44,
+    "pendingMentions": 0,
+    "sourceAuthors": 0
+  },
+  "private_json_files_seen": 5,
+  "private_evidence_selected": true,
+  "private_evidence_filename": "threads-DcWVvpwGTSh-rendered-text.json",
+  "selected_unique_permalinks": 44,
+  "import_returncode": 0,
+  "import_stderr_length": 51,
+  "import": {
+    "schema": "milkcat.vendor-evidence-import/v1",
+    "dicts_scanned": 186,
+    "normalized_candidates": 51,
+    "unique_permalinks": 44,
+    "inserted": 0,
+    "updated": 44,
+    "raw_text_emitted": false
+  },
+  "status_after_http": 200,
+  "status_after": {
+    "vendors": 0,
+    "evidence": 44,
+    "pendingEvidence": 44,
+    "pendingMentions": 0,
+    "sourceAuthors": 0
+  },
+  "raw_evidence_committed": false,
+  "core_modified": false
+}
