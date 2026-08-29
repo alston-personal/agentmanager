@@ -20,7 +20,7 @@ jobs:
         with:
           ref: feature/realm-node-fabric-readiness
           fetch-depth: 1
-      - name: Start staged Thin Client
+      - name: Activate staged Thin Client
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -35,19 +35,34 @@ jobs:
           node='vopc5750'
           tid='runtime-stage2-start-'+node+'-'+str(int(time.time()))
           ps=r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
           $taskName='AgentOS Thin Client'
-          $t=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
-          if ($t.State -ne 'Running') { Start-ScheduledTask -TaskName $taskName }
-          Start-Sleep -Seconds 2
-          $state=(Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).State
-          Write-Output ('agentos_thin_client_task_state=' + $state)
+          $watchdogName='AgentOS Thin Client Watchdog'
+          Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
+          Get-ScheduledTask -TaskName $watchdogName -ErrorAction Stop | Out-Null
+
+          $prov=[ordered]@{
+            schema='agentos.thin-client-runtime/v0.1'
+            source_ref='feature/realm-node-fabric-readiness'
+            source_commit='REF'
+            installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            install_mode='stage2-deferred-restart'
+          }
+          $json=$prov | ConvertTo-Json
+          [System.IO.File]::WriteAllText((Join-Path $install 'runtime-provenance.json'),$json,(New-Object System.Text.UTF8Encoding($false)))
+
+          $restart="Start-Sleep -Seconds 5; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName '$taskName'"
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
           Write-Output 'agentos_runtime_stage2_start=PASS'
-          '''
+          Write-Output 'agentos_restart=deferred-stop-start'
+          Write-Output 'agentos_watchdog_preserved=PASS'
+          Write-Output 'agentos_source_commit=REF'
+          '''.replace('REF',ref)
           task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
           RealmFabricStore().queue_task(node,task)
           print(tid)
           PY
-      - name: Wait for start receipt and converged heartbeat
+      - name: Wait for start receipt and exact converged heartbeat
         shell: bash
         env:
           AGENT_DATA_ROOT: /home/ubuntu/agent-data
@@ -55,20 +70,28 @@ jobs:
         run: |
           set -euo pipefail
           TASK=$(cat /tmp/vopc5750-stage2-task.txt)
-          for i in $(seq 1 60); do
-            python3 - "$TASK" <<'PY' && exit 0 || true
+          REF=$(git rev-parse HEAD)
+          for i in $(seq 1 75); do
+            python3 - "$TASK" "$REF" <<'PY' && exit 0 || true
           import json,sys
           from agent_core.realm_fabric import RealmFabricStore
           from agent_core.node_registry import NodeRegistry
-          r=RealmFabricStore().get_receipt(sys.argv[1])
+          task,ref=sys.argv[1:3]
+          r=RealmFabricStore().get_receipt(task)
           if not r or r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
               raise SystemExit(1)
+          if 'agentos_runtime_stage2_start=PASS' not in str(r.get('stdout') or ''):
+              raise SystemExit(1)
           node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
-          if not node:
+          if not node or node.get('status')!='online':
               raise SystemExit(1)
           caps=set(node.get('capabilities') or [])
           runtime=node.get('runtime') or {}
-          ok=('agent.surface.inspect' in caps and 'node.runtime.converge' in caps and runtime.get('source_commit'))
+          ok=(
+              'agent.surface.inspect' in caps
+              and 'node.runtime.converge' in caps
+              and runtime.get('source_commit') == ref
+          )
           if ok:
               print(json.dumps({'receipt':r,'node':node},ensure_ascii=False,indent=2,sort_keys=True))
               raise SystemExit(0)
@@ -76,5 +99,5 @@ jobs:
           PY
             sleep 2
           done
-          echo 'stage2 heartbeat convergence timeout' >&2
+          echo 'stage2 exact heartbeat convergence timeout' >&2
           exit 1
