@@ -1,0 +1,13 @@
+{
+  "schema": "agentos.threads-normalized-replies-summary/v1",
+  "checked_at": "2026-08-29T01:24:53Z",
+  "raw_reply_candidates": 54,
+  "unique_permalink_groups": 33,
+  "unique_non_root_reply_permalinks": 33,
+  "root_permalink_groups": 0,
+  "unique_authors": 24,
+  "duplicate_permalink_groups": 21,
+  "unlinked_candidates": 0,
+  "private_normalized_path": "/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-normalized-replies.json",
+  "public_comment_text_committed": false
+}
