@@ -92,13 +92,20 @@ jobs:
           grep -q 'selectObjectNearPx' /tmp/layoutlib-semantic-editor
           grep -q 'matchOpeningByEvidence' /tmp/layoutlib-semantic-editor
           grep -q 'moveObjectByPx' /tmp/layoutlib-semantic-editor
+          grep -q 'setDoorHinge' /tmp/layoutlib-semantic-editor
+          grep -q 'setDoorSwingSide' /tmp/layoutlib-semantic-editor
+          grep -q 'resizeWindowEdgeByPx' /tmp/layoutlib-semantic-editor
           grep -q "selectButton.style.display='none'" /tmp/layoutlab-semantic-tools
           grep -q "interactionInvariant:'exclusive-persistent-tool-focus/v1'" /tmp/layoutlab-semantic-tools
           grep -q "selectionInvariant:'zero-focus-object-selection/v1'" /tmp/layoutlab-semantic-tools
           grep -q "moveInvariant:'semantic-object-drag-along-support-wall/v1'" /tmp/layoutlab-semantic-tools
+          grep -q "propertyInvariant:'door-properties-and-window-resize/v1'" /tmp/layoutlab-semantic-tools
           grep -q 'S.selectObjectNearPx' /tmp/layoutlab-semantic-tools
           grep -q 'S.deleteObject' /tmp/layoutlab-semantic-tools
           grep -q 'S.moveObjectByPx' /tmp/layoutlab-semantic-tools
+          grep -q 'S.setDoorHinge' /tmp/layoutlab-semantic-tools
+          grep -q 'S.setDoorSwingSide' /tmp/layoutlab-semantic-tools
+          grep -q 'S.resizeWindowEdgeByPx' /tmp/layoutlab-semantic-tools
           grep -q "doorButton.onclick=()=>setMode(mode==='door'?'select':'door')" /tmp/layoutlab-semantic-tools
           grep -q "windowButton.onclick=()=>setMode(mode==='window'?'select':'window')" /tmp/layoutlab-semantic-tools
           grep -q "工具仍保持 focus" /tmp/layoutlab-semantic-tools
