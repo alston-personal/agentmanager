@@ -1,0 +1,101 @@
+name: Oracle Inventory Vendor Private Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-inventory-vendor-private-evidence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inventory:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inventory metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY' > .agentos/evidence/vendor-private-evidence-inventory.json
+          import json
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          root=Path('/home/ubuntu/agent-data/runtime/vendor-reputation')
+          root_post='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+          def walk(x):
+              if isinstance(x,dict):
+                  yield x
+                  for v in x.values(): yield from walk(v)
+              elif isinstance(x,list):
+                  for v in x: yield from walk(v)
+          def canonical(v):
+              if not isinstance(v,str): return None
+              try: p=urlsplit(v.strip())
+              except ValueError: return None
+              if (p.hostname or '').lower() not in {'threads.com','www.threads.com','threads.net','www.threads.net'}: return None
+              path=p.path.rstrip('/')
+              if '/post/' not in path: return None
+              return 'https://www.threads.com'+path
+          out=[]
+          for p in sorted(root.glob('*.json')):
+              try: obj=json.loads(p.read_text())
+              except Exception as exc:
+                  out.append({'filename':p.name,'bytes':p.stat().st_size,'parse_ok':False,'error_type':type(exc).__name__})
+                  continue
+              all_urls=set(); structured=set(); authored=set(); texted=set(); dicts=0
+              for d in walk(obj):
+                  dicts+=1
+                  u=None
+                  for k in ('permalink','sourceUrl','source_url','url','href'):
+                      u=canonical(d.get(k))
+                      if u: break
+                  if not u or u==root_post: continue
+                  all_urls.add(u)
+                  author=d.get('author') or d.get('username') or d.get('user')
+                  text=d.get('text') or d.get('body') or d.get('content') or d.get('visible_text')
+                  if author not in (None,''): authored.add(u)
+                  if text not in (None,''): texted.add(u)
+                  if author not in (None,'') and text not in (None,''): structured.add(u)
+              if isinstance(obj,dict):
+                  shape='object'
+                  top_keys=sorted(str(k) for k in obj.keys())[:20]
+              elif isinstance(obj,list):
+                  shape='array'; top_keys=[]
+              else:
+                  shape=type(obj).__name__; top_keys=[]
+              out.append({
+                  'filename':p.name,'bytes':p.stat().st_size,'parse_ok':True,
+                  'top_level':shape,'top_keys':top_keys,'dicts_scanned':dicts,
+                  'unique_post_permalinks':len(all_urls),
+                  'unique_with_author':len(authored),
+                  'unique_with_text':len(texted),
+                  'unique_structured_author_text':len(structured),
+              })
+          print(json.dumps({'schema':'milkcat.vendor-private-evidence-inventory/v1','files':out,'raw_text_emitted':False,'core_modified':False},ensure_ascii=False,indent=2))
+          PY
+          python3 -m json.tool .agentos/evidence/vendor-private-evidence-inventory.json >/dev/null
+          cat .agentos/evidence/vendor-private-evidence-inventory.json
+      - name: Commit sanitized inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-private-evidence-inventory.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): private evidence inventory'
+          git push
