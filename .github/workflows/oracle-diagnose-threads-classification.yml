@@ -16,43 +16,72 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect private classifier state without leaking evidence
+      - name: Inspect classifier execution boundary without leaking evidence
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/threads-classification-diagnostic.json
           python3 - <<'PY' > "$OUT"
-          import json, os, time
+          import hashlib, json, os, time
           from pathlib import Path
           from datetime import datetime, timezone
 
           RELAY=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
           OUTPUT=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-vendor-candidates.json')
           INPUT=Path('/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-normalized-replies.json')
-          now=time.time()
-          receipts=[]
+
+          def file_meta(p):
+              if not p.exists(): return {'exists':False}
+              st=p.stat()
+              return {
+                  'exists':True,
+                  'owner_uid':st.st_uid,
+                  'group_gid':st.st_gid,
+                  'mode':oct(st.st_mode & 0o777),
+                  'size_bytes':st.st_size,
+                  'runner_can_read':os.access(p,os.R_OK),
+                  'runner_can_write':os.access(p,os.W_OK),
+              }
+
+          now=time.time(); receipts=[]
+          safe_terms={
+              'permission_denied':'permission denied',
+              'timed_out_text':'timed out',
+              'timeout_text':'timeout',
+              'not_found':'not found',
+              'no_such_file':'no such file',
+              'invalid_argument':'invalid argument',
+              'workspace':'workspace',
+              'json':'json',
+              'read':'read',
+              'write':'write',
+          }
           for p in (RELAY/'receipts').glob('*.json'):
               try:
                   st=p.stat()
-                  if now-st.st_mtime > 900: continue
+                  if now-st.st_mtime > 1200: continue
                   d=json.loads(p.read_text(encoding='utf-8'))
-                  # Sanitize aggressively. Do not expose stdout/stderr content.
+                  stderr=str(d.get('stderr') or '')
                   receipts.append({
                       'file':p.name,
                       'mtime_utc':datetime.fromtimestamp(st.st_mtime,timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
                       'ok':d.get('ok'),
-                      'keys':sorted(d.keys()),
                       'executor':d.get('executor') if isinstance(d.get('executor'),str) else None,
-                      'exit_code':d.get('exit_code'),
-                      'error_type':type(d.get('error')).__name__ if d.get('error') is not None else None,
+                      'executor_user':d.get('executor_user'),
+                      'returncode':d.get('returncode'),
+                      'timed_out':d.get('timed_out'),
                       'stdout_present':bool(d.get('stdout')),
-                      'stderr_present':bool(d.get('stderr')),
+                      'stderr_present':bool(stderr),
+                      'stderr_length':len(stderr),
+                      'stderr_sha256_16':hashlib.sha256(stderr.encode()).hexdigest()[:16] if stderr else None,
+                      'stderr_signals':{k:(v in stderr.lower()) for k,v in safe_terms.items()},
                   })
               except Exception:
                   continue
           receipts.sort(key=lambda x:x['mtime_utc'],reverse=True)
-          output_meta={'exists':OUTPUT.is_file()}
+
+          output_meta=file_meta(OUTPUT)
           if OUTPUT.is_file():
               try:
                   data=json.loads(OUTPUT.read_text(encoding='utf-8'))
@@ -66,12 +95,15 @@ jobs:
                   })
               except Exception as e:
                   output_meta.update({'valid_json':False,'parse_error_type':type(e).__name__})
+
           result={
-              'schema':'agentos.threads-classification-diagnostic/v1',
+              'schema':'agentos.threads-classification-diagnostic/v2',
               'checked_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-              'input_exists':INPUT.is_file(),
+              'runner_uid':os.geteuid(),
+              'runner_gid':os.getegid(),
+              'input':file_meta(INPUT),
               'output':output_meta,
-              'recent_receipts':receipts[:12],
+              'recent_receipts':receipts[:8],
               'private_text_exposed':False,
               'vendor_names_exposed':False,
           }
@@ -87,5 +119,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .agentos/evidence/threads-classification-diagnostic.json
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): Threads classification diagnostic'
+          git commit -m 'evidence(vendors): Threads classification boundary diagnostic'
           git push
