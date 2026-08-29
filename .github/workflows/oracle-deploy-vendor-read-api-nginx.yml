@@ -1,0 +1,50 @@
+name: Oracle Deploy Vendor Read API Nginx
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-deploy-vendor-read-api-nginx.yml'
+      - 'scripts/deploy_vendor_read_api_nginx.py'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy read-only Vendor API boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'sudo -n python3 -' < scripts/deploy_vendor_read_api_nginx.py \
+            > .agentos/evidence/vendor-read-api-nginx-deploy.json
+          python3 -m json.tool .agentos/evidence/vendor-read-api-nginx-deploy.json >/dev/null
+          cat .agentos/evidence/vendor-read-api-nginx-deploy.json
+      - name: Commit sanitized deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/vendor-read-api-nginx-deploy.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-read-api-nginx-deploy.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): read-only nginx API boundary'
+          git push
