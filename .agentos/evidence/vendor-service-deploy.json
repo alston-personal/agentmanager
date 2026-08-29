@@ -5,7 +5,7 @@
 #1 DONE 0.0s
 
 #2 [api internal] load metadata for docker.io/library/python:3.12-slim
-#2 DONE 0.6s
+#2 DONE 0.8s
 
 #3 [api internal] load .dockerignore
 #3 transferring context: 2B done
@@ -15,7 +15,7 @@
 #4 DONE 0.0s
 
 #5 [api internal] load build context
-#5 transferring context: 302B done
+#5 transferring context: 6.07kB done
 #5 DONE 0.0s
 
 #6 [api 2/7] WORKDIR /srv/app
@@ -25,7 +25,7 @@
 #7 CACHED
 
 #8 [api 4/7] COPY app ./app
-#8 DONE 0.0s
+#8 CACHED
 
 #9 [api 5/7] COPY scripts ./scripts
 #9 DONE 0.0s
@@ -34,101 +34,101 @@
 #10 DONE 0.0s
 
 #11 [api 7/7] RUN pip install --no-cache-dir .
-#11 1.919 Processing /srv/app
-#11 1.922   Installing build dependencies: started
-#11 3.126   Installing build dependencies: finished with status 'done'
-#11 3.126   Getting requirements to build wheel: started
-#11 3.398   Getting requirements to build wheel: finished with status 'done'
-#11 3.399   Preparing metadata (pyproject.toml): started
-#11 3.648   Preparing metadata (pyproject.toml): finished with status 'done'
-#11 3.731 Collecting fastapi<1,>=0.116 (from vendor-reputation-service==0.1.0)
-#11 3.758   Downloading fastapi-0.141.1-py3-none-any.whl.metadata (27 kB)
-#11 3.793 Collecting uvicorn<1,>=0.35 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 3.796   Downloading uvicorn-0.52.4-py3-none-any.whl.metadata (6.6 kB)
-#11 3.814 Collecting psycopg<4,>=3.2 (from psycopg[binary,pool]<4,>=3.2->vendor-reputation-service==0.1.0)
-#11 3.819   Downloading psycopg-3.3.4-py3-none-any.whl.metadata (4.3 kB)
-#11 3.921 Collecting pydantic<3,>=2.11 (from vendor-reputation-service==0.1.0)
-#11 3.924   Downloading pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
-#11 3.982 Collecting starlette>=0.46.0 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
-#11 3.986   Downloading starlette-1.6.0-py3-none-any.whl.metadata (6.4 kB)
-#11 4.013 Collecting typing-extensions>=4.8.0 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
-#11 4.016   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
-#11 4.023 Collecting typing-inspection>=0.4.2 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
-#11 4.031   Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
-#11 4.038 Collecting annotated-doc>=0.0.2 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
-#11 4.044   Downloading annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
-#11 4.183 Collecting psycopg-binary==3.3.4 (from psycopg[binary,pool]<4,>=3.2->vendor-reputation-service==0.1.0)
-#11 4.186   Downloading psycopg_binary-3.3.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (2.7 kB)
-#11 4.196 Collecting psycopg-pool (from psycopg[binary,pool]<4,>=3.2->vendor-reputation-service==0.1.0)
-#11 4.201   Downloading psycopg_pool-3.3.1-py3-none-any.whl.metadata (2.8 kB)
-#11 4.209 Collecting annotated-types>=0.6.0 (from pydantic<3,>=2.11->vendor-reputation-service==0.1.0)
-#11 4.228   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
-#11 4.862 Collecting pydantic-core==2.46.5 (from pydantic<3,>=2.11->vendor-reputation-service==0.1.0)
-#11 4.866   Downloading pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (6.6 kB)
-#11 4.886 Collecting click>=7.0 (from uvicorn<1,>=0.35->uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 4.889   Downloading click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
-#11 4.897 Collecting h11>=0.8 (from uvicorn<1,>=0.35->uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 4.900   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
-#11 4.927 Collecting httptools>=0.8.0 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 4.931   Downloading httptools-0.8.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (3.5 kB)
-#11 4.944 Collecting python-dotenv>=0.13 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 4.947   Downloading python_dotenv-1.2.3-py3-none-any.whl.metadata (29 kB)
-#11 4.979 Collecting pyyaml>=5.1 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 4.983   Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (2.4 kB)
-#11 5.014 Collecting uvloop>=0.15.1 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 5.018   Downloading uvloop-0.22.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (4.9 kB)
-#11 5.085 Collecting watchfiles>=0.20 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 5.089   Downloading watchfiles-1.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (4.9 kB)
-#11 5.189 Collecting websockets>=13.0 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
-#11 5.193   Downloading websockets-17.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (6.3 kB)
-#11 5.217 Collecting anyio<5,>=3.6.2 (from starlette>=0.46.0->fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
-#11 5.220   Downloading anyio-4.14.2-py3-none-any.whl.metadata (4.6 kB)
-#11 5.252 Collecting idna>=2.8 (from anyio<5,>=3.6.2->starlette>=0.46.0->fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
-#11 5.255   Downloading idna-3.19-py3-none-any.whl.metadata (9.2 kB)
-#11 5.268 Downloading fastapi-0.141.1-py3-none-any.whl (131 kB)
-#11 5.272 Downloading psycopg-3.3.4-py3-none-any.whl (213 kB)
-#11 5.276 Downloading psycopg_binary-3.3.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (6.7 MB)
-#11 5.365    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.7/6.7 MB 102.5 MB/s eta 0:00:00
-#11 5.368 Downloading pydantic-2.13.5-py3-none-any.whl (472 kB)
-#11 5.372 Downloading pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (2.0 MB)
-#11 5.378    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 511.9 MB/s eta 0:00:00
-#11 5.381 Downloading uvicorn-0.52.4-py3-none-any.whl (79 kB)
-#11 5.384 Downloading annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
-#11 5.387 Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
-#11 5.390 Downloading click-8.5.0-py3-none-any.whl (125 kB)
-#11 5.393 Downloading h11-0.16.0-py3-none-any.whl (37 kB)
-#11 5.400 Downloading httptools-0.8.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (518 kB)
-#11 5.404 Downloading python_dotenv-1.2.3-py3-none-any.whl (22 kB)
-#11 5.407 Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (775 kB)
-#11 5.412    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 775.1/775.1 kB 283.0 MB/s eta 0:00:00
-#11 5.416 Downloading starlette-1.6.0-py3-none-any.whl (75 kB)
-#11 5.436 Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
-#11 5.441 Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
-#11 5.449 Downloading uvloop-0.22.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (4.3 MB)
-#11 5.460    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.3/4.3 MB 484.8 MB/s eta 0:00:00
-#11 5.464 Downloading watchfiles-1.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (453 kB)
-#11 5.470 Downloading websockets-17.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (225 kB)
-#11 5.476 Downloading psycopg_pool-3.3.1-py3-none-any.whl (40 kB)
-#11 5.480 Downloading anyio-4.14.2-py3-none-any.whl (125 kB)
-#11 5.484 Downloading idna-3.19-py3-none-any.whl (68 kB)
-#11 5.517 Building wheels for collected packages: vendor-reputation-service
-#11 5.518   Building wheel for vendor-reputation-service (pyproject.toml): started
-#11 5.770   Building wheel for vendor-reputation-service (pyproject.toml): finished with status 'done'
-#11 5.771   Created wheel for vendor-reputation-service: filename=vendor_reputation_service-0.1.0-py3-none-any.whl size=4261 sha256=f61bd602be5f09e6958b9599858ad2aad3dd6670ed5c800857f33e8661485dd3
-#11 5.771   Stored in directory: /tmp/pip-ephem-wheel-cache-ighr7bhe/wheels/7f/08/7c/e2bb2c6e6b52d9fecc8b8664e106936cb7f4b872843d499b31
-#11 5.772 Successfully built vendor-reputation-service
-#11 5.815 Installing collected packages: websockets, uvloop, typing-extensions, pyyaml, python-dotenv, psycopg-binary, idna, httptools, h11, click, annotated-types, annotated-doc, uvicorn, typing-inspection, pydantic-core, psycopg-pool, psycopg, anyio, watchfiles, starlette, pydantic, fastapi, vendor-reputation-service
-#11 7.546 Successfully installed annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.14.2 click-8.5.0 fastapi-0.141.1 h11-0.16.0 httptools-0.8.0 idna-3.19 psycopg-3.3.4 psycopg-binary-3.3.4 psycopg-pool-3.3.1 pydantic-2.13.5 pydantic-core-2.46.5 python-dotenv-1.2.3 pyyaml-6.0.3 starlette-1.6.0 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.52.4 uvloop-0.22.1 vendor-reputation-service-0.1.0 watchfiles-1.2.0 websockets-17.1
-#11 7.547 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
-#11 7.610 
-#11 7.610 [notice] A new release of pip is available: 25.0.1 -> 26.2.1
-#11 7.610 [notice] To update, run: pip install --upgrade pip
+#11 1.906 Processing /srv/app
+#11 1.909   Installing build dependencies: started
+#11 3.149   Installing build dependencies: finished with status 'done'
+#11 3.150   Getting requirements to build wheel: started
+#11 3.438   Getting requirements to build wheel: finished with status 'done'
+#11 3.439   Preparing metadata (pyproject.toml): started
+#11 3.679   Preparing metadata (pyproject.toml): finished with status 'done'
+#11 3.765 Collecting fastapi<1,>=0.116 (from vendor-reputation-service==0.1.0)
+#11 3.791   Downloading fastapi-0.141.1-py3-none-any.whl.metadata (27 kB)
+#11 3.825 Collecting uvicorn<1,>=0.35 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 3.828   Downloading uvicorn-0.52.4-py3-none-any.whl.metadata (6.6 kB)
+#11 3.846 Collecting psycopg<4,>=3.2 (from psycopg[binary,pool]<4,>=3.2->vendor-reputation-service==0.1.0)
+#11 3.850   Downloading psycopg-3.3.4-py3-none-any.whl.metadata (4.3 kB)
+#11 3.988 Collecting pydantic<3,>=2.11 (from vendor-reputation-service==0.1.0)
+#11 3.992   Downloading pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
+#11 4.026 Collecting starlette>=0.46.0 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
+#11 4.030   Downloading starlette-1.6.0-py3-none-any.whl.metadata (6.4 kB)
+#11 4.061 Collecting typing-extensions>=4.8.0 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
+#11 4.064   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+#11 4.071 Collecting typing-inspection>=0.4.2 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
+#11 4.074   Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+#11 4.080 Collecting annotated-doc>=0.0.2 (from fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
+#11 4.083   Downloading annotated_doc-0.0.5-py3-none-any.whl.metadata (6.5 kB)
+#11 4.222 Collecting psycopg-binary==3.3.4 (from psycopg[binary,pool]<4,>=3.2->vendor-reputation-service==0.1.0)
+#11 4.227   Downloading psycopg_binary-3.3.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (2.7 kB)
+#11 4.238 Collecting psycopg-pool (from psycopg[binary,pool]<4,>=3.2->vendor-reputation-service==0.1.0)
+#11 4.241   Downloading psycopg_pool-3.3.1-py3-none-any.whl.metadata (2.8 kB)
+#11 4.260 Collecting annotated-types>=0.6.0 (from pydantic<3,>=2.11->vendor-reputation-service==0.1.0)
+#11 4.264   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+#11 4.904 Collecting pydantic-core==2.46.5 (from pydantic<3,>=2.11->vendor-reputation-service==0.1.0)
+#11 4.910   Downloading pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (6.6 kB)
+#11 4.931 Collecting click>=7.0 (from uvicorn<1,>=0.35->uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 4.934   Downloading click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+#11 4.942 Collecting h11>=0.8 (from uvicorn<1,>=0.35->uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 4.945   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+#11 4.972 Collecting httptools>=0.8.0 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 4.976   Downloading httptools-0.8.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (3.5 kB)
+#11 4.990 Collecting python-dotenv>=0.13 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 4.993   Downloading python_dotenv-1.2.3-py3-none-any.whl.metadata (29 kB)
+#11 5.025 Collecting pyyaml>=5.1 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 5.029   Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (2.4 kB)
+#11 5.061 Collecting uvloop>=0.15.1 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 5.065   Downloading uvloop-0.22.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (4.9 kB)
+#11 5.132 Collecting watchfiles>=0.20 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 5.137   Downloading watchfiles-1.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (4.9 kB)
+#11 5.234 Collecting websockets>=13.0 (from uvicorn[standard]<1,>=0.35->vendor-reputation-service==0.1.0)
+#11 5.238   Downloading websockets-17.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (6.3 kB)
+#11 5.259 Collecting anyio<5,>=3.6.2 (from starlette>=0.46.0->fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
+#11 5.262   Downloading anyio-4.14.2-py3-none-any.whl.metadata (4.6 kB)
+#11 5.293 Collecting idna>=2.8 (from anyio<5,>=3.6.2->starlette>=0.46.0->fastapi<1,>=0.116->vendor-reputation-service==0.1.0)
+#11 5.296   Downloading idna-3.19-py3-none-any.whl.metadata (9.2 kB)
+#11 5.308 Downloading fastapi-0.141.1-py3-none-any.whl (131 kB)
+#11 5.311 Downloading psycopg-3.3.4-py3-none-any.whl (213 kB)
+#11 5.316 Downloading psycopg_binary-3.3.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (6.7 MB)
+#11 5.354    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.7/6.7 MB 190.2 MB/s eta 0:00:00
+#11 5.357 Downloading pydantic-2.13.5-py3-none-any.whl (472 kB)
+#11 5.362 Downloading pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (2.0 MB)
+#11 5.368    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 439.5 MB/s eta 0:00:00
+#11 5.371 Downloading uvicorn-0.52.4-py3-none-any.whl (79 kB)
+#11 5.374 Downloading annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+#11 5.377 Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+#11 5.380 Downloading click-8.5.0-py3-none-any.whl (125 kB)
+#11 5.383 Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+#11 5.387 Downloading httptools-0.8.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (518 kB)
+#11 5.390 Downloading python_dotenv-1.2.3-py3-none-any.whl (22 kB)
+#11 5.393 Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (775 kB)
+#11 5.400    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 775.1/775.1 kB 163.3 MB/s eta 0:00:00
+#11 5.404 Downloading starlette-1.6.0-py3-none-any.whl (75 kB)
+#11 5.407 Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+#11 5.410 Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+#11 5.415 Downloading uvloop-0.22.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (4.3 MB)
+#11 5.427    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.3/4.3 MB 432.0 MB/s eta 0:00:00
+#11 5.431 Downloading watchfiles-1.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (453 kB)
+#11 5.437 Downloading websockets-17.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (225 kB)
+#11 5.444 Downloading psycopg_pool-3.3.1-py3-none-any.whl (40 kB)
+#11 5.447 Downloading anyio-4.14.2-py3-none-any.whl (125 kB)
+#11 5.450 Downloading idna-3.19-py3-none-any.whl (68 kB)
+#11 5.483 Building wheels for collected packages: vendor-reputation-service
+#11 5.484   Building wheel for vendor-reputation-service (pyproject.toml): started
+#11 5.733   Building wheel for vendor-reputation-service (pyproject.toml): finished with status 'done'
+#11 5.733   Created wheel for vendor-reputation-service: filename=vendor_reputation_service-0.1.0-py3-none-any.whl size=4261 sha256=d6d55b56fc3e8c7c2048f4c2ef7707ac66c2e0da775e32f494e5520ffad7f7c6
+#11 5.733   Stored in directory: /tmp/pip-ephem-wheel-cache-jfk_vrnl/wheels/7f/08/7c/e2bb2c6e6b52d9fecc8b8664e106936cb7f4b872843d499b31
+#11 5.735 Successfully built vendor-reputation-service
+#11 5.779 Installing collected packages: websockets, uvloop, typing-extensions, pyyaml, python-dotenv, psycopg-binary, idna, httptools, h11, click, annotated-types, annotated-doc, uvicorn, typing-inspection, pydantic-core, psycopg-pool, psycopg, anyio, watchfiles, starlette, pydantic, fastapi, vendor-reputation-service
+#11 7.467 Successfully installed annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.14.2 click-8.5.0 fastapi-0.141.1 h11-0.16.0 httptools-0.8.0 idna-3.19 psycopg-3.3.4 psycopg-binary-3.3.4 psycopg-pool-3.3.1 pydantic-2.13.5 pydantic-core-2.46.5 python-dotenv-1.2.3 pyyaml-6.0.3 starlette-1.6.0 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.52.4 uvloop-0.22.1 vendor-reputation-service-0.1.0 watchfiles-1.2.0 websockets-17.1
+#11 7.468 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#11 7.533 
+#11 7.533 [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+#11 7.533 [notice] To update, run: pip install --upgrade pip
 #11 DONE 8.1s
 
 #12 [api] exporting to image
 #12 exporting layers
 #12 exporting layers 0.4s done
-#12 writing image sha256:1c905b2b6e276e986596863cb616b95314ac4fd407120d07d4f7e9a8013f8ce3 done
+#12 writing image sha256:a3ab6d9052752400cdd8e5b4381f4f45beefc423846b9714aeee60aeaf326ea6 done
 #12 naming to docker.io/library/vendor-reputation-service-api done
 #12 DONE 0.4s
 
