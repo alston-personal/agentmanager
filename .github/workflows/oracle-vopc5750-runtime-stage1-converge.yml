@@ -61,7 +61,8 @@ jobs:
             installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             install_mode='stage1-preserve-running-client'
           }
-          $prov | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $install 'runtime-provenance.json')
+          $json=$prov | ConvertTo-Json
+          [System.IO.File]::WriteAllText((Join-Path $install 'runtime-provenance.json'),$json,(New-Object System.Text.UTF8Encoding($false)))
 
           $watchdogName='AgentOS Thin Client Watchdog'
           $watchdog=Join-Path $install 'agentos-thin-client-watchdog.ps1'
