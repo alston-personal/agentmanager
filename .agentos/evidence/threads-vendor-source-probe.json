@@ -1,6 +1,6 @@
 {
-  "schema": "agentos.threads-vendor-source-probe/v1",
-  "checked_at": "2026-08-28T08:44:40Z",
+  "schema": "agentos.threads-vendor-source-probe/v2",
+  "checked_at": "2026-08-29T01:18:33Z",
   "target": {
     "username": "nico1e.16",
     "shortcode": "DcWVvpwGTSh",
@@ -16,11 +16,11 @@
   },
   "profile_lookup": {
     "ok": false,
-    "http_status": 500,
-    "error_code": 100,
-    "error_subcode": null,
-    "error_type": "THApiException",
-    "error_message": "Tried accessing nonexisting field (id)"
+    "http_status": 400,
+    "error_code": 10,
+    "error_subcode": 4279067,
+    "error_type": "OAuthException",
+    "error_message": "Application does not have permission for this action"
   },
   "profile_posts": {
     "ok": false,
@@ -32,6 +32,12 @@
     "error_subcode": 4279067,
     "error_type": "OAuthException",
     "error_message": "Application does not have permission for this action"
+  },
+  "keyword_search": {
+    "ok": true,
+    "http_status": 200,
+    "results_checked": 0,
+    "target_found": false
   },
   "target_post": null,
   "replies": {
@@ -46,7 +52,9 @@
   },
   "capability_summary": {
     "third_party_profile_read": false,
-    "third_party_post_discovery": false,
+    "third_party_profile_posts_read": false,
+    "keyword_search_read": true,
+    "target_post_discovered": false,
     "third_party_top_level_replies_read": false,
     "third_party_full_conversation_read": false
   }
