@@ -17,8 +17,8 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
-      EXPECTED_OLD_SHA: f44db405678cd54ce42b944e71a37de033ed8234
-      TARGET_SHA: 2091d8912104646e1014b219d5f456e858e8a2b5
+      EXPECTED_OLD_SHA: 2091d8912104646e1014b219d5f456e858e8a2b5
+      TARGET_SHA: fd24e5591ef109a13f172b7b15cad454f406623b
     steps:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -97,7 +97,6 @@ jobs:
           python3 -m py_compile fortune_server.py divination/*.py
           if ! test -x node_modules/.bin/vite; then npm ci; fi
           npm run build
-          # stats.json is live mutable state, not a build artifact. Preserve its pre-deploy value.
           cp -f "$backup/stats.json" "$website/stats.json"
 
           old_pid="$(lsof -nP -t -iTCP:8088 -sTCP:LISTEN 2>/dev/null | head -n1 || true)"
