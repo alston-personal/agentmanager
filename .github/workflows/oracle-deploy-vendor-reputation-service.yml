@@ -1,0 +1,163 @@
+name: Oracle Deploy Vendor Reputation Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-deploy-vendor-reputation-service.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_REPO: alston-personal/vendor-reputation-service
+      SERVICE_SHA: c1bcd3f23240bee2bc807ea89f9704e93bc6c3aa
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy pinned vendor service and import private evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SERVICE_REPO" "$SERVICE_SHA" <<'REMOTE' > .agentos/evidence/vendor-service-deploy.json
+          set -euo pipefail
+          REPO="$1"; SHA="$2"
+          BASE=/home/ubuntu/vendor-reputation-service
+          SECRET=/home/ubuntu/agent-data/secrets/vendor-reputation.env
+          RUNTIME=/home/ubuntu/agent-data/runtime/vendor-reputation
+
+          command -v docker >/dev/null
+          docker compose version >/dev/null
+          /usr/bin/gh auth status >/dev/null
+
+          if [ ! -d "$BASE/.git" ]; then
+            rm -rf "$BASE"
+            /usr/bin/gh repo clone "$REPO" "$BASE"
+          fi
+          git -C "$BASE" fetch --depth=1 origin "$SHA"
+          git -C "$BASE" checkout --detach "$SHA"
+          test "$(git -C "$BASE" rev-parse HEAD)" = "$SHA"
+
+          mkdir -p "$(dirname "$SECRET")"
+          if [ ! -s "$SECRET" ]; then
+            umask 077
+            printf 'VENDOR_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" > "$SECRET"
+          fi
+          chmod 600 "$SECRET"
+          set -a
+          . "$SECRET"
+          set +a
+
+          cd "$BASE"
+          docker compose up -d --build
+
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8765/healthz >/dev/null; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8765/healthz >/dev/null
+
+          # Identify the richest private Threads evidence JSON by unique threads.net permalinks.
+          PICK=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/home/ubuntu/agent-data/runtime/vendor-reputation')
+          best=(0,None)
+          def walk(x):
+              if isinstance(x,dict):
+                  yield x
+                  for v in x.values(): yield from walk(v)
+              elif isinstance(x,list):
+                  for v in x: yield from walk(v)
+          for p in root.glob('*.json'):
+              try: obj=json.loads(p.read_text())
+              except Exception: continue
+              urls=set()
+              for d in walk(obj):
+                  for k in ('permalink','sourceUrl','source_url','url','href'):
+                      v=d.get(k)
+                      if isinstance(v,str) and 'threads.net' in v and '/post/' in v:
+                          urls.add(v)
+              if len(urls)>best[0]: best=(len(urls),p)
+          print(str(best[1]) if best[1] else '')
+          PY
+          )
+
+          IMPORT_JSON='{"skipped":true,"reason":"no-private-evidence-file"}'
+          if [ -n "$PICK" ] && [ -f "$PICK" ]; then
+            set +e
+            IMPORT_JSON=$(docker compose exec -T \
+              -e VENDOR_DATABASE_URL="postgresql://vendor_service:${VENDOR_DB_PASSWORD}@db:5432/vendor_reputation" \
+              api python /srv/app/scripts/import_private_threads_evidence.py "/host-evidence.json" 2>/tmp/vendor-import.err)
+            RC=$?
+            set -e
+            if [ "$RC" -ne 0 ]; then
+              # Run importer on host in a throwaway container with the private evidence mounted read-only.
+              set +e
+              IMPORT_JSON=$(docker compose run --rm -T \
+                -v "$PICK:/private-evidence.json:ro" \
+                api python /srv/app/scripts/import_private_threads_evidence.py /private-evidence.json 2>/tmp/vendor-import.err)
+              RC=$?
+              set -e
+              if [ "$RC" -ne 0 ]; then
+                IMPORT_JSON=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          e=Path('/tmp/vendor-import.err')
+          print(json.dumps({'skipped':True,'reason':'importer-failed','stderr_length':len(e.read_text()) if e.exists() else 0}))
+          PY
+                )
+              fi
+            fi
+          fi
+
+          STATUS=$(curl -fsS http://127.0.0.1:8765/v1/status)
+          python3 - "$SHA" "$PICK" "$IMPORT_JSON" "$STATUS" <<'PY'
+          import json,sys
+          sha,pick,imp,status=sys.argv[1:]
+          try: impj=json.loads(imp)
+          except Exception: impj={'raw_length':len(imp),'parse_error':True}
+          st=json.loads(status)
+          print(json.dumps({
+            'schema':'milkcat.vendor-service-deploy/v1',
+            'source_sha':sha,
+            'api_health':True,
+            'api_bind':'127.0.0.1:8765',
+            'db_bind':'127.0.0.1:55432',
+            'private_evidence_selected':bool(pick),
+            'private_evidence_filename':pick.rsplit('/',1)[-1] if pick else None,
+            'import':impj,
+            'status':st,
+            'raw_evidence_committed':False,
+            'core_modified':False
+          },ensure_ascii=False,indent=2))
+          PY
+          REMOTE
+          python3 -m json.tool .agentos/evidence/vendor-service-deploy.json >/dev/null
+          cat .agentos/evidence/vendor-service-deploy.json
+      - name: Commit sanitized deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/vendor-service-deploy.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-service-deploy.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): independent service deployment'
+          git push
