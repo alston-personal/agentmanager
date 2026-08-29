@@ -1,6 +1,6 @@
 # ONE Canonical Continuation Resolve Path
 
-**Status date:** 2026-08-28
+**Status date:** 2026-08-29
 
 ## Purpose
 
@@ -64,26 +64,44 @@ Current v1 composition can return:
 
 ## Maturity
 
-**Implemented in source; runtime verification blocked by deployment-channel configuration.**
+**Implemented and present in a live-accepted Core generation; resolve-specific end-to-end acceptance is still pending.**
 
-The source and regression tests are committed, but no valid focused Core test run or Oracle live acceptance receipt has yet been produced for these commits. Unrelated application workflows triggered by repository pushes are not evidence for this capability.
+The earlier deployment-channel blocker recorded on 2026-08-28 is no longer the current blocker. The canonical Core deployment path was subsequently repaired and Issue #64 produced a real Control Inbox acceptance against deployment generation 3 with `desired_core_commit == observed_core_commit == dedca4b1894987c4ed23fa43c442dbc11810b623` and `deployment_status=converged`.
 
-A governed Realm Fabric deployment was deliberately triggered on 2026-08-28 using the existing `.github/workflows/deploy-realm-fabric-core.yml` push path. Run `33135873181` failed before SSH or installation because `DEPLOY_HOST_SOURCE` was empty. The workflow resolves that value from `secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL`; `DEPLOY_USER` and the SSH port were present, but neither host source resolved. Therefore the failure is currently classified as a **deployment-channel configuration blocker**, not a resolver/code failure.
+The `/v1/resolve` endpoint commit (`f492b96081bd58b0634b68530e0d9f0ec89d739e`) is an ancestor of that accepted Core commit, so the resolve endpoint source is included in the live-accepted generation. This establishes **deployment inclusion**, not resolve-path execution proof.
 
-Do not bypass this by inventing a parallel deploy transport. Repair or deliberately replace the canonical deployment channel, then re-run the same deployment and verification gates.
+What remains unproven is narrower and must not be overstated: no preserved real-path receipt currently proves that an enrolled Node authenticated to the live ONE `/v1/resolve` endpoint, resolved a canonical project identity, and received the expected continuation envelope. Likewise, the current ChatGPT Web surface has not yet been attested as an enrolled Realm node using that transport contract.
 
-The current ChatGPT conversation is also **not** evidence of end-to-end closure: this ChatGPT environment still cannot invoke the AgentOS ONE control plane directly and had to use repository access while implementing the missing path.
+Therefore distinguish these states:
+
+```text
+source implementation              = PASS
+included in accepted Core release  = PASS
+Core service/controller transport  = PASS (Issue #64 evidence)
+/v1/resolve authenticated request  = NOT YET EVIDENCED
+fresh-chat ChatGPT -> ONE resolve   = NOT YET EVIDENCED
+```
+
+Do not reopen the obsolete deployment-host blocker unless fresh runtime evidence reproduces it. Do not claim full continuation closure merely because the endpoint source is deployed.
 
 ## Verification gates
 
-1. Restore a valid canonical Oracle deployment host source for Realm Fabric (`AGENTOS_DEPLOY_HOST` or an explicitly approved replacement/fallback).
-2. Re-run the governed Realm Fabric deployment for current source.
-3. Run `tests/test_resolve_facade.py` and `tests/test_realm_resolve_endpoint.py` in the deployed/source-equivalent environment.
-4. Enroll or use a controlled test Node and perform an authenticated `/v1/resolve` request.
-5. Persist the result as Core evidence/receipt.
-6. Query the live Governance Directory and verify canonical Project Identity aliases, including whether `Chamber` / `Echo` resolve to `metashield-protocol`.
-7. Query the live NodeRegistry/Node Map so conceptual Nodes are distinguished from enrolled/live Nodes.
-8. Connect and attest the ChatGPT Web logical Node to the same transport contract.
-9. Open a fresh ChatGPT conversation, possibly on another machine, and enter only `繼續 metashield-protocol`.
+1. Run `tests/test_resolve_facade.py` and `tests/test_realm_resolve_endpoint.py` against current/source-equivalent Core and preserve the focused result.
+2. Use an enrolled controlled Node and perform an authenticated request to the **live** `POST /v1/resolve` endpoint.
+3. Persist the response plus runtime generation/commit provenance as Core evidence/receipt.
+4. Verify the returned envelope contains canonical Project Identity, integrity/mutation state, continuation availability, execution head availability, Node context, and explicit provenance.
+5. Query canonical aliases from the live Governance Directory, including whether `Chamber` / `Echo` resolve to `metashield-protocol`; do not infer aliases from product/application identity registries.
+6. Query the live NodeRegistry/Node Map so conceptual Nodes are distinguished from enrolled/live Nodes.
+7. Connect and attest the ChatGPT Web logical surface to the same transport contract as an actual enrolled node/client identity, rather than treating a conversation as a node by assumption.
+8. Open a fresh ChatGPT conversation, possibly on another machine, and enter only `繼續 metashield-protocol`.
 
-Final PASS requires AgentOS to provide project identity/aliases, active goal, execution head, relevant capabilities, continuation/next action, and evidence pointer without GitHub/source rediscovery or alias guessing.
+Final PASS requires AgentOS to provide project identity/aliases, active goal, execution head, relevant Node/capability context, continuation/next action, and evidence provenance without GitHub/source rediscovery or alias guessing.
+
+## Evidence interpretation
+
+The following evidence must remain distinct:
+
+- Issue #64 `.agentos/evidence/issue-64/control-inbox.json` proves the real Bootstrap Control Inbox -> ONE -> ControllerService route, not `/v1/resolve` semantics.
+- A deployed commit containing `realm_server.py` proves release inclusion, not that an authenticated resolve request succeeded.
+- Unit/endpoint tests prove source behavior under test conditions, not live Node identity or live Governance/continuation contents.
+- Only a preserved live resolve receipt can close the resolve-specific runtime gate.
