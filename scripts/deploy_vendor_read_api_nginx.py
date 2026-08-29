@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,8 +61,8 @@ BLOCK = r'''    # BEGIN milkcat vendor reputation read api
     # END milkcat vendor reputation read api'''
 
 
-def run(args, check=True):
-    p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+def run(args, check=True, timeout=30):
+    p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
     if check and p.returncode != 0:
         raise RuntimeError(f'command failed rc={p.returncode} stderr_length={len(p.stderr or "")}')
     return p
@@ -90,8 +91,36 @@ def http_json(url, method='GET', data=None):
         return e.code, ctype, parsed
 
 
+def curl_json(url, *, resolve_local=False, method='GET', data=None):
+    args = ['curl', '-ksS', '--max-time', '10', '-X', method]
+    if resolve_local:
+        args += ['--resolve', 'studio.milkcat.org:443:127.0.0.1']
+    if data is not None:
+        args += ['-H', 'Content-Type: application/json', '--data', json.dumps(data)]
+    args += ['-w', '\n__STATUS__%{http_code}\n__CTYPE__%{content_type}\n', url]
+    p = run(args, check=False, timeout=15)
+    text = p.stdout
+    status = None
+    ctype = ''
+    body = text
+    if '\n__STATUS__' in text:
+        body, tail = text.rsplit('\n__STATUS__', 1)
+        status_text, _, ctype_tail = tail.partition('\n__CTYPE__')
+        try:
+            status = int(status_text.strip())
+        except Exception:
+            status = None
+        ctype = ctype_tail.strip()
+    parsed = None
+    if 'json' in ctype:
+        try:
+            parsed = json.loads(body)
+        except Exception:
+            pass
+    return status, ctype, parsed
+
+
 def brace_delta(line: str) -> int:
-    # Nginx config here does not use braces inside quoted values in the target server block.
     return line.count('{') - line.count('}')
 
 
@@ -126,8 +155,21 @@ def strip_existing_marker(text: str) -> str:
         raise RuntimeError('vendor marker begin exists without end')
     before, rest = text.split(MARKER_BEGIN, 1)
     _, after = rest.split(MARKER_END, 1)
-    # Remove the marker lines and their block while preserving surrounding content.
     return before.rstrip() + '\n' + after.lstrip('\n')
+
+
+def require_json_probe(url, *, resolve_local=False, attempts=1):
+    last = (None, '', None)
+    for i in range(attempts):
+        probe_url = url
+        if not resolve_local:
+            sep = '&' if '?' in url else '?'
+            probe_url = f'{url}{sep}_probe={int(time.time() * 1000)}-{i}'
+        last = curl_json(probe_url, resolve_local=resolve_local)
+        if last[0] == 200 and 'json' in last[1] and isinstance(last[2], dict):
+            return last
+        time.sleep(1)
+    return last
 
 
 def main():
@@ -159,26 +201,41 @@ def main():
             run(['systemctl', 'reload', 'nginx'])
             time.sleep(1)
 
-        status_code, status_type, public_status = http_json(PUBLIC_BASE + '/status')
-        vendors_code, vendors_type, public_vendors = http_json(PUBLIC_BASE + '/vendors?limit=1')
-        search_code, _, _ = http_json(PUBLIC_BASE + '/search?q=test')
+        local_status_code, local_status_type, local_public_status = require_json_probe(
+            PUBLIC_BASE + '/status', resolve_local=True, attempts=2)
+        local_vendors_code, local_vendors_type, local_public_vendors = require_json_probe(
+            PUBLIC_BASE + '/vendors?limit=1', resolve_local=True, attempts=2)
+        local_search_code, _, _ = curl_json(
+            PUBLIC_BASE + '/search?q=test', resolve_local=True)
 
-        # This path is intentionally not proxied. Any non-2xx/3xx is acceptable,
-        # but evidence count must remain unchanged to prove no backend write occurred.
-        post_code, _, _ = http_json(PUBLIC_BASE + '/evidence', method='POST', data={
+        if local_status_code != 200 or 'json' not in local_status_type or not isinstance(local_public_status, dict):
+            raise RuntimeError('local nginx status acceptance failed')
+        if local_vendors_code != 200 or 'json' not in local_vendors_type or not isinstance(local_public_vendors, dict):
+            raise RuntimeError('local nginx vendors acceptance failed')
+        if local_search_code != 200:
+            raise RuntimeError('local nginx search acceptance failed')
+
+        public_status_code, public_status_type, public_status = require_json_probe(
+            PUBLIC_BASE + '/status', attempts=5)
+        public_vendors_code, public_vendors_type, public_vendors = require_json_probe(
+            PUBLIC_BASE + '/vendors?limit=1', attempts=5)
+        public_search_code, _, _ = curl_json(
+            PUBLIC_BASE + f'/search?q=test&_probe={int(time.time() * 1000)}')
+
+        post_code, _, _ = curl_json(PUBLIC_BASE + '/evidence', method='POST', data={
             'source_type': 'boundary_test',
             'source_url': 'https://example.invalid/vendor-boundary-test'
         })
         local_code_after, _, local_after = http_json(LOCAL_STATUS)
         evidence_after = int(local_after.get('evidence', -2)) if isinstance(local_after, dict) else -2
 
-        if status_code != 200 or 'json' not in status_type or not isinstance(public_status, dict):
+        if public_status_code != 200 or 'json' not in public_status_type or not isinstance(public_status, dict):
             raise RuntimeError('public status acceptance failed')
-        if vendors_code != 200 or 'json' not in vendors_type or not isinstance(public_vendors, dict):
+        if public_vendors_code != 200 or 'json' not in public_vendors_type or not isinstance(public_vendors, dict):
             raise RuntimeError('public vendors acceptance failed')
-        if search_code not in (200, 422):
+        if public_search_code != 200:
             raise RuntimeError('public search acceptance failed')
-        if 200 <= post_code < 400:
+        if post_code is None or 200 <= post_code < 400:
             raise RuntimeError('public write route unexpectedly accepted request')
         if local_code_after != 200 or evidence_before != evidence_after:
             raise RuntimeError('evidence count changed during write-boundary test')
@@ -188,9 +245,12 @@ def main():
             'changed': changed,
             'nginx_test': 'pass',
             'reloaded': changed,
-            'public_status': status_code,
-            'public_vendors': vendors_code,
-            'public_search': search_code,
+            'local_nginx_status': local_status_code,
+            'local_nginx_vendors': local_vendors_code,
+            'local_nginx_search': local_search_code,
+            'public_status': public_status_code,
+            'public_vendors': public_vendors_code,
+            'public_search': public_search_code,
             'public_write_attempt': post_code,
             'evidence_before': evidence_before,
             'evidence_after': evidence_after,
