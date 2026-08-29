@@ -1,0 +1,35 @@
+{
+  "schema": "agentos.threads-classification-diagnostic/v1",
+  "checked_at": "2026-08-29T01:32:18Z",
+  "input_exists": true,
+  "output": {
+    "exists": false
+  },
+  "recent_receipts": [
+    {
+      "file": "relay-801ccbf65c7b47fc92b12cd4066fd255.json",
+      "mtime_utc": "2026-08-29T01:31:16Z",
+      "ok": false,
+      "keys": [
+        "capsule_id",
+        "completed_at",
+        "executor",
+        "executor_user",
+        "ok",
+        "returncode",
+        "schema",
+        "started_at",
+        "stderr",
+        "stdout",
+        "timed_out"
+      ],
+      "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.247-linux-arm64/resources/native-binary/claude",
+      "exit_code": null,
+      "error_type": null,
+      "stdout_present": false,
+      "stderr_present": true
+    }
+  ],
+  "private_text_exposed": false,
+  "vendor_names_exposed": false
+}
