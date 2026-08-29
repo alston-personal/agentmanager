@@ -1,0 +1,15 @@
+{
+  "schema": "agentos.threads-visible-text-summary/v1",
+  "checked_at": "2026-08-29T01:21:11Z",
+  "unique_text_nodes": 1,
+  "substantial_text_nodes": 1,
+  "likely_content_text_nodes": 1,
+  "likely_content_hashes": [
+    "32652858e279cb2f"
+  ],
+  "max_text_length": 130,
+  "contains_target_username": false,
+  "contains_reply_ui_words": false,
+  "private_text_path": "/home/ubuntu/agent-data/runtime/vendor-reputation/threads-DcWVvpwGTSh-visible-text.json",
+  "public_text_committed": false
+}
