@@ -17,8 +17,8 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
-      EXPECTED_OLD_SHA: 2091d8912104646e1014b219d5f456e858e8a2b5
-      TARGET_SHA: fd24e5591ef109a13f172b7b15cad454f406623b
+      EXPECTED_OLD_SHA: fd24e5591ef109a13f172b7b15cad454f406623b
+      TARGET_SHA: 2b199919ee013a39c2d60b9092927ef222f8e135
     steps:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
