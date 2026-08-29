@@ -45,10 +45,10 @@ jobs:
 
           if [ ! -d "$BASE/.git" ]; then
             rm -rf "$BASE"
-            /usr/bin/gh repo clone "$REPO" "$BASE"
+            /usr/bin/gh repo clone "$REPO" "$BASE" >/tmp/vendor-service-clone.log 2>&1
           fi
-          git -C "$BASE" fetch --depth=1 origin "$SHA"
-          git -C "$BASE" checkout --detach "$SHA"
+          git -C "$BASE" fetch --depth=1 origin "$SHA" >/tmp/vendor-service-fetch.log 2>&1
+          git -C "$BASE" checkout --detach "$SHA" >/tmp/vendor-service-checkout.log 2>&1
           test "$(git -C "$BASE" rev-parse HEAD)" = "$SHA"
 
           mkdir -p "$(dirname "$SECRET")"
@@ -62,10 +62,10 @@ jobs:
           set +a
 
           cd "$BASE"
-          docker compose up -d --build
+          docker compose up -d --build >/tmp/vendor-service-compose.log 2>&1
 
           for i in $(seq 1 40); do
-            if curl -fsS http://127.0.0.1:18765/healthz >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:18765/healthz >/dev/null 2>&1; then break; fi
             sleep 2
           done
           curl -fsS http://127.0.0.1:18765/healthz >/dev/null
