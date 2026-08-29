@@ -1,0 +1,118 @@
+name: Oracle Probe Vendor Read API Nginx
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-vendor-read-api-nginx.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Nginx routing metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 -' <<'PY' > .agentos/evidence/vendor-read-api-nginx-probe.json
+          import json, re, subprocess
+          from pathlib import Path
+
+          def run(args):
+              p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=20)
+              return p.returncode,p.stdout,p.stderr
+
+          rc,out,err=run(['nginx','-T'])
+          if rc != 0:
+              rc,out,err=run(['sudo','-n','nginx','-T'])
+          if rc != 0:
+              print(json.dumps({'schema':'milkcat.vendor-nginx-probe/v1','nginx_t_ok':False,'stderr_length':len(err),'core_modified':False},indent=2))
+              raise SystemExit(1)
+
+          current_file=None
+          blocks=[]
+          file_hits={}
+          api_locations=[]
+          studio_server_files=[]
+          lines=out.splitlines()
+          for line in lines:
+              m=re.match(r'^# configuration file (.+):$',line.strip())
+              if m:
+                  current_file=m.group(1)
+                  continue
+              if current_file and 'studio.milkcat.org' in line:
+                  studio_server_files.append(current_file)
+              if current_file and re.search(r'\blocation\s+(?:[=~*^]+\s*)?/?api(?:/|\s|\{)',line):
+                  api_locations.append({'file':current_file,'directive':line.strip()[:180]})
+              if current_file and '18765' in line:
+                  file_hits.setdefault(current_file,[]).append('contains_18765')
+
+          # Discover enabled config topology without exposing contents.
+          paths=[]
+          for root in ('/etc/nginx/sites-enabled','/etc/nginx/conf.d','/etc/nginx/sites-available'):
+              p=Path(root)
+              if p.exists():
+                  for x in sorted(p.iterdir()):
+                      try:
+                          target=str(x.resolve()) if x.is_symlink() else None
+                      except Exception:
+                          target=None
+                      paths.append({'path':str(x),'is_symlink':x.is_symlink(),'target':target})
+
+          # Probe current localhost service and public candidate path without mutation.
+          import urllib.request, urllib.error
+          def probe(url, method='GET'):
+              req=urllib.request.Request(url,method=method)
+              try:
+                  with urllib.request.urlopen(req,timeout=8) as r:
+                      return {'status':r.status,'content_type':r.headers.get('content-type')}
+              except urllib.error.HTTPError as e:
+                  return {'status':e.code,'content_type':e.headers.get('content-type')}
+              except Exception as e:
+                  return {'status':None,'error_type':type(e).__name__}
+
+          result={
+            'schema':'milkcat.vendor-nginx-probe/v1',
+            'nginx_t_ok':True,
+            'studio_server_files':sorted(set(studio_server_files)),
+            'existing_api_locations':api_locations,
+            'contains_vendor_upstream_reference':bool(file_hits),
+            'nginx_config_entries':paths,
+            'local_vendor_status':probe('http://127.0.0.1:18765/v1/status'),
+            'public_candidate_get':probe('https://studio.milkcat.org/api/vendor-reputation/v1/status'),
+            'public_candidate_post':probe('https://studio.milkcat.org/api/vendor-reputation/v1/evidence',method='POST'),
+            'mutated':False,
+            'core_modified':False,
+          }
+          print(json.dumps(result,ensure_ascii=False,indent=2))
+          PY
+          python3 -m json.tool .agentos/evidence/vendor-read-api-nginx-probe.json >/dev/null
+          cat .agentos/evidence/vendor-read-api-nginx-probe.json
+      - name: Commit sanitized probe
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .agentos/evidence/vendor-read-api-nginx-probe.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-read-api-nginx-probe.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): nginx read API probe'
+          git push
