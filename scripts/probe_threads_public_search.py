@@ -2,7 +2,6 @@
 import html as html_lib
 import json
 import re
-import sys
 import time
 import urllib.parse
 import urllib.request
@@ -10,7 +9,7 @@ import urllib.request
 TERMS = ["抓漏", "冷氣清洗", "居家清潔", "家電維修", "驗屋"]
 FILTERS = ["recent", "top"]
 BASE = "https://www.threads.com/search/"
-UA = "milkcat-vendor-public-search-probe/1.0"
+UA = "milkcat-vendor-public-search-probe/1.1"
 
 
 def normalize_html(raw: str) -> str:
@@ -20,7 +19,61 @@ def normalize_html(raw: str) -> str:
     return value
 
 
-def extract_urls(raw: str):
+def balanced_json_object(text: str, start: int):
+    depth = 0
+    in_string = False
+    escaped = False
+    for pos in range(start, len(text)):
+        ch = text[pos]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:pos + 1]
+    return None
+
+
+def extract_ssr_urls(raw: str):
+    text = normalize_html(raw)
+    needle = '"searchResults":{"inform_module"'
+    idx = text.find(needle)
+    if idx < 0:
+        return [], False
+    prefix = '"searchResults":'
+    start = text.find("{", idx + len(prefix))
+    if start < 0:
+        return [], True
+    fragment = balanced_json_object(text, start)
+    if not fragment:
+        return [], True
+    payload = json.loads(fragment)
+    urls = set()
+    for edge in payload.get("edges") or []:
+        thread = ((edge.get("node") or {}).get("thread") or {})
+        items = thread.get("thread_items") or []
+        if not items:
+            continue
+        post = (items[0] or {}).get("post") or {}
+        user = post.get("user") or {}
+        username = (user.get("username") or "").strip()
+        code = (post.get("code") or "").strip()
+        if username and code:
+            urls.add(f"https://www.threads.com/@{username}/post/{code}")
+    return sorted(urls), True
+
+
+def extract_regex_urls(raw: str):
     text = normalize_html(raw)
     found = set()
     patterns = [
@@ -30,9 +83,16 @@ def extract_urls(raw: str):
     for pattern in patterns:
         for match in re.findall(pattern, text):
             url = match if match.startswith("http") else "https://www.threads.com" + match
-            url = url.split("?", 1)[0].rstrip("/")
-            found.add(url)
+            found.add(url.split("?", 1)[0].rstrip("/"))
     return sorted(found)
+
+
+def extract_urls(raw: str):
+    ssr_urls, marker_found = extract_ssr_urls(raw)
+    if ssr_urls:
+        return ssr_urls, "ssr_json", marker_found
+    regex_urls = extract_regex_urls(raw)
+    return regex_urls, "regex", marker_found
 
 
 def fetch_urllib(url: str):
@@ -77,12 +137,15 @@ def main():
                     status, final_url, body = fetch_playwright(url)
                 else:
                     status, final_url, body = fetch_urllib(url)
-                urls = extract_urls(body)[:25]
+                urls, parser, marker_found = extract_urls(body)
+                urls = urls[:25]
                 all_urls.update(urls)
                 rows.append({
                     "term": term,
                     "filter": filter_name,
                     "mode": mode,
+                    "parser": parser,
+                    "search_results_marker_found": marker_found,
                     "http_status": status,
                     "final_host": urllib.parse.urlsplit(final_url).hostname,
                     "result_count": len(urls),
@@ -94,6 +157,8 @@ def main():
                     "term": term,
                     "filter": filter_name,
                     "mode": mode,
+                    "parser": None,
+                    "search_results_marker_found": False,
                     "http_status": None,
                     "final_host": None,
                     "result_count": 0,
@@ -103,7 +168,7 @@ def main():
             time.sleep(0.4)
 
     print(json.dumps({
-        "schema": "milkcat.threads-public-search-probe/v1",
+        "schema": "milkcat.threads-public-search-probe/v2",
         "ok": any(row["result_count"] > 0 for row in rows),
         "playwright_available": use_playwright,
         "queries": len(rows),
