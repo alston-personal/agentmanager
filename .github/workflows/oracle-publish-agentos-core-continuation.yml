@@ -1,0 +1,184 @@
+name: Oracle Publish AgentOS Core Continuation
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-publish-agentos-core-continuation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agentos-project-continuation-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      LIVE_CORE_COMMIT: f842bee2cf7c24fc3bf7424bd121994562e829cd
+      LIVE_CORE_GENERATION: '6'
+      INDEX_ID: agentos-core-g6-resolve-context-v1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Verify released generation 6 authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          s=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          target=os.environ['LIVE_CORE_COMMIT']
+          assert int(s.get('deployment_generation') or 0)==6,s
+          assert s.get('desired_core_commit')==target and s.get('observed_core_commit')==target,s
+          assert s.get('deployment_status')=='converged' and s.get('lease_status')=='released',s
+          assert s.get('lease_owner')=='agentos-core-mainline',s
+          print('generation6_publication_authority=PASS')
+          PY
+
+      - name: Install pinned continuation publisher overlay through ubuntu Chronos
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap_project_continuation_overlay_via_chronos.sh "$GITHUB_SHA"
+
+      - name: Publish canonical agentos-core continuation through live Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agentos_node.action_relay import ActionRelayClient
+
+          target=os.environ['LIVE_CORE_COMMIT']; index_id=os.environ['INDEX_ID']
+          goal='Complete AgentOS Core fresh-chat continuation by returning canonical project execution head and continuation through /v1/resolve without source/GitHub rediscovery.'
+          next_action='Re-run the authenticated vopc5750 /v1/resolve acceptance and require active_goal, execution_head, continuation, and next_action before the final fresh-chat ChatGPT→ONE probe.'
+          payload={
+            'project_id':'agentos-core',
+            'execution_head':{
+              'schema':'agentos.execution-head/v1',
+              'index_id':index_id,
+              'active_goal':goal,
+              'execution_head':{
+                'phase':'resolve-continuation-acceptance',
+                'status':'in_progress',
+                'live_core_generation':6,
+                'live_core_commit':target,
+                'node_golden_path':'accepted',
+                'resolve_transport':'accepted',
+              },
+            },
+            'continuation':{
+              'protocol':'ANCP/1.0',
+              'index_id':index_id,
+              'recommended_action':next_action,
+              'canonical_ir':{
+                'schema_version':'agentos.ir/v1',
+                'index_id':index_id,
+                'ir_id':'agentos-core-ir-g6-resolve-context-v1',
+                'parent_ir_id':None,
+                'goal':goal,
+                'constraints':[
+                  'Use canonical Project Identity only; never infer aliases from repo or checkout path.',
+                  'Do not use GitHub/source rediscovery in the resolve continuation path.',
+                  'Do not call ChatGPT Web an enrolled live Realm node without registry and heartbeat evidence.',
+                  'Preserve Core deployment generation authority and the evidence ladder.',
+                ],
+                'decisions':[
+                  'Node Golden Path is accepted with node_ready=true and one managed Thin Client.',
+                  'Public /v1/resolve gateway routing is accepted.',
+                  'Real enrolled vopc5750 authenticated /v1/resolve transport and project identity are accepted.',
+                  'Continuation indexing uses one shared index_id generation fence across execution-head and continuation.',
+                  'Core generation 6 is accepted and released at '+target+'.',
+                ],
+                'pending_tasks':[
+                  'Re-run authenticated vopc5750 resolve with non-null continuation context.',
+                  'Perform final fresh-chat ChatGPT→ONE continuation acceptance.',
+                ],
+                'continuation':{'recommended_action':next_action},
+                'capability':'agentos.one.resolve',
+              },
+            },
+          }
+          c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          cap=c.submit('agentos.project.publish_continuation',payload)
+          deadline=time.time()+120; r=None
+          while time.time()<deadline:
+            r=c.receipt(cap['capsule_id'])
+            if r is not None: break
+            time.sleep(1)
+          assert r is not None,r
+          print(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True))
+          assert r.get('action')=='agentos.project.publish_continuation',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('ok') is True,r
+          assert r.get('schema')=='agentos.action-receipt/v1',r
+          assert r.get('project_id')=='agentos-core',r
+          assert r.get('index_id')==index_id,r
+          assert (r.get('authority') or {}).get('identity_source')=='governance-directory',r
+          assert (r.get('authority') or {}).get('mutation_allowed') is True,r
+          assert (r.get('execution_head') or {}).get('path')=='/home/ubuntu/agent-data/projects/agentos-core/execution-head.json',r
+          assert (r.get('continuation') or {}).get('path')=='/home/ubuntu/agent-data/projects/agentos-core/continuity/latest.json',r
+          assert str((r.get('execution_head') or {}).get('sha256') or '').startswith('sha256:'),r
+          assert str((r.get('continuation') or {}).get('sha256') or '').startswith('sha256:'),r
+          Path('/tmp/project-continuation-publish-receipt.json').write_text(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('canonical_project_continuation_publish=PASS')
+          PY
+
+      - name: Persist governed publication evidence on feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          from pathlib import Path
+          outer=json.loads(Path('/tmp/project-continuation-overlay-bootstrap-receipt.json').read_text(encoding='utf-8'))
+          lines=[x for x in (outer.get('stdout') or '').splitlines() if x.startswith('{')]
+          assert lines,outer
+          overlay=json.loads(lines[-1])
+          publish=json.loads(Path('/tmp/project-continuation-publish-receipt.json').read_text(encoding='utf-8'))
+          evidence={
+            'schema':'agentos.project-continuation-live-acceptance/v1',
+            'accepted_at':datetime.now(timezone.utc).isoformat(),
+            'live_core_generation':6,
+            'live_core_commit':os.environ['LIVE_CORE_COMMIT'],
+            'index_id':os.environ['INDEX_ID'],
+            'overlay':overlay,
+            'publication_receipt':publish,
+            'gates':{
+              'ubuntu_chronos_execution':True,
+              'deployment_actions_preserved':True,
+              'publisher_overlay_pinned_to_accepted_core':True,
+              'canonical_project_identity':True,
+              'canonical_paths':True,
+              'shared_index_generation':True,
+            },
+          }
+          Path('/tmp/project-continuation-live-acceptance.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+
+          cp /tmp/project-continuation-live-acceptance.json /tmp/project-continuation-live-acceptance.keep.json
+          git fetch origin feature/realm-node-fabric-readiness
+          git reset --hard origin/feature/realm-node-fabric-readiness
+          mkdir -p .agentos/evidence/resolve-e2e
+          cp /tmp/project-continuation-live-acceptance.keep.json .agentos/evidence/resolve-e2e/project-continuation-live.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/resolve-e2e/project-continuation-live.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'evidence(agentos): accept canonical project continuation publication'
+            git pull --rebase origin feature/realm-node-fabric-readiness
+            git push origin HEAD:feature/realm-node-fabric-readiness
+          fi
