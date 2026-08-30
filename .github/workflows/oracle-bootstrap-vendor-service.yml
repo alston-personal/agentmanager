@@ -1,4 +1,4 @@
-name: Oracle Bootstrap Vendor Service
+name: Oracle Register Vendor Sources
 
 on:
   workflow_dispatch:
@@ -8,200 +8,53 @@ on:
       - '.github/workflows/oracle-bootstrap-vendor-service.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  bootstrap:
+  register:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    timeout-minutes: 8
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_SHA: fbcf3cb1ece1bf7b2d928634cf4afd3901cf894b
+      SOURCE_URL: https://www.threads.com/share/_yh22msHD/
     steps:
       - uses: actions/checkout@v4
-
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Probe and bootstrap isolated vendor service on Oracle
+      - name: Register monitored Threads sources
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
           test -n "${DEPLOY_USER:-}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE' > .agentos/evidence/vendor-service-bootstrap.json
-          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
+            < scripts/register_vendor_threads_source.sh \
+            > .agentos/evidence/vendor-source-register.json
+          python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
+          cat .agentos/evidence/vendor-source-register.json
           python3 - <<'PY'
-          import json, shutil, subprocess
-          from pathlib import Path
-
-          base = Path('/home/ubuntu/vendor-reputation-service')
-          base.mkdir(parents=True, exist_ok=True)
-          gh = shutil.which('gh') or '/usr/bin/gh'
-          gh_auth_ok = False
-          gh_user = None
-          if Path(gh).exists():
-              p = subprocess.run([gh, 'auth', 'status'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
-              gh_auth_ok = p.returncode == 0
-              if gh_auth_ok:
-                  q = subprocess.run([gh, 'api', 'user', '--jq', '.login'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
-                  if q.returncode == 0:
-                      gh_user = q.stdout.strip() or None
-
-          (base / 'app').mkdir(exist_ok=True)
-          (base / 'sql').mkdir(exist_ok=True)
-          (base / 'docs').mkdir(exist_ok=True)
-          (base / 'README.md').write_text('# Vendor Reputation Service\n\nCanonical domain service for vendor identity, evidence, reviews, and derived reputation.\n\nConsumers such as studio-web must use the service API instead of owning vendor domain data.\n', encoding='utf-8')
-
-          (base / 'sql' / '001_initial.sql').write_text('''CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-CREATE TABLE IF NOT EXISTS vendors (
-  id uuid PRIMARY KEY,
-  canonical_name text NOT NULL,
-  status text NOT NULL DEFAULT 'active',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS vendor_aliases (
-  id bigserial PRIMARY KEY,
-  vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
-  alias text NOT NULL,
-  UNIQUE(vendor_id, alias)
-);
-
-CREATE TABLE IF NOT EXISTS evidence (
-  id uuid PRIMARY KEY,
-  source_type text NOT NULL,
-  source_url text NOT NULL,
-  source_object_id text,
-  observed_at timestamptz,
-  original_text text,
-  review_status text NOT NULL DEFAULT 'pending',
-  provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(source_type, source_url)
-);
-
-CREATE TABLE IF NOT EXISTS vendor_mentions (
-  id bigserial PRIMARY KEY,
-  evidence_id uuid NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
-  vendor_id uuid REFERENCES vendors(id) ON DELETE SET NULL,
-  extracted_name text,
-  service_category text,
-  region text,
-  signal text NOT NULL DEFAULT 'unclear',
-  confidence numeric(4,3),
-  review_status text NOT NULL DEFAULT 'pending'
-);
-
-CREATE TABLE IF NOT EXISTS reviews (
-  id uuid PRIMARY KEY,
-  vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
-  evidence_id uuid REFERENCES evidence(id) ON DELETE SET NULL,
-  rating numeric(2,1) CHECK (rating >= 1 AND rating <= 5),
-  body text,
-  occurred_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS reputation_policies (
-  id text PRIMARY KEY,
-  half_life_days integer NOT NULL,
-  prior_mean numeric(3,2) NOT NULL,
-  prior_weight numeric(6,2) NOT NULL,
-  active boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS reputation_snapshots (
-  id bigserial PRIMARY KEY,
-  vendor_id uuid NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
-  policy_id text NOT NULL REFERENCES reputation_policies(id),
-  score numeric(5,3),
-  evidence_count integer NOT NULL DEFAULT 0,
-  effective_weight numeric(10,4) NOT NULL DEFAULT 0,
-  confidence numeric(5,4) NOT NULL DEFAULT 0,
-  computed_at timestamptz NOT NULL DEFAULT now()
-);
-
-INSERT INTO reputation_policies(id, half_life_days, prior_mean, prior_weight, active)
-VALUES ('temporal-bayes-v1', 365, 3.5, 3, true)
-ON CONFLICT (id) DO NOTHING;
-''', encoding='utf-8')
-
-          (base / 'docs' / 'API_V1.md').write_text('''# API v1
-
-Read API:
-- GET /v1/vendors
-- GET /v1/vendors/{id}
-- GET /v1/vendors/{id}/evidence
-- GET /v1/vendors/{id}/reputation
-- GET /v1/search?q=...
-
-Review/admin API:
-- POST /v1/evidence
-- POST /v1/vendor-candidates
-- POST /v1/review-queue/{id}/approve
-- POST /v1/review-queue/{id}/reject
-''', encoding='utf-8')
-
-          if not (base / '.git').exists():
-              subprocess.run(['git', 'init', '-b', 'main', str(base)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-              subprocess.run(['git', '-C', str(base), 'config', 'user.name', 'Sunlake'], check=True)
-              subprocess.run(['git', '-C', str(base), 'config', 'user.email', 'register@milkcat.org'], check=True)
-          subprocess.run(['git', '-C', str(base), 'add', '.'], check=True)
-          if subprocess.run(['git', '-C', str(base), 'diff', '--cached', '--quiet']).returncode != 0:
-              subprocess.run(['git', '-C', str(base), 'commit', '-m', 'bootstrap: vendor reputation domain service'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-          repo_created = False
-          repo_url = None
-          repo_error = None
-          if gh_auth_ok:
-              check = subprocess.run([gh, 'repo', 'view', 'alston-personal/vendor-reputation-service', '--json', 'url', '--jq', '.url'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
-              if check.returncode == 0:
-                  repo_url = check.stdout.strip() or None
-              else:
-                  create = subprocess.run([gh, 'repo', 'create', 'alston-personal/vendor-reputation-service', '--private', '--source', str(base), '--remote', 'origin', '--push'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
-                  repo_created = create.returncode == 0
-                  if repo_created:
-                      view = subprocess.run([gh, 'repo', 'view', 'alston-personal/vendor-reputation-service', '--json', 'url', '--jq', '.url'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
-                      if view.returncode == 0:
-                          repo_url = view.stdout.strip() or None
-                  else:
-                      repo_error = (create.stderr or create.stdout).strip()[:300]
-
-          print(json.dumps({
-              'schema': 'milkcat.vendor-service-bootstrap/v1',
-              'oracle_path': str(base),
-              'git_initialized': (base / '.git').exists(),
-              'gh_installed': Path(gh).exists(),
-              'gh_auth_ok': gh_auth_ok,
-              'gh_user': gh_user,
-              'repo_created': repo_created,
-              'repo_url': repo_url,
-              'repo_error': repo_error,
-              'core_modified': False,
-              'domain_schema_written': True,
-              'api_spec_written': True
-          }, ensure_ascii=False, indent=2))
+          import json
+          x=json.load(open('.agentos/evidence/vendor-source-register.json'))
+          assert x['active_sources'] == 2, x
+          assert x['new_source_registered'] == 1, x
+          assert x['core_modified'] is False, x
+          assert x['raw_threads_content_emitted'] is False, x
           PY
-          REMOTE
-          python3 -m json.tool .agentos/evidence/vendor-service-bootstrap.json >/dev/null
-          cat .agentos/evidence/vendor-service-bootstrap.json
-
-      - name: Commit sanitized bootstrap evidence
+      - name: Commit sanitized source-registry evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test -s .agentos/evidence/vendor-service-bootstrap.json || exit 0
+          test -s .agentos/evidence/vendor-source-register.json || exit 0
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/vendor-service-bootstrap.json
+          git add .agentos/evidence/vendor-source-register.json
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): Oracle vendor service bootstrap'
+          git commit -m 'evidence(vendors): monitored Threads sources'
           git push
