@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 const UPSTREAM = "http://127.0.0.1:8780";
 
 const ALLOWED: Record<string, Set<string>> = {
-  GET: new Set(["/v1/health", "/v1/tasks"]),
+  GET: new Set(["/v1/health", "/v1/tasks", "/v1/bootstrap"]),
   POST: new Set([
     "/v1/join/request",
     "/v1/join/status",
