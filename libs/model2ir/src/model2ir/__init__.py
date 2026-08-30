@@ -1,4 +1,4 @@
-from .v04 import (
+from .v06 import (
     load_asset,
     extract_ir,
     stabilize_external_ir,
@@ -22,4 +22,4 @@ __all__ = [
     "ir_digest",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
