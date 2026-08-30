@@ -73,7 +73,7 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_re
 set +e
 docker compose run --rm -T -e SOC_THREADS_TOKEN="$SOC_THREADS_TOKEN" api \
   python /srv/app/scripts/discover_threads_sources.py /srv/app/config/threads_discovery_queries.txt \
-  >"$OUT" 2>"$ERR"
+  < /dev/null >"$OUT" 2>"$ERR"
 WORKER_RC=$?
 set -e
 if [ "$WORKER_RC" -ne 0 ]; then emit_failure worker "$WORKER_RC" "$ERR"; fi
