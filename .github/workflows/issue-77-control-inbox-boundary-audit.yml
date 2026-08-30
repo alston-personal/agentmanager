@@ -1,0 +1,58 @@
+name: Issue 77 Control Inbox Boundary Audit
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/issue-77-control-inbox-boundary-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit without mutating live services
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner_user=$(id -un)"
+          echo "runner_groups=$(id -Gn)"
+          STATE=/home/ubuntu/agent-data/governance/core-deployment.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+          s=json.loads(p.read_text())
+          print('deployment_generation='+str(s.get('deployment_generation')))
+          print('desired_core_commit='+str(s.get('desired_core_commit')))
+          print('observed_core_commit='+str(s.get('observed_core_commit')))
+          print('deployment_status='+str(s.get('deployment_status')))
+          print('lease_status='+str(s.get('lease_status')))
+          PY
+          UNIT=/home/ubuntu/.config/systemd/user/agentos-control-inbox.service
+          if test -r "$UNIT"; then
+            echo 'control_inbox_unit_readable=true'
+            grep -E '^(WorkingDirectory|EnvironmentFile|ExecStart)=' "$UNIT" || true
+          else
+            echo 'control_inbox_unit_readable=false'
+          fi
+          for p in \
+            /home/ubuntu/.local/share/agentos/realm-fabric/releases/e50e0fab411eb5c05e5aaa4f866e7282fcb04045/agent_core/control_inbox_bridge.py \
+            /home/ubuntu/.local/share/agentos/control-inbox/agent_core/control_inbox_bridge.py \
+            /home/ubuntu/agentmanager/agent_core/control_inbox_bridge.py; do
+            echo "PATH=$p"
+            if test -e "$p"; then
+              stat -c 'owner=%U group=%G mode=%a' "$p"
+              test -r "$p" && echo read=true || echo read=false
+              test -w "$p" && echo write=true || echo write=false
+              grep -n "status.*202\|CONTROLLER_DISPATCH_SUCCESS_CODES" "$p" | head -5 || true
+            else
+              echo exists=false
+            fi
+          done
+          echo 'issue77_boundary_audit=PASS'
