@@ -1,0 +1,49 @@
+name: Patch Action Relay Project Continuation
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/patch-action-relay-project-continuation.yml'
+      - 'scripts/patch_action_relay_project_continuation.py'
+      - 'agent_core/project_continuation_index.py'
+      - 'tests/test_project_continuation_index.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Apply deterministic narrow Action Relay patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_action_relay_project_continuation.py
+          python3 -m py_compile agent_core/project_continuation_index.py agentos_node/action_relay.py
+          grep -q 'agentos.project.publish_continuation' agentos_node/action_relay.py
+      - name: Test canonical continuation publisher and relay contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_project_continuation_index -v
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_action_relay -v
+      - name: Commit relay patch to feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentos_node/action_relay.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(agentos): expose governed continuation publish action'
+          git pull --rebase origin feature/realm-node-fabric-readiness
+          git push origin HEAD:feature/realm-node-fabric-readiness
