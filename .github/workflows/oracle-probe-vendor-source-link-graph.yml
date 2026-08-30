@@ -41,6 +41,36 @@ jobs:
             -c "select input_url, coalesce(canonical_url,'') from monitored_sources where status='active' order by created_at, input_url;"
           REMOTE
           test -s /tmp/vendor-active-sources.tsv
+      - name: Audit monitored source aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' \
+            > .agentos/evidence/vendor-source-alias-audit.json <<'REMOTE'
+          set -euo pipefail
+          set -a
+          . /home/ubuntu/agent-data/secrets/vendor-reputation.env
+          set +a
+          cd /home/ubuntu/vendor-reputation-service
+          docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "
+          select jsonb_build_object(
+            'schema','milkcat.vendor-source-alias-audit/v1',
+            'active_sources',(select count(*) from monitored_sources where status='active'),
+            'rows',coalesce((
+              select jsonb_agg(jsonb_build_object(
+                'input_url',input_url,
+                'canonical_url',canonical_url,
+                'input_aliases',coalesce(metadata->'input_aliases','[]'::jsonb)
+              ) order by created_at,input_url)
+              from monitored_sources where status='active'
+            ),'[]'::jsonb),
+            'raw_text_emitted',false,
+            'db_written',false,
+            'core_modified',false
+          )::text;"
+          REMOTE
+          python3 -m json.tool .agentos/evidence/vendor-source-alias-audit.json >/dev/null
       - name: Probe public source link graph
         shell: bash
         run: |
@@ -72,6 +102,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vendor-source-link-graph-${{ github.run_id }}
-          path: .agentos/evidence/vendor-source-link-graph-probe.json
+          path: |
+            .agentos/evidence/vendor-source-link-graph-probe.json
+            .agentos/evidence/vendor-source-alias-audit.json
           if-no-files-found: error
           retention-days: 14
