@@ -1,4 +1,4 @@
-# acceptance-rerun: 2026-08-30 live gateway resolve route accepted
+# acceptance-rerun: 2026-08-30 generation 6 continuation-index live resolve
 name: Oracle vopc5750 Resolve E2E
 
 on:
@@ -18,8 +18,8 @@ jobs:
     timeout-minutes: 6
     env:
       AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      LIVE_CORE_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
-      LIVE_CORE_RELEASE: /home/ubuntu/.local/share/agentos/realm-fabric/releases/e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+      LIVE_CORE_COMMIT: f842bee2cf7c24fc3bf7424bd121994562e829cd
+      LIVE_CORE_RELEASE: /home/ubuntu/.local/share/agentos/realm-fabric/releases/f842bee2cf7c24fc3bf7424bd121994562e829cd
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +37,7 @@ jobs:
           from agent_core.realm_fabric import RealmFabricStore
           ref=os.environ['LIVE_CORE_COMMIT']
           state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
-          assert int(state.get('deployment_generation') or 0)==5,state
+          assert int(state.get('deployment_generation') or 0)==6,state
           assert state.get('desired_core_commit')==ref and state.get('observed_core_commit')==ref,state
           assert state.get('deployment_status')=='converged' and state.get('lease_status')=='released',state
           node=ControllerService(RealmFabricStore()).node('vopc5750')
