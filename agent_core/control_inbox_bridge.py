@@ -19,6 +19,7 @@ DEFAULT_ISSUE_NUMBER = 50
 DEFAULT_ALLOWED_LOGIN = 'alstonhuang'
 DEFAULT_ONE_URL = 'http://127.0.0.1:8780'
 MAX_COMMAND_LIFETIME_SECONDS = 600
+CONTROLLER_DISPATCH_SUCCESS_CODES = frozenset({200, 202})
 
 
 def _utc_now() -> datetime:
@@ -174,7 +175,7 @@ class OneControllerClient:
             **args,
         }
         status, payload = self._request('POST', '/v1/controller/dispatch', body)
-        if status != 202 or not isinstance(payload, dict) or not payload.get('ok'):
+        if status not in CONTROLLER_DISPATCH_SUCCESS_CODES or not isinstance(payload, dict) or not payload.get('ok'):
             raise RuntimeError(f'ONE dispatch failed: HTTP {status}: {payload}')
         return payload
 
