@@ -18,54 +18,49 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Groq chat 403 safely
+      - name: Test Groq chat with curl
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          cd /home/$(id -un)/leopardcat-tarot/website
-          python3 - <<'PY'
-          import json, os, ssl, urllib.request, urllib.error
+          KEY=$(python3 - <<'PY'
           from pathlib import Path
-          def env_value(name):
-              value=os.environ.get(name)
-              if value: return value
-              p=Path('/home/ubuntu/agentmanager/.env')
-              if not p.exists(): return None
-              for raw in p.read_text(errors='replace').splitlines():
-                  s=raw.strip()
-                  if not s or s.startswith('#'): continue
-                  if s.startswith('export '): s=s[7:].lstrip()
-                  if '=' in s:
-                      k,v=s.split('=',1)
-                      if k.strip()==name: return v.strip().strip('"').strip("'") or None
-              return None
-          key=env_value('GROQ_API_KEY') or ''
-          payload={
-            'model':'openai/gpt-oss-120b',
-            'messages':[{'role':'user','content':'Reply with exactly: OK'}],
-            'temperature':0,
-            'max_tokens':16
-          }
-          req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
-          try:
-              with urllib.request.urlopen(req,context=ssl.create_default_context(),timeout=20) as r:
-                  print('status='+str(r.status))
-                  data=json.loads(r.read().decode())
-                  print('response_present='+str(bool(data.get('choices'))).lower())
-          except urllib.error.HTTPError as e:
-              print('status='+str(e.code))
-              raw=e.read().decode('utf-8',errors='replace')[:1000]
-              try:
-                  data=json.loads(raw)
-                  err=data.get('error') if isinstance(data,dict) else None
-                  if isinstance(err,dict):
-                      print('error_type='+str(err.get('type') or ''))
-                      print('error_code='+str(err.get('code') or ''))
-                      msg=str(err.get('message') or '')
-                      print('error_message='+msg[:500].replace('\n',' '))
-              except Exception:
-                  print('error_body_json=false')
+          p=Path('/home/ubuntu/agentmanager/.env')
+          for raw in p.read_text(errors='replace').splitlines():
+              s=raw.strip()
+              if not s or s.startswith('#'): continue
+              if s.startswith('export '): s=s[7:].lstrip()
+              if '=' in s:
+                  k,v=s.split('=',1)
+                  if k.strip()=='GROQ_API_KEY':
+                      print(v.strip().strip('"').strip("'"))
+                      break
           PY
+          )
+          BODY='{"model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"Reply with exactly: OK"}],"temperature":0,"max_tokens":16}'
+          OUT=$(mktemp)
+          CODE=$(curl -sS -o "$OUT" -w '%{http_code}' https://api.groq.com/openai/v1/chat/completions \
+            -H "Authorization: Bearer $KEY" \
+            -H 'Content-Type: application/json' \
+            -H 'User-Agent: curl/8 leopardcat-health' \
+            --data "$BODY")
+          echo "curl_status=$CODE"
+          python3 - "$OUT" <<'PY'
+          import json,sys
+          raw=open(sys.argv[1],'rb').read(1200).decode('utf-8','replace')
+          try:
+              d=json.loads(raw)
+              print('json_body=true')
+              print('response_present='+str(bool(d.get('choices'))).lower())
+              if isinstance(d.get('error'),dict):
+                  e=d['error']
+                  print('error_type='+str(e.get('type') or ''))
+                  print('error_code='+str(e.get('code') or ''))
+                  print('error_message='+str(e.get('message') or '')[:500].replace('\n',' '))
+          except Exception:
+              print('json_body=false')
+              print('body_prefix='+raw[:200].replace('\n',' '))
+          PY
+          rm -f "$OUT"
           REMOTE
