@@ -20,6 +20,7 @@ jobs:
       AGENT_DATA_ROOT: /home/ubuntu/agent-data
       LIVE_CORE_COMMIT: f842bee2cf7c24fc3bf7424bd121994562e829cd
       LIVE_CORE_RELEASE: /home/ubuntu/.local/share/agentos/realm-fabric/releases/f842bee2cf7c24fc3bf7424bd121994562e829cd
+      NODE_RUNTIME_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,17 +36,22 @@ jobs:
           from pathlib import Path
           from agent_core.controller_api import ControllerService
           from agent_core.realm_fabric import RealmFabricStore
-          ref=os.environ['LIVE_CORE_COMMIT']
+          core_ref=os.environ['LIVE_CORE_COMMIT']
+          node_ref=os.environ['NODE_RUNTIME_COMMIT']
           state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
           assert int(state.get('deployment_generation') or 0)==6,state
-          assert state.get('desired_core_commit')==ref and state.get('observed_core_commit')==ref,state
+          assert state.get('desired_core_commit')==core_ref and state.get('observed_core_commit')==core_ref,state
           assert state.get('deployment_status')=='converged' and state.get('lease_status')=='released',state
           node=ControllerService(RealmFabricStore()).node('vopc5750')
           assert node.get('status')=='online',node
           assert node.get('runtime_status')=='converged',node
-          assert (node.get('runtime') or {}).get('source_commit')==ref,node
+          assert node.get('desired_runtime_commit')==node_ref,node
+          assert (node.get('runtime') or {}).get('source_commit')==node_ref,node
           assert 'shell.exec' in set(node.get('capabilities') or []),node
           print('resolve_e2e_baseline=PASS')
+          print('resolve_core_generation=6')
+          print('resolve_core_commit='+core_ref)
+          print('resolve_node_runtime_commit='+node_ref)
           PY
 
       - name: Resolve agentos-core from vopc5750 using its enrolled credential
@@ -151,8 +157,12 @@ jobs:
           assert result.get('provenance') is not None,result
           print('resolve_authenticated_live_e2e=PASS')
           print('resolve_project_id='+str(result.get('project_id')))
+          print('resolve_availability='+json.dumps(availability,sort_keys=True))
           print('resolve_active_goal='+str(result.get('active_goal')))
+          print('resolve_execution_head='+str(result.get('execution_head')))
+          print('resolve_continuation='+str(result.get('continuation')))
           print('resolve_next_action='+str(result.get('next_action')))
+          print('resolve_provenance='+json.dumps(result.get('provenance') or {},sort_keys=True))
           print('resolve_one_url='+str(result.get('one_url')))
           print('resolve_config_path='+str(result.get('config_path')))
           PY
