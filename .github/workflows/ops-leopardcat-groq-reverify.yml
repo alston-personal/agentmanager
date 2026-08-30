@@ -64,3 +64,4 @@ jobs:
               print('groq_transport=http_'+str(e.code))
           PY
           REMOTE
+# rerun after accepting Groq model terms
