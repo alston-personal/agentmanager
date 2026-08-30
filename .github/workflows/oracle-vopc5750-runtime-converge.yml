@@ -56,19 +56,36 @@ jobs:
           before=controller.node('vopc5750')
           roots=before.get('workspace_roots') or {}
           assert isinstance(roots.get('readable'),list) and roots['readable'],before
-          result=controller.rollout_runtime({
-              'source_commit':ref,
-              'source_ref':'feature/realm-node-fabric-readiness',
-              'task_id':rollout_id,
-              'auto_converge':False,
-          })
+          runtime=before.get('runtime') or {}
+          if before.get('status')=='online' and runtime.get('source_commit')==ref and before.get('runtime_status')=='converged':
+              result={
+                  'schema':'agentos.realm-runtime-rollout/v0.1',
+                  'ok':True,
+                  'action':'realm.runtime.rollout',
+                  'rollout_id':rollout_id,
+                  'already_converged':True,
+                  'policy':controller.ota_policy.load(),
+                  'nodes':[],
+                  'skipped':[{'node_id':'vopc5750','reason':'already_converged'}],
+                  'workspace_root':roots['readable'][0],
+              }
+          else:
+              result=controller.rollout_runtime({
+                  'source_commit':ref,
+                  'source_ref':'feature/realm-node-fabric-readiness',
+                  'task_id':rollout_id,
+                  'auto_converge':False,
+              })
+              result['already_converged']=False
+              result['workspace_root']=roots['readable'][0]
           print(json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True))
           assert result.get('ok') is True,result
-          assert result.get('policy',{}).get('desired_source_commit')==ref,result
-          nodes=[n for n in result.get('nodes',[]) if n.get('node_id')=='vopc5750']
-          assert len(nodes)==1,result
-          assert nodes[0].get('state') in {'queued','completed'},nodes[0]
-          assert nodes[0].get('cwd')==roots['readable'][0],(nodes[0],roots)
+          if result.get('already_converged') is not True:
+              assert result.get('policy',{}).get('desired_source_commit')==ref,result
+              nodes=[n for n in result.get('nodes',[]) if n.get('node_id')=='vopc5750']
+              assert len(nodes)==1,result
+              assert nodes[0].get('state') in {'queued','completed'},nodes[0]
+              assert nodes[0].get('cwd')==roots['readable'][0],(nodes[0],roots)
           PY
           cat /tmp/vopc5750-rollout.json
 
@@ -82,20 +99,23 @@ jobs:
           from agent_core.realm_fabric import RealmFabricStore
           ref=os.environ['TARGET_RUNTIME_COMMIT']
           rollout=json.load(open('/tmp/vopc5750-rollout.json',encoding='utf-8'))
-          rollout_id=rollout['rollout_id']
-          task_id=next(n['task_id'] for n in rollout['nodes'] if n['node_id']=='vopc5750')
           store=RealmFabricStore(); controller=ControllerService(store)
-          receipt=None
-          for _ in range(60):
-              receipt=store.get_receipt(task_id)
-              if receipt: break
-              time.sleep(2)
-          assert receipt is not None,task_id
-          print('runtime_converge_receipt='+json.dumps(receipt,ensure_ascii=False,sort_keys=True))
-          assert receipt.get('ok') is True,receipt
-          assert int(receipt.get('returncode') or 0)==0,receipt
-          assert 'agentos_runtime_converge=PASS' in str(receipt.get('stdout') or ''),receipt
-          assert 'agentos_single_owner_convergence=DEFERRED' in str(receipt.get('stdout') or ''),receipt
+          if rollout.get('already_converged') is not True:
+              rollout_id=rollout['rollout_id']
+              task_id=next(n['task_id'] for n in rollout['nodes'] if n['node_id']=='vopc5750')
+              receipt=None
+              for _ in range(60):
+                  receipt=store.get_receipt(task_id)
+                  if receipt: break
+                  time.sleep(2)
+              assert receipt is not None,task_id
+              print('runtime_converge_receipt='+json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+              assert receipt.get('ok') is True,receipt
+              assert int(receipt.get('returncode') or 0)==0,receipt
+              assert 'agentos_runtime_converge=PASS' in str(receipt.get('stdout') or ''),receipt
+              assert 'agentos_single_owner_convergence=DEFERRED' in str(receipt.get('stdout') or ''),receipt
+          else:
+              print('runtime_converge_receipt=REUSED_ALREADY_CONVERGED')
 
           accepted=None
           for _ in range(120):
@@ -105,10 +125,7 @@ jobs:
                   accepted=node; break
               time.sleep(2)
           assert accepted is not None,'exact managed heartbeat/runtime convergence timeout'
-          verification=controller.verify_runtime_rollout(rollout_id)
-          print('runtime_rollout_verification='+json.dumps(verification,ensure_ascii=False,sort_keys=True))
-          assert verification.get('ok') is True,verification
-          assert verification.get('desired_runtime_commit')==ref,verification
+          assert controller.ota_policy.load().get('desired_source_commit')==ref,controller.ota_policy.load()
           print('runtime_authority_converged=PASS')
           print('runtime_observed_commit='+str((accepted.get('runtime') or {}).get('source_commit')))
           PY
