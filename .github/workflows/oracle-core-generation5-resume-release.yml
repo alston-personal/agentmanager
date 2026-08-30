@@ -1,0 +1,215 @@
+name: AgentOS Core Generation 5 Resume Release
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-core-generation5-resume-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: realm-fabric-deployment-authority
+  cancel-in-progress: false
+
+jobs:
+  resume-release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      TARGET_CORE_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+      LEASE_OWNER: agentos-core-mainline
+      DEPLOY_CLIENT_ROOT: /tmp/agentos-main-deploy-client-g5-resume
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Verify converged generation 5 active lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main "$TARGET_CORE_COMMIT"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          s=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          target=os.environ['TARGET_CORE_COMMIT']
+          assert int(s.get('deployment_generation') or 0)==5,s
+          assert s.get('desired_core_commit')==target,s
+          assert s.get('observed_core_commit')==target,s
+          assert s.get('deployment_status')=='converged',s
+          assert s.get('lease_owner')=='agentos-core-mainline',s
+          assert s.get('lease_status') in {'active','released'},s
+          print(json.dumps(s,ensure_ascii=False,indent=2,sort_keys=True))
+          print('generation5_converged_preflight=PASS')
+          PY
+
+      - name: Prove legacy controller route without fixed temp output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from urllib import request,error
+          body=json.dumps({
+              'schema':'agentos.controller-dispatch/v0.1',
+              'node_id':'vopc5750',
+              'action':'agent.surface.inspect',
+              'payload':{},
+          }).encode('utf-8')
+          req=request.Request('http://127.0.0.1:8780/v1/controller/dispatch',data=body,headers={'Content-Type':'application/json'},method='POST')
+          try:
+              with request.urlopen(req,timeout=5) as resp:
+                  code=resp.status; payload=json.loads(resp.read().decode('utf-8'))
+          except error.HTTPError as exc:
+              code=exc.code; payload=json.loads(exc.read().decode('utf-8'))
+          print('controller_dispatch_http_code='+str(code))
+          print(json.dumps(payload,ensure_ascii=False,indent=2,sort_keys=True))
+          assert code != 404,(code,payload)
+          if code==200:
+              assert payload.get('ok') is True,payload
+              assert payload.get('controller_entered') is True,payload
+              assert payload.get('node_id')=='vopc5750',payload
+              assert payload.get('action')=='agent.surface.inspect',payload
+              assert payload.get('task_id'),payload
+          elif code==400:
+              assert 'target node does not advertise capability: agent.surface.inspect' in str(payload.get('error') or ''),(code,payload)
+          else:
+              raise AssertionError((code,payload))
+          print('controller_service_entered=PASS')
+          PY
+
+      - name: Prove resolve route reaches authentication boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from urllib import request,error
+          req=request.Request(
+              'http://127.0.0.1:8780/v1/resolve',
+              data=json.dumps({'schema':'agentos.resolve-request/v1','node_id':'g5-auth-probe','intent':'continue','project':'agentos-core'}).encode('utf-8'),
+              headers={'Content-Type':'application/json'},method='POST')
+          try:
+              with request.urlopen(req,timeout=5) as resp:
+                  code=resp.status; text=resp.read().decode('utf-8','replace')
+          except error.HTTPError as exc:
+              code=exc.code; text=exc.read().decode('utf-8','replace')
+          print('resolve_auth_http_code='+str(code))
+          print(text)
+          assert code==401,(code,text)
+          assert 'missing bearer credential' in text,(code,text)
+          print('resolve_auth_boundary=PASS')
+          PY
+
+      - name: Capture live workspace authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/home/ubuntu/agent-data/realm/nodes.json').read_text(encoding='utf-8'))
+          n=(d.get('nodes') or {}).get('vopc5750') or {}
+          roots=n.get('workspace_roots') or {}
+          readable=roots.get('readable') if isinstance(roots,dict) else None
+          assert n.get('status')=='online',n
+          assert isinstance(readable,list) and readable,n
+          ev={
+              'schema':'agentos.node-workspace-authority-acceptance/v1',
+              'node_id':'vopc5750',
+              'last_heartbeat_at':n.get('last_heartbeat_at'),
+              'workspace_roots':roots,
+              'runtime':n.get('runtime'),
+              'capabilities':n.get('capabilities'),
+          }
+          Path('/tmp/g5-workspace-authority.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True))
+          print('vopc5750_workspace_authority=PASS')
+          PY
+
+      - name: Materialize accepted deployment client
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DEPLOY_CLIENT_ROOT"
+          mkdir -p "$DEPLOY_CLIENT_ROOT/agentos_node"
+          : > "$DEPLOY_CLIENT_ROOT/agentos_node/__init__.py"
+          git show origin/main:agentos_node/action_relay.py > "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          python3 -m py_compile "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          grep -q 'agentos.realm-fabric.release_deployment' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+
+      - name: Release generation 5 and persist evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,sys,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          sys.path.insert(0,os.environ['DEPLOY_CLIENT_ROOT'])
+          from agentos_node.action_relay import ActionRelayClient
+          target=os.environ['TARGET_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
+          state_path=Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+          before=json.loads(state_path.read_text(encoding='utf-8'))
+          if before.get('lease_status')=='released':
+              r={'ok':True,**before,'release_status':'already_released'}
+          else:
+              c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+              cap=c.submit('agentos.realm-fabric.release_deployment',{
+                  'desired_core_commit':target,
+                  'lease_owner':owner,
+                  'deployment_generation':5,
+              })
+              deadline=time.time()+90; r=None
+              while time.time()<deadline:
+                  r=c.receipt(cap['capsule_id'])
+                  if r is not None: break
+                  time.sleep(1)
+              assert r is not None and r.get('ok') is True,r
+          after=json.loads(state_path.read_text(encoding='utf-8'))
+          assert after.get('desired_core_commit')==target and after.get('observed_core_commit')==target,after
+          assert int(after.get('deployment_generation') or 0)==5,after
+          assert after.get('deployment_status')=='converged' and after.get('lease_status')=='released',after
+          ev={
+              'schema':'agentos.core-runtime-candidate-live-acceptance/v1',
+              'accepted_at':datetime.now(timezone.utc).isoformat(),
+              'live_core_commit':target,
+              'deployment_generation':5,
+              'deployment_status':'converged',
+              'lease_status':'released',
+              'workspace_authority':json.loads(Path('/tmp/g5-workspace-authority.json').read_text()),
+              'release_receipt':r,
+              'gates':{
+                  'candidate_contract_run_33303116461':True,
+                  'generation5_exact_fenced_install_run_33303299206':True,
+                  'node_registry_transaction_safe':True,
+                  'resolve_auth_boundary_preserved':True,
+                  'legacy_controller_route_preserved':True,
+                  'vopc_workspace_authority_persisted':True,
+              },
+          }
+          Path('/tmp/core-generation5-live-acceptance.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True))
+          print('generation5_release=PASS')
+          PY
+
+          cp /tmp/core-generation5-live-acceptance.json /tmp/core-generation5-live-acceptance.keep.json
+          git fetch origin feature/realm-node-fabric-readiness
+          git reset --hard origin/feature/realm-node-fabric-readiness
+          mkdir -p .agentos/evidence/node-golden-path
+          cp /tmp/core-generation5-live-acceptance.keep.json .agentos/evidence/node-golden-path/core-generation5.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/node-golden-path/core-generation5.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'evidence(agentos): accept Core generation 5 workspace authority'
+            git pull --rebase origin feature/realm-node-fabric-readiness
+            git push origin HEAD:feature/realm-node-fabric-readiness
+          fi
