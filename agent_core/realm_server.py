@@ -2,15 +2,70 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import secrets
+import shutil
+import socket
+import threading
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from agent_core.controller_api import ControllerService
+from agent_core.controller_api import ControllerService as RuntimeControllerService
+from agent_core.controller_service import ControllerService as LegacyControllerService
 from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
+from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
+from agent_core.resolve_facade import resolve_continuation
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def _core_node_manifest(realm_id: str) -> dict[str, Any]:
+    node_id = str(os.environ.get('AGENTOS_CORE_NODE_ID') or 'oracle-core-node').strip()
+    if not node_id:
+        raise ValueError('AGENTOS_CORE_NODE_ID cannot be empty')
+    tools = {name: bool(shutil.which(name)) for name in ('git', 'python3', 'curl', 'systemctl')}
+    return {
+        'schema': 'agentos.node-manifest/v0.1',
+        'realm_id': realm_id,
+        'node_id': node_id,
+        'role': 'core',
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'platform_release': platform.release(),
+        'capabilities': ['agentos.governance.read', 'agentos.one.resolve', 'agentos.realm.fabric'],
+        'tool_presence': tools,
+        'surface_inventory': {'surfaces': []},
+        'observed_at': _utc_now(),
+    }
+
+
+def _core_node_heartbeat(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'schema': 'agentos.node-heartbeat/v0.1',
+        'realm_id': manifest['realm_id'],
+        'node_id': manifest['node_id'],
+        'status': 'online',
+        'observed_at': _utc_now(),
+        'uptime_seconds': None,
+        'surface_count': len((manifest.get('surface_inventory') or {}).get('surfaces') or []),
+        'manifest': {**manifest, 'observed_at': _utc_now()},
+    }
+
+
+def _run_core_node_heartbeat(registry: NodeRegistry, manifest: dict[str, Any], stop: threading.Event) -> None:
+    interval = max(5, int(os.environ.get('AGENTOS_CORE_HEARTBEAT_SECONDS', '10')))
+    while not stop.is_set():
+        try:
+            registry.record_heartbeat(_core_node_heartbeat(manifest))
+        except Exception:
+            pass
+        stop.wait(interval)
 
 
 class RealmRequestHandler(BaseHTTPRequestHandler):
@@ -21,7 +76,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
         return self.server.fabric  # type: ignore[attr-defined]
 
     @property
-    def controller(self) -> ControllerService:
+    def controller(self) -> RuntimeControllerService:
         return self.server.controller  # type: ignore[attr-defined]
 
     def log_message(self, fmt: str, *args: Any) -> None:
@@ -133,35 +188,22 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             parsed = urlparse(self.path)
             if parsed.path == '/v1/join/request':
                 body = self._json_body()
-                result = self.fabric.request_join(
-                    manifest=dict(body.get('manifest') or {}),
-                    expires_minutes=int(body.get('expires_minutes') or 10),
-                )
+                result = self.fabric.request_join(manifest=dict(body.get('manifest') or {}), expires_minutes=int(body.get('expires_minutes') or 10))
                 self._send(200, {'ok': True, **result})
                 return
             if parsed.path == '/v1/join/status':
                 body = self._json_body()
-                result = self.fabric.join_status(
-                    request_id=str(body.get('request_id') or ''),
-                    claim_secret=str(body.get('claim_secret') or ''),
-                )
+                result = self.fabric.join_status(request_id=str(body.get('request_id') or ''), claim_secret=str(body.get('claim_secret') or ''))
                 self._send(200, {'ok': True, **result})
                 return
             if parsed.path == '/v1/join/claim':
                 body = self._json_body()
-                result = self.fabric.claim_join(
-                    request_id=str(body.get('request_id') or ''),
-                    claim_secret=str(body.get('claim_secret') or ''),
-                )
+                result = self.fabric.claim_join(request_id=str(body.get('request_id') or ''), claim_secret=str(body.get('claim_secret') or ''))
                 self._send(200, {'ok': True, **result})
                 return
             if parsed.path == '/v1/enroll':
                 body = self._json_body()
-                result = self.fabric.enroll(
-                    invite_id=str(body.get('invite_id') or ''),
-                    code=str(body.get('code') or ''),
-                    manifest=dict(body.get('manifest') or {}),
-                )
+                result = self.fabric.enroll(invite_id=str(body.get('invite_id') or ''), code=str(body.get('code') or ''), manifest=dict(body.get('manifest') or {}))
                 self._send(200, {'ok': True, **result})
                 return
             if parsed.path == '/v1/heartbeat':
@@ -179,6 +221,7 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     and effective.get('status') == 'online'
                     and effective.get('runtime_status') != 'converged'
                     and 'shell.exec' in set(effective.get('capabilities') or [])
+                    and (effective.get('workspace_roots') or {}).get('readable')
                 ):
                     auto_ota = self.controller.dispatch(node_id, {
                         'action': 'node.runtime.converge',
@@ -201,16 +244,34 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 receipt = self.fabric.record_receipt(body, token)
                 self._send(200, {'ok': True, 'receipt': receipt})
                 return
+            # Compatibility fence: preserve the live-accepted #64 transport contract.
+            # Privileged runtime/controller surfaces below remain separately authenticated.
+            if parsed.path == '/v1/controller/dispatch':
+                body = self._json_body()
+                result = LegacyControllerService(self.fabric).dispatch(body)
+                self._send(200, result)
+                return
+            if parsed.path == '/v1/resolve':
+                body = self._json_body()
+                if body.get('schema') not in (None, 'agentos.resolve-request/v1'):
+                    raise ValueError('invalid resolve request schema')
+                if str(body.get('intent') or 'continue') != 'continue':
+                    raise ValueError('only continue intent is supported in v1')
+                node_id = str(body.get('node_id') or '')
+                if not node_id:
+                    raise ValueError('node_id is required')
+                token = self._bearer()
+                self.fabric.authenticate(node_id, token)
+                node_context = bootstrap_snapshot(self.fabric, node_id, token)
+                project_query = str(body.get('project') or body.get('query') or '').strip()
+                if not project_query:
+                    raise ValueError('project query is required')
+                result = resolve_continuation(project_query, node_context=node_context)
+                self._send(200, {'ok': True, **result})
+                return
             if parsed.path == '/v1/controller/runtime/rollout':
                 self._authorize_controller()
                 result = self.controller.rollout_runtime(self._json_body())
-                self._send(202, result)
-                return
-            if parsed.path == '/v1/controller/dispatch':
-                self._authorize_controller()
-                body = self._json_body()
-                node_id = str(body.pop('node_id', '') or '')
-                result = self.controller.dispatch(node_id, body)
                 self._send(202, result)
                 return
             prefix = '/v1/controller/nodes/'
@@ -232,13 +293,29 @@ class RealmHTTPServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], fabric: RealmFabricStore, *, controller_token: str | None = None):
         super().__init__(address, RealmRequestHandler)
         self.fabric = fabric
-        self.controller = ControllerService(fabric)
+        self.controller = RuntimeControllerService(fabric)
         self.controller_token = controller_token if controller_token is not None else os.environ.get('AGENTOS_CONTROLLER_TOKEN', '')
 
 
 def serve(*, host: str = '127.0.0.1', port: int = 8780, fabric: RealmFabricStore | None = None, controller_token: str | None = None) -> None:
-    server = RealmHTTPServer((host, port), fabric or RealmFabricStore(), controller_token=controller_token)
+    store = fabric or RealmFabricStore()
+    realm = store.load()
+    realm_id = str(realm.get('realm_id') or '').strip()
+    if not realm_id:
+        raise ValueError('initialize Realm before serving')
+
+    registry = store.node_registry
+    manifest = _core_node_manifest(realm_id)
+    registry.register_manifest(manifest)
+    registry.record_heartbeat(_core_node_heartbeat(manifest))
+    stop = threading.Event()
+    heartbeat = threading.Thread(target=_run_core_node_heartbeat, args=(registry, manifest, stop), name='agentos-core-node-heartbeat', daemon=True)
+    heartbeat.start()
+
+    server = RealmHTTPServer((host, port), store, controller_token=controller_token)
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
+        stop.set()
+        heartbeat.join(timeout=2)
         server.server_close()
