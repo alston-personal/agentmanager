@@ -1,6 +1,7 @@
-from .v03 import (
+from .v04 import (
     load_asset,
     extract_ir,
+    stabilize_external_ir,
     diff_ir,
     reconcile_ir,
     score_roundtrip,
@@ -12,6 +13,7 @@ from .reversible import ir_digest
 __all__ = [
     "load_asset",
     "extract_ir",
+    "stabilize_external_ir",
     "diff_ir",
     "reconcile_ir",
     "score_roundtrip",
@@ -20,4 +22,4 @@ __all__ = [
     "ir_digest",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

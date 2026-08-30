@@ -1,0 +1,48 @@
+name: model2ir stabilized import v0.4
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_stabilized_import_regression.py'
+      - '.github/workflows/model2ir-stabilized-import-v04.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_stabilized_import_regression.py'
+      - '.github/workflows/model2ir-stabilized-import-v04.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stabilized-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e libs/model2ir
+      - name: Fetch external humanoid asset
+        run: curl -fL --retry 3 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF/CesiumMan.gltf -o /tmp/CesiumMan.gltf
+      - name: Stabilize import and prove future reversibility
+        run: |
+          rm -rf /tmp/model2ir-v04
+          python scripts/model2ir_stabilized_import_regression.py --input /tmp/CesiumMan.gltf --out /tmp/model2ir-v04
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/model2ir-v04/report.json'))
+          assert p['gate']['candidate_repeatability']==1.0
+          assert p['gate']['post_stabilization_reversibility']==1.0
+          assert p['roundtrip']['canonical_difference_count']==0
+          print('model2ir_stabilized_import_gate=PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-stabilized-import-v04
+          path: /tmp/model2ir-v04/
+          if-no-files-found: error
+          retention-days: 30
