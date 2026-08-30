@@ -56,6 +56,17 @@ class ControllerService:
             raise KeyError(node_id)
         return node
 
+    @staticmethod
+    def _maintenance_cwd(node: dict[str, Any]) -> str:
+        roots = node.get('workspace_roots') or {}
+        readable = roots.get('readable') if isinstance(roots, dict) else None
+        if not isinstance(readable, list):
+            raise ValueError('node does not advertise readable workspace roots')
+        candidates = [str(item).strip() for item in readable if str(item).strip()]
+        if not candidates:
+            raise ValueError('node does not advertise readable workspace roots')
+        return candidates[0]
+
     def _existing_task(self, task_id: str) -> dict[str, Any] | None:
         data = self.fabric.load()
         receipt = (data.get('receipts') or {}).get(task_id)
@@ -73,11 +84,19 @@ class ControllerService:
         return None
 
     @staticmethod
-    def _runtime_convergence_task(task_id: str, source_commit: str, source_ref: str = 'feature/realm-node-fabric-readiness') -> dict[str, Any]:
+    def _runtime_convergence_task(
+        task_id: str,
+        source_commit: str,
+        source_ref: str = 'feature/realm-node-fabric-readiness',
+        *,
+        cwd: str,
+    ) -> dict[str, Any]:
         if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
             raise ValueError('source_commit must be a 40-character lowercase git SHA')
         if source_ref not in {'main', 'feature/realm-node-fabric-readiness'}:
             raise ValueError('source_ref is not allowlisted')
+        if not str(cwd or '').strip():
+            raise ValueError('runtime convergence cwd is required')
         script = r'''$ErrorActionPreference='Stop'
 $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
 $base='https://raw.githubusercontent.com/alston-personal/agentmanager/SOURCE_COMMIT'
@@ -172,6 +191,7 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             'controller_action': 'node.runtime.converge',
             'executable': 'powershell',
             'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+            'cwd': str(cwd),
             'timeout_seconds': 60,
             'cognition_ids_used': [],
         }
@@ -198,14 +218,19 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             if 'shell.exec' not in set(node.get('capabilities') or []):
                 skipped.append({'node_id': node_id, 'reason': 'missing_maintenance_capability'})
                 continue
+            try:
+                cwd = self._maintenance_cwd(node)
+            except ValueError:
+                skipped.append({'node_id': node_id, 'reason': 'missing_workspace_authority'})
+                continue
             task_id = f'{rollout_id}_{node_id}'
             existing = self._existing_task(task_id)
             if existing is not None:
                 results.append({'node_id': node_id, 'task_id': task_id, 'state': existing.get('state'), 'reused': True})
                 continue
-            task = self._runtime_convergence_task(task_id, source_commit, source_ref)
+            task = self._runtime_convergence_task(task_id, source_commit, source_ref, cwd=cwd)
             queued = self.fabric.queue_task(node_id, task)
-            results.append({'node_id': node_id, 'task_id': task_id, 'state': 'queued', 'queued_at': queued.get('queued_at'), 'reused': False})
+            results.append({'node_id': node_id, 'task_id': task_id, 'state': 'queued', 'queued_at': queued.get('queued_at'), 'reused': False, 'cwd': cwd})
         return {
             'schema': 'agentos.realm-runtime-rollout/v0.1',
             'ok': True,
@@ -284,6 +309,7 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
                 task_id,
                 str(request.get('source_commit') or '').strip(),
                 str(request.get('source_ref') or 'feature/realm-node-fabric-readiness').strip(),
+                cwd=self._maintenance_cwd(node),
             )
         else:
             task = {
