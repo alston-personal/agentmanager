@@ -1,0 +1,79 @@
+{
+  "accepted_at": "2026-08-30T09:09:49.739356+00:00",
+  "deployment_generation": 5,
+  "deployment_status": "converged",
+  "gates": {
+    "candidate_contract_run_33303116461": true,
+    "generation5_exact_fenced_install_run_33303299206": true,
+    "legacy_controller_route_preserved": true,
+    "node_registry_transaction_safe": true,
+    "resolve_auth_boundary_preserved": true,
+    "vopc_workspace_authority_persisted": true
+  },
+  "lease_status": "released",
+  "live_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+  "release_receipt": {
+    "action": "agentos.realm-fabric.release_deployment",
+    "advanced_from_commit": "2fd2d052a3453aec8e3ec01f17fc48e1b1f94199",
+    "advanced_from_generation": 4,
+    "capsule_id": "action-2b2ceab16d904a7d9bc0d7abe307fdf7",
+    "completed_at": "2026-08-30T09:09:49Z",
+    "deployment_generation": 5,
+    "deployment_status": "converged",
+    "desired_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "executor_user": "ubuntu",
+    "lease_expires_at": "2026-08-30T09:09:49.073943+00:00",
+    "lease_owner": "agentos-core-mainline",
+    "lease_status": "released",
+    "observed_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "ok": true,
+    "released_at": "2026-08-30T09:09:49.073943+00:00",
+    "released_by": "agentos-core-mainline",
+    "result_schema": "agentos.core-deployment/v1",
+    "schema": "agentos.action-receipt/v1",
+    "started_at": "2026-08-30T09:09:49Z",
+    "updated_at": "2026-08-30T09:09:49.073943+00:00"
+  },
+  "schema": "agentos.core-runtime-candidate-live-acceptance/v1",
+  "workspace_authority": {
+    "capabilities": [
+      "agent.chat",
+      "agent.surface.inspect",
+      "code.edit",
+      "context.harvest",
+      "desktop.keyboard",
+      "desktop.mouse",
+      "desktop.open_url",
+      "desktop.screenshot",
+      "desktop.session.inspect",
+      "desktop.windows.inspect",
+      "filesystem.read",
+      "filesystem.write",
+      "ide.inspect",
+      "node.runtime.converge",
+      "process.inspect",
+      "shell.exec",
+      "tool.presence"
+    ],
+    "last_heartbeat_at": "2026-08-30T09:09:42Z",
+    "node_id": "vopc5750",
+    "runtime": {
+      "install_mode": "stage2-deferred-restart",
+      "installed_at": "2026-08-30T07:28:18Z",
+      "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+      "schema": "agentos.thin-client-runtime/v0.1",
+      "source_commit": "9a49e639e630431450308b00673689ae47bf10a9",
+      "source_ref": "feature/realm-node-fabric-readiness",
+      "status": "observed"
+    },
+    "schema": "agentos.node-workspace-authority-acceptance/v1",
+    "workspace_roots": {
+      "readable": [
+        "C:\\Users\\alston.huang\\AgentOS"
+      ],
+      "writable": [
+        "C:\\Users\\alston.huang\\AgentOS"
+      ]
+    }
+  }
+}
