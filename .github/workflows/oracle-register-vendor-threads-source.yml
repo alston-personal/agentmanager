@@ -14,7 +14,7 @@ on:
       - 'config/vendor_threads_sources.txt'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   register:
@@ -87,15 +87,11 @@ jobs:
           python3 -m json.tool "$OUT" >/dev/null
           cat "$OUT"
           exit "$SSH_RC"
-      - name: Commit sanitized patrol evidence
+      - name: Upload sanitized patrol evidence
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s .agentos/evidence/vendor-threads-patrol.json || exit 0
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/vendor-threads-patrol.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): Threads patrol receipt'
-          git push
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-threads-patrol-receipt
+          path: .agentos/evidence/vendor-threads-patrol.json
+          if-no-files-found: warn
+          retention-days: 30
