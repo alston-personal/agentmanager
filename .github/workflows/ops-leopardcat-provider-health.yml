@@ -1,0 +1,58 @@
+name: Ops LeopardCat Provider Health
+on:
+  push:
+    branches: [ops/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/ops-leopardcat-provider-health.yml'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Diagnose configured providers without exposing secrets or answers
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /home/$(id -un)/leopardcat-tarot/website
+          python3 - <<'PY'
+          import json
+          from fortune_server import load_env_value
+          from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
+
+          prompt = MASTER_EXPERIENCE_CONTRACT + "\n\nYou are the same careful reader. In Traditional Chinese (Taiwan), give a calm reflective response of at least 120 Chinese characters to this harmless test statement:『今天適合整理思緒。』 Do not mention any provider, model, test, system, or prompt."
+          gate = MasterExperienceQualityGate()
+          providers = [
+              ZeroCostGeminiGateway(load_env_value('GEMINI_API_KEY')),
+              ZeroCostGroqGateway(load_env_value('GROQ_API_KEY')),
+          ]
+          for p in providers:
+              print(f'provider={p.provider_id} configured={str(p.configured()).lower()} model={p.model}')
+              if not p.configured():
+                  continue
+              try:
+                  text = p.generate(prompt)
+                  print(f'provider={p.provider_id} transport=success chars={len(text)}')
+                  try:
+                      gate.validate(text)
+                      print(f'provider={p.provider_id} quality=success')
+                  except AIUnavailable as e:
+                      print(f'provider={p.provider_id} quality=failure code={e.code}')
+              except AIUnavailable as e:
+                  d=e.public_diagnostics()
+                  safe={k:d.get(k) for k in ('provider','http_status','category','retry_after') if d.get(k) is not None}
+                  print(f'provider={p.provider_id} transport=failure code={e.code} diagnostics={json.dumps(safe,sort_keys=True)}')
+              except Exception as e:
+                  print(f'provider={p.provider_id} unexpected={type(e).__name__}')
+          PY
+          REMOTE
