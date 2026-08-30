@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "model2ir"
-version = "0.3.0"
-description = "Reversible 3D asset to Character IR decompiler with structural semantic inference"
+version = "0.4.0"
+description = "Stable reversible Character IR import/export for 3D assets"
 requires-python = ">=3.10"
 dependencies = []
 
