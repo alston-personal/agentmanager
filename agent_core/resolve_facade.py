@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -183,6 +184,37 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return data
 
 
+def _continuation_index_id(raw: dict[str, Any] | None) -> str | None:
+    if not raw:
+        return None
+    direct = str(raw.get("index_id") or "").strip()
+    canonical_ir = raw.get("canonical_ir") if isinstance(raw.get("canonical_ir"), dict) else raw
+    nested = str(canonical_ir.get("index_id") or "").strip()
+    if direct and nested and direct != nested:
+        raise ValueError("continuation index_id mismatch between envelope and canonical_ir")
+    return direct or nested or None
+
+
+def _read_continuation_pair(project_dir: Path, *, attempts: int = 5) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    execution_path = project_dir / "execution-head.json"
+    continuation_path = project_dir / "continuity" / "latest.json"
+    last = None
+    for attempt in range(max(1, attempts)):
+        execution_head = _read_json(execution_path)
+        raw_continuation = _read_json(continuation_path)
+        head_index = str((execution_head or {}).get("index_id") or "").strip()
+        continuation_index = _continuation_index_id(raw_continuation)
+        fenced = bool(head_index or continuation_index)
+        if not fenced:
+            return execution_head, raw_continuation
+        if execution_head is not None and raw_continuation is not None and head_index and head_index == continuation_index:
+            return execution_head, raw_continuation
+        last = {"execution_head_index_id": head_index or None, "continuation_index_id": continuation_index}
+        if attempt + 1 < max(1, attempts):
+            time.sleep(0.01)
+    raise ValueError(f"continuation index generation mismatch: {last}")
+
+
 def _continuation_projection(raw: dict[str, Any] | None) -> dict[str, Any] | None:
     if not raw:
         return None
@@ -203,10 +235,9 @@ def resolve_continuation(project_query: str, *, governance_path: str | Path | No
     root = _data_root(data_root)
     project = resolve_project_identity(project_query, governance_path=governance_path, data_root=root)
     project_dir = root / "projects" / project["id"]
-    execution_head = _read_json(project_dir / "execution-head.json")
+    execution_head, raw_continuation = _read_continuation_pair(project_dir)
     if execution_head is not None and execution_head.get("schema") != "agentos.execution-head/v1":
         raise ValueError("unsupported execution-head schema")
-    raw_continuation = _read_json(project_dir / "continuity" / "latest.json")
     continuation = _continuation_projection(raw_continuation)
     active_goal = continuation.get("goal") if continuation else None
     recommended_action = continuation.get("recommended_action") if continuation else None
