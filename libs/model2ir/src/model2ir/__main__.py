@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse, json
 from pathlib import Path
-from . import extract_ir, diff_ir, reconcile_ir, stabilize_external_ir, compile_reversible_gltf
+from . import extract_ir, diff_ir, reconcile_ir, stabilize_external_ir, compile_reversible_gltf, audit_asset
 
 
 def load_json(path):
@@ -24,6 +24,8 @@ def main():
     p.add_argument('image_ir'); p.add_argument('model_ir'); p.add_argument('-o','--output', required=True)
     p = sub.add_parser('stabilize')
     p.add_argument('asset'); p.add_argument('-o','--output', required=True)
+    p = sub.add_parser('audit')
+    p.add_argument('asset'); p.add_argument('-o','--output', required=True); p.add_argument('--repeats',type=int,default=3)
     args = ap.parse_args()
 
     if args.cmd == 'extract':
@@ -32,6 +34,8 @@ def main():
         out = diff_ir(load_json(args.a), load_json(args.b))
     elif args.cmd == 'reconcile':
         out = reconcile_ir(load_json(args.image_ir), load_json(args.model_ir))
+    elif args.cmd == 'audit':
+        out = audit_asset(args.asset, repeats=args.repeats)
     else:
         model_ir = extract_ir(args.asset)
         candidate = stabilize_external_ir(model_ir)
