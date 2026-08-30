@@ -1,4 +1,5 @@
 name: Oracle vopc5750 Runtime Stage2 Start
+# Acceptance trigger: rerun the formal Node Golden Path after live /v1/bootstrap gateway routing was accepted.
 
 on:
   push:
