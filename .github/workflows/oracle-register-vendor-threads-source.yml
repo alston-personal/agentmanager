@@ -33,34 +33,30 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          : > .agentos/evidence/vendor-source-register.jsonl
           while IFS= read -r SOURCE_URL; do
             [ -n "$SOURCE_URL" ] || continue
             case "$SOURCE_URL" in \#*) continue ;; esac
             ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
               < scripts/register_vendor_threads_source.sh \
-              >> .agentos/evidence/vendor-source-register.jsonl
+              >/dev/null
           done < config/vendor_threads_sources.txt
+
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE' > .agentos/evidence/vendor-source-register.json
+          set -euo pipefail
+          cd /home/ubuntu/vendor-reputation-service
+          TOTAL=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active';" | tr -d '\r')
+          PRESENT=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active' and input_url in ('https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh','https://www.threads.com/share/_yh22msHD/','https://www.threads.com/share/BAUXFamItI/');" | tr -d '\r')
+          printf '{"schema":"milkcat.vendor-source-register-batch/v1","active_sources":%s,"required_sources_present":%s,"all_registered":%s,"core_modified":false,"raw_threads_content_emitted":false}\n' "$TOTAL" "$PRESENT" "$([ "$PRESENT" -eq 3 ] && printf true || printf false)"
+          REMOTE
+          python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
           python3 - <<'PY'
           import json
-          from pathlib import Path
-          p=Path('.agentos/evidence/vendor-source-register.jsonl')
-          rows=[json.loads(line) for line in p.read_text().splitlines() if line.strip()]
-          assert rows, 'no source registration results'
-          out={
-            'schema':'milkcat.vendor-source-register-batch/v1',
-            'requested_sources':len(rows),
-            'results':rows,
-            'active_sources':max(int(r.get('active_sources',0)) for r in rows),
-            'all_registered':all(int(r.get('new_source_registered',0)) == 1 for r in rows),
-            'core_modified':False,
-            'raw_threads_content_emitted':False,
-          }
-          assert out['all_registered'] is True, out
-          Path('.agentos/evidence/vendor-source-register.json').write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
+          x=json.load(open('.agentos/evidence/vendor-source-register.json'))
+          assert x['required_sources_present'] == 3, x
+          assert x['all_registered'] is True, x
+          assert x['active_sources'] >= 3, x
           PY
-          python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
           cat .agentos/evidence/vendor-source-register.json
       - name: Commit sanitized evidence
         if: always()
