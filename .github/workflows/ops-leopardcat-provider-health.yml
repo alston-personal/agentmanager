@@ -18,7 +18,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Diagnose configured providers without exposing secrets or answers
+      - name: Probe Groq model permissions without exposing secrets or answers
         shell: bash
         run: |
           set -euo pipefail
@@ -26,9 +26,9 @@ jobs:
           set -euo pipefail
           cd /home/$(id -un)/leopardcat-tarot/website
           python3 - <<'PY'
-          import json, os
+          import json, os, ssl, urllib.request, urllib.error
           from pathlib import Path
-          from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
+          from divination.ai_gateway import MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
 
           def env_value(name):
               value=os.environ.get(name)
@@ -41,32 +41,47 @@ jobs:
                   if s.startswith('export '): s=s[7:].lstrip()
                   if '=' in s:
                       k,v=s.split('=',1)
-                      if k.strip()==name:
-                          return v.strip().strip('"').strip("'") or None
+                      if k.strip()==name: return v.strip().strip('"').strip("'") or None
               return None
 
-          prompt = MASTER_EXPERIENCE_CONTRACT + "\n\nYou are the same careful reader. In Traditional Chinese (Taiwan), give a calm reflective response of at least 120 Chinese characters to this harmless statement:『今天適合整理思緒。』 Do not mention any provider, model, test, system, or prompt."
-          gate = MasterExperienceQualityGate()
-          providers = [
-              ZeroCostGeminiGateway(env_value('GEMINI_API_KEY')),
-              ZeroCostGroqGateway(env_value('GROQ_API_KEY')),
-          ]
-          for p in providers:
-              print(f'provider={p.provider_id} configured={str(p.configured()).lower()} model={p.model}')
-              if not p.configured(): continue
+          key=env_value('GROQ_API_KEY')
+          print('groq_key_present='+str(bool(key)).lower())
+          headers={'Authorization':'Bearer '+str(key or ''),'Content-Type':'application/json'}
+          context=ssl.create_default_context()
+          candidates=['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.8-27b','qwen/qwen3.6-27b','llama-3.3-70b-versatile']
+
+          try:
+              req=urllib.request.Request('https://api.groq.com/openai/v1/models',headers=headers)
+              with urllib.request.urlopen(req,context=context,timeout=20) as r:
+                  data=json.loads(r.read().decode())
+              ids={str(x.get('id')) for x in (data.get('data') or []) if isinstance(x,dict)}
+              print('models_endpoint=success')
+              for m in candidates: print(f'model_listed {m}={str(m in ids).lower()}')
+          except urllib.error.HTTPError as e:
+              print(f'models_endpoint=http_{e.code}')
+
+          prompt = MASTER_EXPERIENCE_CONTRACT + "\n\nIn Traditional Chinese (Taiwan), give a calm reflective response of at least 120 Chinese characters to:『今天適合整理思緒。』 Do not mention provider, model, test, system, or prompt."
+          gate=MasterExperienceQualityGate()
+          for model in candidates:
+              payload={'model':model,'messages':[{'role':'system','content':'Follow the supplied Master Experience Contract exactly. Return only the final reading.'},{'role':'user','content':prompt}],'temperature':0.45,'top_p':0.9,'max_tokens':500}
+              req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers=headers)
               try:
-                  text = p.generate(prompt)
-                  print(f'provider={p.provider_id} transport=success chars={len(text)}')
+                  with urllib.request.urlopen(req,context=context,timeout=30) as r:
+                      data=json.loads(r.read().decode())
+                  choices=data.get('choices') or []
+                  text=choices[0].get('message',{}).get('content') if choices else None
+                  if not isinstance(text,str):
+                      print(f'model_call {model}=empty')
+                      continue
                   try:
                       gate.validate(text)
-                      print(f'provider={p.provider_id} quality=success')
+                      print(f'model_call {model}=quality_success chars={len(text)}')
                   except AIUnavailable as e:
-                      print(f'provider={p.provider_id} quality=failure code={e.code}')
-              except AIUnavailable as e:
-                  d=e.public_diagnostics()
-                  safe={k:d.get(k) for k in ('provider','http_status','category','retry_after') if d.get(k) is not None}
-                  print(f'provider={p.provider_id} transport=failure code={e.code} diagnostics={json.dumps(safe,sort_keys=True)}')
+                      print(f'model_call {model}=quality_failure code={e.code} chars={len(text)}')
+              except urllib.error.HTTPError as e:
+                  category='forbidden' if e.code==403 else ('rate_limit' if e.code==429 else 'http_error')
+                  print(f'model_call {model}=http_{e.code} category={category}')
               except Exception as e:
-                  print(f'provider={p.provider_id} unexpected={type(e).__name__}')
+                  print(f'model_call {model}=unexpected_{type(e).__name__}')
           PY
           REMOTE
