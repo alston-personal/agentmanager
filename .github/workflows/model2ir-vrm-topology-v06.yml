@@ -45,15 +45,27 @@ jobs:
           assert p['gate']['insufficient_rig_unknown']
           print('model2ir_vrm_topology=PASS')
           PY
-      - name: Verify current CLI uses current schema
+      - name: Verify current CLI and stability audit
         run: |
           python -m model2ir extract /tmp/RiggedFigure.gltf -o /tmp/model2ir-v06/cli.json
+          python -m model2ir audit /tmp/RiggedFigure.gltf -o /tmp/model2ir-v06/rigged-audit.json --repeats 3
+          python -m model2ir audit /tmp/SimpleSkin.gltf -o /tmp/model2ir-v06/simple-audit.json --repeats 3
           python - <<'PY'
           import json
           p=json.load(open('/tmp/model2ir-v06/cli.json'))
+          r=json.load(open('/tmp/model2ir-v06/rigged-audit.json'))
+          s=json.load(open('/tmp/model2ir-v06/simple-audit.json'))
           assert p['schema']=='model2ir-character-ir/v0.6'
           assert 'topology_evidence' in p
-          print('model2ir_cli_current=PASS')
+          assert r['candidate_repeatable'] is True
+          assert r['semantic_authority']=='explicit-asset-semantics'
+          assert r['status']=='stable-candidate'
+          assert r['stabilizable'] is True
+          assert s['candidate_repeatable'] is True
+          assert s['semantic_authority']=='insufficient-semantic-evidence'
+          assert s['status']=='stable-unknown'
+          assert s['truth_policy']['unknown_is_allowed'] is True
+          print('model2ir_self_audit=PASS')
           PY
       - uses: actions/upload-artifact@v4
         with:
