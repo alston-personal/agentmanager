@@ -1,0 +1,32 @@
+name: Issue 77 Control Inbox Live Repair
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - 'scripts/repair_control_inbox_via_chronos_safe.sh'
+      - '.github/workflows/issue-77-control-inbox-live-repair.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded repair source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/repair_control_inbox_via_chronos_safe.sh
+          grep -q 'core_generation_unchanged=PASS' scripts/repair_control_inbox_via_chronos_safe.sh
+          grep -q 'control_inbox_runtime_decoupled=PASS' scripts/repair_control_inbox_via_chronos_safe.sh
+          ! grep -q 'install_control_inbox_bridge_user.sh' scripts/repair_control_inbox_via_chronos_safe.sh
+      - name: Repair Control Inbox through ubuntu Chronos carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/repair_control_inbox_via_chronos_safe.sh
