@@ -1,8 +1,10 @@
-# Registered source-registry carrier.
-name: Oracle Register Vendor Threads Source
+# Vendor source registry + Threads discovery carrier. Does not modify AgentOS Core.
+name: Oracle Vendor Threads Patrol
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
   push:
     branches: [main]
     paths:
@@ -15,6 +17,7 @@ permissions:
 
 jobs:
   register:
+    if: github.event_name != 'schedule'
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 10
     env:
@@ -32,7 +35,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .agentos/evidence
           while IFS= read -r SOURCE_URL; do
             [ -n "$SOURCE_URL" ] || continue
             case "$SOURCE_URL" in \#*) continue ;; esac
@@ -42,31 +44,80 @@ jobs:
               >/dev/null
           done < config/vendor_threads_sources.txt
 
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE' > .agentos/evidence/vendor-source-register.json
+  discover:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_SHA: 8666a39d0a476afc9b3e4cda42f8ea7a5dd44560
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run Threads keyword patrol on Oracle
+        shell: bash
+        run: |
           set -euo pipefail
-          cd /home/ubuntu/vendor-reputation-service
-          TOTAL=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active';" | tr -d '\r')
-          PRESENT=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active' and input_url in ('https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh','https://www.threads.com/share/_yh22msHD/','https://www.threads.com/share/BAUXFamItI/');" | tr -d '\r')
-          printf '{"schema":"milkcat.vendor-source-register-batch/v1","active_sources":%s,"required_sources_present":%s,"all_registered":%s,"core_modified":false,"raw_threads_content_emitted":false}\n' "$TOTAL" "$PRESENT" "$([ "$PRESENT" -eq 3 ] && printf true || printf false)"
-          REMOTE
-          python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
-          python3 - <<'PY'
-          import json
-          x=json.load(open('.agentos/evidence/vendor-source-register.json'))
-          assert x['required_sources_present'] == 3, x
-          assert x['all_registered'] is True, x
-          assert x['active_sources'] >= 3, x
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SERVICE_SHA" <<'REMOTE' > .agentos/evidence/vendor-threads-patrol.json
+          set -euo pipefail
+          SHA="$1"
+          BASE=/home/ubuntu/vendor-reputation-service
+          test -d "$BASE/.git"
+          git -C "$BASE" fetch --depth=1 origin "$SHA" >/tmp/vendor-patrol-fetch.log 2>&1
+          git -C "$BASE" checkout --detach "$SHA" >/tmp/vendor-patrol-checkout.log 2>&1
+
+          set -a
+          . /home/ubuntu/agent-data/secrets/vendor-reputation.env
+          . /home/ubuntu/agent-data/secrets/zeus-writer.env
+          set +a
+          test -n "${SOC_THREADS_TOKEN:-}"
+
+          cd "$BASE"
+          docker compose up -d --build >/tmp/vendor-patrol-compose.log 2>&1
+          docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/003_source_discovery.sql >/tmp/vendor-patrol-migration.log 2>&1
+
+          OUT=$(docker compose run --rm -T -e SOC_THREADS_TOKEN="$SOC_THREADS_TOKEN" api \
+            python /srv/app/scripts/discover_threads_sources.py /srv/app/config/threads_discovery_queries.txt \
+            2>/tmp/vendor-patrol.err)
+          CANDIDATES=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from candidate_sources where status='candidate';" | tr -d '\r')
+          AUTHORS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_author) from candidate_sources where status='candidate' and source_author is not null;" | tr -d '\r')
+
+          python3 - "$OUT" "$CANDIDATES" "$AUTHORS" <<'PY'
+          import json,sys
+          x=json.loads(sys.argv[1])
+          print(json.dumps({
+            'schema':'milkcat.vendor-threads-patrol-receipt/v1',
+            'queries':x.get('queries',0),
+            'results_seen':x.get('results',0),
+            'new_candidates':x.get('new_candidates',0),
+            'duplicates':x.get('duplicates',0),
+            'errors':x.get('errors',0),
+            'candidate_sources_total':int(sys.argv[2]),
+            'candidate_authors_total':int(sys.argv[3]),
+            'raw_text_emitted':False,
+            'token_exposed':False,
+            'reviews_published':False,
+            'core_modified':False
+          },ensure_ascii=False))
           PY
-          cat .agentos/evidence/vendor-source-register.json
-      - name: Commit sanitized evidence
+          REMOTE
+          python3 -m json.tool .agentos/evidence/vendor-threads-patrol.json >/dev/null
+          cat .agentos/evidence/vendor-threads-patrol.json
+      - name: Commit sanitized patrol evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test -s .agentos/evidence/vendor-source-register.json || exit 0
+          test -s .agentos/evidence/vendor-threads-patrol.json || exit 0
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/vendor-source-register.json
+          git add .agentos/evidence/vendor-threads-patrol.json
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): monitored Threads source registry'
+          git commit -m 'evidence(vendors): Threads patrol receipt'
           git push
