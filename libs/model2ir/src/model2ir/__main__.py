@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse, json
 from pathlib import Path
-from .core import extract_ir, diff_ir, reconcile_ir
+from . import extract_ir, diff_ir, reconcile_ir, stabilize_external_ir, compile_reversible_gltf
 
 
 def load_json(path):
@@ -17,16 +17,27 @@ def main():
     ap = argparse.ArgumentParser(prog='model2ir')
     sub = ap.add_subparsers(dest='cmd', required=True)
     p = sub.add_parser('extract')
-    p.add_argument('asset')
-    p.add_argument('-o', '--output', required=True)
+    p.add_argument('asset'); p.add_argument('-o', '--output', required=True)
     p = sub.add_parser('diff')
     p.add_argument('a'); p.add_argument('b'); p.add_argument('-o','--output', required=True)
     p = sub.add_parser('reconcile')
     p.add_argument('image_ir'); p.add_argument('model_ir'); p.add_argument('-o','--output', required=True)
+    p = sub.add_parser('stabilize')
+    p.add_argument('asset'); p.add_argument('-o','--output', required=True)
     args = ap.parse_args()
-    if args.cmd == 'extract': out = extract_ir(args.asset)
-    elif args.cmd == 'diff': out = diff_ir(load_json(args.a), load_json(args.b))
-    else: out = reconcile_ir(load_json(args.image_ir), load_json(args.model_ir))
+
+    if args.cmd == 'extract':
+        out = extract_ir(args.asset)
+    elif args.cmd == 'diff':
+        out = diff_ir(load_json(args.a), load_json(args.b))
+    elif args.cmd == 'reconcile':
+        out = reconcile_ir(load_json(args.image_ir), load_json(args.model_ir))
+    else:
+        model_ir = extract_ir(args.asset)
+        candidate = stabilize_external_ir(model_ir)
+        asset_json = load_json(args.asset)
+        out = compile_reversible_gltf(asset_json, candidate)
+
     write_json(args.output, out)
     print(json.dumps({'ok': True, 'schema': out.get('schema'), 'output': args.output}))
 
