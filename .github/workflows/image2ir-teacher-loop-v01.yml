@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/image2ir_teacher_compare.py'
       - 'scripts/image2ir_teacher_probe.mjs'
+      - 'scripts/image2ir_silhouette_fallback.py'
       - 'scripts/model2ir_teacher_dataset.py'
       - 'scripts/character_blueprint_glb_render.mjs'
       - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'scripts/image2ir_teacher_compare.py'
       - 'scripts/image2ir_teacher_probe.mjs'
+      - 'scripts/image2ir_silhouette_fallback.py'
       - 'scripts/model2ir_teacher_dataset.py'
       - 'scripts/character_blueprint_glb_render.mjs'
       - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
@@ -36,7 +38,7 @@ jobs:
 
       - name: Install runtimes
         run: |
-          python -m pip install -e libs/model2ir
+          python -m pip install -e libs/model2ir numpy pillow
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
 
@@ -62,7 +64,7 @@ jobs:
           grep -q '"ok":true' /tmp/image2ir-loop/probe.log
           test -s /tmp/image2ir-loop/prediction/probe.json
 
-      - name: Compare image IR to 3D teacher IR
+      - name: Score current public image2ir baseline
         run: |
           python scripts/image2ir_teacher_compare.py \
             --teacher-ir /tmp/image2ir-loop/teacher/cesium-man/character-ir.json \
@@ -71,21 +73,48 @@ jobs:
             --out /tmp/image2ir-loop/compare-front.json | tee /tmp/image2ir-loop/compare.log
           grep -q '"ok": true' /tmp/image2ir-loop/compare.log
 
-      - name: Validate measurable baseline
+      - name: Run detector-independent silhouette fallback
+        run: |
+          mkdir -p /tmp/image2ir-loop/fallback
+          python scripts/image2ir_silhouette_fallback.py \
+            /tmp/image2ir-loop/teacher/cesium-man/canonical-front.png \
+            --out /tmp/image2ir-loop/fallback/probe.json | tee /tmp/image2ir-loop/fallback.log
+          grep -q '"ok": true' /tmp/image2ir-loop/fallback.log
+          test -s /tmp/image2ir-loop/fallback/probe.json
+
+      - name: Score silhouette fallback against same teacher
+        run: |
+          python scripts/image2ir_teacher_compare.py \
+            --teacher-ir /tmp/image2ir-loop/teacher/cesium-man/character-ir.json \
+            --probe /tmp/image2ir-loop/fallback/probe.json \
+            --view front \
+            --out /tmp/image2ir-loop/compare-fallback-front.json | tee /tmp/image2ir-loop/compare-fallback.log
+          grep -q '"ok": true' /tmp/image2ir-loop/compare-fallback.log
+
+      - name: Validate measurable improvement
         run: |
           python - <<'PY'
           import json
-          p=json.load(open('/tmp/image2ir-loop/compare-front.json'))
-          assert p['schema']=='image2ir-teacher-compare/v0.1'
-          m=p['metrics']
-          assert isinstance(m['detector_acceptance'], bool)
-          assert 0 <= m['core_precision'] <= 1
-          assert 0 <= m['core_recall'] <= 1
-          assert 0 <= m['core_f1'] <= 1
-          assert 0 <= m['baseline_score'] <= 1
-          assert p['truth_policy']['detector_rejection_is_valid_zero_baseline'] is True
-          assert p['truth_policy']['teacher_unresolved_fields_are_excluded_from_dense_scoring'] is True
-          print('image2ir_teacher_loop_baseline=PASS', json.dumps(m, sort_keys=True))
+          base=json.load(open('/tmp/image2ir-loop/compare-front.json'))
+          fb=json.load(open('/tmp/image2ir-loop/compare-fallback-front.json'))
+          bm=base['metrics']; fm=fb['metrics']
+          assert base['schema']=='image2ir-teacher-compare/v0.1'
+          assert fb['schema']=='image2ir-teacher-compare/v0.1'
+          assert 0 <= bm['baseline_score'] <= 1
+          assert 0 <= fm['baseline_score'] <= 1
+          assert fb['prediction']['accepted'] is True
+          assert fm['core_f1'] > 0
+          assert fm['baseline_score'] > bm['baseline_score'], (bm, fm)
+          assert fb['truth_policy']['teacher_unresolved_fields_are_excluded_from_dense_scoring'] is True
+          report={
+            'schema':'image2ir-teacher-loop-improvement/v0.1',
+            'baseline':bm,
+            'fallback':fm,
+            'absolute_gain':round(fm['baseline_score']-bm['baseline_score'],4),
+            'gate':'PASS'
+          }
+          open('/tmp/image2ir-loop/improvement.json','w').write(json.dumps(report,indent=2)+'\n')
+          print('image2ir_teacher_loop_improvement=PASS', json.dumps(report, sort_keys=True))
           PY
 
       - uses: actions/upload-artifact@v4
