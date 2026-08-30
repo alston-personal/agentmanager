@@ -1,0 +1,236 @@
+{
+  "accepted_at": "2026-08-30T10:05:26.426422+00:00",
+  "advance_receipt": {
+    "action": "agentos.realm-fabric.advance_deployment",
+    "advanced_from_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "advanced_from_generation": 5,
+    "capsule_id": "action-b8e5e4ed3f1a42989b352f6509db860c",
+    "completed_at": "2026-08-30T10:05:19Z",
+    "deployment_generation": 6,
+    "deployment_status": "desired",
+    "desired_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "executor_user": "ubuntu",
+    "lease_expires_at": "2026-08-30T10:20:19.553638+00:00",
+    "lease_owner": "agentos-core-mainline",
+    "lease_status": "active",
+    "observed_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "ok": true,
+    "result_schema": "agentos.core-deployment/v1",
+    "schema": "agentos.action-receipt/v1",
+    "started_at": "2026-08-30T10:05:19Z",
+    "updated_at": "2026-08-30T10:05:19.553638+00:00"
+  },
+  "deployment_generation": 6,
+  "deployment_status": "converged",
+  "gates": {
+    "continuation_index_reader_fence": true,
+    "controller_route_preserved": true,
+    "project_continuation_publisher_source": true,
+    "resolve_auth_boundary_preserved": true
+  },
+  "install_receipt": {
+    "action": "agentos.realm-fabric.install_release",
+    "capsule_id": "action-65de78f314984fdd9e82d6edbcf27c5e",
+    "claim_receipt": {
+      "action": "agentos.realm-fabric.claim_deployment",
+      "advanced_from_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+      "advanced_from_generation": 5,
+      "capsule_id": "action-6ca6f66c304649c3831dba8ed740c5f5",
+      "claim_status": "idempotent",
+      "completed_at": "2026-08-30T10:05:20Z",
+      "deployment_generation": 6,
+      "deployment_status": "desired",
+      "desired_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+      "executor_user": "ubuntu",
+      "lease_expires_at": "2026-08-30T10:20:19.553638+00:00",
+      "lease_owner": "agentos-core-mainline",
+      "lease_status": "active",
+      "observed_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+      "ok": true,
+      "result_schema": "agentos.core-deployment/v1",
+      "schema": "agentos.action-receipt/v1",
+      "started_at": "2026-08-30T10:05:20Z",
+      "updated_at": "2026-08-30T10:05:19.553638+00:00"
+    },
+    "completed_at": "2026-08-30T10:05:23Z",
+    "current": "/home/ubuntu/.local/share/agentos/realm-fabric/current",
+    "current_pointer_mode": "legacy_directory_preserved",
+    "deployment_generation": 6,
+    "deployment_status": "converged",
+    "deployment_status_receipt": {
+      "action": "agentos.realm-fabric.deployment_status",
+      "advanced_from_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+      "advanced_from_generation": 5,
+      "capsule_id": "action-c0f2a057f9e740929204af2c262243c1",
+      "completed_at": "2026-08-30T10:05:24Z",
+      "deployment_generation": 6,
+      "deployment_status": "converged",
+      "desired_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+      "executor_user": "ubuntu",
+      "lease_expires_at": "2026-08-30T10:20:19.553638+00:00",
+      "lease_owner": "agentos-core-mainline",
+      "lease_status": "active",
+      "observed_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+      "ok": true,
+      "result_schema": "agentos.core-deployment/v1",
+      "schema": "agentos.action-receipt/v1",
+      "started_at": "2026-08-30T10:05:24Z",
+      "updated_at": "2026-08-30T10:05:23.358711+00:00"
+    },
+    "desired_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "endpoint": "http://127.0.0.1:8780",
+    "executor_user": "ubuntu",
+    "health": {
+      "body": "{\"ok\": true, \"realm_id\": \"realm-alston\", \"schema\": \"agentos.one-health/v0.1\"}",
+      "status": 200
+    },
+    "lease_expires_at": "2026-08-30T10:20:19.553638+00:00",
+    "lease_owner": "agentos-core-mainline",
+    "main_pid_after": 3368875,
+    "main_pid_before": 3330971,
+    "observed_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "ok": true,
+    "process_identity_attested": true,
+    "realm_id": "realm-alston",
+    "release": "/home/ubuntu/.local/share/agentos/realm-fabric/releases/f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "resolve_auth_probe": {
+      "body": "{\"error\": \"PermissionError: missing bearer credential\", \"ok\": false}",
+      "status": 401
+    },
+    "schema": "agentos.action-receipt/v1",
+    "service": "agentos-realm-fabric.service",
+    "source_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "started_at": "2026-08-30T10:05:21Z",
+    "steps": [
+      {
+        "argv": [
+          "git",
+          "-c",
+          "safe.directory=/home/ubuntu/agentmanager",
+          "-C",
+          "/home/ubuntu/agentmanager",
+          "fetch",
+          "origin",
+          "f842bee2cf7c24fc3bf7424bd121994562e829cd"
+        ],
+        "returncode": 0,
+        "stderr": "From https://github.com/alston-personal/agentmanager\n * branch            f842bee2cf7c24fc3bf7424bd121994562e829cd -> FETCH_HEAD\n",
+        "stdout": "",
+        "step": "fetch_source_commit"
+      },
+      {
+        "argv": [
+          "git",
+          "-c",
+          "safe.directory=/home/ubuntu/agentmanager",
+          "-C",
+          "/home/ubuntu/agentmanager",
+          "worktree",
+          "add",
+          "--detach",
+          "/tmp/realm-fabric-release-34afk7go/source",
+          "f842bee2cf7c24fc3bf7424bd121994562e829cd"
+        ],
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "Preparing worktree (detached HEAD f842bee)\nHEAD is now at f842bee ci(agentos): accept Core generation 6 continuation index\n",
+        "step": "materialize_source"
+      },
+      {
+        "argv": [
+          "/home/ubuntu/.local/share/agentos/realm-fabric/releases/f842bee2cf7c24fc3bf7424bd121994562e829cd/bin/agentos-one",
+          "--help"
+        ],
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "usage: agentos-one [-h] {init,invite,approve,serve,task,receipt,nodes} ...\n\npositional arguments:\n  {init,invite,approve,serve,task,receipt,nodes}\n\noptions:\n  -h, --help            show this help message and exit\n",
+        "step": "verify_launcher"
+      },
+      {
+        "argv": [
+          "/home/ubuntu/.local/share/agentos/realm-fabric/releases/f842bee2cf7c24fc3bf7424bd121994562e829cd/bin/agentos-one",
+          "init",
+          "--realm-id",
+          "realm-alston"
+        ],
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "{\n  \"realm_id\": \"realm-alston\"\n}\n",
+        "step": "init_realm"
+      },
+      {
+        "argv": [
+          "systemctl",
+          "--user",
+          "daemon-reload"
+        ],
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "",
+        "step": "daemon_reload"
+      },
+      {
+        "argv": [
+          "systemctl",
+          "--user",
+          "enable",
+          "agentos-realm-fabric.service"
+        ],
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "",
+        "step": "enable_service"
+      },
+      {
+        "main_pid_before": 3330971,
+        "observations": [
+          {
+            "returncode": 0,
+            "state": "active",
+            "stderr": ""
+          }
+        ],
+        "ok": true,
+        "restart": {
+          "argv": [
+            "systemctl",
+            "--user",
+            "--no-block",
+            "restart",
+            "agentos-realm-fabric.service"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": ""
+        },
+        "service": "agentos-realm-fabric.service",
+        "step": "restart_service"
+      }
+    ]
+  },
+  "lease_status": "released",
+  "live_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+  "release_receipt": {
+    "action": "agentos.realm-fabric.release_deployment",
+    "advanced_from_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+    "advanced_from_generation": 5,
+    "capsule_id": "action-9cb62eaa55f24e02b71748dae1f0ef23",
+    "completed_at": "2026-08-30T10:05:26Z",
+    "deployment_generation": 6,
+    "deployment_status": "converged",
+    "desired_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "executor_user": "ubuntu",
+    "lease_expires_at": "2026-08-30T10:05:26.382445+00:00",
+    "lease_owner": "agentos-core-mainline",
+    "lease_status": "released",
+    "observed_core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd",
+    "ok": true,
+    "released_at": "2026-08-30T10:05:26.382445+00:00",
+    "released_by": "agentos-core-mainline",
+    "result_schema": "agentos.core-deployment/v1",
+    "schema": "agentos.action-receipt/v1",
+    "started_at": "2026-08-30T10:05:26Z",
+    "updated_at": "2026-08-30T10:05:26.382445+00:00"
+  },
+  "schema": "agentos.core-continuation-index-live-acceptance/v1"
+}
