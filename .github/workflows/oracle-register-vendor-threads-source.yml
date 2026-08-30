@@ -52,7 +52,7 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      SERVICE_SHA: 1ea5b0e38db5d2d5f2228d1597e17acfdc5b8aad
+      SERVICE_SHA: 97cd0bd8671c2afce936d3d9479499db1585544e
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
