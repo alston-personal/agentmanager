@@ -1,0 +1,43 @@
+{
+  "acceptance": "PASS",
+  "cleanup": true,
+  "interactive_session": true,
+  "keyboard": {
+    "characters": 34,
+    "marker": "AGENTOS GUI KEYBOARD PASS 20260830",
+    "ok": true
+  },
+  "mouse": {
+    "button": "left",
+    "ok": true,
+    "operation": "click",
+    "x": 300,
+    "y": 260
+  },
+  "node_id": "vopc5750",
+  "schema": "agentos.node-gui-regression/v1",
+  "screenshot": {
+    "after_input": {
+      "artifact_file": ".agentos/evidence/node-gui/vopc5750/after-input.jpg",
+      "bytes": 227107,
+      "height": 1920,
+      "sha256": "73207f7abb55a2823458a6b6ac60a93f3302d1f7d19f60aff2ae507629bedd10",
+      "width": 3000
+    },
+    "before": {
+      "artifact_file": ".agentos/evidence/node-gui/vopc5750/before.jpg",
+      "bytes": 210964,
+      "height": 1920,
+      "sha256": "830073edb1b9305abdfab646bca0cc3c72f2fdb7c735a89405a531b4969a3970",
+      "width": 3000
+    }
+  },
+  "test_window": {
+    "observed": true,
+    "process_name": "powershell.exe"
+  },
+  "window_inspection": {
+    "ok": true,
+    "window_count": 25
+  }
+}
