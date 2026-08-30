@@ -18,7 +18,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe Groq model permissions without exposing secrets or answers
+      - name: Classify Groq authorization failure without exposing secret or message
         shell: bash
         run: |
           set -euo pipefail
@@ -28,7 +28,6 @@ jobs:
           python3 - <<'PY'
           import json, os, ssl, urllib.request, urllib.error
           from pathlib import Path
-          from divination.ai_gateway import MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
 
           def env_value(name):
               value=os.environ.get(name)
@@ -44,44 +43,40 @@ jobs:
                       if k.strip()==name: return v.strip().strip('"').strip("'") or None
               return None
 
-          key=env_value('GROQ_API_KEY')
+          key=env_value('GROQ_API_KEY') or ''
           print('groq_key_present='+str(bool(key)).lower())
-          headers={'Authorization':'Bearer '+str(key or ''),'Content-Type':'application/json'}
-          context=ssl.create_default_context()
-          candidates=['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.8-27b','qwen/qwen3.6-27b','llama-3.3-70b-versatile']
-
+          print('groq_key_prefix_valid='+str(key.startswith('gsk_')).lower())
+          print('groq_key_length_plausible='+str(30 <= len(key) <= 100).lower())
+          req=urllib.request.Request('https://api.groq.com/openai/v1/models',headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
           try:
-              req=urllib.request.Request('https://api.groq.com/openai/v1/models',headers=headers)
-              with urllib.request.urlopen(req,context=context,timeout=20) as r:
-                  data=json.loads(r.read().decode())
-              ids={str(x.get('id')) for x in (data.get('data') or []) if isinstance(x,dict)}
-              print('models_endpoint=success')
-              for m in candidates: print(f'model_listed {m}={str(m in ids).lower()}')
+              with urllib.request.urlopen(req,context=ssl.create_default_context(),timeout=20) as r:
+                  print('models_endpoint=success')
           except urllib.error.HTTPError as e:
-              print(f'models_endpoint=http_{e.code}')
-
-          prompt = MASTER_EXPERIENCE_CONTRACT + "\n\nIn Traditional Chinese (Taiwan), give a calm reflective response of at least 120 Chinese characters to:『今天適合整理思緒。』 Do not mention provider, model, test, system, or prompt."
-          gate=MasterExperienceQualityGate()
-          for model in candidates:
-              payload={'model':model,'messages':[{'role':'system','content':'Follow the supplied Master Experience Contract exactly. Return only the final reading.'},{'role':'user','content':prompt}],'temperature':0.45,'top_p':0.9,'max_tokens':500}
-              req=urllib.request.Request('https://api.groq.com/openai/v1/chat/completions',data=json.dumps(payload).encode(),headers=headers)
-              try:
-                  with urllib.request.urlopen(req,context=context,timeout=30) as r:
-                      data=json.loads(r.read().decode())
-                  choices=data.get('choices') or []
-                  text=choices[0].get('message',{}).get('content') if choices else None
-                  if not isinstance(text,str):
-                      print(f'model_call {model}=empty')
-                      continue
-                  try:
-                      gate.validate(text)
-                      print(f'model_call {model}=quality_success chars={len(text)}')
-                  except AIUnavailable as e:
-                      print(f'model_call {model}=quality_failure code={e.code} chars={len(text)}')
-              except urllib.error.HTTPError as e:
-                  category='forbidden' if e.code==403 else ('rate_limit' if e.code==429 else 'http_error')
-                  print(f'model_call {model}=http_{e.code} category={category}')
-              except Exception as e:
-                  print(f'model_call {model}=unexpected_{type(e).__name__}')
+              raw=e.read().decode('utf-8',errors='replace')
+              try: data=json.loads(raw)
+              except Exception: data={}
+              err=data.get('error') if isinstance(data,dict) else {}
+              if not isinstance(err,dict): err={}
+              message=str(err.get('message') or '').lower()
+              etype=str(err.get('type') or '')[:80]
+              ecode=str(err.get('code') or '')[:80]
+              if any(x in message for x in ('invalid api key','invalid_api_key','api key is invalid','authentication')):
+                  category='invalid_or_revoked_key'
+              elif any(x in message for x in ('organization','org')) and any(x in message for x in ('restricted','disabled','blocked','deactivated')):
+                  category='organization_restricted'
+              elif any(x in message for x in ('project','organization')) and any(x in message for x in ('permission','not allowed','forbidden','access')):
+                  category='project_or_org_permission'
+              elif any(x in message for x in ('model','permission','not allowed')):
+                  category='model_permission'
+              elif e.code==403:
+                  category='forbidden_unspecified'
+              elif e.code==401:
+                  category='authentication_failed'
+              else:
+                  category='other'
+              print(f'groq_http_status={e.code}')
+              print('groq_error_type='+etype)
+              print('groq_error_code='+ecode)
+              print('groq_error_category='+category)
           PY
           REMOTE
