@@ -96,17 +96,40 @@ jobs:
           docker compose up -d --build >/tmp/vendor-patrol-compose.log 2>&1
           docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/003_source_discovery.sql >/tmp/vendor-patrol-migration.log 2>&1
 
+          set +e
           OUT=$(docker compose run --rm -T -e SOC_THREADS_TOKEN="$SOC_THREADS_TOKEN" api \
             python /srv/app/scripts/discover_threads_sources.py /srv/app/config/threads_discovery_queries.txt \
             2>/tmp/vendor-patrol.err)
+          WORKER_RC=$?
+          set -e
+
           CANDIDATES=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from candidate_sources where status='candidate';" | tr -d '\r')
           AUTHORS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_author) from candidate_sources where status='candidate' and source_author is not null;" | tr -d '\r')
 
-          python3 - "$OUT" "$CANDIDATES" "$AUTHORS" <<'PY'
+          ERROR_TAIL=$(python3 - "$SOC_THREADS_TOKEN" <<'PY'
+          import pathlib,sys,re
+          token=sys.argv[1]
+          p=pathlib.Path('/tmp/vendor-patrol.err')
+          text=p.read_text(errors='replace') if p.exists() else ''
+          if token:
+              text=text.replace(token,'[REDACTED_TOKEN]')
+          text=re.sub(r'access_token=[^&\s]+','access_token=[REDACTED]',text)
+          text=' '.join(text.split())[-800:]
+          print(text)
+          PY
+          )
+
+          python3 - "$OUT" "$CANDIDATES" "$AUTHORS" "$WORKER_RC" "$ERROR_TAIL" <<'PY'
           import json,sys
-          x=json.loads(sys.argv[1])
+          out=sys.argv[1]
+          try:
+              x=json.loads(out) if out.strip() else {}
+          except Exception:
+              x={}
+          rc=int(sys.argv[4])
           print(json.dumps({
-            'schema':'milkcat.vendor-threads-patrol-receipt/v1',
+            'schema':'milkcat.vendor-threads-patrol-receipt/v2',
+            'worker_exit_code':rc,
             'queries':x.get('queries',0),
             'results_seen':x.get('results',0),
             'new_candidates':x.get('new_candidates',0),
@@ -114,15 +137,19 @@ jobs:
             'errors':x.get('errors',0),
             'candidate_sources_total':int(sys.argv[2]),
             'candidate_authors_total':int(sys.argv[3]),
+            'sanitized_error_tail':sys.argv[5] if rc else '',
             'raw_text_emitted':False,
             'token_exposed':False,
             'reviews_published':False,
             'core_modified':False
           },ensure_ascii=False))
           PY
+          exit "$WORKER_RC"
           REMOTE
+          RC=$?
           python3 -m json.tool .agentos/evidence/vendor-threads-patrol.json >/dev/null
           cat .agentos/evidence/vendor-threads-patrol.json
+          exit "$RC"
       - name: Commit sanitized patrol evidence
         if: always()
         shell: bash
