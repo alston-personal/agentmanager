@@ -1,0 +1,137 @@
+name: Oracle vopc5750 Runtime Converge
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-runtime-converge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  converge:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 7
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+
+      - name: Dispatch governed runtime rollout
+        id: rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF=$(git rev-parse HEAD)
+          python3 - "$REF" <<'PY' >/tmp/vopc5750-rollout.json
+          import json,sys,time
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+          ref=sys.argv[1]
+          rollout_id='vopc5750-single-owner-'+str(int(time.time()))
+          controller=ControllerService(RealmFabricStore())
+          result=controller.rollout_runtime({
+              'source_commit':ref,
+              'source_ref':'feature/realm-node-fabric-readiness',
+              'task_id':rollout_id,
+              'auto_converge':False,
+          })
+          print(json.dumps(result,ensure_ascii=False,indent=2,sort_keys=True))
+          assert result.get('ok') is True,result
+          assert result.get('policy',{}).get('desired_source_commit')==ref,result
+          nodes=[n for n in result.get('nodes',[]) if n.get('node_id')=='vopc5750']
+          assert len(nodes)==1,result
+          assert nodes[0].get('state') in {'queued','completed'},nodes[0]
+          PY
+          cat /tmp/vopc5750-rollout.json
+
+      - name: Wait for converge receipt and single managed owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF=$(git rev-parse HEAD)
+          python3 - "$REF" <<'PY'
+          import json,sys,time
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+          ref=sys.argv[1]
+          rollout=json.load(open('/tmp/vopc5750-rollout.json',encoding='utf-8'))
+          rollout_id=rollout['rollout_id']
+          task_id=next(n['task_id'] for n in rollout['nodes'] if n['node_id']=='vopc5750')
+          store=RealmFabricStore(); controller=ControllerService(store)
+          receipt=None
+          for _ in range(60):
+              receipt=store.get_receipt(task_id)
+              if receipt: break
+              time.sleep(2)
+          assert receipt is not None,task_id
+          print('runtime_converge_receipt='+json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          assert receipt.get('ok') is True,receipt
+          assert int(receipt.get('returncode') or 0)==0,receipt
+          assert 'agentos_runtime_converge=PASS' in str(receipt.get('stdout') or ''),receipt
+          assert 'agentos_single_owner_convergence=DEFERRED' in str(receipt.get('stdout') or ''),receipt
+
+          # The detached converger deliberately retires the daemon that returned
+          # the receipt, so allow an offline gap and require a fresh managed heartbeat.
+          accepted=None
+          for _ in range(90):
+              node=next((n for n in controller.nodes().get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
+              if node:
+                  runtime=node.get('runtime') or {}
+                  if node.get('status')=='online' and runtime.get('source_commit')==ref and node.get('runtime_status')=='converged':
+                      accepted=node; break
+              time.sleep(2)
+          assert accepted is not None,'exact managed heartbeat/runtime convergence timeout'
+          verification=controller.verify_runtime_rollout(rollout_id)
+          print('runtime_rollout_verification='+json.dumps(verification,ensure_ascii=False,sort_keys=True))
+          assert verification.get('ok') is True,verification
+          assert verification.get('desired_runtime_commit')==ref,verification
+          print('runtime_authority_converged=PASS')
+          PY
+
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore(); node='vopc5750'
+          tid='single-owner-verify-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $task=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction Stop
+          $watchdog=Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction Stop
+          $clients=@(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -match '^pythonw?\.exe$' -and
+            $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)'
+          })
+          $statusPath=Join-Path $env:LOCALAPPDATA 'AgentOS\runtime-convergence.json'
+          if(-not (Test-Path $statusPath)){ throw 'runtime-convergence.json missing' }
+          $status=Get-Content -Raw $statusPath | ConvertFrom-Json
+          Write-Output "TASK_STATE=$($task.State)"
+          Write-Output "CLIENT_COUNT=$($clients.Count)"
+          Write-Output "WATCHDOG_PRESENT=$($null -ne $watchdog)"
+          Write-Output "CONVERGENCE_STATUS=$($status.converged)"
+          Write-Output "RETIRED_CLIENT_COUNT=$($status.retired_client_count)"
+          if([string]$task.State -ne 'Running'){ exit 5 }
+          if($clients.Count -ne 1){ exit 6 }
+          if(-not $status.converged){ exit 7 }
+          Write-Output 'single_managed_client=PASS'
+          '''
+          store.queue_task(node,{
+              'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+              'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+              'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  print('single_owner_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True))
+                  assert r.get('ok') is True and int(r.get('returncode') or 0)==0,r
+                  assert 'single_managed_client=PASS' in str(r.get('stdout') or ''),r
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('single-owner verification receipt timeout')
+          PY
