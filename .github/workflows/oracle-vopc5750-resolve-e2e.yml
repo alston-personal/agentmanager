@@ -1,3 +1,4 @@
+# acceptance-rerun: 2026-08-30 live gateway resolve route accepted
 name: Oracle vopc5750 Resolve E2E
 
 on:
