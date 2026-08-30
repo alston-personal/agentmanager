@@ -1,0 +1,51 @@
+name: model2ir external semantics v0.3
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_external_semantic_regression.py'
+      - '.github/workflows/model2ir-external-semantics-v03.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_external_semantic_regression.py'
+      - '.github/workflows/model2ir-external-semantics-v03.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-semantics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e libs/model2ir
+      - name: Fetch public regression assets
+        run: |
+          curl -fL --retry 3 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF/CesiumMan.gltf -o /tmp/CesiumMan.gltf
+          curl -fL --retry 3 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AnimatedCube/glTF/AnimatedCube.gltf -o /tmp/AnimatedCube.gltf
+      - name: Run external 3D semantic regression
+        run: |
+          rm -rf /tmp/model2ir-v03
+          python scripts/model2ir_external_semantic_regression.py --cesium /tmp/CesiumMan.gltf --negative /tmp/AnimatedCube.gltf --out /tmp/model2ir-v03
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/model2ir-v03/report.json'))
+          assert p['gate']['status']=='PASS'
+          assert p['human']['joint_count'] >= 10
+          assert p['human']['body_plan']['kind']=='humanoid'
+          assert p['negative']['body_plan']['kind']!='humanoid'
+          print('model2ir_external_semantics_gate=PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-external-semantics-v03
+          path: /tmp/model2ir-v03/
+          if-no-files-found: error
+          retention-days: 30
