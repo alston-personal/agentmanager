@@ -1,0 +1,66 @@
+name: Oracle vopc5750 Lifecycle Diagnose
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-lifecycle-diagnose.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+      - name: Inspect Thin Client supervisor ownership
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore(); node='vopc5750'
+          tid='lifecycle-diagnose-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $names=@('AgentOS Thin Client','AgentOS Thin Client Watchdog')
+          foreach($name in $names){
+            $task=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            $info=Get-ScheduledTaskInfo -TaskName $name -ErrorAction SilentlyContinue
+            if($null -eq $task){ Write-Output "TASK|$name|MISSING"; continue }
+            $actions=@($task.Actions | ForEach-Object { "Execute=$($_.Execute);Arguments=$($_.Arguments);WorkingDirectory=$($_.WorkingDirectory)" }) -join ' || '
+            Write-Output "TASK|$name|State=$($task.State)|LastTaskResult=$($info.LastTaskResult)|LastRunTime=$($info.LastRunTime.ToUniversalTime().ToString('o'))|NextRunTime=$($info.NextRunTime.ToUniversalTime().ToString('o'))|Actions=$actions"
+          }
+          Get-CimInstance Win32_Process | Where-Object {
+            ($_.CommandLine -match 'agentos_node[\\/.]client_cli') -or
+            ($_.CommandLine -match 'agentos-client') -or
+            ($_.CommandLine -match 'AgentOS-ThinClient')
+          } | Sort-Object ProcessId | ForEach-Object {
+            Write-Output "PROC|PID=$($_.ProcessId)|PPID=$($_.ParentProcessId)|Name=$($_.Name)|CommandLine=$($_.CommandLine)"
+          }
+          Write-Output 'lifecycle_diagnose=PASS'
+          '''
+          store.queue_task(node,{
+            'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          for _ in range(45):
+            r=store.get_receipt(tid)
+            if r:
+              print(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True))
+              assert r.get('ok') is True and int(r.get('returncode') or 0)==0,r
+              assert 'lifecycle_diagnose=PASS' in str(r.get('stdout') or ''),r
+              raise SystemExit(0)
+            time.sleep(2)
+          raise SystemExit('diagnostic receipt timeout')
+          PY
