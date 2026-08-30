@@ -26,20 +26,34 @@ jobs:
           set -euo pipefail
           cd /home/$(id -un)/leopardcat-tarot/website
           python3 - <<'PY'
-          import json
-          from fortune_server import load_env_value
+          import json, os
+          from pathlib import Path
           from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
 
-          prompt = MASTER_EXPERIENCE_CONTRACT + "\n\nYou are the same careful reader. In Traditional Chinese (Taiwan), give a calm reflective response of at least 120 Chinese characters to this harmless test statement:『今天適合整理思緒。』 Do not mention any provider, model, test, system, or prompt."
+          def env_value(name):
+              value=os.environ.get(name)
+              if value: return value
+              p=Path('/home/ubuntu/agentmanager/.env')
+              if not p.exists(): return None
+              for raw in p.read_text(errors='replace').splitlines():
+                  s=raw.strip()
+                  if not s or s.startswith('#'): continue
+                  if s.startswith('export '): s=s[7:].lstrip()
+                  if '=' in s:
+                      k,v=s.split('=',1)
+                      if k.strip()==name:
+                          return v.strip().strip('"').strip("'") or None
+              return None
+
+          prompt = MASTER_EXPERIENCE_CONTRACT + "\n\nYou are the same careful reader. In Traditional Chinese (Taiwan), give a calm reflective response of at least 120 Chinese characters to this harmless statement:『今天適合整理思緒。』 Do not mention any provider, model, test, system, or prompt."
           gate = MasterExperienceQualityGate()
           providers = [
-              ZeroCostGeminiGateway(load_env_value('GEMINI_API_KEY')),
-              ZeroCostGroqGateway(load_env_value('GROQ_API_KEY')),
+              ZeroCostGeminiGateway(env_value('GEMINI_API_KEY')),
+              ZeroCostGroqGateway(env_value('GROQ_API_KEY')),
           ]
           for p in providers:
               print(f'provider={p.provider_id} configured={str(p.configured()).lower()} model={p.model}')
-              if not p.configured():
-                  continue
+              if not p.configured(): continue
               try:
                   text = p.generate(prompt)
                   print(f'provider={p.provider_id} transport=success chars={len(text)}')
