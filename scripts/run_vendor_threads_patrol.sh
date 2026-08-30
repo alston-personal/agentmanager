@@ -5,18 +5,20 @@ SHA="${1:?service sha required}"
 BASE=/home/ubuntu/vendor-reputation-service
 ERR=/tmp/vendor-patrol-stage.err
 OUT=/tmp/vendor-patrol-worker.out
+VENDOR_ENV=/home/ubuntu/agent-data/secrets/vendor-reputation.env
 : >"$ERR"
 : >"$OUT"
 
 emit_failure() {
   local stage="$1" rc="$2" file="${3:-$ERR}"
-  python3 - "$stage" "$rc" "$file" "${SOC_THREADS_TOKEN:-}" <<'PY'
+  python3 - "$stage" "$rc" "$file" "${SOC_THREADS_TOKEN:-}" "${VENDOR_ADMIN_TOKEN:-}" <<'PY'
 import json,pathlib,re,sys
-stage,rc,path,token=sys.argv[1],int(sys.argv[2]),sys.argv[3],sys.argv[4]
+stage,rc,path,threads_token,admin_token=sys.argv[1],int(sys.argv[2]),sys.argv[3],sys.argv[4],sys.argv[5]
 p=pathlib.Path(path)
 text=p.read_text(errors='replace') if p.exists() else ''
-if token:
-    text=text.replace(token,'[REDACTED_TOKEN]')
+for token in (threads_token, admin_token):
+    if token:
+        text=text.replace(token,'[REDACTED_TOKEN]')
 text=re.sub(r'access_token=[^&\s]+','access_token=[REDACTED]',text)
 text=' '.join(text.split())[-800:]
 print(json.dumps({
@@ -39,8 +41,25 @@ if [ ! -d "$BASE/.git" ]; then echo 'service git repo missing' >"$ERR"; emit_fai
 git -C "$BASE" fetch --depth=1 origin "$SHA" >"$ERR" 2>&1 || emit_failure fetch $?
 git -C "$BASE" checkout --detach "$SHA" >"$ERR" 2>&1 || emit_failure checkout $?
 
+if [ ! -f "$VENDOR_ENV" ]; then
+  echo 'vendor env missing' >"$ERR"
+  emit_failure vendor_env 2
+fi
+
+if ! grep -q '^VENDOR_ADMIN_TOKEN=' "$VENDOR_ENV"; then
+  ADMIN_TOKEN=$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+) || emit_failure admin_token_generate $?
+  umask 077
+  printf '\nVENDOR_ADMIN_TOKEN=%s\n' "$ADMIN_TOKEN" >> "$VENDOR_ENV" || emit_failure admin_token_write $?
+  chmod 600 "$VENDOR_ENV" || emit_failure admin_token_permissions $?
+  unset ADMIN_TOKEN
+fi
+
 set -a
-. /home/ubuntu/agent-data/secrets/vendor-reputation.env 2>"$ERR" || emit_failure vendor_env $?
+. "$VENDOR_ENV" 2>"$ERR" || emit_failure vendor_env $?
 set +a
 
 SOC_THREADS_TOKEN=$(python3 - <<'PY'
