@@ -163,9 +163,11 @@ SQL
 # normalized, semantically deduplicated registry even after legacy pending rows.
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/006_threads_source_identity.sql >/dev/null
 
-TOTAL=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active';" | tr -d '\r')
+# These commands run while this script itself is streamed to `bash -s` over
+# SSH. Isolate stdin so docker/psql cannot consume the remaining script source.
+TOTAL=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active';" < /dev/null | tr -d '\r')
 INPUT_ESC=$(esc "$INPUT")
-REGISTERED=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where source_type='threads_public_post' and status='active' and (input_url='$INPUT_ESC' or coalesce(metadata->'input_aliases','[]'::jsonb) ? '$INPUT_ESC');" | tr -d '\r')
-UNIQUE_OBJECTS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_object_id) from monitored_sources where source_type='threads_public_post' and status='active' and source_object_id is not null;" | tr -d '\r')
+REGISTERED=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where source_type='threads_public_post' and status='active' and (input_url='$INPUT_ESC' or coalesce(metadata->'input_aliases','[]'::jsonb) ? '$INPUT_ESC');" < /dev/null | tr -d '\r')
+UNIQUE_OBJECTS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_object_id) from monitored_sources where source_type='threads_public_post' and status='active' and source_object_id is not null;" < /dev/null | tr -d '\r')
 
 printf '{"schema":"milkcat.vendor-source-register/v2","service_sha":"%s","active_sources":%s,"registered_input_alias":%s,"unique_source_objects":%s,"canonical_state":"%s","core_modified":false,"raw_threads_content_emitted":false}\n' "$SHA" "$TOTAL" "$REGISTERED" "$UNIQUE_OBJECTS" "$CANONICAL_STATE"
