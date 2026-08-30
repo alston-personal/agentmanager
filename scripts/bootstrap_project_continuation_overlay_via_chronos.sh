@@ -28,7 +28,10 @@ p=sys.argv[1]; age=time.time()-os.stat(p).st_mtime
 print(f'chronos_log_age_seconds={age:.1f}')
 assert age <= 180, 'Chronos log is stale'
 PY
-ps -eo user,group,pid,ppid,etime,args | grep -F 'scripts/chronos.py' | grep -v grep
+ps -eo user,group,pid,ppid,lstart,etime,args | grep -F 'scripts/chronos.py' | grep -v grep
+
+echo '=== live Chronos triggers before bridge ==='
+tail -n 1500 "$DATA/logs/chronos.log" | grep -E "Loaded [0-9]+ scheduled tasks|swarm-board-refresh|update_scheduler_board.py|\[Trigger\]" | tail -n 200 || true
 
 cat "$TARGET" > "$BACKUP"
 python3 - "$TARGET" "$REQUEST_ID" "$RECEIPT" "$INSTALLER_COMMIT" <<'PY'
@@ -45,8 +48,15 @@ compile(target.read_text(encoding='utf-8'),str(target),'exec')
 PY
 
 echo "continuation_overlay_bridge_installed=YES request_id=$REQUEST_ID"
-for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
-test -f "$RECEIPT" || { echo 'continuation_overlay_receipt=TIMEOUT'; exit 3; }
+for i in $(seq 1 90); do [ -f "$RECEIPT" ] && break; sleep 1; done
+if [ ! -f "$RECEIPT" ]; then
+  echo 'continuation_overlay_receipt=TIMEOUT'
+  echo '=== live Chronos triggers during bridge window ==='
+  tail -n 2000 "$DATA/logs/chronos.log" | grep -E "Loaded [0-9]+ scheduled tasks|swarm-board-refresh|update_scheduler_board.py|\[Trigger\]" | tail -n 260 || true
+  echo '=== update_scheduler_board process evidence ==='
+  ps -eo user,group,pid,ppid,lstart,etime,args | grep -F 'update_scheduler_board.py' | grep -v grep || true
+  exit 3
+fi
 cat "$RECEIPT"
 
 python3 - "$RECEIPT" "$INSTALLER_COMMIT" <<'PY'
