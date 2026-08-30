@@ -17,6 +17,8 @@ CONTROLLER_ACTION_CAPABILITY = {
     'desktop.windows.inspect': 'desktop.windows.inspect',
     'desktop.screenshot': 'desktop.screenshot',
     'desktop.open_url': 'desktop.open_url',
+    'desktop.mouse': 'desktop.mouse',
+    'desktop.keyboard': 'desktop.keyboard',
     'node.runtime.converge': 'shell.exec',
 }
 
@@ -277,6 +279,48 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
             'nodes': observations,
         }
 
+    @staticmethod
+    def _desktop_input_task(action: str, task_id: str, request: dict[str, Any]) -> dict[str, Any]:
+        task: dict[str, Any] = {
+            'schema': 'agentos.node-task/v0.1',
+            'task_id': task_id,
+            'action': action,
+            'cognition_ids_used': list(request.get('cognition_ids_used') or []),
+        }
+        operation = str(request.get('operation') or '').strip()
+        if action == 'desktop.mouse':
+            if operation not in {'move', 'click'}:
+                raise ValueError('desktop.mouse operation must be move or click')
+            task['operation'] = operation
+            has_x, has_y = 'x' in request, 'y' in request
+            if has_x != has_y:
+                raise ValueError('desktop.mouse x and y must be provided together')
+            if has_x:
+                x, y = request['x'], request['y']
+                if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, int) or not isinstance(y, int):
+                    raise ValueError('desktop.mouse x and y must be integers')
+                if not (-32768 <= x <= 32767 and -32768 <= y <= 32767):
+                    raise ValueError('desktop.mouse coordinates outside bounded range')
+                task['x'], task['y'] = x, y
+            if operation == 'click':
+                button = str(request.get('button') or 'left').strip()
+                if button not in {'left', 'right'}:
+                    raise ValueError('desktop.mouse button must be left or right')
+                task['button'] = button
+            elif 'button' in request:
+                raise ValueError('desktop.mouse move does not accept button')
+            return task
+        if action == 'desktop.keyboard':
+            if operation != 'type':
+                raise ValueError('desktop.keyboard only supports operation=type')
+            text = request.get('text')
+            if not isinstance(text, str) or not (1 <= len(text) <= 1000):
+                raise ValueError('desktop.keyboard text must contain 1..1000 characters')
+            task['operation'] = 'type'
+            task['text'] = text
+            return task
+        raise ValueError(f'unsupported desktop input action: {action}')
+
     def dispatch(self, node_id: str, request: dict[str, Any]) -> dict[str, Any]:
         action = str(request.get('action') or '').strip()
         if action == 'realm.runtime.rollout':
@@ -304,7 +348,9 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
                 'state': existing.get('state'), 'reused': True,
             }
 
-        if action == 'node.runtime.converge':
+        if action in {'desktop.mouse', 'desktop.keyboard'}:
+            task = self._desktop_input_task(action, task_id, request)
+        elif action == 'node.runtime.converge':
             task = self._runtime_convergence_task(
                 task_id,
                 str(request.get('source_commit') or '').strip(),

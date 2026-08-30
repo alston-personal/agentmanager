@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ DEFAULT_ISSUE_NUMBER = 50
 DEFAULT_ALLOWED_LOGIN = 'alstonhuang'
 DEFAULT_ONE_URL = 'http://127.0.0.1:8780'
 MAX_COMMAND_LIFETIME_SECONDS = 600
+CONTROLLER_DISPATCH_SUCCESS_CODES = frozenset({200, 202})
 
 
 def _utc_now() -> datetime:
@@ -174,7 +176,7 @@ class OneControllerClient:
             **args,
         }
         status, payload = self._request('POST', '/v1/controller/dispatch', body)
-        if status != 202 or not isinstance(payload, dict) or not payload.get('ok'):
+        if status not in CONTROLLER_DISPATCH_SUCCESS_CODES or not isinstance(payload, dict) or not payload.get('ok'):
             raise RuntimeError(f'ONE dispatch failed: HTTP {status}: {payload}')
         return payload
 
@@ -241,6 +243,56 @@ class ControlInboxBridge:
             'args': args,
         }
 
+    def _compact_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
+        action = str(receipt.get('action') or '')
+        base = {key: receipt[key] for key in (
+            'schema', 'realm_id', 'node_id', 'task_id', 'action',
+            'started_at', 'completed_at', 'ok', 'error',
+        ) if key in receipt}
+        if action == 'desktop.screenshot' and receipt.get('ok'):
+            encoded = receipt.get('image_base64')
+            if not isinstance(encoded, str) or not encoded:
+                raise ValueError('desktop.screenshot receipt missing image_base64')
+            raw = base64.b64decode(encoded, validate=True)
+            digest = hashlib.sha256(raw).hexdigest()
+            expected = str(receipt.get('sha256') or '')
+            if expected and digest != expected:
+                raise ValueError('desktop.screenshot sha256 mismatch')
+            reported_bytes = int(receipt.get('bytes') or len(raw))
+            if reported_bytes != len(raw):
+                raise ValueError('desktop.screenshot byte count mismatch')
+            if len(raw) > 1_500_000:
+                raise ValueError('desktop.screenshot exceeds artifact limit')
+            artifact_root = self.config.state_path.parent / 'artifacts'
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            target = artifact_root / f'{digest}.jpg'
+            tmp = target.with_suffix('.tmp')
+            tmp.write_bytes(raw)
+            os.chmod(tmp, 0o600)
+            tmp.replace(target)
+            base.update({
+                'artifact_ref': f'agentos://control-inbox/artifacts/{digest}.jpg',
+                'sha256': digest,
+                'bytes': len(raw),
+                'width': receipt.get('width'),
+                'height': receipt.get('height'),
+                'mime_type': str(receipt.get('mime_type') or 'image/jpeg'),
+            })
+            return base
+        if action == 'desktop.windows.inspect':
+            windows = receipt.get('windows') or []
+            process_names = sorted({str(item.get('process_name')) for item in windows if isinstance(item, dict) and item.get('process_name')})
+            base.update({
+                'window_count': int(receipt.get('window_count') or len(windows)),
+                'process_names': process_names[:50],
+                'window_titles_redacted': True,
+            })
+            return base
+        for key in ('operation', 'button', 'x', 'y', 'characters', 'launched', 'url', 'surface_inventory'):
+            if key in receipt:
+                base[key] = receipt[key]
+        return base
+
     def _result(self, command: dict[str, Any], *, status: str, task_id: str | None = None, receipt: dict[str, Any] | None = None, error: str | None = None) -> dict[str, Any]:
         result: dict[str, Any] = {
             'schema': RESULT_SCHEMA,
@@ -253,7 +305,7 @@ class ControlInboxBridge:
         if task_id:
             result['task_id'] = task_id
         if receipt is not None:
-            result['receipt'] = receipt
+            result['receipt'] = self._compact_receipt(receipt)
         if error:
             result['error'] = error
         return result
