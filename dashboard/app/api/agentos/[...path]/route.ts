@@ -12,6 +12,7 @@ const ALLOWED: Record<string, Set<string>> = {
     "/v1/heartbeat",
     "/v1/benchmark",
     "/v1/receipts",
+    "/v1/resolve",
   ]),
 };
 
