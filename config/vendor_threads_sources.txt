@@ -1,0 +1,4 @@
+# Active Threads sources monitored by Vendor Reputation Service.
+# Keep share/input URLs verbatim; Oracle resolves canonical post URLs at registration/sync time.
+https://www.threads.com/share/_yh22msHD/
+https://www.threads.com/share/BAUXFamItI/
