@@ -1,0 +1,33 @@
+{
+  "schema": "agentos.issue77-control-inbox-live-acceptance/v1",
+  "issue": 77,
+  "accepted_at": "2026-08-30T11:36:45Z",
+  "source_commit": "2bc4c007981edd9268bb022d47db26c6e6fdfd1e",
+  "repair_workflow_run_id": 33309288927,
+  "repair_job_id": 99251299754,
+  "repair": {
+    "ubuntu_executor": true,
+    "executor_uid": 1001,
+    "control_inbox_github_auth_repair": "PASS",
+    "github_issue_read": "PASS",
+    "control_inbox_service": "active",
+    "control_inbox_runtime_decoupled": "PASS",
+    "core_generation_unchanged": "PASS",
+    "core_generation": 6,
+    "core_commit": "f842bee2cf7c24fc3bf7424bd121994562e829cd"
+  },
+  "final_command": {
+    "issue": 50,
+    "command_comment_id": 5468441671,
+    "result_comment_id": 5468442218,
+    "command_id": "issue77-final-acceptance-20260830T113626Z",
+    "node_id": "vopc5750",
+    "action": "agent.surface.inspect",
+    "status": "completed",
+    "task_id": "ctl_badbe25f6bf426be3b6cf21c",
+    "receipt_ok": true,
+    "surface_count": 4,
+    "providers": ["claude-code", "codex", "cursor", "vscode"]
+  },
+  "acceptance": "PASS"
+}
