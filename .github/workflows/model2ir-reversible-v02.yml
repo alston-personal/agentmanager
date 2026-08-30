@@ -1,0 +1,60 @@
+name: model2ir reversible v0.2
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_reversible_regression.py'
+      - '.github/workflows/model2ir-reversible-v02.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_reversible_regression.py'
+      - '.github/workflows/model2ir-reversible-v02.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reversible-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install model2ir
+        run: python -m pip install -e libs/model2ir
+      - name: Validate package version and API
+        run: |
+          python - <<'PY'
+          import model2ir
+          assert model2ir.__version__ == '0.2.0'
+          for name in ['extract_ir','diff_ir','reconcile_ir','score_roundtrip','compile_reversible_gltf','save_reversible_gltf','ir_digest']:
+              assert hasattr(model2ir, name), name
+          print('model2ir_v02_api=PASS')
+          PY
+      - name: Run reversible family regression
+        run: |
+          rm -rf /tmp/model2ir-v02
+          python scripts/model2ir_reversible_regression.py --out /tmp/model2ir-v02
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/model2ir-v02/report.json'))
+          assert p['case_count'] >= 5
+          assert p['all_lossless'] is True
+          assert p['external_asset_correctly_nonlossless'] is True
+          assert p['tamper_detection'] is True
+          assert p['gate']['observed'] == 1.0
+          print('model2ir_lossless_gate=PASS')
+          PY
+      - name: Upload reversible evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-reversible-v02
+          path: /tmp/model2ir-v02/
+          if-no-files-found: error
+          retention-days: 30
