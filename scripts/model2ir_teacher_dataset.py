@@ -45,7 +45,7 @@ def main():
     stable_digest = ir_digest(stable_ir)
 
     # Training data may contain ambiguity, but never silently invent truth.
-    stability = audit.get("stability", "unstable")
+    stability = audit.get("status", "unstable")
     if stability == "unstable":
         raise SystemExit("asset audit is unstable; refusing teacher dataset admission")
 
@@ -71,6 +71,7 @@ def main():
 
     dump(case_dir / "character-ir.json", stable_ir)
     dump(case_dir / "audit.json", audit)
+    unresolved = stable_ir.get("unresolved", [])
 
     examples = []
     for view in VIEWS:
@@ -84,7 +85,7 @@ def main():
             "target_ir_digest": stable_digest,
             "truth_status": stable_ir.get("truth_status", "candidate"),
             "semantic_authority": audit.get("semantic_authority"),
-            "unresolved": audit.get("unresolved", []),
+            "unresolved": unresolved,
         })
 
     manifest = {
@@ -103,6 +104,8 @@ def main():
             "target_ir": str(Path(args.case_id) / "character-ir.json"),
             "target_ir_digest": stable_digest,
             "stability": stability,
+            "semantic_authority": audit.get("semantic_authority"),
+            "unresolved_count": len(unresolved),
         }],
         "examples": examples,
     }
