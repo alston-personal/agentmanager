@@ -17,8 +17,8 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
-      EXPECTED_OLD_SHA: d38ea3aaccc2030d4b5264f3265f25bd1f3cb4fb
-      TARGET_SHA: 0c281862d6988756acbbc4b7615a1e08a644d9b0
+      EXPECTED_OLD_SHA: 0c281862d6988756acbbc4b7615a1e08a644d9b0
+      TARGET_SHA: 038cba4c11650d75531aea0e753f6123bd610467
     steps:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -123,9 +123,15 @@ jobs:
           python3 - <<'PY'
           import json
           p=json.load(open('/tmp/leopardcat-ai-policy.json'))
-          assert p.get('provider')=='gemini',p
+          assert p.get('provider')=='zero-cost-pool',p
+          assert p.get('primary_provider')=='gemini',p
           assert p.get('paid_fallback') is False,p
-          print(json.dumps({k:p.get(k) for k in ('cost_policy','provider','model','paid_fallback')},sort_keys=True))
+          assert p.get('random_model_routing') is False,p
+          providers=p.get('providers') or []
+          assert any(x.get('provider')=='gemini' for x in providers),p
+          assert any(x.get('provider')=='groq' for x in providers),p
+          safe={'cost_policy':p.get('cost_policy'),'provider':p.get('provider'),'primary_provider':p.get('primary_provider'),'paid_fallback':p.get('paid_fallback'),'random_model_routing':p.get('random_model_routing'),'providers':[{k:x.get(k) for k in ('provider','model','configured')} for x in providers]}
+          print(json.dumps(safe,sort_keys=True))
           PY
           echo "after_head=$("${gitc[@]}" rev-parse HEAD)"
           echo "deployment_verified=true"
@@ -137,4 +143,4 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS --max-time 10 https://leopardcat-tarot.milkcat.org/api/v1/ai-policy \
-            | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("provider")=="gemini" and p.get("paid_fallback") is False; print(json.dumps({k:p.get(k) for k in ("cost_policy","provider","model","paid_fallback")},sort_keys=True))'
+            | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("provider")=="zero-cost-pool" and p.get("primary_provider")=="gemini" and p.get("paid_fallback") is False and p.get("random_model_routing") is False; providers=p.get("providers") or []; assert any(x.get("provider")=="gemini" for x in providers) and any(x.get("provider")=="groq" for x in providers); print(json.dumps({"provider":p.get("provider"),"primary_provider":p.get("primary_provider"),"paid_fallback":p.get("paid_fallback"),"random_model_routing":p.get("random_model_routing"),"providers":[{k:x.get(k) for k in ("provider","model","configured")} for x in providers]},sort_keys=True))'
