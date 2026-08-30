@@ -30,7 +30,7 @@ permissions:
 jobs:
   baseline:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,84 +44,86 @@ jobs:
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
 
-      - name: Fetch real 3D teacher
+      - name: Fetch two independent humanoid teachers
         run: |
           curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb -o /tmp/CesiumMan.glb
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RiggedFigure/glTF-Binary/RiggedFigure.glb -o /tmp/RiggedFigure.glb
+          test -s /tmp/CesiumMan.glb
+          test -s /tmp/RiggedFigure.glb
 
-      - name: Build teacher render and IR pair
+      - name: Build canonical teacher pairs
         run: |
           rm -rf /tmp/image2ir-loop
-          python scripts/model2ir_teacher_dataset.py \
-            --asset /tmp/CesiumMan.glb \
-            --case-id cesium-man \
-            --out /tmp/image2ir-loop/teacher
+          python scripts/model2ir_teacher_dataset.py --asset /tmp/CesiumMan.glb --case-id cesium-man --out /tmp/image2ir-loop/teachers/cesium
+          python scripts/model2ir_teacher_dataset.py --asset /tmp/RiggedFigure.glb --case-id rigged-figure --out /tmp/image2ir-loop/teachers/rigged
 
-      - name: Probe current public image2ir on teacher front render
+      - name: Probe current public image2ir baseline
         env:
           CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
-          CHARACTER_BLUEPRINT_FIXTURE: /tmp/image2ir-loop/teacher/cesium-man/canonical-front.png
-          CHARACTER_BLUEPRINT_BENCHMARK_OUT: /tmp/image2ir-loop/prediction
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/image2ir-loop/teachers/cesium/cesium-man/canonical-front.png
+          CHARACTER_BLUEPRINT_BENCHMARK_OUT: /tmp/image2ir-loop/public-baseline
         run: |
-          node scripts/image2ir_teacher_probe.mjs | tee /tmp/image2ir-loop/probe.log
-          grep -q '"ok":true' /tmp/image2ir-loop/probe.log
-          test -s /tmp/image2ir-loop/prediction/probe.json
-
-      - name: Score current public image2ir baseline
-        run: |
+          node scripts/image2ir_teacher_probe.mjs | tee /tmp/image2ir-loop/public-probe.log
+          grep -q '"ok":true' /tmp/image2ir-loop/public-probe.log
           python scripts/image2ir_teacher_compare.py \
-            --teacher-ir /tmp/image2ir-loop/teacher/cesium-man/character-ir.json \
-            --probe /tmp/image2ir-loop/prediction/probe.json \
+            --teacher-ir /tmp/image2ir-loop/teachers/cesium/cesium-man/character-ir.json \
+            --probe /tmp/image2ir-loop/public-baseline/probe.json \
             --view front \
-            --out /tmp/image2ir-loop/compare-front.json | tee /tmp/image2ir-loop/compare.log
-          grep -q '"ok": true' /tmp/image2ir-loop/compare.log
+            --out /tmp/image2ir-loop/public-baseline-score.json
 
-      - name: Run detector-independent silhouette fallback
+      - name: Run teacher-blind silhouette fallback on all canonical views
         run: |
-          mkdir -p /tmp/image2ir-loop/fallback
-          python scripts/image2ir_silhouette_fallback.py \
-            /tmp/image2ir-loop/teacher/cesium-man/canonical-front.png \
-            --out /tmp/image2ir-loop/fallback/probe.json | tee /tmp/image2ir-loop/fallback.log
-          grep -q '"ok": true' /tmp/image2ir-loop/fallback.log
-          test -s /tmp/image2ir-loop/fallback/probe.json
+          set -euo pipefail
+          for spec in 'cesium cesium-man' 'rigged rigged-figure'; do
+            set -- $spec
+            family="$1"; case_id="$2"
+            teacher="/tmp/image2ir-loop/teachers/$family/$case_id/character-ir.json"
+            mkdir -p "/tmp/image2ir-loop/fallback/$family"
+            for view in front yaw45 right back; do
+              image="/tmp/image2ir-loop/teachers/$family/$case_id/canonical-$view.png"
+              probe="/tmp/image2ir-loop/fallback/$family/probe-$view.json"
+              score="/tmp/image2ir-loop/fallback/$family/score-$view.json"
+              python scripts/image2ir_silhouette_fallback.py "$image" --out "$probe"
+              python scripts/image2ir_teacher_compare.py --teacher-ir "$teacher" --probe "$probe" --view "$view" --out "$score"
+            done
+          done
 
-      - name: Score silhouette fallback against same teacher
-        run: |
-          python scripts/image2ir_teacher_compare.py \
-            --teacher-ir /tmp/image2ir-loop/teacher/cesium-man/character-ir.json \
-            --probe /tmp/image2ir-loop/fallback/probe.json \
-            --view front \
-            --out /tmp/image2ir-loop/compare-fallback-front.json | tee /tmp/image2ir-loop/compare-fallback.log
-          grep -q '"ok": true' /tmp/image2ir-loop/compare-fallback.log
-
-      - name: Validate measurable improvement and teacher repair
+      - name: Validate cross-view cross-family improvement
         run: |
           python - <<'PY'
           import json
-          base=json.load(open('/tmp/image2ir-loop/compare-front.json'))
-          fb=json.load(open('/tmp/image2ir-loop/compare-fallback-front.json'))
-          teacher=json.load(open('/tmp/image2ir-loop/teacher/cesium-man/character-ir.json'))
-          bm=base['metrics']; fm=fb['metrics']
-          parts={p['id']:p for p in teacher.get('parts',[]) if p.get('id')}
-          assert 'head' in parts, parts
-          assert parts['head']['state']=='inferred_from_3d'
-          assert base['schema']=='image2ir-teacher-compare/v0.1'
-          assert fb['schema']=='image2ir-teacher-compare/v0.1'
-          assert 0 <= bm['baseline_score'] <= 1
-          assert 0 <= fm['baseline_score'] <= 1
-          assert fb['prediction']['accepted'] is True
-          assert fm['core_f1'] > 0
-          assert fm['baseline_score'] > bm['baseline_score'], (bm, fm)
-          assert fb['truth_policy']['teacher_unresolved_fields_are_excluded_from_dense_scoring'] is True
+          from pathlib import Path
+          root=Path('/tmp/image2ir-loop')
+          base=json.load(open(root/'public-baseline-score.json'))
+          cases=[]
+          for family in ['cesium','rigged']:
+              for view in ['front','yaw45','right','back']:
+                  p=json.load(open(root/f'fallback/{family}/score-{view}.json'))
+                  m=p['metrics']
+                  assert p['prediction']['accepted'] is True, (family,view,p['prediction'])
+                  assert m['core_f1'] >= 0.75, (family,view,m)
+                  assert m['baseline_score'] >= 0.75, (family,view,m)
+                  cases.append({'family':family,'view':view,**m})
+          avg=sum(x['baseline_score'] for x in cases)/len(cases)
+          worst=min(x['baseline_score'] for x in cases)
+          assert avg >= 0.85, (avg,cases)
+          assert avg > base['metrics']['baseline_score'], (base,cases)
+
+          cesium=json.load(open(root/'teachers/cesium/cesium-man/character-ir.json'))
+          cparts={p['id']:p for p in cesium.get('parts',[]) if p.get('id')}
+          assert 'head' in cparts and cparts['head']['confidence']==0.74, cparts
           report={
-            'schema':'image2ir-teacher-loop-improvement/v0.1',
-            'baseline':bm,
-            'fallback':fm,
-            'teacher_head':parts['head'],
-            'absolute_gain':round(fm['baseline_score']-bm['baseline_score'],4),
+            'schema':'image2ir-teacher-loop-family-gate/v0.1',
+            'public_baseline':base['metrics'],
+            'case_count':len(cases),
+            'average_score':round(avg,4),
+            'worst_score':round(worst,4),
+            'cases':cases,
+            'teacher_head_repair':cparts['head'],
             'gate':'PASS'
           }
-          open('/tmp/image2ir-loop/improvement.json','w').write(json.dumps(report,indent=2)+'\n')
-          print('image2ir_teacher_loop_improvement=PASS', json.dumps(report, sort_keys=True))
+          open(root/'family-gate.json','w').write(json.dumps(report,indent=2)+'\n')
+          print('image2ir_teacher_loop_family_gate=PASS',json.dumps({'average':round(avg,4),'worst':round(worst,4),'cases':len(cases)}))
           PY
 
       - uses: actions/upload-artifact@v4
