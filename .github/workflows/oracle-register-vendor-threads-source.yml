@@ -25,7 +25,7 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      SERVICE_SHA: fbcf3cb1ece1bf7b2d928634cf4afd3901cf894b
+      SERVICE_SHA: 21fb1e9e32211060161c9c84c865e3d1ce428cb2
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
@@ -36,14 +36,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .agentos/evidence
+          : > .agentos/evidence/vendor-source-registration.jsonl
           while IFS= read -r SOURCE_URL; do
             [ -n "$SOURCE_URL" ] || continue
             case "$SOURCE_URL" in \#*) continue ;; esac
             ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
               < scripts/register_vendor_threads_source.sh \
-              >/dev/null
+              >> .agentos/evidence/vendor-source-registration.jsonl
           done < config/vendor_threads_sources.txt
+          python3 - <<'PY'
+          import json
+          path='.agentos/evidence/vendor-source-registration.jsonl'
+          rows=[json.loads(line) for line in open(path) if line.strip()]
+          assert rows, rows
+          assert all(x.get('core_modified') is False for x in rows), rows
+          assert all(x.get('raw_threads_content_emitted') is False for x in rows), rows
+          print(json.dumps({
+            'registrations': len(rows),
+            'active_sources': rows[-1].get('active_sources'),
+            'unique_source_objects': rows[-1].get('unique_source_objects'),
+            'core_modified': False,
+            'raw_threads_content_emitted': False,
+          }, ensure_ascii=False))
+          PY
+      - name: Upload sanitized registration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-source-registration-${{ github.run_id }}
+          path: .agentos/evidence/vendor-source-registration.jsonl
+          if-no-files-found: error
+          retention-days: 30
 
   discover:
     runs-on: [self-hosted, Linux, ARM64, oracle]
@@ -52,7 +76,7 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      SERVICE_SHA: 97cd0bd8671c2afce936d3d9479499db1585544e
+      SERVICE_SHA: 21fb1e9e32211060161c9c84c865e3d1ce428cb2
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
@@ -80,7 +104,7 @@ jobs:
           import json,pathlib,sys
           rc=int(sys.argv[1]); p=pathlib.Path(sys.argv[2])
           text=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
-          print(json.dumps({'schema':'milkcat.vendor-threads-patrol-receipt/v6','ok':False,'failed_stage':'ssh','worker_exit_code':None,'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,'harvest_vendor_matches':0,'harvest_filtered_out':0,'new_candidates':0,'duplicates':0,'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,'reputation_vendors_computed':0,'reputation_reviews_seen':0,'reputation_independent_voices':0,'reputation_duplicate_actor_reviews_collapsed':0,'errors':1,'candidate_sources_total':None,'candidate_authors_total':None,'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,'token_exposed':False,'reviews_published':False,'core_modified':False},ensure_ascii=False))
+          print(json.dumps({'schema':'milkcat.vendor-threads-patrol-receipt/v7','ok':False,'failed_stage':'ssh','worker_exit_code':None,'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,'harvest_vendor_matches':0,'harvest_filtered_out':0,'new_candidates':0,'duplicates':0,'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,'reputation_vendors_computed':0,'reputation_reviews_seen':0,'reputation_independent_voices':0,'reputation_duplicate_actor_reviews_collapsed':0,'active_monitored_sources':None,'unique_source_objects':None,'errors':1,'candidate_sources_total':None,'candidate_authors_total':None,'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,'token_exposed':False,'reviews_published':False,'core_modified':False},ensure_ascii=False))
           PY
           fi
           rm -f "$SSHERR"
@@ -99,6 +123,8 @@ jobs:
           x=json.load(open(sys.argv[1]))
           print('## Vendor Threads Patrol')
           print(f"- ok: `{x.get('ok')}`")
+          print(f"- active monitored sources: `{x.get('active_monitored_sources')}`")
+          print(f"- unique source objects: `{x.get('unique_source_objects')}`")
           print(f"- results seen: `{x.get('results_seen',0)}`")
           print(f"- vendor matches: `{x.get('harvest_vendor_matches',0)}`")
           print(f"- new candidates: `{x.get('new_candidates',0)}`")
