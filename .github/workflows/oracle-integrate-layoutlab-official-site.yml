@@ -5,168 +5,50 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/layoutlab_api.py'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  integrate:
+  metashield_version_bump:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 12
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Prepare LayoutLib runtime and governed API port
+      - name: Deterministically bump local Chamber extension
         shell: bash
         run: |
           set -euo pipefail
-          CODE=/home/agentos-node/projects/layoutlib
-          DATA=/home/ubuntu/agent-data
-          python3 scripts/bootstrap_layoutlib.py --target "$CODE"
-          python3 scripts/bootstrap_layoutlib_hardening.py --target "$CODE"
-          python3 -m pip install --user 'Pillow>=10,<13'
-          AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py allocate layoutlab-api --desc 'Layout Lab official-site API' --start 8800 --end 8899
-          PORT=$(AGENT_DATA_ROOT="$DATA" python3 scripts/core_services/port_manager.py list --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(min(int(k) for k,v in d.items() if v.get("project")=="layoutlab-api"))')
-          echo "$PORT" > /tmp/layoutlab-api-port
-          echo "layoutlab_api_port=$PORT"
-
-      - name: Apply minimal official-site integration through Antigravity relay
-        shell: bash
-        run: |
-          set -euo pipefail
+          ROOT=/home/ubuntu/metashield-protocol
+          MANIFEST="$ROOT/extension/manifest.json"
+          test -f "$MANIFEST"
           mkdir -p .agentos/evidence
-          OUT=.agentos/evidence/layoutlab-official-site-integration.txt
-          RUNTIME=/home/ubuntu/.local/share/agentos/runtime-vnext
-          RELAY=/home/ubuntu/agent-data/runtime/antigravity-relay
-          PORT=$(cat /tmp/layoutlab-api-port)
-          CAPSULE_ID=$(PYTHONPATH="$RUNTIME" PORT="$PORT" python3 - <<'PY'
-          import os
-          from agentos_node.antigravity_relay import AntigravityRelayClient
-          port=os.environ['PORT']
-          instruction = f"""Deploy Layout Lab into the existing studio.milkcat.org site with the smallest possible change.
-
-Verified inputs:
-- website checkout: /home/ubuntu/zeus-writer
-- website build root: /home/ubuntu/zeus-writer/website
-- expected static artifact: /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
-- API source: /home/ubuntu/agentmanager/scripts/layoutlab_api.py
-- LayoutLib root: /home/agentos-node/projects/layoutlib
-- governed API port: {port}
-
-Required execution:
-1. Inspect the current site server/config and preserve every unrelated route.
-2. If /home/ubuntu/zeus-writer is clean, fetch and fast-forward its configured branch, then npm build the website. If it is dirty, do not overwrite local changes; report the exact dirty paths and continue only if the existing dist/layout-lab artifact is sufficient.
-3. Create/update ubuntu user service layoutlab-api.service. It must run /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}; set LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib; restart on failure. Use the existing ubuntu user manager, not a root service.
-4. Verify localhost health at http://127.0.0.1:{port}/healthz returns HTTP 200 and JSON ok=true.
-5. Add only the reverse-proxy route needed for /layout-lab/api/ on studio.milkcat.org, preserving the static /layout-lab/ route and all unrelated routes. Back up the one config changed. Validate the web-server configuration before reload. If validation fails, restore the backup and do not reload.
-6. Reload only the affected existing web server via the host's existing privilege mechanism. Do not change DNS, TLS, firewall, or unrelated virtual hosts.
-7. Verify publicly: https://studio.milkcat.org/layout-lab/ is HTTP 200 and contains Layout Lab; https://studio.milkcat.org/layout-lab/api/healthz is HTTP 200 with ok=true.
-8. Build a small synthetic high-contrast PNG and POST it as multipart field image to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel=0.02, wall_height_m=2.7, threshold=128, min_wall_length_px=16. Require HTTP 200, ok=true, Spatial IR and at least one wall.
-9. Return exact changed paths, unit status, web-server validation/reload result, public status codes and parse wall count.
-
-You are authorized only for these Layout Lab deployment changes. Do not perform unrelated cleanup or configuration changes."""
-          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          capsule=client.submit(
-              project_id='layoutlib',
-              canonical_ir={
-                  'goal':'Make LayoutLib directly usable at the existing official Studio Web UI.',
-                  'constraints':['minimal changes only','preserve unrelated routes','no DNS TLS or firewall changes'],
-              },
-              instruction=instruction,
-              workspace='/home/ubuntu/agentmanager',
-          )
-          print(capsule['capsule_id'])
-          PY
-          )
-          RECEIPT="$RELAY/receipts/$CAPSULE_ID.json"
-          for i in $(seq 1 420); do
-            [ -f "$RECEIPT" ] && break
-            sleep 1
-          done
-          test -f "$RECEIPT" || { echo "receipt_timeout=$CAPSULE_ID" | tee "$OUT"; exit 3; }
-          {
-            echo "capsule_id=$CAPSULE_ID"
-            echo "governed_port=$PORT"
-            cat "$RECEIPT"
-          } | tee "$OUT"
-          python3 - "$RECEIPT" <<'PY'
+          BEFORE=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')
+          test "$BEFORE" = "1.0.59" -o "$BEFORE" = "1.0.60"
+          if test "$BEFORE" = "1.0.59"; then
+            python3 - "$MANIFEST" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
-          assert r.get('ok') is True, r
-          text=(r.get('stdout','')+'\n'+r.get('stderr','')).lower()
-          for required in ('studio.milkcat.org/layout-lab','health','parse'):
-              assert required in text, (required, text[-10000:])
-          print('executor_integration_receipt=PASS')
+          from pathlib import Path
+          p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8')); d['version']='1.0.60'; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
           PY
-
-      - name: Independent public acceptance from runner
-        shell: bash
-        run: |
-          set -euo pipefail
-          OUT=.agentos/evidence/layoutlab-official-site-acceptance.txt
+          fi
+          AFTER=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')
+          test "$AFTER" = "1.0.60"
           {
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            UI_CODE=$(curl -sS -o /tmp/layoutlab-official-ui -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 https://studio.milkcat.org/layout-lab/)
-            echo "public_ui_http_code=$UI_CODE"
-            test "$UI_CODE" = 200
-            grep -q 'Layout Lab' /tmp/layoutlab-official-ui
-
-            HEALTH_CODE=$(curl -sS -o /tmp/layoutlab-official-health -w '%{http_code}' --retry 5 --retry-all-errors --connect-timeout 5 --max-time 20 https://studio.milkcat.org/layout-lab/api/healthz)
-            echo "public_health_http_code=$HEALTH_CODE"
-            test "$HEALTH_CODE" = 200
-            python3 - <<'PY'
-          import json
-          d=json.load(open('/tmp/layoutlab-official-health'))
-          assert d.get('ok') is True, d
-          print('public_health_payload=PASS')
-          PY
-
-            python3 - <<'PY'
-          from PIL import Image, ImageDraw
-          p='/tmp/layoutlab-official-fixture.png'
-          im=Image.new('L',(320,240),255)
-          d=ImageDraw.Draw(im)
-          d.rectangle((30,30,290,210),outline=0,width=10)
-          im.save(p)
-          PY
-            PARSE_CODE=$(curl -sS -o /tmp/layoutlab-official-parse -w '%{http_code}' --retry 3 --retry-all-errors --connect-timeout 5 --max-time 30 \
-              -F image=@/tmp/layoutlab-official-fixture.png \
-              -F meters_per_pixel=0.02 \
-              -F wall_height_m=2.7 \
-              -F threshold=128 \
-              -F min_wall_length_px=16 \
-              https://studio.milkcat.org/layout-lab/api/parse)
-            echo "public_parse_http_code=$PARSE_CODE"
-            test "$PARSE_CODE" = 200
-            python3 - <<'PY'
-          import json
-          d=json.load(open('/tmp/layoutlab-official-parse'))
-          assert d.get('ok') is True, d
-          ir=d.get('ir') or {}
-          walls=ir.get('walls') or []
-          assert walls, d
-          print(f'public_parse=PASS walls={len(walls)} spatial_ir={ir.get("version")}')
-          PY
-            echo 'official_layoutlab_goal=PASS'
-            echo 'official_url=https://studio.milkcat.org/layout-lab/'
-          } 2>&1 | tee "$OUT"
-
-      - name: Commit integration evidence
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp .agentos/evidence/layoutlab-official-site-integration.txt /tmp/layoutlab-official-site-integration.txt 2>/dev/null || true
-          cp .agentos/evidence/layoutlab-official-site-acceptance.txt /tmp/layoutlab-official-site-acceptance.txt 2>/dev/null || true
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          cp /tmp/layoutlab-official-site-integration.txt .agentos/evidence/ 2>/dev/null || true
-          cp /tmp/layoutlab-official-site-acceptance.txt .agentos/evidence/ 2>/dev/null || true
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/layoutlab-official-site-integration.txt .agentos/evidence/layoutlab-official-site-acceptance.txt 2>/dev/null || true
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(layoutlab): official Studio Web UI acceptance'
-          git push origin HEAD:main
+            echo "workspace=$ROOT"
+            echo "version_before=$BEFORE"
+            echo "version_after=$AFTER"
+            echo "branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+            echo "head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+            echo "manifest_sha256=$(sha256sum "$MANIFEST" | awk '{print $1}')"
+            echo "status_begin"
+            git -C "$ROOT" status --short --branch 2>&1 || true
+            echo "status_end"
+          } | tee .agentos/evidence/metashield-version-1.0.60.txt
+      - name: Upload version evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: metashield-version-1.0.60
+          path: .agentos/evidence/metashield-version-1.0.60.txt
+          if-no-files-found: error
