@@ -1,0 +1,86 @@
+name: model2ir teacher dataset v0.7
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/model2ir/TEACHER_DATASET_CONTRACT_V0.7.md'
+      - '.github/workflows/model2ir-teacher-dataset-v07.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/model2ir/TEACHER_DATASET_CONTRACT_V0.7.md'
+      - '.github/workflows/model2ir-teacher-dataset-v07.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  teacher-dataset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+
+      - name: Install model2ir and renderer runtime
+        run: |
+          python -m pip install -e libs/model2ir
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Fetch real humanoid GLB teacher source
+        run: |
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb -o /tmp/CesiumMan.glb
+          test -s /tmp/CesiumMan.glb
+
+      - name: Build paired multi-view teacher dataset
+        run: |
+          rm -rf /tmp/model2ir-teacher-v07
+          python scripts/model2ir_teacher_dataset.py \
+            --asset /tmp/CesiumMan.glb \
+            --case-id cesium-man \
+            --out /tmp/model2ir-teacher-v07 | tee /tmp/model2ir-teacher-v07.log
+          grep -q '"ok": true' /tmp/model2ir-teacher-v07.log
+
+      - name: Validate teacher dataset contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/model2ir-teacher-v07')
+          m=json.loads((root/'manifest.json').read_text())
+          assert m['schema']=='model2ir-teacher-dataset/v0.7'
+          assert len(m['cases'])==1
+          assert len(m['examples'])==4
+          assert {x['view'] for x in m['examples']}=={'front','yaw45','right','back'}
+          assert len({x['target_ir_digest'] for x in m['examples']})==1
+          assert m['cases'][0]['stability'] in {'lossless','stable-candidate','stable-but-ambiguous','stable-unknown'}
+          assert m['cases'][0]['stability']!='unstable'
+          for x in m['examples']:
+              assert (root/x['image']).stat().st_size > 1000
+              assert (root/x['target_ir']).is_file()
+              assert 'unresolved' in x
+          ir=json.loads((root/'cesium-man/character-ir.json').read_text())
+          assert ir['truth_status']=='candidate'
+          audit=json.loads((root/'cesium-man/audit.json').read_text())
+          assert audit['candidate_repeatable'] is True
+          assert audit['truth_policy']['automatic_promotion_of_inference'] is False
+          print('model2ir_teacher_dataset=PASS')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-teacher-dataset-v07
+          path: /tmp/model2ir-teacher-v07/
+          if-no-files-found: error
+          retention-days: 30
