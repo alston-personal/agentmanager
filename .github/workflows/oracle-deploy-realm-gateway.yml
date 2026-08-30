@@ -32,7 +32,7 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - run: npm run build
-      - name: Prove route identity on a clean Next server
+      - name: Prove route identity and bootstrap allowlist on a clean Next server
         shell: bash
         run: |
           set -euo pipefail
@@ -53,7 +53,12 @@ jobs:
           code=$(curl -sS -D /tmp/agentos-h -o /tmp/agentos-b -w '%{http_code}' --max-time 4 http://127.0.0.1:3000/dashboard/api/agentos/v1/health || true)
           grep -qi '^x-agentos-realm-gateway: v0.1' /tmp/agentos-h
           test "$code" = 502
+          bootstrap_code=$(curl -sS -D /tmp/agentos-bh -o /tmp/agentos-bb -w '%{http_code}' --max-time 4 'http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=probe' || true)
+          grep -qi '^x-agentos-realm-gateway: v0.1' /tmp/agentos-bh
+          test "$bootstrap_code" = 502
+          ! grep -q 'Realm gateway route not allowlisted' /tmp/agentos-bb
           echo 'clean_next_gateway_route=PASS'
+          echo 'clean_next_bootstrap_allowlist=PASS'
 
   deploy:
     needs: build-check
@@ -61,7 +66,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Install canonical bootstrap hook and request fixed Realm gateway deploy
+      - name: Install canonical bootstrap hook and request pinned Realm gateway deploy
         shell: bash
         run: |
           set -euo pipefail
@@ -84,16 +89,16 @@ jobs:
           done
           test -d "$REQUESTS" && test -d "$RECEIPTS"
 
-          python3 - "$REQUEST" "$REQUEST_ID" <<'PY'
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
           import json,os,sys
           from datetime import datetime,timezone
           from pathlib import Path
-          p=Path(sys.argv[1]); rid=sys.argv[2]
+          p=Path(sys.argv[1]); rid=sys.argv[2]; source_commit=sys.argv[3]
           payload={
             'schema':'agentos.bootstrap-request/v1',
             'request_id':rid,
             'action':'agentos.realm_gateway.deploy',
-            'params':{},
+            'params':{'source_commit':source_commit},
             'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
             'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
           }
@@ -108,22 +113,28 @@ jobs:
           done
           test -f "$RECEIPT" || { echo 'realm_gateway_receipt=TIMEOUT'; exit 3; }
           cat "$RECEIPT"
-          python3 - "$RECEIPT" <<'PY'
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1]))
+          r=json.load(open(sys.argv[1])); source_commit=sys.argv[2]
           assert r.get('schema') == 'agentos.bootstrap-receipt/v1', r
           assert r.get('action') == 'agentos.realm_gateway.deploy', r
           assert r.get('executor_user') == 'ubuntu', r
           assert r.get('executor_uid') == 1001, r
+          assert r.get('source_commit') == source_commit, r
           assert r.get('ok') is True, r
           text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
+          assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
           assert 'dashboard_build=PASS' in text, text[-12000:]
+          assert 'realm_gateway_bootstrap_local=PASS' in text, text[-12000:]
+          assert 'realm_gateway_bootstrap_public=PASS' in text, text[-12000:]
+          assert f'realm_gateway_source_commit={source_commit}' in text, text[-12000:]
           assert 'realm_gateway_public=PASS' in text, text[-12000:]
           assert 'nginx_mutation=NONE' in text, text[-12000:]
           print('realm_gateway_deploy=PASS')
+          print('realm_gateway_pinned_source=PASS')
           PY
 
-      - name: Verify public ONE identity
+      - name: Verify public ONE identity and bootstrap routing
         shell: bash
         run: |
           set -euo pipefail
@@ -131,5 +142,10 @@ jobs:
           BODY=$(curl -fsS --max-time 8 "$URL")
           printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
           printf '%s' "$BODY" | grep -q 'realm-alston'
+          B=/tmp/public-bootstrap-final
+          C=$(curl -sS -o "$B" -w '%{http_code}' --max-time 8 'https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__' || true)
+          test "$C" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$B"
           echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
           echo "public_identity=PASS"
+          echo "public_bootstrap_routing=PASS"
