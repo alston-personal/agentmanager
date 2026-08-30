@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import subprocess
 from datetime import datetime, timezone
 from typing import Any
@@ -16,6 +17,7 @@ ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ALLOWED_ACTIONS = {ACTION_REPAIR_TRANSPORT, ACTION_DEPLOY_REALM_GATEWAY}
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _now() -> str:
@@ -48,7 +50,7 @@ def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str]:
+def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, str | None]:
     if path.is_symlink():
         raise ValueError("request must not be a symlink")
     if payload.get("schema") != SCHEMA:
@@ -59,8 +61,17 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str]:
         raise ValueError("request_id/path mismatch")
     if action not in ALLOWED_ACTIONS:
         raise ValueError("action is not allowlisted")
-    if payload.get("params") not in (None, {}):
-        raise ValueError("bootstrap actions accept no caller parameters")
+    params = payload.get("params") or {}
+    if not isinstance(params, dict):
+        raise ValueError("params must be an object")
+    unknown = set(params) - {"source_commit"}
+    if unknown:
+        raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
+    source_commit = str(params.get("source_commit") or "").strip() or None
+    if source_commit is not None and not COMMIT_RE.fullmatch(source_commit):
+        raise ValueError("source_commit must be an exact lowercase 40-hex commit SHA")
+    if action == ACTION_DEPLOY_REALM_GATEWAY and source_commit is None:
+        raise ValueError("realm gateway deploy requires exact source_commit")
     created = _parse_time(str(payload.get("created_at") or ""))
     age = (datetime.now(timezone.utc) - created).total_seconds()
     if age < -60 or age > MAX_REQUEST_AGE_SECONDS:
@@ -77,44 +88,59 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str]:
         raise ValueError("invalid authority envelope")
     if authority.get("arbitrary_shell") is not False:
         raise ValueError("arbitrary shell is forbidden")
-    return request_id, action
+    return request_id, action, source_commit
 
 
-def _run_canonical_script(script_rel: str, *, timeout: int, env_extra: dict[str, str] | None = None) -> dict[str, Any]:
+def _run_canonical_script(
+    script_rel: str,
+    *,
+    timeout: int,
+    source_commit: str | None = None,
+    env_extra: dict[str, str] | None = None,
+) -> dict[str, Any]:
     repo = Path.home() / "agentmanager"
     tmp = Path("/tmp") / ("agentos-bootstrap-" + Path(script_rel).name)
     steps: list[dict[str, Any]] = []
-    fetch = subprocess.run(["git", "-C", str(repo), "fetch", "origin", "main"], text=True, capture_output=True, timeout=60, check=False)
-    steps.append({"step": "git_fetch", "returncode": fetch.returncode, "stdout": fetch.stdout[-8000:], "stderr": fetch.stderr[-8000:]})
+    source = source_commit or "origin/main"
+    fetch_args = ["git", "-C", str(repo), "fetch", "origin", source_commit] if source_commit else ["git", "-C", str(repo), "fetch", "origin", "main"]
+    fetch = subprocess.run(fetch_args, text=True, capture_output=True, timeout=60, check=False)
+    steps.append({"step": "git_fetch", "source_commit": source_commit, "returncode": fetch.returncode, "stdout": fetch.stdout[-8000:], "stderr": fetch.stderr[-8000:]})
     if fetch.returncode != 0:
-        return {"ok": False, "steps": steps}
-    show = subprocess.run(["git", "-C", str(repo), "show", f"origin/main:{script_rel}"], text=True, capture_output=True, timeout=30, check=False)
-    steps.append({"step": "git_show_script", "returncode": show.returncode, "stderr": show.stderr[-8000:]})
+        return {"ok": False, "source_commit": source_commit, "steps": steps}
+    if source_commit:
+        verify = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{source_commit}^{{commit}}"], text=True, capture_output=True, timeout=30, check=False)
+        steps.append({"step": "verify_source_commit", "returncode": verify.returncode, "stderr": verify.stderr[-8000:]})
+        if verify.returncode != 0:
+            return {"ok": False, "source_commit": source_commit, "steps": steps}
+    show = subprocess.run(["git", "-C", str(repo), "show", f"{source}:{script_rel}"], text=True, capture_output=True, timeout=30, check=False)
+    steps.append({"step": "git_show_script", "source": source, "returncode": show.returncode, "stderr": show.stderr[-8000:]})
     if show.returncode != 0:
-        return {"ok": False, "steps": steps}
+        return {"ok": False, "source_commit": source_commit, "steps": steps}
     tmp.write_text(show.stdout, encoding="utf-8")
     os.chmod(tmp, 0o700)
     digest = hashlib.sha256(show.stdout.encode()).hexdigest()
     env = os.environ.copy()
     env["AGENTOS_REPO"] = str(repo)
+    if source_commit:
+        env["AGENTOS_SOURCE_COMMIT"] = source_commit
     if env_extra:
         env.update(env_extra)
     try:
         run = subprocess.run(["/bin/bash", str(tmp)], text=True, capture_output=True, timeout=timeout, check=False, env=env)
         steps.append({"step": "run_script", "returncode": run.returncode, "stdout": run.stdout[-30000:], "stderr": run.stderr[-20000:]})
-        return {"ok": run.returncode == 0, "script_sha256": digest, "steps": steps}
+        return {"ok": run.returncode == 0, "source_commit": source_commit, "script_sha256": digest, "steps": steps}
     except subprocess.TimeoutExpired as exc:
         steps.append({"step": "run_script", "error": "TimeoutExpired", "timeout": timeout, "stdout": (exc.stdout or "")[-30000:] if isinstance(exc.stdout, str) else "", "stderr": (exc.stderr or "")[-20000:] if isinstance(exc.stderr, str) else ""})
-        return {"ok": False, "script_sha256": digest, "steps": steps}
+        return {"ok": False, "source_commit": source_commit, "script_sha256": digest, "steps": steps}
     finally:
         tmp.unlink(missing_ok=True)
 
 
-def _execute(action: str) -> dict[str, Any]:
+def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
     if action == ACTION_REPAIR_TRANSPORT:
-        return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, env_extra={"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"})
+        return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra={"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"})
     if action == ACTION_DEPLOY_REALM_GATEWAY:
-        return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300)
+        return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
@@ -122,8 +148,8 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
     """Process at most one fresh fixed-schema bootstrap request as ubuntu.
 
     Requests may select only a small enumerated action and cannot supply shell,
-    paths or executable arguments. Each action materializes one canonical script
-    from origin/main before execution.
+    paths or executable arguments. Actions that publish runtime code may carry
+    only an immutable exact source commit SHA, which is preserved in the receipt.
     """
     requests, receipts, rejected = _ensure(_root())
     candidates = sorted(requests.glob("*.request.json"))
@@ -133,14 +159,15 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
     started = _now()
     request_id = source.name.removesuffix(".request.json")
     action = "unknown"
+    source_commit: str | None = None
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
-        request_id, action = _validate_request(source, payload)
+        request_id, action, source_commit = _validate_request(source, payload)
         receipt_path = receipts / f"{request_id}.json"
         if receipt_path.exists():
             source.unlink(missing_ok=True)
             return json.loads(receipt_path.read_text(encoding="utf-8"))
-        result = _execute(action)
+        result = _execute(action, source_commit)
         receipt: dict[str, Any] = {
             "schema": RECEIPT_SCHEMA,
             "request_id": request_id,
@@ -159,6 +186,7 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
             "schema": RECEIPT_SCHEMA,
             "request_id": request_id,
             "action": action,
+            "source_commit": source_commit,
             "executor_user": os.environ.get("USER") or str(os.getuid()),
             "executor_uid": os.getuid(),
             "started_at": started,
