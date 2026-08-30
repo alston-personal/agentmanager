@@ -68,6 +68,30 @@ def infer_structured_semantics(gltf: dict[str, Any]) -> dict[str, Any]:
     required = ['torso','left_arm','right_arm','left_leg','right_leg']
     humanoid_hits = sum(1 for x in required if x in labels)
     if 'pelvis' in labels or 'neck' in labels: humanoid_hits += 1
+
+    if humanoid_hits >= 5 and 'head' not in labels:
+        neck_joint_recs = [r for r in labels.get('neck', []) if r.get('is_joint')]
+        if len(neck_joint_recs) >= 2:
+            terminal = []
+            for rec in neck_joint_recs:
+                idx = rec['node_index']
+                joint_children = [c for c in (nodes[idx].get('children') or []) if c in joint_ids]
+                if not joint_children:
+                    terminal.append(rec)
+            if len(terminal) == 1:
+                src = terminal[0]
+                inferred = {
+                    'label': 'head',
+                    'confidence': 0.74,
+                    'node_index': src['node_index'],
+                    'name': src.get('name'),
+                    'source': 'terminal-neck-joint+humanoid-body-plan',
+                    'is_joint': True,
+                    'inference_reason': 'strong humanoid rig has a multi-joint neck chain whose unique terminal joint is the head anchor',
+                }
+                evidence.append(inferred)
+                labels.setdefault('head', []).append(inferred)
+
     body_plan = {
         'kind': 'humanoid' if humanoid_hits >= 4 else 'unknown',
         'confidence': round(min(0.97, 0.35 + humanoid_hits * 0.1), 3) if humanoid_hits else 0.0,
