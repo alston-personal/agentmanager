@@ -6,13 +6,12 @@ SOURCE_SHA="${GITHUB_SHA:?GITHUB_SHA is required}"
 DATA=/home/ubuntu/agent-data
 LOCAL=/home/ubuntu/agentmanager
 CHRONOS_TARGET="$LOCAL/scripts/update_scheduler_board.py"
-BRIDGE_ROOT="$DATA/runtime/issue-77-control-inbox-repair"
+BRIDGE_ROOT=/tmp/agentos-issue77-control-inbox
 RECEIPT="$BRIDGE_ROOT/${GITHUB_RUN_ID:-manual}-${SOURCE_SHA}.receipt.json"
 BACKUP="$BRIDGE_ROOT/${GITHUB_RUN_ID:-manual}-${SOURCE_SHA}.update_scheduler_board.py"
 STATE="$DATA/governance/core-deployment.json"
 mkdir -p "$BRIDGE_ROOT"
-chgrp agentos "$BRIDGE_ROOT" 2>/dev/null || true
-chmod 2770 "$BRIDGE_ROOT"
+chmod 1777 "$BRIDGE_ROOT"
 rm -f "$RECEIPT" "$RECEIPT.tmp"
 
 snapshot_state() {
@@ -46,7 +45,7 @@ import sys
 
 target=Path(sys.argv[1]); sha=sys.argv[2]; receipt=sys.argv[3]
 original=target.read_text(encoding='utf-8')
-marker='# AGENTOS_ISSUE77_CONTROL_INBOX_REPAIR_V1\n'
+marker='# AGENTOS_ISSUE77_CONTROL_INBOX_REPAIR_V2\n'
 if marker in original:
     raise SystemExit('issue77 bridge marker already present')
 
@@ -127,13 +126,11 @@ lines = [
     '    except BaseException as _i77_e:',
     '        _i77_payload.update({"error":type(_i77_e).__name__+": "+str(_i77_e),"traceback":_i77_traceback.format_exc()[-12000:]})',
     '    _i77_payload["completed_at"]=_i77_dt.datetime.now(_i77_dt.timezone.utc).isoformat()',
-    '    try:',
-    '        _i77_tmp=_I77_RECEIPT.with_suffix(_I77_RECEIPT.suffix+".tmp")',
-    '        _i77_tmp.write_text(_i77_json.dumps(_i77_payload,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")',
-    '        _i77_os.chmod(_i77_tmp,0o660)',
-    '        _i77_tmp.replace(_I77_RECEIPT)',
-    '    except BaseException:',
-    '        pass',
+    '    _i77_tmp=_I77_RECEIPT.with_suffix(_I77_RECEIPT.suffix+".tmp")',
+    '    _i77_tmp.write_text(_i77_json.dumps(_i77_payload,ensure_ascii=False,indent=2)+"\\n",encoding="utf-8")',
+    '    _i77_os.chmod(_i77_tmp,0o644)',
+    '    _i77_tmp.replace(_I77_RECEIPT)',
+    '    _i77_os.chmod(_I77_RECEIPT,0o644)',
     '',
 ]
 bridge='\n'.join(lines)
@@ -162,7 +159,7 @@ PY
 restore_target
 rm -f "$BACKUP"
 trap - EXIT
-! grep -q 'AGENTOS_ISSUE77_CONTROL_INBOX_REPAIR_V1' "$CHRONOS_TARGET" || { echo 'issue77_bridge_cleanup=FAIL'; exit 4; }
+! grep -q 'AGENTOS_ISSUE77_CONTROL_INBOX_REPAIR_V2' "$CHRONOS_TARGET" || { echo 'issue77_bridge_cleanup=FAIL'; exit 4; }
 echo 'issue77_bridge_cleanup=PASS'
 AFTER=$(snapshot_state)
 echo "core_deployment_after=$AFTER"
