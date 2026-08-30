@@ -1,5 +1,4 @@
 # Vendor source registry + Threads discovery carrier. Does not modify AgentOS Core.
-# trigger: verify worker stdin isolation
 name: Oracle Vendor Threads Patrol
 
 on:
@@ -67,13 +66,20 @@ jobs:
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/vendor-threads-patrol.json
           SSHERR=.agentos/evidence/vendor-threads-patrol-ssh.err
+
+          # Materialize the script first. Do not execute a long-running script from ssh stdin:
+          # child processes could inherit and consume the remaining script source.
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'umask 077; cat > /tmp/run_vendor_threads_patrol.sh' \
+            < scripts/run_vendor_threads_patrol.sh
+
           set +e
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$SERVICE_SHA" \
-            < scripts/run_vendor_threads_patrol.sh \
+            bash /tmp/run_vendor_threads_patrol.sh "$SERVICE_SHA" \
             > "$OUT" 2> "$SSHERR"
           SSH_RC=$?
           set -e
+
           if [ ! -s "$OUT" ]; then
             python3 - "$SSH_RC" "$SSHERR" > "$OUT" <<'PY'
           import json,pathlib,sys
