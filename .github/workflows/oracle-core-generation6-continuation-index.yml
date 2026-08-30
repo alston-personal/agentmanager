@@ -1,0 +1,256 @@
+name: AgentOS Core Generation 6 Continuation Index
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-core-generation6-continuation-index.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: realm-fabric-deployment-authority
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 18
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PREVIOUS_CORE_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+      TARGET_CORE_COMMIT: ${{ github.sha }}
+      LEASE_OWNER: agentos-core-mainline
+      DEPLOY_CLIENT_ROOT: /tmp/agentos-main-deploy-client-g6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Preflight exact candidate and released generation 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_CORE_COMMIT"
+          git fetch origin main "$TARGET_CORE_COMMIT"
+          git cat-file -e "$TARGET_CORE_COMMIT^{commit}"
+
+          git show "$TARGET_CORE_COMMIT:agent_core/resolve_facade.py" | grep -q 'continuation index generation mismatch'
+          git show "$TARGET_CORE_COMMIT:agent_core/resolve_facade.py" | grep -q '_read_continuation_pair'
+          git show "$TARGET_CORE_COMMIT:agent_core/project_continuation_index.py" | grep -q 'agentos.project-continuation-publish/v1'
+          git show "$TARGET_CORE_COMMIT:agent_core/project_continuation_index.py" | grep -q 'resolve_project_identity'
+          git show "$TARGET_CORE_COMMIT:agentos_node/action_relay.py" | grep -q 'agentos.project.publish_continuation'
+          git show "$TARGET_CORE_COMMIT:agent_core/realm_server.py" | grep -q "parsed.path == '/v1/resolve'"
+
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_resolve_facade -v
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_resolve_continuation_index_fence -v
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_project_continuation_index -v
+
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          s=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          previous=os.environ['PREVIOUS_CORE_COMMIT']
+          assert int(s.get('deployment_generation') or 0)==5,s
+          assert s.get('desired_core_commit')==previous,s
+          assert s.get('observed_core_commit')==previous,s
+          assert s.get('deployment_status')=='converged',s
+          assert s.get('lease_status')=='released',s
+          assert s.get('lease_owner')=='agentos-core-mainline',s
+          print(json.dumps(s,ensure_ascii=False,indent=2,sort_keys=True))
+          print('generation5_released_preflight=PASS')
+          PY
+
+      - name: Materialize accepted deployment client
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DEPLOY_CLIENT_ROOT"
+          mkdir -p "$DEPLOY_CLIENT_ROOT/agentos_node"
+          : > "$DEPLOY_CLIENT_ROOT/agentos_node/__init__.py"
+          git show origin/main:agentos_node/action_relay.py > "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          git show origin/main:scripts/install_realm_fabric_via_action_relay.py > "$DEPLOY_CLIENT_ROOT/install_realm_fabric_via_action_relay.py"
+          python3 -m py_compile "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py" "$DEPLOY_CLIENT_ROOT/install_realm_fabric_via_action_relay.py"
+          grep -q 'agentos.realm-fabric.advance_deployment' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          grep -q 'agentos.realm-fabric.install_release' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          grep -q 'agentos.realm-fabric.release_deployment' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          echo 'accepted_deployment_client=READY'
+
+      - name: Advance generation 5 to generation 6
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,sys,time
+          from pathlib import Path
+          sys.path.insert(0,os.environ['DEPLOY_CLIENT_ROOT'])
+          from agentos_node.action_relay import ActionRelayClient
+          target=os.environ['TARGET_CORE_COMMIT']; previous=os.environ['PREVIOUS_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
+          p=Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+          s=json.loads(p.read_text(encoding='utf-8'))
+          assert s.get('desired_core_commit')==previous,s
+          c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          cap=c.submit('agentos.realm-fabric.advance_deployment',{
+              'current_desired_core_commit':previous,
+              'next_desired_core_commit':target,
+              'lease_owner':owner,
+              'expected_generation':5,
+              'lease_seconds':900,
+          })
+          deadline=time.time()+90; r=None
+          while time.time()<deadline:
+              r=c.receipt(cap['capsule_id'])
+              if r is not None: break
+              time.sleep(1)
+          assert r is not None and r.get('ok') is True,r
+          assert r.get('desired_core_commit')==target,r
+          assert int(r.get('deployment_generation') or 0)==6,r
+          assert r.get('lease_status')=='active',r
+          Path('/tmp/agentos-core-generation6-advance.json').write_text(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('generation6_advance=PASS')
+          PY
+
+      - name: Install exact generation 6 through canonical CAS fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          export AGENTOS_REALM_FABRIC_SOURCE_COMMIT="$TARGET_CORE_COMMIT"
+          export AGENTOS_REALM_FABRIC_LEASE_OWNER="$LEASE_OWNER"
+          (
+            cd "$DEPLOY_CLIENT_ROOT"
+            PYTHONPATH="$DEPLOY_CLIENT_ROOT" python3 install_realm_fabric_via_action_relay.py
+          )
+          cp "$DEPLOY_CLIENT_ROOT/.agentos/evidence/realm-fabric-install-current.json" /tmp/agentos-core-generation6-install.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          target=os.environ['TARGET_CORE_COMMIT']
+          r=json.loads(Path('/tmp/agentos-core-generation6-install.json').read_text(encoding='utf-8'))
+          assert r.get('desired_core_commit')==target,r
+          assert r.get('observed_core_commit')==target,r
+          assert int(r.get('deployment_generation') or 0)==6,r
+          assert r.get('deployment_status')=='converged',r
+          print('generation6_install_converged=PASS')
+          PY
+
+      - name: Attest live generation 6 continuation reader and resolve route
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="/home/ubuntu/.local/share/agentos/realm-fabric/releases/$TARGET_CORE_COMMIT"
+          test -f "$release/agent_core/resolve_facade.py"
+          test -f "$release/agent_core/project_continuation_index.py"
+          grep -q 'continuation index generation mismatch' "$release/agent_core/resolve_facade.py"
+          grep -q '_read_continuation_pair' "$release/agent_core/resolve_facade.py"
+          grep -q 'agentos.project-continuation-publish/v1' "$release/agent_core/project_continuation_index.py"
+
+          PYTHONPATH="$release" python3 - <<'PY'
+          import json
+          from urllib import request,error
+          req=request.Request(
+              'http://127.0.0.1:8780/v1/resolve',
+              data=json.dumps({'schema':'agentos.resolve-request/v1','node_id':'g6-auth-probe','intent':'continue','project':'agentos-core'}).encode('utf-8'),
+              headers={'Content-Type':'application/json'},method='POST')
+          try:
+              with request.urlopen(req,timeout=5) as resp:
+                  code=resp.status; text=resp.read().decode('utf-8','replace')
+          except error.HTTPError as exc:
+              code=exc.code; text=exc.read().decode('utf-8','replace')
+          print('resolve_auth_http_code='+str(code))
+          print(text)
+          assert code==401,(code,text)
+          assert 'missing bearer credential' in text,(code,text)
+          print('generation6_resolve_auth_boundary=PASS')
+          PY
+          echo 'generation6_continuation_reader_attested=PASS'
+
+      - name: Regress ControllerService route
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from urllib import request,error
+          body=json.dumps({'schema':'agentos.controller-dispatch/v0.1','node_id':'vopc5750','action':'agent.surface.inspect','payload':{}}).encode('utf-8')
+          req=request.Request('http://127.0.0.1:8780/v1/controller/dispatch',data=body,headers={'Content-Type':'application/json'},method='POST')
+          try:
+              with request.urlopen(req,timeout=5) as resp:
+                  code=resp.status; payload=json.loads(resp.read().decode('utf-8'))
+          except error.HTTPError as exc:
+              code=exc.code; payload=json.loads(exc.read().decode('utf-8'))
+          assert code != 404,(code,payload)
+          if code==200:
+              assert payload.get('controller_entered') is True,payload
+          elif code==400:
+              assert 'target node does not advertise capability: agent.surface.inspect' in str(payload.get('error') or ''),payload
+          else:
+              raise AssertionError((code,payload))
+          print('generation6_controller_service_entered=PASS')
+          PY
+
+      - name: Release generation 6 and persist acceptance evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,sys,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          sys.path.insert(0,os.environ['DEPLOY_CLIENT_ROOT'])
+          from agentos_node.action_relay import ActionRelayClient
+          target=os.environ['TARGET_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
+          c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          cap=c.submit('agentos.realm-fabric.release_deployment',{
+              'desired_core_commit':target,
+              'lease_owner':owner,
+              'deployment_generation':6,
+          })
+          deadline=time.time()+90; r=None
+          while time.time()<deadline:
+              r=c.receipt(cap['capsule_id'])
+              if r is not None: break
+              time.sleep(1)
+          assert r is not None and r.get('ok') is True,r
+          state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          assert state.get('desired_core_commit')==target and state.get('observed_core_commit')==target,state
+          assert int(state.get('deployment_generation') or 0)==6,state
+          assert state.get('deployment_status')=='converged' and state.get('lease_status')=='released',state
+          ev={
+              'schema':'agentos.core-continuation-index-live-acceptance/v1',
+              'accepted_at':datetime.now(timezone.utc).isoformat(),
+              'live_core_commit':target,
+              'deployment_generation':6,
+              'deployment_status':'converged',
+              'lease_status':'released',
+              'advance_receipt':json.loads(Path('/tmp/agentos-core-generation6-advance.json').read_text()),
+              'install_receipt':json.loads(Path('/tmp/agentos-core-generation6-install.json').read_text()),
+              'release_receipt':r,
+              'gates':{
+                  'continuation_index_reader_fence':True,
+                  'project_continuation_publisher_source':True,
+                  'resolve_auth_boundary_preserved':True,
+                  'controller_route_preserved':True
+              }
+          }
+          Path('/tmp/core-generation6-live-acceptance.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True))
+          print('generation6_release=PASS')
+          PY
+
+          cp /tmp/core-generation6-live-acceptance.json /tmp/core-generation6-live-acceptance.keep.json
+          git fetch origin feature/realm-node-fabric-readiness
+          git reset --hard origin/feature/realm-node-fabric-readiness
+          mkdir -p .agentos/evidence/resolve-e2e
+          cp /tmp/core-generation6-live-acceptance.keep.json .agentos/evidence/resolve-e2e/core-generation6.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/resolve-e2e/core-generation6.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'evidence(agentos): accept Core generation 6 continuation reader'
+            git pull --rebase origin feature/realm-node-fabric-readiness
+            git push origin HEAD:feature/realm-node-fabric-readiness
+          fi
