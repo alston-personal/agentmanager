@@ -66,7 +66,7 @@ git -C "$REPO" show {sha}:agent_core/__init__.py > "$RELEASE/agent_core/__init__
 git -C "$REPO" show {sha}:agent_core/control_inbox_bridge.py > "$RELEASE/agent_core/control_inbox_bridge.py"
 git -C "$REPO" show {sha}:scripts/repair_control_inbox_github_auth_user.sh > /tmp/issue77-repair-auth.sh
 chmod 700 /tmp/issue77-repair-auth.sh
-grep -q 'CONTROLLER_DISPATCH_SUCCESS_CODES = {{200, 202}}' "$RELEASE/agent_core/control_inbox_bridge.py"
+grep -Eq '^CONTROLLER_DISPATCH_SUCCESS_CODES = (frozenset\()?\{{200, 202\}}\)?$' "$RELEASE/agent_core/control_inbox_bridge.py"
 python3 -m py_compile "$RELEASE/agent_core/control_inbox_bridge.py"
 ln -sfn "$RELEASE" "$CURRENT.new"
 mv -Tf "$CURRENT.new" "$CURRENT"
