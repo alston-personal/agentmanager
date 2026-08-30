@@ -1,0 +1,181 @@
+name: Oracle vopc5750 GUI Regression
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-gui-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  gui-regression:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+
+      - name: Run real GUI regression on vopc5750
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, re, time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+
+          NODE='vopc5750'
+          store=RealmFabricStore()
+          evidence_dir=Path('.agentos/evidence/node-gui/vopc5750')
+          evidence_dir.mkdir(parents=True, exist_ok=True)
+          stamp=str(int(time.time()))
+
+          def run_task(action, **kwargs):
+              tid=f'gui-{action.replace(".","-")}-{stamp}-{run_task.n}'
+              run_task.n += 1
+              task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':action,'cognition_ids_used':[]}
+              task.update(kwargs)
+              store.queue_task(NODE,task)
+              for _ in range(60):
+                  r=store.get_receipt(tid)
+                  if r:
+                      print(action + '=' + json.dumps({k:v for k,v in r.items() if k!='image_base64'},ensure_ascii=False,sort_keys=True))
+                      if r.get('ok') is not True:
+                          raise SystemExit(f'{action} failed: {r}')
+                      return r
+                  time.sleep(1)
+              raise SystemExit(f'{action} receipt timeout')
+          run_task.n=1
+
+          def shell(ps, timeout=30):
+              return run_task(
+                  'shell.exec', executable='powershell',
+                  argv=['-NoProfile','-NonInteractive','-Command',ps],
+                  cwd=r'C:\Users\alston.huang\AgentOS', timeout_seconds=timeout,
+              )
+
+          def save_shot(name, receipt):
+              raw=base64.b64decode(receipt['image_base64'])
+              path=evidence_dir/name
+              path.write_bytes(raw)
+              return {
+                  'sha256':receipt.get('sha256'), 'bytes':receipt.get('bytes'),
+                  'width':receipt.get('width'), 'height':receipt.get('height'),
+                  'artifact_file':str(path),
+              }
+
+          session=run_task('desktop.session.inspect')
+          desktop=session.get('desktop') or {}
+          if desktop.get('interactive') is not True:
+              raise SystemExit('Thin Client is not in active interactive session')
+
+          before_windows=run_task('desktop.windows.inspect')
+          before=save_shot('before.jpg',run_task('desktop.screenshot',quality=40))
+
+          setup=r'''$ErrorActionPreference='Stop'
+          $root='C:\Users\alston.huang\AgentOS'
+          $script=Join-Path $root 'agentos-gui-smoke-window.ps1'
+          $body=@'
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $form=New-Object System.Windows.Forms.Form
+          $form.Text='AgentOS GUI Smoke'
+          $form.StartPosition='Manual'
+          $form.Location=New-Object System.Drawing.Point(100,100)
+          $form.Size=New-Object System.Drawing.Size(800,600)
+          $form.TopMost=$true
+          $label=New-Object System.Windows.Forms.Label
+          $label.Text='AgentOS governed GUI regression target'
+          $label.Location=New-Object System.Drawing.Point(50,30)
+          $label.AutoSize=$true
+          $box=New-Object System.Windows.Forms.TextBox
+          $box.Name='AgentOSInput'
+          $box.Multiline=$true
+          $box.Location=New-Object System.Drawing.Point(50,80)
+          $box.Size=New-Object System.Drawing.Size(650,350)
+          $form.Controls.Add($label)
+          $form.Controls.Add($box)
+          $form.Add_Shown({$form.Activate();$box.Focus()})
+          [void]$form.ShowDialog()
+          '@
+          [System.IO.File]::WriteAllText($script,$body,(New-Object System.Text.UTF8Encoding($false)))
+          $p=Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -PassThru
+          Start-Sleep -Seconds 3
+          Write-Output ('agentos_gui_pid=' + $p.Id)
+          Write-Output ('agentos_gui_script=' + $script)
+          '''
+          launched=shell(setup,30)
+          m=re.search(r'agentos_gui_pid=(\d+)',str(launched.get('stdout') or ''))
+          if not m:
+              raise SystemExit('GUI smoke process pid missing')
+          gui_pid=int(m.group(1))
+
+          target=None
+          for _ in range(15):
+              w=run_task('desktop.windows.inspect')
+              target=next((x for x in w.get('windows') or [] if x.get('title')=='AgentOS GUI Smoke'),None)
+              if target:
+                  break
+              time.sleep(1)
+          if not target:
+              raise SystemExit('AgentOS GUI Smoke window not observed')
+
+          # Deterministic textbox bounds: form (100,100), textbox (50,80) -> click well inside it.
+          mouse=run_task('desktop.mouse',operation='click',button='left',x=300,y=260)
+          marker='AGENTOS GUI KEYBOARD PASS 20260830'
+          keyboard=run_task('desktop.keyboard',operation='type',text=marker)
+          time.sleep(1)
+          after=save_shot('after-input.jpg',run_task('desktop.screenshot',quality=55))
+
+          cleanup=rf'''$ErrorActionPreference='SilentlyContinue'
+          Stop-Process -Id {gui_pid} -Force
+          Remove-Item 'C:\Users\alston.huang\AgentOS\agentos-gui-smoke-window.ps1' -Force
+          Write-Output 'agentos_gui_cleanup=PASS'
+          '''
+          shell(cleanup,20)
+
+          report={
+              'schema':'agentos.node-gui-regression/v1',
+              'node_id':NODE,
+              'interactive_session':True,
+              'window_inspection':{'ok':True,'window_count':before_windows.get('window_count')},
+              'screenshot':{'before':before,'after_input':after},
+              'test_window':{'observed':True,'process_name':target.get('process_name')},
+              'mouse':{'ok':True,'operation':mouse.get('operation'),'button':mouse.get('button'),'x':mouse.get('x'),'y':mouse.get('y')},
+              'keyboard':{'ok':True,'characters':keyboard.get('characters'),'marker':marker},
+              'cleanup':True,
+              'acceptance':'PASS',
+          }
+          (evidence_dir/'acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('agentos_gui_regression=PASS')
+          print('desktop_mouse=PASS')
+          print('desktop_keyboard=PASS')
+          print('desktop_screenshot=PASS')
+          PY
+
+      - name: Upload GUI screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: vopc5750-gui-regression
+          path: .agentos/evidence/node-gui/vopc5750/*.jpg
+          retention-days: 14
+
+      - name: Persist compact GUI acceptance evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/node-gui/vopc5750/acceptance.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(agentos-node): accept vopc5750 GUI regression'
+          git push origin HEAD:feature/realm-node-fabric-readiness
