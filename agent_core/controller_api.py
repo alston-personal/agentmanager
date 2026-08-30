@@ -102,14 +102,66 @@ $prov=@{
   source_ref='SOURCE_REF'
   source_commit='SOURCE_COMMIT'
   installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+  install_mode='controller-single-owner-converge'
 } | ConvertTo-Json
-Set-Content -Encoding UTF8 -Path (Join-Path $install 'runtime-provenance.json') -Value $prov
+[System.IO.File]::WriteAllText((Join-Path $install 'runtime-provenance.json'),$prov,(New-Object System.Text.UTF8Encoding($false)))
+
 $taskName='AgentOS Thin Client'
+$watchdogName='AgentOS Thin Client Watchdog'
 Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
-Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction Stop | Out-Null
-$restart="Start-Sleep -Seconds 5; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName '$taskName'"
-Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
+Get-ScheduledTask -TaskName $watchdogName -ErrorAction Stop | Out-Null
+
+# The task receipt must be submitted before the currently-serving daemon is
+# retired. A detached, bounded convergence script runs after this task returns.
+$convergeScript=Join-Path $install 'agentos-runtime-converge.ps1'
+$statusPath=Join-Path $install 'runtime-convergence.json'
+$body=@'
+$ErrorActionPreference='Stop'
+Start-Sleep -Seconds 10
+$taskName='AgentOS Thin Client'
+$watchdogName='AgentOS Thin Client Watchdog'
+$statusPath='STATUS_PATH'
+Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+$old=@(Get-CimInstance Win32_Process | Where-Object {
+  $_.Name -match '^pythonw?\.exe$' -and
+  $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)'
+})
+foreach($proc in $old){
+  Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Seconds 3
+Start-ScheduledTask -TaskName $taskName
+$state='Unknown'
+for($i=0;$i -lt 12;$i++){
+  Start-Sleep -Seconds 1
+  $state=[string](Get-ScheduledTask -TaskName $taskName -ErrorAction Stop).State
+  if($state -eq 'Running'){ break }
+}
+$clients=@(Get-CimInstance Win32_Process | Where-Object {
+  $_.Name -match '^pythonw?\.exe$' -and
+  $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)'
+})
+$watchdog=Get-ScheduledTask -TaskName $watchdogName -ErrorAction Stop
+$result=[ordered]@{
+  schema='agentos.node-runtime-convergence/v0.1'
+  source_commit='SOURCE_COMMIT'
+  source_ref='SOURCE_REF'
+  retired_client_count=$old.Count
+  managed_client_count=$clients.Count
+  thin_client_task_state=$state
+  watchdog_present=($null -ne $watchdog)
+  converged=($state -eq 'Running' -and $clients.Count -eq 1 -and $null -ne $watchdog)
+  completed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+}
+[System.IO.File]::WriteAllText($statusPath,($result | ConvertTo-Json),(New-Object System.Text.UTF8Encoding($false)))
+if(-not $result.converged){ exit 4 }
+'@
+$body=$body.Replace('STATUS_PATH',$statusPath.Replace("'","''")).Replace('SOURCE_COMMIT','SOURCE_COMMIT').Replace('SOURCE_REF','SOURCE_REF')
+[System.IO.File]::WriteAllText($convergeScript,$body,(New-Object System.Text.UTF8Encoding($false)))
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$convergeScript`""
 Write-Output 'agentos_runtime_converge=PASS'
+Write-Output 'agentos_single_owner_convergence=DEFERRED'
 Write-Output 'agentos_watchdog_preserved=PASS'
 Write-Output 'agentos_source_commit=SOURCE_COMMIT'
 '''.replace('SOURCE_COMMIT', source_commit).replace('SOURCE_REF', source_ref)
