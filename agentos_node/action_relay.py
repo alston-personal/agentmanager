@@ -298,6 +298,17 @@ def _layoutlab_api_restart(params: dict[str, Any]) -> dict[str, Any]:
     return _restart_user_service("layoutlab-api.service")
 
 
+
+def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
+    """Publish the canonical AgentOS Core continuation through one narrow action.
+
+    The relay accepts no arbitrary path or shell. Project identity, mutation
+    authority, schemas, index generation, and canonical target paths are all
+    revalidated by the publisher under the ubuntu execution identity.
+    """
+    from agent_core.project_continuation_index import publish_project_continuation
+    return publish_project_continuation(params)
+
 def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
     return _restart_user_service("agentos-antigravity-relay.service")
@@ -310,6 +321,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
+    "agentos.project.publish_continuation": _publish_project_continuation,
 }
 
 
