@@ -1,0 +1,72 @@
+name: Oracle Vendor Threads Calibration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-vendor-threads-calibration.yml'
+      - 'scripts/run_vendor_threads_calibration.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_SHA: 2c991b9e3d75e0128bed119ea4dff0b4a02fd55e
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run aggregate-only Threads vendor-signal calibration on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/vendor-threads-calibration.json
+          SSHERR=.agentos/evidence/vendor-threads-calibration-ssh.err
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'umask 077; cat > /tmp/run_vendor_threads_calibration.sh' \
+            < scripts/run_vendor_threads_calibration.sh
+          set +e
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash /tmp/run_vendor_threads_calibration.sh "$SERVICE_SHA" \
+            > "$OUT" 2> "$SSHERR"
+          SSH_RC=$?
+          set -e
+          if [ ! -s "$OUT" ]; then
+            python3 - "$SSH_RC" "$SSHERR" > "$OUT" <<'PY'
+          import json,pathlib,sys
+          rc=int(sys.argv[1]); p=pathlib.Path(sys.argv[2])
+          text=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
+          print(json.dumps({
+            'schema':'milkcat.threads-vendor-signal-calibration/v1',
+            'ok':False,'failed_stage':'ssh','requests':0,'results_seen':0,
+            'qualified_under_current_filter':0,'filtered_out':0,
+            'filtered_hint_counts':{},'by_harvest_term':{},
+            'errors':[{'exception_type':'ssh_failure','detail':text}],
+            'raw_text_emitted':False,'raw_text_persisted':False,
+            'candidate_db_modified':False,'reviews_published':False
+          },ensure_ascii=False))
+          PY
+          fi
+          rm -f "$SSHERR"
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+          exit "$SSH_RC"
+      - name: Upload calibration receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-threads-signal-calibration
+          path: .agentos/evidence/vendor-threads-calibration.json
+          if-no-files-found: warn
+          retention-days: 30
