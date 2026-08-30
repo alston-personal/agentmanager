@@ -5,56 +5,57 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-vendor-reputation.yml'
-      - 'scripts/register_vendor_threads_source.sh'
 
 permissions:
   contents: write
 
 jobs:
-  register:
+  metashield_version_bump:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
-    env:
-      DEPLOY_HOST: 127.0.0.1
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      SERVICE_SHA: fbcf3cb1ece1bf7b2d928634cf4afd3901cf894b
-      SOURCE_URL: https://www.threads.com/share/_yh22msHD/
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Register first and second monitored Threads sources
+      - name: Bump Chamber local extension to 1.0.60
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .agentos/evidence
-          test -n "${DEPLOY_USER:-}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
-            < scripts/register_vendor_threads_source.sh \
-            > .agentos/evidence/vendor-source-register.json
-          python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
-          cat .agentos/evidence/vendor-source-register.json
-          python3 - <<'PY'
-          import json
-          x=json.load(open('.agentos/evidence/vendor-source-register.json'))
-          assert x['active_sources'] == 2, x
-          assert x['new_source_registered'] == 1, x
-          assert x['core_modified'] is False, x
-          assert x['raw_threads_content_emitted'] is False, x
+          ROOT=/home/ubuntu/metashield-protocol
+          MANIFEST="$ROOT/extension/manifest.json"
+          test -f "$MANIFEST"
+          python3 - "$MANIFEST" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          data=json.loads(p.read_text(encoding='utf-8'))
+          before=str(data.get('version',''))
+          if before not in {'1.0.59','1.0.60'}:
+              raise SystemExit(f'unexpected current version: {before}')
+          if before=='1.0.59':
+              data['version']='1.0.60'
+              p.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('version_before='+before)
+          print('version_after='+str(data.get('version')))
           PY
-      - name: Commit sanitized source-registry evidence
-        if: always()
+          mkdir -p .agentos/evidence
+          {
+            echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workspace=$ROOT"
+            echo "branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+            echo "head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+            echo "version=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')"
+            echo "manifest_sha256=$(sha256sum "$MANIFEST" | awk '{print $1}')"
+            echo "status_begin"
+            git -C "$ROOT" status --short --branch 2>&1 || true
+            echo "status_end"
+          } | tee .agentos/evidence/metashield-version-1.0.60.txt
+          grep -q '^version=1.0.60$' .agentos/evidence/metashield-version-1.0.60.txt
+      - name: Commit evidence
         shell: bash
         run: |
           set -euo pipefail
-          test -s .agentos/evidence/vendor-source-register.json || exit 0
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/vendor-source-register.json
+          git add .agentos/evidence/metashield-version-1.0.60.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): monitored Threads sources'
+          git commit -m 'evidence(metashield): local extension v1.0.60'
           git push
