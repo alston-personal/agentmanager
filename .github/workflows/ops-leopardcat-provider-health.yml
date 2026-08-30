@@ -18,65 +18,25 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Classify Groq authorization failure without exposing secret or message
+      - name: Check alternative provider credentials without exposing values
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          cd /home/$(id -un)/leopardcat-tarot/website
           python3 - <<'PY'
-          import json, os, ssl, urllib.request, urllib.error
           from pathlib import Path
-
-          def env_value(name):
-              value=os.environ.get(name)
-              if value: return value
-              p=Path('/home/ubuntu/agentmanager/.env')
-              if not p.exists(): return None
+          p=Path('/home/ubuntu/agentmanager/.env')
+          values={}
+          if p.exists():
               for raw in p.read_text(errors='replace').splitlines():
                   s=raw.strip()
                   if not s or s.startswith('#'): continue
                   if s.startswith('export '): s=s[7:].lstrip()
-                  if '=' in s:
-                      k,v=s.split('=',1)
-                      if k.strip()==name: return v.strip().strip('"').strip("'") or None
-              return None
-
-          key=env_value('GROQ_API_KEY') or ''
-          print('groq_key_present='+str(bool(key)).lower())
-          print('groq_key_prefix_valid='+str(key.startswith('gsk_')).lower())
-          print('groq_key_length_plausible='+str(30 <= len(key) <= 100).lower())
-          req=urllib.request.Request('https://api.groq.com/openai/v1/models',headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
-          try:
-              with urllib.request.urlopen(req,context=ssl.create_default_context(),timeout=20) as r:
-                  print('models_endpoint=success')
-          except urllib.error.HTTPError as e:
-              raw=e.read().decode('utf-8',errors='replace')
-              try: data=json.loads(raw)
-              except Exception: data={}
-              err=data.get('error') if isinstance(data,dict) else {}
-              if not isinstance(err,dict): err={}
-              message=str(err.get('message') or '').lower()
-              etype=str(err.get('type') or '')[:80]
-              ecode=str(err.get('code') or '')[:80]
-              if any(x in message for x in ('invalid api key','invalid_api_key','api key is invalid','authentication')):
-                  category='invalid_or_revoked_key'
-              elif any(x in message for x in ('organization','org')) and any(x in message for x in ('restricted','disabled','blocked','deactivated')):
-                  category='organization_restricted'
-              elif any(x in message for x in ('project','organization')) and any(x in message for x in ('permission','not allowed','forbidden','access')):
-                  category='project_or_org_permission'
-              elif any(x in message for x in ('model','permission','not allowed')):
-                  category='model_permission'
-              elif e.code==403:
-                  category='forbidden_unspecified'
-              elif e.code==401:
-                  category='authentication_failed'
-              else:
-                  category='other'
-              print(f'groq_http_status={e.code}')
-              print('groq_error_type='+etype)
-              print('groq_error_code='+ecode)
-              print('groq_error_category='+category)
+                  if '=' not in s: continue
+                  k,v=s.split('=',1)
+                  values[k.strip()]=v.strip().strip('"').strip("'")
+          for name in ('OPENROUTER_API_KEY','OPENROUTER_MODEL','CEREBRAS_API_KEY','TOGETHER_API_KEY','HUGGINGFACE_API_KEY','HF_TOKEN'):
+              print(name.lower()+'_present='+str(bool(values.get(name))).lower())
           PY
           REMOTE
