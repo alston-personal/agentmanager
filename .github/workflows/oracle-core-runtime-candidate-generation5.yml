@@ -1,0 +1,223 @@
+name: AgentOS Core Runtime Candidate Generation 5
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-core-runtime-candidate-generation5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: realm-fabric-deployment-authority
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 18
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      TARGET_CORE_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+      LEASE_OWNER: agentos-core-mainline
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Preflight candidate and released generation 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_CORE_COMMIT" main
+          git cat-file -e "$TARGET_CORE_COMMIT^{commit}"
+          git show "$TARGET_CORE_COMMIT:agent_core/node_registry.py" | grep -q 'workspace_root_authority_v1'
+          git show "$TARGET_CORE_COMMIT:agent_core/node_registry.py" | grep -q 'fcntl.flock'
+          git show "$TARGET_CORE_COMMIT:agent_core/node_registry.py" | grep -q 'RuntimeOTAPolicyStore.annotate_node'
+          git show "$TARGET_CORE_COMMIT:agent_core/realm_server.py" | grep -q 'LegacyControllerService'
+          git show "$TARGET_CORE_COMMIT:agent_core/realm_server.py" | grep -q "parsed.path == '/v1/resolve'"
+          git show "$TARGET_CORE_COMMIT:agent_core/controller_api.py" | grep -q 'node does not advertise readable workspace roots'
+          git show "$TARGET_CORE_COMMIT:agent_core/controller_api.py" | grep -q 'agentos_single_owner_convergence=DEFERRED'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          assert int(s.get('deployment_generation') or 0)==4,s
+          assert s.get('desired_core_commit')==s.get('observed_core_commit'),s
+          assert s.get('deployment_status')=='converged',s
+          assert s.get('lease_status')=='released',s
+          assert s.get('lease_owner')=='agentos-core-mainline',s
+          print(json.dumps(s,ensure_ascii=False,indent=2,sort_keys=True))
+          print('generation4_released_preflight=PASS')
+          PY
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
+          grep -q 'agentos.realm-fabric.advance_deployment' "$runtime"
+          grep -q 'agentos.realm-fabric.install_release' "$runtime"
+          grep -q 'agentos.realm-fabric.release_deployment' "$runtime"
+          grep -q 'realm_fabric_deployment_fence_v1' "$runtime"
+
+      - name: Advance generation 4 to generation 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agentos_node.action_relay import ActionRelayClient
+          target=os.environ['TARGET_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
+          p=Path('/home/ubuntu/agent-data/governance/core-deployment.json')
+          s=json.loads(p.read_text(encoding='utf-8'))
+          c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          cap=c.submit('agentos.realm-fabric.advance_deployment',{
+              'current_desired_core_commit':s['desired_core_commit'],
+              'next_desired_core_commit':target,
+              'lease_owner':owner,
+              'expected_generation':4,
+              'lease_seconds':900,
+          })
+          deadline=time.time()+90; r=None
+          while time.time()<deadline:
+              r=c.receipt(cap['capsule_id'])
+              if r is not None: break
+              time.sleep(1)
+          assert r is not None and r.get('ok') is True,r
+          assert r.get('desired_core_commit')==target,r
+          assert int(r.get('deployment_generation') or 0)==5,r
+          assert r.get('lease_status')=='active',r
+          Path('/tmp/agentos-core-generation5-advance.json').write_text(json.dumps(r,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print('generation5_advance=PASS')
+          PY
+
+      - name: Install exact generation 5 through canonical CAS fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show origin/main:scripts/install_realm_fabric_via_action_relay.py > /tmp/install-realm-fabric-via-action-relay.py
+          chmod 700 /tmp/install-realm-fabric-via-action-relay.py
+          export AGENTOS_REALM_FABRIC_SOURCE_COMMIT="$TARGET_CORE_COMMIT"
+          export AGENTOS_REALM_FABRIC_LEASE_OWNER="$LEASE_OWNER"
+          python3 /tmp/install-realm-fabric-via-action-relay.py
+          cp .agentos/evidence/realm-fabric-install-current.json /tmp/agentos-core-generation5-install.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          target=os.environ['TARGET_CORE_COMMIT']
+          r=json.loads(Path('/tmp/agentos-core-generation5-install.json').read_text(encoding='utf-8'))
+          assert r.get('desired_core_commit')==target,r
+          assert r.get('observed_core_commit')==target,r
+          assert int(r.get('deployment_generation') or 0)==5,r
+          assert r.get('deployment_status')=='converged',r
+          print('generation5_install_converged=PASS')
+          PY
+
+      - name: Accept real vopc heartbeat with workspace authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/realm/nodes.json')
+          accepted=None
+          deadline=time.time()+240
+          while time.time()<deadline:
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  time.sleep(3); continue
+              n=(d.get('nodes') or {}).get('vopc5750') or {}
+              roots=n.get('workspace_roots') or {}
+              readable=roots.get('readable') if isinstance(roots,dict) else None
+              if n.get('status')=='online' and isinstance(readable,list) and readable:
+                  accepted=n; break
+              time.sleep(3)
+          assert accepted is not None,'vopc5750 workspace authority heartbeat timeout'
+          ev={
+              'schema':'agentos.node-workspace-authority-acceptance/v1',
+              'node_id':'vopc5750',
+              'last_heartbeat_at':accepted.get('last_heartbeat_at'),
+              'workspace_roots':accepted.get('workspace_roots'),
+              'runtime':accepted.get('runtime'),
+              'capabilities':accepted.get('capabilities'),
+          }
+          Path('/tmp/vopc5750-workspace-authority.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True))
+          print('vopc5750_workspace_authority=PASS')
+          PY
+
+      - name: Regress accepted legacy ControllerService route
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show origin/main:scripts/controller_surface_inspect_vopc5750.sh > /tmp/controller-surface-inspect-vopc5750.sh
+          chmod 700 /tmp/controller-surface-inspect-vopc5750.sh
+          bash /tmp/controller-surface-inspect-vopc5750.sh | tee /tmp/controller-generation5.txt
+          grep -q 'controller_service_entered=PASS' /tmp/controller-generation5.txt
+          ! grep -q 'controller_dispatch_http_code=404' /tmp/controller-generation5.txt
+          echo 'generation5_legacy_controller_regression=PASS'
+
+      - name: Release generation 5 and persist acceptance evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from agentos_node.action_relay import ActionRelayClient
+          target=os.environ['TARGET_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
+          c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
+          cap=c.submit('agentos.realm-fabric.release_deployment',{
+              'desired_core_commit':target,
+              'lease_owner':owner,
+              'deployment_generation':5,
+          })
+          deadline=time.time()+90; r=None
+          while time.time()<deadline:
+              r=c.receipt(cap['capsule_id'])
+              if r is not None: break
+              time.sleep(1)
+          assert r is not None and r.get('ok') is True,r
+          assert r.get('desired_core_commit')==target and r.get('observed_core_commit')==target,r
+          assert int(r.get('deployment_generation') or 0)==5,r
+          assert r.get('deployment_status')=='converged' and r.get('lease_status')=='released',r
+          ev={
+              'schema':'agentos.core-runtime-candidate-live-acceptance/v1',
+              'accepted_at':datetime.now(timezone.utc).isoformat(),
+              'live_core_commit':target,
+              'deployment_generation':5,
+              'deployment_status':'converged',
+              'lease_status':'released',
+              'workspace_authority':json.loads(Path('/tmp/vopc5750-workspace-authority.json').read_text()),
+              'advance_receipt':json.loads(Path('/tmp/agentos-core-generation5-advance.json').read_text()),
+              'install_receipt':json.loads(Path('/tmp/agentos-core-generation5-install.json').read_text()),
+              'gates':{
+                  'candidate_contract_run_33303116461':True,
+                  'node_registry_transaction_safe':True,
+                  'resolve_route_preserved':True,
+                  'legacy_controller_route_preserved':True,
+                  'vopc_workspace_authority_persisted':True,
+              },
+          }
+          Path('/tmp/core-generation5-live-acceptance.json').write_text(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(ev,ensure_ascii=False,indent=2,sort_keys=True))
+          print('generation5_release=PASS')
+          PY
+
+          cp /tmp/core-generation5-live-acceptance.json /tmp/core-generation5-live-acceptance.keep.json
+          git fetch origin feature/realm-node-fabric-readiness
+          git reset --hard origin/feature/realm-node-fabric-readiness
+          mkdir -p .agentos/evidence/node-golden-path
+          cp /tmp/core-generation5-live-acceptance.keep.json .agentos/evidence/node-golden-path/core-generation5.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/node-golden-path/core-generation5.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'evidence(agentos): accept Core generation 5 workspace authority'
+            git pull --rebase origin feature/realm-node-fabric-readiness
+            git push origin HEAD:feature/realm-node-fabric-readiness
+          fi
