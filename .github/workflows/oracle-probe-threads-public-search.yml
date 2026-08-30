@@ -1,0 +1,44 @@
+name: Oracle Probe Threads Public Search
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-threads-public-search.yml'
+      - 'scripts/probe_threads_public_search.py'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe public Threads search
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          python3 scripts/probe_threads_public_search.py > .agentos/evidence/threads-public-search-probe.json
+          python3 - <<'PY'
+          import json
+          p='.agentos/evidence/threads-public-search-probe.json'
+          x=json.load(open(p))
+          assert x.get('login_bypass_used') is False, x
+          assert x.get('anti_bot_bypass_used') is False, x
+          assert x.get('post_text_emitted') is False, x
+          assert x.get('token_used') is False, x
+          assert x.get('db_written') is False, x
+          assert x.get('core_modified') is False, x
+          print(json.dumps(x, ensure_ascii=False))
+          PY
+      - name: Upload sanitized probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: threads-public-search-probe-${{ github.run_id }}
+          path: .agentos/evidence/threads-public-search-probe.json
+          if-no-files-found: error
+          retention-days: 14
