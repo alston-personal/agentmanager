@@ -1,0 +1,34 @@
+name: Diagnose Live Chronos Jobs
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-diagnose-live-chronos-jobs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+      - name: Read-only live Chronos evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== process ==='
+          ps -eo user,group,pid,ppid,lstart,etime,args | grep -F 'scripts/chronos.py' | grep -v grep
+          echo '=== current source schedule entry ==='
+          grep -n -A2 -B1 'swarm-board-refresh' /home/ubuntu/agentmanager/schedule.yaml || true
+          echo '=== live log trigger evidence (last 1500 lines) ==='
+          tail -n 1500 /home/ubuntu/agent-data/logs/chronos.log | grep -E "Loaded [0-9]+ scheduled tasks|swarm-board-refresh|update_scheduler_board.py|\[Trigger\]" | tail -n 240 || true
+          echo '=== target timestamps ==='
+          stat -c 'target=%n owner=%U:%G mode=%a mtime=%y' /home/ubuntu/agentmanager/scripts/update_scheduler_board.py
+          echo 'chronos_live_job_diagnostic=PASS'
