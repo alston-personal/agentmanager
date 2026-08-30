@@ -14,7 +14,7 @@ from agent_core.realm_fabric import RealmFabricStore
 from agent_core.realm_server import RealmHTTPServer
 
 
-def _online_fabric(tmp_path: Path) -> tuple[RealmFabricStore, str]:
+def _online_fabric(tmp_path: Path, *, include_workspace_roots: bool = True) -> tuple[RealmFabricStore, str]:
     registry = NodeRegistry(tmp_path / 'nodes.json')
     fabric = RealmFabricStore(tmp_path / 'fabric.json', node_registry=registry)
     fabric.initialize_realm('realm-test')
@@ -32,6 +32,11 @@ def _online_fabric(tmp_path: Path) -> tuple[RealmFabricStore, str]:
         'surface_inventory': {'surfaces': [], 'surface_count': 0, 'capabilities': []},
         'observed_at': '2099-01-01T00:00:00Z',
     }
+    if include_workspace_roots:
+        manifest['workspace_roots'] = {
+            'readable': ['C:/Users/test/AgentOS'],
+            'writable': ['C:/Users/test/AgentOS'],
+        }
     enrolled = fabric.enroll(invite_id=invite['invite_id'], code=invite['code'], manifest=manifest)
     token = enrolled['node_token']
     fabric.record_heartbeat({
@@ -97,15 +102,13 @@ def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_p
     assert task['action'] == 'shell.exec'
     assert task['controller_action'] == 'node.runtime.converge'
     assert task['executable'] == 'powershell'
+    assert task['cwd'] == 'C:/Users/test/AgentOS'
     script = task['argv'][-1]
     assert commit in script
     assert 'AgentOS Thin Client Watchdog' in script
     assert 'Register-ScheduledTask' not in script
     assert 'whoami' not in script
     assert 'cmd.exe' not in script
-    # Regression for the real vopc5750 lifecycle failure: old unmanaged client
-    # daemons must be retired only after the task receipt has had time to land,
-    # then the existing Scheduled Task becomes the single runtime owner.
     assert "Start-Sleep -Seconds 10" in script
     assert "Get-CimInstance Win32_Process" in script
     assert "agentos_node\\.client_cli\\s+run" in script
@@ -119,6 +122,16 @@ def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_p
 
     with pytest.raises(ValueError, match='source_commit'):
         controller.dispatch('node-a', {'action': 'node.runtime.converge', 'source_commit': 'main'})
+
+
+def test_runtime_convergence_requires_node_workspace_authority(tmp_path: Path) -> None:
+    fabric, _ = _online_fabric(tmp_path, include_workspace_roots=False)
+    controller = ControllerService(fabric)
+    with pytest.raises(ValueError, match='workspace roots'):
+        controller.dispatch('node-a', {
+            'action': 'node.runtime.converge',
+            'source_commit': 'a' * 40,
+        })
 
 
 def _request(url: str, token: str | None = None, *, method: str = 'GET', body: dict | None = None):
