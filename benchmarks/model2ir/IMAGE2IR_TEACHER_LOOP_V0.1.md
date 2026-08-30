@@ -11,8 +11,17 @@ Purpose: measure the current Image→IR system against a stable 3D-derived Chara
 5. Normalize the shared humanoid part vocabulary (`body` → `torso`).
 6. Measure core-part precision/recall/F1 and body-coverage agreement.
 7. Preserve teacher unresolved fields outside dense scoring.
+8. If the primary detector rejects the image, run a detector-independent silhouette/body-plan fallback and score it against the exact same teacher.
 
-## Why the first score is intentionally narrow
+## First measured result
+
+The current public Character Blueprint (`0.5.0`) rejects the CesiumMan canonical front render with “沒有偵測到足夠清楚的人物”, producing an observable baseline score of `0.0`. This is treated as valid evidence of a detector-domain gap, not as a benchmark infrastructure failure.
+
+A teacher-blind silhouette fallback based only on image foreground shape raises the same case to a positive shared-field score. The first successful run measured core recall `1.0`, core F1 `0.9091`, coverage agreement `true`, and score `0.9318` before teacher semantic repair.
+
+The comparison also exposed a reverse-direction bug: the 3D teacher labelled two terminal `neck_joint` nodes but emitted no `head`, while the rendered image visibly contained a head-shaped region. Rather than hiding that disagreement in the scorer, `model2ir` now uses a conservative corroboration rule: only a strong humanoid rig with a multi-joint neck chain, one unique terminal neck joint, and no explicit head evidence may infer a low-authority head anchor. Existing model2ir family/reversibility gates must remain green after this repair.
+
+## Why the score is intentionally narrow
 
 The two IRs are not yet schema-identical. A full object diff would mostly measure schema mismatch rather than perception quality. v0.1 therefore scores only shared, observable concepts:
 
@@ -24,6 +33,14 @@ The two IRs are not yet schema-identical. A full object diff would mostly measur
 
 Hair, garment, depth assumptions, topology, materials, morphs, and other unmatched fields are recorded but not automatically labelled as hallucinations.
 
+## Truth and correction policy
+
+- A detector rejection is a valid zero baseline.
+- A fallback may improve coverage, but its outputs remain `candidate` unless corroborated.
+- Teacher unknown/unresolved fields are not converted into negative labels merely because the teacher lacks a value.
+- A teacher/predictor disagreement may indicate a predictor bug **or a teacher bug**. The loop must inspect evidence before assigning blame.
+- Benchmark scores may not be improved by weakening truth policy or silently removing disagreements.
+
 ## Exit condition for the next stage
 
-The baseline must produce a deterministic evidence artifact. The next correction stage must improve held-out shared-field score without increasing unsupported confident fields. Only after this gate is measurable should we add learned or rule-based correction from the teacher dataset.
+The loop must produce deterministic evidence, demonstrate a real improvement over the primary detector on at least one out-of-domain case, and keep all model2ir stability/reversibility regressions green. The next stage expands the same test across all canonical views and multiple independent 3D model families before introducing learned correction.
