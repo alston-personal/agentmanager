@@ -45,7 +45,10 @@ For `main`, `master`, and `release/*`:
 2. agents may report a PR as `READY_FOR_MERGE`;
 3. agents MUST then stop at `AWAITING_HUMAN_APPROVAL`;
 4. CI success, mergeability, positive review, or a generic `continue` instruction are not merge authorization;
-5. do not merge or directly push to a protected branch without a separate explicit human authorization event.
+5. do not merge or directly push to a protected branch without a separate explicit human authorization event;
+6. development repository writes must name an explicit non-protected branch; never rely on an API's omitted/default branch argument;
+7. Core deployment authority, live acceptance, or evidence generation never grants repository publication authority;
+8. GitHub provider-side protection for `main` is mandatory. AgentOS policy/CI without a provider ref fence is incomplete enforcement.
 
 Evaluate the executable policy with:
 
@@ -57,6 +60,8 @@ python3 scripts/protected_branch_authority.py \
 ```
 
 The expected result without explicit human approval is `AWAITING_HUMAN_APPROVAL` and a non-zero exit status.
+
+Provider-side acceptance is tracked separately and must prove that GitHub rejects a direct `main` push before mutation. See `docs/governance/decisions/GOV-2026-08-30-001-mainline-physical-enforcement.md`.
 
 ## Documentation Reality Rule
 
