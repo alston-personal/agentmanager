@@ -22,12 +22,14 @@ for token in (threads_token, admin_token):
 text=re.sub(r'access_token=[^&\s]+','access_token=[REDACTED]',text)
 text=' '.join(text.split())[-800:]
 print(json.dumps({
-  'schema':'milkcat.vendor-threads-patrol-receipt/v4',
+  'schema':'milkcat.vendor-threads-patrol-receipt/v5',
   'ok':False,'failed_stage':stage,
   'worker_exit_code':rc if stage == 'worker' else None,
   'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,
   'harvest_vendor_matches':0,'harvest_filtered_out':0,
-  'new_candidates':0,'duplicates':0,'errors':1,
+  'new_candidates':0,'duplicates':0,
+  'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,
+  'errors':1,
   'by_search_type':{},'harvest_by_search_type':{},'positive_controls':[],'error_signatures':[],
   'candidate_sources_total':None,'candidate_authors_total':None,
   'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,
@@ -81,7 +83,8 @@ export SOC_THREADS_TOKEN
 
 cd "$BASE" || emit_failure chdir $?
 docker compose up -d --build >"$ERR" 2>&1 || emit_failure compose $?
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/003_source_discovery.sql >"$ERR" 2>&1 || emit_failure migration $?
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/003_source_discovery.sql >"$ERR" 2>&1 || emit_failure migration_003 $?
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/004_actor_independence.sql >"$ERR" 2>&1 || emit_failure migration_004 $?
 
 set +e
 docker compose run --rm -T -e SOC_THREADS_TOKEN="$SOC_THREADS_TOKEN" api \
@@ -98,13 +101,17 @@ python3 - "$OUT" "$CANDIDATES" "$AUTHORS" <<'PY'
 import json,pathlib,sys
 x=json.loads(pathlib.Path(sys.argv[1]).read_text())
 print(json.dumps({
-  'schema':'milkcat.vendor-threads-patrol-receipt/v4',
+  'schema':'milkcat.vendor-threads-patrol-receipt/v5',
   'ok':True,'failed_stage':None,'worker_exit_code':0,
   'queries':x.get('queries',0),'results_seen':x.get('results',0),
   'direct_results':x.get('direct_results',0),'harvest_results':x.get('harvest_results',0),
   'harvest_vendor_matches':x.get('harvest_vendor_matches',0),
   'harvest_filtered_out':x.get('harvest_filtered_out',0),
-  'new_candidates':x.get('new_candidates',0),'duplicates':x.get('duplicates',0),'errors':x.get('errors',0),
+  'new_candidates':x.get('new_candidates',0),'duplicates':x.get('duplicates',0),
+  'actor_observations':x.get('actor_observations',0),
+  'same_actor_multiple_sources':x.get('same_actor_multiple_sources',0),
+  'same_actor_repeated_text':x.get('same_actor_repeated_text',0),
+  'errors':x.get('errors',0),
   'by_search_type':x.get('by_search_type',{}),'harvest_by_search_type':x.get('harvest_by_search_type',{}),
   'positive_controls':x.get('positive_controls',[]),'error_signatures':x.get('error_signatures',[]),
   'candidate_sources_total':int(sys.argv[2]),'candidate_authors_total':int(sys.argv[3]),
