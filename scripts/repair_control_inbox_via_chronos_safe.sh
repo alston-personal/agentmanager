@@ -142,7 +142,7 @@ target.write_text(bridge+original,encoding='utf-8')
 PY
 
 echo 'issue77_one_time_bridge_installed=YES'
-for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
+for i in $(seq 1 360); do [ -f "$RECEIPT" ] && break; sleep 1; done
 test -f "$RECEIPT" || { echo 'issue77_receipt=TIMEOUT'; exit 3; }
 cat "$RECEIPT"
 python3 - "$RECEIPT" "$SOURCE_SHA" <<'PY'
