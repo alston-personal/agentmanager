@@ -24,7 +24,7 @@ for token in (threads_token, admin_token):
 text=re.sub(r'access_token=[^&\s]+','access_token=[REDACTED]',text)
 text=' '.join(text.split())[-800:]
 print(json.dumps({
-  'schema':'milkcat.vendor-threads-patrol-receipt/v6',
+  'schema':'milkcat.vendor-threads-patrol-receipt/v7',
   'ok':False,'failed_stage':stage,
   'worker_exit_code':rc if stage == 'worker' else None,
   'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,
@@ -33,6 +33,7 @@ print(json.dumps({
   'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,
   'reputation_vendors_computed':0,'reputation_reviews_seen':0,
   'reputation_independent_voices':0,'reputation_duplicate_actor_reviews_collapsed':0,
+  'active_monitored_sources':None,'unique_source_objects':None,
   'errors':1,
   'by_search_type':{},'harvest_by_search_type':{},'positive_controls':[],'error_signatures':[],
   'candidate_sources_total':None,'candidate_authors_total':None,
@@ -90,17 +91,21 @@ cd "$BASE" || emit_failure chdir $?
 docker compose up -d db >"$ERR" 2>&1 || emit_failure compose_db $?
 READY=0
 for _ in $(seq 1 30); do
-  if docker compose exec -T db pg_isready -U vendor_service -d vendor_reputation >/dev/null 2>"$ERR"; then
+  if docker compose exec -T db psql -U vendor_service -d vendor_reputation -Atqc 'select 1' >/dev/null 2>"$ERR"; then
     READY=1
     break
   fi
   sleep 1
 done
-if [ "$READY" -ne 1 ]; then echo 'vendor db did not become ready' >"$ERR"; emit_failure db_ready 2; fi
+if [ "$READY" -ne 1 ]; then echo 'vendor db did not become queryable' >"$ERR"; emit_failure db_ready 2; fi
 
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/003_source_discovery.sql >"$ERR" 2>&1 || emit_failure migration_003 $?
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/004_actor_independence.sql >"$ERR" 2>&1 || emit_failure migration_004 $?
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/005_reputation_snapshot_voice_counts.sql >"$ERR" 2>&1 || emit_failure migration_005 $?
+for migration in \
+  sql/003_source_discovery.sql \
+  sql/004_actor_independence.sql \
+  sql/005_reputation_snapshot_voice_counts.sql \
+  sql/006_threads_source_identity.sql; do
+  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < "$migration" >"$ERR" 2>&1 || emit_failure "migration_$(basename "$migration" .sql)" $?
+done
 
 docker compose up -d --build api >"$ERR" 2>&1 || emit_failure compose_api $?
 
@@ -122,13 +127,15 @@ if [ "$REPUTATION_RC" -ne 0 ]; then emit_failure reputation_recompute "$REPUTATI
 
 CANDIDATES=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from candidate_sources where status='candidate';" 2>"$ERR" | tr -d '\r') || emit_failure db_count $?
 AUTHORS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_author) from candidate_sources where status='candidate' and source_author is not null;" 2>"$ERR" | tr -d '\r') || emit_failure db_count $?
+ACTIVE_SOURCES=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from monitored_sources where status='active';" 2>"$ERR" | tr -d '\r') || emit_failure db_count $?
+UNIQUE_OBJECTS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_object_id) from monitored_sources where status='active' and source_type='threads_public_post' and source_object_id is not null;" 2>"$ERR" | tr -d '\r') || emit_failure db_count $?
 
-python3 - "$OUT" "$REPUTATION_OUT" "$CANDIDATES" "$AUTHORS" <<'PY'
+python3 - "$OUT" "$REPUTATION_OUT" "$CANDIDATES" "$AUTHORS" "$ACTIVE_SOURCES" "$UNIQUE_OBJECTS" <<'PY'
 import json,pathlib,sys
 x=json.loads(pathlib.Path(sys.argv[1]).read_text())
 r=json.loads(pathlib.Path(sys.argv[2]).read_text())
 print(json.dumps({
-  'schema':'milkcat.vendor-threads-patrol-receipt/v6',
+  'schema':'milkcat.vendor-threads-patrol-receipt/v7',
   'ok':True,'failed_stage':None,'worker_exit_code':0,
   'queries':x.get('queries',0),'results_seen':x.get('results',0),
   'direct_results':x.get('direct_results',0),'harvest_results':x.get('harvest_results',0),
@@ -142,6 +149,8 @@ print(json.dumps({
   'reputation_reviews_seen':r.get('reviews_seen',0),
   'reputation_independent_voices':r.get('independent_voices',0),
   'reputation_duplicate_actor_reviews_collapsed':r.get('duplicate_actor_reviews_collapsed',0),
+  'active_monitored_sources':int(sys.argv[5]),
+  'unique_source_objects':int(sys.argv[6]),
   'errors':x.get('errors',0),
   'by_search_type':x.get('by_search_type',{}),'harvest_by_search_type':x.get('harvest_by_search_type',{}),
   'positive_controls':x.get('positive_controls',[]),'error_signatures':x.get('error_signatures',[]),
