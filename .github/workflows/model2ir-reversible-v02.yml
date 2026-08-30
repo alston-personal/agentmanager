@@ -1,4 +1,4 @@
-name: model2ir reversible v0.2
+name: model2ir reversible contract
 
 on:
   pull_request:
@@ -28,14 +28,15 @@ jobs:
           python-version: '3.12'
       - name: Install model2ir
         run: python -m pip install -e libs/model2ir
-      - name: Validate package version and API
+      - name: Validate reversible API compatibility
         run: |
           python - <<'PY'
           import model2ir
-          assert model2ir.__version__ == '0.2.0'
+          major, minor, patch = map(int, model2ir.__version__.split('.'))
+          assert (major, minor) >= (0, 2)
           for name in ['extract_ir','diff_ir','reconcile_ir','score_roundtrip','compile_reversible_gltf','save_reversible_gltf','ir_digest']:
               assert hasattr(model2ir, name), name
-          print('model2ir_v02_api=PASS')
+          print('model2ir_reversible_api_compat=PASS', model2ir.__version__)
           PY
       - name: Run reversible family regression
         run: |
@@ -54,7 +55,7 @@ jobs:
       - name: Upload reversible evidence
         uses: actions/upload-artifact@v4
         with:
-          name: model2ir-reversible-v02
+          name: model2ir-reversible-contract
           path: /tmp/model2ir-v02/
           if-no-files-found: error
           retention-days: 30
