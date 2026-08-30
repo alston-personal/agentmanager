@@ -1,0 +1,42 @@
+{
+  "schema": "agentos.resolve-e2e-evidence/v1",
+  "accepted": true,
+  "accepted_at": "2026-08-30T09:51:45Z",
+  "workflow_run_id": 33305066302,
+  "workflow_job_id": 99240031405,
+  "trigger_commit": "aae93ddab034918f153ae862c32ab09738d0e32f",
+  "live_core_generation": 5,
+  "live_core_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+  "caller_node_id": "vopc5750",
+  "transport": "vopc5750 -> public ONE gateway -> authenticated POST /v1/resolve -> live Realm",
+  "result": {
+    "schema": "agentos.resolve/v1",
+    "intent": "continue",
+    "project_id": "agentos-core",
+    "aliases": ["AgentOS", "AgentOS Core"],
+    "mutation_allowed": true,
+    "availability": {
+      "project_identity": true,
+      "project_integrity": true,
+      "node_context": true,
+      "continuation": false,
+      "execution_head": false,
+      "last_receipt": false
+    },
+    "provenance": {
+      "project_identity": "governance-directory",
+      "project_resolution": "governance-directory",
+      "last_receipt": "not-yet-project-indexed"
+    }
+  },
+  "acceptance_assertions": [
+    "resolve_e2e_baseline=PASS",
+    "node receipt ok=true",
+    "node returncode=0",
+    "resolve_authenticated_live_e2e=PASS",
+    "project_id=agentos-core",
+    "availability.project_identity=true",
+    "provenance present"
+  ],
+  "remaining_gap": "fresh-chat ChatGPT Web -> ONE resolve still requires dedicated E2E evidence; continuation/execution-head/project-indexed last receipt are not yet populated for agentos-core in this resolve result"
+}
