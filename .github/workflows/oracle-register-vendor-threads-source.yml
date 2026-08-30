@@ -74,9 +74,23 @@ jobs:
 
           set -a
           . /home/ubuntu/agent-data/secrets/vendor-reputation.env
-          . /home/ubuntu/agent-data/secrets/zeus-writer.env
           set +a
-          test -n "${SOC_THREADS_TOKEN:-}"
+          SOC_THREADS_TOKEN=$(python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/secrets/zeus-writer.env')
+          value=''
+          for line in p.read_text().splitlines():
+              if line.startswith('SOC_THREADS_TOKEN='):
+                  value=line.split('=',1)[1].strip()
+                  if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\"', "'"}:
+                      value=value[1:-1]
+                  break
+          if not value:
+              raise SystemExit('SOC_THREADS_TOKEN missing')
+          print(value)
+          PY
+          )
+          export SOC_THREADS_TOKEN
 
           cd "$BASE"
           docker compose up -d --build >/tmp/vendor-patrol-compose.log 2>&1
