@@ -64,15 +64,43 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/vendor-threads-patrol.json
+          SSHERR=.agentos/evidence/vendor-threads-patrol-ssh.err
           set +e
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             bash -s -- "$SERVICE_SHA" \
             < scripts/run_vendor_threads_patrol.sh \
-            > .agentos/evidence/vendor-threads-patrol.json
+            > "$OUT" 2> "$SSHERR"
           SSH_RC=$?
           set -e
-          python3 -m json.tool .agentos/evidence/vendor-threads-patrol.json >/dev/null
-          cat .agentos/evidence/vendor-threads-patrol.json
+          if [ ! -s "$OUT" ]; then
+            python3 - "$SSH_RC" "$SSHERR" > "$OUT" <<'PY'
+          import json,pathlib,sys
+          rc=int(sys.argv[1]); p=pathlib.Path(sys.argv[2])
+          text=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
+          print(json.dumps({
+            'schema':'milkcat.vendor-threads-patrol-receipt/v3',
+            'ok':False,
+            'failed_stage':'ssh',
+            'worker_exit_code':None,
+            'queries':0,
+            'results_seen':0,
+            'new_candidates':0,
+            'duplicates':0,
+            'errors':1,
+            'candidate_sources_total':None,
+            'candidate_authors_total':None,
+            'sanitized_error_tail':text,
+            'raw_text_emitted':False,
+            'token_exposed':False,
+            'reviews_published':False,
+            'core_modified':False
+          },ensure_ascii=False))
+          PY
+          fi
+          rm -f "$SSHERR"
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
           exit "$SSH_RC"
       - name: Commit sanitized patrol evidence
         if: always()
