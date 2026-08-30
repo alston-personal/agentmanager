@@ -23,6 +23,7 @@ jobs:
       AGENT_DATA_ROOT: /home/ubuntu/agent-data
       TARGET_CORE_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
       LEASE_OWNER: agentos-core-mainline
+      DEPLOY_CLIENT_ROOT: /tmp/agentos-main-deploy-client
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,13 +61,29 @@ jobs:
           grep -q 'agentos.realm-fabric.release_deployment' "$runtime"
           grep -q 'realm_fabric_deployment_fence_v1' "$runtime"
 
+      - name: Materialize accepted deployment client
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DEPLOY_CLIENT_ROOT"
+          mkdir -p "$DEPLOY_CLIENT_ROOT/agentos_node"
+          : > "$DEPLOY_CLIENT_ROOT/agentos_node/__init__.py"
+          git show origin/main:agentos_node/action_relay.py > "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          git show origin/main:scripts/install_realm_fabric_via_action_relay.py > "$DEPLOY_CLIENT_ROOT/install_realm_fabric_via_action_relay.py"
+          python3 -m py_compile "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py" "$DEPLOY_CLIENT_ROOT/install_realm_fabric_via_action_relay.py"
+          grep -q 'agentos.realm-fabric.advance_deployment' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          grep -q 'agentos.realm-fabric.install_release' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          grep -q 'agentos.realm-fabric.release_deployment' "$DEPLOY_CLIENT_ROOT/agentos_node/action_relay.py"
+          echo 'accepted_deployment_client=READY'
+
       - name: Advance generation 4 to generation 5
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json,os,time
+          import json,os,sys,time
           from pathlib import Path
+          sys.path.insert(0,os.environ['DEPLOY_CLIENT_ROOT'])
           from agentos_node.action_relay import ActionRelayClient
           target=os.environ['TARGET_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
           p=Path('/home/ubuntu/agent-data/governance/core-deployment.json')
@@ -96,12 +113,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git show origin/main:scripts/install_realm_fabric_via_action_relay.py > /tmp/install-realm-fabric-via-action-relay.py
-          chmod 700 /tmp/install-realm-fabric-via-action-relay.py
           export AGENTOS_REALM_FABRIC_SOURCE_COMMIT="$TARGET_CORE_COMMIT"
           export AGENTOS_REALM_FABRIC_LEASE_OWNER="$LEASE_OWNER"
-          python3 /tmp/install-realm-fabric-via-action-relay.py
-          cp .agentos/evidence/realm-fabric-install-current.json /tmp/agentos-core-generation5-install.json
+          (
+            cd "$DEPLOY_CLIENT_ROOT"
+            PYTHONPATH="$DEPLOY_CLIENT_ROOT" python3 install_realm_fabric_via_action_relay.py
+          )
+          cp "$DEPLOY_CLIENT_ROOT/.agentos/evidence/realm-fabric-install-current.json" /tmp/agentos-core-generation5-install.json
           python3 - <<'PY'
           import json,os
           from pathlib import Path
@@ -165,9 +183,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json,os,time
+          import json,os,sys,time
           from datetime import datetime,timezone
           from pathlib import Path
+          sys.path.insert(0,os.environ['DEPLOY_CLIENT_ROOT'])
           from agentos_node.action_relay import ActionRelayClient
           target=os.environ['TARGET_CORE_COMMIT']; owner=os.environ['LEASE_OWNER']
           c=ActionRelayClient('/home/ubuntu/agent-data/runtime/action-relay')
