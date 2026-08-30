@@ -1,3 +1,4 @@
+# retrigger: source graph probe after SSH boundary fix
 name: Oracle Probe Vendor Source Link Graph
 
 on:
