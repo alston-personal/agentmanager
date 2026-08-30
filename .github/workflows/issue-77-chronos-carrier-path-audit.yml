@@ -1,0 +1,47 @@
+name: Issue 77 Chronos Carrier Path Audit
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/issue-77-chronos-carrier-path-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve live Chronos execution root without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner_user=$(id -un)"
+          PID=$(pgrep -fo 'scripts/chronos.py')
+          echo "chronos_pid=$PID"
+          ps -p "$PID" -o user,group,pid,ppid,lstart,etime,args
+          echo '=== Chronos proc identity ==='
+          readlink "/proc/$PID/exe" || true
+          readlink "/proc/$PID/cwd" || true
+          pwdx "$PID" 2>&1 || true
+          echo '=== candidate carrier paths ==='
+          for root in /home/ubuntu/agentmanager /home/ubuntu/agentos /home/ubuntu; do
+            p="$root/scripts/update_scheduler_board.py"
+            echo "PATH=$p"
+            if test -e "$p"; then
+              stat -c 'owner=%U group=%G mode=%a size=%s mtime=%y' "$p"
+              sha256sum "$p"
+              grep -n 'AGENTOS_ISSUE77_CONTROL_INBOX_REPAIR_V1' "$p" || true
+            else
+              echo exists=false
+            fi
+          done
+          echo '=== current live Chronos trigger tail ==='
+          tail -n 600 /home/ubuntu/agent-data/logs/chronos.log | grep -E "swarm-board-refresh|update_scheduler_board.py|\[Trigger\]" | tail -n 80 || true
+          echo '=== recently executed board output ==='
+          stat -c 'board_owner=%U board_group=%G board_mode=%a board_mtime=%y' /home/ubuntu/agent-data/SCHEDULER_BOARD.md 2>/dev/null || true
+          echo 'issue77_chronos_path_audit=PASS'
