@@ -52,7 +52,7 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      SERVICE_SHA: 4a8b08fbae3bdc40c3795d98bf9477a4e2574d03
+      SERVICE_SHA: 36702a56ae88fe3c0b821e275a257fa4c52cbc8d
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
@@ -86,12 +86,16 @@ jobs:
           rc=int(sys.argv[1]); p=pathlib.Path(sys.argv[2])
           text=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
           print(json.dumps({
-            'schema':'milkcat.vendor-threads-patrol-receipt/v3',
+            'schema':'milkcat.vendor-threads-patrol-receipt/v4',
             'ok':False,
             'failed_stage':'ssh',
             'worker_exit_code':None,
             'queries':0,
             'results_seen':0,
+            'direct_results':0,
+            'harvest_results':0,
+            'harvest_vendor_matches':0,
+            'harvest_filtered_out':0,
             'new_candidates':0,
             'duplicates':0,
             'errors':1,
@@ -99,6 +103,7 @@ jobs:
             'candidate_authors_total':None,
             'sanitized_error_tail':text,
             'raw_text_emitted':False,
+            'raw_text_persisted':False,
             'token_exposed':False,
             'reviews_published':False,
             'core_modified':False
