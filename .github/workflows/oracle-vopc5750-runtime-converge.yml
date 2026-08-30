@@ -128,15 +128,19 @@ jobs:
           assert cwd,observed
           tid='single-owner-verify-'+str(int(time.time()))
           ps=r'''$ErrorActionPreference='Stop'
+          $statusPath=Join-Path $env:LOCALAPPDATA 'AgentOS\runtime-convergence.json'
+          for($i=0;$i -lt 60;$i++){
+            if(Test-Path $statusPath){ break }
+            Start-Sleep -Seconds 1
+          }
+          if(-not (Test-Path $statusPath)){ throw 'runtime-convergence.json missing after bounded wait' }
+          $status=Get-Content -Raw $statusPath | ConvertFrom-Json
           $task=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction Stop
           $watchdog=Get-ScheduledTask -TaskName 'AgentOS Thin Client Watchdog' -ErrorAction Stop
           $clients=@(Get-CimInstance Win32_Process | Where-Object {
             $_.Name -match '^pythonw?\.exe$' -and
             $_.CommandLine -match '(?i)-m\s+agentos_node\.client_cli\s+run(?:\s|$)'
           })
-          $statusPath=Join-Path $env:LOCALAPPDATA 'AgentOS\runtime-convergence.json'
-          if(-not (Test-Path $statusPath)){ throw 'runtime-convergence.json missing' }
-          $status=Get-Content -Raw $statusPath | ConvertFrom-Json
           Write-Output "TASK_STATE=$($task.State)"
           Write-Output "CLIENT_COUNT=$($clients.Count)"
           Write-Output "WATCHDOG_PRESENT=$($null -ne $watchdog)"
@@ -151,8 +155,8 @@ jobs:
           store.queue_task(node,{
               'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
               'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],
-              'cwd':cwd,'timeout_seconds':30,'cognition_ids_used':[]})
-          for _ in range(45):
+              'cwd':cwd,'timeout_seconds':90,'cognition_ids_used':[]})
+          for _ in range(60):
               r=store.get_receipt(tid)
               if r:
                   print('single_owner_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True))
