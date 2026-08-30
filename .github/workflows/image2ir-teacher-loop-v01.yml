@@ -4,8 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/image2ir_teacher_compare.py'
+      - 'scripts/image2ir_teacher_probe.mjs'
       - 'scripts/model2ir_teacher_dataset.py'
-      - 'scripts/character_blueprint_benchmark_capture.mjs'
       - 'scripts/character_blueprint_glb_render.mjs'
       - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
       - '.github/workflows/image2ir-teacher-loop-v01.yml'
@@ -13,8 +13,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/image2ir_teacher_compare.py'
+      - 'scripts/image2ir_teacher_probe.mjs'
       - 'scripts/model2ir_teacher_dataset.py'
-      - 'scripts/character_blueprint_benchmark_capture.mjs'
       - 'scripts/character_blueprint_glb_render.mjs'
       - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
       - '.github/workflows/image2ir-teacher-loop-v01.yml'
@@ -52,22 +52,21 @@ jobs:
             --case-id cesium-man \
             --out /tmp/image2ir-loop/teacher
 
-      - name: Run current public image2ir baseline on teacher front render
+      - name: Probe current public image2ir on teacher front render
         env:
           CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
           CHARACTER_BLUEPRINT_FIXTURE: /tmp/image2ir-loop/teacher/cesium-man/canonical-front.png
-          CHARACTER_BLUEPRINT_CASE_ID: cesium-man-teacher-front
           CHARACTER_BLUEPRINT_BENCHMARK_OUT: /tmp/image2ir-loop/prediction
         run: |
-          node scripts/character_blueprint_benchmark_capture.mjs | tee /tmp/image2ir-loop/capture.log
-          grep -q '"ok": true' /tmp/image2ir-loop/capture.log
+          node scripts/image2ir_teacher_probe.mjs | tee /tmp/image2ir-loop/probe.log
+          grep -q '"ok":true' /tmp/image2ir-loop/probe.log
+          test -s /tmp/image2ir-loop/prediction/probe.json
 
       - name: Compare image IR to 3D teacher IR
         run: |
           python scripts/image2ir_teacher_compare.py \
             --teacher-ir /tmp/image2ir-loop/teacher/cesium-man/character-ir.json \
-            --prediction-ir /tmp/image2ir-loop/prediction/character-ir.json \
-            --prediction-result /tmp/image2ir-loop/prediction/result.json \
+            --probe /tmp/image2ir-loop/prediction/probe.json \
             --view front \
             --out /tmp/image2ir-loop/compare-front.json | tee /tmp/image2ir-loop/compare.log
           grep -q '"ok": true' /tmp/image2ir-loop/compare.log
@@ -79,10 +78,12 @@ jobs:
           p=json.load(open('/tmp/image2ir-loop/compare-front.json'))
           assert p['schema']=='image2ir-teacher-compare/v0.1'
           m=p['metrics']
+          assert isinstance(m['detector_acceptance'], bool)
           assert 0 <= m['core_precision'] <= 1
           assert 0 <= m['core_recall'] <= 1
           assert 0 <= m['core_f1'] <= 1
           assert 0 <= m['baseline_score'] <= 1
+          assert p['truth_policy']['detector_rejection_is_valid_zero_baseline'] is True
           assert p['truth_policy']['teacher_unresolved_fields_are_excluded_from_dense_scoring'] is True
           print('image2ir_teacher_loop_baseline=PASS', json.dumps(m, sort_keys=True))
           PY
