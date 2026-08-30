@@ -1,5 +1,5 @@
 name: Oracle vopc5750 Runtime Stage2 Start
-# Acceptance trigger: rerun the formal Node Golden Path after live bootstrap + benchmark gateway routing was accepted.
+# Formal Node Golden Path acceptance against the live generation-5 runtime authority.
 
 on:
   push:
@@ -15,108 +15,62 @@ permissions:
 jobs:
   start:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 6
+    timeout-minutes: 8
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      TARGET_RUNTIME_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+      LIVE_CORE_RELEASE: /home/ubuntu/.local/share/agentos/realm-fabric/releases/e50e0fab411eb5c05e5aaa4f866e7282fcb04045
     steps:
       - uses: actions/checkout@v4
         with:
           ref: feature/realm-node-fabric-readiness
           fetch-depth: 1
-      - name: Activate staged Thin Client
+
+      - name: Verify exact managed runtime baseline
         shell: bash
-        env:
-          AGENT_DATA_ROOT: /home/ubuntu/agent-data
-          PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          REF=$(git rev-parse HEAD)
-          python3 - "$REF" <<'PY' >/tmp/vopc5750-stage2-task.txt
-          import sys,time
+          test -d "$LIVE_CORE_RELEASE/agent_core"
+          PYTHONPATH="$LIVE_CORE_RELEASE" python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          from agent_core.controller_api import ControllerService
           from agent_core.realm_fabric import RealmFabricStore
-          ref=sys.argv[1]
-          node='vopc5750'
-          tid='runtime-stage2-start-'+node+'-'+str(int(time.time()))
-          ps=r'''$ErrorActionPreference='Stop'
-          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
-          $taskName='AgentOS Thin Client'
-          $watchdogName='AgentOS Thin Client Watchdog'
-          Get-ScheduledTask -TaskName $taskName -ErrorAction Stop | Out-Null
-          Get-ScheduledTask -TaskName $watchdogName -ErrorAction Stop | Out-Null
-
-          $prov=[ordered]@{
-            schema='agentos.thin-client-runtime/v0.1'
-            source_ref='feature/realm-node-fabric-readiness'
-            source_commit='REF'
-            installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-            install_mode='stage2-deferred-restart'
-          }
-          $json=$prov | ConvertTo-Json
-          [System.IO.File]::WriteAllText((Join-Path $install 'runtime-provenance.json'),$json,(New-Object System.Text.UTF8Encoding($false)))
-
-          $restart="Start-Sleep -Seconds 5; Stop-ScheduledTask -TaskName '$taskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName '$taskName'"
-          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
-          Write-Output 'agentos_runtime_stage2_start=PASS'
-          Write-Output 'agentos_restart=deferred-stop-start'
-          Write-Output 'agentos_watchdog_preserved=PASS'
-          Write-Output 'agentos_source_commit=REF'
-          '''.replace('REF',ref)
-          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
-          RealmFabricStore().queue_task(node,task)
-          print(tid)
-          PY
-      - name: Wait for start receipt and exact converged heartbeat
-        shell: bash
-        env:
-          AGENT_DATA_ROOT: /home/ubuntu/agent-data
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          set -euo pipefail
-          TASK=$(cat /tmp/vopc5750-stage2-task.txt)
-          REF=$(git rev-parse HEAD)
-          for i in $(seq 1 75); do
-            python3 - "$TASK" "$REF" <<'PY' && exit 0 || true
-          import json,sys
-          from agent_core.realm_fabric import RealmFabricStore
-          from agent_core.node_registry import NodeRegistry
-          task,ref=sys.argv[1:3]
-          r=RealmFabricStore().get_receipt(task)
-          if not r or r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
-              raise SystemExit(1)
-          if 'agentos_runtime_stage2_start=PASS' not in str(r.get('stdout') or ''):
-              raise SystemExit(1)
-          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='vopc5750'),None)
-          if not node or node.get('status')!='online':
-              raise SystemExit(1)
-          caps=set(node.get('capabilities') or [])
+          ref=os.environ['TARGET_RUNTIME_COMMIT']
+          state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          assert int(state.get('deployment_generation') or 0)==5,state
+          assert state.get('desired_core_commit')==ref and state.get('observed_core_commit')==ref,state
+          assert state.get('deployment_status')=='converged' and state.get('lease_status')=='released',state
+          controller=ControllerService(RealmFabricStore())
+          node=controller.node('vopc5750')
           runtime=node.get('runtime') or {}
-          ok=(
-              'agent.surface.inspect' in caps
-              and 'node.runtime.converge' in caps
-              and runtime.get('source_commit') == ref
-          )
-          if ok:
-              print(json.dumps({'receipt':r,'node':node},ensure_ascii=False,indent=2,sort_keys=True))
-              raise SystemExit(0)
-          raise SystemExit(1)
+          roots=node.get('workspace_roots') or {}
+          assert node.get('status')=='online',node
+          assert runtime.get('source_commit')==ref,node
+          assert node.get('runtime_status')=='converged',node
+          assert isinstance(roots.get('readable'),list) and roots['readable'],node
+          print(json.dumps({'node':node,'deployment':state},ensure_ascii=False,indent=2,sort_keys=True))
+          print('stage2_managed_runtime_baseline=PASS')
           PY
-            sleep 2
-          done
-          echo 'stage2 exact heartbeat convergence timeout' >&2
-          exit 1
 
       - name: Persist discovery and readiness regression
         shell: bash
-        env:
-          AGENT_DATA_ROOT: /home/ubuntu/agent-data
-          PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          PYTHONPATH="$LIVE_CORE_RELEASE" python3 - <<'PY'
           import json,time
+          from agent_core.controller_api import ControllerService
           from agent_core.realm_fabric import RealmFabricStore
           from agent_core.node_registry import NodeRegistry
 
           node='vopc5750'
           store=RealmFabricStore()
+          controller=ControllerService(store)
+          observed=controller.node(node)
+          roots=observed.get('workspace_roots') or {}
+          cwd=(roots.get('readable') or [None])[0]
+          if not cwd:
+              raise SystemExit('missing workspace authority')
 
           def wait_receipt(task_id, attempts=60):
               for _ in range(attempts):
@@ -154,17 +108,17 @@ jobs:
               'action':'shell.exec',
               'executable':'powershell',
               'argv':['-NoProfile','-NonInteractive','-Command',ps],
-              'cwd':r'C:\Users\alston.huang\AgentOS',
-              'timeout_seconds':90,
+              'cwd':cwd,
+              'timeout_seconds':120,
               'cognition_ids_used':[],
           })
-          readiness=wait_receipt(verify_id,60)
+          readiness=wait_receipt(verify_id,75)
           print('golden_readiness_receipt='+json.dumps(readiness,ensure_ascii=False,sort_keys=True))
           if readiness.get('ok') is not True or int(readiness.get('returncode') or 0)!=0:
               raise SystemExit('agentos-client verify failed')
 
           observed=None
-          for _ in range(30):
+          for _ in range(45):
               observed=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')==node),None)
               benchmark=(observed or {}).get('benchmark') or {}
               if benchmark.get('schema')=='agentos.one-uplift-report/v0.1' and benchmark.get('report_kind')=='readiness-regression':
@@ -183,6 +137,9 @@ jobs:
               raise SystemExit('lifecycle supervisor is not ready')
           if benchmark.get('regressed_dimensions') != 0:
               raise SystemExit('readiness regression detected')
+          runtime=(observed or {}).get('runtime') or {}
+          if runtime.get('source_commit')!='e50e0fab411eb5c05e5aaa4f866e7282fcb04045':
+              raise SystemExit('runtime authority drifted during readiness acceptance')
           print('golden_readiness_regression=PASS')
           print('golden_benchmark_persisted=PASS')
           print('node_ready=true')
