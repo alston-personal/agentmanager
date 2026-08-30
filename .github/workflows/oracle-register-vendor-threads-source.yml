@@ -52,7 +52,7 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      SERVICE_SHA: f2e02ac56737d25141103f57471df89d8269d68d
+      SERVICE_SHA: 1ea5b0e38db5d2d5f2228d1597e17acfdc5b8aad
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
@@ -80,7 +80,7 @@ jobs:
           import json,pathlib,sys
           rc=int(sys.argv[1]); p=pathlib.Path(sys.argv[2])
           text=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
-          print(json.dumps({'schema':'milkcat.vendor-threads-patrol-receipt/v4','ok':False,'failed_stage':'ssh','worker_exit_code':None,'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,'harvest_vendor_matches':0,'harvest_filtered_out':0,'new_candidates':0,'duplicates':0,'errors':1,'candidate_sources_total':None,'candidate_authors_total':None,'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,'token_exposed':False,'reviews_published':False,'core_modified':False},ensure_ascii=False))
+          print(json.dumps({'schema':'milkcat.vendor-threads-patrol-receipt/v5','ok':False,'failed_stage':'ssh','worker_exit_code':None,'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,'harvest_vendor_matches':0,'harvest_filtered_out':0,'new_candidates':0,'duplicates':0,'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,'errors':1,'candidate_sources_total':None,'candidate_authors_total':None,'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,'token_exposed':False,'reviews_published':False,'core_modified':False},ensure_ascii=False))
           PY
           fi
           rm -f "$SSHERR"
