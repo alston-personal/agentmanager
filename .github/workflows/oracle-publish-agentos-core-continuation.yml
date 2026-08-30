@@ -6,6 +6,8 @@ on:
       - feature/realm-node-fabric-readiness
     paths:
       - '.github/workflows/oracle-publish-agentos-core-continuation.yml'
+      - 'scripts/bootstrap_project_continuation_overlay_via_chronos.sh'
+      - 'scripts/install_project_continuation_overlay.py'
   workflow_dispatch:
 
 permissions:
