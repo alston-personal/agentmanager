@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/oracle-probe-normalized-reply-schema.yml'
+      - 'scripts/register_vendor_threads_source.sh'
 
 permissions:
   contents: write
@@ -65,4 +66,49 @@ jobs:
           git add .agentos/evidence/vendor-normalized-reply-schema.json
           git diff --cached --quiet && exit 0
           git commit -m 'evidence(vendors): normalized reply schema metadata'
+          git push
+
+  register-source:
+    needs: probe
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_SHA: fbcf3cb1ece1bf7b2d928634cf4afd3901cf894b
+      SOURCE_URL: https://www.threads.com/share/_yh22msHD/
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Register first and second monitored Threads sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
+            < scripts/register_vendor_threads_source.sh \
+            > .agentos/evidence/vendor-source-register.json
+          python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
+          cat .agentos/evidence/vendor-source-register.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('.agentos/evidence/vendor-source-register.json'))
+          assert x['active_sources'] == 2, x
+          assert x['new_source_registered'] == 1, x
+          assert x['core_modified'] is False, x
+          PY
+      - name: Commit sanitized source-registry evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .agentos/evidence/vendor-source-register.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(vendors): monitored Threads source registry'
           git push
