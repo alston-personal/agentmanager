@@ -1,0 +1,73 @@
+name: model2ir v0.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_family_regression.py'
+      - 'benchmarks/model2ir/**'
+      - '.github/workflows/model2ir-v01.yml'
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_family_regression.py'
+      - 'benchmarks/model2ir/**'
+      - '.github/workflows/model2ir-v01.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  library-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install model2ir
+        run: python -m pip install -e libs/model2ir
+      - name: Validate public API
+        run: |
+          python - <<'PY'
+          import model2ir
+          assert model2ir.__version__ == '0.1.0'
+          for name in ['load_asset','extract_ir','diff_ir','reconcile_ir','score_roundtrip']:
+              assert callable(getattr(model2ir,name))
+          print('model2ir_public_api=PASS')
+          PY
+      - name: Run controlled family regression
+        run: |
+          python scripts/model2ir_family_regression.py --out benchmark-artifacts/model2ir-family-v01
+          test -s benchmark-artifacts/model2ir-family-v01/schema-gap-report.json
+          grep -q 'hair.style_or_length' benchmark-artifacts/model2ir-family-v01/schema-gap-report.json
+          grep -q 'bodyplan.extra_appendages' benchmark-artifacts/model2ir-family-v01/schema-gap-report.json
+      - name: Fetch real human GLB fixture
+        run: |
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb -o /tmp/CesiumMan.glb
+          cp /tmp/CesiumMan.glb /tmp/CesiumMan.vrm
+      - name: Extract GLB and VRM-container IR
+        run: |
+          python -m model2ir extract /tmp/CesiumMan.glb -o benchmark-artifacts/real/cesium-man-glb.json
+          python -m model2ir extract /tmp/CesiumMan.vrm -o benchmark-artifacts/real/cesium-man-vrm-container.json
+          python - <<'PY'
+          import json
+          a=json.load(open('benchmark-artifacts/real/cesium-man-glb.json'))
+          b=json.load(open('benchmark-artifacts/real/cesium-man-vrm-container.json'))
+          assert a['schema']=='model2ir-character-ir/v0.1'
+          assert a['source_kind']=='glb'
+          assert b['source_kind']=='vrm'
+          assert a['structural_ir']['geometry']['vertices_sum'] > 3000
+          assert a['provenance']['truth_policy']
+          print('model2ir_real_asset=PASS')
+          PY
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-v01-evidence
+          path: benchmark-artifacts/
+          if-no-files-found: error
+          retention-days: 30
