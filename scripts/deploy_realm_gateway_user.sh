@@ -7,15 +7,22 @@ if [ "$(id -un)" != "ubuntu" ]; then
 fi
 
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
+SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 DASH="$REPO/dashboard"
 ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
+PUBLIC_BOOTSTRAP='https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
 LOCAL='http://127.0.0.1:8780/v1/health'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
+LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
 
+[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'ERROR: AGENTOS_SOURCE_COMMIT must be exact lowercase 40-hex commit' >&2; exit 2; }
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
+
+git -C "$REPO" fetch origin "$SOURCE_COMMIT"
+git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 
 find_dashboard_runtime() {
   python3 - "$DASH" <<'PY'
@@ -121,18 +128,17 @@ rollback() {
 
 trap 'rc=$?; if [ $rc -ne 0 ]; then rollback; fi; cleanup; exit $rc' EXIT
 
-git -C "$REPO" fetch origin main
 mkdir -p "$(dirname "$ROUTE")"
-git -C "$REPO" show "origin/main:$ROUTE_REL" > "$ROUTE"
+git -C "$REPO" show "$SOURCE_COMMIT:$ROUTE_REL" > "$ROUTE"
 chmod 0664 "$ROUTE" || true
 
-echo "route_source=origin/main:$ROUTE_REL"
+echo "route_source=$SOURCE_COMMIT:$ROUTE_REL"
 python3 - "$ROUTE" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 s=p.read_text(encoding='utf-8')
-required=['127.0.0.1:8780','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
+required=['127.0.0.1:8780','/v1/bootstrap','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
 missing=[x for x in required if x not in s]
 assert not missing, missing
 assert 'http://' + '${' not in s
@@ -163,6 +169,15 @@ grep -q 'agentos.one-health/v0.1' "$LG_BODY"
 grep -q 'realm-alston' "$LG_BODY"
 echo "realm_gateway_local=PASS"
 
+# No token is supplied intentionally: a correctly routed bootstrap request must
+# reach Realm auth and return 401, never the gateway allowlist 404.
+LB_BODY=/tmp/agentos-realm-local-bootstrap
+LB_CODE=$(curl -sS -o "$LB_BODY" -w '%{http_code}' --max-time 5 "$LOCAL_GATEWAY_BOOTSTRAP" || true)
+echo "local_bootstrap_http=$LB_CODE prefix=$(head -c 240 "$LB_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$LB_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$LB_BODY"
+echo "realm_gateway_bootstrap_local=PASS"
+
 for i in $(seq 1 30); do
   BODY=$(curl -fsS --max-time 5 "$PUBLIC" 2>/dev/null || true)
   if printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1' && printf '%s' "$BODY" | grep -q 'realm-alston'; then break; fi
@@ -172,6 +187,15 @@ BODY=$(curl -fsS --max-time 5 "$PUBLIC")
 printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
 printf '%s' "$BODY" | grep -q 'realm-alston'
 echo "realm_gateway_public=PASS"
+
+PB_BODY=/tmp/agentos-realm-public-bootstrap
+PB_CODE=$(curl -sS -o "$PB_BODY" -w '%{http_code}' --max-time 8 "$PUBLIC_BOOTSTRAP" || true)
+echo "public_bootstrap_http=$PB_CODE prefix=$(head -c 240 "$PB_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$PB_CODE" = 401 ]
+! grep -q 'Realm gateway route not allowlisted' "$PB_BODY"
+echo "realm_gateway_bootstrap_public=PASS"
+
+echo "realm_gateway_source_commit=$SOURCE_COMMIT"
 echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
 echo "nginx_mutation=NONE"
 echo "root_privilege=NONE"
