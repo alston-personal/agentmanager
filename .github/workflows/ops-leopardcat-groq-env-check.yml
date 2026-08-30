@@ -1,0 +1,87 @@
+name: Ops LeopardCat Groq Env Check
+
+on:
+  push:
+    branches: [ops/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/ops-leopardcat-groq-env-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify Groq env and restart runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          envf=/home/ubuntu/agentmanager/.env
+          website=/home/$(id -un)/leopardcat-tarot/website
+          test -f "$envf"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/home/ubuntu/agentmanager/.env')
+          found=False; parseable=False; nonempty=False; style='none'
+          for raw in p.read_text(errors='replace').splitlines():
+              s=raw.strip()
+              if not s or s.startswith('#'): continue
+              t=s
+              if t.startswith('export '):
+                  style='export-prefix'; t=t[7:].lstrip()
+              if t.startswith('GROQ_API_KEY'):
+                  found=True
+                  if '=' in t:
+                      k,v=t.split('=',1)
+                      if k.strip()=='GROQ_API_KEY':
+                          parseable=True
+                          v=v.strip().strip('"').strip("'")
+                          nonempty=bool(v)
+                          if style=='none' and raw.startswith('GROQ_API_KEY='): style='canonical'
+                          elif style=='none': style='spaced'
+                  break
+          print(f'groq_key_line_present={str(found).lower()}')
+          print(f'groq_key_parseable={str(parseable).lower()}')
+          print(f'groq_key_nonempty={str(nonempty).lower()}')
+          print(f'groq_key_style={style}')
+          if not (found and parseable and nonempty):
+              raise SystemExit(3)
+          PY
+          old_pid="$(lsof -nP -t -iTCP:8088 -sTCP:LISTEN | head -n1)"
+          test -n "$old_pid"
+          kill "$old_pid"
+          for _ in $(seq 1 20); do kill -0 "$old_pid" 2>/dev/null || break; sleep 0.25; done
+          cd "$website"
+          nohup /usr/bin/python3 fortune_server.py </dev/null >/tmp/fortune_server.log 2>&1 &
+          new_pid=$!
+          for _ in $(seq 1 30); do
+            curl -fsS --max-time 2 http://127.0.0.1:8088/api/v1/ai-policy >/tmp/groq-policy.json 2>/dev/null && break
+            sleep 0.25
+          done
+          kill -0 "$new_pid"
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/groq-policy.json'))
+          rows=p.get('providers') or []
+          g=next((x for x in rows if x.get('provider')=='groq'),{})
+          print('runtime_groq_configured='+str(bool(g.get('configured'))).lower())
+          print('runtime_groq_model='+str(g.get('model') or ''))
+          if not g.get('configured'): raise SystemExit(4)
+          PY
+          REMOTE
+      - name: Public policy acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 10 https://leopardcat-tarot.milkcat.org/api/v1/ai-policy | python3 -c 'import json,sys; p=json.load(sys.stdin); g=next((x for x in (p.get("providers") or []) if x.get("provider")=="groq"),{}); print("public_groq_configured="+str(bool(g.get("configured"))).lower()); assert g.get("configured") is True'
