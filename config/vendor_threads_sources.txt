@@ -1,5 +1,6 @@
 # Active Threads sources monitored by Vendor Reputation Service.
 # Keep share/input URLs verbatim; Oracle resolves canonical post URLs at registration/sync time.
 # patrol-trigger: verify stdin-isolated discovery worker
+# registration-retrigger: reconcile manifest sources after stable identity registration
 https://www.threads.com/share/_yh22msHD/
 https://www.threads.com/share/BAUXFamItI/
