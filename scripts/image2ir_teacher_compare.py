@@ -29,40 +29,44 @@ def f1(tp, fp, fn):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--teacher-ir", required=True)
-    ap.add_argument("--prediction-ir", required=True)
-    ap.add_argument("--prediction-result", required=True)
+    ap.add_argument("--probe", required=True)
     ap.add_argument("--view", default="front")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
     teacher = load(args.teacher_ir)
-    pred_ir = load(args.prediction_ir)
-    pred_result = load(args.prediction_result)
+    probe = load(args.probe)
+    pred_ir = probe.get("ir") if isinstance(probe.get("ir"), dict) else {}
 
     teacher_parts = {
         p.get("id") for p in teacher.get("parts", [])
         if isinstance(p, dict) and p.get("id")
     }
-    raw_pred_parts = set(pred_result.get("evidence", {}).get("parts") or [])
+    raw_pred_parts = set(probe.get("parts") or [])
     pred_parts = {PREDICTED_MAP.get(x, x) for x in raw_pred_parts}
 
     teacher_core = teacher_parts & CORE
     pred_core = pred_parts & CORE
-    tp_set = teacher_core & pred_core
-    fp_set = pred_core - teacher_core
-    fn_set = teacher_core - pred_core
-    precision, recall, core_f1 = f1(len(tp_set), len(fp_set), len(fn_set))
+    accepted = bool(probe.get("accepted"))
+    if accepted:
+        tp_set = teacher_core & pred_core
+        fp_set = pred_core - teacher_core
+        fn_set = teacher_core - pred_core
+        precision, recall, core_f1 = f1(len(tp_set), len(fp_set), len(fn_set))
+    else:
+        tp_set, fp_set, fn_set = set(), set(), set(teacher_core)
+        precision, recall, core_f1 = 0.0, 0.0, 0.0
 
     expected_coverage = "full_body" if {"left_leg", "right_leg"} <= teacher_core else "upper_body"
     predicted_coverage = pred_ir.get("observed", {}).get("pose", {}).get("coverage")
-    coverage_match = predicted_coverage == expected_coverage
+    coverage_match = accepted and predicted_coverage == expected_coverage
 
     noncore_predictions = sorted(pred_parts - CORE)
     assumed = pred_ir.get("assumed") or {}
     assumed_fields = sorted(assumed.keys()) if isinstance(assumed, dict) else []
     unresolved = teacher.get("unresolved") or []
 
-    score = round(0.75 * core_f1 + 0.25 * float(coverage_match), 4)
+    score = round(0.75 * core_f1 + 0.25 * float(coverage_match), 4) if accepted else 0.0
     report = {
         "schema": "image2ir-teacher-compare/v0.1",
         "view": args.view,
@@ -73,9 +77,12 @@ def main():
             "unresolved_count": len(unresolved),
         },
         "prediction": {
+            "accepted": accepted,
+            "status_text": probe.get("status_text"),
+            "runtime_error": probe.get("runtime_error"),
+            "page_errors": probe.get("page_errors") or [],
             "schema": pred_ir.get("schema"),
-            "system": pred_result.get("system_id"),
-            "model_version": pred_result.get("model_version"),
+            "model_version": probe.get("app_version"),
             "raw_parts": sorted(raw_pred_parts),
             "normalized_core_parts": sorted(pred_core),
             "noncore_predictions": noncore_predictions,
@@ -83,6 +90,7 @@ def main():
             "coverage": predicted_coverage,
         },
         "metrics": {
+            "detector_acceptance": accepted,
             "core_true_positive": sorted(tp_set),
             "core_false_positive": sorted(fp_set),
             "core_false_negative": sorted(fn_set),
@@ -90,17 +98,18 @@ def main():
             "core_recall": round(recall, 4),
             "core_f1": round(core_f1, 4),
             "expected_coverage": expected_coverage,
-            "coverage_match": coverage_match,
+            "coverage_match": bool(coverage_match),
             "baseline_score": score,
         },
         "truth_policy": {
+            "detector_rejection_is_valid_zero_baseline": True,
             "noncore_predictions_are_not_automatically_hallucinations": True,
             "teacher_unresolved_fields_are_excluded_from_dense_scoring": True,
             "score_is_shared_observable_baseline_not_full_ir_equivalence": True,
         },
     }
     dump(args.out, report)
-    print(json.dumps({"ok": True, "baseline_score": score, "core_f1": round(core_f1, 4), "coverage_match": coverage_match}))
+    print(json.dumps({"ok": True, "accepted": accepted, "baseline_score": score, "core_f1": round(core_f1, 4), "coverage_match": bool(coverage_match)}))
 
 
 if __name__ == "__main__":
