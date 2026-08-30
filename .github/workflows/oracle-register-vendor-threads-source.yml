@@ -63,6 +63,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
+          set +e
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             bash -s -- "$SERVICE_SHA" <<'REMOTE' > .agentos/evidence/vendor-threads-patrol.json
           set -euo pipefail
@@ -146,10 +147,11 @@ jobs:
           PY
           exit "$WORKER_RC"
           REMOTE
-          RC=$?
+          SSH_RC=$?
+          set -e
           python3 -m json.tool .agentos/evidence/vendor-threads-patrol.json >/dev/null
           cat .agentos/evidence/vendor-threads-patrol.json
-          exit "$RC"
+          exit "$SSH_RC"
       - name: Commit sanitized patrol evidence
         if: always()
         shell: bash
