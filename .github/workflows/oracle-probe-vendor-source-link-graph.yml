@@ -1,0 +1,62 @@
+name: Oracle Probe Vendor Source Link Graph
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-vendor-source-link-graph.yml'
+      - 'scripts/probe_vendor_source_link_graph.py'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read active monitored source registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /home/ubuntu/vendor-reputation-service
+          docker compose exec -T db psql -At -F $'\t' -U vendor_service -d vendor_reputation \
+            -c "select input_url, coalesce(canonical_url,'') from monitored_sources where status='active' order by created_at, input_url;" \
+            > /tmp/vendor-active-sources.tsv
+          test -s /tmp/vendor-active-sources.tsv
+      - name: Probe public source link graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          python3 scripts/probe_vendor_source_link_graph.py /tmp/vendor-active-sources.tsv \
+            > .agentos/evidence/vendor-source-link-graph-probe.json
+          python3 - <<'PY'
+          import json
+          p='.agentos/evidence/vendor-source-link-graph-probe.json'
+          x=json.load(open(p))
+          assert x.get('active_sources',0) > 0, x
+          assert x.get('login_bypass_used') is False, x
+          assert x.get('anti_bot_bypass_used') is False, x
+          assert x.get('post_text_emitted') is False, x
+          assert x.get('token_used') is False, x
+          assert x.get('db_written') is False, x
+          assert x.get('candidate_promoted') is False, x
+          assert x.get('core_modified') is False, x
+          print(json.dumps({
+            'active_sources': x.get('active_sources'),
+            'canonical_sources': x.get('canonical_sources'),
+            'unique_root_post_urls': x.get('unique_root_post_urls'),
+            'unique_connected_post_urls': x.get('unique_connected_post_urls'),
+            'ok': x.get('ok'),
+          }, ensure_ascii=False))
+          PY
+      - name: Upload sanitized graph probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-source-link-graph-${{ github.run_id }}
+          path: .agentos/evidence/vendor-source-link-graph-probe.json
+          if-no-files-found: error
+          retention-days: 14
