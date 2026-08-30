@@ -14,7 +14,7 @@ on:
       - 'config/vendor_threads_sources.txt'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   register:
@@ -80,22 +80,39 @@ jobs:
           import json,pathlib,sys
           rc=int(sys.argv[1]); p=pathlib.Path(sys.argv[2])
           text=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
-          print(json.dumps({'schema':'milkcat.vendor-threads-patrol-receipt/v5','ok':False,'failed_stage':'ssh','worker_exit_code':None,'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,'harvest_vendor_matches':0,'harvest_filtered_out':0,'new_candidates':0,'duplicates':0,'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,'errors':1,'candidate_sources_total':None,'candidate_authors_total':None,'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,'token_exposed':False,'reviews_published':False,'core_modified':False},ensure_ascii=False))
+          print(json.dumps({'schema':'milkcat.vendor-threads-patrol-receipt/v6','ok':False,'failed_stage':'ssh','worker_exit_code':None,'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,'harvest_vendor_matches':0,'harvest_filtered_out':0,'new_candidates':0,'duplicates':0,'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,'reputation_vendors_computed':0,'reputation_reviews_seen':0,'reputation_independent_voices':0,'reputation_duplicate_actor_reviews_collapsed':0,'errors':1,'candidate_sources_total':None,'candidate_authors_total':None,'sanitized_error_tail':text,'raw_text_emitted':False,'raw_text_persisted':False,'token_exposed':False,'reviews_published':False,'core_modified':False},ensure_ascii=False))
           PY
           fi
           rm -f "$SSHERR"
           python3 -m json.tool "$OUT" >/dev/null
           cat "$OUT"
           exit "$SSH_RC"
-      - name: Commit sanitized patrol evidence
+      - name: Summarize sanitized patrol evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          test -s .agentos/evidence/vendor-threads-patrol.json || exit 0
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/vendor-threads-patrol.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(vendors): Threads patrol receipt'
-          git push
+          OUT=.agentos/evidence/vendor-threads-patrol.json
+          test -s "$OUT" || exit 0
+          python3 - "$OUT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          print('## Vendor Threads Patrol')
+          print(f"- ok: `{x.get('ok')}`")
+          print(f"- results seen: `{x.get('results_seen',0)}`")
+          print(f"- vendor matches: `{x.get('harvest_vendor_matches',0)}`")
+          print(f"- new candidates: `{x.get('new_candidates',0)}`")
+          print(f"- candidate total: `{x.get('candidate_sources_total')}`")
+          print(f"- actor observations: `{x.get('actor_observations',0)}`")
+          print(f"- repeated actor text signals: `{x.get('same_actor_repeated_text',0)}`")
+          print(f"- reputation vendors recomputed: `{x.get('reputation_vendors_computed',0)}`")
+          print(f"- core modified: `{x.get('core_modified')}`")
+          PY
+      - name: Upload sanitized patrol evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-threads-patrol-${{ github.run_id }}
+          path: .agentos/evidence/vendor-threads-patrol.json
+          if-no-files-found: error
+          retention-days: 30

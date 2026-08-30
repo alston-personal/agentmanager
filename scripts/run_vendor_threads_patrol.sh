@@ -5,9 +5,11 @@ SHA="${1:?service sha required}"
 BASE=/home/ubuntu/vendor-reputation-service
 ERR=/tmp/vendor-patrol-stage.err
 OUT=/tmp/vendor-patrol-worker.out
+REPUTATION_OUT=/tmp/vendor-reputation-recompute.out
 VENDOR_ENV=/home/ubuntu/agent-data/secrets/vendor-reputation.env
 : >"$ERR"
 : >"$OUT"
+: >"$REPUTATION_OUT"
 
 emit_failure() {
   local stage="$1" rc="$2" file="${3:-$ERR}"
@@ -22,13 +24,15 @@ for token in (threads_token, admin_token):
 text=re.sub(r'access_token=[^&\s]+','access_token=[REDACTED]',text)
 text=' '.join(text.split())[-800:]
 print(json.dumps({
-  'schema':'milkcat.vendor-threads-patrol-receipt/v5',
+  'schema':'milkcat.vendor-threads-patrol-receipt/v6',
   'ok':False,'failed_stage':stage,
   'worker_exit_code':rc if stage == 'worker' else None,
   'queries':0,'results_seen':0,'direct_results':0,'harvest_results':0,
   'harvest_vendor_matches':0,'harvest_filtered_out':0,
   'new_candidates':0,'duplicates':0,
   'actor_observations':0,'same_actor_multiple_sources':0,'same_actor_repeated_text':0,
+  'reputation_vendors_computed':0,'reputation_reviews_seen':0,
+  'reputation_independent_voices':0,'reputation_duplicate_actor_reviews_collapsed':0,
   'errors':1,
   'by_search_type':{},'harvest_by_search_type':{},'positive_controls':[],'error_signatures':[],
   'candidate_sources_total':None,'candidate_authors_total':None,
@@ -83,7 +87,6 @@ export SOC_THREADS_TOKEN
 
 cd "$BASE" || emit_failure chdir $?
 
-# Bring up only PostgreSQL first so schema migrations land before the new API process starts.
 docker compose up -d db >"$ERR" 2>&1 || emit_failure compose_db $?
 READY=0
 for _ in $(seq 1 30); do
@@ -99,7 +102,6 @@ docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_re
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/004_actor_independence.sql >"$ERR" 2>&1 || emit_failure migration_004 $?
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/005_reputation_snapshot_voice_counts.sql >"$ERR" 2>&1 || emit_failure migration_005 $?
 
-# Only after migrations succeed do we replace/rebuild the API container.
 docker compose up -d --build api >"$ERR" 2>&1 || emit_failure compose_api $?
 
 set +e
@@ -110,14 +112,23 @@ WORKER_RC=$?
 set -e
 if [ "$WORKER_RC" -ne 0 ]; then emit_failure worker "$WORKER_RC" "$ERR"; fi
 
+set +e
+docker compose run --rm -T api \
+  python /srv/app/scripts/recompute_reputation.py \
+  < /dev/null >"$REPUTATION_OUT" 2>"$ERR"
+REPUTATION_RC=$?
+set -e
+if [ "$REPUTATION_RC" -ne 0 ]; then emit_failure reputation_recompute "$REPUTATION_RC" "$ERR"; fi
+
 CANDIDATES=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(*) from candidate_sources where status='candidate';" 2>"$ERR" | tr -d '\r') || emit_failure db_count $?
 AUTHORS=$(docker compose exec -T db psql -At -U vendor_service -d vendor_reputation -c "select count(distinct source_author) from candidate_sources where status='candidate' and source_author is not null;" 2>"$ERR" | tr -d '\r') || emit_failure db_count $?
 
-python3 - "$OUT" "$CANDIDATES" "$AUTHORS" <<'PY'
+python3 - "$OUT" "$REPUTATION_OUT" "$CANDIDATES" "$AUTHORS" <<'PY'
 import json,pathlib,sys
 x=json.loads(pathlib.Path(sys.argv[1]).read_text())
+r=json.loads(pathlib.Path(sys.argv[2]).read_text())
 print(json.dumps({
-  'schema':'milkcat.vendor-threads-patrol-receipt/v5',
+  'schema':'milkcat.vendor-threads-patrol-receipt/v6',
   'ok':True,'failed_stage':None,'worker_exit_code':0,
   'queries':x.get('queries',0),'results_seen':x.get('results',0),
   'direct_results':x.get('direct_results',0),'harvest_results':x.get('harvest_results',0),
@@ -127,10 +138,14 @@ print(json.dumps({
   'actor_observations':x.get('actor_observations',0),
   'same_actor_multiple_sources':x.get('same_actor_multiple_sources',0),
   'same_actor_repeated_text':x.get('same_actor_repeated_text',0),
+  'reputation_vendors_computed':r.get('vendors_computed',0),
+  'reputation_reviews_seen':r.get('reviews_seen',0),
+  'reputation_independent_voices':r.get('independent_voices',0),
+  'reputation_duplicate_actor_reviews_collapsed':r.get('duplicate_actor_reviews_collapsed',0),
   'errors':x.get('errors',0),
   'by_search_type':x.get('by_search_type',{}),'harvest_by_search_type':x.get('harvest_by_search_type',{}),
   'positive_controls':x.get('positive_controls',[]),'error_signatures':x.get('error_signatures',[]),
-  'candidate_sources_total':int(sys.argv[2]),'candidate_authors_total':int(sys.argv[3]),
+  'candidate_sources_total':int(sys.argv[3]),'candidate_authors_total':int(sys.argv[4]),
   'sanitized_error_tail':'','raw_text_emitted':False,
   'raw_text_persisted':bool(x.get('raw_text_persisted',False)),
   'token_exposed':False,'reviews_published':False,'core_modified':False
