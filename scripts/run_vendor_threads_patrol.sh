@@ -82,9 +82,25 @@ PY
 export SOC_THREADS_TOKEN
 
 cd "$BASE" || emit_failure chdir $?
-docker compose up -d --build >"$ERR" 2>&1 || emit_failure compose $?
+
+# Bring up only PostgreSQL first so schema migrations land before the new API process starts.
+docker compose up -d db >"$ERR" 2>&1 || emit_failure compose_db $?
+READY=0
+for _ in $(seq 1 30); do
+  if docker compose exec -T db pg_isready -U vendor_service -d vendor_reputation >/dev/null 2>"$ERR"; then
+    READY=1
+    break
+  fi
+  sleep 1
+done
+if [ "$READY" -ne 1 ]; then echo 'vendor db did not become ready' >"$ERR"; emit_failure db_ready 2; fi
+
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/003_source_discovery.sql >"$ERR" 2>&1 || emit_failure migration_003 $?
 docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/004_actor_independence.sql >"$ERR" 2>&1 || emit_failure migration_004 $?
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vendor_service -d vendor_reputation < sql/005_reputation_snapshot_voice_counts.sql >"$ERR" 2>&1 || emit_failure migration_005 $?
+
+# Only after migrations succeed do we replace/rebuild the API container.
+docker compose up -d --build api >"$ERR" 2>&1 || emit_failure compose_api $?
 
 set +e
 docker compose run --rm -T -e SOC_THREADS_TOKEN="$SOC_THREADS_TOKEN" api \
