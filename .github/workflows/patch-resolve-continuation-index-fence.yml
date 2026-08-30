@@ -1,0 +1,47 @@
+name: Patch Resolve Continuation Index Fence
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/patch-resolve-continuation-index-fence.yml'
+      - 'scripts/patch_resolve_continuation_index_fence.py'
+      - 'tests/test_resolve_continuation_index_fence.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Apply indexed-pair read fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/patch_resolve_continuation_index_fence.py
+          python3 -m py_compile agent_core/resolve_facade.py
+      - name: Test resolve facade and generation fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_resolve_facade -v
+          PYTHONPATH="$PWD" python3 -m unittest tests.test_resolve_continuation_index_fence -v
+      - name: Commit resolve fence to feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent_core/resolve_facade.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(agentos): fence continuation index generations'
+          git pull --rebase origin feature/realm-node-fabric-readiness
+          git push origin HEAD:feature/realm-node-fabric-readiness
