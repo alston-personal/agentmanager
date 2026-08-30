@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from agent_core.control_inbox_bridge import BridgeConfig, ControlInboxBridge, _task_id
+import pytest
+
+from agent_core.control_inbox_bridge import BridgeConfig, ControlInboxBridge, OneControllerClient, _task_id
 from agent_core.controller_api import ControllerService
 
 
@@ -110,6 +112,27 @@ def test_controller_dispatch_reuses_same_task_id_without_duplicate_queue():
     assert len(fabric.data['tasks']['node-a']) == 1
 
 
+def test_one_controller_dispatch_accepts_legacy_200(monkeypatch):
+    client = OneControllerClient('http://127.0.0.1:8780', 'unused')
+    monkeypatch.setattr(client, '_request', lambda method, path, payload: (200, {'ok': True, 'task_id': 'ctl_legacy'}))
+    result = client.dispatch('node-a', _command())
+    assert result['task_id'] == 'ctl_legacy'
+
+
+def test_one_controller_dispatch_accepts_202(monkeypatch):
+    client = OneControllerClient('http://127.0.0.1:8780', 'unused')
+    monkeypatch.setattr(client, '_request', lambda method, path, payload: (202, {'ok': True, 'task_id': 'ctl_new'}))
+    result = client.dispatch('node-a', _command())
+    assert result['task_id'] == 'ctl_new'
+
+
+def test_one_controller_dispatch_rejects_other_status(monkeypatch):
+    client = OneControllerClient('http://127.0.0.1:8780', 'unused')
+    monkeypatch.setattr(client, '_request', lambda method, path, payload: (201, {'ok': True, 'task_id': 'ctl_bad'}))
+    with pytest.raises(RuntimeError, match='HTTP 201'):
+        client.dispatch('node-a', _command())
+
+
 def test_bridge_dispatches_allowed_fresh_command_and_posts_receipt(tmp_path: Path):
     command = _command()
     github = FakeGitHub([{'id': 101, 'user': {'login': 'alstonhuang'}, 'body': __import__('json').dumps(command)}])
@@ -128,7 +151,6 @@ def test_bridge_dispatches_allowed_fresh_command_and_posts_receipt(tmp_path: Pat
     assert github.results[0]['status'] == 'completed'
     assert github.results[0]['receipt']['ok'] is True
 
-    # Local state prevents replay on the next poll.
     assert bridge.process_once() == 0
     assert len(one.dispatched) == 1
 
