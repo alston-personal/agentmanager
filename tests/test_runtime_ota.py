@@ -26,6 +26,10 @@ def _manifest(node_id: str, runtime_commit: str | None = None) -> dict:
         'tool_presence': {'powershell': 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'},
         'surface_inventory': {'surfaces': [], 'surface_count': 0, 'capabilities': []},
         'runtime': runtime,
+        'workspace_roots': {
+            'readable': [f'C:/Users/{node_id}/AgentOS'],
+            'writable': [f'C:/Users/{node_id}/AgentOS'],
+        },
         'observed_at': '2099-01-01T00:00:00Z',
     }
 
@@ -81,12 +85,14 @@ def test_realm_rollout_queues_only_nonconverged_and_requires_post_restart_heartb
     })
     assert rollout['queued_node_count'] == 1
     assert rollout['nodes'][0]['node_id'] == 'node-a'
+    assert rollout['nodes'][0]['cwd'] == 'C:/Users/node-a/AgentOS'
     assert {'node_id': 'node-b', 'reason': 'already_converged'} in rollout['skipped']
 
     tasks_a = fabric.pull_tasks('node-a', token_a)
     assert len(tasks_a) == 1
     task = tasks_a[0]
     assert task['controller_action'] == 'node.runtime.converge'
+    assert task['cwd'] == 'C:/Users/node-a/AgentOS'
     script = task['argv'][-1]
     assert 'agentos_node/runtime_provenance.py' in script
     assert 'runtime-provenance.json' in script
