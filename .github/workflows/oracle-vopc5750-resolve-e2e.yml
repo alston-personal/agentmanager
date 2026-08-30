@@ -1,0 +1,139 @@
+name: Oracle vopc5750 Resolve E2E
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - '.github/workflows/oracle-vopc5750-resolve-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      LIVE_CORE_COMMIT: e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+      LIVE_CORE_RELEASE: /home/ubuntu/.local/share/agentos/realm-fabric/releases/e50e0fab411eb5c05e5aaa4f866e7282fcb04045
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 1
+
+      - name: Verify accepted Node and Core baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$LIVE_CORE_RELEASE" python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+          ref=os.environ['LIVE_CORE_COMMIT']
+          state=json.loads(Path('/home/ubuntu/agent-data/governance/core-deployment.json').read_text(encoding='utf-8'))
+          assert int(state.get('deployment_generation') or 0)==5,state
+          assert state.get('desired_core_commit')==ref and state.get('observed_core_commit')==ref,state
+          assert state.get('deployment_status')=='converged' and state.get('lease_status')=='released',state
+          node=ControllerService(RealmFabricStore()).node('vopc5750')
+          assert node.get('status')=='online',node
+          assert node.get('runtime_status')=='converged',node
+          assert (node.get('runtime') or {}).get('source_commit')==ref,node
+          assert 'shell.exec' in set(node.get('capabilities') or []),node
+          print('resolve_e2e_baseline=PASS')
+          PY
+
+      - name: Resolve agentos-core from vopc5750 using its enrolled credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$LIVE_CORE_RELEASE" python3 - <<'PY'
+          import json,time
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+
+          store=RealmFabricStore(); controller=ControllerService(store); node='vopc5750'
+          observed=controller.node(node)
+          cwd=((observed.get('workspace_roots') or {}).get('readable') or [None])[0]
+          assert cwd,observed
+          tid='resolve-e2e-'+str(int(time.time()))
+          ps=r'''$ErrorActionPreference='Stop'
+          $candidates=@(
+            (Join-Path $env:USERPROFILE '.agentos\client.json'),
+            (Join-Path $env:LOCALAPPDATA 'AgentOS\client.json')
+          ) | Where-Object { Test-Path $_ }
+          if($candidates.Count -ne 1){ throw "expected exactly one client config, found $($candidates.Count)" }
+          $cfg=Get-Content -Raw $candidates[0] | ConvertFrom-Json
+          if(-not $cfg.one_url -or -not $cfg.node_id -or -not $cfg.node_token){ throw 'incomplete client config' }
+          $headers=@{ Authorization=('Bearer '+[string]$cfg.node_token); Accept='application/json' }
+          $body=@{
+            schema='agentos.resolve-request/v1'
+            node_id=[string]$cfg.node_id
+            intent='continue'
+            project='agentos-core'
+          } | ConvertTo-Json
+          try {
+            $result=Invoke-RestMethod -Method Post -Uri (([string]$cfg.one_url).TrimEnd('/')+'/v1/resolve') -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 30
+          } catch {
+            $status=$null
+            if($_.Exception.Response){ $status=[int]$_.Exception.Response.StatusCode }
+            Write-Output ('RESOLVE_HTTP_ERROR='+[string]$status)
+            throw
+          }
+          $safe=[ordered]@{
+            schema=$result.schema
+            intent=$result.intent
+            ok=$result.ok
+            project_id=$result.project.id
+            aliases=$result.project.aliases
+            mutation_allowed=$result.mutation_allowed
+            active_goal=$result.active_goal
+            execution_head=$result.execution_head
+            continuation=$result.continuation
+            next_action=$result.next_action
+            availability=$result.availability
+            provenance=$result.provenance
+            caller_node_id=[string]$cfg.node_id
+            one_url=[string]$cfg.one_url
+          }
+          $safe | ConvertTo-Json -Depth 20 -Compress
+          '''
+          store.queue_task(node,{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':tid,
+              'action':'shell.exec',
+              'executable':'powershell',
+              'argv':['-NoProfile','-NonInteractive','-Command',ps],
+              'cwd':cwd,
+              'timeout_seconds':60,
+              'cognition_ids_used':[],
+          })
+          receipt=None
+          for _ in range(45):
+              receipt=store.get_receipt(tid)
+              if receipt: break
+              time.sleep(2)
+          assert receipt is not None,tid
+          print('resolve_node_receipt='+json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          assert receipt.get('ok') is True,receipt
+          assert int(receipt.get('returncode') or 0)==0,receipt
+          lines=[line.strip() for line in str(receipt.get('stdout') or '').splitlines() if line.strip().startswith('{')]
+          assert lines,receipt
+          result=json.loads(lines[-1])
+          assert result.get('schema')=='agentos.resolve/v1',result
+          assert result.get('intent')=='continue',result
+          assert result.get('project_id')=='agentos-core',result
+          assert result.get('caller_node_id')=='vopc5750',result
+          availability=result.get('availability') or {}
+          assert availability.get('project_identity') is True,result
+          assert result.get('provenance') is not None,result
+          print('resolve_authenticated_live_e2e=PASS')
+          print('resolve_project_id='+str(result.get('project_id')))
+          print('resolve_active_goal='+str(result.get('active_goal')))
+          print('resolve_next_action='+str(result.get('next_action')))
+          print('resolve_one_url='+str(result.get('one_url')))
+          PY
