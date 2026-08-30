@@ -1,0 +1,95 @@
+name: image2ir teacher loop v0.1
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/image2ir_teacher_compare.py'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'scripts/character_blueprint_benchmark_capture.mjs'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
+      - '.github/workflows/image2ir-teacher-loop-v01.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/image2ir_teacher_compare.py'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'scripts/character_blueprint_benchmark_capture.mjs'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
+      - '.github/workflows/image2ir-teacher-loop-v01.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+
+      - name: Install runtimes
+        run: |
+          python -m pip install -e libs/model2ir
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Fetch real 3D teacher
+        run: |
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb -o /tmp/CesiumMan.glb
+
+      - name: Build teacher render and IR pair
+        run: |
+          rm -rf /tmp/image2ir-loop
+          python scripts/model2ir_teacher_dataset.py \
+            --asset /tmp/CesiumMan.glb \
+            --case-id cesium-man \
+            --out /tmp/image2ir-loop/teacher
+
+      - name: Run current public image2ir baseline on teacher front render
+        env:
+          CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/image2ir-loop/teacher/cesium-man/canonical-front.png
+          CHARACTER_BLUEPRINT_CASE_ID: cesium-man-teacher-front
+          CHARACTER_BLUEPRINT_BENCHMARK_OUT: /tmp/image2ir-loop/prediction
+        run: |
+          node scripts/character_blueprint_benchmark_capture.mjs | tee /tmp/image2ir-loop/capture.log
+          grep -q '"ok": true' /tmp/image2ir-loop/capture.log
+
+      - name: Compare image IR to 3D teacher IR
+        run: |
+          python scripts/image2ir_teacher_compare.py \
+            --teacher-ir /tmp/image2ir-loop/teacher/cesium-man/character-ir.json \
+            --prediction-ir /tmp/image2ir-loop/prediction/character-ir.json \
+            --prediction-result /tmp/image2ir-loop/prediction/result.json \
+            --view front \
+            --out /tmp/image2ir-loop/compare-front.json | tee /tmp/image2ir-loop/compare.log
+          grep -q '"ok": true' /tmp/image2ir-loop/compare.log
+
+      - name: Validate measurable baseline
+        run: |
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/image2ir-loop/compare-front.json'))
+          assert p['schema']=='image2ir-teacher-compare/v0.1'
+          m=p['metrics']
+          assert 0 <= m['core_precision'] <= 1
+          assert 0 <= m['core_recall'] <= 1
+          assert 0 <= m['core_f1'] <= 1
+          assert 0 <= m['baseline_score'] <= 1
+          assert p['truth_policy']['teacher_unresolved_fields_are_excluded_from_dense_scoring'] is True
+          print('image2ir_teacher_loop_baseline=PASS', json.dumps(m, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image2ir-teacher-loop-v01
+          path: /tmp/image2ir-loop/
+          if-no-files-found: error
+          retention-days: 30
