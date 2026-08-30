@@ -1,0 +1,71 @@
+name: LeopardCat Runtime Inspect via AgentOS Oracle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-runtime-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect LeopardCat production runtime read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== identity ==='
+          id
+          hostname
+          echo
+
+          echo '=== port 8088 ==='
+          ss -ltnp 2>/dev/null | grep ':8088' || true
+          pids="$(ss -ltnp 2>/dev/null | sed -n 's/.*:8088 .*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)"
+          for pid in $pids; do
+            echo "pid=$pid"
+            echo "cwd=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
+            echo -n 'cmdline='; tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null || true; echo
+          done
+          echo
+
+          echo '=== fortune processes ==='
+          ps -eo pid,user,lstart,args | grep -E '[f]ortune_server.py|[l]eopardcat.*tarot' || true
+          echo
+
+          echo '=== candidate repositories ==='
+          for base in /home/ubuntu /home/agentos-node /opt /srv /var/www; do
+            test -d "$base" || continue
+            find "$base" -maxdepth 5 -type d -name .git -print 2>/dev/null | while read -r gitdir; do
+              repo="${gitdir%/.git}"
+              remote="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
+              case "$remote $repo" in
+                *leopardcat-tarot*|*leopardcat*tarot*)
+                  echo "repo=$repo"
+                  echo "remote=$remote"
+                  echo "head=$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+                  echo "branch=$(git -C "$repo" branch --show-current 2>/dev/null || true)"
+                  echo "dirty=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+                  echo '---'
+                  ;;
+              esac
+            done
+          done
+          echo
+
+          echo '=== service candidates ==='
+          systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'leopard|tarot|fortune' || true
+          systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'leopard|tarot|fortune' || true
+          echo
+
+          echo '=== local policy ==='
+          curl -sS --max-time 5 http://127.0.0.1:8088/api/v1/ai-policy || true
+          echo
+          echo '=== public health ==='
+          curl -sS -o /dev/null -w 'public_http=%{http_code}\n' --max-time 8 https://leopardcat-tarot.milkcat.org/ || true
