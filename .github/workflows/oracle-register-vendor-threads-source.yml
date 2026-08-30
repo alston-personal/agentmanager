@@ -1,4 +1,5 @@
 # Vendor source registry + Threads discovery carrier. Does not modify AgentOS Core.
+# trigger: verify worker stdin isolation
 name: Oracle Vendor Threads Patrol
 
 on:
