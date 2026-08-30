@@ -103,6 +103,19 @@ def test_runtime_convergence_constructs_fixed_shell_and_preserves_watchdog(tmp_p
     assert 'Register-ScheduledTask' not in script
     assert 'whoami' not in script
     assert 'cmd.exe' not in script
+    # Regression for the real vopc5750 lifecycle failure: old unmanaged client
+    # daemons must be retired only after the task receipt has had time to land,
+    # then the existing Scheduled Task becomes the single runtime owner.
+    assert "Start-Sleep -Seconds 10" in script
+    assert "Get-CimInstance Win32_Process" in script
+    assert "agentos_node\\.client_cli\\s+run" in script
+    assert "Stop-Process -Id $proc.ProcessId" in script
+    assert "Start-ScheduledTask -TaskName $taskName" in script
+    assert "managed_client_count=$clients.Count" in script
+    assert "thin_client_task_state=$state" in script
+    assert "runtime-convergence.json" in script
+    assert "controller-single-owner-converge" in script
+    assert "agentos_single_owner_convergence=DEFERRED" in script
 
     with pytest.raises(ValueError, match='source_commit'):
         controller.dispatch('node-a', {'action': 'node.runtime.converge', 'source_commit': 'main'})
