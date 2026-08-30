@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/workflows/oracle-register-vendor-threads-source.yml'
       - 'scripts/register_vendor_threads_source.sh'
+      - 'config/vendor_threads_sources.txt'
 
 permissions:
   contents: write
@@ -21,22 +22,44 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       SERVICE_SHA: fbcf3cb1ece1bf7b2d928634cf4afd3901cf894b
-      SOURCE_URL: https://www.threads.com/share/_yh22msHD/
     steps:
       - uses: actions/checkout@v4
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Register monitored Threads source
+      - name: Register monitored Threads sources
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
-            < scripts/register_vendor_threads_source.sh \
-            > .agentos/evidence/vendor-source-register.json
+          : > .agentos/evidence/vendor-source-register.jsonl
+          while IFS= read -r SOURCE_URL; do
+            [ -n "$SOURCE_URL" ] || continue
+            case "$SOURCE_URL" in \#*) continue ;; esac
+            ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              bash -s -- "$SERVICE_SHA" "$SOURCE_URL" \
+              < scripts/register_vendor_threads_source.sh \
+              >> .agentos/evidence/vendor-source-register.jsonl
+          done < config/vendor_threads_sources.txt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('.agentos/evidence/vendor-source-register.jsonl')
+          rows=[json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+          assert rows, 'no source registration results'
+          out={
+            'schema':'milkcat.vendor-source-register-batch/v1',
+            'requested_sources':len(rows),
+            'results':rows,
+            'active_sources':max(int(r.get('active_sources',0)) for r in rows),
+            'all_registered':all(int(r.get('new_source_registered',0)) == 1 for r in rows),
+            'core_modified':False,
+            'raw_threads_content_emitted':False,
+          }
+          assert out['all_registered'] is True, out
+          Path('.agentos/evidence/vendor-source-register.json').write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
+          PY
           python3 -m json.tool .agentos/evidence/vendor-source-register.json >/dev/null
           cat .agentos/evidence/vendor-source-register.json
       - name: Commit sanitized evidence
