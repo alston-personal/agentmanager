@@ -1,0 +1,75 @@
+name: model2ir VRM topology v0.6
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_vrm_topology_regression.py'
+      - '.github/workflows/model2ir-vrm-topology-v06.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_vrm_topology_regression.py'
+      - '.github/workflows/model2ir-vrm-topology-v06.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vrm-topology:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e libs/model2ir
+      - name: Fetch structural regression rigs
+        run: |
+          curl -fL --retry 3 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RiggedFigure/glTF/RiggedFigure.gltf -o /tmp/RiggedFigure.gltf
+          curl -fL --retry 3 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SimpleSkin/glTF/SimpleSkin.gltf -o /tmp/SimpleSkin.gltf
+      - name: Run VRM and topology regression
+        run: |
+          rm -rf /tmp/model2ir-v06
+          python scripts/model2ir_vrm_topology_regression.py --rigged /tmp/RiggedFigure.gltf --simpleskin /tmp/SimpleSkin.gltf --out /tmp/model2ir-v06
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/model2ir-v06/report.json'))
+          assert p['gate']['status']=='PASS'
+          assert p['gate']['vrm0_standard_semantics']
+          assert p['gate']['vrm1_standard_semantics']
+          assert p['gate']['unnamed_full_rig_body_plan']
+          assert p['gate']['unnamed_side_hallucination_avoided']
+          assert p['gate']['insufficient_rig_unknown']
+          print('model2ir_vrm_topology=PASS')
+          PY
+      - name: Verify current CLI and stability audit
+        run: |
+          python -m model2ir extract /tmp/RiggedFigure.gltf -o /tmp/model2ir-v06/cli.json
+          python -m model2ir audit /tmp/RiggedFigure.gltf -o /tmp/model2ir-v06/rigged-audit.json --repeats 3
+          python -m model2ir audit /tmp/SimpleSkin.gltf -o /tmp/model2ir-v06/simple-audit.json --repeats 3
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/model2ir-v06/cli.json'))
+          r=json.load(open('/tmp/model2ir-v06/rigged-audit.json'))
+          s=json.load(open('/tmp/model2ir-v06/simple-audit.json'))
+          assert p['schema']=='model2ir-character-ir/v0.6'
+          assert 'topology_evidence' in p
+          assert r['candidate_repeatable'] is True
+          assert r['semantic_authority']=='explicit-asset-semantics'
+          assert r['status']=='stable-candidate'
+          assert r['stabilizable'] is True
+          assert s['candidate_repeatable'] is True
+          assert s['semantic_authority']=='insufficient-semantic-evidence'
+          assert s['status']=='stable-unknown'
+          assert s['truth_policy']['unknown_is_allowed'] is True
+          print('model2ir_self_audit=PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-vrm-topology-v06
+          path: /tmp/model2ir-v06/
+          if-no-files-found: error
+          retention-days: 30
