@@ -1,0 +1,75 @@
+name: Ops LeopardCat Semantic Probe
+
+on:
+  push:
+    branches: [ops/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/ops-leopardcat-semantic-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify Seven of Swords semantic grounding and complete ending
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /home/$(id -un)/leopardcat-tarot/website
+          test "$(git -C .. rev-parse HEAD)" = 'e0c9589a1bcbe8df921787a6eaaf1042fce7cd81'
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from divination.ai_gateway import MASTER_EXPERIENCE_CONTRACT, MasterExperienceQualityGate, ZeroCostGroqGateway
+          from divination.personas import ConfigurablePersona
+
+          def env_value(name):
+              value=os.environ.get(name)
+              if value: return value
+              p=Path('/home/ubuntu/agentmanager/.env')
+              for raw in p.read_text(errors='replace').splitlines():
+                  s=raw.strip()
+                  if not s or s.startswith('#'): continue
+                  if s.startswith('export '): s=s[7:].lstrip()
+                  if '=' in s:
+                      k,v=s.split('=',1)
+                      if k.strip()==name: return v.strip().strip('"').strip("'") or None
+              return None
+
+          method_result={
+              'method':'tarot','spread':'single',
+              'cards':[{
+                  'title':{'zh':'寶劍七','en':'SEVEN OF SWORDS'},
+                  'position':'guidance','position_label':'核心指引','orientation':'upright',
+                  'meaning':'逃避、策略、不誠實，以及在人類聚落邊緣尋找生存機會的冒險。',
+                  'upright_meaning':'逃避、策略、不誠實，以及在人類聚落邊緣尋找生存機會的冒險。'
+              }]
+          }
+          persona=ConfigurablePersona('oracle_packs/leopardcat/pack.json')
+          prompt=persona.build_prompt(method_result=method_result, question='面對一件資訊不透明的事情，我現在最需要看清什麼？', lang='zh-TW')
+          text=ZeroCostGroqGateway(env_value('GROQ_API_KEY')).generate(MASTER_EXPERIENCE_CONTRACT+'\n\n'+prompt)
+          MasterExperienceQualityGate().validate(text)
+          anchors=('策略','逃避','不誠實','隱','迂迴','風險','暗中')
+          matched=[x for x in anchors if x in text]
+          assert matched, 'semantic anchor not reflected'
+          assert '休養生息' not in text, 'drifted into Four-of-Swords semantics'
+          assert len(text) >= 250, 'reading unexpectedly short'
+          assert "hidden-quote" in text and '</div>' in text, 'persona closing marker missing/incomplete'
+          print('semantic_grounding=success')
+          print('anchor_matches='+','.join(matched[:4]))
+          print('reading_chars='+str(len(text)))
+          print('persona_closing_complete=true')
+          print('groq_finish_complete=true')
+          PY
+          REMOTE
