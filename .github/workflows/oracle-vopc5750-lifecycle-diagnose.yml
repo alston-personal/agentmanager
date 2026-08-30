@@ -33,21 +33,30 @@ jobs:
           store=RealmFabricStore(); node='vopc5750'
           tid='lifecycle-diagnose-'+str(int(time.time()))
           ps=r'''$ErrorActionPreference='Stop'
+          function IsoOrNull($value) {
+            if ($null -eq $value) { return '<null>' }
+            try { return $value.ToUniversalTime().ToString('o') } catch { return [string]$value }
+          }
           $names=@('AgentOS Thin Client','AgentOS Thin Client Watchdog')
           foreach($name in $names){
             $task=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
             $info=Get-ScheduledTaskInfo -TaskName $name -ErrorAction SilentlyContinue
             if($null -eq $task){ Write-Output "TASK|$name|MISSING"; continue }
             $actions=@($task.Actions | ForEach-Object { "Execute=$($_.Execute);Arguments=$($_.Arguments);WorkingDirectory=$($_.WorkingDirectory)" }) -join ' || '
-            Write-Output "TASK|$name|State=$($task.State)|LastTaskResult=$($info.LastTaskResult)|LastRunTime=$($info.LastRunTime.ToUniversalTime().ToString('o'))|NextRunTime=$($info.NextRunTime.ToUniversalTime().ToString('o'))|Actions=$actions"
+            $lastResult=if($null -eq $info){'<null>'}else{[string]$info.LastTaskResult}
+            $lastRun=if($null -eq $info){'<null>'}else{IsoOrNull $info.LastRunTime}
+            $nextRun=if($null -eq $info){'<null>'}else{IsoOrNull $info.NextRunTime}
+            Write-Output "TASK|$name|State=$($task.State)|LastTaskResult=$lastResult|LastRunTime=$lastRun|NextRunTime=$nextRun|Actions=$actions"
           }
-          Get-CimInstance Win32_Process | Where-Object {
+          $matched=@(Get-CimInstance Win32_Process | Where-Object {
             ($_.CommandLine -match 'agentos_node[\\/.]client_cli') -or
             ($_.CommandLine -match 'agentos-client') -or
             ($_.CommandLine -match 'AgentOS-ThinClient')
-          } | Sort-Object ProcessId | ForEach-Object {
-            Write-Output "PROC|PID=$($_.ProcessId)|PPID=$($_.ParentProcessId)|Name=$($_.Name)|CommandLine=$($_.CommandLine)"
+          } | Sort-Object ProcessId)
+          foreach($proc in $matched){
+            Write-Output "PROC|PID=$($proc.ProcessId)|PPID=$($proc.ParentProcessId)|Name=$($proc.Name)|CommandLine=$($proc.CommandLine)"
           }
+          Write-Output "PROC_COUNT|$($matched.Count)"
           Write-Output 'lifecycle_diagnose=PASS'
           '''
           store.queue_task(node,{
