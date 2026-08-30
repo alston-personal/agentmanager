@@ -62,13 +62,29 @@ jobs:
           assert cwd,observed
           tid='resolve-e2e-'+str(int(time.time()))
           ps=r'''$ErrorActionPreference='Stop'
-          $candidates=@(
-            (Join-Path $env:USERPROFILE '.agentos\client.json'),
-            (Join-Path $env:LOCALAPPDATA 'AgentOS\client.json')
-          ) | Where-Object { Test-Path $_ }
-          if($candidates.Count -ne 1){ throw "expected exactly one client config, found $($candidates.Count)" }
-          $cfg=Get-Content -Raw $candidates[0] | ConvertFrom-Json
-          if(-not $cfg.one_url -or -not $cfg.node_id -or -not $cfg.node_token){ throw 'incomplete client config' }
+          $roots=@(
+            (Join-Path $env:LOCALAPPDATA 'AgentOS'),
+            (Join-Path $env:USERPROFILE 'AgentOS'),
+            (Join-Path $env:USERPROFILE '.agentos'),
+            (Join-Path $env:APPDATA 'AgentOS')
+          ) | Select-Object -Unique | Where-Object { Test-Path $_ }
+          $matches=@()
+          foreach($root in $roots){
+            foreach($file in @(Get-ChildItem -LiteralPath $root -File -Filter '*.json' -Recurse -ErrorAction SilentlyContinue)){
+              try {
+                $obj=Get-Content -Raw -LiteralPath $file.FullName | ConvertFrom-Json
+                if($obj.one_url -and $obj.node_id -and $obj.node_token){
+                  $matches += [pscustomobject]@{ Path=$file.FullName; Config=$obj }
+                }
+              } catch {}
+            }
+          }
+          if($matches.Count -ne 1){
+            $paths=@($matches | ForEach-Object { $_.Path })
+            throw ('expected exactly one enrolled client credential config, found '+$matches.Count+' paths='+($paths -join ','))
+          }
+          $cfg=$matches[0].Config
+          $configPath=$matches[0].Path
           $headers=@{ Authorization=('Bearer '+[string]$cfg.node_token); Accept='application/json' }
           $body=@{
             schema='agentos.resolve-request/v1'
@@ -99,6 +115,7 @@ jobs:
             provenance=$result.provenance
             caller_node_id=[string]$cfg.node_id
             one_url=[string]$cfg.one_url
+            config_path=[string]$configPath
           }
           $safe | ConvertTo-Json -Depth 20 -Compress
           '''
@@ -136,4 +153,5 @@ jobs:
           print('resolve_active_goal='+str(result.get('active_goal')))
           print('resolve_next_action='+str(result.get('next_action')))
           print('resolve_one_url='+str(result.get('one_url')))
+          print('resolve_config_path='+str(result.get('config_path')))
           PY
