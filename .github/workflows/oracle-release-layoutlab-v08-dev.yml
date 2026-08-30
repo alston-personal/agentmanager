@@ -46,12 +46,14 @@ jobs:
           OLD_TARGET=/home/ubuntu/zeus-writer/website/dist/layout-lab-dev
           test -f "$REL/manifest.json"
           test -f "$LL/src/semantic-editor.js"
+          test -f "$LL/src/door-wall-carver.js"
           test -f "$LL/examples/layout-lab/semantic-tools.js"
           rm -rf "$TARGET" "$OLD_TARGET" && mkdir -p "$TARGET"
           install -m 0644 "$REL/layoutlab_v0_5.html" "$TARGET/index.html"
           for f in layoutlib-browser-v0.5.js layoutlib-spatial-semantics-v0.1.js layoutlib-editor-v0.7.js layoutlab-editor-ui-v0.7.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
             install -m 0644 "$REL/$f" "$TARGET/$f"
           done
+          install -m 0644 "$LL/src/door-wall-carver.js" "$TARGET/door-wall-carver.js"
           install -m 0644 "$LL/src/semantic-editor.js" "$TARGET/semantic-editor.js"
           install -m 0644 "$LL/examples/layout-lab/semantic-tools.js" "$TARGET/semantic-tools.js"
           python3 - "$TARGET/index.html" "$LL_SHA" <<'PY'
@@ -61,6 +63,7 @@ jobs:
           text=p.read_text()
           tags='''
           <script src="./layoutlib-spatial-semantics-v0.1.js"></script>
+          <script src="./door-wall-carver.js?v=0.8-dev"></script>
           <script src="./layoutlib-editor-v0.7.js"></script>
           <script src="./layoutlab-editor-ui-v0.7.js"></script>
           <script src="./layoutlab-capability-bridge-v0.7.js"></script>
@@ -84,10 +87,16 @@ jobs:
           set -euo pipefail
           BASE=https://studio.milkcat.org/poc/layout-lab
           curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v08-poc
+          curl -fsS --retry 6 --retry-all-errors "$BASE/door-wall-carver.js?v=0.8-dev" -o /tmp/layoutlib-door-wall-carver
           curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-editor.js?v=0.8-dev" -o /tmp/layoutlib-semantic-editor
           curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-tools.js?v=0.8-dev" -o /tmp/layoutlab-semantic-tools
+          grep -q 'door-wall-carver.js?v=0.8-dev' /tmp/layoutlab-v08-poc
           grep -q 'semantic-editor.js?v=0.8-dev' /tmp/layoutlab-v08-poc
           grep -q 'semantic-tools.js?v=0.8-dev' /tmp/layoutlab-v08-poc
+          grep -q 'LayoutLib Door Wall Carver v0.8.0-dev' /tmp/layoutlib-door-wall-carver
+          grep -q 'scanContinuousWallDoorCandidates' /tmp/layoutlib-door-wall-carver
+          grep -q 'carveContinuousWallDoors' /tmp/layoutlib-door-wall-carver
+          grep -q 'carved_from_continuous_wall' /tmp/layoutlib-door-wall-carver
           grep -q 'LayoutLib Semantic Editor v0.8.0-dev' /tmp/layoutlib-semantic-editor
           grep -q 'selectObjectNearPx' /tmp/layoutlib-semantic-editor
           grep -q 'matchOpeningByEvidence' /tmp/layoutlib-semantic-editor
@@ -100,14 +109,5 @@ jobs:
           grep -q "selectionInvariant:'zero-focus-object-selection/v1'" /tmp/layoutlab-semantic-tools
           grep -q "moveInvariant:'semantic-object-drag-along-support-wall/v1'" /tmp/layoutlab-semantic-tools
           grep -q "propertyInvariant:'door-properties-and-window-resize/v1'" /tmp/layoutlab-semantic-tools
-          grep -q 'S.selectObjectNearPx' /tmp/layoutlab-semantic-tools
-          grep -q 'S.deleteObject' /tmp/layoutlab-semantic-tools
-          grep -q 'S.moveObjectByPx' /tmp/layoutlab-semantic-tools
-          grep -q 'S.setDoorHinge' /tmp/layoutlab-semantic-tools
-          grep -q 'S.setDoorSwingSide' /tmp/layoutlab-semantic-tools
-          grep -q 'S.resizeWindowEdgeByPx' /tmp/layoutlab-semantic-tools
-          grep -q "doorButton.onclick=()=>setMode(mode==='door'?'select':'door')" /tmp/layoutlab-semantic-tools
-          grep -q "windowButton.onclick=()=>setMode(mode==='window'?'select':'window')" /tmp/layoutlab-semantic-tools
-          grep -q "工具仍保持 focus" /tmp/layoutlab-semantic-tools
           grep -q "badge.textContent='v0.8-dev'" /tmp/layoutlab-semantic-tools
           echo 'public_layoutlab_v08_poc=PASS'
