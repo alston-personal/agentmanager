@@ -1,0 +1,22 @@
+{
+  "schema": "model2ir-family-benchmark/v0.1",
+  "goal": "Measure whether structurally similar character assets produce stable IR with localized semantic diffs.",
+  "families": [
+    {
+      "id": "hair-garment-controlled",
+      "intent": "same humanoid core, vary hair and garment labels",
+      "cases": ["long_hair_dress", "short_hair_dress", "long_hair_coat"]
+    },
+    {
+      "id": "accessory-effect-controlled",
+      "intent": "same humanoid core, vary prop/effect labels",
+      "cases": ["body_book", "body_crown", "body_magic_ring"]
+    },
+    {
+      "id": "bodyplan-extension-controlled",
+      "intent": "same humanoid core, add body-plan extensions without relabeling the core",
+      "cases": ["body_only", "body_tail", "body_wing"]
+    }
+  ],
+  "note": "v0.1 uses deterministic synthetic glTF manifests to isolate extractor/schema behavior. Real licensed model families are the next evidence layer, not replaced by these fixtures."
+}
