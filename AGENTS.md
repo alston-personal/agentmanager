@@ -17,11 +17,21 @@ Do not rely on older memory/pulse-era documents as current architecture if they 
 
 When the **actual Gemini agent/session inside the Antigravity IDE/2.0 surface** is asked to connect to, continue from, discover, or validate AgentOS ONE, it MUST read and follow:
 
-`/.agents/skills/agentos-one-onboarding/SKILL.md`
+`.agents/skills/agentos-one-onboarding/SKILL.md`
+
+If the `agentos-one` MCP server is not already available, follow that skill and run from this repository root:
+
+```bash
+python scripts/install_antigravity_one_mcp.py --repo .
+```
+
+After installation, refresh Antigravity MCP servers or reload the Antigravity window, then verify ONE through the `one_status`, `one_bootstrap`, `one_capabilities`, and `one_resolve` tools.
 
 Important identity fence: `agy` and standalone `gemini` may use Gemini-family models but are separate executor/provider identities. They are not acceptable substitutes for proving that the active Antigravity Gemini session is ONE-aware.
 
-Prefer Antigravity's workspace MCP/provider integration for the actual IDE Gemini. Keep Realm/node credentials outside model-visible prompt, MCP resources, and committed config. A fresh Antigravity Gemini conversation must be able to rediscover ONE without copied vendor conversation history before the integration is considered complete.
+Keep Realm/node credentials outside model-visible prompt, MCP tool results, and committed config. The local ONE MCP adapter may use the already-enrolled AgentOS client credential internally, but the model must never receive it.
+
+A fresh Antigravity Gemini conversation must be able to rediscover ONE without copied vendor conversation history before the integration is considered complete.
 
 ## Current architectural role
 
