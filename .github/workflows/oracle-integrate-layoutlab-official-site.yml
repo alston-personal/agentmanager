@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  metashield_version_bump:
+  metashield_mvp_rc1:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
+    timeout-minutes: 18
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -23,44 +23,76 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deterministically bump local Chamber extension via governed deploy identity
+      - name: Copy canonical MVP task to governed deploy identity
         shell: bash
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-version-1.0.60.txt
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new .agentos/commands/metashield-mvp-rc1.json "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield-mvp-rc1.json"
+      - name: Execute MVP phases through Antigravity relay as ubuntu
+        shell: bash
+        run: |
           set -euo pipefail
-          ROOT=/home/ubuntu/metashield-protocol
-          MANIFEST="$ROOT/extension/manifest.json"
-          test -f "$MANIFEST"
-          BEFORE=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')
-          test "$BEFORE" = "1.0.59" -o "$BEFORE" = "1.0.60"
-          if test "$BEFORE" = "1.0.59"; then
-            python3 - "$MANIFEST" <<'PY'
-          import json,sys
+          mkdir -p .agentos/evidence
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-mvp-rc1-ubuntu-relay.json
+          set -euo pipefail
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext
+          python3 - <<'PY'
+          import json,time
           from pathlib import Path
-          p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8')); d['version']='1.0.60'; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+          cmd=json.loads(Path('/tmp/metashield-mvp-rc1.json').read_text(encoding='utf-8'))
+          workspace='/home/ubuntu/metashield-protocol'
+          assert Path(workspace).is_dir(), workspace
+          relay=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          results=[]
+          for phase in cmd.get('phases') or []:
+              submitted=relay.submit(
+                  project_id='metashield-protocol',
+                  canonical_ir={
+                    'goal':'Complete Chamber Sovereignty Preview RC1 MVP from the actual local working tree.',
+                    'constraints':[
+                      'Current tester-visible extension version must be 1.0.60 or newer.',
+                      'Preserve Facebook, Threads, Instagram and X/Twitter backup adapters.',
+                      'Capture once; Mainnet promotion must not require source recapture.',
+                      'Use DEVNET_ONLY -> MAINNET_REFERENCED -> MAINNET_REPLICATED semantics.',
+                      'Do not reset/rebase/discard pre-existing local work.',
+                      'Do not public-promote, deploy Mainnet, or overwrite immutable release artifacts.',
+                      'Treat /home/ubuntu/metashield-protocol as execution truth.',
+                      'Return evidence; do not claim unperformed tests or side effects.'
+                    ]
+                  },
+                  instruction=str(phase['instruction']),
+                  workspace=workspace,
+                  executor_hint='antigravity')
+              cid=submitted['capsule_id']
+              deadline=time.monotonic()+300
+              receipt=None
+              while time.monotonic()<deadline:
+                  receipt=relay.receipt(cid)
+                  if receipt is not None: break
+                  time.sleep(2)
+              if receipt is None:
+                  receipt={'schema':'agentos.antigravity-receipt/v1','capsule_id':cid,'ok':False,'error':'receipt_timeout'}
+              results.append({'phase':phase['id'],'capsule_id':cid,'receipt':receipt})
+              if not receipt.get('ok'):
+                  break
+          summary={
+            'schema':'agentos.metashield-mvp-ubuntu-relay/v0.1',
+            'executor_user':'ubuntu',
+            'workspace':workspace,
+            'results':results,
+            'complete':len(results)==len(cmd.get('phases') or []) and all((x['receipt'] or {}).get('ok') for x in results)
+          }
+          print(json.dumps(summary,ensure_ascii=False,indent=2))
+          if not summary['complete']:
+              raise SystemExit(2)
           PY
-          fi
-          AFTER=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')
-          test "$AFTER" = "1.0.60"
-          echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "executor_user=$(whoami)"
-          echo "workspace=$ROOT"
-          echo "version_before=$BEFORE"
-          echo "version_after=$AFTER"
-          echo "branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-          echo "head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-          echo "manifest_sha256=$(sha256sum "$MANIFEST" | awk '{print $1}')"
-          echo "status_begin"
-          git -C "$ROOT" status --short --branch 2>&1 || true
-          echo "status_end"
           REMOTE
-          grep -q '^version_after=1.0.60$' .agentos/evidence/metashield-version-1.0.60.txt
-      - name: Upload version evidence
+      - name: Upload MVP relay evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: metashield-version-1.0.60
-          path: .agentos/evidence/metashield-version-1.0.60.txt
-          if-no-files-found: error
+          name: metashield-mvp-rc1-ubuntu-relay
+          path: .agentos/evidence/metashield-mvp-rc1-ubuntu-relay.json
+          if-no-files-found: warn
