@@ -8,6 +8,7 @@ on:
       - '.github/workflows/oracle-experience-regression.yml'
       - 'agent_core/experience.py'
       - 'scripts/oracle_experience_regression.py'
+      - 'scripts/oracle_experience_regression_entry.py'
       - 'scripts/inspect_antigravity_regression_runtime.py'
       - 'experience/agentos-core-oracle.seed.json'
       - 'tests/test_experience_memory.py'
@@ -63,9 +64,7 @@ jobs:
           set -euo pipefail
           OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
           mkdir -p "$OUT_DIR"
-          # Module execution keeps repository root ahead of scripts/agentos_node.py,
-          # which otherwise shadows the real agentos_node package.
-          python3 -m scripts.oracle_experience_regression \
+          python3 -m scripts.oracle_experience_regression_entry \
             --seed experience/agentos-core-oracle.seed.json \
             --output "$OUT_DIR/regression.json" \
             --timeout 210
