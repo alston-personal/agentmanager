@@ -1,0 +1,110 @@
+{
+  "schema": "agentos.publication-candidates/v0",
+  "generated_at": "2026-08-31T06:42:00Z",
+  "repository": "alston-personal/agentmanager",
+  "publication_branch": "main",
+  "canonical_integration_branch": "core/integration",
+  "policy": {
+    "explicit_human_authorization_required": true,
+    "generic_continue_is_publication_approval": false,
+    "mergeable_or_green_is_publication_approval": false,
+    "integration_acceptance_is_publication_approval": false,
+    "wholesale_integration_to_main_sync_forbidden": true,
+    "publication_method": "accepted-delta extraction onto current main when branches are materially diverged"
+  },
+  "candidates": [
+    {
+      "pr": 173,
+      "title": "release(agentos): publish Claude OAuth identity fix from #72",
+      "head": "release/issue-72-claude-oauth-publication",
+      "head_sha": "3b1f9f522882e14e99b3bd3ebcff76791290d230",
+      "base": "main",
+      "base_sha": "d9861082afc65cb4afce474a46c025c4161df638",
+      "status": "engineering_green_waiting_dependency_and_human_approval",
+      "source_issue": 72,
+      "integration_provenance": {
+        "pr": 172,
+        "merge_sha": "71df8276fa4c71ad18cd0363d4f526c4ec4089c6"
+      },
+      "scope": [
+        "agentos_node/antigravity_relay_worker.py",
+        "tests/test_antigravity_relay_worker.py"
+      ],
+      "checks": {
+        "status": "success",
+        "required_observed": [
+          "Validate AgentOS Governance Drift",
+          "Mainline Governance Guard",
+          "Validate AgentOS Relay Contracts",
+          "Documentation Reality Guard",
+          "AgentOS Governance Directory Audit"
+        ]
+      },
+      "dependencies": [174],
+      "dependency_reason": "publishing the relay file while the historical Layout official-v2 push trigger remains on main would implicitly redeploy Layout Lab",
+      "post_publication_acceptance": "real ubuntu-owned deterministic Claude relay smoke must return ok=true, timed_out=false, returncode=0 and expected token before #72 completion",
+      "authorized_to_merge_main": false
+    },
+    {
+      "pr": 174,
+      "title": "governance(layoutlib): require explicit dispatch for official deploy carrier",
+      "head": "governance/layoutlab-explicit-dispatch-only",
+      "head_sha": "af9b4b85fa7725a029ccb82706683d464c2d4a3c",
+      "base": "main",
+      "base_sha": "d9861082afc65cb4afce474a46c025c4161df638",
+      "status": "engineering_green_waiting_human_approval",
+      "source_issue": 175,
+      "related_issues": [118, 96, 72],
+      "incident_run": 33363888093,
+      "incident_side_effect_state": "unknown",
+      "scope": [".github/workflows/oracle-layoutlab-official-v2.yml"],
+      "authority_change": [
+        "remove implicit push deployment",
+        "workflow_dispatch only",
+        "contents read",
+        "replace direct protected-main evidence push with Actions artifact"
+      ],
+      "checks": {
+        "status": "success",
+        "required_observed": [
+          "Validate AgentOS Governance Drift",
+          "Mainline Governance Guard",
+          "Documentation Reality Guard",
+          "AgentOS Governance Directory Audit"
+        ]
+      },
+      "dependencies": [],
+      "authorized_to_merge_main": false
+    },
+    {
+      "pr": 177,
+      "title": "governance(layoutlib): require explicit capability-gateway install",
+      "head": "governance/layoutlib-capability-gateway-explicit-dispatch",
+      "head_sha": "a248d92ab7f157b3addb3db5cb965b8dc5bc2ceb",
+      "base": "main",
+      "base_sha": "d9861082afc65cb4afce474a46c025c4161df638",
+      "status": "engineering_green_waiting_human_approval",
+      "source_issue": 175,
+      "related_issues": [118, 96],
+      "scope": [".github/workflows/oracle-install-layoutlib-capability-gateway.yml"],
+      "authority_change": [
+        "remove generic agentos_node/capability_http.py and capability_store.py push-triggered Layout runtime install",
+        "workflow_dispatch only",
+        "contents read",
+        "replace direct protected-main evidence push with Actions artifact"
+      ],
+      "checks": {
+        "status": "success",
+        "required_observed": [
+          "Validate AgentOS Governance Drift",
+          "Mainline Governance Guard",
+          "Documentation Reality Guard",
+          "AgentOS Governance Directory Audit"
+        ]
+      },
+      "runtime_install_triggered_by_fence_branch": false,
+      "dependencies": [],
+      "authorized_to_merge_main": false
+    }
+  ]
+}
