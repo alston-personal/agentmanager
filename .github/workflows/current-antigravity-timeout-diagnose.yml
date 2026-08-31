@@ -1,0 +1,78 @@
+name: Current Antigravity Timeout Diagnose
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/current-antigravity-timeout-diagnose.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Inspect exact prior capsule without replay
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, time
+          from pathlib import Path
+          capsule_id='relay-175197f0cae74cfebd6f6655c3abcc45'
+          root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          paths={name: root/name/f'{capsule_id}.json' for name in ('inbox','processing','receipts')}
+          artifacts={}
+          for name,path in paths.items():
+              row={'path':str(path),'exists':path.exists()}
+              if path.exists():
+                  row['stat']={'size':path.stat().st_size,'mtime':path.stat().st_mtime}
+                  try:
+                      data=json.loads(path.read_text(encoding='utf-8'))
+                      if name=='receipts':
+                          row['content']=data
+                      else:
+                          row['content']={k:v for k,v in data.items() if k not in {'instruction','canonical_ir'}}
+                  except Exception as exc:
+                      row['read_error']=f'{type(exc).__name__}: {exc}'
+              artifacts[name]=row
+          svc=subprocess.run(['systemctl','--user','show','agentos-antigravity-relay.service','--property=ActiveState,SubState,MainPID,ExecMainStatus'],capture_output=True,text=True,check=False)
+          procs=subprocess.run(['ps','-eo','pid,ppid,user,etimes,args'],capture_output=True,text=True,check=False)
+          relevant=[]
+          for line in procs.stdout.splitlines():
+              low=line.lower()
+              if 'antigravity_relay_worker' in low or '/native-binary/claude' in low or '/.local/bin/agy' in low:
+                  relevant.append(line[-4000:])
+          receipt=(artifacts.get('receipts') or {}).get('content') or {}
+          diagnosis={
+              'schema':'agentos.antigravity-timeout-diagnosis/v1',
+              'observed_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+              'capsule_id':capsule_id,
+              'artifacts':artifacts,
+              'service':{'returncode':svc.returncode,'stdout':svc.stdout.strip(),'stderr':svc.stderr.strip()},
+              'relevant_processes':relevant,
+              'classification':(
+                  'late_receipt_executor_timeout' if receipt.get('timed_out') is True else
+                  'late_receipt_executor_failure' if receipt and receipt.get('ok') is not True else
+                  'late_receipt_success' if receipt.get('ok') is True else
+                  'still_processing' if artifacts['processing']['exists'] else
+                  'never_consumed' if artifacts['inbox']['exists'] else
+                  'missing_artifact'
+              ),
+          }
+          out=Path('.agentos/evidence/node-golden-path/current-antigravity-timeout-diagnosis.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(diagnosis,indent=2,ensure_ascii=False,default=str)+'\n',encoding='utf-8')
+          print(json.dumps(diagnosis,indent=2,ensure_ascii=False,default=str))
+          PY
+      - name: Persist diagnosis
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-golden-path/current-antigravity-timeout-diagnosis.json
+          git commit -m 'evidence(agentos): diagnose current Antigravity timeout boundary' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
