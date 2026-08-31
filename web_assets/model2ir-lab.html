@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-Hant" data-model2ir-lab-version="0.1.0">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="model2ir-lab" content="v0.1.0">
+  <title>Model2IR Lab v0.1 · 3D → Canonical Character IR Workbench</title>
+  <style>
+    :root{color-scheme:dark;--bg:#090b10;--panel:#10141d;--panel2:#151b26;--line:#263043;--text:#eef2f8;--muted:#9aa7ba;--accent:#8fb6ff;--ok:#77d7a7;--warn:#f4c46c;--bad:#ff8c91;--mono:ui-monospace,SFMono-Regular,Consolas,monospace}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#182238 0,transparent 32rem),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+    header{max-width:1480px;margin:auto;padding:32px 28px 20px;display:flex;gap:24px;align-items:end;justify-content:space-between}.eyebrow{font:700 12px var(--mono);letter-spacing:.14em;color:var(--accent);text-transform:uppercase}h1{font-size:clamp(28px,4vw,48px);line-height:1.04;margin:8px 0 10px;letter-spacing:-.035em}header p{margin:0;max-width:830px;color:var(--muted);line-height:1.65}.version{border:1px solid var(--line);background:#0c1018cc;padding:10px 12px;border-radius:10px;font:12px var(--mono);color:var(--muted);white-space:nowrap}
+    main{max-width:1480px;margin:auto;padding:0 28px 42px}.truth{display:grid;grid-template-columns:auto 1fr;gap:12px 14px;align-items:start;border:1px solid #5b4924;background:#18150e;padding:14px 16px;border-radius:12px;margin:0 0 18px}.truth strong{color:var(--warn);font:700 12px var(--mono);letter-spacing:.06em}.truth span{color:#dbcba9;font-size:13px;line-height:1.55}
+    .layout{display:grid;grid-template-columns:minmax(480px,1.15fr) minmax(420px,.85fr);gap:18px}@media(max-width:980px){.layout{grid-template-columns:1fr}header{align-items:start;flex-direction:column}.viewer{min-height:420px}}
+    .card{border:1px solid var(--line);background:linear-gradient(180deg,#121722e8,#0d1119e8);border-radius:16px;overflow:hidden;box-shadow:0 18px 70px #0005}.cardHead{height:50px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 16px}.cardHead h2{font-size:13px;margin:0;letter-spacing:.03em}.pill{font:11px var(--mono);padding:5px 8px;border-radius:999px;background:#1b2433;color:var(--muted);border:1px solid #2d3a50}
+    .viewer{height:520px;position:relative;background:linear-gradient(180deg,#0c1018,#090b10)}#viewport{position:absolute;inset:0}.viewerEmpty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:30px;pointer-events:none}.viewerEmpty b{font-size:18px}.viewerEmpty p{color:var(--muted);font-size:13px;max-width:440px;line-height:1.6}.corner{position:absolute;left:14px;bottom:14px;max-width:calc(100% - 28px);background:#07090dbd;backdrop-filter:blur(10px);border:1px solid #263043;padding:9px 11px;border-radius:9px;font:11px var(--mono);color:var(--muted)}
+    .dropWrap{padding:14px}.drop{border:1px dashed #40516c;border-radius:12px;background:#0d121b;padding:20px;text-align:center;transition:.18s}.drop.drag{border-color:var(--accent);background:#111b2b;transform:translateY(-1px)}.drop strong{display:block;margin-bottom:7px}.drop small{display:block;color:var(--muted);line-height:1.55}.actions{display:flex;justify-content:center;gap:10px;margin-top:13px;flex-wrap:wrap}.btn{cursor:pointer;border:1px solid #3c4d69;background:#182236;color:var(--text);border-radius:9px;padding:9px 13px;font-weight:650}.btn:hover{border-color:#6c8fc7}.btn:disabled{opacity:.45;cursor:not-allowed}input[type=file]{display:none}.status{margin-top:12px;min-height:38px;border-radius:9px;padding:10px 12px;background:#0a0e15;text-align:left;font:12px/1.5 var(--mono);color:var(--muted)}.status.ok{color:var(--ok)}.status.error{color:var(--bad)}.status.busy{color:var(--warn)}
+    .right{display:flex;flex-direction:column;gap:18px}.summary{padding:14px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric{background:#0c111a;border:1px solid #222c3c;border-radius:10px;padding:11px}.metric label{display:block;color:var(--muted);font:10px var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}.metric b{font-size:13px;word-break:break-word}.metric.wide{grid-column:1/-1}.roleCandidate{color:var(--warn)}.roleCanonical{color:var(--ok)}
+    .sections{padding:0 14px 14px}details{border:1px solid #222c3c;border-radius:10px;background:#0b1018;margin-top:9px;overflow:hidden}summary{cursor:pointer;list-style:none;padding:12px 13px;font-weight:680;font-size:12px;display:flex;justify-content:space-between;gap:12px}summary::-webkit-details-marker{display:none}summary span{color:var(--muted);font:10px var(--mono);font-weight:400}.box{border-top:1px solid #222c3c;padding:11px 13px}.json{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 var(--mono);color:#c9d4e6;max-height:330px;overflow:auto}.unresolved{margin:0;padding-left:20px;color:#d7c7a4;font:12px/1.6 var(--mono)}.emptyText{color:var(--muted);font-size:12px}
+    footer{max-width:1480px;margin:auto;padding:0 28px 36px;color:#69778b;font:11px/1.6 var(--mono)}
+  </style>
+  <script type="importmap">
+  {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"}}
+  </script>
+</head>
+<body>
+<header>
+  <div>
+    <div class="eyebrow">Model2IR · Evidence Workbench</div>
+    <h1>3D → Character IR</h1>
+    <p>把單一 GLB / VRM 送進真正的 Python <code>model2ir</code>，同時檢視 3D、Observed / Inferred / Unresolved、geometry profile、VRM/topology evidence、stability audit 與完整 IR。Three.js 在這裡只負責顯示模型，不負責推論。</p>
+  </div>
+  <div class="version">LAB v0.1 · model2ir v0.9.1</div>
+</header>
+<main>
+  <div class="truth"><strong>TRUTH BOUNDARY</strong><span>外部模型經 stabilize 後仍只是 candidate；除非資產內已存在可驗證的 embedded canonical IR，Lab 不會把外觀、幾何 heuristic 或 topology inference 升格成 canonical truth。multi-file <code>.gltf + .bin + textures</code> 在 v0.1 明確不支援。</span></div>
+  <div class="layout">
+    <section class="card">
+      <div class="cardHead"><h2>3D VIEWER</h2><span class="pill">display only · no IR inference</span></div>
+      <div class="viewer">
+        <div id="viewport"></div>
+        <div class="viewerEmpty" id="viewerEmpty"><div><b>尚未載入模型</b><p>拖入一個 self-contained <code>.glb</code> 或 <code>.vrm</code>。模型會在瀏覽器本地顯示；同一份 bytes 另外送到 Model2IR API 分析。</p></div></div>
+        <div class="corner" id="assetMeta">No asset loaded</div>
+      </div>
+      <div class="dropWrap">
+        <div class="drop" id="drop">
+          <strong>Drop GLB / VRM here</strong>
+          <small>v0.1 最大 32 MiB · 上傳只用於當次分析，不保存。<br>.gltf bundle 尚未進入 v0.10 bundle-fidelity contract。</small>
+          <div class="actions"><label class="btn" for="fileInput">選擇檔案</label><button class="btn" id="reanalyze" disabled>重新分析</button></div>
+          <input id="fileInput" type="file" accept=".glb,.vrm,model/gltf-binary">
+          <div class="status" id="status">等待資產。</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="right">
+      <section class="card">
+        <div class="cardHead"><h2>ANALYSIS SUMMARY</h2><span class="pill" id="sourcePill">Python Model2IR</span></div>
+        <div class="summary">
+          <div class="grid">
+            <div class="metric"><label>Structural signal</label><b id="structural">—</b></div>
+            <div class="metric"><label>Shape hint</label><b id="shape">—</b></div>
+            <div class="metric"><label>Body plan</label><b id="bodyPlan">—</b></div>
+            <div class="metric"><label>Semantic authority</label><b id="authority">—</b></div>
+            <div class="metric"><label>Stability</label><b id="stability">—</b></div>
+            <div class="metric"><label>Result role</label><b id="resultRole">—</b></div>
+            <div class="metric wide"><label>Source SHA256</label><b id="sha">—</b></div>
+          </div>
+        </div>
+        <div class="sections">
+          <details open><summary>Observed <span>measured evidence</span></summary><div class="box"><pre class="json" id="observed">No analysis yet.</pre></div></details>
+          <details open><summary>Inferred <span>never silently canonical</span></summary><div class="box"><pre class="json" id="inferred">No analysis yet.</pre></div></details>
+          <details open><summary>Unresolved <span>unknown is allowed</span></summary><div class="box" id="unresolved"><div class="emptyText">No analysis yet.</div></div></details>
+          <details><summary>Geometry profile <span>dimensionality + rig signal</span></summary><div class="box"><pre class="json" id="profile">—</pre></div></details>
+          <details><summary>VRM humanoid evidence <span>standard metadata</span></summary><div class="box"><pre class="json" id="vrm">—</pre></div></details>
+          <details><summary>Topology evidence <span>skeleton topology</span></summary><div class="box"><pre class="json" id="topology">—</pre></div></details>
+          <details><summary>Stability audit ×3 <span>repeatability + authority</span></summary><div class="box"><pre class="json" id="audit">—</pre></div></details>
+          <details><summary>Stabilized IR <span>candidate or embedded canonical</span></summary><div class="box"><pre class="json" id="stableIr">—</pre></div></details>
+          <details><summary>Raw Model2IR envelope <span>full provenance / evidence</span></summary><div class="box"><pre class="json" id="rawIr">—</pre></div></details>
+          <details><summary>Truth policy <span>promotion guard</span></summary><div class="box"><pre class="json" id="truthPolicy">—</pre></div></details>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+<footer>Model2IR Lab v0.1 · frontend semantics = none · API contract = /api/model2ir/v1/analyze · supported containers = GLB 2.0 / VRM-in-GLB · multi-file glTF = explicitly unsupported</footer>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+const $=id=>document.getElementById(id), pretty=x=>JSON.stringify(x??null,null,2);
+const MAX=32*1024*1024;
+let currentFile=null,currentObjectUrl=null,currentRoot=null;
+const drop=$('drop'), status=$('status'), reanalyze=$('reanalyze');
+
+const host=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Color(0x090c12);
+const camera=new THREE.PerspectiveCamera(42,1,.01,1000);camera.position.set(2.4,1.8,3.4);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;host.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.target.set(0,.8,0);
+scene.add(new THREE.HemisphereLight(0xe7efff,0x283247,2.2));const key=new THREE.DirectionalLight(0xffffff,2.4);key.position.set(3,5,4);scene.add(key);const rim=new THREE.DirectionalLight(0x9cbcff,1.4);rim.position.set(-4,2,-3);scene.add(rim);
+const grid=new THREE.GridHelper(8,16,0x35445d,0x202938);grid.position.y=-.001;scene.add(grid);
+const loader=new GLTFLoader();
+function resize(){const r=host.getBoundingClientRect();renderer.setSize(Math.max(1,r.width),Math.max(1,r.height),false);camera.aspect=Math.max(1,r.width)/Math.max(1,r.height);camera.updateProjectionMatrix()}new ResizeObserver(resize).observe(host);resize();
+function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera)}loop();
+function disposeRoot(root){root.traverse(o=>{if(o.geometry)o.geometry.dispose?.();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];for(const m of mats){for(const k of Object.keys(m)){const v=m[k];if(v&&v.isTexture)v.dispose?.()}m.dispose?.()}}});scene.remove(root)}
+function fit(root){const box=new THREE.Box3().setFromObject(root);if(box.isEmpty())return;const size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3()),radius=Math.max(size.x,size.y,size.z,.1);controls.target.copy(center);camera.near=Math.max(.001,radius/1000);camera.far=Math.max(100,radius*100);camera.position.copy(center).add(new THREE.Vector3(radius*1.45,radius*.8,radius*1.7));camera.updateProjectionMatrix();controls.update();grid.position.y=box.min.y}
+function setStatus(text,kind=''){status.className='status '+kind;status.textContent=text}
+function resetAnalysis(){for(const id of ['structural','shape','bodyPlan','authority','stability','resultRole','sha'])$(id).textContent='—';for(const id of ['profile','vrm','topology','audit','stableIr','rawIr','truthPolicy'])$(id).textContent='—';$('observed').textContent='No analysis yet.';$('inferred').textContent='No analysis yet.';$('unresolved').innerHTML='<div class="emptyText">No analysis yet.</div>'}
+function validate(file){const lower=file.name.toLowerCase();if(lower.endsWith('.gltf'))throw new Error('Model2IR Lab v0.1 不支援 multi-file .gltf bundle；請使用 self-contained .glb / .vrm。');if(!(lower.endsWith('.glb')||lower.endsWith('.vrm')))throw new Error('只接受 .glb 或 .vrm。');if(file.size<=0)throw new Error('檔案是空的。');if(file.size>MAX)throw new Error('檔案超過 v0.1 的 32 MiB 上限。')}
+async function showModel(file){if(currentRoot){disposeRoot(currentRoot);currentRoot=null}if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=URL.createObjectURL(file);await new Promise((resolve,reject)=>loader.load(currentObjectUrl,g=>{currentRoot=g.scene;scene.add(currentRoot);fit(currentRoot);$('viewerEmpty').style.display='none';resolve()},undefined,reject))}
+function renderUnresolved(items){const root=$('unresolved');root.textContent='';if(!items?.length){const d=document.createElement('div');d.className='emptyText';d.textContent='No unresolved entries reported.';root.appendChild(d);return}const ul=document.createElement('ul');ul.className='unresolved';for(const item of items){const li=document.createElement('li');li.textContent=typeof item==='string'?item:JSON.stringify(item);ul.appendChild(li)}root.appendChild(ul)}
+function renderAnalysis(a){const inf=a.summary?.inferred||{},gp=inf.geometry_profile||{},body=inf.stabilized_body_plan||{};$('structural').textContent=gp.structural_signal??'unknown';$('shape').textContent=gp.shape_hint??'unknown';$('bodyPlan').textContent=body.kind??'unknown';$('authority').textContent=inf.semantic_authority??'unknown';$('stability').textContent=inf.stability_status??'unknown';const role=inf.result_role??'unknown',roleEl=$('resultRole');roleEl.textContent=role;roleEl.className=role==='embedded-canonical'?'roleCanonical':'roleCandidate';$('sha').textContent=a.asset?.sha256??'—';$('sourcePill').textContent=`Python Model2IR ${a.model2ir_version||''}`;$('observed').textContent=pretty(a.summary?.observed);$('inferred').textContent=pretty(a.summary?.inferred);renderUnresolved(a.summary?.unresolved);$('profile').textContent=pretty(a.evidence?.geometry_profile);$('vrm').textContent=pretty(a.evidence?.vrm_humanoid);$('topology').textContent=pretty(a.evidence?.topology);$('audit').textContent=pretty(a.results?.audit);$('stableIr').textContent=pretty(a.results?.stabilized_ir);$('rawIr').textContent=pretty(a.results?.extracted_ir);$('truthPolicy').textContent=pretty(a.truth_policy)}
+async function analyze(file){setStatus('Model2IR 正在 extract → profile → stabilize → audit ×3…','busy');reanalyze.disabled=true;const r=await fetch('/api/model2ir/v1/analyze',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Model2IR-Filename':encodeURIComponent(file.name)},body:file});let payload;try{payload=await r.json()}catch{throw new Error(`API 回傳非 JSON（HTTP ${r.status}）`)}if(!r.ok||!payload.ok)throw new Error(payload.message||payload.error||`HTTP ${r.status}`);renderAnalysis(payload.analysis);setStatus(`完成 · ${payload.analysis.analysis_source} · ${payload.analysis.summary?.inferred?.result_role||'unknown'} · upload persisted=false`,'ok');reanalyze.disabled=false}
+async function useFile(file){try{validate(file);currentFile=file;resetAnalysis();$('assetMeta').textContent=`${file.name} · ${(file.size/1024/1024).toFixed(2)} MiB · browser viewer + server analysis`;setStatus('本地載入 3D viewer…','busy');await showModel(file);await analyze(file)}catch(e){setStatus(e?.message||String(e),'error');reanalyze.disabled=!currentFile}}
+$('fileInput').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)useFile(f)});reanalyze.addEventListener('click',()=>currentFile&&analyze(currentFile).catch(e=>setStatus(e?.message||String(e),'error')));
+for(const ev of ['dragenter','dragover'])drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')});for(const ev of ['dragleave','drop'])drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')});drop.addEventListener('drop',e=>{const f=e.dataTransfer?.files?.[0];if(f)useFile(f)});
+window.addEventListener('beforeunload',()=>{if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl)});
+</script>
+</body>
+</html>
