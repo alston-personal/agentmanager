@@ -1,0 +1,22 @@
+{
+  "schema": "agentos.cmd-observer-install-evidence/v1",
+  "task_id": "vopc5750-cmd-observer-install-1788137333",
+  "node_receipt_ok": true,
+  "returncode": 0,
+  "stderr_tail": "",
+  "install": {
+    "schema": "agentos.cmd-observer-install/v1",
+    "installed_at": "2026-08-31T00:49:05Z",
+    "task_state": "Running",
+    "task_execute": "powershell.exe",
+    "task_arguments": "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-cmd-observer.ps1\"",
+    "last_task_result": 267009,
+    "observer_state": {
+      "schema": "agentos.cmd-observer-state/v1",
+      "status": "running",
+      "pid": 36472,
+      "started_at": "2026-08-31T00:49:02.586Z"
+    },
+    "log_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\cmd-process-trace.jsonl"
+  }
+}
