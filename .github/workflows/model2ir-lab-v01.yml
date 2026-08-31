@@ -1,0 +1,117 @@
+name: Model2IR Lab v0.1
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/model2ir-lab-v01.yml'
+      - 'scripts/model2ir_lab_server.py'
+      - 'scripts/deploy_model2ir_lab.py'
+      - 'tests/test_model2ir_lab.py'
+      - 'web_assets/model2ir-lab.html'
+      - 'libs/model2ir/**'
+      - 'docs/CURRENT_STATE.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/model2ir-lab-v01.yml'
+      - 'scripts/model2ir_lab_server.py'
+      - 'scripts/deploy_model2ir_lab.py'
+      - 'tests/test_model2ir_lab.py'
+      - 'web_assets/model2ir-lab.html'
+      - 'libs/model2ir/**'
+      - 'docs/CURRENT_STATE.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install standalone Model2IR package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -e libs/model2ir
+          python - <<'PY'
+          import model2ir
+          assert model2ir.__version__ == '0.9.1', model2ir.__version__
+          print('model2ir_version=' + model2ir.__version__)
+          PY
+      - name: Compile Lab service and deploy carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/model2ir_lab_server.py scripts/deploy_model2ir_lab.py
+      - name: Run Model2IR Lab unit and HTTP contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python -m unittest tests.test_model2ir_lab -v
+      - name: Validate browser workbench truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAGE=web_assets/model2ir-lab.html
+          grep -q 'data-model2ir-lab-version="0.1.0"' "$PAGE"
+          grep -q 'Model2IR Lab v0.1' "$PAGE"
+          grep -q 'Three.js 在這裡只負責顯示模型' "$PAGE"
+          grep -q 'multi-file' "$PAGE"
+          grep -q '/api/model2ir/v1/analyze' "$PAGE"
+          grep -q 'GLTFLoader' "$PAGE"
+          grep -q 'Observed' "$PAGE"
+          grep -q 'Inferred' "$PAGE"
+          grep -q 'Unresolved' "$PAGE"
+          grep -q 'stabilized-candidate' "$PAGE"
+          grep -q 'automatic_promotion_of_inference' scripts/model2ir_lab_server.py
+          echo 'model2ir_lab_browser_truth_boundary=PASS'
+      - name: Real HTTP smoke through Python Model2IR
+        shell: bash
+        run: |
+          set -euo pipefail
+          TMP=$(mktemp -d)
+          trap 'kill "${SERVER_PID:-}" 2>/dev/null || true; rm -rf "$TMP"' EXIT
+          python - <<'PY' "$TMP/ci.glb"
+          import json,struct,sys
+          p=sys.argv[1]
+          payload=json.dumps({'asset':{'version':'2.0'},'nodes':[],'meshes':[]},separators=(',',':')).encode()
+          payload += b' ' * ((4-len(payload)%4)%4)
+          chunk=struct.pack('<II',len(payload),0x4E4F534A)+payload
+          open(p,'wb').write(struct.pack('<4sII',b'glTF',2,12+len(chunk))+chunk)
+          PY
+          python scripts/model2ir_lab_server.py --host 127.0.0.1 --port 18766 >"$TMP/server.out" 2>"$TMP/server.err" &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:18766/healthz >"$TMP/health.json" && break
+            sleep .2
+          done
+          python - <<'PY' "$TMP/health.json"
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert x['ok'] is True
+          assert x['model2ir_version']=='0.9.1'
+          assert x['multi_file_gltf_supported'] is False
+          PY
+          curl -fsS --max-time 30 \
+            -H 'Content-Type: application/octet-stream' \
+            -H 'X-Model2IR-Filename: ci.glb' \
+            --data-binary @"$TMP/ci.glb" \
+            http://127.0.0.1:18766/v1/analyze >"$TMP/analysis.json"
+          python - <<'PY' "$TMP/analysis.json"
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert x['ok'] is True
+          a=x['analysis']
+          assert a['analysis_source']=='python-model2ir-library'
+          assert a['asset']['persisted'] is False
+          assert a['summary']['inferred']['result_role']=='stabilized-candidate'
+          assert a['truth_policy']['automatic_promotion_of_inference'] is False
+          assert a['results']['audit']['repeats']==3
+          print('model2ir_lab_http_real_library=PASS')
+          PY
