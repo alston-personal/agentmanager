@@ -1,0 +1,146 @@
+{
+  "extension/content.js": [
+    {
+      "token": "NATIVE_PASSKEY_REGISTER",
+      "dataFields": [
+        "accountId",
+        "ciphertext",
+        "data",
+        "iv",
+        "mode",
+        "optionsJSON",
+        "ownerKeyEnvelope",
+        "recipientKeyEnvelope",
+        "recipientKeyId",
+        "recipientPublicKey",
+        "recoveryCodeC",
+        "requestId",
+        "setId",
+        "shareB",
+        "source",
+        "type"
+      ],
+      "postMessageFields": [
+        "accessCapability",
+        "activeProfileId",
+        "data",
+        "error",
+        "identityAlias",
+        "identityDisplayName",
+        "plaintext",
+        "profiles",
+        "recipientKeyEnvelope",
+        "requestId",
+        "sharingKeyId",
+        "sharingPublicKey",
+        "source",
+        "success",
+        "type",
+        "walletAddress"
+      ],
+      "nativePasskeyLiterals": [],
+      "nearbyFunctions": [
+        "getFacebookPostData",
+        "findPostActionRow",
+        "handleBackupClick"
+      ]
+    },
+    {
+      "token": "NATIVE_PASSKEY_AUTHENTICATE",
+      "dataFields": [
+        "accountId",
+        "ciphertext",
+        "data",
+        "iv",
+        "mode",
+        "optionsJSON",
+        "ownerKeyEnvelope",
+        "recipientKeyEnvelope",
+        "recipientKeyId",
+        "recipientPublicKey",
+        "recoveryCodeC",
+        "requestId",
+        "setId",
+        "shareB",
+        "source",
+        "type"
+      ],
+      "postMessageFields": [
+        "accessCapability",
+        "activeProfileId",
+        "data",
+        "error",
+        "identityAlias",
+        "identityDisplayName",
+        "plaintext",
+        "profiles",
+        "recipientKeyEnvelope",
+        "requestId",
+        "sharingKeyId",
+        "sharingPublicKey",
+        "source",
+        "success",
+        "type",
+        "walletAddress"
+      ],
+      "nativePasskeyLiterals": [],
+      "nearbyFunctions": [
+        "getFacebookPostData",
+        "findPostActionRow",
+        "handleBackupClick"
+      ]
+    }
+  ],
+  "web-feed/app/[wallet_address]/[platform]/page.tsx": [
+    {
+      "token": "NATIVE_PASSKEY_REGISTER",
+      "dataFields": [
+        "accessCapability",
+        "error",
+        "identityAlias",
+        "identityDisplayName",
+        "profiles",
+        "requestId",
+        "sharingKeyId",
+        "sharingPublicKey",
+        "success",
+        "walletAddress"
+      ],
+      "postMessageFields": [
+        "source",
+        "type"
+      ],
+      "nativePasskeyLiterals": [
+        "NATIVE_PASSKEY_",
+        "NATIVE_PASSKEY_AUTHENTICATE",
+        "NATIVE_PASSKEY_REGISTER"
+      ],
+      "nearbyFunctions": []
+    },
+    {
+      "token": "NATIVE_PASSKEY_AUTHENTICATE",
+      "dataFields": [
+        "accessCapability",
+        "error",
+        "identityAlias",
+        "identityDisplayName",
+        "profiles",
+        "requestId",
+        "sharingKeyId",
+        "sharingPublicKey",
+        "success",
+        "walletAddress"
+      ],
+      "postMessageFields": [
+        "source",
+        "type"
+      ],
+      "nativePasskeyLiterals": [
+        "NATIVE_PASSKEY_",
+        "NATIVE_PASSKEY_AUTHENTICATE",
+        "NATIVE_PASSKEY_REGISTER"
+      ],
+      "nearbyFunctions": []
+    }
+  ]
+}
