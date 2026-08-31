@@ -1,0 +1,84 @@
+name: vopc5750 transient cmd trace
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-cmd-live-trace.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  trace:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Start 10-minute transient CMD trace
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time
+          from agent_core.realm_fabric import RealmFabricStore
+          tid=f"vopc5750-cmd-trace-{int(time.time())}"
+          ps=r'''$ErrorActionPreference='Stop'
+          $hits=@()
+          $deadline=(Get-Date).AddMinutes(10)
+          Register-CimIndicationEvent -ClassName Win32_ProcessStartTrace -SourceIdentifier AgentOSCmdTrace | Out-Null
+          try {
+            while((Get-Date) -lt $deadline){
+              $e=Wait-Event -SourceIdentifier AgentOSCmdTrace -Timeout 2
+              if($null -eq $e){ continue }
+              $n=[string]$e.SourceEventArgs.NewEvent.ProcessName
+              if($n -match '(?i)^(cmd|powershell|pwsh)\.exe$'){
+                $pid=[int]$e.SourceEventArgs.NewEvent.ProcessID
+                $ppid=[int]$e.SourceEventArgs.NewEvent.ParentProcessID
+                Start-Sleep -Milliseconds 80
+                $p=Get-CimInstance Win32_Process -Filter ("ProcessId="+$pid) -ErrorAction SilentlyContinue
+                $parent=Get-CimInstance Win32_Process -Filter ("ProcessId="+$ppid) -ErrorAction SilentlyContinue
+                $hits += [ordered]@{
+                  time=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+                  process=$n; pid=$pid; parent_pid=$ppid
+                  command_line=if($p){[string]$p.CommandLine}else{$null}
+                  parent_name=if($parent){[string]$parent.Name}else{$null}
+                  parent_command_line=if($parent){[string]$parent.CommandLine}else{$null}
+                }
+              }
+              Remove-Event -EventIdentifier $e.EventIdentifier -ErrorAction SilentlyContinue
+            }
+          } finally { Unregister-Event -SourceIdentifier AgentOSCmdTrace -ErrorAction SilentlyContinue }
+          [ordered]@{schema='agentos.node-cmd-live-trace/v1';observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ');duration_seconds=600;hit_count=$hits.Count;hits=$hits} | ConvertTo-Json -Depth 6 -Compress
+          '''
+          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-WindowStyle','Hidden','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':620,'cognition_ids_used':[]})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write(f'task_id={tid}\n')
+          print(tid)
+          PY
+      - name: Wait and persist trace
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          s=RealmFabricStore(); r=None
+          for _ in range(330):
+            r=s.get_receipt(os.environ['TASK_ID'])
+            if r: break
+            time.sleep(2)
+          if not r or not r.get('ok'): raise SystemExit(f'trace receipt failed: {r}')
+          payload=json.loads(str(r.get('stdout') or '').strip().splitlines()[-1])
+          p=Path('.agentos/evidence/node-lifecycle/vopc5750-cmd-live-trace.json');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(payload,ensure_ascii=False,indent=2))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-cmd-live-trace.json
+          git commit -m 'evidence(agentos-node): capture transient cmd process origins' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
