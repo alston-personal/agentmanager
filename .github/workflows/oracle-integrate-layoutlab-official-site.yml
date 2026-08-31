@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  inspect_metashield_media_runtime:
+  inspect_metashield_irys_dependency:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
     env:
@@ -21,30 +21,46 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect media runtime diagnostics and error sink
+      - name: Inspect Irys dependency declaration and runtime resolution
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-media-runtime-inspect.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-irys-dependency-inspect.txt
           set -euo pipefail
           ROOT=/home/ubuntu/metashield-protocol
           echo "version=$(python3 -c 'import json;print(json.load(open("'$ROOT'/extension/manifest.json"))["version"])')"
-          echo '===== reportBackgroundError definition/calls ====='
-          grep -RniE 'function reportBackgroundError|reportBackgroundError\(|background:media-upload' "$ROOT/extension" "$ROOT/backend" 2>/dev/null --exclude-dir=node_modules | sed -n '1,220p' || true
-          line=$(grep -n 'function reportBackgroundError' "$ROOT/extension/background.js" | head -1 | cut -d: -f1 || true)
-          if test -n "$line"; then start=$((line-15)); end=$((line+90)); nl -ba "$ROOT/extension/background.js" | sed -n "${start},${end}p"; fi
-          echo '===== likely runtime logs ====='
-          find "$ROOT" /home/ubuntu/agent-data -maxdepth 5 -type f \( -name '*.log' -o -name '*.jsonl' -o -name '*error*' -o -name '*diagnostic*' \) 2>/dev/null | grep -Ei 'chamber|metashield|backend|runtime|error|diagnostic' | sed -n '1,240p' || true
-          echo '===== recent matching log lines ====='
-          grep -RniE 'background:media-upload|Platform media fetch failed|Media API error|not enough balance|imageUploadFailed|media fallback upload failed' "$ROOT" /home/ubuntu/agent-data 2>/dev/null --exclude-dir=node_modules --exclude='*.map' | tail -240 || true
-          echo '===== backend processes ====='
-          ps -ef | grep -Ei 'chamber|metashield' | grep -v grep || true
+          echo '===== package manifests ====='
+          find "$ROOT" -maxdepth 3 -type f \( -name package.json -o -name package-lock.json -o -name npm-shrinkwrap.json -o -name pnpm-lock.yaml -o -name yarn.lock \) -print
+          for f in "$ROOT/package.json" "$ROOT/api/package.json"; do
+            if test -f "$f"; then echo "--- $f"; cat "$f"; fi
+          done
+          echo '===== irys references ====='
+          grep -RniE "@irys/sdk|from ['\"]@irys/sdk['\"]|require\(['\"]@irys/sdk['\"]\)" "$ROOT" 2>/dev/null --exclude-dir=.git --exclude-dir=node_modules | sed -n '1,240p' || true
+          echo '===== installed module ====='
+          for p in "$ROOT/node_modules/@irys/sdk" "$ROOT/api/node_modules/@irys/sdk"; do
+            if test -e "$p"; then echo "$p PRESENT"; ls -ld "$p"; else echo "$p MISSING"; fi
+          done
+          echo '===== npm resolution ====='
+          cd "$ROOT"
+          node -e "import('@irys/sdk').then(()=>console.log('root import PASS')).catch(e=>console.log('root import FAIL:',e.message))"
+          if test -d "$ROOT/api"; then
+            cd "$ROOT/api"
+            node -e "import('@irys/sdk').then(()=>console.log('api import PASS')).catch(e=>console.log('api import FAIL:',e.message))"
+          fi
+          echo '===== npm ls ====='
+          (cd "$ROOT" && npm ls @irys/sdk --depth=0) || true
+          if test -f "$ROOT/api/package.json"; then (cd "$ROOT/api" && npm ls @irys/sdk --depth=0) || true; fi
+          echo '===== api process ====='
+          ps -ef | grep -E '[n]ode .*metashield-protocol/.*/?server.js|[n]ode .*api/server.js' || true
+          echo '===== service units ====='
+          systemctl --user --no-pager --type=service 2>/dev/null | grep -Ei 'chamber|metashield|echo' || true
+          systemctl --no-pager --type=service 2>/dev/null | grep -Ei 'chamber|metashield|echo' || true
           echo '===== git status ====='
           git -C "$ROOT" status --short --branch
           REMOTE
       - uses: actions/upload-artifact@v4
         with:
-          name: metashield-media-runtime-inspect
-          path: .agentos/evidence/metashield-media-runtime-inspect.txt
+          name: metashield-irys-dependency-inspect
+          path: .agentos/evidence/metashield-irys-dependency-inspect.txt
           if-no-files-found: error
