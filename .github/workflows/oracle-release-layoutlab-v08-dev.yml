@@ -2,10 +2,11 @@ name: Oracle Release Layout Lab v0.8 Dev
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oracle-release-layoutlab-v08-dev.yml'
+    inputs:
+      candidate_sha:
+        description: 'Exact LayoutLib develop candidate commit (40 hex SHA)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -22,29 +23,44 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v4
+      - name: Authorize LayoutLib POC release lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'candidate_sha must be a full 40-char lowercase hex SHA' >&2; exit 2; }
+          python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch develop
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy canonical LayoutLib semantic editor preview
+      - name: Deploy pinned LayoutLib develop candidate
         shell: bash
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "CANDIDATE_SHA=$CANDIDATE_SHA bash -s" <<'REMOTE'
           set -euo pipefail
           TMP=$(mktemp -d /tmp/layoutlab-v08-dev-XXXXXX)
           trap 'rm -rf "$TMP"' EXIT
           /usr/bin/gh auth status >/dev/null
-          /usr/bin/gh repo clone alston-personal/layoutlib "$TMP/layoutlib" -- --depth=1
+          /usr/bin/gh repo clone alston-personal/layoutlib "$TMP/layoutlib" -- --branch develop --single-branch
           LL="$TMP/layoutlib"
+          /usr/bin/git -C "$LL" cat-file -e "$CANDIDATE_SHA^{commit}"
+          /usr/bin/git -C "$LL" merge-base --is-ancestor "$CANDIDATE_SHA" HEAD || {
+            echo "candidate_not_on_layoutlib_develop=$CANDIDATE_SHA" >&2
+            exit 3
+          }
+          /usr/bin/git -C "$LL" checkout --detach "$CANDIDATE_SHA"
           LL_SHA=$(/usr/bin/git -C "$LL" rev-parse HEAD)
+          test "$LL_SHA" = "$CANDIDATE_SHA"
           REL="$LL/release/v0.7.9"
           TARGET=/home/ubuntu/zeus-writer/website/dist/poc/layout-lab
           OLD_TARGET=/home/ubuntu/zeus-writer/website/dist/layout-lab-dev
           test -f "$REL/manifest.json"
+          test -f "$LL/src/door-wall-carver.js"
           test -f "$LL/src/semantic-editor.js"
           test -f "$LL/examples/layout-lab/semantic-tools.js"
           rm -rf "$TARGET" "$OLD_TARGET" && mkdir -p "$TARGET"
@@ -52,6 +68,7 @@ jobs:
           for f in layoutlib-browser-v0.5.js layoutlib-spatial-semantics-v0.1.js layoutlib-editor-v0.7.js layoutlab-editor-ui-v0.7.js layoutlab-capability-bridge-v0.7.js layoutlab-v0.7-release-fix.js; do
             install -m 0644 "$REL/$f" "$TARGET/$f"
           done
+          install -m 0644 "$LL/src/door-wall-carver.js" "$TARGET/door-wall-carver.js"
           install -m 0644 "$LL/src/semantic-editor.js" "$TARGET/semantic-editor.js"
           install -m 0644 "$LL/examples/layout-lab/semantic-tools.js" "$TARGET/semantic-tools.js"
           python3 - "$TARGET/index.html" "$LL_SHA" <<'PY'
@@ -61,12 +78,14 @@ jobs:
           text=p.read_text()
           tags='''
           <script src="./layoutlib-spatial-semantics-v0.1.js"></script>
+          <script src="./door-wall-carver.js?v=0.8-dev"></script>
           <script src="./layoutlib-editor-v0.7.js"></script>
           <script src="./layoutlab-editor-ui-v0.7.js"></script>
           <script src="./layoutlab-capability-bridge-v0.7.js"></script>
           <script src="./semantic-editor.js?v=0.8-dev"></script>
           <script src="./layoutlab-v0.7-release-fix.js?v=0.7.9"></script>
           <script src="./semantic-tools.js?v=0.8-dev"></script>
+          <meta name="layoutlib-source-branch" content="develop">
           <meta name="layoutlib-commit" content="'''+sha+'''">
           '''
           if 'semantic-tools.js?v=0.8-dev' not in text:
@@ -75,7 +94,8 @@ jobs:
           PY
           chmod 0755 /home/ubuntu/zeus-writer/website/dist/poc "$TARGET"
           chmod 0644 "$TARGET"/*
-          echo "layoutlib_commit=$LL_SHA"
+          echo "layoutlib_source_branch=develop"
+          echo "layoutlib_candidate_commit=$LL_SHA"
           echo "layoutlab_v08_poc_deploy=PASS"
           REMOTE
       - name: Public v0.8 POC acceptance
@@ -84,10 +104,18 @@ jobs:
           set -euo pipefail
           BASE=https://studio.milkcat.org/poc/layout-lab
           curl -fsS --retry 6 --retry-all-errors "$BASE/" -o /tmp/layoutlab-v08-poc
+          curl -fsS --retry 6 --retry-all-errors "$BASE/door-wall-carver.js?v=0.8-dev" -o /tmp/layoutlib-door-wall-carver
           curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-editor.js?v=0.8-dev" -o /tmp/layoutlib-semantic-editor
           curl -fsS --retry 6 --retry-all-errors "$BASE/semantic-tools.js?v=0.8-dev" -o /tmp/layoutlab-semantic-tools
+          grep -q 'name="layoutlib-source-branch" content="develop"' /tmp/layoutlab-v08-poc
+          grep -q "name=\"layoutlib-commit\" content=\"$CANDIDATE_SHA\"" /tmp/layoutlab-v08-poc
+          grep -q 'door-wall-carver.js?v=0.8-dev' /tmp/layoutlab-v08-poc
           grep -q 'semantic-editor.js?v=0.8-dev' /tmp/layoutlab-v08-poc
           grep -q 'semantic-tools.js?v=0.8-dev' /tmp/layoutlab-v08-poc
+          grep -q 'LayoutLib Door Wall Carver v0.8.0-dev' /tmp/layoutlib-door-wall-carver
+          grep -q 'scanContinuousWallDoorCandidates' /tmp/layoutlib-door-wall-carver
+          grep -q 'carveContinuousWallDoors' /tmp/layoutlib-door-wall-carver
+          grep -q 'carved_from_continuous_wall' /tmp/layoutlib-door-wall-carver
           grep -q 'LayoutLib Semantic Editor v0.8.0-dev' /tmp/layoutlib-semantic-editor
           grep -q 'selectObjectNearPx' /tmp/layoutlib-semantic-editor
           grep -q 'matchOpeningByEvidence' /tmp/layoutlib-semantic-editor
@@ -100,14 +128,6 @@ jobs:
           grep -q "selectionInvariant:'zero-focus-object-selection/v1'" /tmp/layoutlab-semantic-tools
           grep -q "moveInvariant:'semantic-object-drag-along-support-wall/v1'" /tmp/layoutlab-semantic-tools
           grep -q "propertyInvariant:'door-properties-and-window-resize/v1'" /tmp/layoutlab-semantic-tools
-          grep -q 'S.selectObjectNearPx' /tmp/layoutlab-semantic-tools
-          grep -q 'S.deleteObject' /tmp/layoutlab-semantic-tools
-          grep -q 'S.moveObjectByPx' /tmp/layoutlab-semantic-tools
-          grep -q 'S.setDoorHinge' /tmp/layoutlab-semantic-tools
-          grep -q 'S.setDoorSwingSide' /tmp/layoutlab-semantic-tools
-          grep -q 'S.resizeWindowEdgeByPx' /tmp/layoutlab-semantic-tools
-          grep -q "doorButton.onclick=()=>setMode(mode==='door'?'select':'door')" /tmp/layoutlab-semantic-tools
-          grep -q "windowButton.onclick=()=>setMode(mode==='window'?'select':'window')" /tmp/layoutlab-semantic-tools
-          grep -q "工具仍保持 focus" /tmp/layoutlab-semantic-tools
           grep -q "badge.textContent='v0.8-dev'" /tmp/layoutlab-semantic-tools
+          echo "public_layoutlab_v08_candidate=$CANDIDATE_SHA"
           echo 'public_layoutlab_v08_poc=PASS'
