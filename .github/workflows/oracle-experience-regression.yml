@@ -62,7 +62,9 @@ jobs:
           set -euo pipefail
           OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
           mkdir -p "$OUT_DIR"
-          python3 scripts/oracle_experience_regression.py \
+          # Module execution keeps repository root ahead of scripts/agentos_node.py,
+          # which otherwise shadows the real agentos_node package.
+          python3 -m scripts.oracle_experience_regression \
             --seed experience/agentos-core-oracle.seed.json \
             --output "$OUT_DIR/regression.json" \
             --timeout 210
