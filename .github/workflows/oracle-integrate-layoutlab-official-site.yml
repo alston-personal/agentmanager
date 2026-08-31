@@ -4,13 +4,13 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_fix_echo_route.py'
+      - 'scripts/metashield_fix_echo_unlock_state.py'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_fix_echo_route:
+  metashield_fix_echo_unlock_state:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 12
     env:
@@ -22,23 +22,25 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy Echo patch
+      - name: Copy Echo unlocked-state patch
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_echo_route.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_echo_route.py"
-      - name: Patch, build, restart and verify Echo
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_echo_unlock_state.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_echo_unlock_state.py"
+      - name: Patch, build, restart and verify Echo unlocked state
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-echo-route-fix.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-echo-unlock-state-fix.txt
           set -euo pipefail
           ROOT=/home/ubuntu/metashield-protocol
           WEB="$ROOT/web-feed"
-          python3 /tmp/metashield_fix_echo_route.py
+          python3 /tmp/metashield_fix_echo_unlock_state.py
           echo '===== diff ====='
-          git -C "$ROOT" diff -- web-feed/app/'[wallet_address]'/'[platform]'/page.tsx | sed -n '1,240p'
+          git -C "$ROOT" diff -- web-feed/app/components/RealLeopardCatCard.tsx | sed -n '1,220p'
+          grep -q 'const isUnlocked = !post.payload.is_encrypted || typeof post.decryptedContent === "string";' "$WEB/app/components/RealLeopardCatCard.tsx"
+          grep -q 'isUnlocked ? "UNLOCKED" : "ENCRYPTED"' "$WEB/app/components/RealLeopardCatCard.tsx"
           cd "$WEB"
           npm run build
           PM2_HOME=/home/ubuntu/.pm2
@@ -50,24 +52,14 @@ jobs:
           node "$PM2_CLI" describe metashield-reborn | sed -n '1,100p'
           curl -fsS -L --max-time 30 https://studio.milkcat.org/echo/sunlake/all -o /tmp/echo-sunlake.html
           grep -q '@sunlake 的迴響谷' /tmp/echo-sunlake.html
-          if grep -q '/echo//' /tmp/echo-sunlake.html; then
-            echo 'echo_double_slash=FAIL'
-            grep -o '/echo//[^"< ]*' /tmp/echo-sunlake.html | head -20 || true
-            exit 20
-          fi
-          echo 'echo_double_slash=PASS'
-          if grep -q 'studio.milkcat.org/reborn' /tmp/echo-sunlake.html; then
-            echo 'legacy_reborn_branding=FAIL'
-            exit 21
-          fi
-          echo 'legacy_reborn_branding=PASS'
-          echo 'public_echo_route=PASS'
-          echo '===== worktree ====='
+          if grep -q '/echo//' /tmp/echo-sunlake.html; then exit 20; fi
+          echo 'echo_route_regression=PASS'
+          echo 'unlock_state_source=PASS'
           git -C "$ROOT" status --short --branch
           REMOTE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-echo-route-fix
-          path: .agentos/evidence/metashield-echo-route-fix.txt
+          name: metashield-echo-unlock-state-fix
+          path: .agentos/evidence/metashield-echo-unlock-state-fix.txt
           if-no-files-found: warn
