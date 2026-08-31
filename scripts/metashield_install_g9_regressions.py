@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 ROOT = Path('/home/ubuntu/metashield-protocol')
 old_test = ROOT / 'scripts/test-threads-background.js'
@@ -24,9 +25,10 @@ replacement = '''  "user_owner-1_nativeWalletPrivateKey": "1".repeat(64),
   },
   "user_owner-1_identityAlias": "threadstest",
 '''
-if anchor not in s:
-    raise SystemExit('positive fixture anchor missing')
-s = s.replace(anchor, replacement, 1)
+if '"user_owner-1_recoveryVaultAccountId": "fixture-vault-account"' not in s:
+    if anchor not in s:
+        raise SystemExit('positive fixture anchor missing')
+    s = s.replace(anchor, replacement, 1)
 
 # Positive backup must carry recovery lineage.
 anchor = '''  assert.equal(backupRequest.encryptionVersion, "post-key-v2");
@@ -38,31 +40,28 @@ replacement = '''  assert.equal(backupRequest.encryptionVersion, "post-key-v2");
   assert.equal(backupRequest.recoveryCoverage, "verified");
   assert.ok(backupRequest.keyEnvelope?.wrapped_key);
 '''
-if anchor not in s:
-    raise SystemExit('positive lineage assertion anchor missing')
-s = s.replace(anchor, replacement, 1)
+if 'assert.equal(backupRequest.recoveryCoverage, "verified");' not in s:
+    if anchor not in s:
+        raise SystemExit('positive lineage assertion anchor missing')
+    s = s.replace(anchor, replacement, 1)
 
-# This test used to create recovery only after backup. That is no longer a valid
-# preservation flow; replace it with assertions that the seeded set stayed intact.
-start = '''  const recovery = await new Promise((resolve, reject) => {
-    listener({ action: "PREPARE_RECOVERY_VAULT" }, {}, (response) => response?.success
-      ? resolve(response)
-      : reject(new Error(response?.error || "recovery preparation failed")));
-  });
-  assert.equal(recovery.shareB.ownerUserId, "owner-1");
-  assert.equal(recovery.shareB.facebookUserId, "owner-1", "0.6.x recovery compatibility field remains readable");
-  assert.equal(recovery.shareB.identityAlias, "threadstest");
-  assert.equal(recovery.shareB.share.x, 2);
-  assert.equal(storage["user_owner-1_recoveryPendingLocalShare"].share.x, 1);
-  console.log("Threads background pipeline passed: local post/media encryption, identity, receipt, Echo route, recovery share.");
-'''
+# This test used to create recovery only after backup. Replace the whole structural
+# block regardless of minor local wording differences in the final log message.
 replacement = '''  assert.equal(storage["user_owner-1_recoveryLocalShare"].setId, "fixture-recovery-set-A");
   assert.equal(storage["user_owner-1_recoveryExportConfirmedVersion"], "2-of-3-vault-v1");
   console.log("Threads background pipeline passed: recovery-covered key generation, local post/media encryption, identity, receipt and Echo route.");
 '''
-if start not in s:
+if 'PREPARE_RECOVERY_VAULT' in s[s.find('.then(async (result) => {'):]:
+    pattern = re.compile(
+        r'''  const recovery = await new Promise\(\(resolve, reject\) => \{.*?^  console\.log\([^\n]*Threads background pipeline passed[^\n]*\);\n''',
+        re.S | re.M,
+    )
+    s2, count = pattern.subn(replacement, s, count=1)
+    if count != 1:
+        raise SystemExit('post-backup recovery structure not found')
+    s = s2
+elif 'recovery-covered key generation' not in s:
     raise SystemExit('post-backup recovery block missing')
-s = s.replace(start, replacement, 1)
 old_test.write_text(s)
 
 # Dedicated negative + rotation regression. It intentionally observes fetches so
