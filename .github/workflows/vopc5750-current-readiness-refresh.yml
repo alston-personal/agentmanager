@@ -1,0 +1,130 @@
+name: vopc5750 current readiness refresh
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-current-readiness-refresh.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vopc5750-current-readiness-refresh
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 8
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Run current-state readiness acceptance
+        run: |
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
+
+          node_id='vopc5750'
+          store=RealmFabricStore()
+          controller=ControllerService(store)
+          before=controller.node(node_id)
+          roots=before.get('workspace_roots') or {}
+          cwd=(roots.get('readable') or [r'C:\Users\alston.huang\AgentOS'])[0]
+
+          def wait_receipt(task_id, attempts=90):
+              for _ in range(attempts):
+                  receipt=store.get_receipt(task_id)
+                  if receipt:
+                      return receipt
+                  time.sleep(2)
+              return None
+
+          stamp=str(int(time.time()))
+          discovery_id='current-readiness-discovery-'+stamp
+          store.queue_task(node_id,{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':discovery_id,
+              'action':'agent.surface.inspect',
+              'cognition_ids_used':[],
+          })
+          discovery=wait_receipt(discovery_id,45)
+
+          verify_id='current-readiness-verify-'+stamp
+          ps=r'''$ErrorActionPreference='Stop'
+          $launcher=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-client.cmd'
+          if(-not (Test-Path -LiteralPath $launcher)){ throw "missing launcher: $launcher" }
+          & $launcher verify
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          '''
+          store.queue_task(node_id,{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':verify_id,
+              'action':'shell.exec',
+              'executable':'powershell',
+              'argv':['-NoProfile','-NonInteractive','-Command',ps],
+              'cwd':cwd,
+              'timeout_seconds':120,
+              'cognition_ids_used':[],
+          })
+          readiness=wait_receipt(verify_id,75)
+
+          observed=None
+          benchmark={}
+          for _ in range(45):
+              observed=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')==node_id),None)
+              benchmark=(observed or {}).get('benchmark') or {}
+              if benchmark.get('schema')=='agentos.one-uplift-report/v0.1' and benchmark.get('report_kind')=='readiness-regression':
+                  break
+              time.sleep(2)
+
+          checks={
+              'node_present': bool(observed),
+              'node_online': bool(observed and (observed.get('status')=='online' or observed.get('effective_status')=='online')),
+              'runtime_converged': bool(observed and observed.get('runtime_status')=='converged'),
+              'discovery_ok': bool(discovery and discovery.get('ok') is True and discovery.get('action')=='agent.surface.inspect'),
+              'surface_inventory_present': bool(discovery and isinstance(discovery.get('surface_inventory'),dict)),
+              'verify_ok': bool(readiness and readiness.get('ok') is True and int(readiness.get('returncode') or 0)==0),
+              'benchmark_persisted': benchmark.get('schema')=='agentos.one-uplift-report/v0.1' and benchmark.get('report_kind')=='readiness-regression',
+              'node_ready': benchmark.get('node_ready') is True,
+              'zero_regressions': benchmark.get('regressed_dimensions')==0,
+              'supervisor_ready': bool((benchmark.get('lifecycle') or {}).get('supervisor_ready') is True),
+          }
+          accepted=all(checks.values())
+          payload={
+              'schema':'agentos.current-node-readiness-acceptance/v1',
+              'observed_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+              'node_id':node_id,
+              'accepted':accepted,
+              'checks':checks,
+              'before':before,
+              'observed':observed,
+              'discovery_receipt':discovery,
+              'verify_receipt':readiness,
+              'benchmark':benchmark,
+          }
+          out=Path('.agentos/evidence/node-golden-path/vopc5750-current-readiness.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,indent=2,ensure_ascii=False,default=str)+'\n',encoding='utf-8')
+          print(json.dumps({'accepted':accepted,'checks':checks,'benchmark':benchmark},indent=2,ensure_ascii=False,default=str))
+          if not accepted:
+              raise SystemExit(2)
+          PY
+
+      - name: Persist refreshed acceptance
+        if: always()
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-golden-path/vopc5750-current-readiness.json
+          git commit -m 'evidence(agentos-node): refresh current vopc5750 readiness' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
