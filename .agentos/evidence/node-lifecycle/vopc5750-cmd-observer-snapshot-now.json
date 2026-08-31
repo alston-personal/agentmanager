@@ -1,0 +1,125 @@
+{
+  "schema": "agentos.cmd-observer-snapshot-evidence/v1",
+  "task_id": "vopc5750-cmd-snapshot-now-1788139305",
+  "node_receipt_ok": true,
+  "returncode": 0,
+  "stderr_tail": "",
+  "snapshot": {
+    "schema": "agentos.cmd-observer-snapshot-now/v1",
+    "observed_at": "2026-08-31T01:21:52.602Z",
+    "observer_state": {
+      "schema": "agentos.cmd-observer-state/v1",
+      "status": "running",
+      "pid": 36472,
+      "started_at": "2026-08-31T00:49:02.586Z"
+    },
+    "event_count": 0,
+    "events": [],
+    "current_shells": [
+      {
+        "process_name": "cmd.exe",
+        "pid": 23292,
+        "parent_pid": 22176,
+        "command_line": "",
+        "parent_name": null,
+        "parent_command_line": null
+      },
+      {
+        "process_name": "cmd.exe",
+        "pid": 13192,
+        "parent_pid": 27572,
+        "command_line": "C:\\WINDOWS\\system32\\cmd.exe /c npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux",
+        "parent_name": "language_server_windows_x64.exe",
+        "parent_command_line": "\"c:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\extensions\\antigravity\\bin\\language_server_windows_x64.exe\" --csrf_token 4a0a01dd-c3be-41fd-a5bc-eb11f08eb7d3 --extension_server_port 51567 --extension_server_csrf_token 8f9b8e38-5d2d-4999-b3c0-52c66d308c8d --app_data_dir antigravity-ide --subclient_type ide --cloud_code_endpoint https://cloudcode-pa.googleapis.com"
+      },
+      {
+        "process_name": "cmd.exe",
+        "pid": 31472,
+        "parent_pid": 29132,
+        "command_line": "C:\\WINDOWS\\system32\\cmd.exe /d /s /c chrome-devtools-mcp --autoConnect --no-usage-statistics --no-performance-crux",
+        "parent_name": "node.exe",
+        "parent_command_line": "\"C:\\Program Files\\nodejs\\\\node.exe\"  \"C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npx-cli.js\" -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux"
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 24700,
+        "parent_pid": 31012,
+        "command_line": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -noexit -command \"try { . \\\"c:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\out\\vs\\workbench\\contrib\\terminal\\common\\scripts\\shellIntegration.ps1\\\" } catch {}\"",
+        "parent_name": "Antigravity IDE.exe",
+        "parent_command_line": "\"C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe\" --type=utility --utility-sub-type=node.mojom.NodeService --lang=en-US --service-sandbox-type=none --video-capture-use-gpu-memory-buffer --user-data-dir=\"C:\\Users\\alston.huang\\AppData\\Roaming\\Antigravity IDE\" --standard-schemes=vscode-webview,vscode-file --enable-sandbox --secure-schemes=vscode-webview,vscode-file --cors-schemes=vscode-webview,vscode-file --fetch-schemes=vscode-webview,vscode-file --service-worker-schemes=vscode-webview --code-cache-schemes=vscode-webview,vscode-file --field-trial-handle=2680,i,3675960878587632595,14750983958110794401,262144 --enable-features=DocumentPolicyIncludeJSCallStacksInCrashReports,EarlyEstablishGpuChannel,EnableTransparentHwndEnlargement,EstablishGpuChannelAsync,PdfUseShowSaveFilePicker --disable-features=CalculateNativeWinOcclusion,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --trace-process-track-uuid=3190709000367499229 --mojo-platform-channel-handle=7044 /prefetch:14"
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 30512,
+        "parent_pid": 31012,
+        "command_line": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -noexit -command \"try { . \\\"c:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\out\\vs\\workbench\\contrib\\terminal\\common\\scripts\\shellIntegration.ps1\\\" } catch {}\"",
+        "parent_name": "Antigravity IDE.exe",
+        "parent_command_line": "\"C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\Antigravity IDE.exe\" --type=utility --utility-sub-type=node.mojom.NodeService --lang=en-US --service-sandbox-type=none --video-capture-use-gpu-memory-buffer --user-data-dir=\"C:\\Users\\alston.huang\\AppData\\Roaming\\Antigravity IDE\" --standard-schemes=vscode-webview,vscode-file --enable-sandbox --secure-schemes=vscode-webview,vscode-file --cors-schemes=vscode-webview,vscode-file --fetch-schemes=vscode-webview,vscode-file --service-worker-schemes=vscode-webview --code-cache-schemes=vscode-webview,vscode-file --field-trial-handle=2680,i,3675960878587632595,14750983958110794401,262144 --enable-features=DocumentPolicyIncludeJSCallStacksInCrashReports,EarlyEstablishGpuChannel,EnableTransparentHwndEnlargement,EstablishGpuChannelAsync,PdfUseShowSaveFilePicker --disable-features=CalculateNativeWinOcclusion,LocalNetworkAccessChecks,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation --variations-seed-version --trace-process-track-uuid=3190709000367499229 --mojo-platform-channel-handle=7044 /prefetch:14"
+      },
+      {
+        "process_name": "cmd.exe",
+        "pid": 32800,
+        "parent_pid": 30652,
+        "command_line": "C:\\WINDOWS\\system32\\cmd.exe /c npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux",
+        "parent_name": "language_server_windows_x64.exe",
+        "parent_command_line": "\"c:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\extensions\\antigravity\\bin\\language_server_windows_x64.exe\" --enable_lsp --csrf_token 0aaaebf9-cb4b-4987-987f-7b146a863825 --extension_server_port 62916 --extension_server_csrf_token d029526d-d1f0-41c4-ba60-0637736082e7 --workspace_id 7d71062f0ccfb0b8d50b939629e97422db738216e94d13a9c57b03bc10d3492e --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --subclient_type ide --app_data_dir antigravity-ide --parent_pipe_path \\\\.\\pipe\\server_973b6e4523640a3b"
+      },
+      {
+        "process_name": "cmd.exe",
+        "pid": 34200,
+        "parent_pid": 33316,
+        "command_line": "C:\\WINDOWS\\system32\\cmd.exe /d /s /c chrome-devtools-mcp --autoConnect --no-usage-statistics --no-performance-crux",
+        "parent_name": "node.exe",
+        "parent_command_line": "\"C:\\Program Files\\nodejs\\\\node.exe\"  \"C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npx-cli.js\" -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux"
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 31052,
+        "parent_pid": 15444,
+        "command_line": "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" ",
+        "parent_name": "explorer.exe",
+        "parent_command_line": "C:\\WINDOWS\\Explorer.EXE"
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 7932,
+        "parent_pid": 15444,
+        "command_line": "",
+        "parent_name": "explorer.exe",
+        "parent_command_line": "C:\\WINDOWS\\Explorer.EXE"
+      },
+      {
+        "process_name": "cmd.exe",
+        "pid": 26252,
+        "parent_pid": 2484,
+        "command_line": "\"cmd.exe\" /d /c \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-client.cmd\" run",
+        "parent_name": "svchost.exe",
+        "parent_command_line": ""
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 36472,
+        "parent_pid": 2484,
+        "command_line": "\"powershell.exe\" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-cmd-observer.ps1\"",
+        "parent_name": "svchost.exe",
+        "parent_command_line": ""
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 7532,
+        "parent_pid": 2484,
+        "command_line": "\"powershell.exe\" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-thin-client-watchdog.ps1\"",
+        "parent_name": "svchost.exe",
+        "parent_command_line": ""
+      },
+      {
+        "process_name": "powershell.exe",
+        "pid": 4524,
+        "parent_pid": 21148,
+        "command_line": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE -NoProfile -NonInteractive -Command \"$ErrorActionPreference='SilentlyContinue'\n$root=Join-Path $env:LOCALAPPDATA 'AgentOS'\n$log=Join-Path $root 'cmd-process-trace.jsonl'\n$state=Join-Path $root 'cmd-observer-state.json'\n$events=@()\nif(Test-Path -LiteralPath $log){\n  $lines=@(Get-Content -LiteralPath $log -Tail 30)\n  foreach($line in $lines){\n    try { $events += ($line | ConvertFrom-Json) } catch {}\n  }\n}\n$stateObj=$null\nif(Test-Path -LiteralPath $state){ try { $stateObj=Get-Content -Raw -LiteralPath $state | ConvertFrom-Json } catch {} }\n$current=@()\nforeach($p in @(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(?i:cmd\\.exe|powershell\\.exe|pwsh\\.exe|wscript\\.exe|cscript\\.exe)$' })){\n  $parent=Get-CimInstance Win32_Process -Filter (\\\"ProcessId=\\\"+[int]$p.ParentProcessId) -ErrorAction SilentlyContinue\n  $current += [ordered]@{\n    process_name=[string]$p.Name; pid=[int]$p.ProcessId; parent_pid=[int]$p.ParentProcessId;\n    command_line=[string]$p.CommandLine;\n    parent_name=if($parent){[string]$parent.Name}else{$null};\n    parent_command_line=if($parent){[string]$parent.CommandLine}else{$null}\n  }\n}\n[ordered]@{\n  schema='agentos.cmd-observer-snapshot-now/v1'\n  observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')\n  observer_state=$stateObj\n  event_count=$events.Count\n  events=$events\n  current_shells=$current\n} | ConvertTo-Json -Depth 8 -Compress\n\"",
+        "parent_name": "python.exe",
+        "parent_command_line": "\"C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\"  -m agentos_node.client_cli run"
+      }
+    ]
+  }
+}
