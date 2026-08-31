@@ -1,0 +1,103 @@
+name: vopc5750 effective runtime probe
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-effective-runtime.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time,textwrap
+          from agent_core.realm_fabric import RealmFabricStore
+          tid=f"vopc5750-effective-runtime-{int(time.time())}"
+          script=textwrap.dedent(r'''
+          import json, os, re, subprocess
+          from pathlib import Path
+          from agentos_node.client_cli import _default_config, _default_policy, _load_policy
+          from agentos_node.thin_client_transport import ClientConfig, build_client
+
+          def ps(command):
+              try:
+                  p=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],capture_output=True,text=True,timeout=12,check=False)
+                  return {'returncode':p.returncode,'stdout':p.stdout.strip()[-6000:],'stderr':p.stderr.strip()[-2000:]}
+              except Exception as exc:
+                  return {'error':type(exc).__name__+':'+str(exc)}
+
+          config_path=_default_config()
+          policy_path=_default_policy()
+          cfg=ClientConfig.load(config_path)
+          launcher=Path(os.environ.get('LOCALAPPDATA',''))/'AgentOS'/'agentos-client.cmd'
+          launcher_text=launcher.read_text(encoding='utf-8',errors='replace') if launcher.exists() else ''
+          launcher_safe=re.sub(r'(?im)^([^\r\n]*token[^=]*=).*$' , r'\1<redacted>', launcher_text)
+          task=ps("(Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction Stop).Actions | Select-Object Execute,Arguments,WorkingDirectory | ConvertTo-Json -Compress")
+          procs=ps("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '(?i)agentos_node|agentos-client' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress")
+          health=None
+          health_error=None
+          try:
+              health=build_client(cfg,_load_policy(policy_path)).health()
+          except Exception as exc:
+              health_error=type(exc).__name__+':'+str(exc)
+          sources='\n'.join([str(config_path),cfg.one_url,launcher_safe,json.dumps(task,ensure_ascii=False),json.dumps(procs,ensure_ascii=False),os.environ.get('AGENTOS_CLIENT_HOME','')])
+          out={
+              'schema':'agentos.node-effective-runtime/v1',
+              'config_path':str(config_path),
+              'policy_path':str(policy_path),
+              'agentos_client_home':os.environ.get('AGENTOS_CLIENT_HOME'),
+              'one_url':cfg.one_url,
+              'realm_id':cfg.realm_id,
+              'node_id':cfg.node_id,
+              'launcher_path':str(launcher),
+              'launcher_exists':launcher.exists(),
+              'launcher':launcher_safe[-4000:],
+              'scheduled_task_action':task,
+              'client_processes':procs,
+              'health':health,
+              'health_error':health_error,
+              'contains_8787':('8787' in sources),
+          }
+          print(json.dumps(out,ensure_ascii=False,separators=(',',':')))
+          ''').strip()
+          RealmFabricStore().queue_task('vopc5750',{
+              'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec',
+              'executable':'python','argv':['-c',script],
+              'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':35,'cognition_ids_used':[]})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write(f"task_id={tid}\n")
+          PY
+      - env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          s=RealmFabricStore(); r=None
+          for _ in range(40):
+              r=s.get_receipt(os.environ['TASK_ID'])
+              if r: break
+              time.sleep(2)
+          payload={'schema':'agentos.effective-runtime-evidence/v1','receipt':r}
+          p=Path('.agentos/evidence/node-lifecycle/vopc5750-effective-runtime.json')
+          p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+'\n')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-effective-runtime.json
+          git commit -m 'evidence(agentos-node): record vopc5750 effective runtime' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
