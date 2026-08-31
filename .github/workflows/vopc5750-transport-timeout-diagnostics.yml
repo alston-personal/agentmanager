@@ -1,0 +1,113 @@
+name: vopc5750 transport timeout diagnostics
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - .github/workflows/vopc5750-transport-timeout-diagnostics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Probe Oracle local services and queue Node network diagnostics
+        id: diag
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import json, os, socket, subprocess, time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+
+          oracle={}
+          for port in (8765, 8787, 8080, 8000):
+              s=socket.socket(); s.settimeout(1)
+              try:
+                  s.connect(('127.0.0.1',port)); oracle[str(port)]='open'
+              except Exception as e: oracle[str(port)]=f'closed:{type(e).__name__}'
+              finally: s.close()
+          try:
+              p=subprocess.run(['systemctl','--user','--no-pager','--plain','--type=service','--state=running'],capture_output=True,text=True,timeout=5)
+              oracle['running_services_tail']='\n'.join([x for x in p.stdout.splitlines() if 'agentos' in x.lower() or 'realm' in x.lower() or 'one' in x.lower()][-30:])
+          except Exception as e: oracle['service_probe_error']=repr(e)
+
+          store=RealmFabricStore()
+          node=store.get_node('vopc5750') if hasattr(store,'get_node') else None
+          oracle['registry_node']=node
+          task_id=f"vopc5750-transport-diag-{int(time.time())}"
+          script=r'''$ErrorActionPreference='Continue'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $candidates=@(
+            (Join-Path $root 'node.json'),
+            (Join-Path $root 'config.json'),
+            (Join-Path $root 'client.json'),
+            (Join-Path $root 'realm.json')
+          )
+          $files=@()
+          foreach($f in $candidates){ if(Test-Path -LiteralPath $f){ $files += [ordered]@{path=$f;content=(Get-Content -Raw -LiteralPath $f)} } }
+          $envRows=@{}
+          Get-ChildItem Env: | Where-Object { $_.Name -match '(?i)AGENTOS|ONE|REALM|GATEWAY' } | ForEach-Object { $envRows[$_.Name]=$_.Value }
+          $procs=@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '(?i)agentos_node\.client_cli\s+run' } | ForEach-Object { [ordered]@{pid=[int]$_.ProcessId;command_line=[string]$_.CommandLine} })
+          $targets=@()
+          foreach($text in @($files.content)+@($envRows.Values)+@($procs.command_line)){
+            if($null -ne $text){ [regex]::Matches([string]$text,'https?://[^\s\"''<>]+') | ForEach-Object { $targets += $_.Value.TrimEnd('/','}',']',',') } }
+          }
+          $targets=@($targets | Select-Object -Unique)
+          $tests=@()
+          foreach($u in $targets){
+            try{
+              $uri=[uri]$u; $hostName=$uri.DnsSafeHost; $port=if($uri.IsDefaultPort){if($uri.Scheme -eq 'https'){443}else{80}}else{$uri.Port}
+              $dns=$null; try{$dns=@([System.Net.Dns]::GetHostAddresses($hostName) | ForEach-Object {$_.IPAddressToString})}catch{$dns=@('DNS_ERROR:'+($_.Exception.Message))}
+              $tcp=$false; $tcpError=$null; $sw=[Diagnostics.Stopwatch]::StartNew(); $client=New-Object Net.Sockets.TcpClient
+              try{ $ar=$client.BeginConnect($hostName,$port,$null,$null); if($ar.AsyncWaitHandle.WaitOne(5000)){ $client.EndConnect($ar); $tcp=$true } else { $tcpError='timeout' } }catch{$tcpError=$_.Exception.Message}finally{$client.Close();$sw.Stop()}
+              $httpStatus=$null; $httpError=$null; $httpMs=$null
+              try{ $h=[Diagnostics.Stopwatch]::StartNew(); $r=Invoke-WebRequest -UseBasicParsing -Uri $u -Method Head -TimeoutSec 8 -ErrorAction Stop; $h.Stop(); $httpStatus=[int]$r.StatusCode; $httpMs=$h.ElapsedMilliseconds }catch{ if($h){$h.Stop();$httpMs=$h.ElapsedMilliseconds}; $httpError=$_.Exception.Message; if($_.Exception.Response){try{$httpStatus=[int]$_.Exception.Response.StatusCode}catch{}} }
+              $tests += [ordered]@{url=$u;host=$hostName;port=$port;dns=$dns;tcp=$tcp;tcp_error=$tcpError;tcp_ms=$sw.ElapsedMilliseconds;http_status=$httpStatus;http_error=$httpError;http_ms=$httpMs}
+            }catch{ $tests += [ordered]@{url=$u;parse_error=$_.Exception.Message} }
+          }
+          [ordered]@{schema='agentos.node-transport-diagnostic/v1';observed_at=(Get-Date).ToUniversalTime().ToString('o');files=$files;env=$envRows;client_processes=$procs;targets=$targets;tests=$tests} | ConvertTo-Json -Depth 8 -Compress
+          '''
+          store.queue_task('vopc5750', {'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':40,'cognition_ids_used':[]})
+          Path('/tmp/vopc5750-oracle-diag.json').write_text(json.dumps(oracle,ensure_ascii=False,default=str),encoding='utf-8')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write(f'task_id={task_id}\n')
+          print('task_id='+task_id)
+          PY
+
+      - name: Persist combined diagnostics
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.diag.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore(); receipt=None
+          for _ in range(35):
+              receipt=store.get_receipt(os.environ['TASK_ID'])
+              if receipt: break
+              time.sleep(2)
+          oracle=json.loads(Path('/tmp/vopc5750-oracle-diag.json').read_text())
+          payload={'schema':'agentos.transport-timeout-diagnostic-evidence/v1','oracle':oracle,'node_receipt':receipt}
+          if receipt and receipt.get('stdout'):
+              try: payload['node']=json.loads(str(receipt['stdout']).strip().splitlines()[-1])
+              except Exception: payload['node_stdout_tail']=str(receipt['stdout'])[-8000:]
+          out=Path('.agentos/evidence/node-lifecycle/vopc5750-transport-timeout-diagnostic.json'); out.parent.mkdir(parents=True,exist_ok=True); out.write_text(json.dumps(payload,indent=2,ensure_ascii=False,default=str)+'\n',encoding='utf-8')
+          print(json.dumps(payload,indent=2,ensure_ascii=False,default=str))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-transport-timeout-diagnostic.json
+          git commit -m 'evidence(agentos-node): diagnose vopc5750 transport timeout' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
