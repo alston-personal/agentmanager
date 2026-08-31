@@ -30,7 +30,6 @@ if '"user_owner-1_recoveryVaultAccountId": "fixture-vault-account"' not in s:
         raise SystemExit('positive fixture anchor missing')
     s = s.replace(anchor, replacement, 1)
 
-# Positive backup must carry recovery lineage.
 anchor = '''  assert.equal(backupRequest.encryptionVersion, "post-key-v2");
   assert.ok(backupRequest.keyEnvelope?.wrapped_key);
 '''
@@ -45,8 +44,6 @@ if 'assert.equal(backupRequest.recoveryCoverage, "verified");' not in s:
         raise SystemExit('positive lineage assertion anchor missing')
     s = s.replace(anchor, replacement, 1)
 
-# This test used to create recovery only after backup. Replace the whole structural
-# block regardless of minor local wording differences in the final log message.
 replacement = '''  assert.equal(storage["user_owner-1_recoveryLocalShare"].setId, "fixture-recovery-set-A");
   assert.equal(storage["user_owner-1_recoveryExportConfirmedVersion"], "2-of-3-vault-v1");
   console.log("Threads background pipeline passed: recovery-covered key generation, local post/media encryption, identity, receipt and Echo route.");
@@ -64,8 +61,6 @@ elif 'recovery-covered key generation' not in s:
     raise SystemExit('post-backup recovery block missing')
 old_test.write_text(s)
 
-# Dedicated negative + rotation regression. It intentionally observes fetches so
-# a missing Recovery Set cannot silently upload media before failing.
 g9 = r'''const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -102,6 +97,7 @@ function makeHarness(overrides = {}) {
   const context = vm.createContext({
     console, crypto: webcrypto, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer, Blob, FormData,
     URL, URLSearchParams, Response, Headers, Request, setTimeout, clearTimeout,
+    setInterval: () => 1, clearInterval: () => {},
     btoa: (v) => Buffer.from(v, "binary").toString("base64"),
     atob: (v) => Buffer.from(v, "base64").toString("binary"),
     self: { crypto: webcrypto, addEventListener: () => {} },
@@ -150,7 +146,6 @@ const post = {
 };
 
 (async () => {
-  // G9 negative: no recovery coverage means no CDN fetch, /media or /backup.
   {
     const h = makeHarness();
     const result = await send(h.listener, { action: "BACKUP_HISTORIC_POST", payload: post });
@@ -159,7 +154,6 @@ const post = {
     assert.equal(h.fetches.filter((u) => !u.endsWith("/dev-errors")).length, 0, `unexpected upload-side fetches: ${h.fetches.join(", ")}`);
   }
 
-  // Mismatched recovery generation is also blocked before any upload.
   {
     const h = makeHarness({
       "user_owner-1_recoveryExportedAt": "2026-08-31T00:00:00Z",
@@ -173,7 +167,6 @@ const post = {
     assert.equal(h.fetches.filter((u) => !u.endsWith("/dev-errors")).length, 0);
   }
 
-  // Key rotation: B stays active while recovered A becomes historical and both decrypt.
   {
     const h = makeHarness();
     await h.context.storeLegacyOwnerKey("owner-1", { ownerAddress: OWNER_A, setId: "set-A", keyTier: "native" }, SECRET_A);
