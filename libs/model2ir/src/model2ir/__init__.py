@@ -10,6 +10,13 @@ from .v06 import (
 )
 from .reversible import ir_digest
 from .audit import audit_asset as _audit_asset
+from .teacher import (
+    CANONICAL_VIEWS,
+    TEACHER_DATASET_SCHEMA,
+    TeacherDatasetError,
+    build_teacher_dataset,
+    validate_teacher_dataset_manifest,
+)
 
 
 def audit_asset(path, repeats=3):
@@ -27,6 +34,11 @@ __all__ = [
     "save_reversible_gltf",
     "ir_digest",
     "audit_asset",
+    "CANONICAL_VIEWS",
+    "TEACHER_DATASET_SCHEMA",
+    "TeacherDatasetError",
+    "build_teacher_dataset",
+    "validate_teacher_dataset_manifest",
 ]
 
-__version__ = "0.6.0"
+__version__ = "0.8.0"
