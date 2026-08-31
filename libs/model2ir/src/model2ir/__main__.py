@@ -36,6 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("asset")
     p.add_argument("-o", "--output", required=True)
 
+    p = sub.add_parser(
+        "profile",
+        help="Summarize geometry dimensionality and rig/structure signals without promoting semantics.",
+    )
+    p.add_argument("asset")
+    p.add_argument("-o", "--output", required=True)
+
     p = sub.add_parser("stabilize", help="Project a 3D asset to stabilized Canonical Character IR candidate/truth.")
     p.add_argument("asset")
     p.add_argument("-o", "--output", required=True)
@@ -92,6 +99,8 @@ def main() -> None:
 
     if args.cmd == "extract":
         out = extract_ir(args.asset)
+    elif args.cmd == "profile":
+        out = extract_ir(args.asset)["geometry_profile_evidence"]
     elif args.cmd == "stabilize":
         out = stabilize_external_ir(extract_ir(args.asset))
     elif args.cmd == "audit":

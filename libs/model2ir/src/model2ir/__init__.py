@@ -14,6 +14,7 @@ from .glb_container import (
     save_reversible_glb,
     verify_glb_container_preservation,
 )
+from .geometry_profile import GEOMETRY_PROFILE_SCHEMA, profile_asset_structure
 from .audit import audit_asset as _audit_asset
 from .teacher import (
     CANONICAL_VIEWS,
@@ -42,6 +43,8 @@ __all__ = [
     "verify_glb_container_preservation",
     "ir_digest",
     "audit_asset",
+    "GEOMETRY_PROFILE_SCHEMA",
+    "profile_asset_structure",
     "CANONICAL_VIEWS",
     "TEACHER_DATASET_SCHEMA",
     "TeacherDatasetError",
@@ -49,4 +52,4 @@ __all__ = [
     "validate_teacher_dataset_manifest",
 ]
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"

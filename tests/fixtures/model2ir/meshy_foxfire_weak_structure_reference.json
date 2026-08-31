@@ -1,0 +1,38 @@
+{
+  "schema": "model2ir-regression-reference/v0.1",
+  "case_id": "meshy-foxfire-tempest-2p5d",
+  "source": {
+    "generator": "meshy-scene",
+    "sha256": "8e73140979e4de8faf6d745e07353f594f5f4df01616b5a81e1da7e33c4eab25",
+    "bytes": 10631348,
+    "binary_committed": false,
+    "note": "Measurement-derived reference only; the uploaded source GLB and image are not committed."
+  },
+  "observed": {
+    "mesh_count": 1,
+    "primitive_count": 1,
+    "component_count": 1,
+    "vertices_sum": 53940,
+    "indices_sum": 263676,
+    "triangle_faces_sum": 87892,
+    "material_count": 1,
+    "skin_count": 0,
+    "joint_count": 0,
+    "animation_count": 0,
+    "image_count": 3,
+    "texture_count": 3,
+    "bbox_extent_local_untransformed": [
+      1.686348021030426,
+      1.8182989954948425,
+      0.23552899807691574
+    ]
+  },
+  "expected": {
+    "shape_hint": "planar-or-relief-like",
+    "structural_signal": "weak",
+    "thin_axis_ratio": 0.129533,
+    "middle_axis_ratio": 0.927432,
+    "body_plan": "unknown",
+    "automatic_humanoid_promotion": false
+  }
+}

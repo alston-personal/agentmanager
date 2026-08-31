@@ -7,6 +7,8 @@ on:
       - 'scripts/model2ir_teacher_dataset.py'
       - 'tests/test_model2ir_teacher_library.py'
       - 'tests/test_model2ir_cli.py'
+      - 'tests/test_model2ir_geometry_profile.py'
+      - 'tests/fixtures/model2ir/**'
       - 'tests/test_model2ir_glb_reversible_v09.py'
       - '.github/workflows/model2ir-library-v08.yml'
   push:
@@ -16,6 +18,8 @@ on:
       - 'scripts/model2ir_teacher_dataset.py'
       - 'tests/test_model2ir_teacher_library.py'
       - 'tests/test_model2ir_cli.py'
+      - 'tests/test_model2ir_geometry_profile.py'
+      - 'tests/fixtures/model2ir/**'
       - 'tests/test_model2ir_glb_reversible_v09.py'
       - '.github/workflows/model2ir-library-v08.yml'
 
@@ -38,6 +42,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_model2ir_teacher_library.py' -q
           python -m unittest discover -s tests -p 'test_model2ir_cli.py' -q
+          python -m unittest discover -s tests -p 'test_model2ir_geometry_profile.py' -q
           python -m unittest discover -s tests -p 'test_model2ir_glb_reversible_v09.py' -q
       - name: Verify public API and console entrypoint
         shell: bash
@@ -45,17 +50,20 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import model2ir
-          assert model2ir.__version__ == '0.9.0'
+          assert model2ir.__version__ == '0.9.1'
           assert callable(model2ir.extract_ir)
+          assert callable(model2ir.profile_asset_structure)
           assert callable(model2ir.build_teacher_dataset)
           assert callable(model2ir.validate_teacher_dataset_manifest)
           assert callable(model2ir.compile_reversible_glb)
           assert callable(model2ir.save_reversible_glb)
           assert callable(model2ir.verify_glb_container_preservation)
+          assert model2ir.GEOMETRY_PROFILE_SCHEMA == 'model2ir-geometry-profile/v0.9.1'
           assert model2ir.TEACHER_DATASET_SCHEMA == 'model2ir-teacher-dataset/v0.7'
           print('model2ir library boundary=ok')
           PY
           model2ir --help >/dev/null
+          model2ir profile --help >/dev/null
           model2ir stabilize --help >/dev/null
           model2ir embed-ir --help >/dev/null
       - name: Prove wheel isolation from monorepo
@@ -70,10 +78,12 @@ jobs:
           cd /tmp
           /tmp/model2ir-wheel-venv/bin/python - <<'PY'
           import model2ir
-          assert model2ir.__version__ == '0.9.0'
+          assert model2ir.__version__ == '0.9.1'
+          assert callable(model2ir.profile_asset_structure)
           assert callable(model2ir.compile_reversible_glb)
           assert callable(model2ir.build_teacher_dataset)
           print('model2ir isolated wheel import=PASS')
           PY
           /tmp/model2ir-wheel-venv/bin/model2ir --help >/dev/null
+          /tmp/model2ir-wheel-venv/bin/model2ir profile --help >/dev/null
           /tmp/model2ir-wheel-venv/bin/model2ir embed-ir --help >/dev/null
