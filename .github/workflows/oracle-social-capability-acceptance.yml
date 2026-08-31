@@ -1,0 +1,58 @@
+name: Oracle Social Capability Acceptance
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric
+    paths:
+      - '.github/workflows/oracle-social-capability-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  threads-identity:
+    if: github.actor == 'alstonhuang'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Threads credential without exposing token
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+
+          zeus = Path('/home/ubuntu/zeus-writer')
+          sys.path.insert(0, str(zeus / 'scripts'))
+          try:
+              from dotenv import load_dotenv
+              load_dotenv(zeus / '.env', override=True)
+              load_dotenv('/home/ubuntu/agentmanager/.env', override=True)
+          except Exception:
+              pass
+          try:
+              from secret_manager import SecretManager
+              SecretManager.load_all_secrets()
+          except Exception as exc:
+              print('secret_bootstrap=degraded')
+
+          from agentos_node.social.threads import ThreadsCapability
+          cap = ThreadsCapability(credential_ref='threads/default', publish_wait_seconds=0)
+          receipt = cap.identity_read()
+          safe = {
+              'schema': 'agentos.social-acceptance/v0.1',
+              'capability': receipt.capability,
+              'ok': receipt.ok,
+              'credential_present': bool(receipt.result.get('credential_present')),
+              'username': receipt.result.get('username'),
+              'error_code': receipt.error_code,
+          }
+          print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
+          if not receipt.ok:
+              raise SystemExit(2)
+          PY
