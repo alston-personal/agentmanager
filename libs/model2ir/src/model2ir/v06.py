@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from . import v04 as _v04
+from .geometry_profile import profile_asset_structure
 from .standards import extract_vrm_humanoid
 from .topology import infer_humanoid_topology
 
@@ -72,6 +73,7 @@ def extract_ir(asset_or_path) -> dict[str, Any]:
     out['schema'] = 'model2ir-character-ir/v0.6'
     out['vrm_humanoid_evidence'] = vrm
     out['topology_evidence'] = topo
+    out['geometry_profile_evidence'] = profile_asset_structure(out)
     if out.get('canonical_ir') is None:
         out['candidate_ir'] = _fused_candidate(out, vrm, topo)
     out['provenance']['extractor'] = 'model2ir/v0.6'
