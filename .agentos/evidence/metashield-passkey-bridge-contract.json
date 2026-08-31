@@ -1,0 +1,124 @@
+{
+  "contentFunctions": {
+    "createNativePasskey": {
+      "params": [
+        "optionsJSON"
+      ],
+      "endpoints": [],
+      "messageTypes": [],
+      "calls": [
+        "AbortController",
+        "DOMException",
+        "Error",
+        "abort",
+        "clearTimeout",
+        "create",
+        "getAuthenticatorData",
+        "getClientExtensionResults",
+        "getPublicKey",
+        "getPublicKeyAlgorithm",
+        "getTransports",
+        "map",
+        "setTimeout",
+        "t",
+        "webAuthnBase64UrlToBuffer",
+        "webAuthnBufferToBase64Url"
+      ]
+    },
+    "authenticateNativePasskey": {
+      "params": [
+        "optionsJSON"
+      ],
+      "endpoints": [],
+      "messageTypes": [],
+      "calls": [
+        "AbortController",
+        "DOMException",
+        "Error",
+        "abort",
+        "clearTimeout",
+        "get",
+        "getClientExtensionResults",
+        "map",
+        "setTimeout",
+        "t",
+        "webAuthnBase64UrlToBuffer",
+        "webAuthnBufferToBase64Url"
+      ]
+    },
+    "handleBackupClick": {
+      "params": [
+        "btn",
+        "postEl"
+      ],
+      "endpoints": [],
+      "messageTypes": [],
+      "calls": [
+        "alert",
+        "appendChild",
+        "createElement",
+        "getFacebookPostData",
+        "getFacebookUserId",
+        "gradient",
+        "log",
+        "querySelector",
+        "sendMessage",
+        "startsWith",
+        "t"
+      ]
+    }
+  },
+  "contentMessageTypes": [
+    "CONFIRM_RECOVERY_VAULT_RESPONSE",
+    "FINALIZE_RECOVERY_VAULT_RESPONSE",
+    "GET_RECOVERY_VAULT_STATUS_RESPONSE",
+    "PREPARE_RECOVERY_VAULT_RESPONSE",
+    "RESTORE_RECOVERY_AB_RESPONSE",
+    "RESTORE_RECOVERY_VAULT_RESPONSE"
+  ],
+  "sidepanelMessageTypes": [
+    "AUTHOR_NOT_CONFIRMED",
+    "RECOVERY_COVERAGE_REQUIRED"
+  ],
+  "sidepanelFunctions": {
+    "openRecoveryTab": {
+      "params": [],
+      "endpoints": [],
+      "messageTypes": [],
+      "calls": [
+        "activePlatformIdentity",
+        "create",
+        "encodeURIComponent",
+        "find",
+        "get",
+        "getActiveProfile"
+      ]
+    },
+    "sendTabMessageWithRecovery": {
+      "params": [
+        "tabId",
+        "message"
+      ],
+      "endpoints": [],
+      "messageTypes": [],
+      "calls": [
+        "Promise",
+        "executeScript",
+        "sendTabMessage",
+        "setTimeout",
+        "test"
+      ]
+    },
+    "refreshRecoveryStatus": {
+      "params": [],
+      "endpoints": [],
+      "messageTypes": [],
+      "calls": [
+        "activePlatformIdentity",
+        "formatDate",
+        "get",
+        "t"
+      ]
+    }
+  }
+}
