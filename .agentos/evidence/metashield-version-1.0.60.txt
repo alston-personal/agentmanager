@@ -1,0 +1,12 @@
+timestamp_utc=2026-08-31T00:30:39Z
+workspace=/home/ubuntu/metashield-protocol
+branch=unknown
+head=unknown
+version=1.0.60
+manifest_sha256=e095643f0018c4a6934f1dc3db0bf86de006c06d9f6b33502866dcdc2c57b2cc
+status_begin
+fatal: detected dubious ownership in repository at '/home/ubuntu/metashield-protocol'
+To add an exception for this directory, call:
+
+	git config --global --add safe.directory /home/ubuntu/metashield-protocol
+status_end
