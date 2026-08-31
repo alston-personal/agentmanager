@@ -1,0 +1,22 @@
+{
+  "schema": "agentos.node-lifecycle-diagnostic/v1",
+  "observed_at": "2026-08-31T00:19:58Z",
+  "client": {
+    "state": "Running",
+    "execute": "cmd.exe",
+    "arguments": "/d /c \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-client.cmd\" run",
+    "last_run_time": "2026-08-30T23:52:48Z",
+    "last_task_result": 267009,
+    "next_run_time": null,
+    "missed_runs": 0
+  },
+  "watchdog": {
+    "state": "Ready",
+    "last_run_time": "2026-08-31T00:19:45Z",
+    "last_task_result": 0,
+    "next_run_time": "2026-08-31T00:20:44Z",
+    "missed_runs": 0
+  },
+  "managed_client_count": 0,
+  "client_processes": []
+}
