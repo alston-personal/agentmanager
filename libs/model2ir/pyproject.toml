@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "model2ir"
-version = "0.8.1"
+version = "0.9.0"
 description = "Standalone evidence-fused reversible Canonical Character IR decompiler for 3D assets"
 readme = "README.md"
 requires-python = ">=3.10"
