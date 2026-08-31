@@ -1,6 +1,6 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T03:05:00Z",
+  "generated_at": "2026-08-31T03:17:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
@@ -101,23 +101,37 @@
       "project_id": "character-blueprint",
       "canonical_repository": null,
       "migration_issue": "alston-personal/agentmanager#164",
+      "core_dependencies": [170],
+      "repository_provisioning": {
+        "issue": 170,
+        "preferred_repository": "alston-personal/character-blueprint",
+        "requires_explicit_human_approval": true,
+        "alternative_satisfaction": "the exact explicitly approved repository may be created out-of-band and then verified by Core"
+      },
       "rejected_repository_candidates": [
         {
           "repository": "alston-personal/charactergenerator",
           "reason": "content provenance mismatch: Character Blueprint is image-to-3D proxy with character-blueprint-ir/v0.4 and Three.js OrbitControls, while charactergenerator is a distinct image-to-AI-description/full-body-image product and contains neither marker"
         }
       ],
-      "status": "identity_unresolved_migration_worker_created",
+      "status": "repository_establishment_blocked_on_governed_provisioning",
       "core_prs": [53],
-      "classification": "Character Blueprint product work exists in agentmanager; charactergenerator is explicitly rejected as an automatic identity match; #164 now owns explicit canonical repository creation/assignment and v0.4 migration",
-      "retire_when": ["#164 explicitly assigns/creates the canonical project repository", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
-      "safe_now": "preserve_pr_53_and_do_not_merge_to_core_or_charactergenerator; migration waits only on its own repository identity step"
+      "classification": "Character Blueprint product work exists in agentmanager; charactergenerator is explicitly rejected as an automatic identity match; #164 owns v0.4 migration and its repository-establishment step is now explicitly gated by #170 or equivalent human-created verified repository",
+      "retire_when": ["#164 obtains an explicitly approved canonical project repository through #170 or equivalent verified manual creation", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
+      "safe_now": "preserve_pr_53_and_do_not_merge_to_core_or_charactergenerator; only the repository-establishment step waits on Core 170"
     },
     {
       "project_id": "model2ir",
       "canonical_repository": null,
       "migration_issue": "alston-personal/agentmanager#163",
-      "status": "carrier_identified_repository_creation_worker_created",
+      "core_dependencies": [170],
+      "repository_provisioning": {
+        "issue": 170,
+        "preferred_repository": "alston-personal/model2ir",
+        "requires_explicit_human_approval": true,
+        "alternative_satisfaction": "the exact explicitly approved repository may be created out-of-band and then verified by Core"
+      },
+      "status": "repository_establishment_blocked_on_governed_provisioning",
       "latest_core_carrier": {
         "ref": "feat/model2ir-meshy-weak-structure-v091",
         "tip": "1314bb01e718e1a930e24441b3544dd8da020065",
@@ -137,9 +151,9 @@
         "feat/model2ir-reversible-glb-v09",
         "feat/model2ir-meshy-weak-structure-v091"
       ],
-      "classification": "a standalone model2ir v0.9.1 library is already implemented under libs/model2ir on historical agentmanager branches; #163 owns repository creation/assignment and migration, not new Core feature implementation",
-      "retire_when": ["#163 assigns/creates canonical standalone repository outside agentmanager", "migrate package, tests, fixtures and relevant history from the v0.9.1 carrier", "reproduce package/CLI behavior and regression evidence in the new repository", "declare the new repository main/release as canonical Model2IR authority"],
-      "safe_now": "freeze_agentmanager_model2ir_carrier_for_migration; do_not_continue_library_implementation_in_core"
+      "classification": "a standalone model2ir v0.9.1 library is already implemented under libs/model2ir on historical agentmanager branches; #163 owns migration and its repository-establishment step is now explicitly gated by #170 or equivalent human-created verified repository",
+      "retire_when": ["#163 obtains an explicitly approved canonical standalone repository through #170 or equivalent verified manual creation", "migrate package, tests, fixtures and relevant history from the v0.9.1 carrier", "reproduce package/CLI behavior and regression evidence in the new repository", "declare the new repository main/release as canonical Model2IR authority"],
+      "safe_now": "freeze_agentmanager_model2ir_carrier_for_migration; do_not_continue_library_implementation_in_core; only repository establishment waits on Core 170"
     }
   ],
   "legacy_core_proposals": [
@@ -156,6 +170,7 @@
     "poc_staging": "exact candidate SHA/artifact allowed",
     "production": "exact accepted main SHA/tag/release artifact",
     "carrier_retirement": "never remove until canonical product-owned replacement and runtime parity evidence exist",
-    "cross_repository_execution": "product owns source/request; Core may own only a generic governed privileged execution boundary and sanitized receipt"
+    "cross_repository_execution": "product owns source/request; Core may own only a generic governed privileged execution boundary and sanitized receipt",
+    "repository_provisioning": "new canonical repository creation is a separate high-impact mutation requiring explicit scoped human authorization; creating a repository does not itself promote imported source to accepted main state"
   }
 }
