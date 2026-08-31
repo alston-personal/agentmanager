@@ -4,13 +4,13 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_inspect_recovery_vault_metadata.sh'
+      - 'scripts/metashield_inspect_recovery_store_safe.sh'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_inspect_recovery_vault_metadata:
+  metashield_inspect_recovery_store_safe:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 8
     env:
@@ -22,20 +22,20 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy safe recovery inspection
+      - name: Copy safe recovery-store inspection
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_recovery_vault_metadata.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_recovery_vault_metadata.sh"
-      - name: Inspect recovery metadata without secrets
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_recovery_store_safe.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_recovery_store_safe.sh"
+      - name: Inspect recovery store without secret material
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_recovery_vault_metadata.sh" | tee .agentos/evidence/metashield-recovery-vault-metadata.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_recovery_store_safe.sh" | tee .agentos/evidence/metashield-recovery-store-safe.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-recovery-vault-metadata
-          path: .agentos/evidence/metashield-recovery-vault-metadata.txt
+          name: metashield-recovery-store-safe
+          path: .agentos/evidence/metashield-recovery-store-safe.txt
           if-no-files-found: warn
