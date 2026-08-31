@@ -4,15 +4,15 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_inspect_owner_decrypt.sh'
+      - 'scripts/metashield_fix_owner_key_fallback.py'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_inspect_owner_decrypt:
+  metashield_fix_owner_key_fallback:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,20 +22,36 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy owner decrypt inspection
+      - name: Copy owner-key fallback patch
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_owner_decrypt.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_owner_decrypt.sh"
-      - name: Inspect owner decrypt failure
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_owner_key_fallback.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_owner_key_fallback.py"
+      - name: Patch and verify extension owner-key fallback
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_owner_decrypt.sh" | tee .agentos/evidence/metashield-owner-decrypt-inspect.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-owner-key-fallback.txt
+          set -euo pipefail
+          ROOT=/home/ubuntu/metashield-protocol
+          python3 /tmp/metashield_fix_owner_key_fallback.py
+          node --check "$ROOT/extension/background.js"
+          grep -q '"version": "1.0.62"' "$ROOT/extension/manifest.json"
+          grep -q 'async function getStoredOwnerKeyCandidates(userId)' "$ROOT/extension/background.js"
+          grep -q 'No stored Chamber owner key could decrypt this backup' "$ROOT/extension/background.js"
+          if test -f "$ROOT/scripts/test-threads-background.js"; then
+            cd "$ROOT"
+            node scripts/test-threads-background.js
+          fi
+          echo '===== diff ====='
+          git -C "$ROOT" diff -- extension/background.js extension/manifest.json | sed -n '1,360p'
+          echo '===== worktree ====='
+          git -C "$ROOT" status --short --branch
+          REMOTE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-owner-decrypt-inspect
-          path: .agentos/evidence/metashield-owner-decrypt-inspect.txt
+          name: metashield-owner-key-fallback
+          path: .agentos/evidence/metashield-owner-key-fallback.txt
           if-no-files-found: warn
