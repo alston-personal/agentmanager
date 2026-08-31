@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-08-28  
+**Status date:** 2026-08-31  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
 This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
@@ -22,6 +22,7 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Continuation-state monotonicity | Implemented + tested | `scripts/continuation_state.py` | `tests/test_continuation_state.py` |
 | Persistent control plane | Implemented + tested | `agent_core/control_plane.py` | `tests/test_control_plane.py`, `.agentos/evidence/bootstrap-control-plane.txt` |
 | Canonical Project Identity | Implemented + tested | `agent_core/project_store.py`, `agent_core/resolve_facade.py` | `tests/test_project_store_canonical.py`, governed Core registration workflow/evidence |
+| Project release-lane authority | Implemented on governance branch + tested | `.agent/governance/project_release_lanes.yaml`, `scripts/check_project_release_lane.py` | `tests/test_project_release_lane.py`, `Project Release Lane Guard` |
 | Node registry / capability discovery | Implemented + tested | `agent_core/node_registry.py`, `scripts/agentos_node.py` | `tests/test_agentos_node.py`, `tests/test_node_registry_v01.py` |
 | Governance responsibility resolution | Implemented + tested | `agent_core/governance_directory.py` | `tests/test_governance_directory.py`, governance audit workflow/evidence |
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
@@ -30,7 +31,7 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Core deployment authority / generation fence | Implemented + live accepted | governed claim/install/release path, Action Relay deployment fence | `docs/CORE_DEPLOYMENT_AUTHORITY.md`, active-lease conflict proof, Issue #64 acceptance |
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
-| Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
+| Protected-branch authority guard | Implemented | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
 | Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows |
 | Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
 | Model-independent Cognitive IR | Research | operational handoff envelopes exist, but general sufficiency is not canonical | requires repeatable cross-model continuity benchmark |
@@ -38,31 +39,32 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 
 ## Canonical Project Identity contract
 
-Project identity is now explicitly separated from repository, checkout path, runtime path, deployment target, and state storage.
+Project identity is explicitly separated from repository, checkout path, runtime path, deployment target, and state storage.
 
-The canonical project document uses schema:
+The canonical project document uses schema `agentos.project/v1` and includes at minimum `project_id`, `display_name`, aliases, source repository/branch/path/node, and state locations. `project_id` is a stable logical identity and must not be derived from a repository name or checkout directory.
+
+## Project release-lane authority
+
+Project identity alone does not authorize a branch mutation or deployment. AgentOS Core now models project development, promotion, POC deployment, and production deployment as separate authorities.
+
+For LayoutLib the canonical contract is:
 
 ```text
-agentos.project/v1
+active development: alston-personal/layoutlib/develop or explicit feature/fix/governance branch
+promotion state:    alston-personal/layoutlib/main
+POC surface:        https://studio.milkcat.org/poc/layout-lab/
+POC source:         validated, pinned develop candidate
+production surface: https://studio.milkcat.org/layout-lab/
+production source:  promoted main/release state
+immutable baseline: release/v0.7.9
+promotion/deploy authority: AgentOS Core
 ```
 
-and includes at minimum:
+A project-development action targeting LayoutLib `main` is denied. Promotion to `main` is a distinct action requiring an explicit human approval event plus Core governance. A passing test, a mergeable PR, a deployment capability, or the user's generic `continue` instruction is not promotion approval.
 
-```text
-project_id
-display_name
-aliases
-source.repo
-source.branch
-source.canonical_path
-source.node
-state.data_path
-state.document
-```
+Project threads may create project commits, tests, evidence, and candidate requests on the development lane. They must not acquire deployment authority by directly editing `agentmanager` deployment workflows. POC deployment consumes a validated candidate commit selected from the registered development branch; production consumes only promoted state. These rules are machine-readable in `.agent/governance/project_release_lanes.yaml` and enforced by `scripts/check_project_release_lane.py`.
 
-`project_id` is a stable logical identity. It must not be derived from a repository name or checkout directory. Compatibility fields such as `repo_url`, `actual_code_path`, and `data_path` are projections for older readers; they are not separate authority sources.
-
-Registration projects the same identity into Governance Directory as `project://<project_id>` with explicit project/source/state authority. Canonical resolution must reject mutation when source authority is incomplete or integrity checks fail.
+This contract was introduced after the LayoutLib v0.8 development incident in which project development landed directly on project `main` and the project thread then attempted to own Core deployment orchestration. Existing history is not rewritten; the correction establishes the authority boundary from this point forward.
 
 ## Realm Node Map and capability semantics
 
@@ -79,32 +81,15 @@ The authoritative live node count/status comes from the runtime NodeRegistry, no
 
 ## Core runtime authority status
 
-Realm Fabric is a single live Core service governed by canonical deployment state in:
+Realm Fabric is a single live Core service governed by canonical deployment state in `/home/ubuntu/agent-data/governance/core-deployment.json`. The deployment state tracks desired/observed commit, monotonic generation, lease owner/expiry, and deployment status. A live generation is converged only when desired and observed commits match and status is `converged`.
 
-```text
-/home/ubuntu/agent-data/governance/core-deployment.json
-```
-
-The deployment state tracks desired/observed commit, monotonic generation, lease owner/expiry, and deployment status. A live generation is converged only when desired and observed commits match and status is `converged`.
-
-A deployment claim and an installation are separate operations. Installation cannot silently advance generation. While a deployment lease is active, another generation advance is rejected even for the same owner; the current generation must first be released/expired according to the deployment contract. This prevents delayed or duplicated workflows from replacing an authoritative generation.
-
-On 2026-08-28, Issue #64 final acceptance proved the real path:
-
-```text
-Bootstrap Control Inbox
-  -> Oracle bridge / ONE
-  -> POST /v1/controller/dispatch
-  -> ControllerService
-```
-
-The accepted probe returned a node-level `NODE_CAPABILITY_NOT_ADVERTISED` outcome for `agent.surface.inspect`, rather than the former Core HTTP 404. This is the intended boundary: Core routing was restored; remaining capability convergence belongs to the Node Golden Path.
+A deployment claim and an installation are separate operations. Installation cannot silently advance generation. While a deployment lease is active, another generation advance is rejected even for the same owner; the current generation must first be released/expired according to the deployment contract.
 
 ## Important invariants
 
 ### Newer user intent must never be rolled back
 
-Compaction, replay, stale tool results, or executor switching must not replace a newer goal/correction with an older one. `scripts/continuation_state.py` currently protects this narrow invariant and has regression tests.
+Compaction, replay, stale tool results, or executor switching must not replace a newer goal/correction with an older one.
 
 ### Evidence is not intent
 
@@ -112,11 +97,11 @@ Tool results and execution evidence can inform decisions, but they do not silent
 
 ### Capability does not imply authority
 
-The presence of a mutation tool, a mergeable pull request, a node capability, or passing CI does not itself authorize mutation. Protected-branch, Core-deployment, project-source, and effect-level authority remain separate checks.
+The presence of a mutation tool, a mergeable pull request, a node capability, or passing CI does not itself authorize mutation. Protected-branch, Core-deployment, project-source, project-release-lane, and effect-level authority remain separate checks.
 
 ### Discover before invent
 
-Reusable/cross-project work should resolve existing responsibility, project identity, node capability, and resources before creating parallel implementations. See `docs/AGENTOS_NODE.md` and the Governance Directory.
+Reusable/cross-project work should resolve existing responsibility, project identity, node capability, resources, and release lane before creating parallel implementations.
 
 ### Models are executors, not the durable source of truth
 
@@ -128,49 +113,16 @@ A successful process start, health endpoint, or workflow status is not enough to
 
 ## Memory and Cognitive IR boundary
 
-Historical three-layer memory remains a useful conceptual model:
+Historical three-layer memory remains a useful conceptual model: L1 immediate/working state, L2 project/continuation state, and L3 stable cross-project knowledge and learned patterns. Current AgentOS separates canonical project state, continuation/work state, governance state, runtime state, receipts/evidence, and validated knowledge.
 
-- L1: immediate/working state;
-- L2: project/continuation state;
-- L3: stable cross-project knowledge and learned patterns.
-
-Current AgentOS no longer treats `SHORT_TERM.md` / `LONG_TERM.md` as the complete memory architecture. Canonical project state, continuation/work state, governance state, runtime state, receipts/evidence, and validated knowledge are distinct concerns.
-
-An operational `agentos.ir/v1`-shaped continuation envelope may be used as a transport/handoff representation. That does **not** prove the stronger research claim that one model-independent Cognitive IR is generally sufficient for arbitrary cross-model continuation.
-
-The active research hypothesis remains:
-
-```text
-canonical/project/memory/work state
-       -> retrieve + reconcile + compile
-       -> model-independent continuation IR
-       -> executor adapter
-       -> execution + receipts
-       -> validated consolidation
-```
-
-Do not promote Cognitive IR from **Research** until a repeatable cross-model continuity benchmark demonstrates preservation of active goal, decisions/constraints, rejected paths, open questions, and next direction.
+Model-independent Cognitive IR remains a research hypothesis until repeatable cross-model continuity benchmarks demonstrate preservation of active goal, decisions/constraints, rejected paths, open questions, and next direction.
 
 ## Deprecated / historical paths
 
-The following are historical foundations or compatibility surfaces and must not be described as current canonical architecture by themselves:
-
-- `SHORT_TERM.md` / `LONG_TERM.md` as the whole memory system;
-- pulse files / brain dumps as canonical state;
-- manual `/report` as the sole handoff mechanism;
-- repository name or checkout directory as Project Identity;
-- direct GitHub/source-code rediscovery as the normal `continue <project>` path;
-- process PID or `/health` alone as proof of a correct deployed Core generation;
-- installer-side implicit generation advance;
-- legacy Core deploy requests containing only `source_commit`;
-- runtime-generation systemd drop-ins as authoritative generation state when canonical deployment state exists.
-
-Compatibility readers may remain temporarily, but they are projections/adapters and must not acquire independent authority.
+Historical or compatibility surfaces must not be described as current canonical architecture by themselves, including pulse files/brain dumps as canonical state, repository name as Project Identity, direct GitHub rediscovery as the normal continuation path, process health alone as deployment proof, installer-side implicit generation advance, and project threads directly owning Core deployment orchestration.
 
 ## Documentation ownership rule
 
 `README.md`, `ONBOARDING.md`, `AGENTS.md`, `docs/CURRENT_STATE.md`, and `docs/CORE_CONTROL_ROOM.md` are authoritative entry points. Architecture-sensitive implementation changes must update at least one appropriate canonical document in the same change set.
-
-The CI guard watches changes under core surfaces including `agent_core/`, `runtime_core/`, continuation/node/governance scripts, governance registries, `.agentos/commands/`, and relevant architecture workflows.
 
 When implementation contradicts this file, fix the file immediately; do not preserve an obsolete narrative for continuity's sake.
