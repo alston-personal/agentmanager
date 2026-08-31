@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           rm -rf /tmp/model2ir-wheel /tmp/model2ir-wheel-venv
           mkdir -p /tmp/model2ir-wheel
-          python -m pip wheel --no-deps --no-build-isolation libs/model2ir -w /tmp/model2ir-wheel
+          python -m pip wheel --no-deps libs/model2ir -w /tmp/model2ir-wheel
           python -m venv /tmp/model2ir-wheel-venv
           /tmp/model2ir-wheel-venv/bin/python -m pip install --no-deps /tmp/model2ir-wheel/model2ir-*.whl
           cd /tmp
