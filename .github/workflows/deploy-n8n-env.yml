@@ -12,18 +12,21 @@ jobs:
   metashield-media-inspect:
     runs-on: ubuntu-latest
     env:
-      SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
-      N8N_BASE_URL: ${{ secrets.N8N_BASE_URL }}
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
       - uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Derive Oracle host
         shell: bash
         run: |
           set -euo pipefail
-          DEPLOY_HOST="${N8N_BASE_URL#*://}"
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
           DEPLOY_HOST="${DEPLOY_HOST%%/*}"
           DEPLOY_HOST="${DEPLOY_HOST%%:*}"
           test -n "$DEPLOY_HOST"
@@ -33,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${SSH_PORT:-22}" "${{ secrets.N8N_DEPLOY_USER }}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-media-deep-hosted.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-media-deep-hosted.txt
           set -euo pipefail
           ROOT=/home/ubuntu/metashield-protocol
           echo "version=$(python3 -c 'import json;print(json.load(open("'$ROOT'/extension/manifest.json"))["version"])')"
