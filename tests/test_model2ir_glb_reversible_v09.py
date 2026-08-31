@@ -101,6 +101,16 @@ class ReversibleGlbV09Test(unittest.TestCase):
         self.assertEqual(recovered["source_kind"], "vrm")
         self.assertEqual(recovered["canonical_ir"], self.ir)
 
+    def test_candidate_truth_cannot_be_laundered_into_canonical_sidecar(self):
+        source = make_glb(self.gltf, self.bin_payload)
+        candidate = {
+            "schema": "character-ir-candidate/v0.6",
+            "truth_status": "candidate",
+            "body_plan": {"kind": "humanoid", "confidence": 0.8},
+        }
+        with self.assertRaisesRegex(ValueError, "refusing to embed truth_status"):
+            compile_reversible_glb(source, candidate)
+
     def test_relative_external_resources_are_rejected_by_default(self):
         external = dict(self.gltf)
         external["images"] = [{"uri": "textures/body.png"}]
