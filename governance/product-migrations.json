@@ -1,6 +1,6 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T02:35:00Z",
+  "generated_at": "2026-08-31T02:38:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
@@ -83,10 +83,29 @@
     {
       "project_id": "model2ir",
       "canonical_repository": null,
-      "status": "repository_unresolved",
-      "classification": "independent library direction exists but no canonical repository was found by current repository inventory",
-      "retire_when": ["assign/create canonical repository outside agentmanager", "move product/library implementation there"],
-      "safe_now": "do_not_add_new_model2ir_implementation_to_core"
+      "status": "carrier_identified_repository_unassigned",
+      "latest_core_carrier": {
+        "ref": "feat/model2ir-meshy-weak-structure-v091",
+        "tip": "1314bb01e718e1a930e24441b3544dd8da020065",
+        "package_root": "libs/model2ir",
+        "package_version": "0.9.1"
+      },
+      "carrier_lineage": [
+        "feat/model2ir-v01",
+        "feat/model2ir-reversible-v02",
+        "feat/model2ir-external-semantics-v03",
+        "feat/model2ir-stabilized-import-v04",
+        "feat/model2ir-real-family-stability-v05",
+        "feat/model2ir-vrm-topology-v06",
+        "feat/model2ir-teacher-dataset-v07",
+        "feat/model2ir-library-v08",
+        "fix/model2ir-cli-v081",
+        "feat/model2ir-reversible-glb-v09",
+        "feat/model2ir-meshy-weak-structure-v091"
+      ],
+      "classification": "a standalone model2ir v0.9.1 library is already implemented under libs/model2ir on historical agentmanager branches; this is concrete migration provenance, not future Core work",
+      "retire_when": ["assign/create canonical standalone repository outside agentmanager", "migrate package, tests, fixtures and relevant history from the v0.9.1 carrier", "reproduce package/CLI behavior and regression evidence in the new repository", "declare the new repository main/release as canonical Model2IR authority"],
+      "safe_now": "freeze_agentmanager_model2ir_carrier_for_migration; do_not_continue_library_implementation_in_core"
     }
   ],
   "legacy_core_proposals": [
