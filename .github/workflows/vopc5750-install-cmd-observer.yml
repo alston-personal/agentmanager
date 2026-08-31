@@ -1,0 +1,154 @@
+name: vopc5750 install cmd observer
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - .github/workflows/vopc5750-install-cmd-observer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Install persistent hidden process observer on vopc5750
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os, time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=f"vopc5750-cmd-observer-install-{int(time.time())}"
+          script=r'''$ErrorActionPreference='Stop'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $observer=Join-Path $root 'agentos-cmd-observer.ps1'
+          $log=Join-Path $root 'cmd-process-trace.jsonl'
+          $state=Join-Path $root 'cmd-observer-state.json'
+          $body=@'
+          $ErrorActionPreference='SilentlyContinue'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $log=Join-Path $root 'cmd-process-trace.jsonl'
+          $state=Join-Path $root 'cmd-observer-state.json'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $started=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+          [ordered]@{schema='agentos.cmd-observer-state/v1';status='running';pid=$PID;started_at=$started} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -Path $state
+          Register-CimIndicationEvent -Query "SELECT * FROM Win32_ProcessStartTrace" -SourceIdentifier 'AgentOSCmdTrace' | Out-Null
+          try {
+            while($true){
+              $evt=Wait-Event -SourceIdentifier 'AgentOSCmdTrace' -Timeout 300
+              if($null -eq $evt){ continue }
+              $p=$evt.SourceEventArgs.NewEvent
+              $name=[string]$p.ProcessName
+              if($name -match '^(?i:cmd\.exe|powershell\.exe|pwsh\.exe|wscript\.exe|cscript\.exe)$'){
+                $pid=[int]$p.ProcessID
+                $ppid=[int]$p.ParentProcessID
+                $proc=Get-CimInstance Win32_Process -Filter ("ProcessId="+$pid) -ErrorAction SilentlyContinue
+                $parent=Get-CimInstance Win32_Process -Filter ("ProcessId="+$ppid) -ErrorAction SilentlyContinue
+                $row=[ordered]@{
+                  schema='agentos.process-start/v1'
+                  observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+                  process_name=$name
+                  pid=$pid
+                  parent_pid=$ppid
+                  command_line=if($proc){[string]$proc.CommandLine}else{$null}
+                  parent_name=if($parent){[string]$parent.Name}else{$null}
+                  parent_command_line=if($parent){[string]$parent.CommandLine}else{$null}
+                  session_id=[int]$p.SessionID
+                }
+                $json=$row | ConvertTo-Json -Compress
+                Add-Content -Encoding UTF8 -Path $log -Value $json
+              }
+              Remove-Event -EventIdentifier $evt.EventIdentifier -ErrorAction SilentlyContinue
+            }
+          } finally {
+            Unregister-Event -SourceIdentifier 'AgentOSCmdTrace' -ErrorAction SilentlyContinue
+            [ordered]@{schema='agentos.cmd-observer-state/v1';status='stopped';pid=$PID;stopped_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')} | ConvertTo-Json -Compress | Set-Content -Encoding UTF8 -Path $state
+          }
+          '@
+          [System.IO.File]::WriteAllText($observer,$body,[System.Text.UTF8Encoding]::new($false))
+
+          $taskName='AgentOS CMD Observer'
+          $action=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$observer+'"') -WorkingDirectory $root
+          $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+          $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+          try {
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS hidden observer for transient cmd/powershell process origin diagnostics' -Force | Out-Null
+          } catch {
+            $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            if($null -eq $existing){ throw }
+          }
+          Start-ScheduledTask -TaskName $taskName
+          Start-Sleep -Seconds 3
+          $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+          $stateObj=$null
+          if(Test-Path -LiteralPath $state){ $stateObj=Get-Content -Raw -LiteralPath $state | ConvertFrom-Json }
+          [ordered]@{
+            schema='agentos.cmd-observer-install/v1'
+            installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            task_state=[string]$task.State
+            task_execute=[string]$task.Actions.Execute
+            task_arguments=[string]$task.Actions.Arguments
+            last_task_result=[int]$info.LastTaskResult
+            observer_state=$stateObj
+            log_path=$log
+          } | ConvertTo-Json -Depth 6 -Compress
+          '''
+          store=RealmFabricStore()
+          store.queue_task('vopc5750', {
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':45,'cognition_ids_used':[]
+          })
+          print(f"task_id={task_id}")
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f: f.write(f"task_id={task_id}\n")
+          PY
+
+      - name: Persist install evidence
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=os.environ['TASK_ID']; store=RealmFabricStore(); receipt=None
+          for _ in range(45):
+            receipt=store.get_receipt(task_id)
+            if receipt: break
+            time.sleep(2)
+          if not receipt:
+            raise SystemExit('observer install receipt missing')
+          stdout=str(receipt.get('stdout') or '').strip().splitlines()
+          payload={
+            'schema':'agentos.cmd-observer-install-evidence/v1',
+            'task_id':task_id,
+            'node_receipt_ok':bool(receipt.get('ok')),
+            'returncode':receipt.get('returncode'),
+            'stderr_tail':str(receipt.get('stderr') or '')[-2000:],
+          }
+          if stdout:
+            try: payload['install']=json.loads(stdout[-1])
+            except Exception: payload['stdout_tail']='\n'.join(stdout[-10:])[-4000:]
+          out=Path('.agentos/evidence/node-lifecycle/vopc5750-cmd-observer-install.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          print(json.dumps(payload,indent=2,ensure_ascii=False))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-cmd-observer-install.json
+          git commit -m 'evidence(agentos-node): install persistent cmd observer on vopc5750' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
