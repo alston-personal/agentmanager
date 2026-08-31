@@ -4,15 +4,15 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_fix_legacy_owner_keyring.py'
+      - 'scripts/metashield_inspect_preservation_completion.sh'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_fix_legacy_owner_keyring:
+  metashield_inspect_preservation_completion:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    timeout-minutes: 8
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,37 +22,20 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy legacy keyring patch
+      - name: Copy preservation completion inspection
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_legacy_owner_keyring.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_legacy_owner_keyring.py"
-      - name: Patch and verify extension legacy keyring
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_preservation_completion.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_preservation_completion.sh"
+      - name: Inspect completion and recovery coverage flow
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-legacy-owner-keyring.txt
-          set -euo pipefail
-          ROOT=/home/ubuntu/metashield-protocol
-          python3 /tmp/metashield_fix_legacy_owner_keyring.py
-          node --check "$ROOT/extension/background.js"
-          grep -q '"version": "1.0.63"' "$ROOT/extension/manifest.json"
-          grep -q 'async function storeLegacyOwnerKey' "$ROOT/extension/background.js"
-          grep -q 'preservedCurrentOwner: true' "$ROOT/extension/background.js"
-          test "$(grep -c 'shouldPreserveCurrentOwnerKey(ownerUserId, shareB.ownerAddress)' "$ROOT/extension/background.js")" -ge 2
-          if test -f "$ROOT/scripts/test-threads-background.js"; then
-            cd "$ROOT"
-            node scripts/test-threads-background.js
-          fi
-          echo '===== diff ====='
-          git -C "$ROOT" diff -- extension/background.js extension/manifest.json | sed -n '1,420p'
-          echo '===== worktree ====='
-          git -C "$ROOT" status --short --branch
-          REMOTE
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_preservation_completion.sh" | tee .agentos/evidence/metashield-preservation-completion-inspect.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-legacy-owner-keyring
-          path: .agentos/evidence/metashield-legacy-owner-keyring.txt
+          name: metashield-preservation-completion-inspect
+          path: .agentos/evidence/metashield-preservation-completion-inspect.txt
           if-no-files-found: warn
