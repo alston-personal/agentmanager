@@ -4,15 +4,15 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_reload_chamber_api.sh'
+      - 'scripts/metashield_fix_echo_route.py'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_reload_chamber_api:
+  metashield_fix_echo_route:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
+    timeout-minutes: 12
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,20 +22,52 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy reload script
+      - name: Copy Echo patch
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_reload_chamber_api.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_reload_chamber_api.sh"
-      - name: Reload Chamber API safely
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_echo_route.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_echo_route.py"
+      - name: Patch, build, restart and verify Echo
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_reload_chamber_api.sh" | tee .agentos/evidence/metashield-chamber-api-reload.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-echo-route-fix.txt
+          set -euo pipefail
+          ROOT=/home/ubuntu/metashield-protocol
+          WEB="$ROOT/web-feed"
+          python3 /tmp/metashield_fix_echo_route.py
+          echo '===== diff ====='
+          git -C "$ROOT" diff -- web-feed/app/'[wallet_address]'/'[platform]'/page.tsx | sed -n '1,240p'
+          cd "$WEB"
+          npm run build
+          PM2_HOME=/home/ubuntu/.pm2
+          export PM2_HOME
+          PM2_CLI=$(find /home/ubuntu/.npm/_npx -maxdepth 7 -type f -path '*/node_modules/pm2/lib/binaries/CLI.js' 2>/dev/null | sort | head -1)
+          test -n "$PM2_CLI"
+          node "$PM2_CLI" restart metashield-reborn --update-env
+          sleep 4
+          node "$PM2_CLI" describe metashield-reborn | sed -n '1,100p'
+          curl -fsS -L --max-time 30 https://studio.milkcat.org/echo/sunlake/all -o /tmp/echo-sunlake.html
+          grep -q '@sunlake 的迴響谷' /tmp/echo-sunlake.html
+          if grep -q '/echo//' /tmp/echo-sunlake.html; then
+            echo 'echo_double_slash=FAIL'
+            grep -o '/echo//[^"< ]*' /tmp/echo-sunlake.html | head -20 || true
+            exit 20
+          fi
+          echo 'echo_double_slash=PASS'
+          if grep -q 'studio.milkcat.org/reborn' /tmp/echo-sunlake.html; then
+            echo 'legacy_reborn_branding=FAIL'
+            exit 21
+          fi
+          echo 'legacy_reborn_branding=PASS'
+          echo 'public_echo_route=PASS'
+          echo '===== worktree ====='
+          git -C "$ROOT" status --short --branch
+          REMOTE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-chamber-api-reload
-          path: .agentos/evidence/metashield-chamber-api-reload.txt
+          name: metashield-echo-route-fix
+          path: .agentos/evidence/metashield-echo-route-fix.txt
           if-no-files-found: warn
