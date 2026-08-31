@@ -1,0 +1,49 @@
+{
+  "version": "1.0.65",
+  "background": {
+    "navigator_credentials_get": [],
+    "navigator_credentials_create": [],
+    "self_navigator_credentials_get": [],
+    "runtime_send_message_count": 0,
+    "actions": [
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "GET_RECOVERY_VAULT_STATUS",
+      "PREPARE_RECOVERY_VAULT",
+      "RECOVERY_COVERAGE_REQUIRED",
+      "RECOVERY_COVERED",
+      "RECOVERY_INCOMPLETE",
+      "RESTORE_RECOVERY_AB",
+      "RESTORE_RECOVERY_VAULT"
+    ]
+  },
+  "sidepanel": {
+    "navigator_credentials_get": [],
+    "navigator_credentials_create": [],
+    "runtime_on_message_count": 0,
+    "actions": [
+      "RECOVERY_COVERAGE_REQUIRED"
+    ]
+  },
+  "api": {
+    "routes": [
+      "/recovery/pair/claim",
+      "/recovery/pair/create",
+      "/recovery/pair/status",
+      "/recovery/passkey/authenticate/options",
+      "/recovery/passkey/authenticate/verify",
+      "/recovery/passkey/register/cancel",
+      "/recovery/passkey/register/options",
+      "/recovery/passkey/register/verify",
+      "/recovery/vault/rotate"
+    ]
+  },
+  "vault": {
+    "exports": [
+      [
+        "",
+        " beginRegistration, finishRegistration, cancelRegistration, beginAuthentication, finishAuthentication, rotateVaultRecord "
+      ]
+    ]
+  }
+}
