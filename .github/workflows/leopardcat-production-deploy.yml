@@ -47,11 +47,12 @@ jobs:
           for f in "${DIRTY[@]:-}"; do
             test -z "$f" && continue
             case "$f" in
-              website/dist/index.html|website/stats.json) ;;
+              website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;;
               *) echo "unexpected_dirty=$f"; exit 20 ;;
             esac
           done
           echo "dirty_allowed=${#DIRTY[@]}"
+          rm -rf "$WEB/node_modules/.vite"
 
           BACKUP=/tmp/leopardcat-stats-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
