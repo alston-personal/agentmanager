@@ -1,0 +1,123 @@
+name: vopc5750 hidden launcher migrate
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - .github/workflows/vopc5750-hidden-launcher-migrate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Queue hidden-launcher migration
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os, time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=f"vopc5750-hidden-launcher-{int(time.time())}"
+          script=r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $launcher=Join-Path $install 'agentos-client.cmd'
+          $wrapper=Join-Path $install 'agentos-thin-client-hidden.vbs'
+          $history=Join-Path $install 'thin-client-launch-history.log'
+          if(-not (Test-Path -LiteralPath $launcher)){ throw 'agentos-client.cmd missing' }
+          $vbs=@'
+          Option Explicit
+          Dim shell, fso, log, launcher, history, cmd, rc
+          launcher = "LAUNCHER_PATH"
+          history = "HISTORY_PATH"
+          Set fso = CreateObject("Scripting.FileSystemObject")
+          Set log = fso.OpenTextFile(history, 8, True)
+          log.WriteLine Now & " START"
+          log.Close
+          Set shell = CreateObject("WScript.Shell")
+          cmd = "cmd.exe /d /c """ & launcher & """ run"
+          rc = shell.Run(cmd, 0, True)
+          Set log = fso.OpenTextFile(history, 8, True)
+          log.WriteLine Now & " EXIT " & CStr(rc)
+          log.Close
+          WScript.Quit rc
+          '@
+          $vbs=$vbs.Replace('LAUNCHER_PATH',$launcher.Replace('\','\\')).Replace('HISTORY_PATH',$history.Replace('\','\\'))
+          [System.IO.File]::WriteAllText($wrapper,$vbs,(New-Object System.Text.UTF8Encoding($false)))
+
+          $taskName='AgentOS Thin Client'
+          $before=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          $wasState=[string]$before.State
+          $newAction=New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"'+$wrapper+'"') -WorkingDirectory $install
+          Set-ScheduledTask -TaskName $taskName -Action $newAction -ErrorAction Stop | Out-Null
+          $after=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+          [ordered]@{
+            schema='agentos.node-hidden-launcher-migration/v1'
+            observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            task_state_before=$wasState
+            task_state_after=[string]$after.State
+            action_execute=[string]$after.Actions.Execute
+            action_arguments=[string]$after.Actions.Arguments
+            wrapper_path=$wrapper
+            history_path=$history
+            last_run_time=$info.LastRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            last_task_result=[int]$info.LastTaskResult
+            migrated=([string]$after.Actions.Execute -match '(?i)wscript\.exe$')
+            current_client_preserved=([string]$after.State -eq 'Running')
+          } | ConvertTo-Json -Compress
+          '''
+          store=RealmFabricStore()
+          store.queue_task('vopc5750', {
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]
+          })
+          print(f"task_id={task_id}")
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f: f.write(f"task_id={task_id}\n")
+          PY
+
+      - name: Wait for migration receipt and persist evidence
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=os.environ['TASK_ID']; store=RealmFabricStore(); receipt=None
+          for _ in range(45):
+            receipt=store.get_receipt(task_id)
+            if receipt: break
+            time.sleep(2)
+          if not receipt:
+            raise SystemExit('migration receipt timeout')
+          if not receipt.get('ok'):
+            raise SystemExit(f"migration transport failed: {receipt}")
+          if int(receipt.get('returncode') or 0) != 0:
+            raise SystemExit(f"migration powershell failed: {receipt.get('stderr')} {receipt.get('stdout')}")
+          lines=str(receipt.get('stdout') or '').strip().splitlines()
+          payload=json.loads(lines[-1])
+          if not payload.get('migrated'):
+            raise SystemExit(f"migration not applied: {payload}")
+          out=Path('.agentos/evidence/node-lifecycle/vopc5750-hidden-launcher.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          print(json.dumps(payload,indent=2,ensure_ascii=False))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-hidden-launcher.json
+          git commit -m 'evidence(agentos-node): accept vopc5750 hidden launcher' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
