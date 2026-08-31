@@ -1,0 +1,48 @@
+name: Model2IR Library v0.8
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'tests/test_model2ir_teacher_library.py'
+      - '.github/workflows/model2ir-library-v08.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'tests/test_model2ir_teacher_library.py'
+      - '.github/workflows/model2ir-library-v08.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  library-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install standalone package
+        run: python -m pip install -e libs/model2ir
+      - name: Compile package
+        run: python -m compileall -q libs/model2ir/src
+      - name: Run library contract tests
+        run: python -m unittest discover -s tests -p 'test_model2ir_teacher_library.py' -q
+      - name: Verify public API and console entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import model2ir
+          assert model2ir.__version__ == '0.8.0'
+          assert callable(model2ir.extract_ir)
+          assert callable(model2ir.build_teacher_dataset)
+          assert callable(model2ir.validate_teacher_dataset_manifest)
+          assert model2ir.TEACHER_DATASET_SCHEMA == 'model2ir-teacher-dataset/v0.7'
+          print('model2ir library boundary=ok')
+          PY
+          model2ir --help >/dev/null
