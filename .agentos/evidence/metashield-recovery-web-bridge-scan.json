@@ -1,0 +1,105 @@
+[
+  {
+    "path": "extension/background.js",
+    "hits": [
+      "PREPARE_RECOVERY_VAULT",
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_VAULT"
+    ],
+    "recoveryMessages": [
+      "AUTHOR_NOT_CONFIRMED",
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "GET_RECOVERY_VAULT_STATUS",
+      "PREPARE_RECOVERY_VAULT",
+      "RECOVERY_COVERAGE_REQUIRED",
+      "RECOVERY_COVERED",
+      "RECOVERY_INCOMPLETE",
+      "RESTORE_RECOVERY_AB",
+      "RESTORE_RECOVERY_VAULT"
+    ]
+  },
+  {
+    "path": "extension/content.js",
+    "hits": [
+      "PREPARE_RECOVERY_VAULT",
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_VAULT",
+      "createNativePasskey",
+      "authenticateNativePasskey"
+    ],
+    "recoveryMessages": [
+      "CONFIRM_RECOVERY_VAULT_RESPONSE",
+      "FINALIZE_RECOVERY_VAULT_RESPONSE",
+      "GET_RECOVERY_VAULT_STATUS_RESPONSE",
+      "PREPARE_RECOVERY_VAULT_RESPONSE",
+      "RESTORE_RECOVERY_AB_RESPONSE",
+      "RESTORE_RECOVERY_VAULT_RESPONSE"
+    ]
+  },
+  {
+    "path": "web-feed/.next/static/chunks/2rtyaq9nlfm1p.js",
+    "hits": [
+      "PREPARE_RECOVERY_VAULT",
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_VAULT",
+      "/recovery/passkey/"
+    ],
+    "recoveryMessages": [
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "GET_RECOVERY_VAULT_STATUS",
+      "NATIVE_PASSKEY_",
+      "NATIVE_PASSKEY_AUTHENTICATE",
+      "NATIVE_PASSKEY_REGISTER",
+      "PREPARE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_AB",
+      "RESTORE_RECOVERY_VAULT"
+    ]
+  },
+  {
+    "path": "web-feed/.next/server/chunks/ssr/app_[wallet_address]_[platform]_page_tsx_1-e-pzb._.js",
+    "hits": [
+      "PREPARE_RECOVERY_VAULT",
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_VAULT",
+      "/recovery/passkey/"
+    ],
+    "recoveryMessages": [
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "GET_RECOVERY_VAULT_STATUS",
+      "NATIVE_PASSKEY_",
+      "NATIVE_PASSKEY_AUTHENTICATE",
+      "NATIVE_PASSKEY_REGISTER",
+      "PREPARE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_AB",
+      "RESTORE_RECOVERY_VAULT"
+    ]
+  },
+  {
+    "path": "web-feed/app/[wallet_address]/[platform]/page.tsx",
+    "hits": [
+      "PREPARE_RECOVERY_VAULT",
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_VAULT",
+      "/recovery/passkey/"
+    ],
+    "recoveryMessages": [
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "GET_RECOVERY_VAULT_STATUS",
+      "NATIVE_PASSKEY_",
+      "NATIVE_PASSKEY_AUTHENTICATE",
+      "NATIVE_PASSKEY_REGISTER",
+      "PREPARE_RECOVERY_VAULT",
+      "RESTORE_RECOVERY_AB",
+      "RESTORE_RECOVERY_VAULT"
+    ]
+  }
+]
