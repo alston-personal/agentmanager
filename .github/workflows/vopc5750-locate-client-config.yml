@@ -1,0 +1,74 @@
+name: vopc5750 locate client config
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - .github/workflows/vopc5750-locate-client-config.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Queue minimal config locate
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=f"vopc5750-config-locate-{int(time.time())}"
+          script=r'''$paths=@(
+            (Join-Path $env:LOCALAPPDATA 'AgentOS\client.json'),
+            'C:\Users\alston.huang\AgentOS\client.json'
+          )
+          $rows=@()
+          foreach($p in $paths){
+            if(Test-Path -LiteralPath $p){
+              $j=Get-Content -Raw -LiteralPath $p | ConvertFrom-Json
+              $rows += [ordered]@{path=$p;one_url=$j.one_url;realm_id=$j.realm_id;node_id=$j.node_id}
+            }
+          }
+          $rows | ConvertTo-Json -Compress'''
+          RealmFabricStore().queue_task('vopc5750',{
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':[]
+          })
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'task_id={task_id}\n')
+          print(task_id)
+          PY
+      - name: Persist evidence
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore(); rid=os.environ['TASK_ID']; r=None
+          for _ in range(40):
+            r=store.get_receipt(rid)
+            if r: break
+            time.sleep(2)
+          if not r: raise SystemExit('receipt missing')
+          out={'schema':'agentos.node-client-config-locate-evidence/v1','receipt':r}
+          p=Path('.agentos/evidence/node-lifecycle/vopc5750-client-config-locate.json'); p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(out,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-client-config-locate.json
+          git commit -m 'evidence(agentos-node): locate vopc5750 client config' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
