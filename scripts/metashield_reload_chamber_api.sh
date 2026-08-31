@@ -20,15 +20,16 @@ fi
 grep -q '@irys/upload' server.js
 echo 'current_uploader_source=PASS'
 
-PM2_BIN=""
-while IFS= read -r p; do PM2_BIN="$p"; break; done < <(find /home/ubuntu/.npm/_npx -maxdepth 4 -type f -path '*/node_modules/pm2/pm2' -perm -111 2>/dev/null | sort)
-test -n "$PM2_BIN"
-echo "pm2_bin=$PM2_BIN"
-"$PM2_BIN" ping
-"$PM2_BIN" describe chamber-api | sed -n '1,140p'
-"$PM2_BIN" restart chamber-api --update-env
+PM2_CLI=""
+while IFS= read -r p; do PM2_CLI="$p"; break; done < <(find /home/ubuntu/.npm/_npx -maxdepth 7 -type f -path '*/node_modules/pm2/lib/binaries/CLI.js' 2>/dev/null | sort)
+test -n "$PM2_CLI"
+echo "pm2_cli=$PM2_CLI"
+pm2(){ node "$PM2_CLI" "$@"; }
+pm2 ping
+pm2 describe chamber-api | sed -n '1,140p'
+pm2 restart chamber-api --update-env
 sleep 4
-"$PM2_BIN" describe chamber-api | sed -n '1,140p'
+pm2 describe chamber-api | sed -n '1,140p'
 
 after_pid=$(ss -ltnp 2>/dev/null | sed -n 's/.*127\.0\.0\.1:3011.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
 echo "after_pid=$after_pid"
