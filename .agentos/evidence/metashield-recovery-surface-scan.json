@@ -1,0 +1,93 @@
+[
+  {
+    "path": "background.js",
+    "recoveryCount": 110,
+    "passkeyCount": 1,
+    "webauthnCount": 0,
+    "functions": [
+      "confirmRecoveryVault",
+      "decodeRecoveryCode",
+      "encodeRecoveryCode",
+      "encryptSharingIdentityForRecovery",
+      "finalizeRecoveryVault",
+      "prepareRecoveryVault",
+      "processBackupTask",
+      "recoveryChecksum",
+      "recoveryCoverageForOwnerKey",
+      "recoveryVaultStatus",
+      "restoreFromLocalAAndVaultB",
+      "restoreFromRecoveryVault",
+      "restoreSharingIdentityFromRecovery"
+    ],
+    "actions": [
+      "CONFIRM_RECOVERY_VAULT",
+      "FINALIZE_RECOVERY_VAULT",
+      "GET_RECOVERY_VAULT_STATUS",
+      "PREPARE_RECOVERY_VAULT",
+      "RECOVERY_COVERAGE_REQUIRED",
+      "RECOVERY_COVERED",
+      "RECOVERY_INCOMPLETE",
+      "RESTORE_RECOVERY_AB",
+      "RESTORE_RECOVERY_VAULT"
+    ]
+  },
+  {
+    "path": "content.js",
+    "recoveryCount": 17,
+    "passkeyCount": 16,
+    "webauthnCount": 17,
+    "functions": [
+      "authenticateNativePasskey",
+      "createNativePasskey",
+      "handleBackupClick"
+    ],
+    "actions": [
+      "CONFIRM_RECOVERY_VAULT_RESPONSE",
+      "FINALIZE_RECOVERY_VAULT_RESPONSE",
+      "GET_RECOVERY_VAULT_STATUS_RESPONSE",
+      "PREPARE_RECOVERY_VAULT_RESPONSE",
+      "RESTORE_RECOVERY_AB_RESPONSE",
+      "RESTORE_RECOVERY_VAULT_RESPONSE"
+    ]
+  },
+  {
+    "path": "i18n.js",
+    "recoveryCount": 49,
+    "passkeyCount": 4,
+    "webauthnCount": 0,
+    "functions": [],
+    "actions": []
+  },
+  {
+    "path": "secret-sharing.js",
+    "recoveryCount": 4,
+    "passkeyCount": 0,
+    "webauthnCount": 0,
+    "functions": [],
+    "actions": []
+  },
+  {
+    "path": "sidepanel.html",
+    "recoveryCount": 7,
+    "passkeyCount": 1,
+    "webauthnCount": 0,
+    "functions": [],
+    "actions": []
+  },
+  {
+    "path": "sidepanel.js",
+    "recoveryCount": 56,
+    "passkeyCount": 0,
+    "webauthnCount": 0,
+    "functions": [
+      "backupPost",
+      "openRecoveryTab",
+      "refreshRecoveryStatus",
+      "sendTabMessageWithRecovery",
+      "showBackup"
+    ],
+    "actions": [
+      "RECOVERY_COVERAGE_REQUIRED"
+    ]
+  }
+]
