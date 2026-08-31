@@ -1,0 +1,41 @@
+{
+  "capsules": [
+    {
+      "bucket": "receipts",
+      "capsule_id": "relay-f86d1432afcf4b9798556cba225bef5a",
+      "receipt": {
+        "capsule_id": "relay-f86d1432afcf4b9798556cba225bef5a",
+        "error": "PermissionError: [Errno 13] Permission denied: '/tmp/agentos-exp-117-antigravity-1l_rq_xt'",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-08-31T00:18:25Z"
+      }
+    },
+    {
+      "bucket": "receipts",
+      "capsule_id": "relay-bbdd2d30dfe544778b00a34d6f85f550",
+      "receipt": {
+        "capsule_id": "relay-bbdd2d30dfe544778b00a34d6f85f550",
+        "error": "PermissionError: [Errno 13] Permission denied: '/tmp/agentos-exp-117-antigravity-yi5m98k7'",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-08-31T00:18:27Z"
+      }
+    }
+  ],
+  "layout_presence": {
+    "inbox": true,
+    "legacy_spool": false,
+    "processing": true,
+    "receipts": true
+  },
+  "redaction": "Only allowlisted scalar receipt/worker fields are persisted; prompts, environment, raw logs, stdout/stderr, argv, and arbitrary files are excluded.",
+  "relay_root_present": true,
+  "schema": "agentos.antigravity-regression-diagnostic/v0",
+  "worker": {},
+  "worker_marker_layout": "missing",
+  "worker_proc_exe": null,
+  "worker_ready_present": false
+}
