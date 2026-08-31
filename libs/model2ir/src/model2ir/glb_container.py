@@ -15,6 +15,14 @@ GLB_VERSION = 2
 JSON_CHUNK = 0x4E4F534A
 BIN_CHUNK = 0x004E4942
 SUPPORTED_CONTAINER_SUFFIXES = {".glb", ".vrm"}
+NON_CANONICAL_TRUTH_STATUSES = {
+    "candidate",
+    "inferred",
+    "unknown",
+    "stable-candidate",
+    "stable-unknown",
+    "stable-but-ambiguous",
+}
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,16 @@ def external_resource_uris(gltf: dict[str, Any]) -> list[str]:
     return [uri for uri in _resource_uris(gltf) if not uri.startswith("data:")]
 
 
+def _assert_canonical_input(canonical_ir: dict[str, Any]) -> None:
+    if not isinstance(canonical_ir, dict):
+        raise ValueError("canonical IR must be a JSON object")
+    status = canonical_ir.get("truth_status")
+    if isinstance(status, str) and status.lower().replace("_", "-") in NON_CANONICAL_TRUTH_STATUSES:
+        raise ValueError(
+            f"refusing to embed truth_status={status!r} as canonical IR; confirm/promote it explicitly first"
+        )
+
+
 def _encode_json_chunk(gltf: dict[str, Any]) -> bytes:
     payload = json.dumps(
         gltf,
@@ -133,13 +151,16 @@ def compile_reversible_glb(
     *,
     require_relocatable: bool = True,
 ) -> bytes:
-    """Embed Canonical Character IR into GLB/VRM while preserving non-JSON chunks.
+    """Embed confirmed/legacy Canonical Character IR while preserving binary chunks.
 
     Only the JSON chunk is rewritten. Every non-JSON chunk is copied byte-for-byte,
-    in the original order. By default assets with non-data external resource URIs
-    are rejected because moving the output could otherwise silently break them.
+    in the original order. Explicit candidate/inferred truth statuses are rejected
+    so a 3D-derived candidate cannot be laundered into embedded canonical truth.
+    By default assets with non-data external resource URIs are rejected because
+    moving the output could otherwise silently break them.
     """
 
+    _assert_canonical_input(canonical_ir)
     container = parse_glb_container(source)
     external = external_resource_uris(container.gltf)
     if require_relocatable and external:
