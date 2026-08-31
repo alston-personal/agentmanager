@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Run release-lane regression
-        run: python -m pytest -q tests/test_project_release_lane.py
+        run: python -m unittest -q tests.test_project_release_lane
       - name: Acceptance probes
         shell: bash
         run: |
