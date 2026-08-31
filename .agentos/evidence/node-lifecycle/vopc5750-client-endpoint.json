@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.node-client-endpoint-evidence/v1",
+  "receipt": {
+    "action": "shell.exec",
+    "cognition_ids_used": [],
+    "completed_at": "2026-08-31T02:06:11Z",
+    "execution": {
+      "argv": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$p=Join-Path $HOME '.agentos\\client.json'; $j=Get-Content -Raw -LiteralPath $p | ConvertFrom-Json; [ordered]@{one_url=$j.one_url;realm_id=$j.realm_id;node_id=$j.node_id} | ConvertTo-Json -Compress"
+      ],
+      "cwd": "C:\\Users\\alston.huang\\AgentOS",
+      "executable": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "timeout_seconds": 15
+    },
+    "node_id": "vopc5750",
+    "ok": true,
+    "realm_id": "realm-alston",
+    "received_at": "2026-08-31T02:06:10Z",
+    "returncode": 0,
+    "schema": "agentos.node-receipt/v0.1",
+    "started_at": "2026-08-31T02:06:10Z",
+    "stderr": "Get-Content : 找不到 'C:\\Users\\alston.huang\\.agentos\\client.json' 路徑，因為它不存在。\n位於 線路:1 字元:47\n+ ... E '.agentos\\client.json'; $j=Get-Content -Raw -LiteralPath $p | Conve ...\n+                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n    + CategoryInfo          : ObjectNotFound: (C:\\Users\\alston...tos\\client.json:String) [Get-Content], ItemNotFoundEx \n   ception\n    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand\n \n",
+    "stdout": "{\"one_url\":null,\"realm_id\":null,\"node_id\":null}\n",
+    "task_id": "vopc5750-endpoint-1788141968"
+  }
+}
