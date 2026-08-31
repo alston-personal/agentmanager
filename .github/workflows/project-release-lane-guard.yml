@@ -1,0 +1,45 @@
+name: Project Release Lane Guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.agent/governance/project_release_lanes.yaml'
+      - 'scripts/check_project_release_lane.py'
+      - 'tests/test_project_release_lane.py'
+      - '.github/workflows/project-release-lane-guard.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.agent/governance/project_release_lanes.yaml'
+      - 'scripts/check_project_release_lane.py'
+      - 'tests/test_project_release_lane.py'
+      - '.github/workflows/project-release-lane-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  release-lane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run release-lane regression
+        run: python -m unittest -q tests.test_project_release_lane
+      - name: Acceptance probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_project_release_lane.py --project layoutlib --action development_write --target-branch develop
+          if python scripts/check_project_release_lane.py --project layoutlib --action development_write --target-branch main; then
+            echo 'expected development->main denial' >&2
+            exit 1
+          fi
+          python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch develop
+          if python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch main; then
+            echo 'expected POC main-source denial' >&2
+            exit 1
+          fi
