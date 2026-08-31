@@ -21,22 +21,30 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect MetaShield launch-surface files
+      - name: Inspect image-upload failure path
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-launch-surface-inspect.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-image-upload-failure-inspect.txt
           set -euo pipefail
-          ROOT=/home/ubuntu/metashield-protocol/extension
-          for spec in 'mvp-validation.js:1:260' 'sidepanel.html:180:430' 'sidepanel.js:1:260' 'sidepanel.js:260:620' 'i18n.js:1:340'; do
-            f=${spec%%:*}; rest=${spec#*:}; a=${rest%%:*}; b=${rest##*:}
-            echo "===== $f:$a-$b ====="
-            sed -n "${a},${b}p" "$ROOT/$f"
+          ROOT=/home/ubuntu/metashield-protocol
+          echo 'matches_begin'
+          grep -RniE 'media\.imageUploadFailed|imageUploadFailed|upload.*image|image.*upload|media\.image' "$ROOT/extension" "$ROOT/backend" "$ROOT/echo" 2>/dev/null --exclude-dir=node_modules --exclude='*.map' | sed "s#^$ROOT/##" | sed -n '1,500p' || true
+          echo 'matches_end'
+          echo 'i18n_candidates_begin'
+          find "$ROOT/extension" -maxdepth 3 -type f \( -name '*i18n*' -o -name '*locale*' -o -name '*messages*' \) -print | sed "s#^$ROOT/##" | sort
+          echo 'i18n_candidates_end'
+          echo 'upload_related_files_begin'
+          grep -RilE 'imageUploadFailed|upload.*image|image.*upload' "$ROOT/extension" "$ROOT/backend" 2>/dev/null --exclude-dir=node_modules | sed "s#^$ROOT/##" | sort | sed -n '1,120p' || true
+          echo 'upload_related_files_end'
+          for f in $(grep -RilE 'imageUploadFailed|media\.imageUploadFailed' "$ROOT/extension" "$ROOT/backend" 2>/dev/null --exclude-dir=node_modules | head -20); do
+            echo "===== FILE ${f#$ROOT/} ====="
+            nl -ba "$f" | sed -n '1,900p' | grep -B18 -A30 -E 'imageUploadFailed|media\.imageUploadFailed' || true
           done
           REMOTE
       - uses: actions/upload-artifact@v4
         with:
-          name: metashield-launch-surface-inspect
-          path: .agentos/evidence/metashield-launch-surface-inspect.txt
+          name: metashield-image-upload-failure-inspect
+          path: .agentos/evidence/metashield-image-upload-failure-inspect.txt
           if-no-files-found: error
