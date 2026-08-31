@@ -78,6 +78,47 @@ def detect_mode(explicit: str | None = None) -> str:
     )
 
 
+GLOBAL_RULE_START = "<!-- AGENTOS_ONE_BOOTSTRAP_START -->"
+GLOBAL_RULE_END = "<!-- AGENTOS_ONE_BOOTSTRAP_END -->"
+GLOBAL_RULE = """<!-- AGENTOS_ONE_BOOTSTRAP_START -->
+## AgentOS ONE bootstrap
+
+When the `agentos-one` MCP tools are available and the current workspace is governed by AgentOS (for example its `AGENTS.md` identifies AgentOS, or the user asks about AgentOS/ONE), use ONE before reconstructing state from vendor conversation history.
+
+For a fresh or relative request such as `continue` / `繼續` in an AgentOS-governed workspace:
+1. call `one_status`;
+2. identify the current project from workspace/repository context without guessing;
+3. call `one_resolve(project)` before continuing substantial work;
+4. treat canonical goal/continuation/authority returned by ONE as durable state, while newer explicit user intent always wins.
+
+Never expose Realm/node credentials. The MCP adapter owns the trust boundary. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
+<!-- AGENTOS_ONE_BOOTSTRAP_END -->
+"""
+
+
+def global_rule_path() -> Path:
+    return Path.home() / ".gemini" / "GEMINI.md"
+
+
+def write_global_rule(path: Path) -> Path:
+    existing = path.read_text(encoding="utf-8-sig") if path.exists() else ""
+    if GLOBAL_RULE_START in existing and GLOBAL_RULE_END in existing:
+        before, remainder = existing.split(GLOBAL_RULE_START, 1)
+        _, after = remainder.split(GLOBAL_RULE_END, 1)
+        updated = before.rstrip() + "\n\n" + GLOBAL_RULE.strip() + after
+    else:
+        prefix = existing.rstrip()
+        updated = (prefix + "\n\n" if prefix else "") + GLOBAL_RULE.strip() + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        shutil.copy2(path, path.with_name(path.name + f".agentos-backup-{stamp}"))
+    tmp = path.with_suffix(path.suffix + ".agentos.tmp")
+    tmp.write_text(updated, encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
 def antigravity_mcp_config_path() -> Path:
     explicit = os.environ.get("AGENTOS_ANTIGRAVITY_MCP_CONFIG")
     if explicit:
@@ -287,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.no_probe
         else probe(python, repo_root, mode=mode)
     )
+    global_rule = write_global_rule(global_rule_path())
     mcp_config = antigravity_mcp_config_path()
     server = write_antigravity_config(
         mcp_config,
@@ -304,6 +346,7 @@ def main(argv: list[str] | None = None) -> int:
                 "mode": mode,
                 "server": SERVER_NAME,
                 "mcp_config": str(mcp_config),
+                "global_rule": str(global_rule),
                 "repo": str(repo_root),
                 "probe": evidence,
                 "credential_in_mcp_config": False,
