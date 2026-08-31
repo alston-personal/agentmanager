@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T02:03:00Z",
+  "generated_at": "2026-08-31T02:11:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -103,13 +103,60 @@
     {
       "issue": 147,
       "name": "Legacy Core proposal delta extraction",
-      "branch": "core/issue-147-legacy-proposal-inventory",
+      "branch": "core/issue-147-extraction-handoffs",
       "status": "running",
-      "execution_lane": "architecture-extraction-worker",
+      "execution_lane": "architecture-extraction-umbrella",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": ["governance/legacy-core-proposals.json"],
+      "children": [151, 152, 153, 154],
+      "evidence": ["governance/legacy-core-proposals.json", "pull/150"],
       "non_authorities": ["wholesale legacy PR merge", "blind retarget to core/integration", "protected-main merge"]
+    },
+    {
+      "issue": 151,
+      "name": "Agent Employee Runtime extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [17],
+      "non_authorities": ["legacy PR wholesale merge", "protected-main merge"]
+    },
+    {
+      "issue": 152,
+      "name": "Node runtime / desktop executor separation extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [22],
+      "related_issues": [72, 105],
+      "non_authorities": ["regress Node Golden Path", "legacy PR wholesale merge", "protected-main merge"]
+    },
+    {
+      "issue": 153,
+      "name": "Execution-head freshness extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [43],
+      "non_authorities": ["restore pulse/status as canonical authority", "legacy PR wholesale merge", "protected-main merge"]
+    },
+    {
+      "issue": 154,
+      "name": "Generic social capability extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [18, 125],
+      "product_handoff": "alston-personal/vendor-reputation-service#27",
+      "non_authorities": ["Vendor product ingestion in Core", "unapproved social publish", "legacy PR wholesale merge", "protected-main merge"]
     }
   ],
   "dependency_edges": [
@@ -119,6 +166,10 @@
     {"from": "vendor-reputation:semantic-classification", "to": "agentos-core#72"},
     {"from": "vendor-reputation:oracle-carriers", "to": "agentos-core#130"},
     {"from": "layoutlib:poc-deployment", "to": "agentos-core#96"},
-    {"from": "arcanaforge:poc-static-release", "to": "agentos-core#66"}
+    {"from": "arcanaforge:poc-static-release", "to": "agentos-core#66"},
+    {"from": "agentos-core#147", "to": "agentos-core#151"},
+    {"from": "agentos-core#147", "to": "agentos-core#152"},
+    {"from": "agentos-core#147", "to": "agentos-core#153"},
+    {"from": "agentos-core#147", "to": "agentos-core#154"}
   ]
 }
