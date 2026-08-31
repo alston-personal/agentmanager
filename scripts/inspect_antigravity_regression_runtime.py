@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Sanitize Antigravity worker/receipt state for one Issue #117 regression run.
 
-Reads only the two capsule ids already emitted by the regression result plus the
-worker-ready marker. It never dumps environment variables, prompts, capsule input,
+Reads only capsule ids already emitted by the regression result and known worker
+markers. It never dumps environment variables, prompts, capsule input, raw logs,
 or arbitrary relay files.
 """
 from __future__ import annotations
@@ -28,7 +28,6 @@ def safe_scalar(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        # Bound messages; do not preserve multiline/log-sized values.
         return value.replace("\r", " ").replace("\n", " ")[:1000]
     return None
 
@@ -53,10 +52,26 @@ def read_json(path: Path) -> Any:
 
 
 def locate_receipt(capsule_id: str) -> tuple[str, Path | None]:
-    for bucket in ("receipts", "failed", "processing", "pending"):
-        path = ROOT / "spool" / bucket / f"{capsule_id}.json"
+    # Current relay client uses ROOT/{inbox,processing,receipts}. Keep legacy spool
+    # lookup read-only for provenance/debugging across worker generations.
+    for bucket in ("receipts", "processing", "inbox"):
+        path = ROOT / bucket / f"{capsule_id}.json"
         if path.exists():
             return bucket, path
+    for bucket in ("receipts", "failed", "processing", "pending", "inbox"):
+        path = ROOT / "spool" / bucket / f"{capsule_id}.json"
+        if path.exists():
+            return f"legacy-spool/{bucket}", path
+    return "missing", None
+
+
+def worker_marker() -> tuple[str, Path | None]:
+    for label, path in (
+        ("root", ROOT / "worker-ready.json"),
+        ("legacy-spool", ROOT / "spool" / "worker-ready.json"),
+    ):
+        if path.exists():
+            return label, path
     return "missing", None
 
 
@@ -75,8 +90,8 @@ def main() -> int:
         if isinstance(capsule_id, str) and capsule_id:
             capsule_ids.append(capsule_id)
 
-    worker_path = ROOT / "spool" / "worker-ready.json"
-    worker_raw = read_json(worker_path) if worker_path.exists() else {}
+    marker_layout, worker_path = worker_marker()
+    worker_raw = read_json(worker_path) if worker_path else {}
     worker = safe_subset(worker_raw, SAFE_WORKER_KEYS)
     pid = worker.get("pid")
     proc_exe = None
@@ -89,7 +104,14 @@ def main() -> int:
     result: dict[str, Any] = {
         "schema": "agentos.antigravity-regression-diagnostic/v0",
         "relay_root_present": ROOT.exists(),
-        "worker_ready_present": worker_path.exists(),
+        "layout_presence": {
+            "inbox": (ROOT / "inbox").is_dir(),
+            "processing": (ROOT / "processing").is_dir(),
+            "receipts": (ROOT / "receipts").is_dir(),
+            "legacy_spool": (ROOT / "spool").is_dir(),
+        },
+        "worker_marker_layout": marker_layout,
+        "worker_ready_present": worker_path is not None,
         "worker": worker,
         "worker_proc_exe": proc_exe,
         "capsules": [],
@@ -108,6 +130,8 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({
+        "layout_presence": result["layout_presence"],
+        "worker_marker_layout": marker_layout,
         "worker_ready_present": result["worker_ready_present"],
         "worker": result["worker"],
         "worker_proc_exe": result["worker_proc_exe"],
