@@ -1,0 +1,16 @@
+{
+  "schema": "agentos.node-hidden-launcher-probe/v1",
+  "before_execute": "cmd.exe",
+  "before_arguments": "/d /c \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-client.cmd\" run",
+  "before_state": "Running",
+  "set_attempted": true,
+  "set_succeeded": false,
+  "error": "存取被拒。\r\n",
+  "after_execute": "cmd.exe",
+  "after_arguments": "/d /c \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-client.cmd\" run",
+  "after_state": "Running",
+  "observed_at": "2026-08-31T00:34:03Z",
+  "node_receipt_ok": true,
+  "returncode": 0,
+  "stderr_tail": ""
+}
