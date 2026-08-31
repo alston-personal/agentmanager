@@ -1,14 +1,11 @@
 name: Oracle Layout Lab Official V2
 
+# Product deployment is an explicit authority event. Do not bind it to generic
+# AgentOS/Core file pushes: an unrelated relay change previously triggered a
+# live Layout Lab deployment. Canonical product/release work must dispatch this
+# workflow intentionally with its own acceptance context.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-layoutlab-official-v2.yml'
-      - 'scripts/deploy_layoutlab_official_v2.py'
-      - 'scripts/layoutlab_api.py'
-      - 'agentos_node/antigravity_relay.py'
-      - 'agentos_node/antigravity_relay_worker.py'
 
 permissions:
   contents: write
