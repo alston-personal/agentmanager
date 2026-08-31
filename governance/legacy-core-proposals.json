@@ -1,12 +1,13 @@
 {
   "schema": "agentos.legacy-core-proposals/v0",
-  "generated_at": "2026-08-31T02:02:00Z",
+  "generated_at": "2026-08-31T02:10:00Z",
   "canonical_base": "core/integration",
+  "umbrella_issue": 147,
   "policy": {
     "wholesale_merge": "forbidden",
     "blind_retarget": "forbidden",
     "protected_main_mutation": "forbidden_without_explicit_human_authorization",
-    "extraction_flow": "classify unique delta -> focused core/issue-* branch -> current tests/acceptance -> core/integration",
+    "extraction_flow": "classify unique delta -> focused core issue/branch -> current tests/acceptance -> core/integration",
     "classifications": ["already_integrated", "superseded", "still_needed", "product_owned", "research_only", "mixed_split_required"]
   },
   "proposals": [
@@ -15,14 +16,16 @@
       "title": "Distributed AgentOS runtime foundation",
       "status": "audit_required",
       "classification": "mixed_split_required",
+      "extraction_issue": null,
       "finding": "very large historical foundation containing both Core runtime/research and product-specific tarot/divination/browser deployment carriers",
-      "action": "use only as source/evidence; classify deltas against current Core before focused extraction"
+      "action": "use only as source/evidence; classify remaining deltas after focused extraction workers account for overlapping areas"
     },
     {
       "pr": 17,
       "title": "Recover minimal Agent Employee Runtime and closure wave 1",
-      "status": "candidate_delta_present",
+      "status": "extraction_handoff_created",
       "classification": "still_needed_review",
+      "extraction_issue": 151,
       "key_unique_paths": ["agent_core/employee_runtime.py", "tests/test_employee_runtime.py"],
       "current_core_check": "agent_core/employee_runtime.py absent from core/integration",
       "action": "reconcile employee identity/assignment/memory model with current worker, Experience and state architecture"
@@ -30,8 +33,9 @@
     {
       "pr": 22,
       "title": "separate node runtime from desktop executor",
-      "status": "candidate_delta_present",
+      "status": "extraction_handoff_created",
       "classification": "still_needed_review",
+      "extraction_issue": 152,
       "key_unique_paths": ["agentos_node/executor_registry.py", "agentos_node/executor_bridge.py", "agentos_node/desktop_executor_host.py"],
       "current_core_check": "agentos_node/executor_registry.py absent from core/integration",
       "action": "reconcile with accepted Node Golden Path, issue #72 executor liveness and issue #105 GUI control before extraction"
@@ -39,8 +43,9 @@
     {
       "pr": 43,
       "title": "publish execution heads and resolve freshness",
-      "status": "candidate_delta_present",
+      "status": "extraction_handoff_created",
       "classification": "still_needed_review",
+      "extraction_issue": 153,
       "key_unique_paths": ["scripts/execution_head.py", "scripts/project_overview.py", "tests/test_execution_head.py"],
       "current_core_check": "scripts/execution_head.py absent from core/integration",
       "action": "reconcile with current Project Identity, runtime provenance, continuation state and deployment authority"
@@ -48,8 +53,9 @@
     {
       "pr": 18,
       "title": "add governed AgentOS social capability",
-      "status": "candidate_delta_present",
+      "status": "extraction_handoff_created",
       "classification": "still_needed_review",
+      "extraction_issue": 154,
       "key_unique_paths": ["agentos_node/social_capability.py", "agentos_node/social_cli.py", "tests/test_social_capability.py"],
       "current_core_check": "agentos_node/social_capability.py absent from core/integration",
       "action": "extract only generic social capability; reconcile with newer #125 implementation and keep product-specific Vendor ingestion outside Core"
@@ -57,11 +63,13 @@
     {
       "pr": 125,
       "title": "social capability pack and vendor Threads ingestion",
-      "status": "split_required",
+      "status": "split_handoff_created",
       "classification": "mixed_split_required",
+      "extraction_issue": 154,
+      "product_migration_issue": "alston-personal/vendor-reputation-service#27",
       "generic_core_paths": ["agentos_node/social/contracts.py", "agentos_node/social/credentials.py", "agentos_node/social/facebook.py", "agentos_node/social/instagram.py", "agentos_node/social/threads.py", "agent_core/capability_governance.py"],
       "product_owned_paths": ["agentos_node/social/vendor_ingest.py", "tests/test_vendor_threads_ingest.py"],
-      "action": "generic social capability may become focused Core work; Vendor ingestion migrates to alston-personal/vendor-reputation-service"
+      "action": "generic social capability goes through #154; Vendor ingestion migrates to the Vendor repository"
     }
   ]
 }
