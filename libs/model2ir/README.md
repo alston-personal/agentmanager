@@ -17,6 +17,9 @@ from model2ir import (
     score_roundtrip,
     compile_reversible_gltf,
     save_reversible_gltf,
+    compile_reversible_glb,
+    save_reversible_glb,
+    verify_glb_container_preservation,
     ir_digest,
     build_teacher_dataset,
     validate_teacher_dataset_manifest,
@@ -31,9 +34,9 @@ model2ir --help
 python -m model2ir --help
 ```
 
-### CLI contract
+## CLI contract
 
-The CLI separates evidence extraction from stabilized Character IR projection:
+The CLI separates evidence extraction, stabilized Character IR projection, and reversible container writing:
 
 ```bash
 model2ir extract character.glb -o evidence.json
@@ -41,11 +44,23 @@ model2ir stabilize character.glb -o character-ir.json
 model2ir audit character.glb -o audit.json --repeats 3
 model2ir diff a.json b.json -o diff.json
 model2ir reconcile image-ir.json model-ir.json -o reconciliation.json
+model2ir embed-ir character.glb canonical-ir.json -o reversible.glb --report preservation.json
 ```
 
-`extract` returns the full Model2IR evidence envelope. `stabilize` accepts GLB, glTF, and VRM through the normal loader and returns only the stabilized Canonical Character IR candidate/truth; it does not rewrite the source 3D container.
+`extract` returns the full Model2IR evidence envelope. `stabilize` accepts GLB, glTF, and VRM through the normal loader and returns only the stabilized Canonical Character IR candidate/truth.
 
-Reversible embedding remains available through the Python API (`compile_reversible_gltf` / `save_reversible_gltf`). A container-writing CLI is deliberately not advertised yet: safely rewriting GLB binary chunks and relocatable multi-file glTF resources needs an explicit preservation contract rather than a JSON-only shortcut.
+`embed-ir` is intentionally narrower. It writes a **new** `.glb` or `.vrm`, rewrites only the JSON chunk to carry the canonical IR sidecar, and preserves every non-JSON chunk byte-for-byte and in order. It refuses in-place overwrite. By default it also rejects non-data external buffer/image URIs so moving the output cannot silently break relative resources.
+
+## Two different lossless claims
+
+Model2IR treats these as separate invariants:
+
+1. **Canonical-IR lossless** — embedded Canonical Character IR is recovered exactly with a verified digest.
+2. **GLB container preservation** — every non-JSON chunk, including BIN and unknown chunks, is byte-identical after embedding.
+
+A successful `verify_glb_container_preservation(...)` requires both, plus an exact expected JSON transformation. This prevents the older mistake of treating “IR sidecar round-trips” as proof that the whole binary 3D container was preserved.
+
+The original JSON `.gltf` reversible API remains available for compatibility. Multi-file `.gltf` bundles with relative buffers/textures are **not** yet covered by the v0.9 container-level lossless guarantee.
 
 ## Truth invariants
 
@@ -87,10 +102,12 @@ The retained `model2ir-teacher-dataset/v0.7` schema is intentional: moving the i
 
 ## Current format boundary
 
-Core extraction and stabilization support the formats handled by the existing loader stack: GLB, glTF, and VRM. The teacher-data builder currently stages self-contained `.glb` only because copying a standalone `.gltf` file without its referenced buffers/textures would create a misleading dataset artifact. Multi-file glTF staging should be added as an explicit bundle feature rather than guessed.
+Core extraction and stabilization support GLB, glTF, and VRM. Reversible **binary-container** output in v0.9 is limited to GLB/VRM. The teacher-data builder also stages self-contained `.glb` only.
+
+Multi-file glTF requires a separate bundle contract covering URI resolution, path containment, resource copying/rewriting, and resource hashes. That work should be explicit rather than inferred from a standalone `.gltf` JSON file.
 
 ## Repository adapters
 
-Repository-level scripts may provide renderers, benchmark harnesses, CI, downloads, and product integration. They should call the package API rather than reimplement extraction, truth policy, hashing, admission, or manifest semantics.
+Repository-level scripts may provide renderers, benchmark harnesses, CI, downloads, and product integration. They should call the package API rather than reimplement extraction, truth policy, hashing, admission, manifest semantics, or container preservation.
 
-This boundary is what allows Image→IR, Character Blueprint, future model-training pipelines, and external repositories to consume the same 3D→IR behavior without depending on AgentOS internals.
+This boundary lets Image→IR, Character Blueprint, future training pipelines, and external repositories consume the same 3D→IR behavior without depending on AgentOS internals.

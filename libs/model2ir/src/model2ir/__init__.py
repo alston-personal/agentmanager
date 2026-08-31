@@ -9,6 +9,11 @@ from .v06 import (
     save_reversible_gltf,
 )
 from .reversible import ir_digest
+from .glb_container import (
+    compile_reversible_glb,
+    save_reversible_glb,
+    verify_glb_container_preservation,
+)
 from .audit import audit_asset as _audit_asset
 from .teacher import (
     CANONICAL_VIEWS,
@@ -32,6 +37,9 @@ __all__ = [
     "score_roundtrip",
     "compile_reversible_gltf",
     "save_reversible_gltf",
+    "compile_reversible_glb",
+    "save_reversible_glb",
+    "verify_glb_container_preservation",
     "ir_digest",
     "audit_asset",
     "CANONICAL_VIEWS",
@@ -41,4 +49,4 @@ __all__ = [
     "validate_teacher_dataset_manifest",
 ]
 
-__version__ = "0.8.1"
+__version__ = "0.9.0"

@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
+from model2ir import extract_ir
 from model2ir.__main__ import main
 
 
@@ -65,6 +66,37 @@ class Model2IRCliTest(unittest.TestCase):
         self.assertEqual(extracted["schema"], "model2ir-character-ir/v0.6")
         self.assertIn("candidate_ir", extracted)
         self.assertIn("topology_evidence", extracted)
+
+    def test_embed_ir_writes_new_verified_container_and_report(self):
+        asset = self.root / "minimal.glb"
+        ir_path = self.root / "canonical-ir.json"
+        output = self.root / "reversible.glb"
+        report_path = self.root / "preservation.json"
+        write_minimal_glb(asset)
+        canonical_ir = {
+            "schema": "character-ir/v0.6",
+            "identity": {"archetype": "humanoid", "locked": True},
+            "unresolved": [],
+        }
+        ir_path.write_text(json.dumps(canonical_ir), encoding="utf-8")
+
+        status = self.run_cli(
+            "embed-ir",
+            str(asset),
+            str(ir_path),
+            "-o",
+            str(output),
+            "--report",
+            str(report_path),
+        )
+
+        self.assertTrue(status["ok"])
+        self.assertTrue(status["canonical_ir_lossless"])
+        self.assertTrue(status["non_json_chunks_exact"])
+        self.assertTrue(output.is_file())
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertTrue(report["lossless_reversible"])
+        self.assertEqual(extract_ir(output)["canonical_ir"], canonical_ir)
 
     def test_audit_rejects_zero_repeats_at_cli_boundary(self):
         asset = self.root / "minimal.glb"
