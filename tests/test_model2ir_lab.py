@@ -33,8 +33,10 @@ class Model2IRLabContractTest(unittest.TestCase):
         self.assertEqual(out["model2ir_version"], "0.9.1")
         self.assertEqual(out["asset"]["sha256"], __import__("hashlib").sha256(data).hexdigest())
         self.assertFalse(out["asset"]["persisted"])
+        self.assertTrue(out["asset"]["self_contained_standard_resources"])
         self.assertEqual(out["results"]["audit"]["repeats"], 3)
         self.assertEqual(out["results"]["extracted_ir"]["schema"], "model2ir-character-ir/v0.6")
+        self.assertEqual(out["results"]["extracted_ir"]["source"]["name"], "minimal.glb")
         self.assertIn("geometry_profile", out["evidence"])
         self.assertIn("topology", out["evidence"])
 
@@ -47,6 +49,21 @@ class Model2IRLabContractTest(unittest.TestCase):
         with self.assertRaisesRegex(lab.UnsupportedAssetError, "multi-file .gltf bundles are not supported"):
             lab.analyze_asset_bytes("character.gltf", minimal_glb())
 
+    def test_external_buffer_uri_is_rejected_as_bundle_boundary(self):
+        data = minimal_glb({"buffers": [{"byteLength": 4, "uri": "mesh.bin"}]})
+        with self.assertRaisesRegex(lab.UnsupportedAssetError, "self-contained GLB/VRM"):
+            lab.analyze_asset_bytes("external-buffer.glb", data)
+
+    def test_external_image_uri_is_rejected_as_bundle_boundary(self):
+        data = minimal_glb({"images": [{"uri": "textures/albedo.png"}]})
+        with self.assertRaisesRegex(lab.UnsupportedAssetError, "v0.10 bundle-fidelity"):
+            lab.analyze_asset_bytes("external-image.glb", data)
+
+    def test_data_uri_is_still_self_contained(self):
+        data = minimal_glb({"images": [{"uri": "data:image/png;base64,"}]})
+        out = lab.analyze_asset_bytes("data-uri.glb", data)
+        self.assertTrue(out["asset"]["self_contained_standard_resources"])
+
     def test_non_glb_bytes_are_rejected_before_model2ir(self):
         bad = b"not-a-glb-container"
         with self.assertRaisesRegex(lab.LabInputError, "GLB magic"):
@@ -57,6 +74,13 @@ class Model2IRLabContractTest(unittest.TestCase):
         struct.pack_into("<I", data, 8, len(data) + 4)
         with self.assertRaisesRegex(lab.LabInputError, "declared length"):
             lab.analyze_asset_bytes("bad.glb", bytes(data))
+
+    def test_chunk_alignment_is_strict(self):
+        payload = b"{} "
+        chunk = struct.pack("<II", len(payload), lab.JSON_CHUNK) + payload
+        data = struct.pack("<4sII", b"glTF", 2, 12 + len(chunk)) + chunk
+        with self.assertRaisesRegex(lab.LabInputError, "4-byte aligned"):
+            lab.analyze_asset_bytes("unaligned.glb", data)
 
     def test_upload_limit_is_checked_without_large_fixture(self):
         data = minimal_glb()
@@ -112,6 +136,7 @@ class Model2IRLabHTTPTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["model2ir_version"], "0.9.1")
+        self.assertTrue(payload["self_contained_standard_resources_required"])
         self.assertFalse(payload["multi_file_gltf_supported"])
         self.assertEqual(headers["Cache-Control"], "no-store")
 
@@ -130,6 +155,8 @@ class Model2IRLabHTTPTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
         analysis = payload["analysis"]
         self.assertEqual(analysis["asset"]["filename"], "browser sample.glb")
+        self.assertEqual(analysis["results"]["extracted_ir"]["source"]["name"], "browser sample.glb")
+        self.assertTrue(analysis["asset"]["self_contained_standard_resources"])
         self.assertEqual(analysis["summary"]["inferred"]["result_role"], "stabilized-candidate")
         self.assertFalse(analysis["truth_policy"]["automatic_promotion_of_inference"])
 
@@ -144,6 +171,17 @@ class Model2IRLabHTTPTest(unittest.TestCase):
         self.assertEqual(payload["error"], "unsupported-asset")
         self.assertIn("multi-file .gltf", payload["message"])
 
+    def test_external_resource_endpoint_rejection_is_415(self):
+        status, _, payload = self.request(
+            "POST",
+            "/v1/analyze",
+            body=minimal_glb({"images": [{"uri": "texture.png"}]}),
+            headers={"X-Model2IR-Filename": "external.glb"},
+        )
+        self.assertEqual(status, 415)
+        self.assertEqual(payload["error"], "unsupported-asset")
+        self.assertIn("self-contained", payload["message"])
+
     def test_oversized_content_length_is_rejected_before_read(self):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         conn.putrequest("POST", "/v1/analyze")
@@ -151,9 +189,10 @@ class Model2IRLabHTTPTest(unittest.TestCase):
         conn.putheader("X-Model2IR-Filename", "huge.glb")
         conn.endheaders()
         response = conn.getresponse()
+        status = response.status
         payload = json.loads(response.read().decode("utf-8"))
         conn.close()
-        self.assertEqual(response.status, 413)
+        self.assertEqual(status, 413)
         self.assertEqual(payload["error"], "payload-too-large")
 
 
