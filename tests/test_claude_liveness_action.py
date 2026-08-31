@@ -34,6 +34,7 @@ class ClaudeLivenessActionTests(unittest.TestCase):
         invoked = run.call_args.args[0]
         self.assertIn("--print", invoked)
         self.assertNotIn("--restricted", invoked)
+        self.assertNotIn("--bare", invoked)
 
     @patch("agentos_node.antigravity_relay_worker.discover_executor")
     @patch("agentos_node.action_relay.subprocess.run")
@@ -45,6 +46,7 @@ class ClaudeLivenessActionTests(unittest.TestCase):
         self.assertFalse(result["probe_ok"])
         self.assertFalse(result["result"]["supported"])
         self.assertIn("--restricted", run.call_args.args[0])
+        self.assertNotIn("--bare", run.call_args.args[0])
 
     @patch("agentos_node.antigravity_relay_worker.discover_executor")
     @patch("agentos_node.action_relay.subprocess.run")

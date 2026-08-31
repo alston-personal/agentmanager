@@ -49,6 +49,38 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
             self.assertEqual(result["returncode"], 124)
             self.assertLess(elapsed, 5.0)
 
+
+    def test_claude_discovery_preserves_ubuntu_oauth_identity(self) -> None:
+        fake_binary = Path("/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.251-linux-arm64/resources/native-binary/claude")
+        with patch.dict("agentos_node.antigravity_relay_worker.os.environ", {"AGENTOS_ANTIGRAVITY_EXECUTOR": str(fake_binary)}, clear=False), \
+             patch.object(Path, "is_file", return_value=True), \
+             patch("agentos_node.antigravity_relay_worker.os.access", return_value=True):
+            provider, executor = discover_executor("claude")
+        self.assertEqual(provider, "claude")
+        self.assertIsNotNone(executor)
+        self.assertEqual(executor[0], str(fake_binary))
+        self.assertIn("--print", executor)
+        self.assertIn("--output-format", executor)
+        self.assertIn("--effort", executor)
+        self.assertNotIn("--bare", executor)
+
+    def test_claude_executor_argv_stays_noninteractive_without_bare(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            workspace = Path(td)
+            worker = AntigravityRelayWorker(
+                workspace / "relay",
+                provider="claude",
+                executor=["/tmp/claude", "--print", "--output-format", "text", "--effort", "low"],
+            )
+            argv = worker._executor_argv(
+                {"canonical_ir": {"goal": "probe"}, "instruction": "Return exactly PASS"},
+                workspace,
+            )
+            self.assertEqual(argv[0], "/tmp/claude")
+            self.assertIn("--print", argv)
+            self.assertNotIn("--bare", argv)
+            self.assertIn("Return exactly PASS", argv[-1])
+
     def test_agy_provider_uses_fixed_agentos_cli_path(self) -> None:
         fake_home = Path("/home/ubuntu")
         with patch("agentos_node.antigravity_relay_worker.Path.home", return_value=fake_home), \

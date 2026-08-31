@@ -425,7 +425,7 @@ def _claude_liveness_diagnose(params: dict[str, Any]) -> dict[str, Any]:
         fixed = [binary]
         if probe == "restricted_headless_print":
             fixed.append("--restricted")
-        fixed.extend(["--bare", "--print", "--output-format", "text", "--effort", "low", prompt])
+        fixed.extend(["--print", "--output-format", "text", "--effort", "low", prompt])
         result = _claude_probe_result(
             fixed,
             command_class=probe,
