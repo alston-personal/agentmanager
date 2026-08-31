@@ -1,0 +1,607 @@
+{
+  "schema": "agentos.current-node-readiness-acceptance/v1",
+  "observed_at": "2026-08-31T03:05:11Z",
+  "node_id": "vopc5750",
+  "accepted": true,
+  "checks": {
+    "node_present": true,
+    "node_online": true,
+    "runtime_converged": true,
+    "discovery_ok": true,
+    "surface_inventory_present": true,
+    "verify_ok": true,
+    "benchmark_persisted": true,
+    "node_ready": true,
+    "zero_regressions": true,
+    "supervisor_ready": true
+  },
+  "before": {
+    "benchmark": {
+      "after": {
+        "continuity_recovery": 0.0,
+        "evidence_returned": 1,
+        "inherited_cognition_usage": 0,
+        "realm_capability_usage": 3,
+        "repeated_errors": 0,
+        "task_success": 1.0,
+        "user_clarifications": 0
+      },
+      "before": {
+        "continuity_recovery": 0.0,
+        "evidence_returned": 0,
+        "inherited_cognition_usage": 0,
+        "realm_capability_usage": 0,
+        "repeated_errors": 0,
+        "task_success": 1.0,
+        "user_clarifications": 0
+      },
+      "checks": {
+        "canonical_capabilities": [],
+        "inherited_realm_capabilities": [
+          "agentos.governance.read",
+          "agentos.one.resolve",
+          "agentos.realm.fabric"
+        ],
+        "lifecycle_supervisor_ready": true,
+        "local_capability_non_regression": true,
+        "lost_capabilities": [],
+        "surface_inventory_present": true
+      },
+      "improved_dimensions": 2,
+      "lifecycle": {
+        "applicable": true,
+        "platform": "Windows",
+        "returncode": 0,
+        "schema": "agentos.node-lifecycle/v0.1",
+        "stderr": "",
+        "supervisor_ready": true,
+        "thin_client_task": "AgentOS Thin Client",
+        "watchdog_task": "AgentOS Thin Client Watchdog"
+      },
+      "node_id": "vopc5750",
+      "node_ready": true,
+      "one_uplift_observed": true,
+      "realm_id": "realm-alston",
+      "recorded_at": "2026-08-30T09:18:53Z",
+      "regressed_dimensions": 0,
+      "report_kind": "readiness-regression",
+      "schema": "agentos.one-uplift-report/v0.1",
+      "uplift": {
+        "continuity_recovery": 0.0,
+        "evidence_returned": 1,
+        "inherited_cognition_usage": 0,
+        "realm_capability_usage": 3,
+        "repeated_errors": 0,
+        "task_success": 0.0,
+        "user_clarifications": 0
+      }
+    },
+    "capabilities": [
+      "agent.chat",
+      "agent.surface.inspect",
+      "code.edit",
+      "context.harvest",
+      "desktop.keyboard",
+      "desktop.mouse",
+      "desktop.open_url",
+      "desktop.screenshot",
+      "desktop.session.inspect",
+      "desktop.windows.inspect",
+      "filesystem.read",
+      "filesystem.write",
+      "ide.inspect",
+      "node.runtime.converge",
+      "process.inspect",
+      "shell.exec",
+      "tool.presence"
+    ],
+    "first_seen_at": "2026-08-26T06:21:49Z",
+    "hostname": "VOPC5750",
+    "last_heartbeat_at": "2026-08-31T03:04:43Z",
+    "last_manifest_at": "2026-08-31T03:04:43Z",
+    "node_id": "vopc5750",
+    "platform": "Windows",
+    "platform_release": "11",
+    "role": "client",
+    "runtime": {
+      "install_mode": "controller-single-owner-converge",
+      "installed_at": "2026-08-30T09:11:08Z",
+      "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+      "schema": "agentos.thin-client-runtime/v0.1",
+      "source_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+      "source_ref": "feature/realm-node-fabric-readiness",
+      "status": "observed"
+    },
+    "status": "online",
+    "surface_count": 4,
+    "surface_inventory": {
+      "capabilities": [
+        "agent.chat",
+        "code.edit",
+        "ide.inspect"
+      ],
+      "providers": [
+        "claude-code",
+        "codex",
+        "cursor",
+        "vscode"
+      ],
+      "schema": "agentos.surface-inventory/v0.1",
+      "surface_count": 4,
+      "surfaces": [
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "claude-code",
+          "running": true,
+          "surface_id": "agent-runtime:claude-code"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "codex",
+          "running": true,
+          "surface_id": "agent-runtime:codex"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+          "kind": "ide-agent",
+          "metadata": {
+            "executable_name": "cursor",
+            "session_bridge": null
+          },
+          "provider": "cursor",
+          "running": false,
+          "surface_id": "ide-agent:cursor"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "code.edit",
+            "ide.inspect"
+          ],
+          "executable": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+          "kind": "ide",
+          "metadata": {
+            "executable_name": "code",
+            "session_bridge": null
+          },
+          "provider": "vscode",
+          "running": false,
+          "surface_id": "ide:vscode"
+        }
+      ]
+    },
+    "tool_presence": {
+      "code": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+      "cursor": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+      "git": "C:\\Program Files\\Git\\cmd\\git.EXE",
+      "node": "C:\\Program Files\\nodejs\\node.EXE",
+      "npm": "C:\\Program Files\\nodejs\\npm.CMD",
+      "powershell": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "python": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.EXE",
+      "python3": "C:\\Users\\alston.huang\\AppData\\Local\\Microsoft\\WindowsApps\\python3.EXE"
+    },
+    "uptime_seconds": 4552,
+    "workspace_roots": {
+      "readable": [
+        "C:\\Users\\alston.huang\\AgentOS"
+      ],
+      "writable": [
+        "C:\\Users\\alston.huang\\AgentOS"
+      ]
+    },
+    "reported_status": "online",
+    "heartbeat_age_seconds": 4,
+    "heartbeat_stale_after_seconds": 30,
+    "runtime_status": "converged",
+    "desired_runtime_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045"
+  },
+  "observed": {
+    "benchmark": {
+      "after": {
+        "continuity_recovery": 0.0,
+        "evidence_returned": 1,
+        "inherited_cognition_usage": 0,
+        "realm_capability_usage": 3,
+        "repeated_errors": 0,
+        "task_success": 1.0,
+        "user_clarifications": 0
+      },
+      "before": {
+        "continuity_recovery": 0.0,
+        "evidence_returned": 0,
+        "inherited_cognition_usage": 0,
+        "realm_capability_usage": 0,
+        "repeated_errors": 0,
+        "task_success": 1.0,
+        "user_clarifications": 0
+      },
+      "checks": {
+        "canonical_capabilities": [],
+        "inherited_realm_capabilities": [
+          "agentos.governance.read",
+          "agentos.one.resolve",
+          "agentos.realm.fabric"
+        ],
+        "lifecycle_supervisor_ready": true,
+        "local_capability_non_regression": true,
+        "lost_capabilities": [],
+        "surface_inventory_present": true
+      },
+      "improved_dimensions": 2,
+      "lifecycle": {
+        "applicable": true,
+        "platform": "Windows",
+        "returncode": 0,
+        "schema": "agentos.node-lifecycle/v0.1",
+        "stderr": "",
+        "supervisor_ready": true,
+        "thin_client_task": "AgentOS Thin Client",
+        "watchdog_task": "AgentOS Thin Client Watchdog"
+      },
+      "node_id": "vopc5750",
+      "node_ready": true,
+      "one_uplift_observed": true,
+      "realm_id": "realm-alston",
+      "recorded_at": "2026-08-31T03:05:09Z",
+      "regressed_dimensions": 0,
+      "report_kind": "readiness-regression",
+      "schema": "agentos.one-uplift-report/v0.1",
+      "uplift": {
+        "continuity_recovery": 0.0,
+        "evidence_returned": 1,
+        "inherited_cognition_usage": 0,
+        "realm_capability_usage": 3,
+        "repeated_errors": 0,
+        "task_success": 0.0,
+        "user_clarifications": 0
+      }
+    },
+    "capabilities": [
+      "agent.chat",
+      "agent.surface.inspect",
+      "code.edit",
+      "context.harvest",
+      "desktop.keyboard",
+      "desktop.mouse",
+      "desktop.open_url",
+      "desktop.screenshot",
+      "desktop.session.inspect",
+      "desktop.windows.inspect",
+      "filesystem.read",
+      "filesystem.write",
+      "ide.inspect",
+      "node.runtime.converge",
+      "process.inspect",
+      "shell.exec",
+      "tool.presence"
+    ],
+    "first_seen_at": "2026-08-26T06:21:49Z",
+    "hostname": "VOPC5750",
+    "last_heartbeat_at": "2026-08-31T03:05:07Z",
+    "last_manifest_at": "2026-08-31T03:05:07Z",
+    "node_id": "vopc5750",
+    "platform": "Windows",
+    "platform_release": "11",
+    "role": "client",
+    "runtime": {
+      "install_mode": "controller-single-owner-converge",
+      "installed_at": "2026-08-30T09:11:08Z",
+      "provenance_path": "C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\runtime-provenance.json",
+      "schema": "agentos.thin-client-runtime/v0.1",
+      "source_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045",
+      "source_ref": "feature/realm-node-fabric-readiness",
+      "status": "observed"
+    },
+    "status": "online",
+    "surface_count": 4,
+    "surface_inventory": {
+      "capabilities": [
+        "agent.chat",
+        "code.edit",
+        "ide.inspect"
+      ],
+      "providers": [
+        "claude-code",
+        "codex",
+        "cursor",
+        "vscode"
+      ],
+      "schema": "agentos.surface-inventory/v0.1",
+      "surface_count": 4,
+      "surfaces": [
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "claude-code",
+          "running": true,
+          "surface_id": "agent-runtime:claude-code"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "codex",
+          "running": true,
+          "surface_id": "agent-runtime:codex"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+          "kind": "ide-agent",
+          "metadata": {
+            "executable_name": "cursor",
+            "session_bridge": null
+          },
+          "provider": "cursor",
+          "running": false,
+          "surface_id": "ide-agent:cursor"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "code.edit",
+            "ide.inspect"
+          ],
+          "executable": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+          "kind": "ide",
+          "metadata": {
+            "executable_name": "code",
+            "session_bridge": null
+          },
+          "provider": "vscode",
+          "running": false,
+          "surface_id": "ide:vscode"
+        }
+      ]
+    },
+    "tool_presence": {
+      "code": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+      "cursor": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+      "git": "C:\\Program Files\\Git\\cmd\\git.EXE",
+      "node": "C:\\Program Files\\nodejs\\node.EXE",
+      "npm": "C:\\Program Files\\nodejs\\npm.CMD",
+      "powershell": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "python": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Python\\Python312\\python.EXE",
+      "python3": "C:\\Users\\alston.huang\\AppData\\Local\\Microsoft\\WindowsApps\\python3.EXE"
+    },
+    "uptime_seconds": 7,
+    "workspace_roots": {
+      "readable": [
+        "C:\\Users\\alston.huang\\AgentOS"
+      ],
+      "writable": [
+        "C:\\Users\\alston.huang\\AgentOS"
+      ]
+    },
+    "reported_status": "online",
+    "heartbeat_age_seconds": 4,
+    "heartbeat_stale_after_seconds": 30,
+    "runtime_status": "converged",
+    "desired_runtime_commit": "e50e0fab411eb5c05e5aaa4f866e7282fcb04045"
+  },
+  "discovery_receipt": {
+    "action": "agent.surface.inspect",
+    "cognition_ids_used": [],
+    "completed_at": "2026-08-31T03:04:51Z",
+    "node_id": "vopc5750",
+    "ok": true,
+    "realm_id": "realm-alston",
+    "received_at": "2026-08-31T03:04:51Z",
+    "schema": "agentos.node-receipt/v0.1",
+    "started_at": "2026-08-31T03:04:50Z",
+    "surface_inventory": {
+      "capabilities": [
+        "agent.chat",
+        "code.edit",
+        "ide.inspect"
+      ],
+      "providers": [
+        "claude-code",
+        "codex",
+        "cursor",
+        "vscode"
+      ],
+      "schema": "agentos.surface-inventory/v0.1",
+      "surface_count": 4,
+      "surfaces": [
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "claude-code",
+          "running": true,
+          "surface_id": "agent-runtime:claude-code"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": null,
+          "kind": "agent-runtime",
+          "metadata": {
+            "executable_name": null,
+            "session_bridge": null
+          },
+          "provider": "codex",
+          "running": true,
+          "surface_id": "agent-runtime:codex"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "agent.chat",
+            "code.edit"
+          ],
+          "executable": "C:\\Program Files\\cursor\\resources\\app\\bin\\cursor.CMD",
+          "kind": "ide-agent",
+          "metadata": {
+            "executable_name": "cursor",
+            "session_bridge": null
+          },
+          "provider": "cursor",
+          "running": false,
+          "surface_id": "ide-agent:cursor"
+        },
+        {
+          "attachable": false,
+          "capabilities": [
+            "code.edit",
+            "ide.inspect"
+          ],
+          "executable": "C:\\Users\\alston.huang\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.CMD",
+          "kind": "ide",
+          "metadata": {
+            "executable_name": "code",
+            "session_bridge": null
+          },
+          "provider": "vscode",
+          "running": false,
+          "surface_id": "ide:vscode"
+        }
+      ]
+    },
+    "task_id": "current-readiness-discovery-1788145487"
+  },
+  "verify_receipt": {
+    "action": "shell.exec",
+    "cognition_ids_used": [],
+    "completed_at": "2026-08-31T03:05:09Z",
+    "execution": {
+      "argv": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference='Stop'\n$launcher=Join-Path $env:LOCALAPPDATA 'AgentOS\\agentos-client.cmd'\nif(-not (Test-Path -LiteralPath $launcher)){ throw \"missing launcher: $launcher\" }\n& $launcher verify\nif($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }\n"
+      ],
+      "cwd": "C:\\Users\\alston.huang\\AgentOS",
+      "executable": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "timeout_seconds": 120
+    },
+    "node_id": "vopc5750",
+    "ok": true,
+    "realm_id": "realm-alston",
+    "received_at": "2026-08-31T03:05:09Z",
+    "returncode": 0,
+    "schema": "agentos.node-receipt/v0.1",
+    "started_at": "2026-08-31T03:04:58Z",
+    "stderr": "",
+    "stdout": "{\n  \"lifecycle\": {\n    \"applicable\": true,\n    \"platform\": \"Windows\",\n    \"returncode\": 0,\n    \"schema\": \"agentos.node-lifecycle/v0.1\",\n    \"stderr\": \"\",\n    \"supervisor_ready\": true,\n    \"thin_client_task\": \"AgentOS Thin Client\",\n    \"watchdog_task\": \"AgentOS Thin Client Watchdog\"\n  },\n  \"ok\": true,\n  \"readiness\": {\n    \"benchmark_persisted\": true,\n    \"bootstrap\": {\n      \"canonical_capabilities\": [],\n      \"canonical_capability_count\": 0,\n      \"inherited_realm_capabilities\": [\n        \"agentos.governance.read\",\n        \"agentos.one.resolve\",\n        \"agentos.realm.fabric\"\n      ],\n      \"inherited_surface_providers\": [],\n      \"node\": {\n        \"benchmark\": {\n          \"after\": {\n            \"continuity_recovery\": 0.0,\n            \"evidence_returned\": 1,\n            \"inherited_cognition_usage\": 0,\n            \"realm_capability_usage\": 3,\n            \"repeated_errors\": 0,\n            \"task_success\": 1.0,\n            \"user_clarifications\": 0\n          },\n          \"before\": {\n            \"continuity_recovery\": 0.0,\n            \"evidence_returned\": 0,\n            \"inherited_cognition_usage\": 0,\n            \"realm_capability_usage\": 0,\n            \"repeated_errors\": 0,\n            \"task_success\": 1.0,\n            \"user_clarifications\": 0\n          },\n          \"checks\": {\n            \"canonical_capabilities\": [],\n            \"inherited_realm_capabilities\": [\n              \"agentos.governance.read\",\n              \"agentos.one.resolve\",\n              \"agentos.realm.fabric\"\n            ],\n            \"lifecycle_supervisor_ready\": true,\n            \"local_capability_non_regression\": true,\n            \"lost_capabilities\": [],\n            \"surface_inventory_present\": true\n          },\n          \"improved_dimensions\": 2,\n          \"lifecycle\": {\n            \"applicable\": true,\n            \"platform\": \"Windows\",\n            \"returncode\": 0,\n            \"schema\": \"agentos.node-lifecycle/v0.1\",\n            \"stderr\": \"\",\n            \"supervisor_ready\": true,\n            \"thin_client_task\": \"AgentOS Thin Client\",\n            \"watchdog_task\": \"AgentOS Thin Client Watchdog\"\n          },\n          \"node_id\": \"vopc5750\",\n          \"node_ready\": true,\n          \"one_uplift_observed\": true,\n          \"realm_id\": \"realm-alston\",\n          \"recorded_at\": \"2026-08-30T09:18:53Z\",\n          \"regressed_dimensions\": 0,\n          \"report_kind\": \"readiness-regression\",\n          \"schema\": \"agentos.one-uplift-report/v0.1\",\n          \"uplift\": {\n            \"continuity_recovery\": 0.0,\n            \"evidence_returned\": 1,\n            \"inherited_cognition_usage\": 0,\n            \"realm_capability_usage\": 3,\n            \"repeated_errors\": 0,\n            \"task_success\": 0.0,\n            \"user_clarifications\": 0\n          }\n        },\n        \"capabilities\": [\n          \"agent.chat\",\n          \"agent.surface.inspect\",\n          \"code.edit\",\n          \"context.harvest\",\n          \"desktop.keyboard\",\n          \"desktop.mouse\",\n          \"desktop.open_url\",\n          \"desktop.screenshot\",\n          \"desktop.session.inspect\",\n          \"desktop.windows.inspect\",\n          \"filesystem.read\",\n          \"filesystem.write\",\n          \"ide.inspect\",\n          \"node.runtime.converge\",\n          \"process.inspect\",\n          \"shell.exec\",\n          \"tool.presence\"\n        ],\n        \"desired_runtime_commit\": \"e50e0fab411eb5c05e5aaa4f866e7282fcb04045\",\n        \"first_seen_at\": \"2026-08-26T06:21:49Z\",\n        \"heartbeat_age_seconds\": 1,\n        \"heartbeat_stale_after_seconds\": 30,\n        \"hostname\": \"VOPC5750\",\n        \"last_heartbeat_at\": \"2026-08-31T03:05:07Z\",\n        \"last_manifest_at\": \"2026-08-31T03:05:07Z\",\n        \"node_id\": \"vopc5750\",\n        \"platform\": \"Windows\",\n        \"platform_release\": \"11\",\n        \"reported_status\": \"online\",\n        \"role\": \"client\",\n        \"runtime\": {\n          \"install_mode\": \"controller-single-owner-converge\",\n          \"installed_at\": \"2026-08-30T09:11:08Z\",\n          \"provenance_path\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\runtime-provenance.json\",\n          \"schema\": \"agentos.thin-client-runtime/v0.1\",\n          \"source_commit\": \"e50e0fab411eb5c05e5aaa4f866e7282fcb04045\",\n          \"source_ref\": \"feature/realm-node-fabric-readiness\",\n          \"status\": \"observed\"\n        },\n        \"runtime_status\": \"converged\",\n        \"status\": \"online\",\n        \"surface_count\": 4,\n        \"surface_inventory\": {\n          \"capabilities\": [\n            \"agent.chat\",\n            \"code.edit\",\n            \"ide.inspect\"\n          ],\n          \"providers\": [\n            \"claude-code\",\n            \"codex\",\n            \"cursor\",\n            \"vscode\"\n          ],\n          \"schema\": \"agentos.surface-inventory/v0.1\",\n          \"surface_count\": 4,\n          \"surfaces\": [\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"agent.chat\",\n                \"code.edit\"\n              ],\n              \"executable\": null,\n              \"kind\": \"agent-runtime\",\n              \"metadata\": {\n                \"executable_name\": null,\n                \"session_bridge\": null\n              },\n              \"provider\": \"claude-code\",\n              \"running\": true,\n              \"surface_id\": \"agent-runtime:claude-code\"\n            },\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"agent.chat\",\n                \"code.edit\"\n              ],\n              \"executable\": null,\n              \"kind\": \"agent-runtime\",\n              \"metadata\": {\n                \"executable_name\": null,\n                \"session_bridge\": null\n              },\n              \"provider\": \"codex\",\n              \"running\": true,\n              \"surface_id\": \"agent-runtime:codex\"\n            },\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"agent.chat\",\n                \"code.edit\"\n              ],\n              \"executable\": \"C:\\\\Program Files\\\\cursor\\\\resources\\\\app\\\\bin\\\\cursor.CMD\",\n              \"kind\": \"ide-agent\",\n              \"metadata\": {\n                \"executable_name\": \"cursor\",\n                \"session_bridge\": null\n              },\n              \"provider\": \"cursor\",\n              \"running\": false,\n              \"surface_id\": \"ide-agent:cursor\"\n            },\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"code.edit\",\n                \"ide.inspect\"\n              ],\n              \"executable\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Programs\\\\Microsoft VS Code\\\\bin\\\\code.CMD\",\n              \"kind\": \"ide\",\n              \"metadata\": {\n                \"executable_name\": \"code\",\n                \"session_bridge\": null\n              },\n              \"provider\": \"vscode\",\n              \"running\": false,\n              \"surface_id\": \"ide:vscode\"\n            }\n          ]\n        },\n        \"tool_presence\": {\n          \"code\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Programs\\\\Microsoft VS Code\\\\bin\\\\code.CMD\",\n          \"cursor\": \"C:\\\\Program Files\\\\cursor\\\\resources\\\\app\\\\bin\\\\cursor.CMD\",\n          \"git\": \"C:\\\\Program Files\\\\Git\\\\cmd\\\\git.EXE\",\n          \"node\": \"C:\\\\Program Files\\\\nodejs\\\\node.EXE\",\n          \"npm\": \"C:\\\\Program Files\\\\nodejs\\\\npm.CMD\",\n          \"powershell\": \"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.EXE\",\n          \"python\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.EXE\",\n          \"python3\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.EXE\"\n        },\n        \"uptime_seconds\": 7,\n        \"workspace_roots\": {\n          \"readable\": [\n            \"C:\\\\Users\\\\alston.huang\\\\AgentOS\"\n          ],\n          \"writable\": [\n            \"C:\\\\Users\\\\alston.huang\\\\AgentOS\"\n          ]\n        }\n      },\n      \"node_id\": \"vopc5750\",\n      \"ok\": true,\n      \"realm_capabilities\": [\n        \"agent.chat\",\n        \"agent.surface.inspect\",\n        \"agentos.governance.read\",\n        \"agentos.one.resolve\",\n        \"agentos.realm.fabric\",\n        \"code.edit\",\n        \"context.harvest\",\n        \"desktop.keyboard\",\n        \"desktop.mouse\",\n        \"desktop.open_url\",\n        \"desktop.screenshot\",\n        \"desktop.session.inspect\",\n        \"desktop.windows.inspect\",\n        \"filesystem.read\",\n        \"filesystem.write\",\n        \"ide.inspect\",\n        \"node.runtime.converge\",\n        \"process.inspect\",\n        \"shell.exec\",\n        \"tool.presence\"\n      ],\n      \"realm_id\": \"realm-alston\",\n      \"realm_node_count\": 2,\n      \"schema\": \"agentos.node-bootstrap/v0.1\"\n    },\n    \"heartbeat\": {\n      \"auto_ota\": null,\n      \"node\": {\n        \"benchmark\": {\n          \"after\": {\n            \"continuity_recovery\": 0.0,\n            \"evidence_returned\": 1,\n            \"inherited_cognition_usage\": 0,\n            \"realm_capability_usage\": 3,\n            \"repeated_errors\": 0,\n            \"task_success\": 1.0,\n            \"user_clarifications\": 0\n          },\n          \"before\": {\n            \"continuity_recovery\": 0.0,\n            \"evidence_returned\": 0,\n            \"inherited_cognition_usage\": 0,\n            \"realm_capability_usage\": 0,\n            \"repeated_errors\": 0,\n            \"task_success\": 1.0,\n            \"user_clarifications\": 0\n          },\n          \"checks\": {\n            \"canonical_capabilities\": [],\n            \"inherited_realm_capabilities\": [\n              \"agentos.governance.read\",\n              \"agentos.one.resolve\",\n              \"agentos.realm.fabric\"\n            ],\n            \"lifecycle_supervisor_ready\": true,\n            \"local_capability_non_regression\": true,\n            \"lost_capabilities\": [],\n            \"surface_inventory_present\": true\n          },\n          \"improved_dimensions\": 2,\n          \"lifecycle\": {\n            \"applicable\": true,\n            \"platform\": \"Windows\",\n            \"returncode\": 0,\n            \"schema\": \"agentos.node-lifecycle/v0.1\",\n            \"stderr\": \"\",\n            \"supervisor_ready\": true,\n            \"thin_client_task\": \"AgentOS Thin Client\",\n            \"watchdog_task\": \"AgentOS Thin Client Watchdog\"\n          },\n          \"node_id\": \"vopc5750\",\n          \"node_ready\": true,\n          \"one_uplift_observed\": true,\n          \"realm_id\": \"realm-alston\",\n          \"recorded_at\": \"2026-08-30T09:18:53Z\",\n          \"regressed_dimensions\": 0,\n          \"report_kind\": \"readiness-regression\",\n          \"schema\": \"agentos.one-uplift-report/v0.1\",\n          \"uplift\": {\n            \"continuity_recovery\": 0.0,\n            \"evidence_returned\": 1,\n            \"inherited_cognition_usage\": 0,\n            \"realm_capability_usage\": 3,\n            \"repeated_errors\": 0,\n            \"task_success\": 0.0,\n            \"user_clarifications\": 0\n          }\n        },\n        \"capabilities\": [\n          \"agent.chat\",\n          \"agent.surface.inspect\",\n          \"code.edit\",\n          \"context.harvest\",\n          \"desktop.keyboard\",\n          \"desktop.mouse\",\n          \"desktop.open_url\",\n          \"desktop.screenshot\",\n          \"desktop.session.inspect\",\n          \"desktop.windows.inspect\",\n          \"filesystem.read\",\n          \"filesystem.write\",\n          \"ide.inspect\",\n          \"node.runtime.converge\",\n          \"process.inspect\",\n          \"shell.exec\",\n          \"tool.presence\"\n        ],\n        \"first_seen_at\": \"2026-08-26T06:21:49Z\",\n        \"hostname\": \"VOPC5750\",\n        \"last_heartbeat_at\": \"2026-08-31T03:05:07Z\",\n        \"last_manifest_at\": \"2026-08-31T03:05:07Z\",\n        \"node_id\": \"vopc5750\",\n        \"platform\": \"Windows\",\n        \"platform_release\": \"11\",\n        \"role\": \"client\",\n        \"runtime\": {\n          \"install_mode\": \"controller-single-owner-converge\",\n          \"installed_at\": \"2026-08-30T09:11:08Z\",\n          \"provenance_path\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\runtime-provenance.json\",\n          \"schema\": \"agentos.thin-client-runtime/v0.1\",\n          \"source_commit\": \"e50e0fab411eb5c05e5aaa4f866e7282fcb04045\",\n          \"source_ref\": \"feature/realm-node-fabric-readiness\",\n          \"status\": \"observed\"\n        },\n        \"status\": \"online\",\n        \"surface_count\": 4,\n        \"surface_inventory\": {\n          \"capabilities\": [\n            \"agent.chat\",\n            \"code.edit\",\n            \"ide.inspect\"\n          ],\n          \"providers\": [\n            \"claude-code\",\n            \"codex\",\n            \"cursor\",\n            \"vscode\"\n          ],\n          \"schema\": \"agentos.surface-inventory/v0.1\",\n          \"surface_count\": 4,\n          \"surfaces\": [\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"agent.chat\",\n                \"code.edit\"\n              ],\n              \"executable\": null,\n              \"kind\": \"agent-runtime\",\n              \"metadata\": {\n                \"executable_name\": null,\n                \"session_bridge\": null\n              },\n              \"provider\": \"claude-code\",\n              \"running\": true,\n              \"surface_id\": \"agent-runtime:claude-code\"\n            },\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"agent.chat\",\n                \"code.edit\"\n              ],\n              \"executable\": null,\n              \"kind\": \"agent-runtime\",\n              \"metadata\": {\n                \"executable_name\": null,\n                \"session_bridge\": null\n              },\n              \"provider\": \"codex\",\n              \"running\": true,\n              \"surface_id\": \"agent-runtime:codex\"\n            },\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"agent.chat\",\n                \"code.edit\"\n              ],\n              \"executable\": \"C:\\\\Program Files\\\\cursor\\\\resources\\\\app\\\\bin\\\\cursor.CMD\",\n              \"kind\": \"ide-agent\",\n              \"metadata\": {\n                \"executable_name\": \"cursor\",\n                \"session_bridge\": null\n              },\n              \"provider\": \"cursor\",\n              \"running\": false,\n              \"surface_id\": \"ide-agent:cursor\"\n            },\n            {\n              \"attachable\": false,\n              \"capabilities\": [\n                \"code.edit\",\n                \"ide.inspect\"\n              ],\n              \"executable\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Programs\\\\Microsoft VS Code\\\\bin\\\\code.CMD\",\n              \"kind\": \"ide\",\n              \"metadata\": {\n                \"executable_name\": \"code\",\n                \"session_bridge\": null\n              },\n              \"provider\": \"vscode\",\n              \"running\": false,\n              \"surface_id\": \"ide:vscode\"\n            }\n          ]\n        },\n        \"tool_presence\": {\n          \"code\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Programs\\\\Microsoft VS Code\\\\bin\\\\code.CMD\",\n          \"cursor\": \"C:\\\\Program Files\\\\cursor\\\\resources\\\\app\\\\bin\\\\cursor.CMD\",\n          \"git\": \"C:\\\\Program Files\\\\Git\\\\cmd\\\\git.EXE\",\n          \"node\": \"C:\\\\Program Files\\\\nodejs\\\\node.EXE\",\n          \"npm\": \"C:\\\\Program Files\\\\nodejs\\\\npm.CMD\",\n          \"powershell\": \"C:\\\\WINDOWS\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.EXE\",\n          \"python\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.EXE\",\n          \"python3\": \"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.EXE\"\n        },\n        \"uptime_seconds\": 7,\n        \"workspace_roots\": {\n          \"readable\": [\n            \"C:\\\\Users\\\\alston.huang\\\\AgentOS\"\n          ],\n          \"writable\": [\n            \"C:\\\\Users\\\\alston.huang\\\\AgentOS\"\n          ]\n        }\n      },\n      \"ok\": true\n    },\n    \"lifecycle\": {\n      \"applicable\": true,\n      \"platform\": \"Windows\",\n      \"returncode\": 0,\n      \"schema\": \"agentos.node-lifecycle/v0.1\",\n      \"stderr\": \"\",\n      \"supervisor_ready\": true,\n      \"thin_client_task\": \"AgentOS Thin Client\",\n      \"watchdog_task\": \"AgentOS Thin Client Watchdog\"\n    },\n    \"node_id\": \"vopc5750\",\n    \"node_ready\": true,\n    \"realm_id\": \"realm-alston\",\n    \"regression\": {\n      \"after\": {\n        \"continuity_recovery\": 0.0,\n        \"evidence_returned\": 1,\n        \"inherited_cognition_usage\": 0,\n        \"realm_capability_usage\": 3,\n        \"repeated_errors\": 0,\n        \"task_success\": 1.0,\n        \"user_clarifications\": 0\n      },\n      \"before\": {\n        \"continuity_recovery\": 0.0,\n        \"evidence_returned\": 0,\n        \"inherited_cognition_usage\": 0,\n        \"realm_capability_usage\": 0,\n        \"repeated_errors\": 0,\n        \"task_success\": 1.0,\n        \"user_clarifications\": 0\n      },\n      \"checks\": {\n        \"canonical_capabilities\": [],\n        \"inherited_realm_capabilities\": [\n          \"agentos.governance.read\",\n          \"agentos.one.resolve\",\n          \"agentos.realm.fabric\"\n        ],\n        \"lifecycle_supervisor_ready\": true,\n        \"local_capability_non_regression\": true,\n        \"lost_capabilities\": [],\n        \"surface_inventory_present\": true\n      },\n      \"improved_dimensions\": 2,\n      \"lifecycle\": {\n        \"applicable\": true,\n        \"platform\": \"Windows\",\n        \"returncode\": 0,\n        \"schema\": \"agentos.node-lifecycle/v0.1\",\n        \"stderr\": \"\",\n        \"supervisor_ready\": true,\n        \"thin_client_task\": \"AgentOS Thin Client\",\n        \"watchdog_task\": \"AgentOS Thin Client Watchdog\"\n      },\n      \"node_id\": \"vopc5750\",\n      \"node_ready\": true,\n      \"one_uplift_observed\": true,\n      \"realm_id\": \"realm-alston\",\n      \"regressed_dimensions\": 0,\n      \"report_kind\": \"readiness-regression\",\n      \"schema\": \"agentos.one-uplift-report/v0.1\",\n      \"uplift\": {\n        \"continuity_recovery\": 0.0,\n        \"evidence_returned\": 1,\n        \"inherited_cognition_usage\": 0,\n        \"realm_capability_usage\": 3,\n        \"repeated_errors\": 0,\n        \"task_success\": 0.0,\n        \"user_clarifications\": 0\n      }\n    },\n    \"schema\": \"agentos.node-readiness/v0.1\"\n  }\n}\n",
+    "task_id": "current-readiness-verify-1788145487"
+  },
+  "benchmark": {
+    "after": {
+      "continuity_recovery": 0.0,
+      "evidence_returned": 1,
+      "inherited_cognition_usage": 0,
+      "realm_capability_usage": 3,
+      "repeated_errors": 0,
+      "task_success": 1.0,
+      "user_clarifications": 0
+    },
+    "before": {
+      "continuity_recovery": 0.0,
+      "evidence_returned": 0,
+      "inherited_cognition_usage": 0,
+      "realm_capability_usage": 0,
+      "repeated_errors": 0,
+      "task_success": 1.0,
+      "user_clarifications": 0
+    },
+    "checks": {
+      "canonical_capabilities": [],
+      "inherited_realm_capabilities": [
+        "agentos.governance.read",
+        "agentos.one.resolve",
+        "agentos.realm.fabric"
+      ],
+      "lifecycle_supervisor_ready": true,
+      "local_capability_non_regression": true,
+      "lost_capabilities": [],
+      "surface_inventory_present": true
+    },
+    "improved_dimensions": 2,
+    "lifecycle": {
+      "applicable": true,
+      "platform": "Windows",
+      "returncode": 0,
+      "schema": "agentos.node-lifecycle/v0.1",
+      "stderr": "",
+      "supervisor_ready": true,
+      "thin_client_task": "AgentOS Thin Client",
+      "watchdog_task": "AgentOS Thin Client Watchdog"
+    },
+    "node_id": "vopc5750",
+    "node_ready": true,
+    "one_uplift_observed": true,
+    "realm_id": "realm-alston",
+    "recorded_at": "2026-08-31T03:05:09Z",
+    "regressed_dimensions": 0,
+    "report_kind": "readiness-regression",
+    "schema": "agentos.one-uplift-report/v0.1",
+    "uplift": {
+      "continuity_recovery": 0.0,
+      "evidence_returned": 1,
+      "inherited_cognition_usage": 0,
+      "realm_capability_usage": 3,
+      "repeated_errors": 0,
+      "task_success": 0.0,
+      "user_clarifications": 0
+    }
+  }
+}
