@@ -1,6 +1,6 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T02:29:00Z",
+  "generated_at": "2026-08-31T02:35:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
@@ -68,12 +68,17 @@
     {
       "project_id": "character-blueprint",
       "canonical_repository": null,
-      "repository_candidate": "alston-personal/charactergenerator",
+      "rejected_repository_candidates": [
+        {
+          "repository": "alston-personal/charactergenerator",
+          "reason": "content provenance mismatch: Character Blueprint is image-to-3D proxy with character-blueprint-ir/v0.4 and Three.js OrbitControls, while charactergenerator is a distinct image-to-AI-description/full-body-image product and contains neither marker"
+        }
+      ],
       "status": "identity_unresolved",
       "core_prs": [53],
-      "classification": "Character Blueprint product work exists in agentmanager but canonical product repository has not been verified; similar repository name is not sufficient identity evidence",
-      "retire_when": ["explicitly establish canonical project identity/repository", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
-      "safe_now": "preserve_pr_53_and_do_not_merge_to_core"
+      "classification": "Character Blueprint product work exists in agentmanager, but the only repository-name candidate was inspected and rejected by source/product provenance; canonical repository still requires explicit assignment or creation",
+      "retire_when": ["explicitly assign/create canonical project repository", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
+      "safe_now": "preserve_pr_53_and_do_not_merge_to_core_or_charactergenerator"
     },
     {
       "project_id": "model2ir",
