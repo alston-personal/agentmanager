@@ -1,43 +1,47 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T01:30:00Z",
+  "generated_at": "2026-08-31T01:55:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
     {
       "project_id": "vendor-reputation",
       "canonical_repository": "alston-personal/vendor-reputation-service",
-      "status": "migration_required",
+      "status": "handoff_created",
+      "product_issue": "alston-personal/vendor-reputation-service#27",
       "core_prs": [97, 99, 127],
-      "product_evidence": ["vendor-reputation-service#20"],
+      "core_dependencies": [130],
+      "product_evidence": ["alston-personal/vendor-reputation-service#20"],
       "classification": "product implementation exists in product repo, but Oracle execution/scheduling carriers still live in agentmanager",
       "retire_when": ["equivalent product-owned governed execution path exists", "Oracle access/runner boundary is solved without copying Core secrets", "receipt/evidence parity is verified"],
-      "safe_now": "do_not_close_or_delete_carriers_yet"
+      "safe_now": "product_work_continues; only carrier-dependent execution waits"
     },
     {
       "project_id": "arcanaforge",
       "canonical_repository": "alston-personal/arcanaforge",
-      "status": "migration_required",
+      "status": "handoff_created",
+      "product_issue": "alston-personal/arcanaforge#3",
       "core_prs": [136],
       "core_dependencies": [66],
       "classification": "product has canonical repo, but public POC release is still carried by agentmanager governance/deploy path",
       "retire_when": ["product-owned artifact/deploy source is canonical", "governed static release capability or approved runner surface exists", "POC deployment receipt identifies exact ArcanaForge source/artifact"],
-      "safe_now": "retain_until_issue_66_acceptance"
+      "safe_now": "product_work_continues; only POC publication waits"
     },
     {
       "project_id": "layoutlib",
       "canonical_repository": "alston-personal/layoutlib",
-      "status": "boundary_defined_migration_pending",
+      "status": "handoff_created",
+      "product_issue": "alston-personal/layoutlib#2",
       "core_dependencies": [96],
       "classification": "canonical product repo and develop lane exist; Core should own only generic promotion/deployment policy, not Layout implementation",
       "retire_when": ["POC deploy consumes pinned layoutlib candidate", "production remains pinned to promoted release", "agentmanager contains no Layout product implementation/deployer beyond generic adapter"],
-      "safe_now": "continue_issue_96_without_product_pause"
+      "safe_now": "layout feature work continues; only governed POC/deploy step waits"
     },
     {
       "project_id": "leopardcat-tarot",
       "canonical_repository": "alston-personal/leopardcat-tarot",
       "status": "product_owned_pattern_observed",
-      "product_evidence": ["leopardcat-tarot#41"],
+      "product_evidence": ["alston-personal/leopardcat-tarot#41"],
       "classification": "production parity governance is already being implemented in the product repository; use this as target ownership pattern",
       "retire_when": ["inventory any remaining tarot-specific files/carriers in agentmanager", "verify parity before removing them"],
       "safe_now": "product_work_continues_in_product_repo"
