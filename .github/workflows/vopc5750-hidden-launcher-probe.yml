@@ -1,0 +1,81 @@
+name: vopc5750 hidden launcher probe
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-hidden-launcher-probe.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Queue migration probe
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id='vopc5750-hidden-launcher-probe-v1'
+          script=r'''$ErrorActionPreference='Stop'
+          $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $wrapper=Join-Path $install 'agentos-thin-client-hidden.vbs'
+          $taskName='AgentOS Thin Client'
+          $before=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          $result=[ordered]@{schema='agentos.node-hidden-launcher-probe/v1'; before_execute=[string]$before.Actions.Execute; before_arguments=[string]$before.Actions.Arguments; before_state=[string]$before.State; set_attempted=$false; set_succeeded=$false; error=$null}
+          try {
+            $result.set_attempted=$true
+            $newAction=New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"'+$wrapper+'"') -WorkingDirectory $install
+            Set-ScheduledTask -TaskName $taskName -Action $newAction -ErrorAction Stop | Out-Null
+            $result.set_succeeded=$true
+          } catch {
+            $result.error=$_.Exception.Message
+          }
+          $after=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+          $result.after_execute=[string]$after.Actions.Execute
+          $result.after_arguments=[string]$after.Actions.Arguments
+          $result.after_state=[string]$after.State
+          $result.observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $result | ConvertTo-Json -Compress
+          '''
+          store=RealmFabricStore(); store.queue_task('vopc5750', {
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          PY
+      - name: Persist receipt even on ACL failure
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore(); receipt=None
+          for _ in range(45):
+            receipt=store.get_receipt('vopc5750-hidden-launcher-probe-v1')
+            if receipt: break
+            time.sleep(2)
+          if not receipt: raise SystemExit('probe receipt timeout')
+          lines=str(receipt.get('stdout') or '').strip().splitlines()
+          payload=json.loads(lines[-1]) if lines else {'parse_error':True}
+          payload['node_receipt_ok']=bool(receipt.get('ok'))
+          payload['returncode']=receipt.get('returncode')
+          payload['stderr_tail']=str(receipt.get('stderr') or '')[-1000:]
+          out=Path('.agentos/evidence/node-lifecycle/vopc5750-hidden-launcher-probe.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          print(json.dumps(payload,indent=2,ensure_ascii=False))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-hidden-launcher-probe.json
+          git commit -m 'evidence(agentos-node): record hidden launcher migration probe' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
