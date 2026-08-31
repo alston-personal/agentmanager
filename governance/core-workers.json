@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T02:50:00Z",
+  "generated_at": "2026-08-31T03:04:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -73,6 +73,7 @@
         "issue/130"
       ],
       "non_authorities": [
+        "cross-repository runner reachability claim",
         "weaken-governance-gates",
         "protected-main merge"
       ]
@@ -152,7 +153,10 @@
         "pull/155",
         "pull/156",
         "pull/157",
-        "pull/159"
+        "pull/159",
+        "issue/163",
+        "issue/164",
+        "issue/165"
       ],
       "non_authorities": [
         "global product feature pause",
@@ -236,6 +240,34 @@
         "implicit ONE mutation authority",
         "protected-main merge"
       ]
+    },
+    {
+      "issue": 165,
+      "name": "Governed cross-repository Oracle execution requests",
+      "branch": "core/issue-165-cross-repo-execution",
+      "status": "queued",
+      "execution_lane": "shared-cross-repository-execution-worker",
+      "dependencies": [],
+      "blocking_scope": [
+        "vendor-reputation:oracle-carrier-retirement",
+        "leopardcat-tarot:oracle-carrier-retirement"
+      ],
+      "evidence": [
+        "issue/165",
+        "alston-personal/leopardcat-tarot#41",
+        "workflow-run/33312465860",
+        "workflow-run/33352392531",
+        "workflow-job/99368137799"
+      ],
+      "non_authorities": [
+        "assume runner registration scope without evidence",
+        "generic shell authority",
+        "arbitrary executable or argv tunneling",
+        "copy Core-wide Oracle secrets into product repositories",
+        "product production promotion",
+        "carrier deletion before parity",
+        "protected-main merge"
+      ]
     }
   ],
   "dependency_edges": [
@@ -250,6 +282,14 @@
     {
       "from": "vendor-reputation:semantic-classification",
       "to": "agentos-core#72"
+    },
+    {
+      "from": "vendor-reputation:oracle-carrier-retirement",
+      "to": "agentos-core#165"
+    },
+    {
+      "from": "leopardcat-tarot:oracle-carrier-retirement",
+      "to": "agentos-core#165"
     },
     {
       "from": "layoutlib:poc-deployment:live-acceptance",
