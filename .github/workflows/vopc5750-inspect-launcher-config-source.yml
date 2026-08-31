@@ -1,0 +1,56 @@
+name: vopc5750 inspect launcher config source
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-inspect-launcher-config-source.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Queue launcher inspection
+        id: q
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time
+          from agent_core.realm_fabric import RealmFabricStore
+          tid=f'vopc5750-launcher-inspect-{int(time.time())}'
+          ps=r'''$cmd=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-client.cmd'
+          $txt=if(Test-Path -LiteralPath $cmd){Get-Content -Raw -LiteralPath $cmd}else{''}
+          $procs=@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'agentos_node\.client_cli\s+run' } | ForEach-Object {[ordered]@{pid=[int]$_.ProcessId;command_line=[string]$_.CommandLine}})
+          [ordered]@{launcher_path=$cmd;launcher=$txt;processes=$procs;agentos_client_home=$env:AGENTOS_CLIENT_HOME} | ConvertTo-Json -Depth 5 -Compress'''
+          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':[]})
+          open(os.environ['GITHUB_OUTPUT'],'a').write(f'task_id={tid}\n')
+          PY
+      - name: Persist
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.q.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          s=RealmFabricStore(); r=None
+          for _ in range(40):
+            r=s.get_receipt(os.environ['TASK_ID'])
+            if r: break
+            time.sleep(2)
+          if not r: raise SystemExit('receipt missing')
+          p=Path('.agentos/evidence/node-lifecycle/vopc5750-launcher-config-source.json');p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps({'schema':'agentos.node-launcher-config-source/v1','receipt':r},indent=2,ensure_ascii=False)+'\n')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-launcher-config-source.json
+          git commit -m 'evidence(agentos-node): inspect vopc5750 launcher config source' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
