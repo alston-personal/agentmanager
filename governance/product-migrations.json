@@ -1,6 +1,6 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T01:55:00Z",
+  "generated_at": "2026-08-31T02:05:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
@@ -12,9 +12,14 @@
       "core_prs": [97, 99, 127],
       "core_dependencies": [130],
       "product_evidence": ["alston-personal/vendor-reputation-service#20"],
+      "observed_files": {
+        "97": [".github/workflows/oracle-register-vendor-threads-source.yml"],
+        "99": [".github/workflows/oracle-vendor-threads-calibration.yml", "scripts/run_vendor_threads_calibration.sh"],
+        "127": [".github/workflows/oracle-register-vendor-threads-source.yml", ".github/workflows/oracle-sync-vendor-monitored-sources.yml", "scripts/run_vendor_monitored_source_sync.sh"]
+      },
       "classification": "product implementation exists in product repo, but Oracle execution/scheduling carriers still live in agentmanager",
       "retire_when": ["equivalent product-owned governed execution path exists", "Oracle access/runner boundary is solved without copying Core secrets", "receipt/evidence parity is verified"],
-      "safe_now": "product_work_continues; only carrier-dependent execution waits"
+      "safe_now": "product_work_continues; only carrier-dependent execution waits; freeze agentmanager product carriers from direct Core merge"
     },
     {
       "project_id": "arcanaforge",
@@ -23,9 +28,10 @@
       "product_issue": "alston-personal/arcanaforge#3",
       "core_prs": [136],
       "core_dependencies": [66],
+      "observed_files": {"136": [".github/workflows/oracle-release-arcanaforge-poc.yml"]},
       "classification": "product has canonical repo, but public POC release is still carried by agentmanager governance/deploy path",
       "retire_when": ["product-owned artifact/deploy source is canonical", "governed static release capability or approved runner surface exists", "POC deployment receipt identifies exact ArcanaForge source/artifact"],
-      "safe_now": "product_work_continues; only POC publication waits"
+      "safe_now": "product_work_continues; only POC publication waits; freeze PR #136 from direct Core merge"
     },
     {
       "project_id": "layoutlib",
@@ -52,9 +58,10 @@
       "repository_candidate": "alston-personal/charactergenerator",
       "status": "identity_unresolved",
       "core_prs": [53],
+      "observed_files": {"53": ["scripts/deploy_character_blueprint_poc.py"]},
       "classification": "Character Blueprint product work exists in agentmanager but canonical product repository has not been verified; similar repository name is not sufficient identity evidence",
       "retire_when": ["explicitly establish canonical project identity/repository", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
-      "safe_now": "preserve_pr_53_and_do_not_merge_to_core"
+      "safe_now": "freeze PR #53 as migration source; preserve and do not merge to Core"
     },
     {
       "project_id": "model2ir",
@@ -65,19 +72,30 @@
       "safe_now": "do_not_add_new_model2ir_implementation_to_core"
     }
   ],
+  "mixed_prs": [
+    {
+      "pr": 125,
+      "classification": "mixed_core_social_capability_and_vendor_ingestion",
+      "core_extraction_issue": 144,
+      "product_issue": "alston-personal/vendor-reputation-service#27",
+      "product_owned_files": ["agentos_node/social/vendor_ingest.py", "tests/test_vendor_threads_ingest.py"],
+      "rule": "do_not_merge_as_is; extract independently justified generic Core delta and migrate Vendor-specific semantics"
+    }
+  ],
   "legacy_core_proposals": [
     {"pr": 2, "classification": "core_proposal_extract_needed"},
     {"pr": 17, "classification": "core_proposal_extract_needed"},
     {"pr": 22, "classification": "core_proposal_extract_needed"},
     {"pr": 43, "classification": "core_proposal_extract_needed"},
     {"pr": 18, "classification": "generic_capability_candidate_review_separately"},
-    {"pr": 125, "classification": "mixed_core_and_vendor_scope_must_split"}
+    {"pr": 125, "classification": "mixed_core_and_vendor_scope_must_split_via_issue_144"}
   ],
   "rules": {
     "main": "accepted/promotion state; not active agent workspace",
     "development": "feature/fix branch, optionally through develop/integration",
     "poc_staging": "exact candidate SHA/artifact allowed",
     "production": "exact accepted main SHA/tag/release artifact",
-    "carrier_retirement": "never remove until canonical product-owned replacement and runtime parity evidence exist"
+    "carrier_retirement": "never remove until canonical product-owned replacement and runtime parity evidence exist",
+    "migration_blocking": "block only the exact dependent step, never the whole product"
   }
 }
