@@ -1,0 +1,47 @@
+{
+  "schema": "agentos.antigravity-timeout-diagnosis/v1",
+  "observed_at": "2026-08-31T03:11:02Z",
+  "capsule_id": "relay-175197f0cae74cfebd6f6655c3abcc45",
+  "artifacts": {
+    "inbox": {
+      "path": "/home/ubuntu/agent-data/runtime/antigravity-relay/inbox/relay-175197f0cae74cfebd6f6655c3abcc45.json",
+      "exists": false
+    },
+    "processing": {
+      "path": "/home/ubuntu/agent-data/runtime/antigravity-relay/processing/relay-175197f0cae74cfebd6f6655c3abcc45.json",
+      "exists": false
+    },
+    "receipts": {
+      "path": "/home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-175197f0cae74cfebd6f6655c3abcc45.json",
+      "exists": true,
+      "stat": {
+        "size": 513,
+        "mtime": 1788145799.857742
+      },
+      "content": {
+        "capsule_id": "relay-175197f0cae74cfebd6f6655c3abcc45",
+        "completed_at": "2026-08-31T03:09:59Z",
+        "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.251-linux-arm64/resources/native-binary/claude",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "returncode": 124,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-08-31T03:06:59Z",
+        "stderr": "\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+        "stdout": "",
+        "timed_out": true
+      }
+    }
+  },
+  "service": {
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "Failed to connect to bus: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined (consider using --machine=<user>@.host --user to connect to bus of other user)"
+  },
+  "relevant_processes": [
+    "3538468    1027 root       47504 /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay",
+    "3538469 3538468 ubuntu     47504 sh -c /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay",
+    "3538470 3538469 ubuntu     47504 /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay"
+  ],
+  "classification": "late_receipt_executor_timeout"
+}
