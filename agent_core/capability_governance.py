@@ -68,6 +68,39 @@ DEFAULT_CAPABILITY_POLICIES: dict[str, CapabilityPolicy] = {
     'desktop.keyboard': CapabilityPolicy(
         'desktop.keyboard', RiskLevel.MEDIUM, approval='policy', evidence=('before_state', 'receipt', 'after_state'), max_lease_seconds=300
     ),
+    'social.threads.identity.read': CapabilityPolicy(
+        'social.threads.identity.read', RiskLevel.LOW, evidence=('receipt',)
+    ),
+    'social.threads.post.read': CapabilityPolicy(
+        'social.threads.post.read', RiskLevel.LOW, evidence=('receipt',)
+    ),
+    'social.threads.replies.read': CapabilityPolicy(
+        'social.threads.replies.read', RiskLevel.LOW, evidence=('receipt',)
+    ),
+    'social.threads.publish': CapabilityPolicy(
+        'social.threads.publish', RiskLevel.MEDIUM, approval='policy', evidence=('content_hash', 'receipt'), max_lease_seconds=300
+    ),
+    'social.threads.reply': CapabilityPolicy(
+        'social.threads.reply', RiskLevel.MEDIUM, approval='policy', evidence=('content_hash', 'receipt'), max_lease_seconds=300
+    ),
+    'social.facebook.identity.read': CapabilityPolicy(
+        'social.facebook.identity.read', RiskLevel.LOW, evidence=('receipt',)
+    ),
+    'social.facebook.publish': CapabilityPolicy(
+        'social.facebook.publish', RiskLevel.MEDIUM, approval='policy', evidence=('content_hash', 'receipt'), max_lease_seconds=300
+    ),
+    'social.facebook.reply': CapabilityPolicy(
+        'social.facebook.reply', RiskLevel.MEDIUM, approval='policy', evidence=('content_hash', 'receipt'), max_lease_seconds=300
+    ),
+    'social.instagram.identity.read': CapabilityPolicy(
+        'social.instagram.identity.read', RiskLevel.LOW, evidence=('receipt',)
+    ),
+    'social.instagram.publish': CapabilityPolicy(
+        'social.instagram.publish', RiskLevel.MEDIUM, approval='policy', evidence=('content_hash', 'receipt'), max_lease_seconds=300
+    ),
+    'social.instagram.reply': CapabilityPolicy(
+        'social.instagram.reply', RiskLevel.MEDIUM, approval='policy', evidence=('content_hash', 'receipt'), max_lease_seconds=300
+    ),
     'service.restart': CapabilityPolicy(
         'service.restart', RiskLevel.HIGH, approval='policy', recovery=RecoveryRequirement(required=True, rollback_action='service.start'), evidence=('preflight', 'receipt', 'postcheck')
     ),
