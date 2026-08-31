@@ -1,0 +1,155 @@
+name: Oracle Release Model2IR Lab v0.1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model2ir-lab-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify source and real-library contract before release
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/libs/model2ir/src:$PWD"
+          python3 - <<'PY'
+          import model2ir
+          assert model2ir.__version__ == '0.9.1', model2ir.__version__
+          print('model2ir_version=' + model2ir.__version__)
+          PY
+          python3 -m py_compile scripts/model2ir_lab_server.py scripts/deploy_model2ir_lab.py
+          python3 -m unittest tests.test_model2ir_lab -v
+          grep -q 'data-model2ir-lab-version="0.1.0"' web_assets/model2ir-lab.html
+          grep -q 'Three.js 在這裡只負責顯示模型' web_assets/model2ir-lab.html
+          grep -q 'multi-file' web_assets/model2ir-lab.html
+          grep -q 'automatic_promotion_of_inference' scripts/model2ir_lab_server.py
+          echo 'model2ir_lab_release_source=PASS'
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Stage exact mainline source and deploy governed runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          test "${#GITHUB_SHA}" -eq 40
+          STAGE=/tmp/model2ir-lab-${GITHUB_RUN_ID}
+          tar czf - \
+            libs/model2ir/src/model2ir \
+            scripts/model2ir_lab_server.py \
+            scripts/deploy_model2ir_lab.py \
+            web_assets/model2ir-lab.html \
+          | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "rm -rf '$STAGE' && mkdir -p '$STAGE' && tar xzf - -C '$STAGE'"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "sudo -n python3 '$STAGE/scripts/deploy_model2ir_lab.py' --root '$STAGE' --source-sha '$GITHUB_SHA'" \
+            | tee /tmp/model2ir-lab-deploy.json
+          python3 -m json.tool /tmp/model2ir-lab-deploy.json >/dev/null
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/model2ir-lab-deploy.json'))
+          assert x['ok'] is True, x
+          assert x['source_sha'] == __import__('os').environ['GITHUB_SHA'], x
+          assert x['model2ir_version'] == '0.9.1', x
+          assert x['local_backend_health'] is True, x
+          assert x['local_proxy_health'] is True, x
+          assert x['local_proxy_analysis'] is True, x
+          assert x['truth_promotion_guard'] is True, x
+          assert x['multi_file_gltf_supported'] is False, x
+          assert x['uploaded_assets_persisted'] is False, x
+          PY
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "rm -rf '$STAGE'"
+          echo 'model2ir_lab_oracle_deploy=PASS'
+
+      - name: Public Studio identity and API acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          BASE=https://studio.milkcat.org
+          for i in $(seq 1 12); do
+            curl -fsS --retry 2 --retry-delay 1 --retry-all-errors "$BASE/poc/model2ir-lab/" -o "$TMP/page" && \
+            curl -fsS --retry 2 --retry-delay 1 --retry-all-errors "$BASE/api/model2ir/v1/healthz" -o "$TMP/health.json" && break
+            sleep 2
+          done
+          grep -q 'data-model2ir-lab-version="0.1.0"' "$TMP/page"
+          grep -q 'Model2IR Lab v0.1' "$TMP/page"
+          grep -q 'Three.js 在這裡只負責顯示模型' "$TMP/page"
+          grep -q 'multi-file' "$TMP/page"
+          python3 - <<'PY' "$TMP/health.json"
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert x['ok'] is True, x
+          assert x['model2ir_version']=='0.9.1', x
+          assert x['bind_policy']=='localhost-only', x
+          assert x['multi_file_gltf_supported'] is False, x
+          PY
+          python3 - <<'PY' "$TMP/public-smoke.glb"
+          import json,struct,sys
+          payload=json.dumps({'asset':{'version':'2.0'},'nodes':[],'meshes':[]},separators=(',',':')).encode()
+          payload += b' ' * ((4-len(payload)%4)%4)
+          chunk=struct.pack('<II',len(payload),0x4E4F534A)+payload
+          open(sys.argv[1],'wb').write(struct.pack('<4sII',b'glTF',2,12+len(chunk))+chunk)
+          PY
+          curl -fsS --retry 3 --retry-delay 2 --retry-all-errors --max-time 55 \
+            -H 'Content-Type: application/octet-stream' \
+            -H 'X-Model2IR-Filename: public-smoke.glb' \
+            --data-binary @"$TMP/public-smoke.glb" \
+            "$BASE/api/model2ir/v1/analyze" -o "$TMP/analysis.json"
+          python3 - <<'PY' "$TMP/analysis.json" "$GITHUB_SHA"
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert x['ok'] is True, x
+          a=x['analysis']
+          assert a['analysis_source']=='python-model2ir-library', a
+          assert a['asset']['persisted'] is False, a
+          assert a['summary']['inferred']['result_role']=='stabilized-candidate', a
+          assert a['truth_policy']['automatic_promotion_of_inference'] is False, a
+          assert a['results']['audit']['repeats']==3, a
+          receipt={
+            'schema':'model2ir-lab-public-acceptance/v0.1',
+            'ok':True,
+            'source_sha':sys.argv[2],
+            'page_identity':'v0.1.0',
+            'api_health':True,
+            'real_library_analysis':True,
+            'external_result_role':'stabilized-candidate',
+            'automatic_promotion_of_inference':False,
+            'audit_repeats':3,
+            'uploaded_assets_persisted':False,
+            'multi_file_gltf_supported':False,
+          }
+          open('/tmp/model2ir-lab-public-acceptance.json','w').write(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(receipt,sort_keys=True))
+          PY
+          echo 'model2ir_lab_public_acceptance=PASS'
+
+      - name: Upload sanitized release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-lab-v01-release-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            /tmp/model2ir-lab-deploy.json
+            /tmp/model2ir-lab-public-acceptance.json
+          retention-days: 30
