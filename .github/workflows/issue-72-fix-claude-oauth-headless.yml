@@ -1,0 +1,86 @@
+name: Issue 72 Fix Claude OAuth Headless Contract
+
+on:
+  push:
+    branches: [core/issue-72-claude-liveness]
+    paths: [.github/workflows/issue-72-fix-claude-oauth-headless.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/issue-72-claude-liveness
+          fetch-depth: 0
+
+      - name: Preserve ubuntu OAuth identity in Claude headless execution
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          worker=Path('agentos_node/antigravity_relay_worker.py')
+          text=worker.read_text(encoding='utf-8')
+          old='return [str(candidate), "--bare", "--print", "--output-format", "text", "--effort", "low"]'
+          new='return [str(candidate), "--print", "--output-format", "text", "--effort", "low"]'
+          count=text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly two Claude --bare discovery contracts, found {count}')
+          text=text.replace(old,new)
+          anchor='def _discover_claude() -> list[str] | None:\n'
+          note=(
+              'def _discover_claude() -> list[str] | None:\n'
+              '    # Preserve the ubuntu-owned Claude/Antigravity login identity. Claude\n'
+              '    # `--bare` intentionally bypasses OAuth/keychain subscription auth,\n'
+              '    # which is incompatible with this relay boundary. `--print` remains\n'
+              '    # the fixed non-interactive execution mode; capsules still cannot\n'
+              '    # provide argv, credentials, provider selection, or timeout values.\n'
+          )
+          if note not in text:
+              text=text.replace(anchor,note,1)
+          worker.write_text(text,encoding='utf-8')
+
+          tests=Path('tests/test_antigravity_relay_worker.py')
+          t=tests.read_text(encoding='utf-8')
+          insert='''\n    def test_claude_discovery_preserves_ubuntu_oauth_identity(self) -> None:\n        fake_binary = Path(\"/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.251-linux-arm64/resources/native-binary/claude\")\n        with patch.dict(\"agentos_node.antigravity_relay_worker.os.environ\", {\"AGENTOS_ANTIGRAVITY_EXECUTOR\": str(fake_binary)}, clear=False), \\\n             patch.object(Path, \"is_file\", return_value=True), \\\n             patch(\"agentos_node.antigravity_relay_worker.os.access\", return_value=True):\n            provider, executor = discover_executor(\"claude\")\n        self.assertEqual(provider, \"claude\")\n        self.assertIsNotNone(executor)\n        self.assertEqual(executor[0], str(fake_binary))\n        self.assertIn(\"--print\", executor)\n        self.assertIn(\"--output-format\", executor)\n        self.assertIn(\"--effort\", executor)\n        self.assertNotIn(\"--bare\", executor)\n\n    def test_claude_executor_argv_stays_noninteractive_without_bare(self) -> None:\n        with tempfile.TemporaryDirectory() as td:\n            workspace = Path(td)\n            worker = AntigravityRelayWorker(\n                workspace / \"relay\",\n                provider=\"claude\",\n                executor=[\"/tmp/claude\", \"--print\", \"--output-format\", \"text\", \"--effort\", \"low\"],\n            )\n            argv = worker._executor_argv(\n                {\"canonical_ir\": {\"goal\": \"probe\"}, \"instruction\": \"Return exactly PASS\"},\n                workspace,\n            )\n            self.assertEqual(argv[0], \"/tmp/claude\")\n            self.assertIn(\"--print\", argv)\n            self.assertNotIn(\"--bare\", argv)\n            self.assertIn(\"Return exactly PASS\", argv[-1])\n'''
+          marker='    def test_agy_provider_uses_fixed_agentos_cli_path(self) -> None:\n'
+          if 'test_claude_discovery_preserves_ubuntu_oauth_identity' not in t:
+              if marker not in t:
+                  raise SystemExit('test insertion marker missing')
+              t=t.replace(marker,insert+'\n'+marker,1)
+          tests.write_text(t,encoding='utf-8')
+
+          # Keep the already-authorized diagnostic semantics aligned with the
+          # actual comparison: normal and restricted headless must preserve OAuth.
+          action=Path('agentos_node/action_relay.py')
+          a=action.read_text(encoding='utf-8')
+          a=a.replace('fixed = [binary]\n              if probe == "restricted_headless_print":', 'fixed = [binary]\n              if probe == "restricted_headless_print":')
+          a=a.replace('fixed.extend(["--bare", "--print", "--output-format", "text", "--effort", "low", prompt])', 'fixed.extend(["--print", "--output-format", "text", "--effort", "low", prompt])')
+          action.write_text(a,encoding='utf-8')
+
+          diagtests=Path('tests/test_claude_liveness_action.py')
+          d=diagtests.read_text(encoding='utf-8')
+          d=d.replace('self.assertNotIn("--restricted", invoked)', 'self.assertNotIn("--restricted", invoked)\n        self.assertNotIn("--bare", invoked)')
+          d=d.replace('self.assertIn("--restricted", run.call_args.args[0])', 'self.assertIn("--restricted", run.call_args.args[0])\n        self.assertNotIn("--bare", run.call_args.args[0])')
+          diagtests.write_text(d,encoding='utf-8')
+          PY
+
+      - name: Run executor and diagnostic regressions
+        run: |
+          python3 -m unittest tests.test_antigravity_relay_worker tests.test_action_relay tests.test_claude_liveness_action -v
+          python3 -m py_compile agentos_node/antigravity_relay_worker.py agentos_node/action_relay.py tests/test_antigravity_relay_worker.py tests/test_claude_liveness_action.py
+          ! grep -n 'return \[str(candidate), "--bare"' agentos_node/antigravity_relay_worker.py
+
+      - name: Commit OAuth-preserving executor contract
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add agentos_node/antigravity_relay_worker.py agentos_node/action_relay.py tests/test_antigravity_relay_worker.py tests/test_claude_liveness_action.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(agentos): preserve Claude OAuth identity in headless relay'
+          git push origin HEAD:core/issue-72-claude-liveness
