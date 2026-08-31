@@ -14,6 +14,8 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.executor_bridge import FileExecutorBridge
+from agentos_node.executor_registry import ExecutorRegistry
 from agentos_node.session_bridge import FileSessionBridge
 
 
@@ -71,11 +73,18 @@ class ThinClient:
         'code', 'cursor', 'antigravity', 'claude', 'codex', 'gemini',
     )
 
-    def __init__(self, identity: NodeIdentity, policy: ThinClientPolicy):
+    def __init__(
+        self,
+        identity: NodeIdentity,
+        policy: ThinClientPolicy,
+        *,
+        executor_registry: ExecutorRegistry | None = None,
+    ):
         self.identity = identity
         self.policy = policy
         self.hostname = socket.gethostname()
         self.started_at = _utc_now()
+        self.executors = executor_registry or ExecutorRegistry()
 
     def discover_tools(self) -> dict[str, str]:
         found: dict[str, str] = {}
@@ -88,10 +97,8 @@ class ThinClient:
     def surface_inventory(self) -> dict[str, Any]:
         return discover_surfaces()
 
-    def capability_manifest(self) -> dict[str, Any]:
-        tools = self.discover_tools()
-        surface_inventory = self.surface_inventory()
-        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
+    def _local_capabilities(self, surface_inventory: dict[str, Any]) -> list[str]:
+        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect', 'executor.inspect']
         caps.extend(surface_inventory.get('capabilities') or [])
         if self.policy.allowed_executables:
             caps.append('shell.exec')
@@ -99,11 +106,14 @@ class ThinClient:
             caps.append('filesystem.read')
         if self.policy.writable_roots:
             caps.append('filesystem.write')
-        if platform.system() == 'Windows':
-            caps.extend([
-                'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
-                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
-            ])
+        return sorted(set(caps))
+
+    def capability_manifest(self) -> dict[str, Any]:
+        tools = self.discover_tools()
+        surface_inventory = self.surface_inventory()
+        local_caps = self._local_capabilities(surface_inventory)
+        caps = self.executors.available_capabilities(local_capabilities=local_caps)
+        executor_inventory = self.executors.inventory(local_capabilities=local_caps)
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -114,7 +124,8 @@ class ThinClient:
             'platform_release': platform.release(),
             'python_version': platform.python_version(),
             'observed_at': _utc_now(),
-            'capabilities': sorted(set(caps)),
+            'capabilities': caps,
+            'executors': executor_inventory,
             'tool_presence': tools,
             'surface_inventory': surface_inventory,
             'workspace_roots': {
@@ -134,6 +145,7 @@ class ThinClient:
             'observed_at': _utc_now(),
             'uptime_seconds': max(0, int(time.time() - datetime.fromisoformat(self.started_at.replace('Z', '+00:00')).timestamp())),
             'capability_count': len(manifest['capabilities']),
+            'executor_count': len(manifest.get('executors') or []),
             'surface_count': int((manifest.get('surface_inventory') or {}).get('surface_count') or 0),
             'manifest': manifest,
         }
@@ -167,6 +179,10 @@ class ThinClient:
                 result = self._read_file(task)
             elif action == 'filesystem.write':
                 result = self._write_file(task)
+            elif action == 'executor.inspect':
+                surface_inventory = self.surface_inventory()
+                local_caps = self._local_capabilities(surface_inventory)
+                result = {'executors': self.executors.inventory(local_capabilities=local_caps)}
             elif action == 'agent.surface.inspect':
                 result = {'surface_inventory': self.surface_inventory()}
             elif action == 'agent.session.discover':
@@ -190,19 +206,28 @@ class ThinClient:
                 if not request_id:
                     raise ValueError('request_id is required')
                 result = {'session_receipt': self._session_bridge(task).receipt(request_id)}
-            elif action == 'desktop.session.inspect':
-                result = {'desktop': interactive_desktop.session_info()}
-            elif action == 'desktop.windows.inspect':
-                result = interactive_desktop.inspect_windows()
-            elif action == 'desktop.open_url':
-                result = interactive_desktop.open_url(str(task.get('url') or ''))
-            elif action == 'desktop.screenshot':
-                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
-                result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
-            elif action == 'desktop.mouse':
-                result = interactive_desktop.mouse(task)
-            elif action == 'desktop.keyboard':
-                result = interactive_desktop.keyboard(task)
+            elif str(action).startswith('desktop.'):
+                desktop = self.executors.require_desktop()
+                if desktop.kind == 'interactive-desktop-bridge':
+                    result = FileExecutorBridge.from_environment('desktop').execute(
+                        task,
+                        timeout_seconds=min(float(task.get('timeout_seconds') or 30), float(self.policy.max_timeout_seconds)),
+                    )
+                elif action == 'desktop.session.inspect':
+                    result = {'desktop': interactive_desktop.session_info()}
+                elif action == 'desktop.windows.inspect':
+                    result = interactive_desktop.inspect_windows()
+                elif action == 'desktop.open_url':
+                    result = interactive_desktop.open_url(str(task.get('url') or ''))
+                elif action == 'desktop.screenshot':
+                    workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
+                    result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
+                elif action == 'desktop.mouse':
+                    result = interactive_desktop.mouse(task)
+                elif action == 'desktop.keyboard':
+                    result = interactive_desktop.keyboard(task)
+                else:
+                    raise ValueError(f'unsupported desktop action: {action}')
             else:
                 raise ValueError(f'unsupported action: {action}')
             receipt.update(result)

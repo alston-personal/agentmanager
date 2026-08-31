@@ -29,10 +29,17 @@ if ($major -lt 3) { throw "Python 3 is required; found $version" }
 
 $files = @(
   'agentos_node/__init__.py',
-  'agentos_node/thin_client.py',
+  'agentos_node/agent_surfaces.py',
+  'agentos_node/client_cli.py',
+  'agentos_node/desktop_executor_cli.py',
+  'agentos_node/desktop_executor_host.py',
+  'agentos_node/executor_bridge.py',
+  'agentos_node/executor_registry.py',
   'agentos_node/interactive_desktop.py',
-  'agentos_node/thin_client_transport.py',
-  'agentos_node/client_cli.py'
+  'agentos_node/onboarding.py',
+  'agentos_node/session_bridge.py',
+  'agentos_node/thin_client.py',
+  'agentos_node/thin_client_transport.py'
 )
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')
@@ -45,8 +52,10 @@ $clientCliText = Get-Content -Raw $clientCli
 if ($clientCliText -notmatch "encoding='utf-8-sig'") {
   throw "Downloaded client_cli.py failed BOM-compatibility guard (ref=$Ref)"
 }
-if (-not (Test-Path (Join-Path $Pkg 'interactive_desktop.py'))) {
-  throw "Interactive Desktop Adapter missing (ref=$Ref)"
+foreach ($required in @('interactive_desktop.py','executor_bridge.py','executor_registry.py','desktop_executor_host.py','desktop_executor_cli.py')) {
+  if (-not (Test-Path (Join-Path $Pkg $required))) {
+    throw "Required AgentOS runtime module missing: $required (ref=$Ref)"
+  }
 }
 
 $policy = @{
@@ -68,24 +77,21 @@ $launcherPath = Join-Path $InstallRoot 'agentos-client.cmd'
 $launcher | Set-Content -Encoding ASCII $launcherPath
 
 if ($EnableAutostart) {
-  if (-not (Test-Path (Join-Path $State 'client.json'))) {
-    throw 'Client is not enrolled yet. Run agentos-client.cmd join first, then rerun installer with -EnableAutostart.'
-  }
-  $taskName = 'AgentOS Thin Client'
-  $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/d /c `"$launcherPath`" run" -WorkingDirectory $InstallRoot
-  $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
-  Start-ScheduledTask -TaskName $taskName
-  Write-Host "Autostart enabled: $taskName"
+  throw @'
+-EnableAutostart no longer installs the combined interactive Thin Client task.
+AgentOS now separates the always-on Node Runtime from user-session executors.
+Install the Node Runtime Windows Service with scripts/windows/install_node_runtime_service.ps1,
+then install the interactive desktop executor with scripts/windows/install_desktop_executor_user.ps1.
+'@
 }
 
-Write-Host "AgentOS Thin Client installed: $InstallRoot"
+Write-Host "AgentOS Thin Client runtime installed: $InstallRoot"
 Write-Host "Source commit: $Ref"
 Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
 Write-Host "Launcher: $launcherPath"
-Write-Host "Interactive Desktop Adapter: installed"
+Write-Host "Executor bridge runtime: installed"
 Write-Host ''
-Write-Host 'Next command:'
+Write-Host 'Next command for a new node:'
 Write-Host "  & '$launcherPath' join --one https://studio.milkcat.org/dashboard/api/agentos"
+Write-Host 'After enrollment, install the split Node Service and user-session Desktop Executor carriers.'

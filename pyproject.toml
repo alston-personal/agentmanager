@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 agentos-node = "agentos_node.cli:main"
 agentos-client = "agentos_node.client_cli:main"
+agentos-desktop-executor = "agentos_node.desktop_executor_cli:main"
 agentos-one = "agent_core.realm_cli:main"
 
 [tool.setuptools.packages.find]

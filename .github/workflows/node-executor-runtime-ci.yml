@@ -1,0 +1,114 @@
+name: Node Executor Runtime CI
+
+on:
+  push:
+    branches:
+      - feature/node-executor-runtime
+    paths:
+      - 'agentos_node/desktop_executor_cli.py'
+      - 'agentos_node/desktop_executor_host.py'
+      - 'agentos_node/executor_bridge.py'
+      - 'agentos_node/executor_registry.py'
+      - 'agentos_node/thin_client.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - 'scripts/windows/install_node_runtime_service.ps1'
+      - 'scripts/windows/install_desktop_executor_user.ps1'
+      - 'scripts/windows/migrate_split_node_executor_runtime.ps1'
+      - 'tests/test_executor_bridge.py'
+      - 'tests/test_executor_registry.py'
+      - 'tests/test_thin_client.py'
+      - 'pyproject.toml'
+      - '.github/workflows/node-executor-runtime-ci.yml'
+  pull_request:
+    paths:
+      - 'agentos_node/desktop_executor_cli.py'
+      - 'agentos_node/desktop_executor_host.py'
+      - 'agentos_node/executor_bridge.py'
+      - 'agentos_node/executor_registry.py'
+      - 'agentos_node/thin_client.py'
+      - 'scripts/install_thin_client_windows.ps1'
+      - 'scripts/windows/install_node_runtime_service.ps1'
+      - 'scripts/windows/install_desktop_executor_user.ps1'
+      - 'scripts/windows/migrate_split_node_executor_runtime.ps1'
+      - 'tests/test_executor_bridge.py'
+      - 'tests/test_executor_registry.py'
+      - 'tests/test_thin_client.py'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run executor bridge and thin client tests
+        run: |
+          python -m unittest tests.test_executor_bridge tests.test_executor_registry tests.test_thin_client -v
+          python -m py_compile agentos_node/desktop_executor_cli.py agentos_node/desktop_executor_host.py agentos_node/executor_bridge.py agentos_node/executor_registry.py agentos_node/thin_client.py
+      - name: Validate node and desktop carrier boundaries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path('scripts/windows/install_node_runtime_service.ps1').read_text(encoding='utf-8')
+          desktop = Path('scripts/windows/install_desktop_executor_user.ps1').read_text(encoding='utf-8')
+          migration = Path('scripts/windows/migrate_split_node_executor_runtime.ps1').read_text(encoding='utf-8')
+          bootstrap = Path('scripts/install_thin_client_windows.ps1').read_text(encoding='utf-8')
+          host = Path('agentos_node/desktop_executor_host.py').read_text(encoding='utf-8')
+          pyproject = Path('pyproject.toml').read_text(encoding='utf-8')
+
+          assert 'sc.exe create $ServiceName' in service
+          assert 'ServiceName = RuntimeServiceName' in service
+          assert 'AGENTOS_DESKTOP_EXECUTOR_BRIDGE' in service
+          assert "Disable-ScheduledTask -TaskName $LegacyTaskName" in service
+          assert 'agentos_node.client_cli' not in desktop
+          assert 'agentos_node.desktop_executor_cli' in desktop
+          assert '-LogonType Interactive' in desktop
+          assert 'ThinClientTransport' not in host
+          assert 'node_token' not in host
+          assert 'agentos-desktop-executor = "agentos_node.desktop_executor_cli:main"' in pyproject
+          assert 'Register-ScheduledTask' not in bootstrap
+          assert 'executor_bridge.py' in bootstrap and 'desktop_executor_host.py' in bootstrap
+          assert 'migration-backup-' in migration
+          assert 'Restore-LegacyRuntime' in migration
+          assert '[uri]::EscapeDataString($SourceRef)' in migration
+          assert 'client.json' in migration and 'policy.json' in migration
+          print('node_desktop_carrier_boundary=PASS')
+          PY
+
+  windows-syntax:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Parse PowerShell carrier scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'scripts/install_thin_client_windows.ps1',
+            'scripts/windows/install_node_runtime_service.ps1',
+            'scripts/windows/install_desktop_executor_user.ps1',
+            'scripts/windows/migrate_split_node_executor_runtime.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed: $file"
+            }
+            Write-Host "powershell_parse=PASS file=$file"
+          }
+      - name: Compile executor Python modules on Windows
+        shell: powershell
+        run: |
+          python -m py_compile agentos_node/desktop_executor_cli.py agentos_node/desktop_executor_host.py agentos_node/executor_bridge.py agentos_node/executor_registry.py agentos_node/interactive_desktop.py agentos_node/thin_client.py

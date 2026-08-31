@@ -25,6 +25,9 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Project release-lane authority | Implemented + tested | `.agent/governance/project_release_lanes.yaml`, `scripts/check_project_release_lane.py` | `tests/test_project_release_lane.py`, `Project Release Lane Guard` |
 | Pinned project POC candidate deployment | Implemented for LayoutLib candidate path | `.github/workflows/oracle-release-layoutlab-v08-dev.yml` | release-lane static acceptance + public POC acceptance after dispatch |
 | Node registry / capability discovery | Implemented + tested | `agent_core/node_registry.py`, `scripts/agentos_node.py` | `tests/test_agentos_node.py`, `tests/test_node_registry_v01.py` |
+| Node / executor separation | Implemented + tested on feature branch | `agentos_node/executor_registry.py`, `agentos_node/executor_bridge.py`, `agentos_node/thin_client.py` | `tests/test_executor_registry.py`, `tests/test_executor_bridge.py`, `Node Executor Runtime CI` |
+| Windows always-on Node Runtime carrier | Implemented, not yet live-verified | `scripts/windows/install_node_runtime_service.ps1` | Windows-native syntax CI; requires live `vopc5750` heartbeat acceptance |
+| Windows interactive Desktop executor carrier | Implemented, not yet live-verified | `agentos_node/desktop_executor_host.py`, `agentos_node/desktop_executor_cli.py`, `scripts/windows/install_desktop_executor_user.ps1` | bridge/unit tests + Windows-native syntax CI; requires live desktop acceptance |
 | Governance responsibility resolution | Implemented + tested | `agent_core/governance_directory.py` | `tests/test_governance_directory.py`, governance audit workflow/evidence |
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
@@ -97,6 +100,12 @@ Compaction, replay, stale tool results, or executor switching must not replace a
 ### Evidence is not intent
 
 Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal.
+
+### Node identity is not executor availability
+
+A Node is the durable transport/control-plane participant. Executors are capability providers attached to that Node and may independently become available or unavailable. In particular, Windows being online must not imply that an interactive desktop is available. A Session 0 Node Runtime must remain able to heartbeat, receive work, report executor status, and recover even when the Desktop executor is absent.
+
+The Windows Desktop executor is intentionally hosted in the logged-in user session. Its interactive Scheduled Task is an executor carrier only; it must not own the Realm transport credential or become the Node's liveness boundary. The always-on Node Runtime belongs to the Windows Service carrier.
 
 ### Capability does not imply authority
 
