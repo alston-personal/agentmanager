@@ -11,9 +11,25 @@ This document classifies non-Core work that still appears in `alston-personal/ag
 | Vendor Reputation | `alston-personal/vendor-reputation-service` | PR #97 patrol artifact carrier, #99 calibration carrier, #127 monitored-source scheduler | Keep temporarily. Product implementation is already outside Core, but Oracle execution/scheduling carriers still depend on Core infrastructure. Migrate after a governed product-owned runner/capability path is verified. |
 | ArcanaForge | `alston-personal/arcanaforge` | PR #136 POC release carrier | Keep until #66 provides a governed static-release path and an exact ArcanaForge source/artifact receipt can drive `/poc/arcanaforge/`. |
 | LayoutLib | `alston-personal/layoutlib` | Core-side deploy/governance residue tracked by #96 | Keep only generic deployment/promotion adapter. Layout implementation and product tests stay in `layoutlib`; POC consumes exact candidate SHA, production consumes promoted release. |
-| Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | remaining residue still requires file-level inventory | Product repo already has PR #41 implementing a production parity gate. This is the preferred ownership pattern: product-specific parity checks stay with the product. |
+| Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | historical `ops/leopardcat-runtime-inspect` and `chore/leopardcat-runtime-inspect` carrier branches plus Tarot-specific deploy/inspect/probe workflows | Product handoff is `alston-personal/leopardcat-tarot#44`. PR #41 is a product-owned read-only parity gate, but retirement also requires a product-owned write/deploy replacement (or thin caller of a generic governed Core deploy capability) and exact runtime/artifact evidence. |
 | Character Blueprint | unresolved; `alston-personal/charactergenerator` is only a candidate | PR #53 browser/deployer fix | Preserve, do not merge into Core. First establish explicit Project Identity and canonical repo, then migrate with parity evidence. |
 | Model2IR | unresolved | future risk of implementation landing in Core | Do not add new Model2IR implementation to `agentmanager`; assign/create a canonical library repo first. |
+
+## Leopard Cat Tarot carrier inventory
+
+The remaining Tarot residue has now been reduced from an unspecified file-level inventory to explicit historical carrier provenance:
+
+- `ops/leopardcat-runtime-inspect` @ `141bbfe27b789c5803c9c5b469d76377debf7aeb` — manual-draw production verification carrier;
+- `chore/leopardcat-runtime-inspect` @ `d51487149b5911333b0f0a5e5a8171fe1afba26e` — production frontend bundle build/verification carrier;
+- Tarot-specific workflow surfaces observed in the carrier history include:
+  - `.github/workflows/ops-leopardcat-ai-probe.yml`;
+  - `.github/workflows/ops-leopardcat-runtime-deploy.yml`;
+  - `.github/workflows/ops-leopardcat-runtime-inspect.yml`;
+  - `.github/workflows/leopardcat-production-deploy.yml` (modified by the latest carrier commit).
+
+The canonical product repository already owns product-side Oracle/runtime inspection and production AI probing. PR `alston-personal/leopardcat-tarot#41` adds a read-only `Production Parity Gate`. That is necessary evidence, but it is not sufficient to retire a write-capable production deploy carrier. Product issue `alston-personal/leopardcat-tarot#44` therefore owns the remaining deploy/parity handoff.
+
+Core must not delete or merge these historical carriers into `core/integration`. They become retirement candidates only after #44 demonstrates a product-owned deployment path (or a thin product caller of a generic governed Core deploy surface), exact source/artifact identity, public/runtime parity, and persisted receipt/evidence.
 
 ## Legacy Core proposal separation
 
