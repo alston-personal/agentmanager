@@ -14,12 +14,23 @@ jobs:
   inspect:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 4
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Inspect LeopardCat production runtime read-only
         shell: bash
         run: |
           set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -u
           echo '=== identity ==='
           id
           hostname
@@ -40,9 +51,9 @@ jobs:
           echo
 
           echo '=== candidate repositories ==='
-          for base in /home/ubuntu /home/agentos-node /opt /srv /var/www; do
+          for base in /home/ubuntu /opt /srv /var/www; do
             test -d "$base" || continue
-            find "$base" -maxdepth 5 -type d -name .git -print 2>/dev/null | while read -r gitdir; do
+            while IFS= read -r gitdir; do
               repo="${gitdir%/.git}"
               remote="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
               case "$remote $repo" in
@@ -55,7 +66,7 @@ jobs:
                   echo '---'
                   ;;
               esac
-            done
+            done < <(find "$base" -maxdepth 5 -type d -name .git -print 2>/dev/null || true)
           done
           echo
 
@@ -69,3 +80,4 @@ jobs:
           echo
           echo '=== public health ==='
           curl -sS -o /dev/null -w 'public_http=%{http_code}\n' --max-time 8 https://leopardcat-tarot.milkcat.org/ || true
+          REMOTE
