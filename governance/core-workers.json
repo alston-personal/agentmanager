@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T01:24:00Z",
+  "generated_at": "2026-08-31T01:53:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -75,18 +75,18 @@
       "execution_lane": "independent-worker",
       "dependencies": [130],
       "blocking_scope": ["arcanaforge:poc-static-release"],
-      "evidence": [],
+      "evidence": ["alston-personal/arcanaforge#2"],
       "non_authorities": ["arbitrary shell authority", "protected-main merge"]
     },
     {
       "issue": 118,
       "name": "Repository-boundary cleanup",
-      "branch": "core/issue-118-repo-boundary",
+      "branch": "core/issue-118-product-migration-inventory",
       "status": "running",
       "execution_lane": "architecture-migration-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": ["docs/PROJECT_REPO_MAP.md", "pull/141"],
+      "evidence": ["docs/PROJECT_REPO_MAP.md", "docs/PRODUCT_MIGRATION_INVENTORY.md", "pull/141", "alston-personal/vendor-reputation-service#26", "alston-personal/arcanaforge#2"],
       "non_authorities": ["global product feature pause", "destructive historical branch deletion", "protected-main merge"]
     },
     {
@@ -99,6 +99,17 @@
       "blocking_scope": [],
       "evidence": ["docs/CORE_WORKER_MODEL.md", "governance/core-workers.json", "pull/140"],
       "non_authorities": ["protected-main merge"]
+    },
+    {
+      "issue": 144,
+      "name": "Extract generic social capability from mixed PR #125",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-core-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "evidence": ["pull/125", "alston-personal/vendor-reputation-service#26"],
+      "non_authorities": ["merge mixed PR #125", "retain Vendor product ingestion in Core", "protected-main merge"]
     }
   ],
   "dependency_edges": [
@@ -106,7 +117,10 @@
     {"from": "agentos-core#117", "to": "agentos-core#130"},
     {"from": "agentos-core#72", "to": "agentos-core#130"},
     {"from": "vendor-reputation:semantic-classification", "to": "agentos-core#72"},
+    {"from": "vendor-reputation:migrate-agentmanager-carriers", "to": "alston-personal/vendor-reputation-service#26"},
     {"from": "layoutlib:poc-deployment", "to": "agentos-core#96"},
-    {"from": "arcanaforge:poc-static-release", "to": "agentos-core#66"}
+    {"from": "arcanaforge:poc-static-release", "to": "agentos-core#66"},
+    {"from": "arcanaforge:migrate-agentmanager-carrier", "to": "alston-personal/arcanaforge#2"},
+    {"from": "agentos-core:social-capability-extraction", "to": "agentos-core#144"}
   ]
 }
