@@ -1,0 +1,64 @@
+name: vopc5750 read cmd observer log
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - .github/workflows/vopc5750-read-cmd-observer-log.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Queue read
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=f"vopc5750-cmd-observer-read-{int(time.time())}"
+          script=r'''$root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $log=Join-Path $root 'cmd-process-trace.jsonl'
+          if(Test-Path -LiteralPath $log){ Get-Content -LiteralPath $log -Tail 40 }'''
+          RealmFabricStore().queue_task('vopc5750', {'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':20,'cognition_ids_used':[]})
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'task_id={task_id}\n')
+          PY
+      - name: Persist compact log
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore();r=None
+          for _ in range(30):
+            r=store.get_receipt(os.environ['TASK_ID'])
+            if r:break
+            time.sleep(2)
+          if not r: raise SystemExit('missing receipt')
+          lines=[x for x in str(r.get('stdout') or '').splitlines() if x.strip()]
+          events=[]
+          for x in lines[-40:]:
+            try: events.append(json.loads(x))
+            except: pass
+          out={'schema':'agentos.cmd-observer-log-snapshot/v1','node_receipt_ok':bool(r.get('ok')),'event_count':len(events),'events':events[-20:]}
+          p=Path('.agentos/evidence/node-lifecycle/vopc5750-cmd-observer-log.json');p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(out,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-cmd-observer-log.json
+          git commit -m 'evidence(agentos-node): snapshot vopc5750 cmd observer log' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
