@@ -4,15 +4,15 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_install_g9_regressions.py'
+      - 'scripts/metashield_inspect_backup_message_wrapper.sh'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_g9_regressions:
+  metashield_inspect_backup_wrapper:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    timeout-minutes: 6
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,31 +22,20 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy G9 regression installer
+      - name: Copy inspection
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_install_g9_regressions.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_install_g9_regressions.py"
-      - name: Install and run G9 regressions
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_backup_message_wrapper.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_backup_message_wrapper.sh"
+      - name: Inspect backup wrapper
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-g9-regressions.txt
-          set -euo pipefail
-          ROOT=/home/ubuntu/metashield-protocol
-          python3 /tmp/metashield_install_g9_regressions.py
-          cd "$ROOT"
-          node scripts/test-threads-background.js
-          node scripts/test-no-irrecoverable-preservation.js
-          echo '===== manifest ====='
-          python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])'
-          echo '===== test files ====='
-          git status --short -- scripts/test-threads-background.js scripts/test-no-irrecoverable-preservation.js
-          REMOTE
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_backup_message_wrapper.sh" | tee .agentos/evidence/metashield-backup-wrapper.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-g9-regressions
-          path: .agentos/evidence/metashield-g9-regressions.txt
+          name: metashield-backup-wrapper
+          path: .agentos/evidence/metashield-backup-wrapper.txt
           if-no-files-found: warn
