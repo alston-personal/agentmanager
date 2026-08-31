@@ -1,0 +1,715 @@
+{
+  "schema": "agentos.node-cmd-origin-diagnostic/v1",
+  "observed_at": "2026-08-31T00:41:27Z",
+  "shell_scheduled_tasks": [
+    {
+      "task_path": "\\AgentOS Thin Client",
+      "state": "Running",
+      "execute": "cmd.exe",
+      "arguments": "/d /c \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-client.cmd\" run",
+      "last_run_time": "2026-08-30T23:52:48Z",
+      "last_result": 267009,
+      "next_run_time": null
+    },
+    {
+      "task_path": "\\AgentOS Thin Client Watchdog",
+      "state": "Ready",
+      "execute": "powershell.exe",
+      "arguments": "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-thin-client-watchdog.ps1\"",
+      "last_run_time": "2026-08-31T00:40:45Z",
+      "last_result": 0,
+      "next_run_time": "2026-08-31T00:41:44Z"
+    },
+    {
+      "task_path": "\\FS Update",
+      "state": "Ready",
+      "execute": "cmd.exe",
+      "arguments": "/c del C:\\Users\\alston.huang\\AppData\\Roaming\\Microsoft\\Windows\\SendTo\\Bluetooth* /f",
+      "last_run_time": "2026-08-07T09:23:07Z",
+      "last_result": 0,
+      "next_run_time": null
+    },
+    {
+      "task_path": "\\FS Update",
+      "state": "Ready",
+      "execute": "cmd.exe",
+      "arguments": "/c del C:\\Users\\alston.huang\\AppData\\Roaming\\Microsoft\\Windows\\SendTo\\藍* /f",
+      "last_run_time": "2026-08-07T09:23:07Z",
+      "last_result": 0,
+      "next_run_time": null
+    },
+    {
+      "task_path": "\\MassageBookingTask",
+      "state": "Disabled",
+      "execute": "wscript.exe",
+      "arguments": "d:\\Test\\massage_bot\\run_hidden.vbs",
+      "last_run_time": "2026-08-11T02:29:00Z",
+      "last_result": 0,
+      "next_run_time": "2026-09-01T02:29:00Z"
+    },
+    {
+      "task_path": "\\MassageBotBooking",
+      "state": "Disabled",
+      "execute": "wscript.exe",
+      "arguments": "d:\\Test\\massage_bot\\run_hidden.vbs",
+      "last_run_time": "2026-08-11T02:29:00Z",
+      "last_result": 0,
+      "next_run_time": "2026-09-01T02:29:00Z"
+    },
+    {
+      "task_path": "\\Microsoft\\Windows\\Hotpatch\\Monitoring",
+      "state": "Ready",
+      "execute": "%systemroot%\\system32\\cmd.exe",
+      "arguments": "/d /c %systemroot%\\system32\\hpatchmonTask.cmd",
+      "last_run_time": "2026-08-27T20:51:45Z",
+      "last_result": 0,
+      "next_run_time": "2026-08-31T19:16:53Z"
+    }
+  ],
+  "current_cmd_processes": [
+    {
+      "pid": 23292,
+      "parent_pid": 22176,
+      "parent_name": null,
+      "parent_command_line": null,
+      "command_line": ""
+    },
+    {
+      "pid": 13192,
+      "parent_pid": 27572,
+      "parent_name": "language_server_windows_x64.exe",
+      "parent_command_line": "\"c:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\extensions\\antigravity\\bin\\language_server_windows_x64.exe\" --csrf_token 4a0a01dd-c3be-41fd-a5bc-eb11f08eb7d3 --extension_server_port 51567 --extension_server_csrf_token 8f9b8e38-5d2d-4999-b3c0-52c66d308c8d --app_data_dir antigravity-ide --subclient_type ide --cloud_code_endpoint https://cloudcode-pa.googleapis.com",
+      "command_line": "C:\\WINDOWS\\system32\\cmd.exe /c npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux"
+    },
+    {
+      "pid": 31472,
+      "parent_pid": 29132,
+      "parent_name": "node.exe",
+      "parent_command_line": "\"C:\\Program Files\\nodejs\\\\node.exe\"  \"C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npx-cli.js\" -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux",
+      "command_line": "C:\\WINDOWS\\system32\\cmd.exe /d /s /c chrome-devtools-mcp --autoConnect --no-usage-statistics --no-performance-crux"
+    },
+    {
+      "pid": 32800,
+      "parent_pid": 30652,
+      "parent_name": "language_server_windows_x64.exe",
+      "parent_command_line": "\"c:\\Users\\alston.huang\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\extensions\\antigravity\\bin\\language_server_windows_x64.exe\" --enable_lsp --csrf_token 0aaaebf9-cb4b-4987-987f-7b146a863825 --extension_server_port 62916 --extension_server_csrf_token d029526d-d1f0-41c4-ba60-0637736082e7 --workspace_id 7d71062f0ccfb0b8d50b939629e97422db738216e94d13a9c57b03bc10d3492e --cloud_code_endpoint https://daily-cloudcode-pa.googleapis.com --subclient_type ide --app_data_dir antigravity-ide --parent",
+      "command_line": "C:\\WINDOWS\\system32\\cmd.exe /c npx -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux"
+    },
+    {
+      "pid": 34200,
+      "parent_pid": 33316,
+      "parent_name": "node.exe",
+      "parent_command_line": "\"C:\\Program Files\\nodejs\\\\node.exe\"  \"C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npx-cli.js\" -y chrome-devtools-mcp@latest --autoConnect --no-usage-statistics --no-performance-crux",
+      "command_line": "C:\\WINDOWS\\system32\\cmd.exe /d /s /c chrome-devtools-mcp --autoConnect --no-usage-statistics --no-performance-crux"
+    },
+    {
+      "pid": 26252,
+      "parent_pid": 2484,
+      "parent_name": "svchost.exe",
+      "parent_command_line": "",
+      "command_line": "\"cmd.exe\" /d /c \"C:\\Users\\alston.huang\\AppData\\Local\\AgentOS\\agentos-client.cmd\" run"
+    }
+  ],
+  "task_scheduler_events": [
+    {
+      "time": "2026-08-31T00:40:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{021ba720-ffbc-4dad-b296-c56cb4af6b73}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:40:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{021ba720-ffbc-4dad-b296-c56cb4af6b73}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:40:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{021ba720-ffbc-4dad-b296-c56cb4af6b73}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:40:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{021ba720-ffbc-4dad-b296-c56cb4af6b73}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:40:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 41304。"
+    },
+    {
+      "time": "2026-08-31T00:39:50Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{b0e4c12b-42c4-40ad-b209-5e6168ad72ac}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:39:50Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{b0e4c12b-42c4-40ad-b209-5e6168ad72ac}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:39:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{b0e4c12b-42c4-40ad-b209-5e6168ad72ac}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:39:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{b0e4c12b-42c4-40ad-b209-5e6168ad72ac}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:39:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 25432。"
+    },
+    {
+      "time": "2026-08-31T00:39:44Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"NT AUTHORITY\\SYSTEM\" 完成 \"\\Microsoft\\Windows\\Flighting\\OneSettings\\RefreshCache\" 工作的 \"{4d29f2e3-0143-4ec2-9543-78defb3965d9}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:39:44Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\Microsoft\\Windows\\Flighting\\OneSettings\\RefreshCache\"，執行個體 \"{4d29f2e3-0143-4ec2-9543-78defb3965d9}\"，動作 \"OneSettings Refresh Cache Task Handler\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:39:33Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\Microsoft\\Windows\\Flighting\\OneSettings\\RefreshCache\" 的執行個體 \"{4d29f2e3-0143-4ec2-9543-78defb3965d9}\" 中的動作 \"OneSettings Refresh Cache Task Handler\"。"
+    },
+    {
+      "time": "2026-08-31T00:39:33Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"NT AUTHORITY\\SYSTEM\" 啟動 \"\\Microsoft\\Windows\\Flighting\\OneSettings\\RefreshCache\" 工作的 \"{4d29f2e3-0143-4ec2-9543-78defb3965d9}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:39:33Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\Microsoft\\Windows\\Flighting\\OneSettings\\RefreshCache\"，執行個體 \"taskhostw.exe\"，處理程序識別碼為 37756。"
+    },
+    {
+      "time": "2026-08-31T00:38:50Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{5486bd3c-6689-4b43-86a7-c5116e20c3e7}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:38:50Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{5486bd3c-6689-4b43-86a7-c5116e20c3e7}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:38:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{5486bd3c-6689-4b43-86a7-c5116e20c3e7}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:38:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{5486bd3c-6689-4b43-86a7-c5116e20c3e7}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:38:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 42812。"
+    },
+    {
+      "time": "2026-08-31T00:37:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{42c339a6-0439-4804-a66a-32d4caf20d9c}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:37:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{42c339a6-0439-4804-a66a-32d4caf20d9c}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:37:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{42c339a6-0439-4804-a66a-32d4caf20d9c}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:37:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{42c339a6-0439-4804-a66a-32d4caf20d9c}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:37:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 42828。"
+    },
+    {
+      "time": "2026-08-31T00:36:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{c645c234-74c8-42bb-8a61-2243ee479072}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:36:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{c645c234-74c8-42bb-8a61-2243ee479072}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:36:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{c645c234-74c8-42bb-8a61-2243ee479072}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:36:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{c645c234-74c8-42bb-8a61-2243ee479072}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:36:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 25552。"
+    },
+    {
+      "time": "2026-08-31T00:35:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{224025e3-0ae3-469a-89c0-7e5a3acf1922}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:35:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{224025e3-0ae3-469a-89c0-7e5a3acf1922}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:35:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{224025e3-0ae3-469a-89c0-7e5a3acf1922}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:35:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{224025e3-0ae3-469a-89c0-7e5a3acf1922}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:35:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 40228。"
+    },
+    {
+      "time": "2026-08-31T00:35:01Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\SoftLanding\\S-1-5-21-706670597-753717926-1206375605-438133\\SoftLandingDeferralTask-{da1ccb2a-c6f0-4309-8c6d-dc98925d7168}\" 工作的 \"{d54d9d7b-96ed-487d-8632-c08f255473c3}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:35:01Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\SoftLanding\\S-1-5-21-706670597-753717926-1206375605-438133\\SoftLandingDeferralTask-{da1ccb2a-c6f0-4309-8c6d-dc98925d7168}\"，執行個體 \"{d54d9d7b-96ed-487d-8632-c08f255473c3}\"，動作 \"\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:35:01Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\SoftLanding\\S-1-5-21-706670597-753717926-1206375605-438133\\SoftLandingDeferralTask-{da1ccb2a-c6f0-4309-8c6d-dc98925d7168}\" 的執行個體 \"{d54d9d7b-96ed-487d-8632-c08f255473c3}\" 中的動作 \"\"。"
+    },
+    {
+      "time": "2026-08-31T00:35:01Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\SoftLanding\\S-1-5-21-706670597-753717926-1206375605-438133\\SoftLandingDeferralTask-{da1ccb2a-c6f0-4309-8c6d-dc98925d7168}\" 工作的 \"{d54d9d7b-96ed-487d-8632-c08f255473c3}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:35:01Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\SoftLanding\\S-1-5-21-706670597-753717926-1206375605-438133\\SoftLandingDeferralTask-{da1ccb2a-c6f0-4309-8c6d-dc98925d7168}\"，執行個體 \"taskhostw.exe\"，處理程序識別碼為 18396。"
+    },
+    {
+      "time": "2026-08-31T00:34:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{3f57a1b8-0455-4026-b193-d365d526f975}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:34:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{3f57a1b8-0455-4026-b193-d365d526f975}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:34:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{3f57a1b8-0455-4026-b193-d365d526f975}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:34:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{3f57a1b8-0455-4026-b193-d365d526f975}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:34:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 38936。"
+    },
+    {
+      "time": "2026-08-31T00:33:53Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\Adobe Acrobat Update Task\" 工作的 \"{26e2cf18-d058-4dd0-af67-ca7f665a7da3}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:33:53Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\Adobe Acrobat Update Task\"，執行個體 \"{26e2cf18-d058-4dd0-af67-ca7f665a7da3}\"，動作 \"C:\\Program Files (x86)\\Common Files\\Adobe\\ARM\\1.0\\AdobeARM.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:33:53Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\Adobe Acrobat Update Task\" 的執行個體 \"{26e2cf18-d058-4dd0-af67-ca7f665a7da3}\" 中的動作 \"C:\\Program Files (x86)\\Common Files\\Adobe\\ARM\\1.0\\AdobeARM.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:33:53Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\Adobe Acrobat Update Task\" 工作的 \"{26e2cf18-d058-4dd0-af67-ca7f665a7da3}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:33:53Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\Adobe Acrobat Update Task\"，執行個體 \"C:\\Program Files (x86)\\Common Files\\Adobe\\ARM\\1.0\\AdobeARM.exe\"，處理程序識別碼為 37580。"
+    },
+    {
+      "time": "2026-08-31T00:33:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{976a0262-a02a-4ae7-bfb5-725461db22a8}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:33:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{976a0262-a02a-4ae7-bfb5-725461db22a8}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:33:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{976a0262-a02a-4ae7-bfb5-725461db22a8}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:33:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{976a0262-a02a-4ae7-bfb5-725461db22a8}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:33:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 38264。"
+    },
+    {
+      "time": "2026-08-31T00:33:16Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"NT AUTHORITY\\SYSTEM\" 完成 \"\\MicrosoftEdgeUpdateTaskMachineUA{2C76BE0B-9ABB-418A-97FB-A2659C98D812}\" 工作的 \"{8faf7dcf-9cd3-460d-a0c2-900129af60c1}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:33:16Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\MicrosoftEdgeUpdateTaskMachineUA{2C76BE0B-9ABB-418A-97FB-A2659C98D812}\"，執行個體 \"{8faf7dcf-9cd3-460d-a0c2-900129af60c1}\"，動作 \"C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:33:15Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\MicrosoftEdgeUpdateTaskMachineUA{2C76BE0B-9ABB-418A-97FB-A2659C98D812}\" 的執行個體 \"{8faf7dcf-9cd3-460d-a0c2-900129af60c1}\" 中的動作 \"C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:33:15Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"NT AUTHORITY\\SYSTEM\" 啟動 \"\\MicrosoftEdgeUpdateTaskMachineUA{2C76BE0B-9ABB-418A-97FB-A2659C98D812}\" 工作的 \"{8faf7dcf-9cd3-460d-a0c2-900129af60c1}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:33:15Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\MicrosoftEdgeUpdateTaskMachineUA{2C76BE0B-9ABB-418A-97FB-A2659C98D812}\"，執行個體 \"C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe\"，處理程序識別碼為 38280。"
+    },
+    {
+      "time": "2026-08-31T00:32:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{395c92f1-8a10-4fdc-905f-75774d7b9b20}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:32:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{395c92f1-8a10-4fdc-905f-75774d7b9b20}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:32:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{395c92f1-8a10-4fdc-905f-75774d7b9b20}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:32:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{395c92f1-8a10-4fdc-905f-75774d7b9b20}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:32:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 20572。"
+    },
+    {
+      "time": "2026-08-31T00:31:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{bf058eb7-23d3-475e-9657-30e47fb358b0}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:31:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{bf058eb7-23d3-475e-9657-30e47fb358b0}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:31:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{bf058eb7-23d3-475e-9657-30e47fb358b0}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:31:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{bf058eb7-23d3-475e-9657-30e47fb358b0}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:31:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 20448。"
+    },
+    {
+      "time": "2026-08-31T00:30:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{ac5214c8-39de-46a2-8be1-d16e85064d33}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:30:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{ac5214c8-39de-46a2-8be1-d16e85064d33}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:30:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{ac5214c8-39de-46a2-8be1-d16e85064d33}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:30:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{ac5214c8-39de-46a2-8be1-d16e85064d33}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:30:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 17244。"
+    },
+    {
+      "time": "2026-08-31T00:29:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{c1ad9d91-48d6-4c29-8bac-fa27b7d5373d}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:29:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{c1ad9d91-48d6-4c29-8bac-fa27b7d5373d}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:29:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{c1ad9d91-48d6-4c29-8bac-fa27b7d5373d}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:29:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{c1ad9d91-48d6-4c29-8bac-fa27b7d5373d}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:29:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 37104。"
+    },
+    {
+      "time": "2026-08-31T00:28:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{27a5d1c6-2633-49ec-8c25-145606d3d993}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:28:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{27a5d1c6-2633-49ec-8c25-145606d3d993}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:28:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{27a5d1c6-2633-49ec-8c25-145606d3d993}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:28:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{27a5d1c6-2633-49ec-8c25-145606d3d993}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:28:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 37280。"
+    },
+    {
+      "time": "2026-08-31T00:27:48Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{1a05927d-98f4-4a23-8b79-32fc35451e6f}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:27:48Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{1a05927d-98f4-4a23-8b79-32fc35451e6f}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:27:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{1a05927d-98f4-4a23-8b79-32fc35451e6f}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:27:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{1a05927d-98f4-4a23-8b79-32fc35451e6f}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:27:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 9096。"
+    },
+    {
+      "time": "2026-08-31T00:26:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{799540fd-f3dd-4b14-9a38-d092cb384fc7}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:26:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{799540fd-f3dd-4b14-9a38-d092cb384fc7}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:26:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{799540fd-f3dd-4b14-9a38-d092cb384fc7}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:26:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{799540fd-f3dd-4b14-9a38-d092cb384fc7}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:26:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 42764。"
+    },
+    {
+      "time": "2026-08-31T00:26:39Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"NT AUTHORITY\\SYSTEM\" 完成 \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem152.0.7933.0{7BB83B3B-4503-4E2E-B925-230DAE260291}\" 工作的 \"{94f9a3db-7cc9-4c52-8c40-07a2656e0d7b}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:26:39Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem152.0.7933.0{7BB83B3B-4503-4E2E-B925-230DAE260291}\"，執行個體 \"{94f9a3db-7cc9-4c52-8c40-07a2656e0d7b}\"，動作 \"C:\\Program Files (x86)\\Google\\GoogleUpdater\\152.0.7933.0\\updater.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:26:34Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem152.0.7933.0{7BB83B3B-4503-4E2E-B925-230DAE260291}\" 的執行個體 \"{94f9a3db-7cc9-4c52-8c40-07a2656e0d7b}\" 中的動作 \"C:\\Program Files (x86)\\Google\\GoogleUpdater\\152.0.7933.0\\updater.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:26:34Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"NT AUTHORITY\\SYSTEM\" 啟動 \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem152.0.7933.0{7BB83B3B-4503-4E2E-B925-230DAE260291}\" 工作的 \"{94f9a3db-7cc9-4c52-8c40-07a2656e0d7b}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:26:34Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\GoogleSystem\\GoogleUpdater\\GoogleUpdaterTaskSystem152.0.7933.0{7BB83B3B-4503-4E2E-B925-230DAE260291}\"，執行個體 \"C:\\Program Files (x86)\\Google\\GoogleUpdater\\152.0.7933.0\\updater.exe\"，處理程序識別碼為 36716。"
+    },
+    {
+      "time": "2026-08-31T00:25:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{b2701a6e-9a0c-4789-a48c-92f5436a4021}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:25:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{b2701a6e-9a0c-4789-a48c-92f5436a4021}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:25:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{b2701a6e-9a0c-4789-a48c-92f5436a4021}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:25:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{b2701a6e-9a0c-4789-a48c-92f5436a4021}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:25:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 36984。"
+    },
+    {
+      "time": "2026-08-31T00:24:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{40dfaba2-2eb1-4191-b3da-7ee19b63b96f}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:24:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{40dfaba2-2eb1-4191-b3da-7ee19b63b96f}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:24:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{40dfaba2-2eb1-4191-b3da-7ee19b63b96f}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:24:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{40dfaba2-2eb1-4191-b3da-7ee19b63b96f}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:24:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 42408。"
+    },
+    {
+      "time": "2026-08-31T00:23:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{48637d60-68d5-4bf2-9867-93a3d5e649d1}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:23:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{48637d60-68d5-4bf2-9867-93a3d5e649d1}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:23:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{48637d60-68d5-4bf2-9867-93a3d5e649d1}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:23:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{48637d60-68d5-4bf2-9867-93a3d5e649d1}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:23:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 38100。"
+    },
+    {
+      "time": "2026-08-31T00:22:49Z",
+      "id": 102,
+      "message": "工作排程器已順利為使用者 \"DELTA\\alston.huang\" 完成 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{ea91e44a-8ef2-4ec8-912c-310b627216ac}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:22:49Z",
+      "id": 201,
+      "message": "工作排程器已順利完成工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"{ea91e44a-8ef2-4ec8-912c-310b627216ac}\"，動作 \"powershell.exe\"，傳回碼為 0。"
+    },
+    {
+      "time": "2026-08-31T00:22:45Z",
+      "id": 200,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\" 的執行個體 \"{ea91e44a-8ef2-4ec8-912c-310b627216ac}\" 中的動作 \"powershell.exe\"。"
+    },
+    {
+      "time": "2026-08-31T00:22:45Z",
+      "id": 100,
+      "message": "工作排程器已為使用者 \"DELTA\\alston.huang\" 啟動 \"\\AgentOS Thin Client Watchdog\" 工作的 \"{ea91e44a-8ef2-4ec8-912c-310b627216ac}\" 執行個體。"
+    },
+    {
+      "time": "2026-08-31T00:22:45Z",
+      "id": 129,
+      "message": "工作排程器已啟動工作 \"\\AgentOS Thin Client Watchdog\"，執行個體 \"powershell.exe\"，處理程序識別碼為 38308。"
+    }
+  ]
+}
