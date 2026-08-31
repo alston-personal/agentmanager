@@ -1,0 +1,79 @@
+{
+  "schema": "agentos.product-migrations/v0",
+  "generated_at": "2026-08-31T01:30:00Z",
+  "core_repository": "alston-personal/agentmanager",
+  "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
+  "projects": [
+    {
+      "project_id": "vendor-reputation",
+      "canonical_repository": "alston-personal/vendor-reputation-service",
+      "status": "migration_required",
+      "core_prs": [97, 99, 127],
+      "product_evidence": ["vendor-reputation-service#20"],
+      "classification": "product implementation exists in product repo, but Oracle execution/scheduling carriers still live in agentmanager",
+      "retire_when": ["equivalent product-owned governed execution path exists", "Oracle access/runner boundary is solved without copying Core secrets", "receipt/evidence parity is verified"],
+      "safe_now": "do_not_close_or_delete_carriers_yet"
+    },
+    {
+      "project_id": "arcanaforge",
+      "canonical_repository": "alston-personal/arcanaforge",
+      "status": "migration_required",
+      "core_prs": [136],
+      "core_dependencies": [66],
+      "classification": "product has canonical repo, but public POC release is still carried by agentmanager governance/deploy path",
+      "retire_when": ["product-owned artifact/deploy source is canonical", "governed static release capability or approved runner surface exists", "POC deployment receipt identifies exact ArcanaForge source/artifact"],
+      "safe_now": "retain_until_issue_66_acceptance"
+    },
+    {
+      "project_id": "layoutlib",
+      "canonical_repository": "alston-personal/layoutlib",
+      "status": "boundary_defined_migration_pending",
+      "core_dependencies": [96],
+      "classification": "canonical product repo and develop lane exist; Core should own only generic promotion/deployment policy, not Layout implementation",
+      "retire_when": ["POC deploy consumes pinned layoutlib candidate", "production remains pinned to promoted release", "agentmanager contains no Layout product implementation/deployer beyond generic adapter"],
+      "safe_now": "continue_issue_96_without_product_pause"
+    },
+    {
+      "project_id": "leopardcat-tarot",
+      "canonical_repository": "alston-personal/leopardcat-tarot",
+      "status": "product_owned_pattern_observed",
+      "product_evidence": ["leopardcat-tarot#41"],
+      "classification": "production parity governance is already being implemented in the product repository; use this as target ownership pattern",
+      "retire_when": ["inventory any remaining tarot-specific files/carriers in agentmanager", "verify parity before removing them"],
+      "safe_now": "product_work_continues_in_product_repo"
+    },
+    {
+      "project_id": "character-blueprint",
+      "canonical_repository": null,
+      "repository_candidate": "alston-personal/charactergenerator",
+      "status": "identity_unresolved",
+      "core_prs": [53],
+      "classification": "Character Blueprint product work exists in agentmanager but canonical product repository has not been verified; similar repository name is not sufficient identity evidence",
+      "retire_when": ["explicitly establish canonical project identity/repository", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
+      "safe_now": "preserve_pr_53_and_do_not_merge_to_core"
+    },
+    {
+      "project_id": "model2ir",
+      "canonical_repository": null,
+      "status": "repository_unresolved",
+      "classification": "independent library direction exists but no canonical repository was found by current repository inventory",
+      "retire_when": ["assign/create canonical repository outside agentmanager", "move product/library implementation there"],
+      "safe_now": "do_not_add_new_model2ir_implementation_to_core"
+    }
+  ],
+  "legacy_core_proposals": [
+    {"pr": 2, "classification": "core_proposal_extract_needed"},
+    {"pr": 17, "classification": "core_proposal_extract_needed"},
+    {"pr": 22, "classification": "core_proposal_extract_needed"},
+    {"pr": 43, "classification": "core_proposal_extract_needed"},
+    {"pr": 18, "classification": "generic_capability_candidate_review_separately"},
+    {"pr": 125, "classification": "mixed_core_and_vendor_scope_must_split"}
+  ],
+  "rules": {
+    "main": "accepted/promotion state; not active agent workspace",
+    "development": "feature/fix branch, optionally through develop/integration",
+    "poc_staging": "exact candidate SHA/artifact allowed",
+    "production": "exact accepted main SHA/tag/release artifact",
+    "carrier_retirement": "never remove until canonical product-owned replacement and runtime parity evidence exist"
+  }
+}
