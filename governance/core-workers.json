@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T03:04:00Z",
+  "generated_at": "2026-08-31T03:12:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -185,17 +185,98 @@
     {
       "issue": 147,
       "name": "Legacy Core proposal delta extraction",
-      "branch": "core/issue-147-legacy-proposal-inventory",
+      "branch": null,
       "status": "running",
-      "execution_lane": "architecture-extraction-worker",
+      "execution_lane": "architecture-extraction-umbrella",
       "dependencies": [],
       "blocking_scope": [],
+      "children": [151, 152, 153, 154],
       "evidence": [
-        "governance/legacy-core-proposals.json"
+        "governance/legacy-core-proposals.json",
+        "pull/150",
+        "issues/151",
+        "issues/152",
+        "issues/153",
+        "issues/154"
       ],
       "non_authorities": [
         "wholesale legacy PR merge",
         "blind retarget to core/integration",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 151,
+      "name": "Agent Employee Runtime extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [17],
+      "evidence": ["issue/151"],
+      "non_authorities": [
+        "legacy PR wholesale merge",
+        "create competing canonical state store",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 152,
+      "name": "Node runtime / executor lifecycle and ONE-awareness extraction",
+      "branch": "core/issue-152-executor-awareness",
+      "status": "running",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [22],
+      "related_issues": [72, 105, 117, 160],
+      "supersedes_issues": [161],
+      "evidence": [
+        "issue/152",
+        "pull/167",
+        "commit/d80ac3500fc2b10892d0fffadfa52b4f3bf0dee3"
+      ],
+      "non_authorities": [
+        "regress Node Golden Path",
+        "give Realm credentials to executor",
+        "duplicate session-bridge authority",
+        "treat agy as proof for Antigravity built-in Gemini",
+        "legacy PR wholesale merge",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 153,
+      "name": "Execution-head freshness extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [43],
+      "evidence": ["issue/153"],
+      "non_authorities": [
+        "restore pulse/status as canonical authority",
+        "legacy PR wholesale merge",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 154,
+      "name": "Generic social capability extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [18, 125],
+      "product_handoff": "alston-personal/vendor-reputation-service#27",
+      "evidence": ["issue/154"],
+      "non_authorities": [
+        "Vendor product ingestion in Core",
+        "unapproved social publish",
+        "legacy PR wholesale merge",
         "protected-main merge"
       ]
     },
@@ -223,25 +304,6 @@
       ]
     },
     {
-      "issue": 161,
-      "name": "ONE-aware executor startup/continuation handshake",
-      "branch": null,
-      "status": "queued",
-      "execution_lane": "executor-protocol-architecture-worker",
-      "dependencies": [],
-      "blocking_scope": [],
-      "evidence": [
-        "issue/161",
-        "issue/137#issuecomment-5472788499"
-      ],
-      "non_authorities": [
-        "block passive Experience hydration acceptance",
-        "portable hidden-state claims",
-        "implicit ONE mutation authority",
-        "protected-main merge"
-      ]
-    },
-    {
       "issue": 165,
       "name": "Governed cross-repository Oracle execution requests",
       "branch": "core/issue-165-cross-repo-execution",
@@ -261,6 +323,7 @@
       ],
       "non_authorities": [
         "assume runner registration scope without evidence",
+        "grant product repositories unrestricted Oracle shell authority",
         "generic shell authority",
         "arbitrary executable or argv tunneling",
         "copy Core-wide Oracle secrets into product repositories",
@@ -294,6 +357,22 @@
     {
       "from": "layoutlib:poc-deployment:live-acceptance",
       "to": "agentos-core#96"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#151"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#152"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#153"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#154"
     }
   ]
 }
