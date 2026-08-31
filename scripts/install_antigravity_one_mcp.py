@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -11,6 +13,8 @@ from typing import Any
 
 MCP_PACKAGE = "mcp>=2,<3"
 SERVER_NAME = "agentos-one"
+CLIENT_MODE = "client"
+ORACLE_LOCAL_MODE = "oracle-local"
 
 
 def _repo_root() -> Path:
@@ -27,9 +31,18 @@ def _client_config_candidates() -> list[Path]:
         candidates.append(Path(client_home).expanduser() / "client.json")
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        candidates.append(Path(local_app_data) / "AgentOS" / "state" / "client.json")
+        candidates.append(
+            Path(local_app_data) / "AgentOS" / "state" / "client.json"
+        )
     if os.name == "nt":
-        candidates.append(Path.home() / "AppData" / "Local" / "AgentOS" / "state" / "client.json")
+        candidates.append(
+            Path.home()
+            / "AppData"
+            / "Local"
+            / "AgentOS"
+            / "state"
+            / "client.json"
+        )
     candidates.append(Path.home() / ".agentos" / "client.json")
     return candidates
 
@@ -38,8 +51,30 @@ def discover_client_config() -> Path:
     for path in _client_config_candidates():
         if path.is_file():
             return path
-    raise FileNotFoundError(
-        "AgentOS client.json not found; enroll/start the AgentOS client first"
+    raise FileNotFoundError("AgentOS client.json not found")
+
+
+def oracle_data_root() -> Path:
+    return Path(
+        os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data")
+    ).expanduser()
+
+
+def detect_mode(explicit: str | None = None) -> str:
+    if explicit:
+        return explicit
+    try:
+        discover_client_config()
+        return CLIENT_MODE
+    except FileNotFoundError:
+        pass
+    root = oracle_data_root()
+    if os.name != "nt" and (root / "realm" / "nodes.json").is_file():
+        return ORACLE_LOCAL_MODE
+    raise RuntimeError(
+        "Cannot determine ONE MCP mode: no enrolled client config and no "
+        "Oracle-local ONE Node Registry. Use --mode explicitly after "
+        "verifying the intended runtime."
     )
 
 
@@ -48,7 +83,9 @@ def antigravity_mcp_config_path() -> Path:
     if explicit:
         return Path(explicit).expanduser()
     current = Path.home() / ".gemini" / "config" / "mcp_config.json"
-    legacy = Path.home() / ".gemini" / "antigravity" / "mcp_config.json"
+    legacy = (
+        Path.home() / ".gemini" / "antigravity" / "mcp_config.json"
+    )
     if current.exists() or current.parent.exists() or not legacy.exists():
         return current
     return legacy
@@ -66,7 +103,11 @@ def ensure_mcp_venv(venv_root: Path) -> Path:
         venv_root.parent.mkdir(parents=True, exist_ok=True)
         venv.EnvBuilder(with_pip=True, clear=False).create(venv_root)
     check = subprocess.run(
-        [str(python), "-c", "from mcp.server import MCPServer"],
+        [
+            str(python),
+            "-c",
+            "from mcp.server import MCPServer",
+        ],
         text=True,
         capture_output=True,
         check=False,
@@ -107,35 +148,82 @@ def write_antigravity_config(
     *,
     python: Path,
     repo_root: Path,
+    mode: str,
 ) -> dict[str, Any]:
     config = _load_json(path)
     servers = config.setdefault("mcpServers", {})
     if not isinstance(servers, dict):
         raise ValueError("mcpServers must be an object")
+
+    env = {
+        "PYTHONPATH": str(repo_root),
+        "AGENTOS_ONE_MCP_MODE": mode,
+    }
+    if mode == ORACLE_LOCAL_MODE:
+        env["AGENT_DATA_ROOT"] = str(oracle_data_root())
+        env["AGENTOS_CORE_NODE_ID"] = str(
+            os.environ.get(
+                "AGENTOS_CORE_NODE_ID",
+                "oracle-core-node",
+            )
+        )
+
     servers[SERVER_NAME] = {
         "command": str(python),
         "args": ["-m", "agentos_node.one_mcp"],
         "cwd": str(repo_root),
-        "env": {"PYTHONPATH": str(repo_root)},
+        "env": env,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        shutil.copy2(path, path.with_name(path.name + f".agentos-backup-{stamp}"))
+        shutil.copy2(
+            path,
+            path.with_name(
+                path.name + f".agentos-backup-{stamp}"
+            ),
+        )
     tmp = path.with_suffix(path.suffix + ".agentos.tmp")
     tmp.write_text(
-        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(
+            config,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
     tmp.replace(path)
     return servers[SERVER_NAME]
 
 
-def probe(python: Path, repo_root: Path) -> dict[str, Any]:
+def state_root_for_mode(mode: str) -> Path:
+    if mode == CLIENT_MODE:
+        return discover_client_config().parent / "mcp"
+    return Path.home() / ".local" / "share" / "agentos" / "one-mcp"
+
+
+def probe(
+    python: Path,
+    repo_root: Path,
+    *,
+    mode: str,
+) -> dict[str, Any]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo_root)
+    env["AGENTOS_ONE_MCP_MODE"] = mode
+    if mode == ORACLE_LOCAL_MODE:
+        env["AGENT_DATA_ROOT"] = str(oracle_data_root())
     result = subprocess.run(
-        [str(python), "-m", "agentos_node.one_mcp", "--probe"],
+        [
+            str(python),
+            "-m",
+            "agentos_node.one_mcp",
+            "--mode",
+            mode,
+            "--probe",
+        ],
         cwd=str(repo_root),
         env=env,
         text=True,
@@ -145,43 +233,75 @@ def probe(python: Path, repo_root: Path) -> dict[str, Any]:
     )
     if result.returncode != 0:
         raise RuntimeError(
-            "ONE MCP probe failed: " + (result.stderr or result.stdout)[-5000:]
+            "ONE MCP probe failed: "
+            + (result.stderr or result.stdout)[-5000:]
         )
     payload = json.loads(result.stdout)
     if payload.get("probe") != "PASS":
-        raise RuntimeError(f"ONE MCP probe did not pass: {payload}")
+        raise RuntimeError(
+            f"ONE MCP probe did not pass: {payload}"
+        )
+    if payload.get("credential_exposed") is not False:
+        raise RuntimeError(
+            "ONE MCP probe did not prove credential isolation"
+        )
     return payload
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Install AgentOS ONE MCP for the real Antigravity IDE agent"
+        description=(
+            "Install AgentOS ONE MCP for the real Antigravity IDE agent"
+        )
     )
-    parser.add_argument("--repo", type=Path, default=_repo_root())
+    parser.add_argument(
+        "--repo",
+        type=Path,
+        default=_repo_root(),
+    )
+    parser.add_argument(
+        "--mode",
+        choices=(CLIENT_MODE, ORACLE_LOCAL_MODE),
+        help=(
+            "client uses an enrolled Thin Client credential; "
+            "oracle-local uses trusted read-only Oracle state"
+        ),
+    )
     parser.add_argument("--no-probe", action="store_true")
     args = parser.parse_args(argv)
 
     repo_root = args.repo.expanduser().resolve()
-    if not (repo_root / "agentos_node" / "one_mcp.py").is_file():
+    if not (
+        repo_root / "agentos_node" / "one_mcp.py"
+    ).is_file():
         raise FileNotFoundError(
             f"AgentOS ONE MCP module missing under repo: {repo_root}"
         )
-    client_config = discover_client_config()
-    state_root = client_config.parent
-    venv_root = state_root / "mcp" / "venv"
+
+    mode = detect_mode(args.mode)
+    state_root = state_root_for_mode(mode)
+    venv_root = state_root / "venv"
     python = ensure_mcp_venv(venv_root)
-    evidence = None if args.no_probe else probe(python, repo_root)
+    evidence = (
+        None
+        if args.no_probe
+        else probe(python, repo_root, mode=mode)
+    )
     mcp_config = antigravity_mcp_config_path()
     server = write_antigravity_config(
         mcp_config,
         python=python,
         repo_root=repo_root,
+        mode=mode,
     )
     print(
         json.dumps(
             {
-                "schema": "agentos.antigravity-one-mcp-install/v0.1",
+                "schema": (
+                    "agentos.antigravity-one-mcp-install/v0.2"
+                ),
                 "ok": True,
+                "mode": mode,
                 "server": SERVER_NAME,
                 "mcp_config": str(mcp_config),
                 "repo": str(repo_root),
