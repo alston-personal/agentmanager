@@ -1,0 +1,227 @@
+{
+  "prepareRecoveryVault": {
+    "params": [
+      "userId"
+    ],
+    "endpointStrings": [
+      "chamber-recovery-share-v2",
+      "recoveryPendingExportAt",
+      "recoveryPendingLocalShare",
+      "recoveryPendingShareC"
+    ],
+    "calls": [
+      "Date",
+      "Error",
+      "String",
+      "encryptSharingIdentityForRecovery",
+      "get",
+      "getExtensionConfig",
+      "getOrCreateSharingIdentity",
+      "if",
+      "randomUUID",
+      "recoveryChecksum",
+      "set",
+      "split2of3",
+      "t",
+      "toISOString",
+      "trim"
+    ],
+    "returnKeys": [
+      "share",
+      "shareB"
+    ],
+    "storageKeys": [
+      ",\n    checksum: await recoveryChecksum(normalizedUserId, config.boundWalletAddress, config.walletPrivateKey),\n    sharingIdentityEnvelope,\n  };\n  await chrome.storage.local.set({\n    [prefix + ",
+      ",\n    setId,\n    createdAt: exportedAt,\n    ownerUserId: normalizedUserId,\n    // Compatibility field for recovery records created/read by 0.6.x.\n    facebookUserId: normalizedUserId,\n    ownerAddress: config.boundWalletAddress,\n    keyTier: usesCustom ? ",
+      "] === config.walletPrivateKey;\n  const exportedAt = new Date().toISOString();\n  const setId = crypto.randomUUID();\n  const shares = ChamberSecretSharing.split2of3(config.walletPrivateKey);\n  const sharingIdentityEnvelope = await encryptSharingIdentityForRecovery(await getOrCreateSharingIdentity(normalizedUserId), config.walletPrivateKey);\n  const base = {\n    format: ",
+      "recoveryPendingExportAt",
+      "recoveryPendingShareC"
+    ]
+  },
+  "confirmRecoveryVault": {
+    "params": [
+      "userId",
+      "setId"
+    ],
+    "endpointStrings": [
+      "2-of-3-vault-v1",
+      "recoveryExportConfirmedVersion",
+      "recoveryExportedAt",
+      "recoveryLocalShare",
+      "recoveryPendingExportAt",
+      "recoveryPendingShareC"
+    ],
+    "calls": [
+      "Date",
+      "Error",
+      "get",
+      "if",
+      "remove",
+      "set",
+      "t",
+      "toISOString"
+    ],
+    "returnKeys": [],
+    "storageKeys": [
+      "2-of-3-vault-v1",
+      "recoveryExportConfirmedVersion",
+      "recoveryExportedAt",
+      "recoveryLocalShare",
+      "recoveryPendingExportAt",
+      "recoveryPendingShareC"
+    ]
+  },
+  "finalizeRecoveryVault": {
+    "params": [
+      "userId",
+      "setId",
+      "accountId"
+    ],
+    "endpointStrings": [
+      "recoveryLocalShare",
+      "recoveryPendingLocalShare",
+      "recoveryPendingShareC",
+      "recoveryVaultAccountId"
+    ],
+    "calls": [
+      "Error",
+      "Number",
+      "encodeRecoveryCode",
+      "get",
+      "if",
+      "remove",
+      "set",
+      "t"
+    ],
+    "returnKeys": [
+      "recoveryCodeC"
+    ],
+    "storageKeys": [
+      "recoveryLocalShare",
+      "recoveryPendingLocalShare",
+      "recoveryPendingShareC",
+      "recoveryVaultAccountId"
+    ]
+  },
+  "restoreFromRecoveryVault": {
+    "params": [
+      "suppliedShareB",
+      "recoveryCodeC",
+      "currentUserId"
+    ],
+    "endpointStrings": [
+      ",\n      needsVaultRotation: Boolean(suppliedShareB),\n    };\n  }\n  const update = {\n    [prefix + (shareB.keyTier === ",
+      "chamber-recovery-share-v2",
+      "crypto.vaultBInvalid"
+    ],
+    "calls": [
+      "Boolean",
+      "Error",
+      "Number",
+      "String",
+      "combine2of3",
+      "decodeRecoveryCode",
+      "get",
+      "if",
+      "includes",
+      "prepareRecoveryVault",
+      "recoveryChecksum",
+      "restoreSharingIdentityFromRecovery",
+      "set",
+      "shouldPreserveCurrentOwnerKey",
+      "storeLegacyOwnerKey",
+      "t"
+    ],
+    "returnKeys": [
+      "accountId",
+      "legacy",
+      "local",
+      "needsVaultRotation",
+      "ownerAddress",
+      "preservedCurrentOwner",
+      "setId"
+    ],
+    "storageKeys": [
+      " };\n  }\n  // B+C were both exposed during disaster recovery. Prepare a fresh set; Echo\n  // replaces B in the same passkey-protected Vault before showing the new C.\n  return { ...(await prepareRecoveryVault(ownerUserId)), accountId: decoded.accountId || ",
+      "));\n  }\n  const ownerSecret = ChamberSecretSharing.combine2of3(recoveryShares);\n  if (await recoveryChecksum(ownerUserId, shareB.ownerAddress, ownerSecret) !== shareB.checksum) {\n    throw new Error(t(",
+      ",\n      needsVaultRotation: Boolean(suppliedShareB),\n    };\n  }\n  const update = {\n    [prefix + (shareB.keyTier === ",
+      "] = shareB.identityAlias;\n  await chrome.storage.local.set(update);\n  await restoreSharingIdentityFromRecovery(shareB.sharingIdentityEnvelope, ownerSecret, prefix);\n  if (!suppliedShareB && localShare?.setId === decoded.setId) {\n    return { local: true, setId: decoded.setId, accountId: decoded.accountId || ",
+      "chamber-recovery-share-v2",
+      "crypto.vaultBInvalid",
+      "recoveryLocalShare"
+    ]
+  },
+  "restoreFromLocalAAndVaultB": {
+    "params": [
+      "shareB",
+      "currentUserId"
+    ],
+    "endpointStrings": [
+      ");\n  if (await recoveryChecksum(ownerUserId, shareB.ownerAddress, ownerSecret) !== shareB.checksum) throw new Error(t(",
+      "chamber-recovery-share-v2",
+      "crypto.localVaultMismatch",
+      "crypto.vaultBInvalid",
+      "recoveryLocalShare",
+      "recoveryVaultAccountId"
+    ],
+    "calls": [
+      "Error",
+      "Number",
+      "String",
+      "combine2of3",
+      "get",
+      "if",
+      "recoveryChecksum",
+      "restoreSharingIdentityFromRecovery",
+      "set",
+      "shouldPreserveCurrentOwnerKey",
+      "storeLegacyOwnerKey",
+      "t"
+    ],
+    "returnKeys": [
+      "accountId",
+      "legacy",
+      "ownerAddress",
+      "preservedCurrentOwner",
+      "setId"
+    ],
+    "storageKeys": [
+      ");\n  if (await recoveryChecksum(ownerUserId, shareB.ownerAddress, ownerSecret) !== shareB.checksum) throw new Error(t(",
+      "] = shareB.identityAlias;\n  await chrome.storage.local.set(update);\n  await restoreSharingIdentityFromRecovery(shareB.sharingIdentityEnvelope, ownerSecret, prefix);\n  return { accountId: data[prefix + ",
+      "chamber-recovery-share-v2",
+      "crypto.localVaultMismatch",
+      "crypto.vaultBInvalid",
+      "recoveryLocalShare",
+      "recoveryVaultAccountId"
+    ]
+  },
+  "recoveryVaultStatus": {
+    "params": [
+      "userId"
+    ],
+    "endpointStrings": [
+      ",\n    pendingRecoveryCodeC: setId && accountId && pendingShareC\n      ? encodeRecoveryCode(setId, pendingShareC, accountId)\n      : ",
+      "recoveryExportConfirmedVersion",
+      "recoveryLocalShare",
+      "recoveryPendingShareC",
+      "recoveryVaultAccountId"
+    ],
+    "calls": [
+      "Boolean",
+      "encodeRecoveryCode",
+      "get"
+    ],
+    "returnKeys": [
+      "confirmed",
+      "hasLocalA",
+      "pendingRecoveryCodeC"
+    ],
+    "storageKeys": [
+      "2-of-3-vault-v1",
+      "recoveryExportConfirmedVersion",
+      "recoveryLocalShare",
+      "recoveryPendingShareC",
+      "recoveryVaultAccountId"
+    ]
+  }
+}
