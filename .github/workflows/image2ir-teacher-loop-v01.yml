@@ -1,0 +1,134 @@
+name: image2ir teacher loop v0.1
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/image2ir_teacher_compare.py'
+      - 'scripts/image2ir_teacher_probe.mjs'
+      - 'scripts/image2ir_silhouette_fallback.py'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
+      - '.github/workflows/image2ir-teacher-loop-v01.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'scripts/image2ir_teacher_compare.py'
+      - 'scripts/image2ir_teacher_probe.mjs'
+      - 'scripts/image2ir_silhouette_fallback.py'
+      - 'scripts/model2ir_teacher_dataset.py'
+      - 'scripts/character_blueprint_glb_render.mjs'
+      - 'benchmarks/model2ir/IMAGE2IR_TEACHER_LOOP_V0.1.md'
+      - '.github/workflows/image2ir-teacher-loop-v01.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+
+      - name: Install runtimes
+        run: |
+          python -m pip install -e libs/model2ir numpy pillow
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Fetch two independent humanoid teachers
+        run: |
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb -o /tmp/CesiumMan.glb
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RiggedFigure/glTF-Binary/RiggedFigure.glb -o /tmp/RiggedFigure.glb
+          test -s /tmp/CesiumMan.glb
+          test -s /tmp/RiggedFigure.glb
+
+      - name: Build canonical teacher pairs
+        run: |
+          rm -rf /tmp/image2ir-loop
+          python scripts/model2ir_teacher_dataset.py --asset /tmp/CesiumMan.glb --case-id cesium-man --out /tmp/image2ir-loop/teachers/cesium
+          python scripts/model2ir_teacher_dataset.py --asset /tmp/RiggedFigure.glb --case-id rigged-figure --out /tmp/image2ir-loop/teachers/rigged
+
+      - name: Probe current public image2ir baseline
+        env:
+          CHARACTER_BLUEPRINT_URL: https://studio.milkcat.org/poc/character-blueprint/
+          CHARACTER_BLUEPRINT_FIXTURE: /tmp/image2ir-loop/teachers/cesium/cesium-man/canonical-front.png
+          CHARACTER_BLUEPRINT_BENCHMARK_OUT: /tmp/image2ir-loop/public-baseline
+        run: |
+          node scripts/image2ir_teacher_probe.mjs | tee /tmp/image2ir-loop/public-probe.log
+          grep -q '"ok":true' /tmp/image2ir-loop/public-probe.log
+          python scripts/image2ir_teacher_compare.py \
+            --teacher-ir /tmp/image2ir-loop/teachers/cesium/cesium-man/character-ir.json \
+            --probe /tmp/image2ir-loop/public-baseline/probe.json \
+            --view front \
+            --out /tmp/image2ir-loop/public-baseline-score.json
+
+      - name: Run teacher-blind silhouette fallback on all canonical views
+        run: |
+          set -euo pipefail
+          for spec in 'cesium cesium-man' 'rigged rigged-figure'; do
+            set -- $spec
+            family="$1"; case_id="$2"
+            teacher="/tmp/image2ir-loop/teachers/$family/$case_id/character-ir.json"
+            mkdir -p "/tmp/image2ir-loop/fallback/$family"
+            for view in front yaw45 right back; do
+              image="/tmp/image2ir-loop/teachers/$family/$case_id/canonical-$view.png"
+              probe="/tmp/image2ir-loop/fallback/$family/probe-$view.json"
+              score="/tmp/image2ir-loop/fallback/$family/score-$view.json"
+              python scripts/image2ir_silhouette_fallback.py "$image" --out "$probe"
+              python scripts/image2ir_teacher_compare.py --teacher-ir "$teacher" --probe "$probe" --view "$view" --out "$score"
+            done
+          done
+
+      - name: Validate cross-view cross-family improvement
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/image2ir-loop')
+          base=json.load(open(root/'public-baseline-score.json'))
+          cases=[]
+          for family in ['cesium','rigged']:
+              for view in ['front','yaw45','right','back']:
+                  p=json.load(open(root/f'fallback/{family}/score-{view}.json'))
+                  m=p['metrics']
+                  assert p['prediction']['accepted'] is True, (family,view,p['prediction'])
+                  assert m['core_f1'] >= 0.75, (family,view,m)
+                  assert m['baseline_score'] >= 0.75, (family,view,m)
+                  cases.append({'family':family,'view':view,**m})
+          avg=sum(x['baseline_score'] for x in cases)/len(cases)
+          worst=min(x['baseline_score'] for x in cases)
+          assert avg >= 0.85, (avg,cases)
+          assert avg > base['metrics']['baseline_score'], (base,cases)
+
+          cesium=json.load(open(root/'teachers/cesium/cesium-man/character-ir.json'))
+          cparts={p['id']:p for p in cesium.get('parts',[]) if p.get('id')}
+          assert 'head' in cparts and cparts['head']['confidence']==0.74, cparts
+          report={
+            'schema':'image2ir-teacher-loop-family-gate/v0.1',
+            'public_baseline':base['metrics'],
+            'case_count':len(cases),
+            'average_score':round(avg,4),
+            'worst_score':round(worst,4),
+            'cases':cases,
+            'teacher_head_repair':cparts['head'],
+            'gate':'PASS'
+          }
+          open(root/'family-gate.json','w').write(json.dumps(report,indent=2)+'\n')
+          print('image2ir_teacher_loop_family_gate=PASS',json.dumps({'average':round(avg,4),'worst':round(worst,4),'cases':len(cases)}))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image2ir-teacher-loop-v01
+          path: /tmp/image2ir-loop/
+          if-no-files-found: error
+          retention-days: 30
