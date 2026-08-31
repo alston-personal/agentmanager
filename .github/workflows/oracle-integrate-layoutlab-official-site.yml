@@ -4,15 +4,15 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_echo_regression.sh'
+      - 'scripts/metashield_runtime_echo_inspect.sh'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_echo_full_regression:
+  metashield_runtime_echo_inspect:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 15
+    timeout-minutes: 8
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,20 +22,20 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy Echo regression script
+      - name: Copy inspection script
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_echo_regression.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_echo_regression.sh"
-      - name: Run Echo full regression
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_runtime_echo_inspect.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_runtime_echo_inspect.sh"
+      - name: Inspect runtime and Echo state
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_echo_regression.sh" | tee .agentos/evidence/metashield-echo-full-regression.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_runtime_echo_inspect.sh" | tee .agentos/evidence/metashield-runtime-echo-inspect.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-echo-full-regression
-          path: .agentos/evidence/metashield-echo-full-regression.txt
+          name: metashield-runtime-echo-inspect
+          path: .agentos/evidence/metashield-runtime-echo-inspect.txt
           if-no-files-found: warn
