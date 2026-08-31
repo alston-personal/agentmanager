@@ -19,19 +19,17 @@ When the **actual Gemini agent/session inside the Antigravity IDE/2.0 surface** 
 
 `.agents/skills/agentos-one-onboarding/SKILL.md`
 
-If the `agentos-one` MCP server is not already available, follow that skill and run from this repository root:
+For Oracle-hosted Antigravity, fresh-session continuity is provided primarily by the global Antigravity `PreInvocation` hook installed in `~/.gemini/config/hooks.json`. On the first model invocation of a fresh conversation, the hook resolves the active workspace against Oracle ONE and injects a bounded `source=ONE_PREINVOCATION_HOOK` canonical-state envelope before the model is called. It does not read or copy the vendor transcript.
 
-```bash
-python scripts/install_antigravity_one_mcp.py --repo .
-```
+The `agentos-one` MCP server remains the explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The pre-invocation hook and MCP adapter both use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
 
-After installation, refresh Antigravity MCP servers or reload the Antigravity window, then verify ONE through the `one_status`, `one_bootstrap`, `one_capabilities`, and `one_resolve` tools.
+If Oracle bootstrap is not installed, use the immutable bootstrap path documented by the onboarding skill. For enrolled external clients, use the client installer described there instead; do not make a desktop executor own Realm credentials.
 
 Important identity fence: `agy` and standalone `gemini` may use Gemini-family models but are separate executor/provider identities. They are not acceptable substitutes for proving that the active Antigravity Gemini session is ONE-aware.
 
-Keep Realm/node credentials outside model-visible prompt, MCP tool results, and committed config. The local ONE MCP adapter may use the already-enrolled AgentOS client credential internally, but the model must never receive it.
+Do not claim continuity merely because Pulse data, PM2 services, `agent-data`, or old memory files are readable. Fresh-session success requires either injected ONE pre-invocation provenance or a successful current-conversation `agentos-one` MCP query.
 
-A fresh Antigravity Gemini conversation must be able to rediscover ONE without copied vendor conversation history before the integration is considered complete.
+A fresh Antigravity Gemini conversation must be able to recover canonical project/goal/authority state without copied vendor conversation history before the integration is considered complete.
 
 ## Current architectural role
 
