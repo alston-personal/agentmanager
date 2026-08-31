@@ -1,0 +1,36 @@
+schema_version: "0.1"
+policy_version: "2026.08.31.1"
+
+projects:
+  layoutlib:
+    canonical_repo: "alston-personal/layoutlib"
+    development_branch: "develop"
+    promotion_branch: "main"
+    development_branch_patterns:
+      - "develop"
+      - "feature/*"
+      - "fix/*"
+      - "governance/*"
+    promotion_requires:
+      pull_request: true
+      explicit_human_approval: true
+      core_governance: true
+    deployment:
+      poc:
+        surface: "https://studio.milkcat.org/poc/layout-lab/"
+        source_branch: "develop"
+        require_pinned_candidate_commit: true
+      production:
+        surface: "https://studio.milkcat.org/layout-lab/"
+        source_branch: "main"
+        immutable_release: "release/v0.7.9"
+    authority:
+      development_owner: "layoutlib-project"
+      promotion_owner: "agentos-core"
+      deployment_owner: "agentos-core"
+    invariants:
+      - "project development MUST NOT target main directly"
+      - "project threads MUST NOT mutate agentmanager deployment workflows"
+      - "POC may consume only a validated develop candidate"
+      - "production may consume only promoted main/release state"
+      - "release/v0.7.9 is immutable provenance"
