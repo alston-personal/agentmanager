@@ -1,0 +1,58 @@
+name: Oracle Executor Discovery 117
+
+on:
+  push:
+    branches:
+      - core/issue-117-experience-memory
+    paths:
+      - '.github/workflows/oracle-executor-discovery-117.yml'
+      - 'scripts/oracle_executor_discovery.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-executor-discovery-117
+  cancel-in-progress: true
+
+jobs:
+  discover:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/issue-117-experience-memory
+          fetch-depth: 0
+
+      - name: Verify worker boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'core/issue-117-experience-memory'
+          echo "protected_main_write=disabled"
+
+      - name: Capture sanitized executor discovery
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUT=".agentos/evidence/experience/oracle-issue117-executor-discovery-${GITHUB_RUN_ID}.json"
+          mkdir -p "$(dirname "$OUT")"
+          python3 -m scripts.oracle_executor_discovery --output "$OUT"
+
+      - name: Persist evidence to worker branch only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=".agentos/evidence/experience/oracle-issue117-executor-discovery-${GITHUB_RUN_ID}.json"
+          test -f "$OUT" || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$OUT"
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence(agentos): Oracle executor discovery ${GITHUB_RUN_ID}"
+          git push origin HEAD:core/issue-117-experience-memory
