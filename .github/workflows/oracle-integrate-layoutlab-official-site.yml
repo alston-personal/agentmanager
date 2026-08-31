@@ -4,13 +4,12 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_patch_media_i18n.py'
 
 permissions:
   contents: read
 
 jobs:
-  patch_metashield_media_i18n:
+  inspect_metashield_media_runtime:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
     env:
@@ -22,21 +21,30 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy deterministic patch helper
-        shell: bash
-        run: |
-          set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_patch_media_i18n.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_patch_media_i18n.py"
-      - name: Apply media upload diagnostics and bump tester version
+      - name: Inspect media runtime diagnostics and error sink
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "python3 /tmp/metashield_patch_media_i18n.py && echo status_begin && git -C /home/ubuntu/metashield-protocol status --short --branch && echo status_end" | tee .agentos/evidence/metashield-media-i18n-v1.0.61.txt
-          grep -q '^version_after=1.0.61$' .agentos/evidence/metashield-media-i18n-v1.0.61.txt
-          grep -q 'media.imageUploadFailed' .agentos/evidence/metashield-media-i18n-v1.0.61.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-media-runtime-inspect.txt
+          set -euo pipefail
+          ROOT=/home/ubuntu/metashield-protocol
+          echo "version=$(python3 -c 'import json;print(json.load(open("'$ROOT'/extension/manifest.json"))["version"])')"
+          echo '===== reportBackgroundError definition/calls ====='
+          grep -RniE 'function reportBackgroundError|reportBackgroundError\(|background:media-upload' "$ROOT/extension" "$ROOT/backend" 2>/dev/null --exclude-dir=node_modules | sed -n '1,220p' || true
+          line=$(grep -n 'function reportBackgroundError' "$ROOT/extension/background.js" | head -1 | cut -d: -f1 || true)
+          if test -n "$line"; then start=$((line-15)); end=$((line+90)); nl -ba "$ROOT/extension/background.js" | sed -n "${start},${end}p"; fi
+          echo '===== likely runtime logs ====='
+          find "$ROOT" /home/ubuntu/agent-data -maxdepth 5 -type f \( -name '*.log' -o -name '*.jsonl' -o -name '*error*' -o -name '*diagnostic*' \) 2>/dev/null | grep -Ei 'chamber|metashield|backend|runtime|error|diagnostic' | sed -n '1,240p' || true
+          echo '===== recent matching log lines ====='
+          grep -RniE 'background:media-upload|Platform media fetch failed|Media API error|not enough balance|imageUploadFailed|media fallback upload failed' "$ROOT" /home/ubuntu/agent-data 2>/dev/null --exclude-dir=node_modules --exclude='*.map' | tail -240 || true
+          echo '===== backend processes ====='
+          ps -ef | grep -Ei 'chamber|metashield' | grep -v grep || true
+          echo '===== git status ====='
+          git -C "$ROOT" status --short --branch
+          REMOTE
       - uses: actions/upload-artifact@v4
         with:
-          name: metashield-media-i18n-v1.0.61
-          path: .agentos/evidence/metashield-media-i18n-v1.0.61.txt
+          name: metashield-media-runtime-inspect
+          path: .agentos/evidence/metashield-media-runtime-inspect.txt
           if-no-files-found: error
