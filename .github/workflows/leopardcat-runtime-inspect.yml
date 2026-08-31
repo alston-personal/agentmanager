@@ -31,9 +31,24 @@ jobs:
           test -n "${DEPLOY_USER:-}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -u
+          ROOT=/home/ubuntu/leopardcat-tarot
           echo '=== identity ==='
           id
           hostname
+          echo
+
+          echo '=== production git ==='
+          echo "repo=$ROOT"
+          echo "head=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+          echo "branch=$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+          echo 'status_begin'
+          git -C "$ROOT" status --short --branch 2>/dev/null || true
+          echo 'status_end'
+          echo 'dirty_name_status_begin'
+          git -C "$ROOT" diff --name-status 2>/dev/null || true
+          git -C "$ROOT" diff --cached --name-status 2>/dev/null || true
+          git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null | sed 's/^/?\t/' || true
+          echo 'dirty_name_status_end'
           echo
 
           echo '=== port 8088 ==='
@@ -46,33 +61,8 @@ jobs:
           done
           echo
 
-          echo '=== fortune processes ==='
-          ps -eo pid,user,lstart,args | grep -E '[f]ortune_server.py|[l]eopardcat.*tarot' || true
-          echo
-
-          echo '=== candidate repositories ==='
-          for base in /home/ubuntu /opt /srv /var/www; do
-            test -d "$base" || continue
-            while IFS= read -r gitdir; do
-              repo="${gitdir%/.git}"
-              remote="$(git -C "$repo" remote get-url origin 2>/dev/null || true)"
-              case "$remote $repo" in
-                *leopardcat-tarot*|*leopardcat*tarot*)
-                  echo "repo=$repo"
-                  echo "remote=$remote"
-                  echo "head=$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
-                  echo "branch=$(git -C "$repo" branch --show-current 2>/dev/null || true)"
-                  echo "dirty=$(git -C "$repo" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-                  echo '---'
-                  ;;
-              esac
-            done < <(find "$base" -maxdepth 5 -type d -name .git -print 2>/dev/null || true)
-          done
-          echo
-
-          echo '=== service candidates ==='
-          systemctl --user --no-pager --type=service --all 2>/dev/null | grep -Ei 'leopard|tarot|fortune' || true
-          systemctl --no-pager --type=service --all 2>/dev/null | grep -Ei 'leopard|tarot|fortune' || true
+          echo '=== service ==='
+          systemctl --user --no-pager --full status leopardcat-tarot.service 2>/dev/null | sed -n '1,40p' || true
           echo
 
           echo '=== local policy ==='
