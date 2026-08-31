@@ -1,0 +1,113 @@
+name: vopc5750 cmd origin diagnostic
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-cmd-origin-diagnostic.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - name: Queue read-only CMD origin diagnostic
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=f"vopc5750-cmd-origin-{int(time.time())}"
+          script=r'''$ErrorActionPreference='Stop'
+          $shellTasks=@()
+          Get-ScheduledTask | ForEach-Object {
+            $t=$_
+            foreach($a in @($t.Actions)){
+              $exe=[string]$a.Execute
+              if($exe -match '(?i)(^|\\)(cmd|powershell|pwsh|wscript|cscript)\.exe$'){
+                $info=Get-ScheduledTaskInfo -TaskName $t.TaskName -TaskPath $t.TaskPath -ErrorAction SilentlyContinue
+                $shellTasks += [ordered]@{
+                  task_path=([string]$t.TaskPath+[string]$t.TaskName)
+                  state=[string]$t.State
+                  execute=$exe
+                  arguments=[string]$a.Arguments
+                  last_run_time=if($info -and $info.LastRunTime -gt [datetime]::MinValue){$info.LastRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')}else{$null}
+                  last_result=if($info){[int]$info.LastTaskResult}else{$null}
+                  next_run_time=if($info -and $info.NextRunTime -gt [datetime]::MinValue){$info.NextRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')}else{$null}
+                }
+              }
+            }
+          }
+          $cmds=@()
+          Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | ForEach-Object {
+            $p=$_; $parent=Get-CimInstance Win32_Process -Filter ("ProcessId="+$p.ParentProcessId) -ErrorAction SilentlyContinue
+            $cmds += [ordered]@{
+              pid=[int]$p.ProcessId
+              parent_pid=[int]$p.ParentProcessId
+              parent_name=if($parent){[string]$parent.Name}else{$null}
+              parent_command_line=if($parent){([string]$parent.CommandLine).Substring(0,[Math]::Min(500,([string]$parent.CommandLine).Length))}else{$null}
+              command_line=([string]$p.CommandLine).Substring(0,[Math]::Min(500,([string]$p.CommandLine).Length))
+            }
+          }
+          $events=@()
+          try {
+            $start=(Get-Date).AddHours(-6)
+            Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational';StartTime=$start} -ErrorAction Stop |
+              Where-Object {$_.Id -in 100,102,129,200,201} | Select-Object -First 120 | ForEach-Object {
+                $msg=[string]$_.Message
+                $events += [ordered]@{
+                  time=$_.TimeCreated.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                  id=[int]$_.Id
+                  message=$msg.Substring(0,[Math]::Min(800,$msg.Length))
+                }
+              }
+          } catch {}
+          $out=[ordered]@{
+            schema='agentos.node-cmd-origin-diagnostic/v1'
+            observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            shell_scheduled_tasks=$shellTasks
+            current_cmd_processes=$cmds
+            task_scheduler_events=$events
+          }
+          $out | ConvertTo-Json -Depth 8 -Compress
+          '''
+          store=RealmFabricStore(); store.queue_task('vopc5750',{
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell',
+            'argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':45,'cognition_ids_used':[]})
+          print(f'task_id={task_id}')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:f.write(f'task_id={task_id}\n')
+          PY
+      - name: Persist evidence
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore(); receipt=None
+          for _ in range(45):
+            receipt=store.get_receipt(os.environ['TASK_ID'])
+            if receipt: break
+            time.sleep(2)
+          if not receipt or not receipt.get('ok'): raise SystemExit(f'cmd-origin receipt failed: {receipt}')
+          lines=str(receipt.get('stdout') or '').strip().splitlines(); payload=json.loads(lines[-1])
+          out=Path('.agentos/evidence/node-lifecycle/vopc5750-cmd-origin.json'); out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(payload,ensure_ascii=False,indent=2))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-cmd-origin.json
+          git commit -m 'evidence(agentos-node): record vopc5750 cmd origin diagnostic' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
