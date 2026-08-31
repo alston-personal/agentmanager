@@ -1,0 +1,43 @@
+name: MetaShield Recovery Summary
+
+on:
+  push:
+    paths:
+      - '.github/workflows/metashield-recovery-summary.yml'
+      - 'scripts/metashield_recovery_summary.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  recovery_summary:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Generate safe recovery summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_recovery_summary.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_recovery_summary.sh"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_recovery_summary.sh /tmp/metashield-recovery-summary.json"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield-recovery-summary.json" .agentos/evidence/metashield-recovery-summary.json
+          cat .agentos/evidence/metashield-recovery-summary.json
+      - name: Persist summary on inspection branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'MetaShield Oracle'
+          git config user.email 'register@milkcat.org'
+          git add .agentos/evidence/metashield-recovery-summary.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'evidence(metashield): persist safe recovery bridge summary'
+          git push origin HEAD:ops/metashield-inspect-after-timeout
