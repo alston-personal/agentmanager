@@ -1,0 +1,86 @@
+name: Current Antigravity Boundary Refresh
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/current-antigravity-boundary-refresh.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: current-antigravity-boundary-refresh
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, Linux, ARM64]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Verify current agentos-node to ubuntu Antigravity handoff
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          from agentos_node.antigravity_relay import AntigravityRelayClient
+
+          marker='AGENTOS_RELAY_SMOKE_PASS'
+          client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
+          capsule=client.submit(
+              project_id='realm-readiness-current-smoke',
+              canonical_ir={'goal':'Verify only the governed AgentOS Antigravity relay boundary.'},
+              instruction=f'Return exactly {marker}. Do not modify files, repositories, services, or system state.',
+              workspace='/home/ubuntu/agentmanager',
+          )
+          receipt=None
+          for _ in range(90):
+              receipt=client.receipt(capsule['capsule_id'])
+              if receipt:
+                  break
+              time.sleep(2)
+
+          encoded=json.dumps(receipt,ensure_ascii=False,default=str) if receipt else ''
+          stdout=str((receipt or {}).get('stdout') or '')
+          checks={
+              'receipt_present': receipt is not None,
+              'receipt_ok': bool(receipt and receipt.get('ok') is True),
+              'no_permission_regression': bool(receipt and 'PermissionError' not in encoded and 'Permission denied' not in encoded),
+              'executor_marker_present': marker in stdout,
+          }
+          accepted=all(checks.values())
+          payload={
+              'schema':'agentos.current-antigravity-boundary-acceptance/v1',
+              'observed_at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+              'accepted':accepted,
+              'checks':checks,
+              'capsule_id':capsule.get('capsule_id'),
+              'receipt':receipt,
+              'scope':{
+                  'proves':['agentos-node relay submission reaches ubuntu executor boundary','receipt returns across the governed relay boundary','cross-user permission boundary is healthy'],
+                  'does_not_prove':['arbitrary executor tasks beyond this read-only smoke','vopc5750 local agent execution'],
+              },
+          }
+          out=Path('.agentos/evidence/node-golden-path/current-antigravity-boundary.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,indent=2,ensure_ascii=False,default=str)+'\n',encoding='utf-8')
+          print(json.dumps(payload,indent=2,ensure_ascii=False,default=str))
+          if not accepted:
+              raise SystemExit(2)
+          PY
+
+      - name: Persist current Antigravity acceptance
+        if: always()
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-golden-path/current-antigravity-boundary.json
+          git commit -m 'evidence(agentos): refresh current Antigravity boundary' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
