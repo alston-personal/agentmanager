@@ -8,12 +8,22 @@ This document classifies non-Core work that still appears in `alston-personal/ag
 
 | Product / scope | Canonical repo | Agentmanager residue | Current decision |
 | --- | --- | --- | --- |
-| Vendor Reputation | `alston-personal/vendor-reputation-service` | PR #97 patrol artifact carrier, #99 calibration carrier, #127 monitored-source scheduler | Keep temporarily. Product implementation is already outside Core, but Oracle execution/scheduling carriers still depend on Core infrastructure. Migrate after a governed product-owned runner/capability path is verified. |
-| ArcanaForge | `alston-personal/arcanaforge` | PR #136 POC release carrier | Keep until #66 provides a governed static-release path and an exact ArcanaForge source/artifact receipt can drive `/poc/arcanaforge/`. |
-| LayoutLib | `alston-personal/layoutlib` | Core-side deploy/governance residue tracked by #96 | Keep only generic deployment/promotion adapter. Layout implementation and product tests stay in `layoutlib`; POC consumes exact candidate SHA, production consumes promoted release. |
+| Vendor Reputation | `alston-personal/vendor-reputation-service` | PR #97 patrol artifact carrier, #99 calibration carrier, #127 monitored-source scheduler | Core runner blocker #130 is resolved. Keep carriers only until Vendor #27 owns an equivalent governed request/execution path with exact Vendor source identity and sanitized receipt/runtime parity. |
+| ArcanaForge | `alston-personal/arcanaforge` | PR #136 POC release carrier | Core static-release blocker #66 is resolved. Remaining gate is product provenance: #136 pins a `studio-web` host-adapter SHA, but retirement requires the receipt to identify the exact `arcanaforge` source/artifact as canonical product provenance. |
+| LayoutLib | `alston-personal/layoutlib` | historical/main Layout-specific POC deploy carrier tracked by #96 | Generic release-lane authority is now canonical in `core/integration` via #158. Keep Layout-specific carrier only until a real exact `develop` candidate is dispatched, public/source receipt parity is proven, and the carrier can be replaced by a generic governed adapter. |
 | Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | historical `ops/leopardcat-runtime-inspect` and `chore/leopardcat-runtime-inspect` carrier branches plus Tarot-specific deploy/inspect/probe workflows | Product handoff is `alston-personal/leopardcat-tarot#44`. PR #41 is a product-owned read-only parity gate, but retirement also requires a product-owned write/deploy replacement (or thin caller of a generic governed Core deploy capability) and exact runtime/artifact evidence. |
 | Character Blueprint | unresolved; `alston-personal/charactergenerator` explicitly rejected as a provenance match | PR #53 browser/deployer fix | Preserve PR #53 as migration source and do not merge it into Core. Assign/create the actual Character Blueprint canonical repo before migrating v0.4 behavior; do not overwrite the distinct `charactergenerator` product. |
 | Model2IR | canonical repo not yet assigned/created | real standalone package under `libs/model2ir` across historical `feat/model2ir-*` / `fix/model2ir-*` branches; latest observed carrier is v0.9.1 | Freeze the `agentmanager` lineage as migration provenance. Assign/create a standalone canonical repository, then migrate package/tests/fixtures/history with parity; do not continue library implementation in Core. |
+
+## Dependency reality — 2026-08-31
+
+The migration registry must distinguish a resolved shared Core dependency from a still-open product migration gate.
+
+- **Vendor #130:** completed. Vendor PR #127 governance audit run `33344571389`, job `99346155434`, completed successfully on the canonical Oracle-labelled runner `instance-20260129-0852`. Vendor #27 can continue; this does not authorize merging #97/#99/#127 into Core.
+- **ArcanaForge #66:** completed. The fenced static-release capability/public POC acceptance exists. ArcanaForge #3 is now blocked only by product source/artifact provenance, not by missing Core release capability.
+- **LayoutLib #96:** partially accepted. PR #158 (`6deea2ec7debb2e912d6e53eb2954fd081c85c1e`) puts generic release-lane authority in `core/integration` with one machine-readable policy source and exact-SHA deployment authorization. #96 remains open only for live exact-candidate POC dispatch/receipt acceptance and carrier retirement.
+
+A resolved dependency must not remain in `core_dependencies` merely because a product carrier still exists. Carrier retirement and infrastructure availability are different states.
 
 ## Leopard Cat Tarot carrier inventory
 

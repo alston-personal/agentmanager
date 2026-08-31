@@ -19,12 +19,23 @@ This document separates **Project Identity**, **repository ownership**, **develo
 | Project | Canonical repository | Development lane | Main meaning | Online/deploy state | Repo-boundary status |
 | --- | --- | --- | --- | --- | --- |
 | AgentOS Core | `alston-personal/agentmanager` | `core/issue-*` → `core/integration` | protected publication history | live Core uses deployment generation + exact accepted SHA, not branch head | canonical Core owner |
-| Vendor Reputation Service | `alston-personal/vendor-reputation-service` | product feature/fix lane; integration policy to be normalized | accepted Vendor source | Oracle/project carriers must consume pinned Vendor SHA; Vendor implementation should not live in `agentmanager` | canonical repo confirmed; migration cleanup pending |
-| LayoutLib / Layout Lab | `alston-personal/layoutlib` | `feature/*` / `fix/*` → `develop` | accepted/promoted Layout source | POC may consume exact `develop` candidate SHA; production remains promoted/release state | canonical repo confirmed; #96 governs lane/deploy boundary |
-| ArcanaForge | `alston-personal/arcanaforge` | product feature/fix lane; integration policy to be normalized | accepted ArcanaForge source | `/poc/arcanaforge/` is POC and must deploy a pinned candidate through governed static-release capability | canonical repo confirmed; #66 blocks only POC release step |
-| Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | product feature/fix lane; integration policy to be normalized | accepted Tarot source | production/POC source mapping still requires explicit deployment receipt inventory | canonical repo confirmed; remove any product implementation/carriers from Core after parity evidence |
+| Vendor Reputation Service | `alston-personal/vendor-reputation-service` | product feature/fix lane; integration policy to be normalized | accepted Vendor source | shared Oracle runner blocker #130 is resolved; remaining migration is Vendor-owned governed scheduling/execution with exact Vendor source identity and receipt/runtime parity | canonical repo confirmed; carrier retirement tracked by Vendor #27 |
+| LayoutLib / Layout Lab | `alston-personal/layoutlib` | `feature/*` / `fix/*` → `develop` | accepted/promoted Layout source | generic release-lane authority is canonical in `core/integration` via #158; POC still needs one live exact-`develop`-candidate dispatch/receipt acceptance under #96 | canonical repo confirmed; product work unblocked, live POC acceptance pending |
+| ArcanaForge | `alston-personal/arcanaforge` | product feature/fix lane; integration policy to be normalized | accepted ArcanaForge source | Core static-release blocker #66 is resolved; remaining gate is to make `/poc/arcanaforge/` receipt identify the exact canonical `arcanaforge` source/artifact rather than only the `studio-web` host-adapter SHA | canonical repo confirmed; product provenance retirement gate tracked by ArcanaForge #3 |
+| Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | product feature/fix lane; integration policy to be normalized | accepted Tarot source | production/POC source mapping still requires product-owned write/deploy replacement plus exact deployment receipt evidence | canonical repo confirmed; carrier retirement tracked by Tarot #44 |
 | Character Blueprint | unresolved; `alston-personal/charactergenerator` has been checked and rejected as a canonical identity match | unresolved | unresolved | existing Character Blueprint material in `agentmanager` must not be treated as Core authority or migrated into `charactergenerator` by name similarity | canonical repository NOT yet assigned; explicit create/assignment decision required |
 | Model2IR | canonical repository unassigned; no `alston-personal/model2ir` repository exists in current inventory | historical `feat/model2ir-*` / `fix/model2ir-*` work in `agentmanager` is a migration carrier, not an approved Core development lane | new repository `main` must become accepted library source after migration | library boundary; no production web environment required by default | actual standalone v0.9.1 library carrier identified in `agentmanager`; repo creation/assignment is now the blocking identity step |
+
+## Dependency-state rule
+
+A shared Core dependency and a product-carrier retirement gate are different state dimensions.
+
+- A resolved infrastructure/capability issue must not remain an active project blocker merely because the product still has a historical carrier to migrate.
+- Vendor Core #130 is completed: the Oracle-labelled self-hosted runner successfully claimed and completed the formerly queued Vendor governance audit. Vendor #27 now owns the remaining product execution/scheduling migration.
+- ArcanaForge Core #66 is completed: governed fenced static release exists. ArcanaForge #3 now owns the remaining product source/artifact provenance gate for #136 retirement.
+- LayoutLib #96 is split: generic release-lane authority is accepted in `core/integration` through PR #158; only live exact-candidate POC dispatch, receipt/public parity, and subsequent carrier retirement remain.
+
+This distinction is machine-readable in `governance/product-migrations.json`. Workers block only on the precise unresolved step, not on the historical issue number as a blanket project lock.
 
 ## Character Blueprint identity evidence
 
