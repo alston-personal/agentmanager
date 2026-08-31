@@ -9,6 +9,7 @@ on:
       - 'agent_core/experience.py'
       - 'scripts/oracle_experience_regression.py'
       - 'scripts/oracle_experience_regression_entry.py'
+      - 'scripts/oracle_executor_discovery.py'
       - 'scripts/inspect_antigravity_regression_runtime.py'
       - 'experience/agentos-core-oracle.seed.json'
       - 'tests/test_experience_memory.py'
@@ -25,7 +26,7 @@ concurrency:
 jobs:
   regress:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,13 +49,49 @@ jobs:
           set -euo pipefail
           python3 -m pytest -q tests/test_experience_memory.py
 
-      - name: Inspect executor availability
+      - name: Discover Oracle executor surfaces and identity state
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
+          mkdir -p "$OUT_DIR"
+          python3 -m scripts.oracle_executor_discovery \
+            --output "$OUT_DIR/executor-discovery.json"
+          echo "python3=$(command -v python3 || true)"
+          test -d /home/ubuntu/agent-data/runtime/antigravity-relay && echo 'antigravity_relay_root=present' || echo 'antigravity_relay_root=missing'
+
+      - name: Bind discovered Antigravity Codex binary to regression PATH
         shell: bash
         run: |
           set -euo pipefail
-          echo "codex=$(command -v codex || true)"
-          echo "python3=$(command -v python3 || true)"
-          test -d /home/ubuntu/agent-data/runtime/antigravity-relay && echo 'antigravity_relay_root=present' || echo 'antigravity_relay_root=missing'
+          DISCOVERY=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}/executor-discovery.json"
+          WRAP_DIR="$RUNNER_TEMP/issue117-executor-bin"
+          mkdir -p "$WRAP_DIR"
+          python3 - "$DISCOVERY" "$WRAP_DIR/codex" <<'PY'
+          import json, pathlib, shlex, sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          exe=d.get('codex',{}).get('selected_executable')
+          sudo_ok=bool(d.get('runner',{}).get('sudo_as_ubuntu'))
+          out=pathlib.Path(sys.argv[2])
+          if not exe:
+              print('codex_wrapper=not_created:no_discovered_executable')
+              raise SystemExit(0)
+          q=shlex.quote(str(exe))
+          if sudo_ok:
+              body=f'''#!/usr/bin/env bash\nexec sudo -n -u ubuntu env HOME=/home/ubuntu CI=1 {q} "$@"\n'''
+              mode='sudo-ubuntu'
+          else:
+              body=f'''#!/usr/bin/env bash\nexport HOME=/home/ubuntu\nexport CI=1\nexec {q} "$@"\n'''
+              mode='runner-with-ubuntu-home'
+          out.write_text(body,encoding='utf-8')
+          out.chmod(0o755)
+          print('codex_wrapper=created')
+          print('codex_identity_mode='+mode)
+          print('codex_source_executable='+str(exe))
+          PY
+          echo "$WRAP_DIR" >> "$GITHUB_PATH"
 
       - name: Run fresh baseline versus ONE-hydrated regressions
         shell: bash
