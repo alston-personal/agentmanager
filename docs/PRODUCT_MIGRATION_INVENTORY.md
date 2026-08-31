@@ -12,7 +12,7 @@ This document classifies non-Core work that still appears in `alston-personal/ag
 | ArcanaForge | `alston-personal/arcanaforge` | PR #136 POC release carrier | Keep until #66 provides a governed static-release path and an exact ArcanaForge source/artifact receipt can drive `/poc/arcanaforge/`. |
 | LayoutLib | `alston-personal/layoutlib` | Core-side deploy/governance residue tracked by #96 | Keep only generic deployment/promotion adapter. Layout implementation and product tests stay in `layoutlib`; POC consumes exact candidate SHA, production consumes promoted release. |
 | Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | historical `ops/leopardcat-runtime-inspect` and `chore/leopardcat-runtime-inspect` carrier branches plus Tarot-specific deploy/inspect/probe workflows | Product handoff is `alston-personal/leopardcat-tarot#44`. PR #41 is a product-owned read-only parity gate, but retirement also requires a product-owned write/deploy replacement (or thin caller of a generic governed Core deploy capability) and exact runtime/artifact evidence. |
-| Character Blueprint | unresolved; `alston-personal/charactergenerator` is only a candidate | PR #53 browser/deployer fix | Preserve, do not merge into Core. First establish explicit Project Identity and canonical repo, then migrate with parity evidence. |
+| Character Blueprint | unresolved; `alston-personal/charactergenerator` explicitly rejected as a provenance match | PR #53 browser/deployer fix | Preserve PR #53 as migration source and do not merge it into Core. Assign/create the actual Character Blueprint canonical repo before migrating v0.4 behavior; do not overwrite the distinct `charactergenerator` product. |
 | Model2IR | unresolved | future risk of implementation landing in Core | Do not add new Model2IR implementation to `agentmanager`; assign/create a canonical library repo first. |
 
 ## Leopard Cat Tarot carrier inventory
@@ -30,6 +30,24 @@ The remaining Tarot residue has now been reduced from an unspecified file-level 
 The canonical product repository already owns product-side Oracle/runtime inspection and production AI probing. PR `alston-personal/leopardcat-tarot#41` adds a read-only `Production Parity Gate`. That is necessary evidence, but it is not sufficient to retire a write-capable production deploy carrier. Product issue `alston-personal/leopardcat-tarot#44` therefore owns the remaining deploy/parity handoff.
 
 Core must not delete or merge these historical carriers into `core/integration`. They become retirement candidates only after #44 demonstrates a product-owned deployment path (or a thin product caller of a generic governed Core deploy surface), exact source/artifact identity, public/runtime parity, and persisted receipt/evidence.
+
+## Character Blueprint negative provenance
+
+The previous `alston-personal/charactergenerator` name candidate has been inspected and rejected as a canonical identity match for the known Character Blueprint artifact.
+
+Known Character Blueprint migration source:
+
+- PR #53 is a one-file product deployer fix for `scripts/deploy_character_blueprint_poc.py`;
+- that deployer consumes `web_assets/character-blueprint-poc.html`;
+- the source carries `character-blueprint-poc` / v0.4 markers, `character-blueprint-ir/v0.4`, an image → 3D proxy interaction, Three.js, and `OrbitControls`.
+
+Observed `charactergenerator` product:
+
+- `main` currently contains a single `index.html`;
+- the UI describes image upload → AI-generated character text description and full-body imagery;
+- no `OrbitControls` or `character-blueprint-ir` marker is present in repository code search.
+
+This is sufficient to reject automatic identity inference. It is not authority to rename or repurpose `charactergenerator`; #118 instead keeps Character Blueprint unresolved until an explicit canonical repository is assigned or created. PR #53 remains frozen migration evidence and must not be merged into AgentOS Core.
 
 ## Legacy Core proposal separation
 
