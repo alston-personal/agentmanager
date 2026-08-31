@@ -1,0 +1,159 @@
+{
+  "schema": "agentos.product-deployment-carriers/v0",
+  "generated_at": "2026-08-31T06:36:00Z",
+  "umbrella_issue": 118,
+  "worker_issue": 175,
+  "invariants": [
+    "core_or_source_publication_is_not_product_deployment_authority",
+    "generic_core_paths_must_not_implicitly_trigger_product_runtime_mutation",
+    "product_release_requires_explicit_release_authority_unless_a_separately_approved_product_cd_policy_exists",
+    "direct_protected_main_evidence_push_is_not_a_valid_receipt_channel",
+    "failure_after_privileged_execution_boundary_means_side_effect_state_unknown_until_verified",
+    "working_carriers_are_preserved_until_verified_replacements_exist"
+  ],
+  "authority_dimensions": [
+    "product_source_authority",
+    "deploy_orchestrator_authority",
+    "release_trigger_authority",
+    "privileged_execution_authority",
+    "evidence_publication_authority"
+  ],
+  "incident": {
+    "workflow": ".github/workflows/oracle-layoutlab-official-v2.yml",
+    "run_id": 33363888093,
+    "trigger_source": "unrelated Core #72 relay publication candidate",
+    "conclusion": "failure",
+    "side_effect_state": "unknown",
+    "acceptance_evidence": false,
+    "immediate_fence_pr": 174
+  },
+  "carriers": [
+    {
+      "project_id": "layoutlib",
+      "workflow": ".github/workflows/oracle-layoutlab-official-v2.yml",
+      "classification": "runtime_mutating_legacy_carrier_immediate_fence",
+      "runtime_effect": "real Layout Lab service/systemd/reverse-proxy/public acceptance through Antigravity executor",
+      "trigger_before_fence": "workflow_dispatch + push paths including generic antigravity relay worker",
+      "generic_core_trigger_risk": true,
+      "contents_permission_before_fence": "write",
+      "evidence_before_fence": "direct git push protected main",
+      "current_fence": "draft PR #174 proposes workflow_dispatch-only, contents:read, Actions artifact evidence",
+      "retire_owner": "agentos-core#175 + agentos-core#96 + alston-personal/layoutlib#2",
+      "safe_now": "do not merge #173 to main before #174 or equivalent accepted fence"
+    },
+    {
+      "project_id": "layoutlib",
+      "workflow": ".github/workflows/oracle-deploy-layoutlib-web.yml",
+      "classification": "runtime_mutating_legacy_carrier_audit_required",
+      "runtime_effect": "bootstraps/hardens LayoutLib, starts persistent Web daemon and Cloudflare tunnel, records public URL",
+      "trigger": "workflow_dispatch + push paths on workflow/bootstrap/hardening/port-manager files",
+      "generic_core_trigger_risk": true,
+      "contents_permission": "write",
+      "evidence": "direct git push",
+      "safe_immediate_action": "preserve working carrier; classify trigger dependencies and replace direct evidence push before publication changes",
+      "retire_owner": "agentos-core#175 + agentos-core#96 + alston-personal/layoutlib#2"
+    },
+    {
+      "project_id": "layoutlib",
+      "workflow": ".github/workflows/oracle-deploy-layoutlab-static-official.yml",
+      "classification": "read_only_public_acceptance_with_invalid_evidence_publication",
+      "runtime_effect": "public v0.7.9 acceptance only; no production deployment by design",
+      "trigger": "workflow_dispatch + push when workflow file changes",
+      "generic_core_trigger_risk": false,
+      "contents_permission": "write",
+      "evidence": "direct git push HEAD:main",
+      "safe_immediate_action": "retain read-only acceptance semantics; migrate evidence to artifact/governed receipt and remove direct-main write",
+      "retire_owner": "agentos-core#175 + agentos-core#96"
+    },
+    {
+      "project_id": "layoutlib",
+      "workflow": ".github/workflows/oracle-release-layoutlab-v07.yml",
+      "classification": "retired_positive_pattern",
+      "runtime_effect": "none; canonical-source notice only",
+      "trigger": "workflow_dispatch only",
+      "runner": "ubuntu-latest",
+      "contents_permission": "read",
+      "canonical_source": "alston-personal/layoutlib",
+      "safe_immediate_action": "no change"
+    },
+    {
+      "project_id": "layoutlib",
+      "workflow": ".github/workflows/oracle-release-layoutlab-v079-canonical.yml",
+      "classification": "canonical_product_source_but_agentmanager_release_orchestrator",
+      "product_source_authority": "alston-personal/layoutlib",
+      "deploy_orchestrator_authority": "alston-personal/agentmanager",
+      "runtime_effect": "real production Layout Lab v0.7.9 release",
+      "trigger": "workflow_dispatch + main push on workflow/deployment scripts",
+      "generic_core_trigger_risk": false,
+      "publication_implies_release_risk": true,
+      "contents_permission": "read",
+      "evidence": "runtime release receipt and public acceptance",
+      "safe_immediate_action": "preserve until #96/product-owned replacement; classify explicit release-trigger boundary before orchestrator publication",
+      "retire_owner": "agentos-core#175 + agentos-core#96 + alston-personal/layoutlib#2"
+    },
+    {
+      "project_id": "vendor-reputation",
+      "workflow": ".github/workflows/oracle-deploy-vendor-reputation-service.yml",
+      "classification": "external_product_source_legacy_deploy_carrier",
+      "product_source_authority": "alston-personal/vendor-reputation-service",
+      "runtime_effect": "real Docker/API/DB/source-registry deployment on Oracle",
+      "trigger": "workflow_dispatch + main push on workflow/register script",
+      "generic_core_trigger_risk": false,
+      "publication_implies_release_risk": true,
+      "contents_permission": "write",
+      "evidence": "direct git push",
+      "safe_immediate_action": "preserve pinned working carrier; replace evidence write and migrate toward product request + Core #165 execution boundary",
+      "retire_owner": "agentos-core#175 + agentos-core#165 + alston-personal/vendor-reputation-service#27"
+    },
+    {
+      "project_id": "vendor-reputation",
+      "workflow": ".github/workflows/oracle-release-vendor-reputation-canonical.yml",
+      "classification": "external_product_ui_source_legacy_release_carrier",
+      "product_source_authority": "alston-personal/studio-web",
+      "runtime_effect": "real production /vendors/ release with rollback and public acceptance",
+      "trigger": "workflow_dispatch + main push when workflow file changes",
+      "generic_core_trigger_risk": false,
+      "publication_implies_release_risk": true,
+      "contents_permission": "read",
+      "evidence": "runtime backup/receipt plus public acceptance",
+      "safe_immediate_action": "do not mechanically disable; reconcile explicit release trigger with product-owned request/#165 replacement",
+      "retire_owner": "agentos-core#175 + agentos-core#165 + alston-personal/vendor-reputation-service#27"
+    },
+    {
+      "project_id": "arcanaforge",
+      "workflow": ".github/workflows/oracle-release-arcanaforge-poc.yml",
+      "classification": "external_product_ui_source_legacy_release_carrier",
+      "product_source_authority": "alston-personal/studio-web",
+      "runtime_effect": "real production POC ArcanaForge v0.2 release with rollback/public acceptance",
+      "trigger": "workflow_dispatch + main push when workflow file changes",
+      "generic_core_trigger_risk": false,
+      "publication_implies_release_risk": true,
+      "contents_permission": "read",
+      "evidence": "runtime backup/receipt plus public acceptance",
+      "safe_immediate_action": "preserve until canonical ArcanaForge provenance/replacement exists; separate orchestrator publication from release authority",
+      "retire_owner": "agentos-core#175 + alston-personal/arcanaforge#3"
+    },
+    {
+      "project_id": "character-blueprint",
+      "workflow": ".github/workflows/oracle-release-character-blueprint.yml",
+      "classification": "product_source_and_deployer_still_in_agentmanager_migration_carrier",
+      "product_source_authority": "unresolved pending agentos-core#164",
+      "runtime_effect": "real Oracle Character Blueprint production release plus public browser E2E",
+      "trigger": "workflow_dispatch + main push on Character Blueprint HTML/deployer/selftest/browser smoke files",
+      "generic_core_trigger_risk": false,
+      "publication_implies_release_risk": true,
+      "contents_permission": "read",
+      "evidence": "runtime refresh receipt plus public acceptance/E2E",
+      "safe_immediate_action": "preserve as migration provenance/working carrier; no new Character Blueprint product feature publication into agentmanager main",
+      "retire_owner": "agentos-core#175 + agentos-core#164"
+    }
+  ],
+  "next_audit": [
+    "enumerate remaining Oracle product deploy/release workflows in agentmanager/main",
+    "separate read-only acceptance from runtime mutation and production release",
+    "identify all direct protected-main evidence writes",
+    "identify all generic Core path to product mutation trigger edges",
+    "cross-link each carrier to product-owned replacement/retirement issue",
+    "apply immediate fences only where current trigger creates unsafe authority coupling"
+  ]
+}
