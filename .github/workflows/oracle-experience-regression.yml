@@ -142,6 +142,8 @@ jobs:
           git add ".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
           git diff --cached --quiet && exit 0
           git commit -m "evidence(agentos): Oracle experience regression ${GITHUB_RUN_ID}"
+          git fetch origin core/issue-117-experience-memory
+          git rebase origin/core/issue-117-experience-memory
           git push origin HEAD:core/issue-117-experience-memory
 
       - name: Enforce complete regression only after evidence is preserved
