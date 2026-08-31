@@ -38,7 +38,9 @@ Do not create a competing generic protocol unless current contracts are demonstr
 
 ## Preferred Antigravity integration point
 
-Antigravity officially supports custom MCP servers and workspace-local configuration under `.agents/mcp_config.json`. Prefer this as the first provider-side integration mechanism because it reaches the actual Antigravity Agent/Gemini session rather than a sibling CLI process.
+Antigravity officially supports MCP servers. For Antigravity 2.0 / IDE / CLI, the user-level MCP client configuration is `~/.gemini/antigravity/mcp_config.json`.
+
+Prefer MCP as the first provider-side integration mechanism because it reaches the actual Antigravity Agent/Gemini session rather than a sibling CLI process.
 
 The preferred shape is:
 
@@ -47,14 +49,14 @@ Antigravity Gemini
         |
         | logical ONE tools/resources only
         v
-workspace ONE MCP/provider adapter
+ONE MCP/provider adapter
         |
         | trusted Node-side mediation
         v
 AgentOS ONE / canonical state
 ```
 
-The Gemini model/session must never receive a raw Realm bearer credential in prompt text, MCP resource content, config committed to Git, or model-visible environment output.
+The Gemini model/session must never receive a raw Realm bearer credential in prompt text, MCP resource content, committed config, or model-visible environment output.
 
 ## Work order
 
@@ -74,6 +76,7 @@ Do not dump auth/token/session files. Do not copy private Antigravity session st
 
 Read, at minimum:
 
+- `.agents/AGENTS.md`
 - `AGENTS.md`
 - `docs/CURRENT_STATE.md`
 - `agent_core/realm_server.py`
@@ -86,7 +89,7 @@ Confirm what is already implemented before adding code.
 
 ### 3. Build the narrow provider adapter
 
-Prefer a small workspace/local MCP server or equivalent Antigravity-supported provider adapter that exposes only bounded logical operations such as:
+Prefer a small local MCP server or equivalent Antigravity-supported provider adapter that exposes only bounded logical operations such as:
 
 - `one_status`
 - `one_resolve(project)`
@@ -98,11 +101,11 @@ Names are not canonical yet; preserve existing Core schemas internally.
 
 The adapter may execute on the trusted Node/ubuntu side and may use local canonical data or existing authenticated Core calls. The model-facing MCP contract must contain no Realm/node bearer credential.
 
-### 4. Add workspace MCP configuration
+### 4. Configure Antigravity MCP
 
-When the adapter is ready, add a **secret-free** `.agents/mcp_config.json` entry pointing to the local adapter. Prefer a local stdio/server command or localhost endpoint whose authentication remains outside model-visible configuration.
+When the adapter is ready, add a **secret-free** MCP server entry to `~/.gemini/antigravity/mcp_config.json` pointing to the local adapter. Prefer a local stdio/server command or localhost endpoint whose sensitive authentication remains outside model-visible content.
 
-Do not commit personal OAuth tokens, bearer tokens, API keys, or absolute credential paths.
+Do not commit personal OAuth tokens, bearer tokens, API keys, or private credential material to the repository.
 
 ### 5. Live E2 acceptance with the actual Antigravity Gemini
 
@@ -128,9 +131,10 @@ After the first machine passes E2, extract the minimum portable onboarding bundl
 
 ```text
 repo checkout
-  -> workspace bootstrap/rule/skill
-  -> secret-free MCP config
-  -> Node enrollment / trusted adapter credential setup outside model context
+  -> `.agents/AGENTS.md` + onboarding skill
+  -> trusted local ONE adapter install
+  -> secret-free Antigravity MCP registration
+  -> Node enrollment / adapter credential setup outside model context
   -> Antigravity refresh/reopen
   -> ONE discovery probe
   -> fresh-session acceptance
