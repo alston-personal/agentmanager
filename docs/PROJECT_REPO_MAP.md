@@ -24,7 +24,7 @@ This document separates **Project Identity**, **repository ownership**, **develo
 | ArcanaForge | `alston-personal/arcanaforge` | product feature/fix lane; integration policy to be normalized | accepted ArcanaForge source | `/poc/arcanaforge/` is POC and must deploy a pinned candidate through governed static-release capability | canonical repo confirmed; #66 blocks only POC release step |
 | Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | product feature/fix lane; integration policy to be normalized | accepted Tarot source | production/POC source mapping still requires explicit deployment receipt inventory | canonical repo confirmed; remove any product implementation/carriers from Core after parity evidence |
 | Character Blueprint | unresolved; `alston-personal/charactergenerator` has been checked and rejected as a canonical identity match | unresolved | unresolved | existing Character Blueprint material in `agentmanager` must not be treated as Core authority or migrated into `charactergenerator` by name similarity | canonical repository NOT yet assigned; explicit create/assignment decision required |
-| Model2IR | unresolved; no `alston-personal` repository named `model2ir` found in current repository search | unresolved | unresolved | new independent-library direction requires explicit canonical repository assignment | repository unresolved; do not place implementation in Core by default |
+| Model2IR | canonical repository unassigned; no `alston-personal/model2ir` repository exists in current inventory | historical `feat/model2ir-*` / `fix/model2ir-*` work in `agentmanager` is a migration carrier, not an approved Core development lane | new repository `main` must become accepted library source after migration | library boundary; no production web environment required by default | actual standalone v0.9.1 library carrier identified in `agentmanager`; repo creation/assignment is now the blocking identity step |
 
 ## Character Blueprint identity evidence
 
@@ -36,6 +36,22 @@ This document separates **Project Identity**, **repository ownership**, **develo
 - repository code search finds neither `OrbitControls` nor `character-blueprint-ir` in `charactergenerator`.
 
 Therefore similar naming is contradicted by product behavior and source markers. Core must not overwrite or repurpose `charactergenerator` as the Character Blueprint canonical repository without a separate explicit product-consolidation decision. For #118, Character Blueprint remains identity-unresolved and requires assignment/creation of its canonical repository before PR #53 behavior is migrated.
+
+## Model2IR carrier evidence
+
+Model2IR is no longer classified as merely a future independent-library direction. A real standalone package already exists on historical non-Core branches inside `agentmanager`.
+
+Latest observed carrier:
+
+- branch: `feat/model2ir-meshy-weak-structure-v091`;
+- tip: `1314bb01e718e1a930e24441b3544dd8da020065`;
+- package root: `libs/model2ir/`;
+- `pyproject.toml`: project `model2ir`, version `0.9.1`, console script `model2ir`;
+- README explicitly defines the reusable **3D asset → Canonical Character IR** boundary as extracted from the AgentOS research codebase.
+
+Observed lineage in `agentmanager` includes `feat/model2ir-v01`, reversible v0.2, external semantics v0.3, stabilized import v0.4, real-family stability v0.5, VRM topology v0.6, teacher-dataset v0.7 variants, library v0.8 / CLI v0.8.1, reversible GLB v0.9, and Meshy weak-structure v0.9.1.
+
+This lineage is migration provenance, not permission to keep developing the library inside Core. #118 must preserve the v0.9.1 carrier until a canonical standalone repository is assigned/created and the package, tests, fixtures, and relevant history are migrated with parity. After that migration, new Model2IR work belongs in the product/library repository.
 
 ## `agentmanager` ownership boundary
 

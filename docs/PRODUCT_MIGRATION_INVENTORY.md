@@ -13,7 +13,7 @@ This document classifies non-Core work that still appears in `alston-personal/ag
 | LayoutLib | `alston-personal/layoutlib` | Core-side deploy/governance residue tracked by #96 | Keep only generic deployment/promotion adapter. Layout implementation and product tests stay in `layoutlib`; POC consumes exact candidate SHA, production consumes promoted release. |
 | Leopard Cat Tarot | `alston-personal/leopardcat-tarot` | historical `ops/leopardcat-runtime-inspect` and `chore/leopardcat-runtime-inspect` carrier branches plus Tarot-specific deploy/inspect/probe workflows | Product handoff is `alston-personal/leopardcat-tarot#44`. PR #41 is a product-owned read-only parity gate, but retirement also requires a product-owned write/deploy replacement (or thin caller of a generic governed Core deploy capability) and exact runtime/artifact evidence. |
 | Character Blueprint | unresolved; `alston-personal/charactergenerator` explicitly rejected as a provenance match | PR #53 browser/deployer fix | Preserve PR #53 as migration source and do not merge it into Core. Assign/create the actual Character Blueprint canonical repo before migrating v0.4 behavior; do not overwrite the distinct `charactergenerator` product. |
-| Model2IR | unresolved | future risk of implementation landing in Core | Do not add new Model2IR implementation to `agentmanager`; assign/create a canonical library repo first. |
+| Model2IR | canonical repo not yet assigned/created | real standalone package under `libs/model2ir` across historical `feat/model2ir-*` / `fix/model2ir-*` branches; latest observed carrier is v0.9.1 | Freeze the `agentmanager` lineage as migration provenance. Assign/create a standalone canonical repository, then migrate package/tests/fixtures/history with parity; do not continue library implementation in Core. |
 
 ## Leopard Cat Tarot carrier inventory
 
@@ -48,6 +48,32 @@ Observed `charactergenerator` product:
 - no `OrbitControls` or `character-blueprint-ir` marker is present in repository code search.
 
 This is sufficient to reject automatic identity inference. It is not authority to rename or repurpose `charactergenerator`; #118 instead keeps Character Blueprint unresolved until an explicit canonical repository is assigned or created. PR #53 remains frozen migration evidence and must not be merged into AgentOS Core.
+
+## Model2IR carrier inventory
+
+Model2IR already exists as an independently packaged library inside historical `agentmanager` branches. It must therefore be treated as a concrete migration, not a future placement rule.
+
+Latest observed carrier:
+
+- `feat/model2ir-meshy-weak-structure-v091` @ `1314bb01e718e1a930e24441b3544dd8da020065`;
+- package root `libs/model2ir/` with `README.md`, `pyproject.toml`, and `src/`;
+- package metadata declares `name = "model2ir"`, `version = "0.9.1"`, Python `>=3.10`, and a `model2ir` console script;
+- README describes the reusable 3D asset → Canonical Character IR boundary extracted from AgentOS research, including reversible GLB/VRM handling, stabilization, teacher dataset support, and weak-structure profiling.
+
+Observed branch lineage includes:
+
+- `feat/model2ir-v01`;
+- `feat/model2ir-reversible-v02`;
+- `feat/model2ir-external-semantics-v03`;
+- `feat/model2ir-stabilized-import-v04`;
+- `feat/model2ir-real-family-stability-v05`;
+- `feat/model2ir-vrm-topology-v06`;
+- `feat/model2ir-teacher-dataset-v07` plus rebase variants;
+- `feat/model2ir-library-v08` and `fix/model2ir-cli-v081`;
+- `feat/model2ir-reversible-glb-v09`;
+- `feat/model2ir-meshy-weak-structure-v091`.
+
+The branch names are provenance, not canonical source authority. Preserve the latest accepted package state and relevant history until a standalone repository is assigned/created. Migration must reproduce package tests/fixtures and preserve the library contract before the old `agentmanager` carrier can be retired. New Model2IR implementation must not continue in Core merely because the current carrier is there.
 
 ## Legacy Core proposal separation
 
