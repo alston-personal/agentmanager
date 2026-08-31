@@ -1,0 +1,112 @@
+{
+  "schema": "agentos.core-workers/v0",
+  "project_id": "agentos-core",
+  "generated_at": "2026-08-31T01:21:00Z",
+  "authority": {
+    "canonical_integration_branch": "core/integration",
+    "publication_branch": "main",
+    "publication_requires_explicit_human_authorization": true,
+    "live_runtime_authority": {
+      "generation": 6,
+      "source_sha": "f842bee2cf7c24fc3bf7424bd121994562e829cd"
+    }
+  },
+  "workers": [
+    {
+      "issue": 117,
+      "name": "ONE Experience discovery/hydration/regression",
+      "branch": "core/issue-117-experience-memory",
+      "status": "blocked",
+      "execution_lane": "separate-worker-thread",
+      "dependencies": [72, 130],
+      "blocking_scope": ["agentos-core:experience-regression"],
+      "evidence": [".agentos/evidence/experience/", "pull/119"],
+      "non_authorities": ["protected-main merge", "deployment-generation advance"]
+    },
+    {
+      "issue": 72,
+      "name": "Antigravity/Claude executor liveness",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "shared-executor-runtime-worker",
+      "dependencies": [130],
+      "blocking_scope": ["agentos-core:experience-regression", "vendor-reputation:semantic-classification"],
+      "evidence": [".agentos/evidence/relay-smoke.json"],
+      "non_authorities": ["protected-main merge"]
+    },
+    {
+      "issue": 130,
+      "name": "Oracle self-hosted runner recovery",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "shared-infrastructure-worker",
+      "dependencies": [],
+      "blocking_scope": ["oracle:self-hosted-governance-jobs", "agentos-core:experience-regression"],
+      "evidence": [],
+      "non_authorities": ["weaken-governance-gates", "protected-main merge"]
+    },
+    {
+      "issue": 105,
+      "name": "Governed GUI control certification",
+      "branch": "core/issue-105-gui-control",
+      "status": "queued",
+      "execution_lane": "independent-worker",
+      "dependencies": [],
+      "blocking_scope": ["agentos-node:full-chatgpt-one-gui-certification"],
+      "evidence": [".agentos/evidence/node-gui/vopc5750/acceptance.json", "pull/116"],
+      "non_authorities": ["protected-main merge"]
+    },
+    {
+      "issue": 96,
+      "name": "LayoutLib development/deployment authority",
+      "branch": "core/layoutlib-poc-candidate-deploy",
+      "status": "queued",
+      "execution_lane": "independent-worker",
+      "dependencies": [130],
+      "blocking_scope": ["layoutlib:poc-deployment"],
+      "evidence": [],
+      "non_authorities": ["layoutlib production promotion", "protected-main merge"]
+    },
+    {
+      "issue": 66,
+      "name": "Governed Studio static release",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-worker",
+      "dependencies": [130],
+      "blocking_scope": ["arcanaforge:poc-static-release"],
+      "evidence": [],
+      "non_authorities": ["arbitrary shell authority", "protected-main merge"]
+    },
+    {
+      "issue": 118,
+      "name": "Repository-boundary cleanup",
+      "branch": "core/issue-118-repo-boundary",
+      "status": "running",
+      "execution_lane": "architecture-migration-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "evidence": ["docs/PROJECT_REPO_MAP.md", "pull/139"],
+      "non_authorities": ["global product feature pause", "destructive historical branch deletion", "protected-main merge"]
+    },
+    {
+      "issue": 137,
+      "name": "Parallel worker/dependency control-plane",
+      "branch": "core/issue-137-worker-coordination",
+      "status": "acceptance_ready",
+      "execution_lane": "canonical-coordination-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "evidence": ["docs/CORE_WORKER_MODEL.md", "governance/core-workers.json", "pull/138"],
+      "non_authorities": ["protected-main merge"]
+    }
+  ],
+  "dependency_edges": [
+    {"from": "agentos-core#117", "to": "agentos-core#72"},
+    {"from": "agentos-core#117", "to": "agentos-core#130"},
+    {"from": "agentos-core#72", "to": "agentos-core#130"},
+    {"from": "vendor-reputation:semantic-classification", "to": "agentos-core#72"},
+    {"from": "layoutlib:poc-deployment", "to": "agentos-core#96"},
+    {"from": "arcanaforge:poc-static-release", "to": "agentos-core#66"}
+  ]
+}
