@@ -25,9 +25,7 @@ if [ ! -f "$TARGET/agentos_node/one_mcp.py" ]; then
   mv "$TMP" "$TARGET"
 fi
 
-python3 "$TARGET/scripts/install_antigravity_one_mcp.py" \
-  --repo "$TARGET" \
-  --mode oracle-local
+python3 "$TARGET/scripts/install_antigravity_one_mcp_oracle.py"
 
 echo "agentos_antigravity_one_bootstrap=PASS"
 echo "agentos_source_ref=$SOURCE_REF"
