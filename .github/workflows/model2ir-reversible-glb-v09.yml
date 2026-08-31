@@ -1,0 +1,70 @@
+name: model2ir reversible GLB VRM v0.9
+
+on:
+  pull_request:
+    paths:
+      - 'libs/model2ir/**'
+      - 'tests/test_model2ir_glb_reversible_v09.py'
+      - 'scripts/model2ir_glb_reversible_regression.py'
+      - '.github/workflows/model2ir-reversible-glb-v09.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'libs/model2ir/**'
+      - 'tests/test_model2ir_glb_reversible_v09.py'
+      - 'scripts/model2ir_glb_reversible_regression.py'
+      - '.github/workflows/model2ir-reversible-glb-v09.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reversible-glb-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install standalone model2ir
+        run: python -m pip install -e libs/model2ir
+
+      - name: Run synthetic binary-container contract tests
+        run: python -m unittest discover -s tests -p 'test_model2ir_glb_reversible_v09.py' -q
+
+      - name: Fetch real self-contained humanoid GLB
+        run: |
+          curl -fL --retry 4 https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CesiumMan/glTF-Binary/CesiumMan.glb -o /tmp/CesiumMan.glb
+          test -s /tmp/CesiumMan.glb
+
+      - name: Prove real GLB binary container preservation
+        run: |
+          rm -rf /tmp/model2ir-glb-v09
+          python scripts/model2ir_glb_reversible_regression.py \
+            --asset /tmp/CesiumMan.glb \
+            --out /tmp/model2ir-glb-v09 | tee /tmp/model2ir-glb-v09.log
+          grep -q '"ok": true' /tmp/model2ir-glb-v09.log
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/model2ir-glb-v09/report.json'))
+          assert p['schema']=='model2ir-glb-reversible-regression/v0.9'
+          assert p['gate']['status']=='PASS'
+          assert p['gate']['source_unchanged'] is True
+          assert p['gate']['canonical_ir_exact'] is True
+          assert p['gate']['non_json_chunks_exact'] is True
+          assert p['gate']['relocatable_source'] is True
+          assert p['preservation']['lossless_reversible'] is True
+          assert p['preservation']['container']['non_json_chunk_count'] >= 1
+          assert p['preservation']['container']['source_chunks'] == p['preservation']['container']['output_chunks']
+          print('model2ir_real_glb_container_preservation=PASS')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model2ir-reversible-glb-v09
+          path: /tmp/model2ir-glb-v09/
+          if-no-files-found: error
+          retention-days: 30
