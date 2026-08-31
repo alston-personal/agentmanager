@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.actual-client-config-evidence/v1",
+  "receipt": {
+    "action": "shell.exec",
+    "cognition_ids_used": [],
+    "completed_at": "2026-08-31T02:30:30Z",
+    "execution": {
+      "argv": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$p=Join-Path $env:AGENTOS_CLIENT_HOME 'client.json'; if(Test-Path -LiteralPath $p){$j=Get-Content -Raw -LiteralPath $p | ConvertFrom-Json; [ordered]@{path=$p;one_url=$j.one_url;realm_id=$j.realm_id;node_id=$j.node_id} | ConvertTo-Json -Compress}else{[ordered]@{path=$p;missing=$true}|ConvertTo-Json -Compress}"
+      ],
+      "cwd": "C:\\Users\\alston.huang\\AgentOS",
+      "executable": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "timeout_seconds": 15
+    },
+    "node_id": "vopc5750",
+    "ok": true,
+    "realm_id": "realm-alston",
+    "received_at": "2026-08-31T02:30:30Z",
+    "returncode": 0,
+    "schema": "agentos.node-receipt/v0.1",
+    "started_at": "2026-08-31T02:30:29Z",
+    "stderr": "",
+    "stdout": "{\"path\":\"C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\state\\\\client.json\",\"one_url\":\"https://studio.milkcat.org/dashboard/api/agentos\",\"realm_id\":\"realm-alston\",\"node_id\":\"vopc5750\"}\n",
+    "task_id": "vopc5750-actual-client-config-1788143425"
+  }
+}
