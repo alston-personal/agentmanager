@@ -309,6 +309,149 @@ def _publish_project_continuation(params: dict[str, Any]) -> dict[str, Any]:
     from agent_core.project_continuation_index import publish_project_continuation
     return publish_project_continuation(params)
 
+CLAUDE_LIVENESS_PROBES = frozenset({"auth_status", "headless_print", "restricted_headless_print"})
+CLAUDE_LIVENESS_MARKER = "AGENTOS_CLAUDE_LIVENESS_PASS"
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _claude_probe_result(
+    argv: list[str],
+    *,
+    command_class: str,
+    timeout: float,
+    marker: str | None = None,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    stdout = ""
+    stderr = ""
+    returncode = 124
+    timed_out = False
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=str(Path.home()),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        stdout = completed.stdout or ""
+        stderr = completed.stderr or ""
+        returncode = int(completed.returncode)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        raw_stdout = exc.stdout or ""
+        raw_stderr = exc.stderr or ""
+        stdout = raw_stdout.decode(errors="replace") if isinstance(raw_stdout, bytes) else str(raw_stdout)
+        stderr = raw_stderr.decode(errors="replace") if isinstance(raw_stderr, bytes) else str(raw_stderr)
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    lowered = (stdout + "\n" + stderr).lower()
+    unsupported = any(
+        token in lowered
+        for token in (
+            "unknown option", "unknown command", "unrecognized option",
+            "unrecognized command", "invalid option", "no such command",
+        )
+    )
+    result: dict[str, Any] = {
+        "command_class": command_class,
+        "returncode": returncode,
+        "timed_out": timed_out,
+        "elapsed_ms": elapsed_ms,
+        "stdout_bytes": len(stdout.encode("utf-8", errors="replace")),
+        "stderr_bytes": len(stderr.encode("utf-8", errors="replace")),
+        "stdout_sha256": _sha256_text(stdout),
+        "stderr_sha256": _sha256_text(stderr),
+        "supported": not unsupported,
+    }
+    if marker is not None:
+        result["expected_marker"] = marker
+        result["marker_present"] = marker in stdout
+    if command_class == "auth_status":
+        if unsupported:
+            auth_state = "unsupported"
+        elif any(token in lowered for token in ("not logged in", "not authenticated", "unauthenticated", "login required")):
+            auth_state = "not_authenticated"
+        elif any(token in lowered for token in ("logged in", "authenticated")):
+            auth_state = "authenticated"
+        elif returncode == 0 and not timed_out:
+            auth_state = "status_ok_unclassified"
+        else:
+            auth_state = "unknown"
+        result["auth_state"] = auth_state
+    return result
+
+
+def _claude_liveness_diagnose(params: dict[str, Any]) -> dict[str, Any]:
+    if set(params) != {"probe"}:
+        raise ValueError("unexpected parameters")
+    probe = str(params.get("probe") or "").strip()
+    if probe not in CLAUDE_LIVENESS_PROBES:
+        raise ValueError("unsupported Claude liveness probe")
+
+    # Import lazily so the deterministic Action Relay stays independent
+    # from the model relay except for this explicitly-authorized probe.
+    from agentos_node.antigravity_relay_worker import discover_executor
+
+    provider, executor = discover_executor("claude")
+    if provider != "claude" or not executor:
+        return {
+            "ok": True,
+            "probe": probe,
+            "probe_ok": False,
+            "supported": False,
+            "classification": "executor_unavailable",
+        }
+
+    binary = executor[0]
+    version = "unknown"
+    parts = Path(binary).parts
+    for part in parts:
+        prefix = "anthropic.claude-code-"
+        suffix = "-linux-arm64"
+        if part.startswith(prefix) and part.endswith(suffix):
+            version = part[len(prefix):-len(suffix)]
+            break
+
+    prompt = f"Return exactly {CLAUDE_LIVENESS_MARKER}. Do not use tools."
+    if probe == "auth_status":
+        argv = [binary, "auth", "status"]
+        result = _claude_probe_result(argv, command_class=probe, timeout=20.0)
+        probe_ok = result["returncode"] == 0 and not result["timed_out"] and result.get("auth_state") != "not_authenticated"
+    else:
+        fixed = [binary]
+        if probe == "restricted_headless_print":
+            fixed.append("--restricted")
+        fixed.extend(["--bare", "--print", "--output-format", "text", "--effort", "low", prompt])
+        result = _claude_probe_result(
+            fixed,
+            command_class=probe,
+            timeout=30.0,
+            marker=CLAUDE_LIVENESS_MARKER,
+        )
+        probe_ok = (
+            result["returncode"] == 0
+            and not result["timed_out"]
+            and result.get("marker_present") is True
+        )
+
+    # `ok` means the bounded diagnostic action itself completed and
+    # emitted sanitized evidence. Probe health is carried separately.
+    return {
+        "ok": True,
+        "probe": probe,
+        "probe_ok": bool(probe_ok),
+        "provider": "claude",
+        "executor_version": version,
+        "result": result,
+        "raw_output_persisted": False,
+        "arbitrary_argv": False,
+    }
+
+
 def _antigravity_restart(params: dict[str, Any]) -> dict[str, Any]:
     if params not in ({}, {"service": "agentos-antigravity-relay"}): raise ValueError("unexpected parameters")
     return _restart_user_service("agentos-antigravity-relay.service")
@@ -321,6 +464,7 @@ ACTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "github.repo.seed_verify_studio_web": _seed_verify_studio_web_remote,
     "layoutlab.api.restart": _layoutlab_api_restart,
     "agentos.antigravity.restart": _antigravity_restart,
+    "agentos.claude.liveness_diagnose": _claude_liveness_diagnose,
     "agentos.project.publish_continuation": _publish_project_continuation,
 }
 
