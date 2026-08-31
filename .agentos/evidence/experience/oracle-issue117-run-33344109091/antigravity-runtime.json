@@ -1,0 +1,20 @@
+{
+  "capsules": [
+    {
+      "bucket": "missing",
+      "capsule_id": "relay-31d070f5482e40fb9846558a10a2a24d",
+      "receipt": {}
+    },
+    {
+      "bucket": "missing",
+      "capsule_id": "relay-150797f579ae4ef389e11ffa419c37a4",
+      "receipt": {}
+    }
+  ],
+  "redaction": "Only allowlisted scalar receipt/worker fields are persisted; prompts, environment, raw logs, stdout/stderr, argv, and arbitrary files are excluded.",
+  "relay_root_present": true,
+  "schema": "agentos.antigravity-regression-diagnostic/v0",
+  "worker": {},
+  "worker_proc_exe": null,
+  "worker_ready_present": false
+}
