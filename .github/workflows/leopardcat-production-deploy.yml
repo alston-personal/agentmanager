@@ -1,0 +1,104 @@
+name: LeopardCat Governed Production Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-production-deploy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy LeopardCat main safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          OLD=ca8ffce72662821fc152872c881d832fc17f2fa7
+          TARGET=ad369808e8c9e53ac989672a08a526b986f25c8e
+
+          echo '=== preflight ==='
+          test -d "$ROOT/.git"
+          test "$(git -C "$ROOT" branch --show-current)" = main
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo "head_before=$HEAD"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+
+          mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
+          for f in "${DIRTY[@]:-}"; do
+            test -z "$f" && continue
+            case "$f" in
+              website/dist/index.html|website/stats.json) ;;
+              *) echo "unexpected_dirty=$f"; exit 20 ;;
+            esac
+          done
+          echo "dirty_allowed=${#DIRTY[@]}"
+
+          BACKUP=/tmp/leopardcat-stats-${GITHUB_RUN_ID:-manual}.json
+          cp "$WEB/stats.json" "$BACKUP"
+          echo "stats_backup=$BACKUP"
+
+          echo '=== fast-forward source ==='
+          git -C "$ROOT" fetch origin main
+          git -C "$ROOT" merge --ff-only origin/main
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
+
+          echo '=== preserve runtime stats ==='
+          cp "$BACKUP" "$WEB/stats.json"
+
+          echo '=== restart ownership ==='
+          systemctl --user stop leopardcat-tarot.service || true
+          for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
+            cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+            cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then
+              echo "terminating_stale_pid=$pid"
+              kill "$pid" || true
+            fi
+          done
+          for i in $(seq 1 20); do
+            if ! ss -ltnp 2>/dev/null | grep -q ':8088'; then break; fi
+            sleep 1
+          done
+          if ss -ltnp 2>/dev/null | grep -q ':8088'; then
+            echo 'port_8088_still_busy=YES'
+            exit 21
+          fi
+
+          systemctl --user start leopardcat-tarot.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/api/v1/ai-policy >/tmp/leopardcat-policy.json; then
+              break
+            fi
+            sleep 1
+          done
+          systemctl --user is-active leopardcat-tarot.service
+          curl -fsS --max-time 5 http://127.0.0.1:8088/api/v1/ai-policy >/tmp/leopardcat-policy.json
+          cat /tmp/leopardcat-policy.json
+          echo
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"
+          test "$code" = 200
+          echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
+          echo 'leopardcat_deploy=PASS'
+          REMOTE
