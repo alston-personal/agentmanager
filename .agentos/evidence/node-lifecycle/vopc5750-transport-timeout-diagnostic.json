@@ -1,0 +1,37 @@
+{
+  "schema": "agentos.transport-timeout-diagnostic-evidence/v1",
+  "oracle": {
+    "8765": "open",
+    "8787": "closed:ConnectionRefusedError",
+    "8080": "open",
+    "8000": "open",
+    "running_services_tail": "",
+    "registry_node": null
+  },
+  "node_receipt": {
+    "action": "shell.exec",
+    "cognition_ids_used": [],
+    "completed_at": "2026-08-31T01:49:29Z",
+    "execution": {
+      "argv": [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference='Continue'\n$root=Join-Path $env:LOCALAPPDATA 'AgentOS'\n$candidates=@(\n  (Join-Path $root 'node.json'),\n  (Join-Path $root 'config.json'),\n  (Join-Path $root 'client.json'),\n  (Join-Path $root 'realm.json')\n)\n$files=@()\nforeach($f in $candidates){ if(Test-Path -LiteralPath $f){ $files += [ordered]@{path=$f;content=(Get-Content -Raw -LiteralPath $f)} } }\n$envRows=@{}\nGet-ChildItem Env: | Where-Object { $_.Name -match '(?i)AGENTOS|ONE|REALM|GATEWAY' } | ForEach-Object { $envRows[$_.Name]=$_.Value }\n$procs=@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '(?i)agentos_node\\.client_cli\\s+run' } | ForEach-Object { [ordered]@{pid=[int]$_.ProcessId;command_line=[string]$_.CommandLine} })\n$targets=@()\nforeach($text in @($files.content)+@($envRows.Values)+@($procs.command_line)){\n  if($null -ne $text){ [regex]::Matches([string]$text,'https?://[^\\s\\\"''<>]+') | ForEach-Object { $targets += $_.Value.TrimEnd('/','}',']',',') } }\n}\n$targets=@($targets | Select-Object -Unique)\n$tests=@()\nforeach($u in $targets){\n  try{\n    $uri=[uri]$u; $hostName=$uri.DnsSafeHost; $port=if($uri.IsDefaultPort){if($uri.Scheme -eq 'https'){443}else{80}}else{$uri.Port}\n    $dns=$null; try{$dns=@([System.Net.Dns]::GetHostAddresses($hostName) | ForEach-Object {$_.IPAddressToString})}catch{$dns=@('DNS_ERROR:'+($_.Exception.Message))}\n    $tcp=$false; $tcpError=$null; $sw=[Diagnostics.Stopwatch]::StartNew(); $client=New-Object Net.Sockets.TcpClient\n    try{ $ar=$client.BeginConnect($hostName,$port,$null,$null); if($ar.AsyncWaitHandle.WaitOne(5000)){ $client.EndConnect($ar); $tcp=$true } else { $tcpError='timeout' } }catch{$tcpError=$_.Exception.Message}finally{$client.Close();$sw.Stop()}\n    $httpStatus=$null; $httpError=$null; $httpMs=$null\n    try{ $h=[Diagnostics.Stopwatch]::StartNew(); $r=Invoke-WebRequest -UseBasicParsing -Uri $u -Method Head -TimeoutSec 8 -ErrorAction Stop; $h.Stop(); $httpStatus=[int]$r.StatusCode; $httpMs=$h.ElapsedMilliseconds }catch{ if($h){$h.Stop();$httpMs=$h.ElapsedMilliseconds}; $httpError=$_.Exception.Message; if($_.Exception.Response){try{$httpStatus=[int]$_.Exception.Response.StatusCode}catch{}} }\n    $tests += [ordered]@{url=$u;host=$hostName;port=$port;dns=$dns;tcp=$tcp;tcp_error=$tcpError;tcp_ms=$sw.ElapsedMilliseconds;http_status=$httpStatus;http_error=$httpError;http_ms=$httpMs}\n  }catch{ $tests += [ordered]@{url=$u;parse_error=$_.Exception.Message} }\n}\n[ordered]@{schema='agentos.node-transport-diagnostic/v1';observed_at=(Get-Date).ToUniversalTime().ToString('o');files=$files;env=$envRows;client_processes=$procs;targets=$targets;tests=$tests} | ConvertTo-Json -Depth 8 -Compress\n"
+      ],
+      "cwd": "C:\\Users\\alston.huang\\AgentOS",
+      "executable": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "timeout_seconds": 40
+    },
+    "node_id": "vopc5750",
+    "ok": true,
+    "realm_id": "realm-alston",
+    "received_at": "2026-08-31T01:49:29Z",
+    "returncode": 1,
+    "schema": "agentos.node-receipt/v0.1",
+    "started_at": "2026-08-31T01:49:28Z",
+    "stderr": "位於 線路:1 字元:1\n+ $ErrorActionPreference='Continue'\n+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n此指令碼包含惡意內容，而且已由您的防毒軟體封鎖。\n    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException\n    + FullyQualifiedErrorId : ScriptContainedMaliciousContent\n \n",
+    "stdout": "",
+    "task_id": "vopc5750-transport-diag-1788140968"
+  }
+}
