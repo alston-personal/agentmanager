@@ -24,7 +24,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy LeopardCat deck-owned share theme safely
+      - name: Deploy LeopardCat reading OG share preview safely
         shell: bash
         run: |
           set -euo pipefail
@@ -33,8 +33,8 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=f35709108233df39e2a4a9237ea44139ee9ca066
-          TARGET=d1cae4fc34d2bfaec00bbbab54a058d33a4595cc
+          OLD=d1cae4fc34d2bfaec00bbbab54a058d33a4595cc
+          TARGET=127833770b96004e99936aac7fb99cce384c004d
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
@@ -65,13 +65,19 @@ jobs:
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
           cp "$BACKUP" "$WEB/stats.json"
 
-          echo '=== verify share-theme source contract ==='
+          echo '=== verify share contracts ==='
           grep -q 'normalizeShareTheme' "$WEB/main.js"
           grep -q 'applyShareTheme' "$WEB/main.js"
           grep -q 'deck.share_theme' "$WEB/main.js"
           grep -q 'share_theme: dict' "$WEB/divination/decks.py"
           grep -q 'sharing.deck-owned-share-theme' "$ROOT/governance/capabilities.json"
+          grep -q 'persistReadingSharePreview' "$WEB/main.js"
+          grep -q "threadsShareU.searchParams.set('preview', String(Date.now()))" "$WEB/main.js"
+          grep -q 'share-image.png' "$WEB/fortune_server.py"
+          grep -q 'sharing.reading-og-share-preview' "$ROOT/governance/capabilities.json"
           echo 'deck_share_theme_source=present'
+          echo 'reading_og_share_preview_source=present'
+          echo 'threads_preview_cache_buster=present'
 
           echo '=== build production frontend ==='
           test -e "$WEB/public/art/renders"
@@ -120,6 +126,12 @@ jobs:
           grep -q 'spirit-memo' /tmp/leopardcat-deck.json
           echo 'deck_share_theme_api=present'
 
+          echo '=== verify root OG contract ==='
+          curl -fsS --max-time 5 http://127.0.0.1:8088/ -o /tmp/leopardcat-root.html
+          grep -q 'property="og:image"' /tmp/leopardcat-root.html
+          grep -q 'property="og:title"' /tmp/leopardcat-root.html
+          echo 'root_og_metadata=present'
+
           echo '=== verify served bundle ==='
           curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-release.js
           curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-release.css
@@ -131,9 +143,11 @@ jobs:
           test "$code" = 200
           curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-public-release.js
           test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-public-release.js | awk '{print $1}')"
+          curl -fsS --max-time 8 https://leopardcat-tarot.milkcat.org/ -o /tmp/leopardcat-public-root.html
+          grep -q 'property="og:image"' /tmp/leopardcat-public-root.html
           curl -fsS --max-time 8 https://leopardcat-tarot.milkcat.org/api/v1/decks/leopardcat -o /tmp/leopardcat-public-deck.json
           grep -q '"share_theme"' /tmp/leopardcat-public-deck.json
 
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
-          echo 'leopardcat_share_theme_deploy=PASS'
+          echo 'leopardcat_reading_og_deploy=PASS'
           REMOTE
