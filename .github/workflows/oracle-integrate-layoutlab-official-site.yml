@@ -4,13 +4,13 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_inspect_recovery_store_safe.sh'
+      - 'scripts/metashield_check_sunlake_recovery_records.sh'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_inspect_recovery_store_safe:
+  metashield_check_sunlake_recovery_records:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 8
     env:
@@ -22,20 +22,20 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy safe recovery-store inspection
+      - name: Copy safe recovery correlation
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_recovery_store_safe.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_recovery_store_safe.sh"
-      - name: Inspect recovery store without secret material
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_check_sunlake_recovery_records.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_check_sunlake_recovery_records.sh"
+      - name: Correlate recovery records without secret material
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_recovery_store_safe.sh" | tee .agentos/evidence/metashield-recovery-store-safe.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_check_sunlake_recovery_records.sh" | tee .agentos/evidence/metashield-sunlake-recovery-records.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-recovery-store-safe
-          path: .agentos/evidence/metashield-recovery-store-safe.txt
+          name: metashield-sunlake-recovery-records
+          path: .agentos/evidence/metashield-sunlake-recovery-records.txt
           if-no-files-found: warn
