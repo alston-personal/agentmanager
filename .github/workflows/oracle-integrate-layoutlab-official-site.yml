@@ -21,34 +21,26 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect MetaShield local worktree
+      - name: Inspect MetaShield extension structure
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-after-timeout.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-extension-structure.txt
           set -euo pipefail
           ROOT=/home/ubuntu/metashield-protocol
-          echo "executor_user=$(whoami)"
-          echo "workspace=$ROOT"
-          echo "branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
-          echo "head=$(git -C "$ROOT" rev-parse HEAD)"
-          echo "version=$(python3 -c 'import json;print(json.load(open("'$ROOT'/extension/manifest.json"))["version"])')"
-          echo 'status_begin'
-          git -C "$ROOT" status --short --branch
-          echo 'status_end'
-          echo 'diffstat_begin'
-          git -C "$ROOT" diff --stat
-          echo 'diffstat_end'
-          echo 'changed_files_begin'
-          git -C "$ROOT" diff --name-only
-          echo 'changed_files_end'
-          echo 'recent_commits_begin'
-          git -C "$ROOT" log -5 --oneline
-          echo 'recent_commits_end'
+          echo 'tree_begin'
+          find "$ROOT/extension" -maxdepth 3 -type f | sed "s#^$ROOT/##" | sort | sed -n '1,260p'
+          echo 'tree_end'
+          echo 'package_files_begin'
+          find "$ROOT" -maxdepth 2 -type f \( -name 'package.json' -o -name 'pyproject.toml' -o -name 'README*' -o -name 'vite.config.*' \) | sed "s#^$ROOT/##" | sort
+          echo 'package_files_end'
+          echo 'keywords_begin'
+          grep -RniE 'Reborn|affiliate|Pioneer|Genesis|Echo|Threads|Instagram|Twitter|Facebook|Devnet|mainnet|logical_source_id' "$ROOT/extension" --exclude-dir=node_modules --exclude='*.map' | sed "s#^$ROOT/##" | sed -n '1,320p' || true
+          echo 'keywords_end'
           REMOTE
       - uses: actions/upload-artifact@v4
         with:
-          name: metashield-after-timeout
-          path: .agentos/evidence/metashield-after-timeout.txt
+          name: metashield-extension-structure
+          path: .agentos/evidence/metashield-extension-structure.txt
           if-no-files-found: error
