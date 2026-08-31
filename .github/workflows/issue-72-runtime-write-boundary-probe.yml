@@ -1,0 +1,58 @@
+name: Issue 72 Runtime Write Boundary Probe
+
+on:
+  push:
+    branches: [core/issue-72-claude-liveness]
+    paths: [.github/workflows/issue-72-runtime-write-boundary-probe.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/issue-72-claude-liveness
+      - name: Inspect existing runtime mutation authority only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence/core
+          OUT=.agentos/evidence/core/issue-72-runtime-write-boundary.json
+          python3 - <<'PY' > "$OUT"
+          import json, os
+          from pathlib import Path
+          targets=[
+              Path('/home/ubuntu/.local/share/agentos/runtime-vnext'),
+              Path('/home/ubuntu/.local/share/agentos/runtime-vnext/agentos_node/antigravity_relay_worker.py'),
+              Path('/home/ubuntu/.local/share/agentos/runtime-vnext/runtime-provenance.json'),
+              Path('/home/ubuntu/agentmanager'),
+          ]
+          rows=[]
+          for p in targets:
+              row={'path':str(p),'exists':p.exists(),'writable':os.access(p,os.W_OK)}
+              if p.exists():
+                  st=p.stat()
+                  row.update({'uid':st.st_uid,'gid':st.st_gid,'mode':oct(st.st_mode & 0o7777)})
+              rows.append(row)
+          print(json.dumps({
+              'schema':'agentos.runtime-write-boundary-probe/v1',
+              'runner_uid':os.getuid(),
+              'runner_gid':os.getgid(),
+              'supplementary_groups':os.getgroups(),
+              'targets':rows,
+              'mutation_performed':False,
+          },indent=2,sort_keys=True))
+          PY
+          cat "$OUT"
+      - name: Persist read-only boundary evidence
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/core/issue-72-runtime-write-boundary.json
+          git commit -m 'evidence(agentos): inspect #72 runtime write boundary' || exit 0
+          git push origin HEAD:core/issue-72-claude-liveness
