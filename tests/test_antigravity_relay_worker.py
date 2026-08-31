@@ -6,8 +6,9 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
-from agentos_node.antigravity_relay_worker import AntigravityRelayWorker
+from agentos_node.antigravity_relay_worker import AntigravityRelayWorker, discover_executor
 
 
 class AntigravityRelayWorkerTests(unittest.TestCase):
@@ -47,6 +48,28 @@ class AntigravityRelayWorkerTests(unittest.TestCase):
             self.assertTrue(result["timed_out"])
             self.assertEqual(result["returncode"], 124)
             self.assertLess(elapsed, 5.0)
+
+    def test_claude_discovery_preserves_ubuntu_oauth_identity(self) -> None:
+        fake_binary = Path(
+            "/home/ubuntu/.antigravity-ide-server/extensions/"
+            "anthropic.claude-code-2.1.251-linux-arm64/resources/native-binary/claude"
+        )
+        with (
+            patch.dict(
+                "agentos_node.antigravity_relay_worker.os.environ",
+                {"AGENTOS_ANTIGRAVITY_EXECUTOR": str(fake_binary)},
+                clear=False,
+            ),
+            patch.object(Path, "is_file", return_value=True),
+            patch("agentos_node.antigravity_relay_worker.os.access", return_value=True),
+        ):
+            executor = discover_executor()
+        self.assertIsNotNone(executor)
+        self.assertEqual(executor[0], str(fake_binary))
+        self.assertIn("--print", executor)
+        self.assertIn("--output-format", executor)
+        self.assertIn("--effort", executor)
+        self.assertNotIn("--bare", executor)
 
 
 if __name__ == "__main__":
