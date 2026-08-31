@@ -35,6 +35,8 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Protected-branch authority guard | Implemented | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
 | Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows |
 | Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
+| Model2IR standalone Character IR library | Implemented + tested | `libs/model2ir/` | Model2IR unit/regression workflows including reversible GLB/VRM, VRM topology, teacher dataset, weak-structure profile and isolated package install |
+| Model2IR Lab GLB/VRM workbench | Implemented candidate; live deployment pending explicit authority | `scripts/model2ir_lab_server.py`, `scripts/deploy_model2ir_lab.py`, `web_assets/model2ir-lab.html` | `tests/test_model2ir_lab.py`, `Model2IR Lab v0.1`; Oracle release is manual-dispatch only and public acceptance does not exist until an authorized release succeeds |
 | Model-independent Cognitive IR | Research | operational handoff envelopes exist, but general sufficiency is not canonical | requires repeatable cross-model continuity benchmark |
 | Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on portable working-state + canonical resolution layer | continuity benchmark still required |
 
@@ -87,6 +89,14 @@ The authoritative live node count/status comes from the runtime NodeRegistry, no
 Realm Fabric is a single live Core service governed by canonical deployment state in `/home/ubuntu/agent-data/governance/core-deployment.json`. The deployment state tracks desired/observed commit, monotonic generation, lease owner/expiry, and deployment status. A live generation is converged only when desired and observed commits match and status is `converged`.
 
 A deployment claim and an installation are separate operations. Installation cannot silently advance generation. While a deployment lease is active, another generation advance is rejected even for the same owner; the current generation must first be released/expired according to the deployment contract.
+
+## Model2IR library and Lab boundary
+
+Model2IR v0.9.1 is an installable Python package boundary under `libs/model2ir`. It imports GLB/glTF/VRM evidence, preserves unknown/unresolved facts, fuses explicit VRM/topology/scene evidence conservatively, audits repeatability, supports byte-preserving reversible GLB/VRM Canonical Character IR carriage, and profiles weak or relief-like geometry without inventing humanoid structure.
+
+Model2IR Lab v0.1 is a workbench candidate around that real library, not a second inference implementation. Its browser uses Three.js only to display the uploaded model. The localhost Python service performs `extract_ir`, geometry profiling, `stabilize_external_ir`, and a three-run `audit_asset`; external stabilization remains a candidate unless explicit embedded canonical IR is recovered. Uploaded bytes are scoped to a temporary directory and are not retained after analysis.
+
+The v0.1 Lab accepts only a single self-contained GLB 2.0 or VRM-in-GLB container up to 32 MiB. Multi-file `.gltf + .bin + textures` bundle fidelity is explicitly **not implemented** and remains a Model2IR v0.10 gap. The Oracle release workflow is `workflow_dispatch` only: merging code and authorizing live deployment are intentionally separate authority events.
 
 ## Important invariants
 
