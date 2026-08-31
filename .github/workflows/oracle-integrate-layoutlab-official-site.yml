@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
+      - 'scripts/metashield_patch_media_i18n.py'
 
 permissions:
   contents: read
@@ -21,67 +22,19 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Add media upload diagnostics and bump tester version
+      - name: Copy deterministic patch helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_patch_media_i18n.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_patch_media_i18n.py"
+      - name: Apply media upload diagnostics and bump tester version
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-media-i18n-v1.0.61.txt
-          set -euo pipefail
-          ROOT=/home/ubuntu/metashield-protocol
-          I18N="$ROOT/extension/i18n.js"
-          MANIFEST="$ROOT/extension/manifest.json"
-          test -f "$I18N" && test -f "$MANIFEST"
-          BEFORE=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')
-          test "$BEFORE" = "1.0.60" -o "$BEFORE" = "1.0.61"
-          python3 - "$I18N" <<'PY'
-          from pathlib import Path
-          import sys
-          p=Path(sys.argv[1])
-          s=p.read_text(encoding='utf-8')
-          zh='''      "media.platformImagePost": "（圖片貼文）",
-      "media.platformVideoPost": "（影片貼文）",
-      "media.uploadFailed": "媒體上傳失敗",
-      "media.devnetQuota": "測試網媒體儲存額度不足或暫時不可用",
-      "media.imageUploadFailed": "圖片 {current}/{total} 上傳失敗：{detail}",
-      "media.noSuccessfulUpload": "圖片未能完整保存；本次備份已停止，避免產生不完整的成功紀錄。",
-'''
-          en='''      "media.platformImagePost": "(image post)",
-      "media.platformVideoPost": "(video post)",
-      "media.uploadFailed": "Media upload failed",
-      "media.devnetQuota": "Devnet media storage quota is exhausted or temporarily unavailable",
-      "media.imageUploadFailed": "Image {current}/{total} upload failed: {detail}",
-      "media.noSuccessfulUpload": "Images were not fully preserved; this backup was stopped to avoid recording an incomplete success.",
-'''
-          if '"media.imageUploadFailed"' not in s:
-              zmark='      "backup.failed": "備份失敗",\n'
-              emark='      "backup.failed": "Backup failed",\n'
-              if s.count(zmark)!=1 or s.count(emark)!=1:
-                  raise SystemExit('expected backup.failed markers not found uniquely')
-              s=s.replace(zmark, zmark+zh, 1)
-              s=s.replace(emark, emark+en, 1)
-              p.write_text(s,encoding='utf-8')
-          PY
-          if test "$BEFORE" = "1.0.60"; then
-            python3 - "$MANIFEST" <<'PY'
-          from pathlib import Path
-          import json,sys
-          p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8')); d['version']='1.0.61'; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          PY
-          fi
-          AFTER=$(python3 -c 'import json;print(json.load(open("'$MANIFEST'"))["version"])')
-          test "$AFTER" = "1.0.61"
-          grep -q '"media.imageUploadFailed"' "$I18N"
-          echo "executor_user=$(whoami)"
-          echo "version_before=$BEFORE"
-          echo "version_after=$AFTER"
-          echo 'media_keys_begin'
-          grep -n '"media\.' "$I18N" | head -30
-          echo 'media_keys_end'
-          echo 'status_begin'
-          git -C "$ROOT" status --short --branch
-          echo 'status_end'
-          REMOTE
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "python3 /tmp/metashield_patch_media_i18n.py && echo status_begin && git -C /home/ubuntu/metashield-protocol status --short --branch && echo status_end" | tee .agentos/evidence/metashield-media-i18n-v1.0.61.txt
+          grep -q '^version_after=1.0.61$' .agentos/evidence/metashield-media-i18n-v1.0.61.txt
+          grep -q 'media.imageUploadFailed' .agentos/evidence/metashield-media-i18n-v1.0.61.txt
       - uses: actions/upload-artifact@v4
         with:
           name: metashield-media-i18n-v1.0.61
