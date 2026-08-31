@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  inspect_metashield_irys_dependency:
+  repair_metashield_irys_runtime:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
+    timeout-minutes: 8
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -21,46 +21,43 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Irys dependency declaration and runtime resolution
+      - name: Rebuild Chamber API dependencies and restart service
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-irys-dependency-inspect.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-irys-runtime-repair.txt
           set -euo pipefail
           ROOT=/home/ubuntu/metashield-protocol
-          echo "version=$(python3 -c 'import json;print(json.load(open("'$ROOT'/extension/manifest.json"))["version"])')"
-          echo '===== package manifests ====='
-          find "$ROOT" -maxdepth 3 -type f \( -name package.json -o -name package-lock.json -o -name npm-shrinkwrap.json -o -name pnpm-lock.yaml -o -name yarn.lock \) -print
-          for f in "$ROOT/package.json" "$ROOT/api/package.json"; do
-            if test -f "$f"; then echo "--- $f"; cat "$f"; fi
-          done
-          echo '===== irys references ====='
-          grep -RniE "@irys/sdk|from ['\"]@irys/sdk['\"]|require\(['\"]@irys/sdk['\"]\)" "$ROOT" 2>/dev/null --exclude-dir=.git --exclude-dir=node_modules | sed -n '1,240p' || true
-          echo '===== installed module ====='
-          for p in "$ROOT/node_modules/@irys/sdk" "$ROOT/api/node_modules/@irys/sdk"; do
-            if test -e "$p"; then echo "$p PRESENT"; ls -ld "$p"; else echo "$p MISSING"; fi
-          done
-          echo '===== npm resolution ====='
-          cd "$ROOT"
-          node -e "import('@irys/sdk').then(()=>console.log('root import PASS')).catch(e=>console.log('root import FAIL:',e.message))"
-          if test -d "$ROOT/api"; then
-            cd "$ROOT/api"
-            node -e "import('@irys/sdk').then(()=>console.log('api import PASS')).catch(e=>console.log('api import FAIL:',e.message))"
-          fi
-          echo '===== npm ls ====='
-          (cd "$ROOT" && npm ls @irys/sdk --depth=0) || true
-          if test -f "$ROOT/api/package.json"; then (cd "$ROOT/api" && npm ls @irys/sdk --depth=0) || true; fi
-          echo '===== api process ====='
-          ps -ef | grep -E '[n]ode .*metashield-protocol/.*/?server.js|[n]ode .*api/server.js' || true
-          echo '===== service units ====='
-          systemctl --user --no-pager --type=service 2>/dev/null | grep -Ei 'chamber|metashield|echo' || true
-          systemctl --no-pager --type=service 2>/dev/null | grep -Ei 'chamber|metashield|echo' || true
-          echo '===== git status ====='
-          git -C "$ROOT" status --short --branch
+          API="$ROOT/api"
+          echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "extension_version=$(python3 -c 'import json;print(json.load(open("'$ROOT'/extension/manifest.json"))["version"])')"
+          echo '===== before ====='
+          if test -d "$API/node_modules/@irys/sdk"; then echo 'irys_before=PRESENT'; else echo 'irys_before=MISSING'; fi
+          (cd "$API" && npm ls @irys/sdk --depth=0) || true
+          echo '===== npm ci ====='
+          cd "$API"
+          npm ci --omit=dev
+          echo '===== import readiness ====='
+          node -e "import('@irys/sdk').then(()=>{console.log('irys_import=PASS')}).catch(e=>{console.error(e);process.exit(2)})"
+          test -d "$API/node_modules/@irys/sdk"
+          echo '===== restart pm2 ====='
+          pm2 describe chamber-api >/tmp/chamber-api-before.txt
+          pm2 restart chamber-api --update-env
+          sleep 2
+          pm2 describe chamber-api | sed -n '1,120p'
+          echo '===== health ====='
+          curl -fsS http://127.0.0.1:3011/chamber-api/health
+          echo
+          echo '===== after ====='
+          echo 'irys_after=PRESENT'
+          (cd "$API" && npm ls @irys/sdk --depth=0)
+          echo 'runtime_repair=PASS'
           REMOTE
+          grep -q '^irys_import=PASS$' .agentos/evidence/metashield-irys-runtime-repair.txt
+          grep -q '^runtime_repair=PASS$' .agentos/evidence/metashield-irys-runtime-repair.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: metashield-irys-dependency-inspect
-          path: .agentos/evidence/metashield-irys-dependency-inspect.txt
+          name: metashield-irys-runtime-repair
+          path: .agentos/evidence/metashield-irys-runtime-repair.txt
           if-no-files-found: error
