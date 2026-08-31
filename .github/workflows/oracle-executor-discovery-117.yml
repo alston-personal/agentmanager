@@ -19,7 +19,7 @@ concurrency:
 jobs:
   discover:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,20 +39,97 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          OUT=".agentos/evidence/experience/oracle-issue117-executor-discovery-${GITHUB_RUN_ID}.json"
-          mkdir -p "$(dirname "$OUT")"
-          python3 -m scripts.oracle_executor_discovery --output "$OUT"
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-executor-discovery-${GITHUB_RUN_ID}"
+          mkdir -p "$OUT_DIR"
+          python3 -m scripts.oracle_executor_discovery --output "$OUT_DIR/discovery.json"
+
+          python3 - "$OUT_DIR/boundary.json" <<'PY'
+          import grp,json,os,pwd,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+
+          def stat_path(raw):
+              p=Path(raw); item={'path':str(p)}
+              try:
+                  st=os.stat(p)
+                  item.update({'exists':True,'uid':st.st_uid,'gid':st.st_gid,'owner':pwd.getpwuid(st.st_uid).pw_name,'mode':oct(st.st_mode & 0o777),'readable':os.access(p,os.R_OK),'searchable':os.access(p,os.X_OK)})
+              except Exception as exc:
+                  item.update({'exists':None,'stat_error':type(exc).__name__})
+              if p.is_dir():
+                  try:
+                      names=[]
+                      for name in os.listdir(p):
+                          low=name.lower()
+                          if any(x in low for x in ('claude','codex','openai','chatgpt')):
+                              names.append(name[:240])
+                      item['relevant_children']=sorted(names)
+                  except Exception as exc:
+                      item['list_error']=type(exc).__name__
+              return item
+
+          observed=[]
+          proc=Path('/proc')
+          for child in proc.iterdir():
+              if not child.name.isdigit(): continue
+              try: pst=child.stat()
+              except Exception: continue
+              if pst.st_uid != 1001: continue
+              rec={'pid':int(child.name),'uid':pst.st_uid}
+              try: rec['comm']=(child/'comm').read_text(errors='replace').strip()[:120]
+              except Exception: rec['comm']=None
+              paths=set()
+              try:
+                  raw=(child/'cmdline').read_bytes().split(b'\0')
+                  for token in raw:
+                      s=token.decode('utf-8','replace')
+                      low=s.lower()
+                      if s.startswith('/') and '.antigravity' in low and ('codex' in low or 'claude' in low): paths.add(s[:500])
+              except Exception: pass
+              for link_name in ('exe','cwd'):
+                  try:
+                      s=os.readlink(child/link_name); low=s.lower()
+                      if '.antigravity' in low and ('codex' in low or 'claude' in low): paths.add(s[:500])
+                  except Exception: pass
+              if paths:
+                  rec['antigravity_paths']=sorted(paths)
+                  observed.append(rec)
+
+          groups=[]
+          try:
+              for g in os.getgroups(): groups.append({'gid':g,'name':grp.getgrgid(g).gr_name})
+          except Exception: pass
+          payload={
+              'schema':'agentos.oracle-executor-boundary/v0',
+              'timestamp':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'runner':{'uid':os.geteuid(),'user':pwd.getpwuid(os.geteuid()).pw_name,'groups':groups},
+              'paths':[stat_path(x) for x in (
+                  '/home/ubuntu',
+                  '/home/ubuntu/.antigravity-ide-server',
+                  '/home/ubuntu/.antigravity-ide-server/extensions',
+                  '/home/ubuntu/.antigravity-server',
+                  '/home/ubuntu/.antigravity-server/extensions',
+                  '/home/ubuntu/.codex',
+                  '/home/ubuntu/.codex/sessions',
+              )],
+              'ubuntu_process_extension_paths':observed,
+              'redaction':'Only ownership/mode/access, matching extension names, and matching Antigravity path tokens from ubuntu process metadata are retained. No arbitrary argv, environment, file contents, tokens, or session contents are persisted.'
+          }
+          Path(sys.argv[1]).write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
 
       - name: Persist evidence to worker branch only
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          OUT=".agentos/evidence/experience/oracle-issue117-executor-discovery-${GITHUB_RUN_ID}.json"
-          test -f "$OUT" || exit 0
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-executor-discovery-${GITHUB_RUN_ID}"
+          test -d "$OUT_DIR" || exit 0
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$OUT"
+          git add "$OUT_DIR"
           git diff --cached --quiet && exit 0
           git commit -m "evidence(agentos): Oracle executor discovery ${GITHUB_RUN_ID}"
+          git fetch origin core/issue-117-experience-memory
+          git rebase origin/core/issue-117-experience-memory
           git push origin HEAD:core/issue-117-experience-memory
