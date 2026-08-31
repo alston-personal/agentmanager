@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T01:13:00Z",
+  "generated_at": "2026-08-31T01:21:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -20,7 +20,7 @@
       "execution_lane": "separate-worker-thread",
       "dependencies": [72, 130],
       "blocking_scope": ["agentos-core:experience-regression"],
-      "evidence": [".agentos/evidence/experience/"],
+      "evidence": [".agentos/evidence/experience/", "pull/119"],
       "non_authorities": ["protected-main merge", "deployment-generation advance"]
     },
     {
@@ -53,7 +53,7 @@
       "execution_lane": "independent-worker",
       "dependencies": [],
       "blocking_scope": ["agentos-node:full-chatgpt-one-gui-certification"],
-      "evidence": [".agentos/evidence/node-gui/vopc5750/acceptance.json"],
+      "evidence": [".agentos/evidence/node-gui/vopc5750/acceptance.json", "pull/116"],
       "non_authorities": ["protected-main merge"]
     },
     {
@@ -81,23 +81,23 @@
     {
       "issue": 118,
       "name": "Repository-boundary cleanup",
-      "branch": null,
+      "branch": "core/issue-118-repo-boundary",
       "status": "running",
       "execution_lane": "architecture-migration-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": [],
+      "evidence": ["docs/PROJECT_REPO_MAP.md", "pull/139"],
       "non_authorities": ["global product feature pause", "destructive historical branch deletion", "protected-main merge"]
     },
     {
       "issue": 137,
       "name": "Parallel worker/dependency control-plane",
       "branch": "core/issue-137-worker-coordination",
-      "status": "running",
+      "status": "acceptance_ready",
       "execution_lane": "canonical-coordination-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": ["docs/CORE_WORKER_MODEL.md", "governance/core-workers.json"],
+      "evidence": ["docs/CORE_WORKER_MODEL.md", "governance/core-workers.json", "pull/138"],
       "non_authorities": ["protected-main merge"]
     }
   ],
