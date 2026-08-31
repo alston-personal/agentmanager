@@ -8,6 +8,7 @@ on:
       - 'scripts/check_project_release_lane.py'
       - 'tests/test_project_release_lane.py'
       - '.github/workflows/project-release-lane-guard.yml'
+      - '.github/workflows/oracle-release-layoutlab-v08-dev.yml'
   push:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - 'scripts/check_project_release_lane.py'
       - 'tests/test_project_release_lane.py'
       - '.github/workflows/project-release-lane-guard.yml'
+      - '.github/workflows/oracle-release-layoutlab-v08-dev.yml'
 
 permissions:
   contents: read
@@ -41,5 +43,21 @@ jobs:
           python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch develop
           if python scripts/check_project_release_lane.py --project layoutlib --action poc_deploy --target-branch main; then
             echo 'expected POC main-source denial' >&2
+            exit 1
+          fi
+      - name: Verify LayoutLab POC uses pinned develop candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          W=.github/workflows/oracle-release-layoutlab-v08-dev.yml
+          grep -q 'candidate_sha:' "$W"
+          grep -q -- '--target-branch develop' "$W"
+          grep -q -- '--branch develop --single-branch' "$W"
+          grep -q 'merge-base --is-ancestor' "$W"
+          grep -q 'checkout --detach' "$W"
+          grep -q 'layoutlib-source-branch' "$W"
+          grep -q 'door-wall-carver.js?v=0.8-dev' "$W"
+          if grep -q 'gh repo clone alston-personal/layoutlib "$TMP/layoutlib" -- --depth=1' "$W"; then
+            echo 'POC workflow regressed to default-branch clone' >&2
             exit 1
           fi
