@@ -14,13 +14,15 @@ authors = [
 ]
 keywords = ["agentos", "runtime", "node", "realm", "one", "ancp", "ai-agent"]
 dependencies = [
-    "pyyaml>=6.0"
+    "pyyaml>=6.0",
+    "requests>=2.31"
 ]
 
 [project.scripts]
 agentos-node = "agentos_node.cli:main"
 agentos-client = "agentos_node.client_cli:main"
 agentos-one = "agent_core.realm_cli:main"
+agentos-social = "agentos_node.social_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -9,6 +9,7 @@ setup(
     entry_points={
         "console_scripts": [
             "agentos-node=agentos_node.cli:main",
+            "agentos-social=agentos_node.social_cli:main",
         ],
     },
     install_requires=[
