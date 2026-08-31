@@ -1,0 +1,41 @@
+name: MetaShield Fix Passkey Bridge v1.0.66 v2
+
+on:
+  push:
+    paths:
+      - '.github/workflows/metashield-fix-passkey-bridge-v1066-v2.yml'
+      - 'scripts/metashield_fix_passkey_bridge_v1066.py'
+
+permissions:
+  contents: read
+
+jobs:
+  fix_passkey_bridge:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Copy deterministic v1.0.66 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_passkey_bridge_v1066.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_passkey_bridge_v1066.py"
+      - name: Apply and validate v1.0.66
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'set -euo pipefail; ROOT=/home/ubuntu/metashield-protocol; python3 /tmp/metashield_fix_passkey_bridge_v1066.py "$ROOT"; node --check "$ROOT/extension/content.js"; node "$ROOT/extension/tests/passkey-recovery-bridge-contract.test.mjs"; python3 -c "import json; print(\"manifest_version=\" + json.load(open(\"/home/ubuntu/metashield-protocol/extension/manifest.json\"))[\"version\"])"; echo "bridge_register_count=$(grep -c NATIVE_PASSKEY_REGISTER "$ROOT/extension/content.js")"; echo "bridge_auth_count=$(grep -c NATIVE_PASSKEY_AUTHENTICATE "$ROOT/extension/content.js")"; echo "echo_register_count=$(grep -c NATIVE_PASSKEY_REGISTER "$ROOT/web-feed/app/[wallet_address]/[platform]/page.tsx")"; echo "echo_auth_count=$(grep -c NATIVE_PASSKEY_AUTHENTICATE "$ROOT/web-feed/app/[wallet_address]/[platform]/page.tsx")"; echo git_status_begin; git -C "$ROOT" status --short --branch; echo git_status_end' | tee .agentos/evidence/metashield-passkey-bridge-v1066.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metashield-passkey-bridge-v1.0.66
+          path: .agentos/evidence/metashield-passkey-bridge-v1066.txt
+          if-no-files-found: error
