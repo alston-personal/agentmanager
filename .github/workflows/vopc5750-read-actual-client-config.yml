@@ -1,0 +1,52 @@
+name: vopc5750 read actual client config
+
+on:
+  push:
+    branches: [feature/realm-node-fabric-readiness]
+    paths: [.github/workflows/vopc5750-read-actual-client-config.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+      - id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os,time
+          from agent_core.realm_fabric import RealmFabricStore
+          tid=f"vopc5750-actual-client-config-{int(time.time())}"
+          script=r'''$p=Join-Path $env:AGENTOS_CLIENT_HOME 'client.json'; if(Test-Path -LiteralPath $p){$j=Get-Content -Raw -LiteralPath $p | ConvertFrom-Json; [ordered]@{path=$p;one_url=$j.one_url;realm_id=$j.realm_id;node_id=$j.node_id} | ConvertTo-Json -Compress}else{[ordered]@{path=$p;missing=$true}|ConvertTo-Json -Compress}'''
+          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':15,'cognition_ids_used':[]})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write(f"task_id={tid}\n")
+          PY
+      - env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          s=RealmFabricStore(); r=None
+          for _ in range(30):
+            r=s.get_receipt(os.environ['TASK_ID'])
+            if r: break
+            time.sleep(2)
+          payload={'schema':'agentos.actual-client-config-evidence/v1','receipt':r}
+          p=Path('.agentos/evidence/node-lifecycle/vopc5750-actual-client-config.json'); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+'\n')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-actual-client-config.json
+          git commit -m 'evidence(agentos-node): record actual vopc5750 client config' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
