@@ -15,15 +15,30 @@ MCP_PACKAGE = "mcp>=2,<3"
 GLOBAL_RULE_START = "<!-- AGENTOS_ONE_BOOTSTRAP_START -->"
 GLOBAL_RULE_END = "<!-- AGENTOS_ONE_BOOTSTRAP_END -->"
 GLOBAL_RULE = """<!-- AGENTOS_ONE_BOOTSTRAP_START -->
-## AgentOS ONE bootstrap
+## AgentOS ONE bootstrap — mandatory ONE-first continuation
 
-When the `agentos-one` MCP tools are available and the current workspace is governed by AgentOS, use ONE before reconstructing state from vendor conversation history.
+This machine participates in AgentOS ONE through the `agentos-one` MCP server.
 
-For a fresh or relative request such as `continue` / `繼續` in an AgentOS-governed workspace:
-1. call `one_status`;
-2. identify the current project from workspace/repository context without guessing;
-3. call `one_resolve(project)` before continuing substantial work;
-4. treat canonical goal/continuation/authority returned by ONE as durable state, while newer explicit user intent always wins.
+### Mandatory startup gate
+
+If `agentos-one` tools are available, the active Antigravity executor MUST use ONE before reconstructing AgentOS state from local files, pulse boards, PM2 listings, vendor conversation history, memory files, or prior chat summaries.
+
+For the first user request in a fresh conversation, and especially for a relative request such as `continue` / `繼續`:
+1. call `one_status` before answering the user;
+2. if `one_status.connected` is not true, explicitly report `ONE_BOOTSTRAP_BLOCKED` and do not claim AgentOS continuity;
+3. identify the current project from the active workspace/repository path or Git metadata; do not infer it from stale memory;
+4. call `one_resolve(project)` before doing substantial project work;
+5. if project identity cannot be determined or `one_resolve` fails, explicitly report `ONE_RESOLVE_BLOCKED` instead of falling back to old AgentOS memory;
+6. use the returned canonical active goal, continuation, next action, and mutation boundary as durable state; newer explicit user intent always wins;
+7. only after the ONE calls may local files be consulted as supporting evidence.
+
+### Proof requirement
+
+When answering a fresh AgentOS continuation request after successful ONE calls, include a compact provenance footer containing the actual tool-returned values:
+
+`source=ONE | status_schema=<one_status.schema> | resolve_schema=<one_resolve.schema> | realm=<realm_id> | node=<node_id> | project=<resolved project>`
+
+Do not claim "connected to AgentOS" merely because local AgentOS files, `/dev/shm` pulse data, PM2 services, or `agent-data` are readable. Connection means the active Antigravity executor successfully invoked the `agentos-one` MCP tools in the current conversation.
 
 Never expose Realm/node credentials. The MCP adapter owns the trust boundary. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
 <!-- AGENTOS_ONE_BOOTSTRAP_END -->
