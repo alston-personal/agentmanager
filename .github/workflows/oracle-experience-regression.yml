@@ -8,6 +8,7 @@ on:
       - '.github/workflows/oracle-experience-regression.yml'
       - 'agent_core/experience.py'
       - 'scripts/oracle_experience_regression.py'
+      - 'scripts/inspect_antigravity_regression_runtime.py'
       - 'experience/agentos-core-oracle.seed.json'
       - 'tests/test_experience_memory.py'
       - 'schemas/agentos-experience-v0.schema.json'
@@ -79,6 +80,19 @@ jobs:
               print(f"{name}_uplift={item['uplift']}")
           PY
 
+      - name: Capture sanitized Antigravity runtime diagnostic
+        if: always()
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
+          test -f "$OUT_DIR/regression.json" || exit 0
+          python3 -m scripts.inspect_antigravity_regression_runtime \
+            --regression "$OUT_DIR/regression.json" \
+            --output "$OUT_DIR/antigravity-runtime.json"
+
       - name: Persist branch-scoped regression evidence
         if: always()
         shell: bash
@@ -92,7 +106,6 @@ jobs:
           git add ".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
           git diff --cached --quiet && exit 0
           git commit -m "evidence(agentos): Oracle experience regression ${GITHUB_RUN_ID}"
-          # Explicit issue branch only. Never default/main.
           git push origin HEAD:core/issue-117-experience-memory
 
       - name: Enforce complete regression only after evidence is preserved
