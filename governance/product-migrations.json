@@ -1,41 +1,67 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T02:38:00Z",
+  "generated_at": "2026-08-31T02:49:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
     {
       "project_id": "vendor-reputation",
       "canonical_repository": "alston-personal/vendor-reputation-service",
-      "status": "handoff_created",
+      "status": "product_handoff_core_runner_blocker_cleared",
       "product_issue": "alston-personal/vendor-reputation-service#27",
       "core_prs": [97, 99, 127],
-      "core_dependencies": [130],
+      "core_dependencies": [],
+      "resolved_core_dependencies": [
+        {
+          "issue": 130,
+          "state": "completed",
+          "evidence": "Vendor PR #127 governance audit run 33344571389 / job 99346155434 completed success on Oracle runner instance-20260129-0852"
+        }
+      ],
       "product_evidence": ["alston-personal/vendor-reputation-service#20"],
-      "classification": "product implementation exists in product repo, but Oracle execution/scheduling carriers still live in agentmanager",
-      "retire_when": ["equivalent product-owned governed execution path exists", "Oracle access/runner boundary is solved without copying Core secrets", "receipt/evidence parity is verified"],
-      "safe_now": "product_work_continues; only carrier-dependent execution waits"
+      "classification": "product implementation exists in the product repo and the shared Oracle runner blocker is resolved; temporary Vendor scheduling/execution carriers still live in agentmanager and require product-owned governed replacement",
+      "retire_when": ["equivalent Vendor-owned governed execution/request path exists", "exact Vendor source SHA/artifact identity is preserved", "sanitized receipt and runtime parity are verified"],
+      "safe_now": "product_work_and_carrier_migration_continue; carrier_retirement_waits_on_product_issue_27"
     },
     {
       "project_id": "arcanaforge",
       "canonical_repository": "alston-personal/arcanaforge",
-      "status": "handoff_created",
+      "status": "product_provenance_gate_core_release_blocker_cleared",
       "product_issue": "alston-personal/arcanaforge#3",
       "core_prs": [136],
-      "core_dependencies": [66],
-      "classification": "product has canonical repo, but public POC release is still carried by agentmanager governance/deploy path",
-      "retire_when": ["product-owned artifact/deploy source is canonical", "governed static release capability or approved runner surface exists", "POC deployment receipt identifies exact ArcanaForge source/artifact"],
-      "safe_now": "product_work_continues; only POC publication waits"
+      "core_dependencies": [],
+      "resolved_core_dependencies": [
+        {
+          "issue": 66,
+          "state": "completed",
+          "evidence": "fenced static-release capability and public POC acceptance completed on 2026-08-31"
+        }
+      ],
+      "current_carrier": {
+        "core_pr": 136,
+        "host_repository": "alston-personal/studio-web",
+        "host_source_sha": "ddd136feb827bb86d91a796414e5a96e4e83d960"
+      },
+      "classification": "generic Core static-release capability is no longer the blocker; #136 still proves only the Studio Web host adapter SHA, while canonical product identity is alston-personal/arcanaforge and its v0.2 Workbench source is distinct",
+      "retire_when": ["ArcanaForge-owned product source/artifact definition is canonical", "host adapter consumes or attests the exact ArcanaForge source/artifact identity", "POC deployment receipt identifies ArcanaForge repo/ref/exact SHA/artifact in addition to host-adapter provenance", "public POC parity is verified"],
+      "safe_now": "product_work_and_provenance_fix_continue; carrier_retirement_waits_on_product_issue_3"
     },
     {
       "project_id": "layoutlib",
       "canonical_repository": "alston-personal/layoutlib",
-      "status": "handoff_created",
+      "status": "core_authority_accepted_live_poc_acceptance_pending",
       "product_issue": "alston-personal/layoutlib#2",
       "core_dependencies": [96],
-      "classification": "canonical product repo and develop lane exist; Core should own only generic promotion/deployment policy, not Layout implementation",
-      "retire_when": ["POC deploy consumes pinned layoutlib candidate", "production remains pinned to promoted release", "agentmanager contains no Layout product implementation/deployer beyond generic adapter"],
-      "safe_now": "layout feature work continues; only governed POC/deploy step waits"
+      "core_evidence": [
+        {
+          "pr": 158,
+          "merge_sha": "6deea2ec7debb2e912d6e53eb2954fd081c85c1e",
+          "role": "canonical generic project release-lane authority in core/integration"
+        }
+      ],
+      "classification": "canonical product repo/develop lane exist and generic Core release-lane authority is accepted in core/integration; only the live exact-candidate POC dispatch/receipt acceptance and later carrier retirement remain",
+      "retire_when": ["POC deploy consumes an exact validated layoutlib develop candidate", "public/receipt evidence records exact LayoutLib source identity", "production remains pinned to promoted release", "agentmanager contains no Layout product implementation/deployer beyond a generic adapter"],
+      "safe_now": "layout feature work continues; only live governed POC dispatch/receipt acceptance waits"
     },
     {
       "project_id": "leopardcat-tarot",
