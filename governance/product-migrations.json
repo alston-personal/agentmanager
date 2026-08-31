@@ -1,6 +1,6 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T01:55:00Z",
+  "generated_at": "2026-08-31T02:29:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
@@ -40,11 +40,30 @@
     {
       "project_id": "leopardcat-tarot",
       "canonical_repository": "alston-personal/leopardcat-tarot",
-      "status": "product_owned_pattern_observed",
+      "status": "handoff_created",
+      "product_issue": "alston-personal/leopardcat-tarot#44",
       "product_evidence": ["alston-personal/leopardcat-tarot#41"],
-      "classification": "production parity governance is already being implemented in the product repository; use this as target ownership pattern",
-      "retire_when": ["inventory any remaining tarot-specific files/carriers in agentmanager", "verify parity before removing them"],
-      "safe_now": "product_work_continues_in_product_repo"
+      "core_branches": [
+        {
+          "ref": "ops/leopardcat-runtime-inspect",
+          "tip": "141bbfe27b789c5803c9c5b469d76377debf7aeb",
+          "role": "manual-draw production verification carrier"
+        },
+        {
+          "ref": "chore/leopardcat-runtime-inspect",
+          "tip": "d51487149b5911333b0f0a5e5a8171fe1afba26e",
+          "role": "production frontend bundle build/verification carrier"
+        }
+      ],
+      "carrier_surfaces": [
+        ".github/workflows/ops-leopardcat-ai-probe.yml",
+        ".github/workflows/ops-leopardcat-runtime-deploy.yml",
+        ".github/workflows/ops-leopardcat-runtime-inspect.yml",
+        ".github/workflows/leopardcat-production-deploy.yml"
+      ],
+      "classification": "Tarot-specific production verification and write/deploy carriers are explicitly inventoried in historical agentmanager branches; product repo owns parity direction but still needs a product-owned deploy replacement before Core retirement",
+      "retire_when": ["product-owned parity gate succeeds and is accepted", "product-owned deployment path or thin caller of a generic governed Core deployment surface replaces the write carrier", "exact deployed source SHA/artifact and public/runtime parity evidence are persisted", "historical agentmanager Tarot carriers are no longer the only working deployment path"],
+      "safe_now": "product_work_continues_in_product_repo; carrier_retirement_waits_on_product_issue_44"
     },
     {
       "project_id": "character-blueprint",
