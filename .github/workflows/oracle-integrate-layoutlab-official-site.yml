@@ -4,15 +4,16 @@ on:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/metashield_inspect_backup_message_wrapper.sh'
+      - 'scripts/metashield_fix_backup_error_contract.py'
+      - 'scripts/metashield_install_g9_regressions.py'
 
 permissions:
   contents: read
 
 jobs:
-  metashield_inspect_backup_wrapper:
+  metashield_g9_regressions_1065:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 6
+    timeout-minutes: 10
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -22,20 +23,35 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy inspection
+      - name: Copy 1.0.65 patch and G9 tests
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_inspect_backup_message_wrapper.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_inspect_backup_message_wrapper.sh"
-      - name: Inspect backup wrapper
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_backup_error_contract.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_backup_error_contract.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_install_g9_regressions.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_install_g9_regressions.py"
+      - name: Patch and run G9 regressions
         shell: bash
         run: |
           set -o pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_inspect_backup_message_wrapper.sh" | tee .agentos/evidence/metashield-backup-wrapper.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-g9-1065.txt
+          set -euo pipefail
+          ROOT=/home/ubuntu/metashield-protocol
+          python3 /tmp/metashield_fix_backup_error_contract.py
+          python3 /tmp/metashield_install_g9_regressions.py
+          node --check "$ROOT/extension/background.js"
+          grep -q '"version": "1.0.65"' "$ROOT/extension/manifest.json"
+          cd "$ROOT"
+          node scripts/test-threads-background.js
+          node scripts/test-no-irrecoverable-preservation.js
+          echo '===== version ====='
+          python3 -c 'import json; print(json.load(open("extension/manifest.json"))["version"])'
+          echo '===== worktree ====='
+          git status --short --branch
+          REMOTE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: metashield-backup-wrapper
-          path: .agentos/evidence/metashield-backup-wrapper.txt
+          name: metashield-g9-1065
+          path: .agentos/evidence/metashield-g9-1065.txt
           if-no-files-found: warn
