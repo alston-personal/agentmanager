@@ -31,6 +31,22 @@ model2ir --help
 python -m model2ir --help
 ```
 
+### CLI contract
+
+The CLI separates evidence extraction from stabilized Character IR projection:
+
+```bash
+model2ir extract character.glb -o evidence.json
+model2ir stabilize character.glb -o character-ir.json
+model2ir audit character.glb -o audit.json --repeats 3
+model2ir diff a.json b.json -o diff.json
+model2ir reconcile image-ir.json model-ir.json -o reconciliation.json
+```
+
+`extract` returns the full Model2IR evidence envelope. `stabilize` accepts GLB, glTF, and VRM through the normal loader and returns only the stabilized Canonical Character IR candidate/truth; it does not rewrite the source 3D container.
+
+Reversible embedding remains available through the Python API (`compile_reversible_gltf` / `save_reversible_gltf`). A container-writing CLI is deliberately not advertised yet: safely rewriting GLB binary chunks and relocatable multi-file glTF resources needs an explicit preservation contract rather than a JSON-only shortcut.
+
 ## Truth invariants
 
 1. A first import of an external model is not automatically canonical truth.
@@ -41,7 +57,7 @@ python -m model2ir --help
 
 ## Teacher dataset API
 
-The multi-view teacher contract is now library-owned. Rendering is intentionally an injected adapter so `model2ir` itself does not depend on Playwright, Three.js, a browser, or an AgentOS repository layout.
+The multi-view teacher contract is library-owned. Rendering is intentionally an injected adapter so `model2ir` itself does not depend on Playwright, Three.js, a browser, or an AgentOS repository layout.
 
 ```python
 from pathlib import Path
@@ -71,7 +87,7 @@ The retained `model2ir-teacher-dataset/v0.7` schema is intentional: moving the i
 
 ## Current format boundary
 
-Core extraction supports the formats handled by the existing loader stack, including the current GLB/glTF/VRM paths. The teacher-data builder currently stages self-contained `.glb` only because copying a standalone `.gltf` file without its referenced buffers/textures would create a misleading dataset artifact. Multi-file glTF staging should be added as an explicit bundle feature rather than guessed.
+Core extraction and stabilization support the formats handled by the existing loader stack: GLB, glTF, and VRM. The teacher-data builder currently stages self-contained `.glb` only because copying a standalone `.gltf` file without its referenced buffers/textures would create a misleading dataset artifact. Multi-file glTF staging should be added as an explicit bundle feature rather than guessed.
 
 ## Repository adapters
 
