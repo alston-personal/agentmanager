@@ -1,0 +1,446 @@
+===== extension/content.js =====
+--- lines 303-375 ---
+303:         error: response?.error || ""
+304:       }, "https://studio.milkcat.org");
+305:     });
+306:     return;
+307:   }
+308: 
+309:   if (event.data && event.data.source === "echo-portal" && event.data.type === "CREATE_ECHO_READING_GRANT") {
+310:     if (location.origin !== "https://studio.milkcat.org") return;
+311:     chrome.runtime.sendMessage({
+312:       action: "CREATE_RECIPIENT_GRANT",
+313:       ownerKeyEnvelope: event.data.ownerKeyEnvelope || null,
+314:       recipientPublicKey: event.data.recipientPublicKey || null,
+315:       recipientKeyId: event.data.recipientKeyId || ""
+316:     }, (response) => {
+317:       if (chrome.runtime.lastError) return;
+318:       window.postMessage({
+319:         source: "chamber-extension",
+320:         type: "CREATE_ECHO_READING_GRANT_RESPONSE",
+321:         requestId: event.data.requestId || "",
+322:         success: Boolean(response?.success),
+323:         recipientKeyEnvelope: response?.recipientKeyEnvelope || null,
+324:         error: response?.error || ""
+325:       }, "https://studio.milkcat.org");
+326:     });
+327:     return;
+328:   }
+329: 
+330:   const nativePasskeyActions = {
+331:     NATIVE_PASSKEY_REGISTER: createNativePasskey,
+332:     NATIVE_PASSKEY_AUTHENTICATE: authenticateNativePasskey
+333:   };
+334:   if (event.data && event.data.source === "echo-portal" && nativePasskeyActions[event.data.type]) {
+335:     if (location.origin !== "https://studio.milkcat.org") return;
+336:     const responseType = `${event.data.type}_RESPONSE`;
+337:     nativePasskeyActions[event.data.type](event.data.optionsJSON || {})
+338:       .then((credential) => {
+339:         window.postMessage({
+340:           source: "chamber-extension",
+341:           type: responseType,
+342:           requestId: event.data.requestId || "",
+343:           success: true,
+344:           credential
+345:         }, "https://studio.milkcat.org");
+346:       })
+347:       .catch((error) => {
+348:         reportChamberError(error, `content:${event.data.type.toLowerCase()}`);
+349:         window.postMessage({
+350:           source: "chamber-extension",
+351:           type: responseType,
+352:           requestId: event.data.requestId || "",
+353:           success: false,
+354:           error: error?.name === "AbortError" ? t("passkey.canceled") : String(error?.message || error)
+355:         }, "https://studio.milkcat.org");
+356:       });
+357:     return;
+358:   }
+359: 
+360:   const recoveryActions = {
+361:     PREPARE_RECOVERY_VAULT: "PREPARE_RECOVERY_VAULT_RESPONSE",
+362:     FINALIZE_RECOVERY_VAULT: "FINALIZE_RECOVERY_VAULT_RESPONSE",
+363:     CONFIRM_RECOVERY_VAULT: "CONFIRM_RECOVERY_VAULT_RESPONSE",
+364:     RESTORE_RECOVERY_VAULT: "RESTORE_RECOVERY_VAULT_RESPONSE",
+365:     GET_RECOVERY_VAULT_STATUS: "GET_RECOVERY_VAULT_STATUS_RESPONSE",
+366:     RESTORE_RECOVERY_AB: "RESTORE_RECOVERY_AB_RESPONSE"
+367:   };
+368:   if (event.data && event.data.source === "echo-portal" && recoveryActions[event.data.type]) {
+369:     if (location.origin !== "https://studio.milkcat.org") return;
+370:     chrome.runtime.sendMessage({
+371:       action: event.data.type,
+372:       setId: event.data.setId || "",
+373:       accountId: event.data.accountId || "",
+374:       shareB: event.data.shareB || null,
+375:       recoveryCodeC: event.data.recoveryCodeC || ""
+--- lines 304-376 ---
+304:       }, "https://studio.milkcat.org");
+305:     });
+306:     return;
+307:   }
+308: 
+309:   if (event.data && event.data.source === "echo-portal" && event.data.type === "CREATE_ECHO_READING_GRANT") {
+310:     if (location.origin !== "https://studio.milkcat.org") return;
+311:     chrome.runtime.sendMessage({
+312:       action: "CREATE_RECIPIENT_GRANT",
+313:       ownerKeyEnvelope: event.data.ownerKeyEnvelope || null,
+314:       recipientPublicKey: event.data.recipientPublicKey || null,
+315:       recipientKeyId: event.data.recipientKeyId || ""
+316:     }, (response) => {
+317:       if (chrome.runtime.lastError) return;
+318:       window.postMessage({
+319:         source: "chamber-extension",
+320:         type: "CREATE_ECHO_READING_GRANT_RESPONSE",
+321:         requestId: event.data.requestId || "",
+322:         success: Boolean(response?.success),
+323:         recipientKeyEnvelope: response?.recipientKeyEnvelope || null,
+324:         error: response?.error || ""
+325:       }, "https://studio.milkcat.org");
+326:     });
+327:     return;
+328:   }
+329: 
+330:   const nativePasskeyActions = {
+331:     NATIVE_PASSKEY_REGISTER: createNativePasskey,
+332:     NATIVE_PASSKEY_AUTHENTICATE: authenticateNativePasskey
+333:   };
+334:   if (event.data && event.data.source === "echo-portal" && nativePasskeyActions[event.data.type]) {
+335:     if (location.origin !== "https://studio.milkcat.org") return;
+336:     const responseType = `${event.data.type}_RESPONSE`;
+337:     nativePasskeyActions[event.data.type](event.data.optionsJSON || {})
+338:       .then((credential) => {
+339:         window.postMessage({
+340:           source: "chamber-extension",
+341:           type: responseType,
+342:           requestId: event.data.requestId || "",
+343:           success: true,
+344:           credential
+345:         }, "https://studio.milkcat.org");
+346:       })
+347:       .catch((error) => {
+348:         reportChamberError(error, `content:${event.data.type.toLowerCase()}`);
+349:         window.postMessage({
+350:           source: "chamber-extension",
+351:           type: responseType,
+352:           requestId: event.data.requestId || "",
+353:           success: false,
+354:           error: error?.name === "AbortError" ? t("passkey.canceled") : String(error?.message || error)
+355:         }, "https://studio.milkcat.org");
+356:       });
+357:     return;
+358:   }
+359: 
+360:   const recoveryActions = {
+361:     PREPARE_RECOVERY_VAULT: "PREPARE_RECOVERY_VAULT_RESPONSE",
+362:     FINALIZE_RECOVERY_VAULT: "FINALIZE_RECOVERY_VAULT_RESPONSE",
+363:     CONFIRM_RECOVERY_VAULT: "CONFIRM_RECOVERY_VAULT_RESPONSE",
+364:     RESTORE_RECOVERY_VAULT: "RESTORE_RECOVERY_VAULT_RESPONSE",
+365:     GET_RECOVERY_VAULT_STATUS: "GET_RECOVERY_VAULT_STATUS_RESPONSE",
+366:     RESTORE_RECOVERY_AB: "RESTORE_RECOVERY_AB_RESPONSE"
+367:   };
+368:   if (event.data && event.data.source === "echo-portal" && recoveryActions[event.data.type]) {
+369:     if (location.origin !== "https://studio.milkcat.org") return;
+370:     chrome.runtime.sendMessage({
+371:       action: event.data.type,
+372:       setId: event.data.setId || "",
+373:       accountId: event.data.accountId || "",
+374:       shareB: event.data.shareB || null,
+375:       recoveryCodeC: event.data.recoveryCodeC || ""
+376:     }, (response) => {
+===== web-feed/app/[wallet_address]/[platform]/page.tsx =====
+--- lines 262-334 ---
+262:       window.removeEventListener("message", onMessage);
+263:       reject(new Error(ft("extensionMissing")));
+264:     }, 2500);
+265:     const onMessage = (event: MessageEvent) => {
+266:       if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "EXTENSION_WALLET_RESPONSE") return;
+267:       if (event.data.requestId && event.data.requestId !== requestId) return;
+268:       window.clearTimeout(timeout);
+269:       window.removeEventListener("message", onMessage);
+270:       if (!event.data.walletAddress || !event.data.sharingKeyId || !event.data.sharingPublicKey) {
+271:         reject(new Error(ft("sharingKeyMissing")));
+272:         return;
+273:       }
+274:       resolve({
+275:         walletAddress: event.data.walletAddress,
+276:         identityAlias: event.data.identityAlias || "",
+277:         identityDisplayName: event.data.identityDisplayName || event.data.identityAlias || "",
+278:         sharingKeyId: event.data.sharingKeyId,
+279:         sharingPublicKey: event.data.sharingPublicKey,
+280:         accessCapability: event.data.accessCapability || "",
+281:       });
+282:     };
+283:     window.addEventListener("message", onMessage);
+284:     window.postMessage({ source: "echo-portal", type: "GET_EXTENSION_WALLET", requestId }, window.location.origin);
+285:   });
+286: 
+287:   const requestExtensionRecovery = <T extends Record<string, any>>(type: string, payload: Record<string, any> = {}) => new Promise<T>((resolve, reject) => {
+288:     const requestId = `recovery_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+289:     const responseType = `${type}_RESPONSE`;
+290:     const timeoutMs = type.startsWith("NATIVE_PASSKEY_") ? 70_000 : 10_000;
+291:     const timeout = window.setTimeout(() => {
+292:       window.removeEventListener("message", onMessage);
+293:       reject(new Error(type.startsWith("NATIVE_PASSKEY_") ? ft("systemPasskeyTimeout") : ft("extensionNoResponse")));
+294:     }, timeoutMs);
+295:     const onMessage = (event: MessageEvent) => {
+296:       if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== responseType || event.data?.requestId !== requestId) return;
+297:       window.clearTimeout(timeout);
+298:       window.removeEventListener("message", onMessage);
+299:       if (!event.data.success) reject(new Error(event.data.error || ft("recoveryFailed")));
+300:       else resolve(event.data as T);
+301:     };
+302:     window.addEventListener("message", onMessage);
+303:     window.postMessage({ source: "echo-portal", type, requestId, ...payload }, window.location.origin);
+304:   });
+305: 
+306:   const runPasswordManagerPasskey = async <T,>(operation: () => Promise<T>): Promise<T> => {
+307:     let timeoutId = 0;
+308:     try {
+309:       return await Promise.race([
+310:         operation(),
+311:         new Promise<never>((_, reject) => {
+312:           timeoutId = window.setTimeout(() => {
+313:             WebAuthnAbortService.cancelCeremony();
+314:             reject(new Error(ft("passwordManagerTimeout")));
+315:           }, 60_000);
+316:         }),
+317:       ]);
+318:     } finally {
+319:       if (timeoutId) window.clearTimeout(timeoutId);
+320:     }
+321:   };
+322: 
+323:   const registerPasskey = async (optionsJSON: any) => {
+324:     if (passkeyProvider === "system") {
+325:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_REGISTER", { optionsJSON });
+326:       return result.credential;
+327:     }
+328:     return runPasswordManagerPasskey(() => startRegistration({ optionsJSON }));
+329:   };
+330: 
+331:   const authenticatePasskey = async (optionsJSON: any) => {
+332:     if (passkeyProvider === "system") {
+333:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_AUTHENTICATE", { optionsJSON });
+334:       return result.credential;
+--- lines 265-337 ---
+265:     const onMessage = (event: MessageEvent) => {
+266:       if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "EXTENSION_WALLET_RESPONSE") return;
+267:       if (event.data.requestId && event.data.requestId !== requestId) return;
+268:       window.clearTimeout(timeout);
+269:       window.removeEventListener("message", onMessage);
+270:       if (!event.data.walletAddress || !event.data.sharingKeyId || !event.data.sharingPublicKey) {
+271:         reject(new Error(ft("sharingKeyMissing")));
+272:         return;
+273:       }
+274:       resolve({
+275:         walletAddress: event.data.walletAddress,
+276:         identityAlias: event.data.identityAlias || "",
+277:         identityDisplayName: event.data.identityDisplayName || event.data.identityAlias || "",
+278:         sharingKeyId: event.data.sharingKeyId,
+279:         sharingPublicKey: event.data.sharingPublicKey,
+280:         accessCapability: event.data.accessCapability || "",
+281:       });
+282:     };
+283:     window.addEventListener("message", onMessage);
+284:     window.postMessage({ source: "echo-portal", type: "GET_EXTENSION_WALLET", requestId }, window.location.origin);
+285:   });
+286: 
+287:   const requestExtensionRecovery = <T extends Record<string, any>>(type: string, payload: Record<string, any> = {}) => new Promise<T>((resolve, reject) => {
+288:     const requestId = `recovery_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+289:     const responseType = `${type}_RESPONSE`;
+290:     const timeoutMs = type.startsWith("NATIVE_PASSKEY_") ? 70_000 : 10_000;
+291:     const timeout = window.setTimeout(() => {
+292:       window.removeEventListener("message", onMessage);
+293:       reject(new Error(type.startsWith("NATIVE_PASSKEY_") ? ft("systemPasskeyTimeout") : ft("extensionNoResponse")));
+294:     }, timeoutMs);
+295:     const onMessage = (event: MessageEvent) => {
+296:       if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== responseType || event.data?.requestId !== requestId) return;
+297:       window.clearTimeout(timeout);
+298:       window.removeEventListener("message", onMessage);
+299:       if (!event.data.success) reject(new Error(event.data.error || ft("recoveryFailed")));
+300:       else resolve(event.data as T);
+301:     };
+302:     window.addEventListener("message", onMessage);
+303:     window.postMessage({ source: "echo-portal", type, requestId, ...payload }, window.location.origin);
+304:   });
+305: 
+306:   const runPasswordManagerPasskey = async <T,>(operation: () => Promise<T>): Promise<T> => {
+307:     let timeoutId = 0;
+308:     try {
+309:       return await Promise.race([
+310:         operation(),
+311:         new Promise<never>((_, reject) => {
+312:           timeoutId = window.setTimeout(() => {
+313:             WebAuthnAbortService.cancelCeremony();
+314:             reject(new Error(ft("passwordManagerTimeout")));
+315:           }, 60_000);
+316:         }),
+317:       ]);
+318:     } finally {
+319:       if (timeoutId) window.clearTimeout(timeoutId);
+320:     }
+321:   };
+322: 
+323:   const registerPasskey = async (optionsJSON: any) => {
+324:     if (passkeyProvider === "system") {
+325:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_REGISTER", { optionsJSON });
+326:       return result.credential;
+327:     }
+328:     return runPasswordManagerPasskey(() => startRegistration({ optionsJSON }));
+329:   };
+330: 
+331:   const authenticatePasskey = async (optionsJSON: any) => {
+332:     if (passkeyProvider === "system") {
+333:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_AUTHENTICATE", { optionsJSON });
+334:       return result.credential;
+335:     }
+336:     return runPasswordManagerPasskey(() => startAuthentication({ optionsJSON }));
+337:   };
+--- lines 297-369 ---
+297:       window.clearTimeout(timeout);
+298:       window.removeEventListener("message", onMessage);
+299:       if (!event.data.success) reject(new Error(event.data.error || ft("recoveryFailed")));
+300:       else resolve(event.data as T);
+301:     };
+302:     window.addEventListener("message", onMessage);
+303:     window.postMessage({ source: "echo-portal", type, requestId, ...payload }, window.location.origin);
+304:   });
+305: 
+306:   const runPasswordManagerPasskey = async <T,>(operation: () => Promise<T>): Promise<T> => {
+307:     let timeoutId = 0;
+308:     try {
+309:       return await Promise.race([
+310:         operation(),
+311:         new Promise<never>((_, reject) => {
+312:           timeoutId = window.setTimeout(() => {
+313:             WebAuthnAbortService.cancelCeremony();
+314:             reject(new Error(ft("passwordManagerTimeout")));
+315:           }, 60_000);
+316:         }),
+317:       ]);
+318:     } finally {
+319:       if (timeoutId) window.clearTimeout(timeoutId);
+320:     }
+321:   };
+322: 
+323:   const registerPasskey = async (optionsJSON: any) => {
+324:     if (passkeyProvider === "system") {
+325:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_REGISTER", { optionsJSON });
+326:       return result.credential;
+327:     }
+328:     return runPasswordManagerPasskey(() => startRegistration({ optionsJSON }));
+329:   };
+330: 
+331:   const authenticatePasskey = async (optionsJSON: any) => {
+332:     if (passkeyProvider === "system") {
+333:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_AUTHENTICATE", { optionsJSON });
+334:       return result.credential;
+335:     }
+336:     return runPasswordManagerPasskey(() => startAuthentication({ optionsJSON }));
+337:   };
+338: 
+339:   useEffect(() => {
+340:     if (!showRecovery) return;
+341:     requestExtensionRecovery<any>("GET_RECOVERY_VAULT_STATUS")
+342:       .then((status) => {
+343:         setRecoveryConfigured(Boolean(status.confirmed));
+344:         if (status.pendingRecoveryCodeC && status.setId) {
+345:           setPendingRecovery({ setId: status.setId, recoveryCodeC: status.pendingRecoveryCodeC });
+346:           setRecoveryStatus(ft("recoveryPendingC"));
+347:         } else if (status.confirmed) {
+348:           setRecoveryStatus(ft("recoveryComplete"));
+349:         }
+350:       })
+351:       .catch((error) => setRecoveryStatus(ft("recoveryStatusFailed", { error: error.message })));
+352:   }, [showRecovery]);
+353: 
+354:   const setupRecoveryVault = async () => {
+355:     let registrationSession: { accountId: string; setupToken: string } | null = null;
+356:     let registrationVerified = false;
+357:     setRecoveryBusy(true);
+358:     setRecoveryStatus(ft("creatingShares"));
+359:     try {
+360:       const prepared = await requestExtensionRecovery<any>("PREPARE_RECOVERY_VAULT");
+361:       const optionsResponse = await fetch("https://studio.milkcat.org/chamber-api/recovery/passkey/register/options", {
+362:         method: "POST",
+363:         headers: { "Content-Type": "application/json" },
+364:         body: JSON.stringify({ shareB: prepared.shareB }),
+365:       });
+366:       const optionsData = await optionsResponse.json();
+367:       if (!optionsResponse.ok) throw new Error(optionsData.error || ft("passkeySetupFailed"));
+368:       registrationSession = {
+369:         accountId: optionsData.registration.accountId,
+--- lines 305-377 ---
+305: 
+306:   const runPasswordManagerPasskey = async <T,>(operation: () => Promise<T>): Promise<T> => {
+307:     let timeoutId = 0;
+308:     try {
+309:       return await Promise.race([
+310:         operation(),
+311:         new Promise<never>((_, reject) => {
+312:           timeoutId = window.setTimeout(() => {
+313:             WebAuthnAbortService.cancelCeremony();
+314:             reject(new Error(ft("passwordManagerTimeout")));
+315:           }, 60_000);
+316:         }),
+317:       ]);
+318:     } finally {
+319:       if (timeoutId) window.clearTimeout(timeoutId);
+320:     }
+321:   };
+322: 
+323:   const registerPasskey = async (optionsJSON: any) => {
+324:     if (passkeyProvider === "system") {
+325:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_REGISTER", { optionsJSON });
+326:       return result.credential;
+327:     }
+328:     return runPasswordManagerPasskey(() => startRegistration({ optionsJSON }));
+329:   };
+330: 
+331:   const authenticatePasskey = async (optionsJSON: any) => {
+332:     if (passkeyProvider === "system") {
+333:       const result = await requestExtensionRecovery<any>("NATIVE_PASSKEY_AUTHENTICATE", { optionsJSON });
+334:       return result.credential;
+335:     }
+336:     return runPasswordManagerPasskey(() => startAuthentication({ optionsJSON }));
+337:   };
+338: 
+339:   useEffect(() => {
+340:     if (!showRecovery) return;
+341:     requestExtensionRecovery<any>("GET_RECOVERY_VAULT_STATUS")
+342:       .then((status) => {
+343:         setRecoveryConfigured(Boolean(status.confirmed));
+344:         if (status.pendingRecoveryCodeC && status.setId) {
+345:           setPendingRecovery({ setId: status.setId, recoveryCodeC: status.pendingRecoveryCodeC });
+346:           setRecoveryStatus(ft("recoveryPendingC"));
+347:         } else if (status.confirmed) {
+348:           setRecoveryStatus(ft("recoveryComplete"));
+349:         }
+350:       })
+351:       .catch((error) => setRecoveryStatus(ft("recoveryStatusFailed", { error: error.message })));
+352:   }, [showRecovery]);
+353: 
+354:   const setupRecoveryVault = async () => {
+355:     let registrationSession: { accountId: string; setupToken: string } | null = null;
+356:     let registrationVerified = false;
+357:     setRecoveryBusy(true);
+358:     setRecoveryStatus(ft("creatingShares"));
+359:     try {
+360:       const prepared = await requestExtensionRecovery<any>("PREPARE_RECOVERY_VAULT");
+361:       const optionsResponse = await fetch("https://studio.milkcat.org/chamber-api/recovery/passkey/register/options", {
+362:         method: "POST",
+363:         headers: { "Content-Type": "application/json" },
+364:         body: JSON.stringify({ shareB: prepared.shareB }),
+365:       });
+366:       const optionsData = await optionsResponse.json();
+367:       if (!optionsResponse.ok) throw new Error(optionsData.error || ft("passkeySetupFailed"));
+368:       registrationSession = {
+369:         accountId: optionsData.registration.accountId,
+370:         setupToken: optionsData.registration.setupToken,
+371:       };
+372:       setRecoveryStatus(passkeyProvider === "system"
+373:         ? ft("waitingSystemPasskey")
+374:         : ft("waitingManagerPasskey"));
+375:       const passkeyResponse = await registerPasskey(optionsData.registration.options);
+376:       const verifyResponse = await fetch("https://studio.milkcat.org/chamber-api/recovery/passkey/register/verify", {
+377:         method: "POST",
