@@ -1,0 +1,110 @@
+name: vopc5750 lifecycle diagnostics
+
+on:
+  push:
+    branches:
+      - feature/realm-node-fabric-readiness
+    paths:
+      - .github/workflows/vopc5750-lifecycle-diagnostics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realm-node-fabric-readiness
+          fetch-depth: 0
+
+      - name: Queue read-only lifecycle diagnostics
+        id: queue
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          python3 - <<'PY'
+          import os, time
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=f"vopc5750-lifecycle-diag-{int(time.time())}"
+          script=r'''$ErrorActionPreference='Stop'
+          $clientName='AgentOS Thin Client'
+          $watchdogName='AgentOS Thin Client Watchdog'
+          $client=Get-ScheduledTask -TaskName $clientName -ErrorAction Stop
+          $clientInfo=Get-ScheduledTaskInfo -TaskName $clientName -ErrorAction Stop
+          $watchdog=Get-ScheduledTask -TaskName $watchdogName -ErrorAction Stop
+          $watchdogInfo=Get-ScheduledTaskInfo -TaskName $watchdogName -ErrorAction Stop
+          $procs=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^pythonw?\\.exe$' -and $_.CommandLine -match '(?i)-m\\s+agentos_node\\.client_cli\\s+run(?:\\s|$)' })
+          $procRows=@()
+          foreach($p in $procs){
+            $gp=Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue
+            $procRows += [ordered]@{
+              pid=[int]$p.ProcessId
+              parent_pid=[int]$p.ParentProcessId
+              creation_time=if($gp){$gp.StartTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')}else{$null}
+            }
+          }
+          $result=[ordered]@{
+            schema='agentos.node-lifecycle-diagnostic/v1'
+            observed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            client=[ordered]@{
+              state=[string]$client.State
+              execute=[string]$client.Actions.Execute
+              arguments=[string]$client.Actions.Arguments
+              last_run_time=$clientInfo.LastRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+              last_task_result=[int]$clientInfo.LastTaskResult
+              next_run_time=if($clientInfo.NextRunTime -gt [datetime]::MinValue){$clientInfo.NextRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')}else{$null}
+              missed_runs=[int]$clientInfo.NumberOfMissedRuns
+            }
+            watchdog=[ordered]@{
+              state=[string]$watchdog.State
+              last_run_time=$watchdogInfo.LastRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+              last_task_result=[int]$watchdogInfo.LastTaskResult
+              next_run_time=$watchdogInfo.NextRunTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+              missed_runs=[int]$watchdogInfo.NumberOfMissedRuns
+            }
+            managed_client_count=$procRows.Count
+            client_processes=$procRows
+          }
+          $result | ConvertTo-Json -Depth 6 -Compress
+          '''
+          store=RealmFabricStore()
+          store.queue_task('vopc5750', {
+            'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec',
+            'executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',script],
+            'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]
+          })
+          print(f"task_id={task_id}")
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f: f.write(f"task_id={task_id}\n")
+          PY
+
+      - name: Wait for receipt and persist compact evidence
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          TASK_ID: ${{ steps.queue.outputs.task_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          task_id=os.environ['TASK_ID']; store=RealmFabricStore(); receipt=None
+          for _ in range(45):
+            receipt=store.get_receipt(task_id)
+            if receipt: break
+            time.sleep(2)
+          if not receipt or not receipt.get('ok'):
+            raise SystemExit(f"diagnostic receipt failed: {receipt}")
+          stdout=str(receipt.get('stdout') or '').strip().splitlines()
+          payload=json.loads(stdout[-1])
+          out=Path('.agentos/evidence/node-lifecycle/vopc5750-diagnostic.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(payload,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          print(json.dumps(payload,indent=2,ensure_ascii=False))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/node-lifecycle/vopc5750-diagnostic.json
+          git commit -m 'evidence(agentos-node): record vopc5750 lifecycle diagnostics' || exit 0
+          git push origin HEAD:feature/realm-node-fabric-readiness
