@@ -3,7 +3,8 @@ set -euo pipefail
 ALIAS=${1:-sunlake}
 PLATFORM=${2:-all}
 API=https://studio.milkcat.org/chamber-api
-IRYS=https://devnet.irys.xyz
+IRYS_INDEX=https://devnet.irys.xyz
+IRYS_DATA=https://gateway.irys.xyz
 
 echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "alias=$ALIAS platform=$PLATFORM"
@@ -28,7 +29,7 @@ key=os.environ['CONTENT_KEY']
 q='''query { transactions(tags: [{ name: "App-Name", values: ["Chamber"] }, { name: "Identity-Key", values: ["%s"] }], first: 20) { edges { node { id tags { name value } } } } }''' % key
 print(json.dumps({'query':q}))
 PY
-curl -fsS --max-time 30 -H 'content-type: application/json' --data @/tmp/query.json "$IRYS/graphql" -o /tmp/echo-graphql.json
+curl -fsS --max-time 30 -H 'content-type: application/json' --data @/tmp/query.json "$IRYS_INDEX/graphql" -o /tmp/echo-graphql.json
 
 python3 - <<'PY'
 import json
@@ -48,7 +49,7 @@ PY
 echo '===== payload metadata ====='
 while read -r tx; do
   test -n "$tx" || continue
-  if ! curl -fsS --max-time 30 "$IRYS/$tx" -o "/tmp/tx-$tx.json"; then
+  if ! curl -fsS --max-time 30 "$IRYS_DATA/$tx" -o "/tmp/tx-$tx.json"; then
     echo "TX $tx fetch=FAIL"
     continue
   fi
