@@ -19,6 +19,7 @@ LAB_SCHEMA = "model2ir-lab-analysis/v0.1"
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 SUPPORTED_SUFFIXES = {".glb", ".vrm"}
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost"}
+JSON_CHUNK = 0x4E4F534A
 
 
 class LabInputError(ValueError):
@@ -52,7 +53,21 @@ def _validate_filename(filename: str) -> tuple[str, str]:
     return name, suffix
 
 
-def _validate_glb_container(data: bytes) -> None:
+def _standard_external_uris(gltf: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    for collection in ("buffers", "images"):
+        for item in gltf.get(collection, []) or []:
+            if not isinstance(item, dict):
+                continue
+            uri = item.get("uri")
+            if isinstance(uri, str) and uri and not uri.lower().startswith("data:"):
+                refs.append(f"{collection}:{uri}")
+    return refs
+
+
+def _validate_glb_container(data: bytes) -> dict[str, Any]:
+    """Validate a strict GLB 2.0 container and the Lab v0.1 single-file resource boundary."""
+
     if not data:
         raise LabInputError("asset body is empty")
     if len(data) > MAX_UPLOAD_BYTES:
@@ -66,6 +81,46 @@ def _validate_glb_container(data: bytes) -> None:
         raise LabInputError("Model2IR Lab v0.1 accepts GLB container version 2 only")
     if declared_length != len(data):
         raise LabInputError("GLB declared length does not match the uploaded byte length")
+
+    offset = 12
+    chunk_index = 0
+    gltf: dict[str, Any] | None = None
+    while offset < len(data):
+        if offset + 8 > len(data):
+            raise LabInputError("GLB contains a truncated chunk header")
+        chunk_length, chunk_type = struct.unpack_from("<II", data, offset)
+        if chunk_length % 4 != 0:
+            raise LabInputError("GLB chunk length is not 4-byte aligned")
+        payload_start = offset + 8
+        payload_end = payload_start + chunk_length
+        if payload_end > len(data):
+            raise LabInputError("GLB chunk exceeds the declared container boundary")
+        if chunk_index == 0 and chunk_type != JSON_CHUNK:
+            raise LabInputError("GLB first chunk must be JSON")
+        if chunk_type == JSON_CHUNK:
+            if gltf is not None:
+                raise LabInputError("GLB contains more than one JSON chunk")
+            try:
+                parsed = json.loads(data[payload_start:payload_end].rstrip(b"\x00 \t\r\n").decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise LabInputError("GLB JSON chunk is not valid UTF-8 JSON") from exc
+            if not isinstance(parsed, dict):
+                raise LabInputError("GLB JSON chunk must contain an object")
+            gltf = parsed
+        offset = payload_end
+        chunk_index += 1
+
+    if offset != len(data):
+        raise LabInputError("GLB chunk boundaries do not consume the uploaded container")
+    if gltf is None:
+        raise LabInputError("GLB is missing its JSON chunk")
+
+    external = _standard_external_uris(gltf)
+    if external:
+        raise UnsupportedAssetError(
+            "Model2IR Lab v0.1 requires a self-contained GLB/VRM; external buffer/image URIs belong to the v0.10 bundle-fidelity boundary"
+        )
+    return gltf
 
 
 def _dedupe_unresolved(*values: Any) -> list[Any]:
@@ -100,7 +155,7 @@ def analyze_asset_bytes(filename: str, data: bytes, *, repeats: int = 3) -> dict
     source_sha256 = hashlib.sha256(data).hexdigest()
 
     with tempfile.TemporaryDirectory(prefix="model2ir-lab-") as temp_dir:
-        asset_path = Path(temp_dir) / f"asset{suffix}"
+        asset_path = Path(temp_dir) / safe_name
         asset_path.write_bytes(data)
 
         extracted = extract_ir(asset_path)
@@ -145,6 +200,7 @@ def analyze_asset_bytes(filename: str, data: bytes, *, repeats: int = 3) -> dict
             "bytes": len(data),
             "sha256": source_sha256,
             "persisted": False,
+            "self_contained_standard_resources": True,
         },
         "summary": {
             "observed": profile.get("observed") or {},
@@ -207,6 +263,7 @@ class Model2IRLabHandler(BaseHTTPRequestHandler):
                 "single_worker": True,
                 "max_upload_bytes": MAX_UPLOAD_BYTES,
                 "accepted": [".glb", ".vrm"],
+                "self_contained_standard_resources_required": True,
                 "multi_file_gltf_supported": False,
             },
         )
