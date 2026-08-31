@@ -13,7 +13,7 @@ permissions:
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 6
+    timeout-minutes: 8
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -55,24 +55,39 @@ jobs:
 
           BACKUP=/tmp/leopardcat-stats-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
-          echo "stats_backup=$BACKUP"
 
-          # dist/index.html is a generated tracked artifact; discard only its local generated drift.
+          # Generated tracked index may differ from the previous production build.
           git -C "$ROOT" checkout -- website/dist/index.html
 
-          echo '=== fast-forward source ==='
+          echo '=== sync source ==='
           git -C "$ROOT" fetch origin main
           git -C "$ROOT" merge --ff-only origin/main
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
-
-          echo '=== preserve runtime stats ==='
           cp "$BACKUP" "$WEB/stats.json"
 
-          echo '=== verify committed frontend release ==='
-          grep -q 'ritual-fan-shuffle' "$WEB/dist/index.html"
-          grep -q 'nearestManualFanButton' "$WEB/dist/index.html"
-          echo 'fan_bundle=present'
+          echo '=== verify source markers ==='
+          grep -q 'nearestManualFanButton' "$WEB/main.js"
+          grep -q "phase: 'shuffling'" "$WEB/main.js"
+          grep -q 'fan-hover' "$WEB/style.css"
+          echo 'fan_source=present'
+
+          echo '=== build production frontend ==='
+          test -e "$WEB/public/art/renders"
+          test -e "$WEB/public/cards"
+          cd "$WEB"
+          npm ci
+          npm run build
+
+          JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
+          CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
+          test -n "$JS_ASSET"
+          test -n "$CSS_ASSET"
+          test -f "dist$JS_ASSET"
+          test -f "dist$CSS_ASSET"
+          test -f dist/art/card-back.svg
+          echo "js_asset=$JS_ASSET"
+          echo "css_asset=$CSS_ASSET"
 
           echo '=== restart ownership ==='
           systemctl --user stop leopardcat-tarot.service || true
@@ -102,11 +117,19 @@ jobs:
           done
           systemctl --user is-active leopardcat-tarot.service
           curl -fsS --max-time 5 http://127.0.0.1:8088/api/v1/ai-policy >/tmp/leopardcat-policy.json
-          cat /tmp/leopardcat-policy.json
-          echo
+
+          echo '=== verify served bundle ==='
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-release.js
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-release.css
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-release.js | awk '{print $1}')"
+          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-release.css | awk '{print $1}')"
+
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
           echo "public_http=$code"
           test "$code" = 200
+          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-public-release.js
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-public-release.js | awk '{print $1}')"
+
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
           echo 'leopardcat_fan_deploy=PASS'
           REMOTE
