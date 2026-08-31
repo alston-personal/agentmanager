@@ -1,0 +1,42 @@
+name: LeopardCat Production AI Probe via AgentOS Oracle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-production-ai-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Probe production AI without printing generated content
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=/tmp/leopardcat-ai-probe.json
+          CODE=$(curl -sS --max-time 45 -o "$BODY" -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"method":"tarot","persona":"leopardcat","question":"PRODUCTION_AI_HEALTH_CHECK","lang":"zh-TW","seed":"production-ai-health-check","input":{"deck_id":"leopardcat","spread":"single"}}' \
+            http://127.0.0.1:8088/api/v1/readings || true)
+          echo "http_status=$CODE"
+          python3 - "$BODY" <<'PY'
+          import json,sys
+          p=sys.argv[1]
+          try:
+              d=json.load(open(p,encoding='utf-8'))
+          except Exception as e:
+              print('json_valid=false')
+              print('parse_error='+type(e).__name__)
+              raise SystemExit(2)
+          print('json_valid=true')
+          for k in ('error','code','retryable','reading_present','privacy','method','persona'):
+              if k in d: print(f'{k}={d.get(k)}')
+          print('has_reading='+str(bool(d.get('reading'))).lower())
+          PY
+          test "$CODE" = 200 -o "$CODE" = 503
