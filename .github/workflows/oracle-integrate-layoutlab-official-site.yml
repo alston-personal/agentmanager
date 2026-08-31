@@ -1,7 +1,6 @@
 name: Oracle Integrate Layout Lab Into Official Site
 
 on:
-  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
@@ -10,89 +9,48 @@ permissions:
   contents: read
 
 jobs:
-  metashield_mvp_rc1:
+  metashield_launch_surface_microtask:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 18
+    timeout-minutes: 8
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+      - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy canonical MVP task to governed deploy identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${DEPLOY_USER:-}"
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new .agentos/commands/metashield-mvp-rc1.json "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield-mvp-rc1.json"
-      - name: Execute MVP phases through Antigravity relay as ubuntu
+      - name: Execute launch-surface microtask as ubuntu
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-mvp-rc1-ubuntu-relay.json
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-launch-surface-microtask.json
           set -euo pipefail
           export PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext
           python3 - <<'PY'
           import json,time
           from pathlib import Path
           from agentos_node.antigravity_relay import AntigravityRelayClient
-          cmd=json.loads(Path('/tmp/metashield-mvp-rc1.json').read_text(encoding='utf-8'))
           workspace='/home/ubuntu/metashield-protocol'
-          assert Path(workspace).is_dir(), workspace
+          instruction='''Work ONLY on the Chamber Sovereignty Preview RC1 launch surface in /home/ubuntu/metashield-protocol. Do not inspect the whole repository. Current manifest version is already 1.0.60. Limit edits to extension/sidepanel.html, extension/sidepanel.js, extension/i18n.js, extension/mvp-validation.js, and extension/_locales only if required. Preserve all Facebook, Threads, Instagram and X/Twitter platform picker/backup paths. Make the default backup view clearly show "Sovereignty Preview · Closed Beta · Devnet" and expose extension version 1.0.60 (prefer deriving from chrome.runtime.getManifest().version rather than hard-coding where practical). Correct any tester-facing copy that says production/mainnet will require re-backup: replace it with an honest Capture-once statement that Closed Beta data is on Devnet and is designed to be promoted/replicated later without re-capturing the source, while explicitly avoiding any Mainnet permanence guarantee. De-emphasize the quota/Free Genesis/Pro upsell and Reborn action from the DEFAULT MVP backup surface by the smallest reversible method (hidden/collapsed/beta gate); DO NOT delete their code or functionality and do not alter entitlement/business logic. Keep identity/settings/recovery accessible. Do not change platform adapter code, background storage behavior, billing, APIs, Genesis, recovery crypto, or package/release files. Do not reset/stash/rebase or overwrite unrelated local changes. Run only fast syntax/targeted validation suitable for these edited files (for example node --check and existing mvp-validation test if obvious). Return exact changed files and checks. If safe, commit only these launch-surface changes plus the existing v1.0.60 manifest bump in one commit; otherwise leave them intact and explain why.'''
           relay=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
-          results=[]
-          for phase in cmd.get('phases') or []:
-              submitted=relay.submit(
-                  project_id='metashield-protocol',
-                  canonical_ir={
-                    'goal':'Complete Chamber Sovereignty Preview RC1 MVP from the actual local working tree.',
-                    'constraints':[
-                      'Current tester-visible extension version must be 1.0.60 or newer.',
-                      'Preserve Facebook, Threads, Instagram and X/Twitter backup adapters.',
-                      'Capture once; Mainnet promotion must not require source recapture.',
-                      'Use DEVNET_ONLY -> MAINNET_REFERENCED -> MAINNET_REPLICATED semantics.',
-                      'Do not reset/rebase/discard pre-existing local work.',
-                      'Do not public-promote, deploy Mainnet, or overwrite immutable release artifacts.',
-                      'Treat /home/ubuntu/metashield-protocol as execution truth.',
-                      'Return evidence; do not claim unperformed tests or side effects.'
-                    ]
-                  },
-                  instruction=str(phase['instruction']),
-                  workspace=workspace,
-                  executor_hint='antigravity')
-              cid=submitted['capsule_id']
-              deadline=time.monotonic()+300
-              receipt=None
-              while time.monotonic()<deadline:
-                  receipt=relay.receipt(cid)
-                  if receipt is not None: break
-                  time.sleep(2)
-              if receipt is None:
-                  receipt={'schema':'agentos.antigravity-receipt/v1','capsule_id':cid,'ok':False,'error':'receipt_timeout'}
-              results.append({'phase':phase['id'],'capsule_id':cid,'receipt':receipt})
-              if not receipt.get('ok'):
-                  break
-          summary={
-            'schema':'agentos.metashield-mvp-ubuntu-relay/v0.1',
-            'executor_user':'ubuntu',
-            'workspace':workspace,
-            'results':results,
-            'complete':len(results)==len(cmd.get('phases') or []) and all((x['receipt'] or {}).get('ok') for x in results)
-          }
-          print(json.dumps(summary,ensure_ascii=False,indent=2))
-          if not summary['complete']:
-              raise SystemExit(2)
+          sub=relay.submit(project_id='metashield-protocol',canonical_ir={'goal':'Finish the tester-visible Chamber Sovereignty Preview RC1 launch surface only.','constraints':['version 1.0.60','four backup adapters remain visible','Devnet honest copy','hide peripheral business/Reborn surface reversibly','no broad repo scan','no destructive git operations']},instruction=instruction,workspace=workspace,executor_hint='antigravity')
+          cid=sub['capsule_id']; deadline=time.monotonic()+210; receipt=None
+          while time.monotonic()<deadline:
+              receipt=relay.receipt(cid)
+              if receipt is not None: break
+              time.sleep(2)
+          if receipt is None: receipt={'schema':'agentos.antigravity-receipt/v1','capsule_id':cid,'ok':False,'error':'receipt_timeout'}
+          print(json.dumps({'capsule_id':cid,'receipt':receipt},ensure_ascii=False,indent=2))
+          if not receipt.get('ok'): raise SystemExit(2)
           PY
           REMOTE
-      - name: Upload MVP relay evidence
+      - name: Upload microtask evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: metashield-mvp-rc1-ubuntu-relay
-          path: .agentos/evidence/metashield-mvp-rc1-ubuntu-relay.json
+          name: metashield-launch-surface-microtask
+          path: .agentos/evidence/metashield-launch-surface-microtask.json
           if-no-files-found: warn
