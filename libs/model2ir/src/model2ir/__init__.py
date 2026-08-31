@@ -41,4 +41,4 @@ __all__ = [
     "validate_teacher_dataset_manifest",
 ]
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
