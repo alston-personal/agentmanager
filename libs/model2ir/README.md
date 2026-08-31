@@ -20,6 +20,7 @@ from model2ir import (
     compile_reversible_glb,
     save_reversible_glb,
     verify_glb_container_preservation,
+    profile_asset_structure,
     ir_digest,
     build_teacher_dataset,
     validate_teacher_dataset_manifest,
@@ -36,10 +37,11 @@ python -m model2ir --help
 
 ## CLI contract
 
-The CLI separates evidence extraction, stabilized Character IR projection, and reversible container writing:
+The CLI separates evidence extraction, geometry/structure profiling, stabilized Character IR projection, and reversible container writing:
 
 ```bash
 model2ir extract character.glb -o evidence.json
+model2ir profile character.glb -o profile.json
 model2ir stabilize character.glb -o character-ir.json
 model2ir audit character.glb -o audit.json --repeats 3
 model2ir diff a.json b.json -o diff.json
@@ -47,9 +49,23 @@ model2ir reconcile image-ir.json model-ir.json -o reconciliation.json
 model2ir embed-ir character.glb canonical-ir.json -o reversible.glb --report preservation.json
 ```
 
-`extract` returns the full Model2IR evidence envelope. `stabilize` accepts GLB, glTF, and VRM through the normal loader and returns only the stabilized Canonical Character IR candidate/truth.
+`extract` returns the full Model2IR evidence envelope. `profile` returns only the conservative geometry/rig structure evidence. `stabilize` accepts GLB, glTF, and VRM through the normal loader and returns only the stabilized Canonical Character IR candidate/truth.
 
 `embed-ir` is intentionally narrower. It writes a **new** `.glb` or `.vrm`, rewrites only the JSON chunk to carry the canonical IR sidecar, and preserves every non-JSON chunk byte-for-byte and in order. It refuses in-place overwrite. By default it also rejects non-data external buffer/image URIs so moving the output cannot silently break relative resources.
+
+## Geometry and weak-structure profiling
+
+Model2IR v0.9.1 adds an evidence-only geometry profile for assets that are technically 3D but carry weak volumetric or rig structure, including relief-like AI-generated assets.
+
+The profile keeps these layers separate:
+
+- **Observed:** local accessor bounding-box extents, mesh/primitive/component counts, skin count, joint count, and animation count.
+- **Inferred:** axis-anisotropy shape hint (`planar-or-relief-like`, `volumetric-like`, `elongated-or-linear-like`, or `anisotropic-3d`) and a conservative structural signal.
+- **Unresolved:** missing or unusable extent evidence.
+
+A `planar-or-relief-like` asset with no skin, no joints, and only one mesh component is classified as `structural_signal: weak`. That is explicitly **not** permission to infer humanoid bones or promote semantic parts. The purpose of the profile is to make weak evidence visible, not to make sparse 3D assets look more complete than they are.
+
+The regression fixture derived from the Meshy relief sample stores only measured metadata and its SHA-256 reference; the uploaded binary/image are not committed. The sample remains `body_plan: unknown`, with no automatic humanoid promotion.
 
 ## Two different lossless claims
 
