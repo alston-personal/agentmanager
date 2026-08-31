@@ -1,0 +1,24 @@
+{
+  "schema": "agentos.current-antigravity-boundary-acceptance/v1",
+  "observed_at": "2026-08-31T03:09:58Z",
+  "accepted": false,
+  "checks": {
+    "receipt_present": false,
+    "receipt_ok": false,
+    "no_permission_regression": false,
+    "executor_marker_present": false
+  },
+  "capsule_id": "relay-175197f0cae74cfebd6f6655c3abcc45",
+  "receipt": null,
+  "scope": {
+    "proves": [
+      "agentos-node relay submission reaches ubuntu executor boundary",
+      "receipt returns across the governed relay boundary",
+      "cross-user permission boundary is healthy"
+    ],
+    "does_not_prove": [
+      "arbitrary executor tasks beyond this read-only smoke",
+      "vopc5750 local agent execution"
+    ]
+  }
+}
