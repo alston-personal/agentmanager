@@ -13,6 +13,16 @@ Before architecture or system-level changes:
 
 Do not rely on older memory/pulse-era documents as current architecture if they disagree with `docs/CURRENT_STATE.md` and executable evidence.
 
+## Antigravity ONE self-bootstrap
+
+When the **actual Gemini agent/session inside the Antigravity IDE/2.0 surface** is asked to connect to, continue from, discover, or validate AgentOS ONE, it MUST read and follow:
+
+`/.agents/skills/agentos-one-onboarding/SKILL.md`
+
+Important identity fence: `agy` and standalone `gemini` may use Gemini-family models but are separate executor/provider identities. They are not acceptable substitutes for proving that the active Antigravity Gemini session is ONE-aware.
+
+Prefer Antigravity's workspace MCP/provider integration for the actual IDE Gemini. Keep Realm/node credentials outside model-visible prompt, MCP resources, and committed config. A fresh Antigravity Gemini conversation must be able to rediscover ONE without copied vendor conversation history before the integration is considered complete.
+
 ## Current architectural role
 
 AgentOS currently contains, among other components:
