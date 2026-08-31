@@ -1,0 +1,46 @@
+{
+  "schema": "agentos.project-release-lanes/v1",
+  "generated_at": "2026-08-31T02:45:00Z",
+  "projects": {
+    "layoutlib": {
+      "canonical_repository": "alston-personal/layoutlib",
+      "development_branch_patterns": [
+        "develop",
+        "feature/*",
+        "fix/*",
+        "governance/*"
+      ],
+      "promotion_branch": "main",
+      "promotion_requires": {
+        "pull_request": true,
+        "explicit_human_approval": true,
+        "core_governance": true
+      },
+      "deployment": {
+        "poc": {
+          "surface": "https://studio.milkcat.org/poc/layout-lab/",
+          "source_branch": "develop",
+          "require_exact_source_sha": true
+        },
+        "production": {
+          "surface": "https://studio.milkcat.org/layout-lab/",
+          "source_branch": "main",
+          "require_exact_source_sha": true,
+          "immutable_release": "release/v0.7.9"
+        }
+      },
+      "authority": {
+        "development_owner": "layoutlib-project",
+        "promotion_owner": "agentos-core",
+        "deployment_owner": "agentos-core"
+      },
+      "invariants": [
+        "project development MUST NOT target main directly",
+        "project threads MUST NOT mutate agentmanager deployment workflows",
+        "POC consumes only an exact validated develop candidate SHA",
+        "production consumes only exact promoted main/release state",
+        "release/v0.7.9 is immutable provenance"
+      ]
+    }
+  }
+}
