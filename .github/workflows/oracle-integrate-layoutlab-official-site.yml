@@ -21,30 +21,28 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect image-upload failure path
+      - name: Inspect fallback upload and i18n definitions
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .agentos/evidence
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-image-upload-failure-inspect.txt
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE' | tee .agentos/evidence/metashield-image-upload-deep-inspect.txt
           set -euo pipefail
-          ROOT=/home/ubuntu/metashield-protocol
-          echo 'matches_begin'
-          grep -RniE 'media\.imageUploadFailed|imageUploadFailed|upload.*image|image.*upload|media\.image' "$ROOT/extension" "$ROOT/backend" "$ROOT/echo" 2>/dev/null --exclude-dir=node_modules --exclude='*.map' | sed "s#^$ROOT/##" | sed -n '1,500p' || true
-          echo 'matches_end'
-          echo 'i18n_candidates_begin'
-          find "$ROOT/extension" -maxdepth 3 -type f \( -name '*i18n*' -o -name '*locale*' -o -name '*messages*' \) -print | sed "s#^$ROOT/##" | sort
-          echo 'i18n_candidates_end'
-          echo 'upload_related_files_begin'
-          grep -RilE 'imageUploadFailed|upload.*image|image.*upload' "$ROOT/extension" "$ROOT/backend" 2>/dev/null --exclude-dir=node_modules | sed "s#^$ROOT/##" | sort | sed -n '1,120p' || true
-          echo 'upload_related_files_end'
-          for f in $(grep -RilE 'imageUploadFailed|media\.imageUploadFailed' "$ROOT/extension" "$ROOT/backend" 2>/dev/null --exclude-dir=node_modules | head -20); do
-            echo "===== FILE ${f#$ROOT/} ====="
-            nl -ba "$f" | sed -n '1,900p' | grep -B18 -A30 -E 'imageUploadFailed|media\.imageUploadFailed' || true
+          ROOT=/home/ubuntu/metashield-protocol/extension
+          echo '===== background.js 520-735 ====='
+          nl -ba "$ROOT/background.js" | sed -n '520,735p'
+          echo '===== i18n.js 1-260 ====='
+          nl -ba "$ROOT/i18n.js" | sed -n '1,260p'
+          echo '===== locale key search ====='
+          for f in "$ROOT/_locales/en/messages.json" "$ROOT/_locales/zh_TW/messages.json"; do
+            echo "--- ${f#$ROOT/} ---"
+            grep -nE 'imageUploadFailed|uploadFailed|noSuccessfulUpload|devnetQuota|platformImagePost' "$f" || true
           done
+          echo '===== config and fallback endpoints ====='
+          grep -RniE 'imgur|r2|fallback|mediaUpload|uploadUrl|uploadEndpoint|fallbackStorage' "$ROOT" --exclude-dir=node_modules --exclude='*.map' | sed -n '1,300p' || true
           REMOTE
       - uses: actions/upload-artifact@v4
         with:
-          name: metashield-image-upload-failure-inspect
-          path: .agentos/evidence/metashield-image-upload-failure-inspect.txt
+          name: metashield-image-upload-deep-inspect
+          path: .agentos/evidence/metashield-image-upload-deep-inspect.txt
           if-no-files-found: error
