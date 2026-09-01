@@ -7,103 +7,158 @@ from typing import Any
 
 from agentos_node.one_mcp import OracleLocalGateway
 
-HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.1"
+HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.2"
+SOURCE = "ONE_PREINVOCATION_IR"
+CORE_PROJECT_ID = "agentos-core"
+IR_SCHEMA = "agentos.ir/v1"
+EXECUTION_HEAD_SCHEMA = "agentos.execution-head/v1"
+CORE_REPO_BASENAME = "agentmanager"
 
 
-def _workspace_candidates(raw_paths: Any) -> list[tuple[str, str]]:
+def _workspace_paths(raw_paths: Any) -> list[str]:
     if not isinstance(raw_paths, list):
         return []
-    out: list[tuple[str, str]] = []
+    out: list[str] = []
     seen: set[str] = set()
     for raw in raw_paths:
         value = str(raw or "").strip()
         if not value:
             continue
-        path = Path(value)
-        name = path.name.strip()
-        if not name:
-            continue
-        key = name.casefold()
+        key = value.casefold()
         if key in seen:
             continue
         seen.add(key)
-        out.append((value, name))
+        out.append(value)
     return out
 
 
-def _compact_resolution(workspace: str, result: dict[str, Any]) -> dict[str, Any]:
+def _core_workspace_present(paths: list[str]) -> bool:
+    """Use Antigravity workspace metadata only as a Core bootstrap gate.
+
+    workspacePaths must never be used to choose among project states.  For the
+    #152 Core acceptance slice, the existing canonical IR publisher is
+    intentionally restricted to agentos-core, whose repository checkout is
+    agentmanager.  Multi-root siblings therefore cannot become hydration
+    candidates.
+    """
+    return any(Path(value).name.casefold() == CORE_REPO_BASENAME for value in paths)
+
+
+def _canonical_ir_from_resolution(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], str]:
+    if result.get("schema") != "agentos.resolve/v1":
+        raise ValueError("unexpected ONE resolve schema")
+
     project = result.get("project") if isinstance(result.get("project"), dict) else {}
-    resolution = result.get("project_resolution") if isinstance(result.get("project_resolution"), dict) else {}
-    resolved = resolution.get("resolved") if isinstance(resolution.get("resolved"), dict) else {}
+    if str(project.get("id") or "") != CORE_PROJECT_ID:
+        raise ValueError("ONE did not resolve canonical agentos-core")
+
+    execution_head = result.get("execution_head")
+    if not isinstance(execution_head, dict) or execution_head.get("schema") != EXECUTION_HEAD_SCHEMA:
+        raise ValueError("canonical execution head is unavailable or has unsupported schema")
+
+    continuation = result.get("continuation")
+    if not isinstance(continuation, dict):
+        raise ValueError("canonical continuation is unavailable")
+    canonical_ir = continuation.get("canonical_ir")
+    if not isinstance(canonical_ir, dict) or canonical_ir.get("schema_version") != IR_SCHEMA:
+        raise ValueError("canonical continuation does not contain agentos.ir/v1")
+
+    head_index = str(execution_head.get("index_id") or "").strip()
+    ir_index = str(canonical_ir.get("index_id") or "").strip()
+    if not head_index or head_index != ir_index:
+        raise ValueError("canonical execution-head / IR index generation mismatch")
+    if not str(canonical_ir.get("ir_id") or "").strip():
+        raise ValueError("canonical IR has no ir_id")
+
+    return execution_head, canonical_ir, head_index
+
+
+def _compact_ir(
+    result: dict[str, Any],
+    execution_head: dict[str, Any],
+    canonical_ir: dict[str, Any],
+    index_id: str,
+) -> dict[str, Any]:
+    project = result.get("project") if isinstance(result.get("project"), dict) else {}
+    continuation = canonical_ir.get("continuation") if isinstance(canonical_ir.get("continuation"), dict) else {}
     return {
-        "workspace": workspace,
-        "project_id": project.get("id") or resolved.get("project_id"),
-        "project_name": project.get("name"),
-        "schema": result.get("schema"),
-        "active_goal": result.get("active_goal"),
-        "next_action": result.get("next_action"),
+        "schema_version": canonical_ir.get("schema_version"),
+        "index_id": index_id,
+        "ir_id": canonical_ir.get("ir_id"),
+        "parent_ir_id": canonical_ir.get("parent_ir_id"),
+        "project_id": project.get("id"),
+        "goal": canonical_ir.get("goal"),
+        "constraints": canonical_ir.get("constraints") or [],
+        "decisions": canonical_ir.get("decisions") or [],
+        "pending_tasks": canonical_ir.get("pending_tasks") or [],
+        "continuation": continuation,
+        "capability": canonical_ir.get("capability"),
+        "next_action": (
+            result.get("next_action")
+            or continuation.get("recommended_action")
+            or continuation.get("next_action")
+        ),
         "mutation_allowed": bool(result.get("mutation_allowed")),
-        "canonical_repo": resolved.get("repo"),
-        "canonical_branch": resolved.get("branch"),
-        "canonical_path": resolved.get("canonical_path"),
-        "canonical_node": resolved.get("node"),
-        "availability": result.get("availability") or {},
+        "execution_head": {
+            "schema": execution_head.get("schema"),
+            "index_id": execution_head.get("index_id"),
+            "active_goal": execution_head.get("active_goal"),
+            "status": (
+                execution_head.get("execution_head", {}).get("status")
+                if isinstance(execution_head.get("execution_head"), dict)
+                else None
+            ),
+        },
         "provenance": result.get("provenance") or {},
     }
 
 
 def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None = None) -> dict[str, Any]:
-    # Hydrate only once per fresh conversation. The injected step remains in the
-    # trajectory for later turns, avoiding repeated context/token overhead.
+    # Hydrate exactly once per fresh conversation.  The injected IR remains in
+    # the trajectory for later turns, avoiding repeated context/token overhead.
     if int(payload.get("invocationNum") or 0) != 0:
         return {}
 
-    workspaces = _workspace_candidates(payload.get("workspacePaths"))
-    if not workspaces:
+    paths = _workspace_paths(payload.get("workspacePaths"))
+    if not _core_workspace_present(paths):
+        # Global hook remains silent outside a workspace containing the Core
+        # checkout.  Importantly, siblings are never treated as state choices.
         return {}
 
     one = gateway or OracleLocalGateway()
     status = one.status()
-    resolutions: list[dict[str, Any]] = []
-    failures: list[dict[str, str]] = []
-    for workspace, candidate in workspaces:
-        try:
-            result = one.resolve(candidate)
-        except (KeyError, ValueError):
-            # An unrelated workspace is not an AgentOS bootstrap failure.
-            continue
-        except Exception as exc:  # pragma: no cover - live diagnostics only
-            failures.append({"workspace": workspace, "error": f"{type(exc).__name__}: {exc}"})
-            continue
-        if result.get("schema") != "agentos.resolve/v1":
-            failures.append({"workspace": workspace, "error": "unexpected resolve schema"})
-            continue
-        resolutions.append(_compact_resolution(workspace, result))
+    if not status.get("connected"):
+        raise RuntimeError("ONE is not connected")
 
-    # Global hook is intentionally silent outside AgentOS-governed workspaces.
-    if not resolutions and not failures:
-        return {}
+    # The existing canonical continuation publisher is restricted to
+    # agentos-core.  Resolve that authoritative IR directly; do not infer state
+    # from workspace order, Pulse, PM2, memory, or sibling repositories.
+    result = one.resolve(CORE_PROJECT_ID)
+    execution_head, canonical_ir, index_id = _canonical_ir_from_resolution(result)
+    ir = _compact_ir(result, execution_head, canonical_ir, index_id)
 
     envelope = {
         "schema": HOOK_SCHEMA,
-        "source": "ONE_PREINVOCATION_HOOK",
+        "source": SOURCE,
         "status_schema": status.get("schema"),
-        "connected": bool(status.get("connected")),
+        "connected": True,
         "realm_id": status.get("realm_id"),
         "node_id": status.get("node_id"),
         "surface": "antigravity",
         "executor_class": "antigravity-gemini",
         "model_name": payload.get("modelName"),
         "credential_exposed": False,
-        "resolutions": resolutions,
-        "failures": failures,
+        "canonical_ir": ir,
     }
     message = (
-        "AgentOS ONE canonical pre-invocation hydration. This state was resolved "
-        "before the model was called; do not replace it with Pulse/PM2/local-memory "
-        "reconstruction. Newer explicit user intent still wins. If continuing work, "
-        "use the resolved active_goal/next_action and authority boundary below. "
-        "When reporting bootstrap provenance, state source=ONE_PREINVOCATION_HOOK.\n"
+        "AgentOS ONE canonical IR hydration. This is the single authoritative "
+        "agentos-core continuation selected before the model was called. Do not "
+        "replace it with workspace enumeration, Pulse/PM2 scans, local-memory "
+        "reconstruction, or sibling project state. Newer explicit user intent "
+        "still wins. Continue from canonical_ir.goal / pending_tasks / "
+        "continuation / next_action and obey mutation_allowed. When reporting "
+        "bootstrap provenance, state source=ONE_PREINVOCATION_IR and include "
+        "index_id + ir_id.\n"
         + json.dumps(envelope, ensure_ascii=False, sort_keys=True)
     )
     return {"injectSteps": [{"ephemeralMessage": message}]}
@@ -115,14 +170,19 @@ def main() -> int:
         if not isinstance(payload, dict):
             raise ValueError("hook input must be a JSON object")
         output = build_injection(payload)
-    except Exception as exc:  # Fail open for Antigravity, but inject a bounded diagnostic.
+    except Exception as exc:
+        # Fail closed for AgentOS continuity: Antigravity itself may continue,
+        # but the model receives an explicit prohibition against claiming ONE
+        # state from local reconstruction.
         output = {
             "injectSteps": [
                 {
                     "ephemeralMessage": (
-                        "ONE_PREHOOK_BLOCKED: AgentOS pre-invocation hydration failed: "
-                        f"{type(exc).__name__}: {exc}. Do not claim ONE-connected state "
-                        "from local Pulse/PM2/memory scans."
+                        "ONE_IR_HEAD_UNRESOLVED: AgentOS canonical IR hydration "
+                        f"failed: {type(exc).__name__}: {exc}. Do not claim or "
+                        "reconstruct AgentOS continuation from workspace lists, "
+                        "Pulse, PM2, or local memory. Ask for/restore the canonical "
+                        "IR head instead."
                     )
                 }
             ]
