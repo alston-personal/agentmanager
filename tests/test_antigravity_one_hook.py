@@ -7,9 +7,10 @@ from agentos_node.antigravity_one_hook import build_injection
 
 
 class FakeGateway:
-    def __init__(self, *, index_id="idx-7"):
+    def __init__(self, *, index_id="idx-7", ir_id="ir-core-152"):
         self.resolved = []
         self.index_id = index_id
+        self.ir_id = ir_id
 
     def status(self):
         return {
@@ -35,19 +36,28 @@ class FakeGateway:
                 "canonical_ir": {
                     "schema_version": "agentos.ir/v1",
                     "index_id": self.index_id,
-                    "ir_id": "ir-core-152",
+                    "ir_id": self.ir_id,
                     "parent_ir_id": "ir-core-151",
                     "goal": "Complete #152 Antigravity IR hydration",
-                    "constraints": ["Do not infer current state from workspace order"],
+                    "constraints": ["Workspace is not continuation authority"],
                     "decisions": ["Canonical IR is the durable continuation state"],
-                    "pending_tasks": ["Run fresh Gemini regression"],
-                    "continuation": {"recommended_action": "Run fresh Gemini regression"},
+                    "pending_tasks": ["Run fresh Codex regression"],
+                    "continuation": {"recommended_action": "Run fresh Codex regression"},
                     "capability": "agentos.one.resolve",
                 }
             },
-            "next_action": "Run fresh Gemini regression",
+            "next_action": "Run fresh Codex regression",
             "provenance": {"continuation": "project/continuity/latest.json"},
         }
+
+
+def selector(index_id="idx-7", ir_id="ir-core-152"):
+    return {
+        "schema": "agentos.active-continuation/v1",
+        "project_id": "agentos-core",
+        "index_id": index_id,
+        "ir_id": ir_id,
+    }
 
 
 def envelope_from(output):
@@ -56,7 +66,7 @@ def envelope_from(output):
 
 
 class AntigravityOneHookTests(unittest.TestCase):
-    def test_first_invocation_hydrates_single_canonical_ir(self):
+    def test_first_invocation_hydrates_active_canonical_ir(self):
         gateway = FakeGateway()
         output = build_injection(
             {
@@ -69,13 +79,14 @@ class AntigravityOneHookTests(unittest.TestCase):
                 "modelName": "gemini-test",
             },
             gateway,
+            selector=selector(),
         )
         self.assertIn("injectSteps", output)
         message = output["injectSteps"][0]["ephemeralMessage"]
         self.assertIn("ONE_PREINVOCATION_IR", message)
+        self.assertIn("ONE_ACTIVE_CONTINUATION", message)
         self.assertIn("ir-core-152", message)
         self.assertIn("idx-7", message)
-        self.assertIn("Complete #152 Antigravity IR hydration", message)
         self.assertNotIn("zeus-writer", message)
         self.assertNotIn("privacy-guard", message)
         self.assertNotIn("token", message.casefold())
@@ -83,48 +94,52 @@ class AntigravityOneHookTests(unittest.TestCase):
         envelope = envelope_from(output)
         self.assertEqual(envelope["executor_class"], "antigravity-gemini")
         self.assertTrue(envelope["executor_identity_bound"])
+        self.assertEqual(envelope["selection_source"], "ONE_ACTIVE_CONTINUATION")
 
-    def test_nested_workspace_under_agentmanager_hydrates_core_ir(self):
+    def test_acas_workspace_cannot_override_active_core_ir(self):
         gateway = FakeGateway()
         output = build_injection(
             {
                 "invocationNum": 0,
-                "workspacePaths": [
-                    "/home/ubuntu/agentmanager/workspace/if-tv-station",
-                ],
+                "workspacePaths": ["/home/ubuntu/acas"],
                 "modelName": "gpt-5-codex",
             },
             gateway,
+            selector=selector(),
         )
         envelope = envelope_from(output)
         self.assertEqual(envelope["canonical_ir"]["project_id"], "agentos-core")
         self.assertEqual(envelope["executor_class"], "antigravity-codex")
         self.assertEqual(gateway.resolved, ["agentos-core"])
-        self.assertNotIn("if-tv-station", json.dumps(envelope))
+        self.assertNotIn("/home/ubuntu/acas", json.dumps(envelope))
 
-    def test_prefix_lookalike_workspace_does_not_open_core_gate(self):
-        gateway = FakeGateway()
+    def test_nested_workspace_cannot_override_active_core_ir(self):
         output = build_injection(
             {
                 "invocationNum": 0,
-                "workspacePaths": [
-                    "/home/ubuntu/agentmanager-old/workspace/if-tv-station",
-                ],
-                "modelName": "gpt-5-codex",
-            },
-            gateway,
-        )
-        self.assertEqual(output, {})
-        self.assertEqual(gateway.resolved, [])
-
-    def test_codex_model_binds_codex_executor(self):
-        output = build_injection(
-            {
-                "invocationNum": 0,
-                "workspacePaths": ["/home/ubuntu/agentmanager"],
+                "workspacePaths": ["/home/ubuntu/agentmanager/workspace/if-tv-station"],
                 "modelName": "gpt-5-codex",
             },
             FakeGateway(),
+            selector=selector(),
+        )
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["canonical_ir"]["project_id"], "agentos-core")
+        self.assertNotIn("if-tv-station", json.dumps(envelope))
+
+    def test_empty_workspace_still_hydrates_active_ir(self):
+        output = build_injection(
+            {"invocationNum": 0, "workspacePaths": [], "modelName": "gpt-5-codex"},
+            FakeGateway(),
+            selector=selector(),
+        )
+        self.assertEqual(envelope_from(output)["canonical_ir"]["project_id"], "agentos-core")
+
+    def test_codex_model_binds_codex_executor(self):
+        output = build_injection(
+            {"invocationNum": 0, "workspacePaths": ["/home/ubuntu/acas"], "modelName": "gpt-5-codex"},
+            FakeGateway(),
+            selector=selector(),
         )
         envelope = envelope_from(output)
         self.assertEqual(envelope["executor_class"], "antigravity-codex")
@@ -133,12 +148,9 @@ class AntigravityOneHookTests(unittest.TestCase):
 
     def test_unknown_model_does_not_guess_executor_identity(self):
         output = build_injection(
-            {
-                "invocationNum": 0,
-                "workspacePaths": ["/home/ubuntu/agentmanager"],
-                "modelName": "mystery-model",
-            },
+            {"invocationNum": 0, "workspacePaths": ["/home/ubuntu/acas"], "modelName": "mystery-model"},
             FakeGateway(),
+            selector=selector(),
         )
         envelope = envelope_from(output)
         self.assertEqual(envelope["executor_class"], "antigravity-unknown")
@@ -147,26 +159,20 @@ class AntigravityOneHookTests(unittest.TestCase):
     def test_later_invocation_is_silent(self):
         gateway = FakeGateway()
         output = build_injection(
-            {
-                "invocationNum": 1,
-                "workspacePaths": ["/home/ubuntu/agentmanager"],
-            },
+            {"invocationNum": 1, "workspacePaths": ["/home/ubuntu/acas"]},
             gateway,
+            selector=selector(),
         )
         self.assertEqual(output, {})
         self.assertEqual(gateway.resolved, [])
 
-    def test_workspace_without_core_is_silent(self):
-        gateway = FakeGateway()
-        output = build_injection(
-            {
-                "invocationNum": 0,
-                "workspacePaths": ["/home/ubuntu/zeus-writer"],
-            },
-            gateway,
-        )
-        self.assertEqual(output, {})
-        self.assertEqual(gateway.resolved, [])
+    def test_stale_active_selector_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "active continuation selector is stale"):
+            build_injection(
+                {"invocationNum": 0, "workspacePaths": ["/home/ubuntu/acas"]},
+                FakeGateway(),
+                selector=selector(index_id="idx-stale"),
+            )
 
     def test_index_generation_mismatch_fails_closed(self):
         class MismatchGateway(FakeGateway):
@@ -177,11 +183,9 @@ class AntigravityOneHookTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "index generation mismatch"):
             build_injection(
-                {
-                    "invocationNum": 0,
-                    "workspacePaths": ["/home/ubuntu/agentmanager"],
-                },
+                {"invocationNum": 0, "workspacePaths": ["/home/ubuntu/acas"]},
                 MismatchGateway(),
+                selector=selector(),
             )
 
 
