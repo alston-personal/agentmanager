@@ -1,0 +1,43 @@
+name: MetaShield Recovery Survival Probe
+
+on:
+  push:
+    paths:
+      - '.github/workflows/metashield-recovery-survival-probe.yml'
+      - 'scripts/metashield_recovery_survival_probe.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe survivability
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_recovery_survival_probe.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_recovery_survival_probe.sh"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_recovery_survival_probe.sh /tmp/metashield-recovery-survival.json"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield-recovery-survival.json" .agentos/evidence/metashield-recovery-survival.json
+          cat .agentos/evidence/metashield-recovery-survival.json
+      - name: Persist evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'MetaShield Oracle'
+          git config user.email 'register@milkcat.org'
+          git add .agentos/evidence/metashield-recovery-survival.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'evidence(metashield): persist backup survivability probe'
+          git push origin HEAD:ops/metashield-inspect-after-timeout
