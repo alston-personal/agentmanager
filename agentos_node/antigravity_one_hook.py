@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from agentos_node.one_mcp import OracleLocalGateway
 
-HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.3"
+HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.4"
 SOURCE = "ONE_PREINVOCATION_IR"
 CORE_PROJECT_ID = "agentos-core"
 IR_SCHEMA = "agentos.ir/v1"
 EXECUTION_HEAD_SCHEMA = "agentos.execution-head/v1"
-CORE_REPO_BASENAME = "agentmanager"
+DEFAULT_CORE_REPO_ROOT = "/home/ubuntu/agentmanager"
 
 
 def _workspace_paths(raw_paths: Any) -> list[str]:
@@ -32,16 +33,30 @@ def _workspace_paths(raw_paths: Any) -> list[str]:
     return out
 
 
+def _core_repo_root() -> Path:
+    return Path(
+        os.environ.get("AGENTOS_CORE_REPO_ROOT", DEFAULT_CORE_REPO_ROOT)
+    ).expanduser().resolve(strict=False)
+
+
 def _core_workspace_present(paths: list[str]) -> bool:
     """Use Antigravity workspace metadata only as a Core bootstrap gate.
 
-    workspacePaths must never be used to choose among project states.  For the
-    #152 Core acceptance slice, the existing canonical IR publisher is
-    intentionally restricted to agentos-core, whose repository checkout is
-    agentmanager.  Multi-root siblings therefore cannot become hydration
-    candidates.
+    A fresh Antigravity conversation may be opened at the repository root or at
+    a descendant workspace such as ``agentmanager/workspace/if-tv-station``.
+    Both belong to the same canonical Core checkout boundary for the #152
+    acceptance slice.  Descendant names are never project selectors: once the
+    gate is satisfied, continuation still resolves exactly ``agentos-core``.
+
+    Paths that merely share a textual prefix with the Core checkout (for
+    example ``/home/ubuntu/agentmanager-old``) are not accepted.
     """
-    return any(Path(value).name.casefold() == CORE_REPO_BASENAME for value in paths)
+    root = _core_repo_root()
+    for value in paths:
+        candidate = Path(value).expanduser().resolve(strict=False)
+        if candidate == root or root in candidate.parents:
+            return True
+    return False
 
 
 def _executor_identity(model_name: Any) -> tuple[str, bool]:
@@ -137,8 +152,8 @@ def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None 
 
     paths = _workspace_paths(payload.get("workspacePaths"))
     if not _core_workspace_present(paths):
-        # Global hook remains silent outside a workspace containing the Core
-        # checkout.  Importantly, siblings are never treated as state choices.
+        # Global hook remains silent outside the canonical Core checkout tree.
+        # Workspace descendants are only a gate; their names never choose state.
         return {}
 
     one = gateway or OracleLocalGateway()
