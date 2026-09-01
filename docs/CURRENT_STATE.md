@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-08-27  
+**Status date:** 2026-09-01  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
 This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
@@ -28,10 +28,12 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
 | Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
-| Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows |
+| Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows and live executor evidence |
 | Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
-| Model-independent Cognitive IR | Research | schema/experiments not yet canonical | requires cross-model continuity experiment |
-| Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on future portable working-state layer | continuity benchmark still required |
+| Canonical continuation IR (`agentos.ir/v1`) | Implemented + verified for AgentOS Core E2 | `agent_core/project_continuation_index.py`, `agent_core/resolve_facade.py`, `agentos_node/antigravity_one_hook.py` | `tests/test_project_continuation_index.py`, `tests/test_resolve_facade.py`, `tests/test_antigravity_one_hook.py`, `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
+| Fresh Antigravity Gemini continuation with only `繼續` | Verified for one concrete E2 slice | Oracle `PreInvocation` hydration from ONE Canonical IR plus read-only MCP adapter | two independent fresh built-in Gemini sessions reproduced `ONE_PREINVOCATION_IR / agentos-core / idx-core-152 / ir-core-152`; see `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
+| Model-independent Cognitive IR across arbitrary executors/models | Research | bounded `agentos.ir/v1` continuity exists, but the general cross-model projection/benchmark is not yet canonical | requires repeatable Gemini -> ONE -> fresh Codex and broader cross-model continuity experiments |
+| General zero-cost model/executor/machine switch with only `continue` | Target / not yet proven generally | one Antigravity Gemini E2 slice is verified; portability/generalization remain open | E3 and broader continuity benchmarks still required |
 
 ## Important invariants
 
@@ -64,15 +66,17 @@ Early documentation centered on:
 - manual `/report` handoff;
 - Logic/Data separation as the main architectural idea.
 
-Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, and explicit authority boundaries for protected mutations.
+Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, and a bounded Canonical IR continuation path that has been live-verified for fresh Antigravity Gemini sessions.
 
 Old documents that describe only the memory/pulse era must be treated as historical unless they link back to this file.
 
 ## Current research boundary: Cognitive IR
 
-The unresolved question is not how to copy one model's hidden state into another model. Public model interfaces do not provide a portable common activation state, and different models need not have identical internal representations.
+AgentOS now has a concrete bounded Canonical IR path for project continuation: `agentos.ir/v1` can be published together with an `agentos.execution-head/v1` generation fence and hydrated into a fresh Antigravity Gemini session through ONE. That specific E2 path is implemented and live-verified.
 
-The active hypothesis is instead:
+The unresolved research question is broader: whether one model-independent working-state representation and projection layer can preserve useful continuity across arbitrary model families, executors, and machines with consistently low reconstruction cost. Public model interfaces do not provide a portable common activation state, and different models need not have identical internal representations.
+
+The active hypothesis remains:
 
 ```text
 full session / events
@@ -86,7 +90,7 @@ functional continuation
 
 Success means the new executor can preserve the current goal, established decisions/constraints, rejected paths, open questions, and next direction well enough that a relative instruction such as `continue` remains meaningful.
 
-This layer is **not yet declared implemented**. Do not describe it as a finished feature until a repeatable cross-model continuity benchmark exists.
+Do not generalize the verified Antigravity Gemini E2 slice into a claim of arbitrary cross-model continuity. The next critical experiment is E3: Gemini -> ONE -> fresh Antigravity Codex.
 
 ## Documentation ownership rule
 
