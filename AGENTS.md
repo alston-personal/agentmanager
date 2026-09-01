@@ -19,17 +19,21 @@ When the **actual Gemini agent/session inside the Antigravity IDE/2.0 surface** 
 
 `.agents/skills/agentos-one-onboarding/SKILL.md`
 
-For Oracle-hosted Antigravity, fresh-session continuity is provided primarily by the global Antigravity `PreInvocation` hook installed in `~/.gemini/config/hooks.json`. On the first model invocation of a fresh conversation, the hook resolves the active workspace against Oracle ONE and injects a bounded `source=ONE_PREINVOCATION_HOOK` canonical-state envelope before the model is called. It does not read or copy the vendor transcript.
+For Oracle-hosted Antigravity, fresh-session continuity is provided primarily by the global Antigravity `PreInvocation` hook installed in `~/.gemini/config/hooks.json`. For the current Core acceptance slice, the hook uses workspace metadata only as a gate that the canonical `agentmanager` checkout is present; workspace order and sibling repositories MUST NOT choose continuation state.
 
-The `agentos-one` MCP server remains the explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The pre-invocation hook and MCP adapter both use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
+Before the first model call, the hook resolves the single authoritative `agentos-core` continuation and injects a bounded `source=ONE_PREINVOCATION_IR` envelope containing the `agentos.ir/v1` Canonical IR. The hook accepts the IR only when its `index_id` matches the canonical `agentos.execution-head/v1` generation. The durable continuation fields are the IR goal, constraints, decisions, pending tasks, continuation/next action, capability, and authority projection. It does not read or copy the vendor transcript.
+
+The existing canonical publisher in `agent_core/project_continuation_index.py` is initially restricted to `agentos-core`; it atomically publishes `execution-head.json` and `continuity/latest.json` with one shared `index_id`. Until that contract is deliberately generalized, do not fabricate cross-project continuation by scanning multi-root workspaces.
+
+The `agentos-one` MCP server remains the explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The PreInvocation hook and MCP adapter both use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
+
+If the Canonical IR head is unavailable, malformed, or generation-mismatched, fail closed with `ONE_IR_HEAD_UNRESOLVED`; do not reconstruct current state from Pulse data, PM2 services, `agent-data` memory files, workspace enumeration, or old vendor conversation history.
 
 If Oracle bootstrap is not installed, use the immutable bootstrap path documented by the onboarding skill. For enrolled external clients, use the client installer described there instead; do not make a desktop executor own Realm credentials.
 
 Important identity fence: `agy` and standalone `gemini` may use Gemini-family models but are separate executor/provider identities. They are not acceptable substitutes for proving that the active Antigravity Gemini session is ONE-aware.
 
-Do not claim continuity merely because Pulse data, PM2 services, `agent-data`, or old memory files are readable. Fresh-session success requires either injected ONE pre-invocation provenance or a successful current-conversation `agentos-one` MCP query.
-
-A fresh Antigravity Gemini conversation must be able to recover canonical project/goal/authority state without copied vendor conversation history before the integration is considered complete.
+A fresh Antigravity Gemini conversation must be able to recover the canonical IR/goal/authority state without copied vendor conversation history before the integration is considered complete.
 
 ## Current architectural role
 
@@ -44,7 +48,7 @@ AgentOS currently contains, among other components:
 - platform runtime drivers;
 - operational evidence and drift guards.
 
-The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it.
+The model-independent **Cognitive IR / zero-cost arbitrary model switching** layer is still research unless and until a repeatable benchmark proves it. The existing `agentos.ir/v1` continuation contract is an implemented canonical continuation representation; that does not by itself prove the broader Cognitive IR research claim.
 
 ## Critical constraints
 
