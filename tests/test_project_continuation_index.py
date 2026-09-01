@@ -48,6 +48,20 @@ class ProjectContinuationIndexTests(unittest.TestCase):
     def tearDown(self):
         self.td.cleanup()
 
+    def _child_params(self):
+        params = json.loads(json.dumps(self.params))
+        params["execution_head"]["index_id"] = "idx-2"
+        params["execution_head"]["active_goal"] = "Run E3"
+        params["continuation"]["index_id"] = "idx-2"
+        params["continuation"]["recommended_action"] = "Open fresh Codex"
+        ir = params["continuation"]["canonical_ir"]
+        ir["index_id"] = "idx-2"
+        ir["ir_id"] = "ir-2"
+        ir["parent_ir_id"] = "ir-1"
+        ir["goal"] = "Run E3"
+        ir["continuation"] = {"recommended_action": "Open fresh Codex"}
+        return params
+
     def test_rejects_noncanonical_project(self):
         params = dict(self.params)
         params["project_id"] = "other"
@@ -78,6 +92,51 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         self.assertEqual(cont["canonical_ir"]["schema_version"], "agentos.ir/v1")
         self.assertTrue(receipt["execution_head"]["sha256"].startswith("sha256:"))
         self.assertTrue(receipt["continuation"]["sha256"].startswith("sha256:"))
+
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_guarded_advance_requires_exact_current_parent(self, resolve):
+        resolve.return_value = self.project
+        publish_project_continuation(self.params, data_root=self.root)
+        receipt = publish_project_continuation(
+            self._child_params(),
+            data_root=self.root,
+            expected_index_id="idx-1",
+            expected_ir_id="ir-1",
+        )
+        self.assertTrue(receipt["guarded_advance"])
+        self.assertEqual(receipt["parent_ir_id"], "ir-1")
+        self.assertEqual(receipt["index_id"], "idx-2")
+        self.assertEqual(receipt["ir_id"], "ir-2")
+
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_guarded_advance_rejects_stale_parent_without_mutation(self, resolve):
+        resolve.return_value = self.project
+        publish_project_continuation(self.params, data_root=self.root)
+        before_head = (self.root / "projects" / "agentos-core" / "execution-head.json").read_bytes()
+        before_cont = (self.root / "projects" / "agentos-core" / "continuity" / "latest.json").read_bytes()
+        with self.assertRaisesRegex(ValueError, "stale canonical IR parent"):
+            publish_project_continuation(
+                self._child_params(),
+                data_root=self.root,
+                expected_index_id="idx-stale",
+                expected_ir_id="ir-stale",
+            )
+        self.assertEqual(before_head, (self.root / "projects" / "agentos-core" / "execution-head.json").read_bytes())
+        self.assertEqual(before_cont, (self.root / "projects" / "agentos-core" / "continuity" / "latest.json").read_bytes())
+
+    @patch("agent_core.project_continuation_index.resolve_project_identity")
+    def test_guarded_advance_rejects_wrong_parent_ir_before_mutation(self, resolve):
+        resolve.return_value = self.project
+        publish_project_continuation(self.params, data_root=self.root)
+        child = self._child_params()
+        child["continuation"]["canonical_ir"]["parent_ir_id"] = "ir-other"
+        with self.assertRaisesRegex(ValueError, "parent_ir_id"):
+            publish_project_continuation(
+                child,
+                data_root=self.root,
+                expected_index_id="idx-1",
+                expected_ir_id="ir-1",
+            )
 
     @patch("agent_core.project_continuation_index.resolve_project_identity")
     def test_rejects_governance_identity_without_mutation_authority(self, resolve):
