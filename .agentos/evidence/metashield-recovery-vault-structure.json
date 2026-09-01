@@ -1,0 +1,127 @@
+{
+  "vaultExists": true,
+  "rootType": "dict",
+  "rootKeys": [
+    "records",
+    "updatedAt",
+    "version"
+  ],
+  "records": [
+    {
+      "index": 0,
+      "keys": [
+        "authenticationChallenge",
+        "createdAt",
+        "credential",
+        "id",
+        "identityAlias",
+        "ownerAddress",
+        "payload",
+        "registrationChallenge",
+        "setId",
+        "setupTokenHash",
+        "updatedAt"
+      ],
+      "shape": {
+        "type": "object",
+        "keys": [
+          "authenticationChallenge",
+          "createdAt",
+          "credential",
+          "id",
+          "identityAlias",
+          "ownerAddress",
+          "payload",
+          "registrationChallenge",
+          "setId",
+          "setupTokenHash",
+          "updatedAt"
+        ],
+        "children": {
+          "setupTokenHash": {
+            "type": "null"
+          },
+          "ownerAddress": {
+            "type": "string",
+            "length": 42
+          },
+          "setId": {
+            "type": "string",
+            "length": 36
+          },
+          "credential": {
+            "type": "object",
+            "keys": [
+              "backedUp",
+              "counter",
+              "deviceType",
+              "id",
+              "publicKey",
+              "transports"
+            ],
+            "children": {}
+          },
+          "payload": {
+            "type": "object",
+            "keys": [
+              "ciphertext",
+              "iv",
+              "tag",
+              "version"
+            ],
+            "children": {
+              "iv": {
+                "type": "string",
+                "length": 16
+              },
+              "tag": {
+                "type": "string",
+                "length": 24
+              },
+              "ciphertext": {
+                "type": "string",
+                "length": 1532
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "libraryContract": {
+    "beginAuthenticationReturnKeys": [
+      "accountId"
+    ],
+    "finishAuthenticationReturnKeys": [
+      "accountId",
+      "shareB",
+      "verified"
+    ],
+    "finishMentionsShareB": true,
+    "finishMentionsSessionToken": true,
+    "finishMentionsEncryptedPayload": true
+  },
+  "apiVerifyContract": {
+    "routePresent": true,
+    "responseKeys": [
+      "authentication",
+      "claimingEnabled",
+      "connect",
+      "connectEnabled",
+      "detailsSubmitted",
+      "expiresAt",
+      "payoutsEnabled",
+      "registration",
+      "sessionId",
+      "success",
+      "supportedIntervals",
+      "supportedPayoutCurrencies",
+      "url",
+      "vault"
+    ],
+    "mentionsShareB": true,
+    "mentionsVault": true,
+    "mentionsSessionToken": true,
+    "callsFinishAuthentication": true
+  }
+}
