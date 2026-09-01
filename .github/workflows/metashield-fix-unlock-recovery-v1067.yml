@@ -1,0 +1,65 @@
+name: MetaShield Fix Unlock Recovery v1.0.67
+
+on:
+  push:
+    paths:
+      - '.github/workflows/metashield-fix-unlock-recovery-v1067.yml'
+      - 'scripts/metashield_fix_unlock_recovery_v1067.py'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Copy patch
+        run: |
+          set -euo pipefail
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_unlock_recovery_v1067.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_unlock_recovery_v1067.py"
+      - name: Apply build restart and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'set -euo pipefail
+            ROOT=/home/ubuntu/metashield-protocol
+            python3 /tmp/metashield_fix_unlock_recovery_v1067.py "$ROOT"
+            cd "$ROOT/web-feed"
+            npm run build
+            PM2_CLI=$(find /home/ubuntu/.npm/_npx -path "*/node_modules/pm2/lib/binaries/CLI.js" -type f 2>/dev/null | head -n1)
+            test -n "$PM2_CLI"
+            PM2_HOME=/home/ubuntu/.pm2 node "$PM2_CLI" restart metashield-reborn
+            sleep 2
+            python3 - <<"PY"
+import json,re,urllib.request
+root="/home/ubuntu/metashield-protocol"
+manifest=json.load(open(root+"/extension/manifest.json"))
+page=open(root+"/web-feed/app/[wallet_address]/[platform]/page.tsx").read()
+assert manifest["version"]=="1.0.67"
+for q in ["decryptPostDataWithOwnerRecovery", "isOwnerRecoveryDecryptError(error)", "await restoreWithLocalAAndVaultB()", "return true;"]:
+    assert q in page, q
+html=urllib.request.urlopen("https://studio.milkcat.org/echo/sunlake/all",timeout=20).read().decode("utf-8","replace")
+assert "@sunlake" in html
+assert "/echo//" not in html
+print("manifest_version=1.0.67")
+print("unlock_recovery_contract=PASS")
+print("public_echo_route=PASS")
+PY
+            git -C "$ROOT" status --short --branch
+          ' | tee .agentos/evidence/metashield-unlock-recovery-v1067.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metashield-unlock-recovery-v1.0.67
+          path: .agentos/evidence/metashield-unlock-recovery-v1067.txt
+          if-no-files-found: error
