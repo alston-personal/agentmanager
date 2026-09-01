@@ -1,0 +1,81 @@
+455:         }),
+456:       });
+457:       const rotateData = await rotateResponse.json();
+458:       if (!rotateResponse.ok) throw new Error(rotateData.error || ft("vaultRotateFailed"));
+459:       const finalized = await requestExtensionRecovery<any>("FINALIZE_RECOVERY_VAULT", {
+460:         setId: prepared.setId,
+461:         accountId: status.accountId,
+462:       });
+463:       setPendingRecovery({ setId: finalized.setId, recoveryCodeC: finalized.recoveryCodeC });
+464:       setRecoveryConfigured(false);
+465:       setRecoveryStatus(ft("rotateSaveC"));
+466:     } catch (error: any) {
+467:       setRecoveryStatus(ft("rotateFailed", { error: error.message }));
+468:     } finally {
+469:       setRecoveryBusy(false);
+470:     }
+471:   };
+472: 
+473:   const restoreWithLocalAAndVaultB = async () => {
+474:     setRecoveryBusy(true);
+475:     setRecoveryStatus(ft("repairChecking"));
+476:     try {
+477:       const status = await requestExtensionRecovery<any>("GET_RECOVERY_VAULT_STATUS");
+478:       if (!status.hasLocalA || !status.accountId) throw new Error(ft("repairUnavailable"));
+479:       const optionsResponse = await fetch("https://studio.milkcat.<redacted>", {
+480:         method: "POST",
+481:         headers: { "Content-Type": "application/json" },
+482:         body: JSON.stringify({ accountId: status.accountId }),
+483:       });
+484:       const optionsData = await optionsResponse.json();
+485:       if (!optionsResponse.ok) throw new Error(optionsData.error || ft("passkeyReadFailed"));
+486:       const passkeyResponse = await authenticatePasskey(optionsData.authentication.options);
+487:       const verifyResponse = await fetch("https://studio.milkcat.<redacted>", {
+488:         method: "POST",
+489:         headers: { "Content-Type": "application/json" },
+490:         body: JSON.stringify({ accountId: status.accountId, response: passkeyResponse }),
+491:       });
+492:       const verifyData = await verifyResponse.json();
+493:       if (!verifyResponse.ok || !verifyData.authentication?.verified) throw new Error(verifyData.error || ft("passkeyVerifyFailed"));
+494:       await requestExtensionRecovery("RESTORE_RECOVERY_AB", { shareB: verifyData.authentication.shareB });
+495:       setRecoveryStatus(ft("repairSuccess"));
+496:     } catch (error: any) {
+497:       setRecoveryStatus(ft("repairFailed", { error: error.message }));
+498:     } finally {
+499:       setRecoveryBusy(false);
+500:     }
+501:   };
+502: 
+503:   const restoreRecoveryVault = async () => {
+504:     if (!recoveryCodeInput.trim()) {
+505:       setRecoveryStatus(ft("pasteC"));
+506:       return;
+507:     }
+508:     setRecoveryBusy(true);
+509:     setRecoveryStatus(ft("checkingLocalC"));
+510:     try {
+511:       try {
+512:         const localRestored = await requestExtensionRecovery<any>("RESTORE_RECOVERY_VAULT", { recoveryCodeC: recoveryCodeInput.trim() });
+513:         if (localRestored.local) {
+514:           setRecoveryCodeInput("");
+515:           setRecoveryStatus(ft("localCSuccess"));
+516:           return;
+517:         }
+518:       } catch (_) {
+519:         // A is absent or belongs to another set; continue with Passkey + B+C.
+520:       }
+521:       const normalizedRecoveryCode = recoveryCodeInput.trim();
+522:       if (!normalizedRecoveryCode.startsWith("CHAMBER-C1.")) throw new Error(ft("invalidC"));
+523:       const encoded = normalizedRecoveryCode.slice("CHAMBER-C1.".length).replace(/-/g, "+").replace(/_/g, "/");
+524:       const binary = atob(encoded + "=".repeat((4 - encoded.length % 4) % 4));
+525:       const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0))));
+526:       if (!decoded.accountId) throw new Error(ft("incompleteC"));
+527:       setRecoveryStatus(ft("authenticateForB"));
+528:       const optionsResponse = await fetch("https://studio.milkcat.<redacted>", {
+529:         method: "POST",
+530:         headers: { "Content-Type": "application/json" },
+531:         body: JSON.stringify({ accountId: decoded.accountId }),
+532:       });
+533:       const optionsData = await optionsResponse.json();
+534:       if (!optionsResponse.ok) throw new Error(optionsData.error || ft("passkeyReadFailed"));
+535:       const passkeyResponse = await authenticatePasskey(optionsData.authentication.options);
