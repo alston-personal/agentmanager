@@ -1,0 +1,325 @@
+{
+  "candidateFunctions": {
+    "authenticatePasskey": {
+      "calls": [
+        "async",
+        "if",
+        "runPasswordManagerPasskey",
+        "startAuthentication"
+      ],
+      "recoveryLiterals": [
+        "NATIVE_PASSKEY_AUTHENTICATE"
+      ],
+      "mentionsRecovery": true,
+      "mentionsDecrypt": false
+    },
+    "decideReadingRequest": {
+      "calls": [
+        "Error",
+        "async",
+        "catch",
+        "createRecipientGrant",
+        "encodeURIComponent",
+        "fetch",
+        "find",
+        "ft",
+        "if",
+        "json",
+        "map",
+        "setAccessBusyId",
+        "setReadingRequests",
+        "setStatusMessage",
+        "stringify"
+      ],
+      "recoveryLiterals": [],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": false
+    },
+    "deriveKey": {
+      "calls": [
+        "TextEncoder",
+        "async",
+        "digest",
+        "encode",
+        "importKey"
+      ],
+      "recoveryLiterals": [
+        "decrypt"
+      ],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": true
+    },
+    "fetchPosts": {
+      "calls": [
+        "Boolean",
+        "DESC",
+        "Number",
+        "String",
+        "add",
+        "all",
+        "async",
+        "canonicalSourceKey",
+        "catch",
+        "database",
+        "encodeURIComponent",
+        "fetch",
+        "filter",
+        "for",
+        "forEach",
+        "fromEntries",
+        "get",
+        "getMockPlatformPosts",
+        "has",
+        "if",
+        "includes",
+        "isArray",
+        "join",
+        "json",
+        "log",
+        "map",
+        "preservePostRuntimeState",
+        "push",
+        "set",
+        "setLoading",
+        "setOwnerWallet",
+        "setPosts",
+        "sort",
+        "stringify",
+        "toLowerCase",
+        "transactions",
+        "values",
+        "warn"
+      ],
+      "recoveryLiterals": [],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": false
+    },
+    "getOrCreateGuestSharingKey": {
+      "calls": [
+        "Uint8Array",
+        "async",
+        "catch",
+        "exportKey",
+        "from",
+        "ft",
+        "generateKey",
+        "getItem",
+        "getRandomValues",
+        "if",
+        "join",
+        "map",
+        "padStart",
+        "parse",
+        "random",
+        "setItem",
+        "slice",
+        "stringify",
+        "toString"
+      ],
+      "recoveryLiterals": [],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": false
+    },
+    "handleDecryptAll": {
+      "calls": [
+        "async",
+        "catch",
+        "decryptPostData",
+        "error",
+        "filter",
+        "for",
+        "ft",
+        "if",
+        "map",
+        "setDecryptProgress",
+        "setIsDecryptingAll",
+        "setPosts",
+        "setStatusMessage"
+      ],
+      "recoveryLiterals": [
+        ");\n    setIsDecryptingAll(false);\n    setStatusMessage(\n      failures\n        ? ft("
+      ],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": true
+    },
+    "handleDecryptPost": {
+      "calls": [
+        "async",
+        "catch",
+        "decryptPostData",
+        "error",
+        "ft",
+        "if",
+        "map",
+        "setPosts",
+        "setStatusMessage"
+      ],
+      "recoveryLiterals": [
+        "[Chamber] Decryption error:",
+        "decryptFailed"
+      ],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": true
+    },
+    "loadRequests": {
+      "calls": [
+        "async",
+        "catch",
+        "encodeURIComponent",
+        "fetch",
+        "if",
+        "json",
+        "setReadingRequests"
+      ],
+      "recoveryLiterals": [],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": false
+    },
+    "requestReadingAccess": {
+      "calls": [
+        "Error",
+        "async",
+        "catch",
+        "fetch",
+        "findIndex",
+        "ft",
+        "getOrCreateGuestSharingKey",
+        "handleDecryptPost",
+        "if",
+        "json",
+        "prompt",
+        "requestExtensionIdentity",
+        "setAccessBusyId",
+        "setExtensionIdentity",
+        "setStatusMessage",
+        "stringify",
+        "trim"
+      ],
+      "recoveryLiterals": [
+        "approvedUnlocking"
+      ],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": false
+    },
+    "resolvePostKeyAccess": {
+      "calls": [
+        "Error",
+        "async",
+        "catch",
+        "encodeURIComponent",
+        "fetch",
+        "ft",
+        "getItem",
+        "if",
+        "isPostOwner",
+        "json",
+        "parse"
+      ],
+      "recoveryLiterals": [],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": false
+    },
+    "worker": {
+      "calls": [
+        "Blob",
+        "Error",
+        "String",
+        "Uint8Array",
+        "arrayBuffer",
+        "async",
+        "base64ToBytes",
+        "bytesToBase64",
+        "catch",
+        "createObjectURL",
+        "fetch",
+        "ft",
+        "if",
+        "onMediaProgress",
+        "reportDecryptIssue",
+        "requestExtensionDecrypt",
+        "while"
+      ],
+      "recoveryLiterals": [],
+      "mentionsRecovery": false,
+      "mentionsDecrypt": true
+    }
+  },
+  "uiReferences": [
+    {
+      "line": 201,
+      "text": "const autoUnlockKey = useRef<string>(\"\");"
+    },
+    {
+      "line": 1341,
+      "text": "const handleDecryptPost = async (post: PostItem, index: number) => {"
+    },
+    {
+      "line": 1365,
+      "text": "const handleDecryptAll = async () => {"
+    },
+    {
+      "line": 1402,
+      "text": ": ft(\"decryptAll\", { count: targets.length })"
+    },
+    {
+      "line": 1496,
+      "text": "setStatusMessage(data.request?.status === \"approved\" ? ft(\"approvedUnlocking\") : ft(\"requestSentNotice\"));"
+    },
+    {
+      "line": 1497,
+      "text": "if (data.request?.status === \"approved\") await handleDecryptPost(post, posts.findIndex((item) => item.txId === post.txId));"
+    },
+    {
+      "line": 1536,
+      "text": "if (autoUnlockKey.current === key) return;"
+    },
+    {
+      "line": 1537,
+      "text": "autoUnlockKey.current = key;"
+    },
+    {
+      "line": 1541,
+      "text": "await handleDecryptPost(post, posts.findIndex((item) => item.txId === post.txId));"
+    },
+    {
+      "line": 1547,
+      "text": "// If URL focuses on a single post (?post=TX_ID) and guest has a sharing key, try to unlock that specific post"
+    },
+    {
+      "line": 1555,
+      "text": "handleDecryptPost(targetPost, posts.findIndex((item) => item.txId === targetPost.txId)).catch(() => {});"
+    },
+    {
+      "line": 2191,
+      "text": "🔐 {ft(\"passwordRecoveryUnlock\")}"
+    },
+    {
+      "line": 2457,
+      "text": "onClick={handleDecryptAll}"
+    },
+    {
+      "line": 2462,
+      "text": "{isDecryptingAll ? ft(\"unlockingProgress\", { progress: decryptProgress }) : ft(\"unlockAgain\")}"
+    },
+    {
+      "line": 2616,
+      "text": "onDecrypt={() => handleDecryptPost(post, idx)}"
+    },
+    {
+      "line": 2734,
+      "text": "{isPostOwner(post) ? ft(\"ownerAutoUnlock\") : ft(\"approvedOnly\")}"
+    },
+    {
+      "line": 2739,
+      "text": "onClick={() => handleDecryptPost(post, idx)}"
+    },
+    {
+      "line": 2744,
+      "text": "{post.isDecrypting ? ft(\"autoUnlocking\") : ft(\"unlockAgain\")}"
+    },
+    {
+      "line": 2749,
+      "text": "onClick={() => handleDecryptPost(post, idx)}"
+    }
+  ]
+}
