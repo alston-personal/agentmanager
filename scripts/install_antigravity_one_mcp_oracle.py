@@ -21,15 +21,17 @@ GLOBAL_RULE = """<!-- AGENTOS_ONE_BOOTSTRAP_START -->
 
 This machine participates in AgentOS ONE through a trusted Oracle-local PreInvocation hook plus the `agentos-one` MCP server.
 
-For the current Core acceptance slice, when a fresh Antigravity conversation contains the canonical `agentmanager` checkout, AgentOS loads the single authoritative `agentos-core` continuation before the model is called. The injected envelope has `source=ONE_PREINVOCATION_IR` and contains a validated `agentos.ir/v1` whose `index_id` matches the canonical `agentos.execution-head/v1` generation.
+On the first model invocation of a fresh Antigravity conversation, AgentOS reads the ONE active-continuation selector and loads the exact Canonical IR generation named by its `project_id + index_id + ir_id`. The selector is only a pointer; the authoritative working state remains the referenced `agentos.ir/v1` plus its matching `agentos.execution-head/v1` generation.
 
-Treat that Canonical IR—not workspace ordering, Pulse boards, PM2 listings, local memory files, vendor conversation history, or prior chat summaries—as the durable continuation state. Newer explicit user intent always wins.
+The IDE workspace path is not continuation authority. A conversation opened in `/home/ubuntu/acas`, a nested `agentmanager/workspace/...` directory, or another workspace must not silently select that workspace's local state. Workspace metadata may describe execution environment, but it does not choose the durable continuation.
 
-Multi-root sibling workspaces are context only. They MUST NOT be treated as candidate current projects and MUST NOT be enumerated to reconstruct continuation. If the IR head is absent, malformed, or generation-mismatched, report `ONE_IR_HEAD_UNRESOLVED` and do not fabricate a continuation from local state.
+Treat the injected Canonical IR—not workspace ordering, Pulse boards, PM2 listings, local memory files, vendor conversation history, or prior chat summaries—as the durable continuation state. Newer explicit user intent always wins.
 
-The `agentos-one` MCP tools remain available for explicit live queries (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). They are not a replacement for the injected canonical IR on fresh Core continuation.
+If the active selector is missing, malformed, stale relative to the referenced project generation, or the IR head is invalid, report `ONE_IR_HEAD_UNRESOLVED` and do not fabricate a continuation from local state.
 
-Never expose Realm/node credentials. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
+The `agentos-one` MCP tools remain available for explicit live queries (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). They are not a replacement for the injected canonical IR on fresh continuation.
+
+Never expose Realm/node credentials. `agy`, standalone `gemini`, Claude, built-in Gemini, and built-in Codex are distinct executor identities. The PreInvocation hook may bind Gemini/Codex identity only from its current `modelName`; the generic MCP process remains caller-identity unbound.
 <!-- AGENTOS_ONE_BOOTSTRAP_END -->
 """
 
@@ -233,14 +235,13 @@ def probe_preinvocation_hook(python: Path, repo_root: Path) -> dict[str, Any]:
         "invocationNum": 0,
         "initialNumSteps": 1,
         "conversationId": "agentos-installer-probe",
-        "workspacePaths": [
-            "/home/ubuntu/zeus-writer",
-            "/home/ubuntu/agentmanager",
-            "/home/ubuntu/privacy-guard",
-        ],
+        # Deliberately use the workspace that caused the first real E3 Codex
+        # regression failure. The active ONE selector, not workspacePaths, must
+        # determine continuation.
+        "workspacePaths": ["/home/ubuntu/acas"],
         "transcriptPath": "",
         "artifactDirectoryPath": "",
-        "modelName": "installer-probe",
+        "modelName": "gpt-5-codex-installer-probe",
     }
     result = subprocess.run(
         [str(python), "-m", "agentos_node.antigravity_one_hook"],
@@ -270,9 +271,12 @@ def probe_preinvocation_hook(python: Path, repo_root: Path) -> dict[str, Any]:
         envelope = json.loads(message.rsplit("\n", 1)[-1])
     except json.JSONDecodeError as exc:
         raise RuntimeError("PreInvocation hydration envelope is not parseable JSON") from exc
+    if envelope.get("selection_source") != "ONE_ACTIVE_CONTINUATION":
+        raise RuntimeError("PreInvocation hydration did not use ONE active continuation selector")
     canonical_ir = envelope.get("canonical_ir") if isinstance(envelope, dict) else None
-    if not isinstance(canonical_ir, dict):
-        raise RuntimeError("PreInvocation hydration contains no canonical_ir")
+    selector = envelope.get("active_selector") if isinstance(envelope.get("active_selector"), dict) else None
+    if not isinstance(canonical_ir, dict) or not isinstance(selector, dict):
+        raise RuntimeError("PreInvocation hydration lacks canonical_ir or active_selector")
     if canonical_ir.get("schema_version") != "agentos.ir/v1":
         raise RuntimeError("PreInvocation hydration is not agentos.ir/v1")
     index_id = str(canonical_ir.get("index_id") or "").strip()
@@ -282,18 +286,25 @@ def probe_preinvocation_hook(python: Path, repo_root: Path) -> dict[str, Any]:
         raise RuntimeError("PreInvocation hydration is missing index_id or ir_id")
     if str(head.get("index_id") or "").strip() != index_id:
         raise RuntimeError("PreInvocation hydration execution-head / IR generation mismatch")
-    if canonical_ir.get("project_id") != "agentos-core":
-        raise RuntimeError("PreInvocation hydration selected a non-Core project")
-    serialized = json.dumps(envelope, ensure_ascii=False).casefold()
-    if "zeus-writer" in serialized or "privacy-guard" in serialized:
-        raise RuntimeError("PreInvocation hydration leaked sibling workspace state")
+    if canonical_ir.get("project_id") != str(selector.get("project_id") or ""):
+        raise RuntimeError("PreInvocation hydration project differs from active selector")
+    if index_id != str(selector.get("index_id") or "") or ir_id != str(selector.get("ir_id") or ""):
+        raise RuntimeError("PreInvocation hydration generation differs from active selector")
+    if envelope.get("executor_class") != "antigravity-codex" or envelope.get("executor_identity_bound") is not True:
+        raise RuntimeError("PreInvocation Codex identity binding probe failed")
+    serialized = json.dumps(envelope, ensure_ascii=False)
+    if "/home/ubuntu/acas" in serialized:
+        raise RuntimeError("PreInvocation hydration leaked ACAS workspace as continuation state")
     return {
         "ok": True,
-        "schema": "agentos.antigravity-one-preinvocation-probe/v0.2",
+        "schema": "agentos.antigravity-one-preinvocation-probe/v0.3",
         "source": "ONE_PREINVOCATION_IR",
-        "project_id": "agentos-core",
+        "selection_source": "ONE_ACTIVE_CONTINUATION",
+        "project_id": canonical_ir.get("project_id"),
         "index_id": index_id,
         "ir_id": ir_id,
+        "executor_class": envelope.get("executor_class"),
+        "workspace_probe": "/home/ubuntu/acas",
         "credential_exposed": False,
     }
 
@@ -306,6 +317,7 @@ def main() -> int:
 
     repo_root = _repo_root()
     for required in (
+        repo_root / "agent_core" / "active_continuation.py",
         repo_root / "agentos_node" / "one_mcp.py",
         repo_root / "agentos_node" / "one_mcp_stdio.py",
         repo_root / "agentos_node" / "antigravity_one_hook.py",
@@ -328,7 +340,7 @@ def main() -> int:
     print(
         json.dumps(
             {
-                "schema": "agentos.antigravity-one-oracle-install/v0.3",
+                "schema": "agentos.antigravity-one-oracle-install/v0.4",
                 "ok": True,
                 "mode": "oracle-local",
                 "probe": evidence,
