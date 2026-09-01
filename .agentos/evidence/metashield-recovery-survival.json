@@ -1,0 +1,411 @@
+{
+  "extensionVersion": "1.0.66",
+  "recoveryVaultExists": true,
+  "recoveryVaultRecordCount": 1,
+  "recoveryVaultRecords": [
+    {
+      "accountIdSuffix": "",
+      "identityAlias": "sunlake",
+      "ownerAddressSuffix": "eddd4148",
+      "setIdSuffix": "7002e774",
+      "createdAt": "2026-08-12T01:04:41.889Z",
+      "updatedAt": "2026-08-17T05:21:48.739Z",
+      "credentialPresent": true,
+      "shareBPresent": false,
+      "payloadFormat": null
+    }
+  ],
+  "candidatePersistenceFiles": [
+    {
+      "path": "/home/ubuntu/agent-data/projects/metashield-protocol/recovery-vault.json",
+      "size": 2611
+    },
+    {
+      "path": "/home/ubuntu/agent-data/projects/metashield-protocol/memory/backup-receipts.ndjson",
+      "size": 17365
+    },
+    {
+      "path": "/home/ubuntu/agent-data/projects/metashield-protocol/change-charters/2026-08-21-genesis-g4-governance-recovery.json",
+      "size": 2095
+    }
+  ],
+  "historicalTxEvidence": [
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-11T09:32:38.806Z",
+      "txIds": [
+        "DspLCUMiMZFghv6JXZyVhbgvrKBqLYHbtSCjWtmSJ8fF",
+        "DspLCUMiMZFghv6JXZyVhbgvrKBqLYHbtSCjWtmSJ8fF",
+        "DspLCUMiMZFghv6JXZyVhbgvrKBqLYHbtSCjWtmSJ8fF"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T01:51:05.316Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg",
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg",
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.540Z",
+      "txIds": [
+        "HwJTDkgNqG4Ur77ZP8nZezW8wVDe89tgEjR514sdKAwg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.540Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.540Z",
+      "txIds": [
+        "HwJTDkgNqG4Ur77ZP8nZezW8wVDe89tgEjR514sdKAwg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.538Z",
+      "txIds": [
+        "HwJTDkgNqG4Ur77ZP8nZezW8wVDe89tgEjR514sdKAwg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.539Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.539Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.540Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.541Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.541Z",
+      "txIds": [
+        "HwJTDkgNqG4Ur77ZP8nZezW8wVDe89tgEjR514sdKAwg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.541Z",
+      "txIds": [
+        "DGoJvdfoawmVcoZGnGyroAaoPALBPvBPthWR9Ck1TZjs"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.541Z",
+      "txIds": [
+        "DGoJvdfoawmVcoZGnGyroAaoPALBPvBPthWR9Ck1TZjs"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.541Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.541Z",
+      "txIds": [
+        "DGoJvdfoawmVcoZGnGyroAaoPALBPvBPthWR9Ck1TZjs"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.542Z",
+      "txIds": [
+        "DGoJvdfoawmVcoZGnGyroAaoPALBPvBPthWR9Ck1TZjs"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.542Z",
+      "txIds": [
+        "DGoJvdfoawmVcoZGnGyroAaoPALBPvBPthWR9Ck1TZjs"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:32:14.542Z",
+      "txIds": [
+        "HwJTDkgNqG4Ur77ZP8nZezW8wVDe89tgEjR514sdKAwg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-12T02:35:29.685Z",
+      "txIds": [
+        "DGoJvdfoawmVcoZGnGyroAaoPALBPvBPthWR9Ck1TZjs"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-14T09:12:02.339Z",
+      "txIds": [
+        "2kZbi2WGVC7ip6r7pDiJ6nuRYHBHbchMKYj3uUWAbb5C",
+        "2kZbi2WGVC7ip6r7pDiJ6nuRYHBHbchMKYj3uUWAbb5C",
+        "2kZbi2WGVC7ip6r7pDiJ6nuRYHBHbchMKYj3uUWAbb5C"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T00:19:36.645Z",
+      "txIds": [
+        "EM8qG1QZKcPFoKP2cCaxJiYq1oJAEANurso8we7Jdc66",
+        "EM8qG1QZKcPFoKP2cCaxJiYq1oJAEANurso8we7Jdc66",
+        "EM8qG1QZKcPFoKP2cCaxJiYq1oJAEANurso8we7Jdc66"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.089Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.090Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.090Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.090Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.090Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T05:55:12.090Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T06:25:08.417Z",
+      "txIds": [
+        "21GpxyYSx5rpy41SVkaB54osmbDY6Ub6eE93P2tik94H",
+        "21GpxyYSx5rpy41SVkaB54osmbDY6Ub6eE93P2tik94H",
+        "21GpxyYSx5rpy41SVkaB54osmbDY6Ub6eE93P2tik94H"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T07:23:59.440Z",
+      "txIds": [
+        "CR9M61tLFRTb6riBPD4gi64yG59pLMrutLaP95ddceMA",
+        "CR9M61tLFRTb6riBPD4gi64yG59pLMrutLaP95ddceMA",
+        "CR9M61tLFRTb6riBPD4gi64yG59pLMrutLaP95ddceMA"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T07:37:11.974Z",
+      "txIds": [
+        "Fw6CdcX1KV8MDnnwZhXDkr2UsXqrx7W1EWvM5cEiCtcB",
+        "Fw6CdcX1KV8MDnnwZhXDkr2UsXqrx7W1EWvM5cEiCtcB",
+        "Fw6CdcX1KV8MDnnwZhXDkr2UsXqrx7W1EWvM5cEiCtcB"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T08:04:10.178Z",
+      "txIds": [
+        "5uq3otBMiFYJMdnkdRPVM3KSWBHvFbEf6KSLpmfq39pD",
+        "5uq3otBMiFYJMdnkdRPVM3KSWBHvFbEf6KSLpmfq39pD",
+        "5uq3otBMiFYJMdnkdRPVM3KSWBHvFbEf6KSLpmfq39pD"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-18T08:22:16.475Z",
+      "txIds": [
+        "GyN2UuzjaTHmnfkAWUq7wFo5poXeto6N1oNqzShzDpgC",
+        "GyN2UuzjaTHmnfkAWUq7wFo5poXeto6N1oNqzShzDpgC",
+        "GyN2UuzjaTHmnfkAWUq7wFo5poXeto6N1oNqzShzDpgC"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.781Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.782Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.782Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.781Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.782Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.782Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.783Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.783Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.783Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.783Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-19T01:36:09.783Z",
+      "txIds": [
+        "BJ2wjkiQYhtqwAKrjokv21y58PBfpSdxzVgB4BmWXNNg"
+      ]
+    },
+    {
+      "source": "dev-errors.ndjson",
+      "timestamp": "2026-08-31T01:12:38.159Z",
+      "txIds": [
+        "8PHw9eb4cdVq7UrqrrLZFD5TNwTumEgd2tbyRKeZk9qT",
+        "8PHw9eb4cdVq7UrqrrLZFD5TNwTumEgd2tbyRKeZk9qT",
+        "8PHw9eb4cdVq7UrqrrLZFD5TNwTumEgd2tbyRKeZk9qT"
+      ]
+    }
+  ],
+  "recoveryContract": {
+    "has2of3": true,
+    "hasLocalA": true,
+    "hasVaultB": true,
+    "hasRecoveryC": true,
+    "hasLegacyOwnerPreservation": true
+  }
+}
