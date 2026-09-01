@@ -57,7 +57,23 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 - Newer user intent must never be rolled back by stale snapshots, replay, or tool results.
 - Evidence and tool results do not silently rewrite user intent.
 - Claims in documentation must be backed by implementation paths; verified claims also need tests/evidence.
-- **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
+- **Capability does not imply authority.** A tool being available, a reachable transport/runner, or a PR being mergeable does not authorize another class of operation.
+
+## Transport Routing Authority Rule
+
+For AgentOS Realm/Node/control-plane work, transport selection is authority-driven rather than convenience-driven. Read `docs/CHATGPT_ONE_TRANSPORT.md` and `governance/transport-routing.json`.
+
+Typed control-plane intents may use, in priority order when available:
+
+1. native/direct ONE transport;
+2. an AgentOS MCP/App bounded adapter;
+3. the current ChatGPT Bootstrap Control Inbox (#50).
+
+**GitHub Actions is not a generic fallback for control-plane work.** If all authorized ONE-side transports are unavailable or fail, surface that failure. Do not start or repurpose a workflow merely because a GitHub Actions runner can reach Oracle.
+
+GitHub Actions is an allowed carrier only for an explicitly classified workflow intent such as CI/tests, build/package, explicit release/deployment, or a separately authorized evidence workflow.
+
+Evaluate typed routing with `agent_core.transport_routing.resolve_transport`. Unknown intent classes and unauthorized requested transports fail closed.
 
 ## Protected Branch Authority Rule
 
@@ -103,6 +119,7 @@ CI enforces the same rule. Treat a documentation-drift failure as an architectur
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 python3 -m unittest tests.test_protected_branch_authority -v
+python3 -m unittest tests.test_transport_routing -v
 python3 scripts/documentation_reality_guard.py
 ```
 

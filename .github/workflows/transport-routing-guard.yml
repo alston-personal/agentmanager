@@ -1,0 +1,73 @@
+name: Transport Routing Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+      - main
+    paths:
+      - agent_core/transport_routing.py
+      - governance/transport-routing.json
+      - tests/test_transport_routing.py
+      - docs/CHATGPT_ONE_TRANSPORT.md
+      - AGENTS.md
+      - docs/CURRENT_STATE.md
+      - .github/workflows/transport-routing-guard.yml
+  push:
+    branches:
+      - core/integration
+    paths:
+      - agent_core/transport_routing.py
+      - governance/transport-routing.json
+      - tests/test_transport_routing.py
+      - docs/CHATGPT_ONE_TRANSPORT.md
+      - AGENTS.md
+      - docs/CURRENT_STATE.md
+      - .github/workflows/transport-routing-guard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  routing-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test transport authority resolver
+        run: python3 -m unittest tests.test_transport_routing -v
+
+      - name: Validate documentation coupling
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          BASE="${PR_BASE_SHA:-}"
+          if [[ -z "$BASE" ]]; then
+            BASE="${PUSH_BEFORE_SHA:-}"
+          fi
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then
+            python3 scripts/documentation_reality_guard.py
+          else
+            python3 scripts/documentation_reality_guard.py --base "$BASE"
+          fi
+
+      - name: Assert policy forbids Actions for control-plane intents
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy = json.loads(Path('governance/transport-routing.json').read_text(encoding='utf-8'))
+          control = policy['intent_classes']['control_plane']
+          assert 'github_actions' not in control['allowed_transports']
+          assert 'github_actions' in control['forbidden_implicit_fallbacks']
+          assert policy['failure_semantics']['control_plane_transport_unavailable'] == 'fail_closed'
+          assert policy['failure_semantics']['control_plane_transport_error'] == 'surface_error_no_workflow_fallback'
+          PY

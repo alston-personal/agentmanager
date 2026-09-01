@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T02:03:00Z",
+  "generated_at": "2026-08-31T03:17:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -18,76 +18,153 @@
       "branch": "core/issue-117-experience-memory",
       "status": "blocked",
       "execution_lane": "separate-worker-thread",
-      "dependencies": [72, 130],
-      "blocking_scope": ["agentos-core:experience-regression"],
-      "evidence": [".agentos/evidence/experience/", "pull/119"],
-      "non_authorities": ["protected-main merge", "deployment-generation advance"]
+      "dependencies": [72, 160],
+      "blocking_scope": [
+        "agentos-core:experience-regression:claude",
+        "agentos-core:experience-regression:codex"
+      ],
+      "evidence": [
+        ".agentos/evidence/experience/",
+        "pull/119",
+        "workflow-run/33347604180",
+        "issue/117#issuecomment-5473078523"
+      ],
+      "non_authorities": [
+        "protected-main merge",
+        "deployment-generation advance",
+        "general executor-protocol redesign"
+      ]
     },
     {
       "issue": 72,
       "name": "Antigravity/Claude executor liveness",
       "branch": null,
-      "status": "queued",
+      "status": "running",
       "execution_lane": "shared-executor-runtime-worker",
-      "dependencies": [130],
-      "blocking_scope": ["agentos-core:experience-regression", "vendor-reputation:semantic-classification"],
-      "evidence": [".agentos/evidence/relay-smoke.json"],
-      "non_authorities": ["protected-main merge"]
+      "dependencies": [],
+      "blocking_scope": [
+        "agentos-core:experience-regression:claude",
+        "vendor-reputation:semantic-classification"
+      ],
+      "evidence": [
+        ".agentos/evidence/relay-smoke.json",
+        "issue/72#issuecomment-5472586373",
+        "issue/72#issuecomment-5473080170"
+      ],
+      "non_authorities": [
+        "generic shell authority",
+        "credential relocation",
+        "timeout increase as liveness fix",
+        "protected-main merge"
+      ]
     },
     {
       "issue": 130,
       "name": "Oracle self-hosted runner recovery",
       "branch": null,
-      "status": "queued",
+      "status": "accepted",
       "execution_lane": "shared-infrastructure-worker",
       "dependencies": [],
-      "blocking_scope": ["oracle:self-hosted-governance-jobs", "agentos-core:experience-regression"],
-      "evidence": [],
-      "non_authorities": ["weaken-governance-gates", "protected-main merge"]
+      "blocking_scope": [],
+      "evidence": [
+        "workflow-run/33344571389",
+        "workflow-job/99346155434",
+        "runner/instance-20260129-0852",
+        "issue/130"
+      ],
+      "non_authorities": [
+        "cross-repository runner reachability claim",
+        "weaken-governance-gates",
+        "protected-main merge"
+      ]
     },
     {
       "issue": 105,
       "name": "Governed GUI control certification",
       "branch": "core/issue-105-gui-control",
-      "status": "queued",
+      "status": "running",
       "execution_lane": "independent-worker",
       "dependencies": [],
-      "blocking_scope": ["agentos-node:full-chatgpt-one-gui-certification"],
-      "evidence": [".agentos/evidence/node-gui/vopc5750/acceptance.json", "pull/116"],
-      "non_authorities": ["protected-main merge"]
+      "blocking_scope": [
+        "agentos-node:full-chatgpt-one-gui-certification"
+      ],
+      "evidence": [
+        ".agentos/evidence/node-gui/vopc5750/acceptance.json",
+        "pull/116",
+        "issue/105#issuecomment-5469133426"
+      ],
+      "non_authorities": [
+        "protected-main merge"
+      ]
     },
     {
       "issue": 96,
       "name": "LayoutLib development/deployment authority",
-      "branch": "core/layoutlib-poc-candidate-deploy",
-      "status": "queued",
+      "branch": null,
+      "status": "running",
       "execution_lane": "independent-worker",
-      "dependencies": [130],
-      "blocking_scope": ["layoutlib:poc-deployment"],
-      "evidence": ["alston-personal/layoutlib#2"],
-      "non_authorities": ["layoutlib production promotion", "protected-main merge"]
+      "dependencies": [],
+      "blocking_scope": [
+        "layoutlib:poc-deployment:live-acceptance"
+      ],
+      "evidence": [
+        "alston-personal/layoutlib#2",
+        "pull/158",
+        "merge/6deea2ec7debb2e912d6e53eb2954fd081c85c1e"
+      ],
+      "non_authorities": [
+        "layoutlib production promotion",
+        "product-specific deployer ownership",
+        "protected-main merge"
+      ]
     },
     {
       "issue": 66,
       "name": "Governed Studio static release",
       "branch": null,
-      "status": "queued",
+      "status": "accepted",
       "execution_lane": "independent-worker",
-      "dependencies": [130],
-      "blocking_scope": ["arcanaforge:poc-static-release"],
-      "evidence": ["alston-personal/arcanaforge#3"],
-      "non_authorities": ["arbitrary shell authority", "protected-main merge"]
+      "dependencies": [],
+      "blocking_scope": [],
+      "evidence": [
+        "issue/66",
+        "alston-personal/arcanaforge#3"
+      ],
+      "non_authorities": [
+        "arbitrary shell authority",
+        "protected-main merge"
+      ]
     },
     {
       "issue": 118,
       "name": "Repository-boundary cleanup",
-      "branch": "core/issue-118-product-handoffs",
+      "branch": null,
       "status": "running",
       "execution_lane": "architecture-migration-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": ["docs/PROJECT_REPO_MAP.md", "docs/PRODUCT_MIGRATION_INVENTORY.md", "governance/product-migrations.json", "pull/141", "pull/143", "pull/146"],
-      "non_authorities": ["global product feature pause", "destructive historical branch deletion", "protected-main merge"]
+      "children": [163, 164, 165],
+      "evidence": [
+        "docs/PROJECT_REPO_MAP.md",
+        "docs/PRODUCT_MIGRATION_INVENTORY.md",
+        "governance/product-migrations.json",
+        "pull/141",
+        "pull/143",
+        "pull/146",
+        "pull/155",
+        "pull/156",
+        "pull/157",
+        "pull/159",
+        "issue/163",
+        "issue/164",
+        "issue/165",
+        "issue/170"
+      ],
+      "non_authorities": [
+        "global product feature pause",
+        "destructive historical branch deletion",
+        "protected-main merge"
+      ]
     },
     {
       "issue": 137,
@@ -97,28 +174,286 @@
       "execution_lane": "canonical-coordination-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": ["docs/CORE_WORKER_MODEL.md", "governance/core-workers.json", "pull/140"],
-      "non_authorities": ["protected-main merge"]
+      "evidence": [
+        "docs/CORE_WORKER_MODEL.md",
+        "governance/core-workers.json",
+        "pull/140",
+        "pull/142"
+      ],
+      "non_authorities": [
+        "protected-main merge"
+      ]
     },
     {
       "issue": 147,
       "name": "Legacy Core proposal delta extraction",
-      "branch": "core/issue-147-legacy-proposal-inventory",
+      "branch": null,
       "status": "running",
-      "execution_lane": "architecture-extraction-worker",
+      "execution_lane": "architecture-extraction-umbrella",
       "dependencies": [],
       "blocking_scope": [],
-      "evidence": ["governance/legacy-core-proposals.json"],
-      "non_authorities": ["wholesale legacy PR merge", "blind retarget to core/integration", "protected-main merge"]
+      "children": [151, 152, 153, 154],
+      "evidence": [
+        "governance/legacy-core-proposals.json",
+        "pull/150",
+        "pull/169",
+        "issues/151",
+        "issues/152",
+        "issues/153",
+        "issues/154"
+      ],
+      "non_authorities": [
+        "wholesale legacy PR merge",
+        "blind retarget to core/integration",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 151,
+      "name": "Agent Employee Runtime extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [17],
+      "evidence": ["issue/151"],
+      "non_authorities": [
+        "legacy PR wholesale merge",
+        "create competing canonical state store",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 152,
+      "name": "Node runtime / executor lifecycle and ONE-awareness extraction",
+      "branch": "core/issue-152-executor-awareness",
+      "status": "running",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [22],
+      "related_issues": [72, 105, 117, 160],
+      "supersedes_issues": [161],
+      "evidence": [
+        "issue/152",
+        "pull/167",
+        "commit/d80ac3500fc2b10892d0fffadfa52b4f3bf0dee3",
+        "pull/167#issuecomment-5473233658"
+      ],
+      "non_authorities": [
+        "regress Node Golden Path",
+        "give Realm credentials to executor",
+        "expose raw Node bootstrap as model-visible executor context",
+        "duplicate session-bridge authority",
+        "treat agy as proof for Antigravity built-in Gemini",
+        "legacy PR wholesale merge",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 153,
+      "name": "Execution-head freshness extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [43],
+      "evidence": ["issue/153"],
+      "non_authorities": [
+        "restore pulse/status as canonical authority",
+        "legacy PR wholesale merge",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 154,
+      "name": "Generic social capability extraction",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "independent-extraction-worker",
+      "dependencies": [],
+      "blocking_scope": [],
+      "source_prs": [18, 125],
+      "product_handoff": "alston-personal/vendor-reputation-service#27",
+      "evidence": ["issue/154"],
+      "non_authorities": [
+        "Vendor product ingestion in Core",
+        "unapproved social publish",
+        "legacy PR wholesale merge",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 160,
+      "name": "Isolated fixed-provider Codex relay",
+      "branch": null,
+      "status": "queued",
+      "execution_lane": "privileged-executor-boundary-worker",
+      "dependencies": [],
+      "blocking_scope": [
+        "agentos-core:experience-regression:codex"
+      ],
+      "evidence": [
+        "issue/160",
+        "issue/137#issuecomment-5472574149"
+      ],
+      "non_authorities": [
+        "generic shell authority",
+        "arbitrary executable selection",
+        "credential relocation",
+        "permission broadening",
+        "protected-main merge",
+        "deployment-generation advance"
+      ]
+    },
+    {
+      "issue": 163,
+      "name": "Model2IR standalone repository migration",
+      "branch": null,
+      "status": "blocked",
+      "execution_lane": "product-library-migration-worker",
+      "dependencies": [170],
+      "blocking_scope": [
+        "model2ir:canonical-repository-establishment"
+      ],
+      "evidence": [
+        "issue/163",
+        "carrier/feat/model2ir-meshy-weak-structure-v091@1314bb01e718e1a930e24441b3544dd8da020065"
+      ],
+      "alternative_dependency_satisfaction": "explicitly approved alston-personal/model2ir may be created out-of-band and verified, then dependency 170 can be removed",
+      "non_authorities": [
+        "continue Model2IR feature development in agentmanager",
+        "treat repository creation as source acceptance",
+        "delete migration provenance before parity",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 164,
+      "name": "Character Blueprint canonical repository migration",
+      "branch": null,
+      "status": "blocked",
+      "execution_lane": "product-migration-worker",
+      "dependencies": [170],
+      "blocking_scope": [
+        "character-blueprint:canonical-repository-establishment"
+      ],
+      "evidence": [
+        "issue/164",
+        "source-pr/53",
+        "rejected-repository/alston-personal/charactergenerator"
+      ],
+      "alternative_dependency_satisfaction": "explicitly approved alston-personal/character-blueprint may be created out-of-band and verified, then dependency 170 can be removed",
+      "non_authorities": [
+        "repurpose charactergenerator",
+        "treat repository creation as source acceptance",
+        "delete migration provenance before parity",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 165,
+      "name": "Governed cross-repository Oracle execution requests",
+      "branch": "core/issue-165-cross-repo-execution",
+      "status": "queued",
+      "execution_lane": "shared-cross-repository-execution-worker",
+      "dependencies": [],
+      "blocking_scope": [
+        "vendor-reputation:oracle-carrier-retirement",
+        "leopardcat-tarot:oracle-carrier-retirement"
+      ],
+      "evidence": [
+        "issue/165",
+        "alston-personal/leopardcat-tarot#41",
+        "workflow-run/33312465860",
+        "workflow-run/33352392531",
+        "workflow-job/99368137799"
+      ],
+      "non_authorities": [
+        "assume runner registration scope without evidence",
+        "grant product repositories unrestricted Oracle shell authority",
+        "generic shell authority",
+        "arbitrary executable or argv tunneling",
+        "copy Core-wide Oracle secrets into product repositories",
+        "product production promotion",
+        "carrier deletion before parity",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 170,
+      "name": "Governed canonical repository provisioning",
+      "branch": "core/issue-170-repository-provisioning",
+      "status": "queued",
+      "execution_lane": "project-lifecycle-authority-worker",
+      "dependencies": [],
+      "blocking_scope": [
+        "model2ir:canonical-repository-establishment",
+        "character-blueprint:canonical-repository-establishment"
+      ],
+      "evidence": [
+        "issue/170",
+        "plugin-search/no-repository-create-capability"
+      ],
+      "non_authorities": [
+        "create repository without explicit scoped human approval",
+        "repository delete rename transfer or organization admin",
+        "secret distribution",
+        "treat repository creation as accepted source promotion",
+        "protected-main merge"
+      ]
     }
   ],
   "dependency_edges": [
-    {"from": "agentos-core#117", "to": "agentos-core#72"},
-    {"from": "agentos-core#117", "to": "agentos-core#130"},
-    {"from": "agentos-core#72", "to": "agentos-core#130"},
-    {"from": "vendor-reputation:semantic-classification", "to": "agentos-core#72"},
-    {"from": "vendor-reputation:oracle-carriers", "to": "agentos-core#130"},
-    {"from": "layoutlib:poc-deployment", "to": "agentos-core#96"},
-    {"from": "arcanaforge:poc-static-release", "to": "agentos-core#66"}
+    {
+      "from": "agentos-core#117",
+      "to": "agentos-core#72"
+    },
+    {
+      "from": "agentos-core#117",
+      "to": "agentos-core#160"
+    },
+    {
+      "from": "vendor-reputation:semantic-classification",
+      "to": "agentos-core#72"
+    },
+    {
+      "from": "vendor-reputation:oracle-carrier-retirement",
+      "to": "agentos-core#165"
+    },
+    {
+      "from": "leopardcat-tarot:oracle-carrier-retirement",
+      "to": "agentos-core#165"
+    },
+    {
+      "from": "layoutlib:poc-deployment:live-acceptance",
+      "to": "agentos-core#96"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#151"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#152"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#153"
+    },
+    {
+      "from": "agentos-core#147",
+      "to": "agentos-core#154"
+    },
+    {
+      "from": "agentos-core#163",
+      "to": "agentos-core#170"
+    },
+    {
+      "from": "agentos-core#164",
+      "to": "agentos-core#170"
+    }
   ]
 }

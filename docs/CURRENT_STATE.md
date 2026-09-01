@@ -26,6 +26,8 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
+| ChatGPT bootstrap transport into ONE | Implemented bootstrap; live regression still required | Bootstrap Control Inbox #50 → Oracle bridge → ONE | Issue #50 control command/result evidence; `docs/CHATGPT_ONE_TRANSPORT.md` |
+| Authority-driven transport routing | Implemented + tested candidate | `agent_core/transport_routing.py`, `governance/transport-routing.json` | `tests/test_transport_routing.py`; fresh ChatGPT session acceptance pending in #179 |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
 | Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
 | Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows and live executor evidence |
@@ -52,7 +54,15 @@ Tool results and execution evidence can inform decisions, but they do not silent
 
 ### Capability does not imply authority
 
-The presence of a mutation tool, a mergeable pull request, or passing CI does not authorize a protected-branch mutation. Agents must stop at `AWAITING_HUMAN_APPROVAL` until an explicit human authorization exists. See `.agent/governance/protected_branches.yaml` and `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`.
+The presence of a mutation tool, a mergeable pull request, a reachable Actions runner, or passing CI does not create authority for a different class of operation. Agents must stop at `AWAITING_HUMAN_APPROVAL` for protected publication, and control-plane work must not opportunistically switch to GitHub Actions because ONE-side transport is unavailable.
+
+See `.agent/governance/protected_branches.yaml`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`, and `docs/CHATGPT_ONE_TRANSPORT.md`.
+
+### Transport failure does not expand authority
+
+For typed Realm/Node/control-plane intents, the authorized transport order is direct ONE → AgentOS MCP/App → Bootstrap Control Inbox. GitHub Actions is not in that allowlist and is not a failure fallback. GitHub Actions is reserved for explicitly typed workflow intents such as CI/tests, build/package, release, deployment, or separately authorized evidence workflows.
+
+The current ChatGPT Web path is therefore not yet a native direct ONE connection. It is a bootstrap path through GitHub comments into an Oracle bridge and then ONE. The GitHub mailbox is transport only; ONE remains the control-plane authority. The target is to replace that mailbox with an AgentOS MCP/App after equivalent acceptance evidence exists.
 
 ### Discover before invent
 
@@ -71,7 +81,7 @@ Early documentation centered on:
 - manual `/report` handoff;
 - Logic/Data separation as the main architectural idea.
 
-Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, and a bounded Canonical IR continuation path that has been live-verified for fresh Antigravity Gemini sessions.
+Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, an explicit transport-authority contract that prevents workflow-carrier capability from becoming control-plane authority, and a bounded Canonical IR continuation path that has been live-verified for fresh Antigravity Gemini sessions.
 
 Old documents that describe only the memory/pulse era must be treated as historical unless they link back to this file.
 

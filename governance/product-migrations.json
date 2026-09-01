@@ -1,48 +1,80 @@
 {
   "schema": "agentos.product-migrations/v0",
-  "generated_at": "2026-08-31T02:38:00Z",
+  "generated_at": "2026-08-31T03:17:00Z",
   "core_repository": "alston-personal/agentmanager",
   "invariant": "Product implementation, UI, product CI/deployers and product-specific runtime carriers belong in the canonical product repository. Core retains only generic capability contracts and cross-repository governance/integration machinery.",
   "projects": [
     {
       "project_id": "vendor-reputation",
       "canonical_repository": "alston-personal/vendor-reputation-service",
-      "status": "handoff_created",
+      "status": "product_handoff_cross_repo_execution_pending",
       "product_issue": "alston-personal/vendor-reputation-service#27",
       "core_prs": [97, 99, 127],
-      "core_dependencies": [130],
+      "core_dependencies": [165],
+      "resolved_core_dependencies": [
+        {
+          "issue": 130,
+          "state": "completed",
+          "evidence": "Vendor PR #127 governance audit run 33344571389 / job 99346155434 completed success on Oracle runner instance-20260129-0852"
+        }
+      ],
       "product_evidence": ["alston-personal/vendor-reputation-service#20"],
-      "classification": "product implementation exists in product repo, but Oracle execution/scheduling carriers still live in agentmanager",
-      "retire_when": ["equivalent product-owned governed execution path exists", "Oracle access/runner boundary is solved without copying Core secrets", "receipt/evidence parity is verified"],
-      "safe_now": "product_work_continues; only carrier-dependent execution waits"
+      "classification": "product implementation exists in the product repo and agentmanager-local Oracle runner recovery is accepted; temporary Vendor scheduling/execution carriers still require a product-owned request definition plus a generic governed cross-repository Oracle execution boundary",
+      "retire_when": ["equivalent Vendor-owned governed execution/request path exists", "Core #165 or equivalent accepted generic boundary executes the pinned Vendor source without copying Core-wide secrets", "exact Vendor source SHA/artifact identity is preserved", "sanitized receipt and runtime parity are verified"],
+      "safe_now": "product_work_continues; only Oracle execution/carrier-retirement step waits on product issue 27 and Core 165"
     },
     {
       "project_id": "arcanaforge",
       "canonical_repository": "alston-personal/arcanaforge",
-      "status": "handoff_created",
+      "status": "product_provenance_gate_core_release_blocker_cleared",
       "product_issue": "alston-personal/arcanaforge#3",
       "core_prs": [136],
-      "core_dependencies": [66],
-      "classification": "product has canonical repo, but public POC release is still carried by agentmanager governance/deploy path",
-      "retire_when": ["product-owned artifact/deploy source is canonical", "governed static release capability or approved runner surface exists", "POC deployment receipt identifies exact ArcanaForge source/artifact"],
-      "safe_now": "product_work_continues; only POC publication waits"
+      "core_dependencies": [],
+      "resolved_core_dependencies": [
+        {
+          "issue": 66,
+          "state": "completed",
+          "evidence": "fenced static-release capability and public POC acceptance completed on 2026-08-31"
+        }
+      ],
+      "current_carrier": {
+        "core_pr": 136,
+        "host_repository": "alston-personal/studio-web",
+        "host_source_sha": "ddd136feb827bb86d91a796414e5a96e4e83d960"
+      },
+      "classification": "generic Core static-release capability is no longer the blocker; #136 still proves only the Studio Web host adapter SHA, while canonical product identity is alston-personal/arcanaforge and its v0.2 Workbench source is distinct",
+      "retire_when": ["ArcanaForge-owned product source/artifact definition is canonical", "host adapter consumes or attests the exact ArcanaForge source/artifact identity", "POC deployment receipt identifies ArcanaForge repo/ref/exact SHA/artifact in addition to host-adapter provenance", "public POC parity is verified"],
+      "safe_now": "product_work_and_provenance_fix_continue; carrier_retirement_waits_on_product_issue_3"
     },
     {
       "project_id": "layoutlib",
       "canonical_repository": "alston-personal/layoutlib",
-      "status": "handoff_created",
+      "status": "core_authority_accepted_live_poc_acceptance_pending",
       "product_issue": "alston-personal/layoutlib#2",
       "core_dependencies": [96],
-      "classification": "canonical product repo and develop lane exist; Core should own only generic promotion/deployment policy, not Layout implementation",
-      "retire_when": ["POC deploy consumes pinned layoutlib candidate", "production remains pinned to promoted release", "agentmanager contains no Layout product implementation/deployer beyond generic adapter"],
-      "safe_now": "layout feature work continues; only governed POC/deploy step waits"
+      "core_evidence": [
+        {
+          "pr": 158,
+          "merge_sha": "6deea2ec7debb2e912d6e53eb2954fd081c85c1e",
+          "role": "canonical generic project release-lane authority in core/integration"
+        }
+      ],
+      "classification": "canonical product repo/develop lane exist and generic Core release-lane authority is accepted in core/integration; no Layout v0.8 workflow_dispatch run was found, so the live exact-candidate POC dispatch/receipt acceptance is genuinely still pending",
+      "retire_when": ["POC deploy consumes an exact validated layoutlib develop candidate", "public/receipt evidence records exact LayoutLib source identity", "production remains pinned to promoted release", "agentmanager contains no Layout product implementation/deployer beyond a generic adapter"],
+      "safe_now": "layout feature work continues; only live governed POC dispatch/receipt acceptance waits"
     },
     {
       "project_id": "leopardcat-tarot",
       "canonical_repository": "alston-personal/leopardcat-tarot",
-      "status": "handoff_created",
+      "status": "product_parity_retriggered_cross_repo_execution_pending",
       "product_issue": "alston-personal/leopardcat-tarot#44",
-      "product_evidence": ["alston-personal/leopardcat-tarot#41"],
+      "core_dependencies": [165],
+      "product_evidence": [
+        "alston-personal/leopardcat-tarot#41",
+        "leopardcat-tarot@27610149eafe27872e71e0b4f2fdebded2d164fb",
+        "workflow-run/33352392531",
+        "workflow-job/99368137799"
+      ],
       "core_branches": [
         {
           "ref": "ops/leopardcat-runtime-inspect",
@@ -61,29 +93,45 @@
         ".github/workflows/ops-leopardcat-runtime-inspect.yml",
         ".github/workflows/leopardcat-production-deploy.yml"
       ],
-      "classification": "Tarot-specific production verification and write/deploy carriers are explicitly inventoried in historical agentmanager branches; product repo owns parity direction but still needs a product-owned deploy replacement before Core retirement",
-      "retire_when": ["product-owned parity gate succeeds and is accepted", "product-owned deployment path or thin caller of a generic governed Core deployment surface replaces the write carrier", "exact deployed source SHA/artifact and public/runtime parity evidence are persisted", "historical agentmanager Tarot carriers are no longer the only working deployment path"],
-      "safe_now": "product_work_continues_in_product_repo; carrier_retirement_waits_on_product_issue_44"
+      "classification": "Tarot product repo owns a read-only production parity gate, but both its original and post-#130 retriggered Oracle-labelled parity runs have remained queued without a runner claim at observation time; this proves cross-repo execution reachability is still unresolved but does not yet prove the exact runner registration cause",
+      "retire_when": ["product-owned parity gate succeeds and is accepted", "product-owned deployment request/path or thin caller of Core #165 replaces the write carrier", "exact deployed source SHA/artifact and public/runtime parity evidence are persisted", "historical agentmanager Tarot carriers are no longer the only working deployment path"],
+      "safe_now": "product work continues; only Oracle parity/deploy carrier-retirement step waits on product issue 44 and Core 165"
     },
     {
       "project_id": "character-blueprint",
       "canonical_repository": null,
+      "migration_issue": "alston-personal/agentmanager#164",
+      "core_dependencies": [170],
+      "repository_provisioning": {
+        "issue": 170,
+        "preferred_repository": "alston-personal/character-blueprint",
+        "requires_explicit_human_approval": true,
+        "alternative_satisfaction": "the exact explicitly approved repository may be created out-of-band and then verified by Core"
+      },
       "rejected_repository_candidates": [
         {
           "repository": "alston-personal/charactergenerator",
           "reason": "content provenance mismatch: Character Blueprint is image-to-3D proxy with character-blueprint-ir/v0.4 and Three.js OrbitControls, while charactergenerator is a distinct image-to-AI-description/full-body-image product and contains neither marker"
         }
       ],
-      "status": "identity_unresolved",
+      "status": "repository_establishment_blocked_on_governed_provisioning",
       "core_prs": [53],
-      "classification": "Character Blueprint product work exists in agentmanager, but the only repository-name candidate was inspected and rejected by source/product provenance; canonical repository still requires explicit assignment or creation",
-      "retire_when": ["explicitly assign/create canonical project repository", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
-      "safe_now": "preserve_pr_53_and_do_not_merge_to_core_or_charactergenerator"
+      "classification": "Character Blueprint product work exists in agentmanager; charactergenerator is explicitly rejected as an automatic identity match; #164 owns v0.4 migration and its repository-establishment step is now explicitly gated by #170 or equivalent human-created verified repository",
+      "retire_when": ["#164 obtains an explicitly approved canonical project repository through #170 or equivalent verified manual creation", "migrate v0.4 browser/deployer behavior with parity evidence", "verify public surface"],
+      "safe_now": "preserve_pr_53_and_do_not_merge_to_core_or_charactergenerator; only the repository-establishment step waits on Core 170"
     },
     {
       "project_id": "model2ir",
       "canonical_repository": null,
-      "status": "carrier_identified_repository_unassigned",
+      "migration_issue": "alston-personal/agentmanager#163",
+      "core_dependencies": [170],
+      "repository_provisioning": {
+        "issue": 170,
+        "preferred_repository": "alston-personal/model2ir",
+        "requires_explicit_human_approval": true,
+        "alternative_satisfaction": "the exact explicitly approved repository may be created out-of-band and then verified by Core"
+      },
+      "status": "repository_establishment_blocked_on_governed_provisioning",
       "latest_core_carrier": {
         "ref": "feat/model2ir-meshy-weak-structure-v091",
         "tip": "1314bb01e718e1a930e24441b3544dd8da020065",
@@ -103,9 +151,9 @@
         "feat/model2ir-reversible-glb-v09",
         "feat/model2ir-meshy-weak-structure-v091"
       ],
-      "classification": "a standalone model2ir v0.9.1 library is already implemented under libs/model2ir on historical agentmanager branches; this is concrete migration provenance, not future Core work",
-      "retire_when": ["assign/create canonical standalone repository outside agentmanager", "migrate package, tests, fixtures and relevant history from the v0.9.1 carrier", "reproduce package/CLI behavior and regression evidence in the new repository", "declare the new repository main/release as canonical Model2IR authority"],
-      "safe_now": "freeze_agentmanager_model2ir_carrier_for_migration; do_not_continue_library_implementation_in_core"
+      "classification": "a standalone model2ir v0.9.1 library is already implemented under libs/model2ir on historical agentmanager branches; #163 owns migration and its repository-establishment step is now explicitly gated by #170 or equivalent human-created verified repository",
+      "retire_when": ["#163 obtains an explicitly approved canonical standalone repository through #170 or equivalent verified manual creation", "migrate package, tests, fixtures and relevant history from the v0.9.1 carrier", "reproduce package/CLI behavior and regression evidence in the new repository", "declare the new repository main/release as canonical Model2IR authority"],
+      "safe_now": "freeze_agentmanager_model2ir_carrier_for_migration; do_not_continue_library_implementation_in_core; only repository establishment waits on Core 170"
     }
   ],
   "legacy_core_proposals": [
@@ -121,6 +169,8 @@
     "development": "feature/fix branch, optionally through develop/integration",
     "poc_staging": "exact candidate SHA/artifact allowed",
     "production": "exact accepted main SHA/tag/release artifact",
-    "carrier_retirement": "never remove until canonical product-owned replacement and runtime parity evidence exist"
+    "carrier_retirement": "never remove until canonical product-owned replacement and runtime parity evidence exist",
+    "cross_repository_execution": "product owns source/request; Core may own only a generic governed privileged execution boundary and sanitized receipt",
+    "repository_provisioning": "new canonical repository creation is a separate high-impact mutation requiring explicit scoped human authorization; creating a repository does not itself promote imported source to accepted main state"
   }
 }
