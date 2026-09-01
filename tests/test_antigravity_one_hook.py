@@ -84,6 +84,39 @@ class AntigravityOneHookTests(unittest.TestCase):
         self.assertEqual(envelope["executor_class"], "antigravity-gemini")
         self.assertTrue(envelope["executor_identity_bound"])
 
+    def test_nested_workspace_under_agentmanager_hydrates_core_ir(self):
+        gateway = FakeGateway()
+        output = build_injection(
+            {
+                "invocationNum": 0,
+                "workspacePaths": [
+                    "/home/ubuntu/agentmanager/workspace/if-tv-station",
+                ],
+                "modelName": "gpt-5-codex",
+            },
+            gateway,
+        )
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["canonical_ir"]["project_id"], "agentos-core")
+        self.assertEqual(envelope["executor_class"], "antigravity-codex")
+        self.assertEqual(gateway.resolved, ["agentos-core"])
+        self.assertNotIn("if-tv-station", json.dumps(envelope))
+
+    def test_prefix_lookalike_workspace_does_not_open_core_gate(self):
+        gateway = FakeGateway()
+        output = build_injection(
+            {
+                "invocationNum": 0,
+                "workspacePaths": [
+                    "/home/ubuntu/agentmanager-old/workspace/if-tv-station",
+                ],
+                "modelName": "gpt-5-codex",
+            },
+            gateway,
+        )
+        self.assertEqual(output, {})
+        self.assertEqual(gateway.resolved, [])
+
     def test_codex_model_binds_codex_executor(self):
         output = build_injection(
             {
