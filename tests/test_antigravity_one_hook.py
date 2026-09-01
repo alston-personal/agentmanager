@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from agentos_node.antigravity_one_hook import build_injection
@@ -49,6 +50,11 @@ class FakeGateway:
         }
 
 
+def envelope_from(output):
+    message = output["injectSteps"][0]["ephemeralMessage"]
+    return json.loads(message.split("\n", 1)[1])
+
+
 class AntigravityOneHookTests(unittest.TestCase):
     def test_first_invocation_hydrates_single_canonical_ir(self):
         gateway = FakeGateway()
@@ -74,6 +80,36 @@ class AntigravityOneHookTests(unittest.TestCase):
         self.assertNotIn("privacy-guard", message)
         self.assertNotIn("token", message.casefold())
         self.assertEqual(gateway.resolved, ["agentos-core"])
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["executor_class"], "antigravity-gemini")
+        self.assertTrue(envelope["executor_identity_bound"])
+
+    def test_codex_model_binds_codex_executor(self):
+        output = build_injection(
+            {
+                "invocationNum": 0,
+                "workspacePaths": ["/home/ubuntu/agentmanager"],
+                "modelName": "gpt-5-codex",
+            },
+            FakeGateway(),
+        )
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["executor_class"], "antigravity-codex")
+        self.assertTrue(envelope["executor_identity_bound"])
+        self.assertEqual(envelope["model_name"], "gpt-5-codex")
+
+    def test_unknown_model_does_not_guess_executor_identity(self):
+        output = build_injection(
+            {
+                "invocationNum": 0,
+                "workspacePaths": ["/home/ubuntu/agentmanager"],
+                "modelName": "mystery-model",
+            },
+            FakeGateway(),
+        )
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["executor_class"], "antigravity-unknown")
+        self.assertFalse(envelope["executor_identity_bound"])
 
     def test_later_invocation_is_silent(self):
         gateway = FakeGateway()
