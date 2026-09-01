@@ -1,0 +1,118 @@
+{
+  "functions": [
+    {
+      "name": "rotateRecoveryCode",
+      "startLine": 423,
+      "calls": [
+        "Error",
+        "async",
+        "authenticatePasskey",
+        "catch",
+        "confirm",
+        "fetch",
+        "ft",
+        "if",
+        "json",
+        "requestExtensionRecovery",
+        "setPendingRecovery",
+        "setRecoveryBusy",
+        "setRecoveryConfigured",
+        "setRecoveryStatus",
+        "stringify"
+      ],
+      "literals": [
+        "FINALIZE_RECOVERY_VAULT",
+        "GET_RECOVERY_VAULT_STATUS",
+        "PREPARE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_AB",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeyVerifyFailed",
+        "vaultRotateFailed"
+      ],
+      "usesAB": true,
+      "usesBC": false,
+      "authOptions": true,
+      "authVerify": true
+    },
+    {
+      "name": "restoreWithLocalAAndVaultB",
+      "startLine": 473,
+      "calls": [
+        "Error",
+        "async",
+        "authenticatePasskey",
+        "catch",
+        "fetch",
+        "ft",
+        "if",
+        "json",
+        "requestExtensionRecovery",
+        "setRecoveryBusy",
+        "setRecoveryStatus",
+        "stringify"
+      ],
+      "literals": [
+        "GET_RECOVERY_VAULT_STATUS",
+        "RESTORE_RECOVERY_AB",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "passkeyReadFailed",
+        "passkeyVerifyFailed"
+      ],
+      "usesAB": true,
+      "usesBC": false,
+      "authOptions": true,
+      "authVerify": true
+    },
+    {
+      "name": "restoreRecoveryVault",
+      "startLine": 503,
+      "calls": [
+        "Error",
+        "TextDecoder",
+        "async",
+        "atob",
+        "authenticatePasskey",
+        "catch",
+        "charCodeAt",
+        "decode",
+        "fetch",
+        "from",
+        "ft",
+        "if",
+        "json",
+        "parse",
+        "repeat",
+        "replace",
+        "setPendingRecovery",
+        "setRecoveryBusy",
+        "setRecoveryCodeInput",
+        "setRecoveryStatus",
+        "slice",
+        "startsWith",
+        "stringify",
+        "trim"
+      ],
+      "literals": [
+        "));\n    } catch (error: any) {\n      setRecoveryStatus(ft(",
+        ");\n          setRecoveryStatus(ft(",
+        ");\n      setRecoveryStatus(ft(",
+        "FINALIZE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_VAULT",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeyVerifyFailed",
+        "vaultRotateFailed"
+      ],
+      "usesAB": false,
+      "usesBC": true,
+      "authOptions": true,
+      "authVerify": true
+    }
+  ]
+}
