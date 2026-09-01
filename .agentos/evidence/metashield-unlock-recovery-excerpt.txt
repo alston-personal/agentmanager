@@ -1,0 +1,319 @@
+===== page.tsx 1300-1435 =====
+1300:     const decryptedByIndex: Array<string | null> = new Array(encryptedItems.length).fill(null);
+1301:     let nextIndex = 0;
+1302:     let completed = 0;
+1303:     let failed = 0;
+1304:     onMediaProgress(0, encryptedItems.length, 0);
+1305: 
+1306:     const worker = async () => {
+1307:       while (nextIndex < encryptedItems.length) {
+1308:         const itemIndex = nextIndex;
+1309:         nextIndex += 1;
+1310:         const item = encryptedItems[itemIndex];
+1311:         try {
+1312:           const response = await fetch(item.url, { cache: "force-cache" });
+1313:           if (!response.ok) throw new Error(ft("mediaDownloadFailed", { status: response.status }));
+1314:           const encryptedBytes = new Uint8Array(await response.arrayBuffer());
+1315:           const result = await requestExtensionDecrypt(bytesToBase64(encryptedBytes), item.iv || "", "bytes", keyAccess);
+1316:           const blob = new Blob([base64ToBytes(result.data)], { type: item.contentType || "image/jpeg" });
+1317:           decryptedByIndex[itemIndex] = URL.createObjectURL(blob);
+1318:         } catch (error) {
+1319:           failed += 1;
+1320:           reportDecryptIssue(post, error instanceof Error ? error.message : String(error), {
+1321:             mediaIndex: itemIndex + 1,
+1322:             mediaTotal: encryptedItems.length
+1323:           });
+1324:         } finally {
+1325:           completed += 1;
+1326:           onMediaProgress(completed, encryptedItems.length, failed);
+1327:         }
+1328:       }
+1329:     };
+1330: 
+1331:     const workerCount = Math.min(4, encryptedItems.length);
+1332:     await Promise.all(Array.from({ length: workerCount }, () => worker()));
+1333:     return {
+1334:       decryptedText,
+1335:       decryptedMedia: decryptedByIndex.filter((url): url is string => Boolean(url)),
+1336:       mediaFailed: failed,
+1337:       mediaTotal: encryptedItems.length
+1338:     };
+1339:   };
+1340: 
+1341:   const handleDecryptPost = async (post: PostItem, index: number) => {
+1342:     setPosts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, isDecrypting: true } : item));
+1343: 
+1344:     try {
+1345:       const { decryptedText, decryptedMedia, mediaFailed, mediaTotal } = await decryptPostData(
+1346:         post,
+1347:         (text) => setPosts((current) => current.map((item) => item.txId === post.txId ? { ...item, decryptedContent: text } : item)),
+1348:         (completed, total, failed) => setPosts((current) => current.map((item) => item.txId === post.txId
+1349:           ? { ...item, mediaDecryptCompleted: completed, mediaDecryptTotal: total, mediaDecryptFailed: failed }
+1350:           : item))
+1351:       );
+1352: 
+1353:       setPosts((current) => current.map((item) => item.txId === post.txId
+1354:         ? { ...item, decryptedContent: decryptedText, decryptedMedia, isDecrypting: false, mediaDecryptFailed: mediaFailed, mediaDecryptTotal: mediaTotal }
+1355:         : item));
+1356:       if (mediaFailed) setStatusMessage(ft("partialMedia", { success: mediaTotal - mediaFailed, total: mediaTotal, failed: mediaFailed }));
+1357: 
+1358:     } catch (err: any) {
+1359:       console.error("[Chamber] Decryption error:", err);
+1360:       setStatusMessage(ft("decryptFailed", { error: err.message }));
+1361:       setPosts((current) => current.map((item) => item.txId === post.txId ? { ...item, isDecrypting: false, decryptError: err.message } : item));
+1362:     }
+1363:   };
+1364: 
+1365:   const handleDecryptAll = async () => {
+1366:     const targets = posts.filter((post) => post.payload.is_encrypted && !post.decryptedContent);
+1367:     if (!targets.length || isDecryptingAll) return;
+1368:     setIsDecryptingAll(true);
+1369:     let failures = 0;
+1370:     let mediaFailures = 0;
+1371:     let mediaTotal = 0;
+1372:     for (let index = 0; index < targets.length; index += 1) {
+1373:       const target = targets[index];
+1374:       setDecryptProgress(`${index + 1} / ${targets.length}`);
+1375:       setPosts((current) => current.map((item) => item.txId === target.txId ? { ...item, isDecrypting: true } : item));
+1376:       try {
+1377:         const result = await decryptPostData(
+1378:           target,
+1379:           (text) => setPosts((current) => current.map((item) => item.txId === target.txId ? { ...item, decryptedContent: text } : item)),
+1380:           (completed, total, failed) => setPosts((current) => current.map((item) => item.txId === target.txId
+1381:             ? { ...item, mediaDecryptCompleted: completed, mediaDecryptTotal: total, mediaDecryptFailed: failed }
+1382:             : item))
+1383:         );
+1384:         mediaFailures += result.mediaFailed;
+1385:         mediaTotal += result.mediaTotal;
+1386:         setPosts((current) => current.map((item) => item.txId === target.txId
+1387:           ? { ...item, decryptedContent: result.decryptedText, decryptedMedia: result.decryptedMedia, isDecrypting: false, mediaDecryptFailed: result.mediaFailed, mediaDecryptTotal: result.mediaTotal }
+1388:           : item));
+1389:       } catch (error) {
+1390:         failures += 1;
+1391:         console.error(`[Chamber] Failed to decrypt ${target.txId}:`, error);
+1392:         setPosts((current) => current.map((item) => item.txId === target.txId ? { ...item, isDecrypting: false } : item));
+1393:       }
+1394:     }
+1395:     setDecryptProgress("");
+1396:     setIsDecryptingAll(false);
+1397:     setStatusMessage(
+1398:       failures
+1399:         ? ft("decryptPostsPartial", { success: targets.length - failures, failed: failures })
+1400:         : mediaFailures
+1401:           ? ft("decryptAlbums", { posts: targets.length, success: mediaTotal - mediaFailures, total: mediaTotal })
+1402:           : ft("decryptAll", { count: targets.length })
+1403:     );
+1404:   };
+1405: 
+1406:   const effectiveOwnerIdentityKey = posts.find((post) => post.payload.identity_key)?.payload.identity_key || resolvedIdentityKey || walletAddress;
+1407: 
+1408:   const createRecipientGrant = (
+1409:     ownerKeyEnvelope: Record<string, unknown>,
+1410:     recipientPublicKey: JsonWebKey,
+1411:     recipientKeyId: string
+1412:   ) => new Promise<Record<string, unknown>>((resolve, reject) => {
+1413:     const requestId = `grant_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+1414:     const timeout = window.setTimeout(() => {
+1415:       window.removeEventListener("message", onMessage);
+1416:       reject(new Error(ft("grantTimeout")));
+1417:     }, 15000);
+1418:     const onMessage = (event: MessageEvent) => {
+1419:       if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "CREATE_ECHO_READING_GRANT_RESPONSE" || event.data.requestId !== requestId) return;
+1420:       window.clearTimeout(timeout);
+1421:       window.removeEventListener("message", onMessage);
+1422:       if (!event.data.success || !event.data.recipientKeyEnvelope) reject(new Error(event.data.error || ft("grantCreateFailed")));
+1423:       else resolve(event.data.recipientKeyEnvelope);
+1424:     };
+1425:     window.addEventListener("message", onMessage);
+1426:     window.postMessage({
+1427:       source: "echo-portal",
+1428:       type: "CREATE_ECHO_READING_GRANT",
+1429:       requestId,
+1430:       ownerKeyEnvelope,
+1431:       recipientPublicKey,
+1432:       recipientKeyId
+1433:     }, window.location.origin);
+1434:   });
+1435: 
+===== page.tsx 2050-2230 =====
+2050:                       await navigator.clipboard.writeText(pendingRecovery.recoveryCodeC);
+2051:                       setCopiedC(true);
+2052:                       setRecoveryStatus(ft("cCopied"));
+2053:                       setTimeout(() => setCopiedC(false), 3000);
+2054:                     }}
+2055:                     className={`rounded-xl px-3 py-2.5 text-xs font-bold transition-all shadow-md ${copiedC ? "bg-emerald-500 text-white" : "bg-amber-500 text-slate-950 hover:bg-amber-400"}`}
+2056:                   >
+2057:               {copiedC ? ft("copiedC") : ft("copyC")}
+2058:                   </button>
+2059:                   <button
+2060:                     onClick={confirmRecoverySaved}
+2061:                     disabled={recoveryBusy}
+2062:                     className="rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors shadow-md"
+2063:                   >
+2064:                     {ft("cSavedElsewhere")}
+2065:                   </button>
+2066:                 </div>
+2067:               </div>
+2068:             )}
+2069: 
+2070:             {extensionIdentity && (
+2071:               <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+2072:                 {recoveryConfigured ? (
+2073:                   <div>
+2074:                     <div className="flex items-start gap-3">
+2075:                       <span className="mt-0.5 text-lg" aria-hidden="true">✅</span>
+2076:                       <div>
+2077:                         <h3 className="text-sm font-semibold text-emerald-300">{ft("recoveryReadyTitle")}</h3>
+2078:                         <p className="mt-1 text-[11px] leading-5 text-slate-500">{ft("recoveryReadyBody")}</p>
+2079:                       </div>
+2080:                     </div>
+2081:                     <details className="mt-3 border-t border-slate-800 pt-3">
+2082:                       <summary className="cursor-pointer text-[11px] font-semibold text-slate-400 hover:text-amber-300">{ft("rotateCSummary")}</summary>
+2083:                       <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label={ft("rotateProviderLabel")}>
+2084:                         <button type="button" onClick={() => setPasskeyProvider("password-manager")} disabled={recoveryBusy} className={`rounded-lg border px-2 py-2 text-[11px] font-semibold ${passkeyProvider === "password-manager" ? "border-indigo-500 bg-indigo-950/70 text-indigo-200" : "border-slate-700 bg-slate-900 text-slate-400"}`}>{ft("passwordManager")}</button>
+2085:                         <button type="button" onClick={() => setPasskeyProvider("system")} disabled={recoveryBusy} className={`rounded-lg border px-2 py-2 text-[11px] font-semibold ${passkeyProvider === "system" ? "border-indigo-500 bg-indigo-950/70 text-indigo-200" : "border-slate-700 bg-slate-900 text-slate-400"}`}>{ft("systemPasskey")}</button>
+2086:                       </div>
+2087:                       <p className="mt-2 text-[10px] leading-4 text-amber-200/70">{ft("rotateWarning")}</p>
+2088:                       <button type="button" onClick={rotateRecoveryCode} disabled={recoveryBusy} className="mt-2 w-full rounded-lg border border-amber-800/70 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-900/40 disabled:opacity-50">{ft("rotateCButton")}</button>
+2089:                     </details>
+2090:                   </div>
+2091:                 ) : (
+2092:                   <>
+2093:                     <h3 className="text-sm font-semibold text-slate-200">{ft("recoverySetupTitle")}</h3>
+2094:                     <p className="mt-1 text-[11px] leading-5 text-slate-500">{ft("recoverySetupBody")}</p>
+2095:                     <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label={ft("passkeyProviderLabel")}>
+2096:                       <button
+2097:                         type="button"
+2098:                         onClick={() => setPasskeyProvider("password-manager")}
+2099:                         disabled={recoveryBusy}
+2100:                         className={`rounded-lg border px-2 py-2 text-[11px] font-semibold ${passkeyProvider === "password-manager" ? "border-indigo-500 bg-indigo-950/70 text-indigo-200" : "border-slate-700 bg-slate-900 text-slate-400"}`}
+2101:                       >
+2102:                         {ft("passwordManager")}
+2103:                         <span className="mt-1 block text-[9px] font-normal opacity-75">{ft("passwordManagerExamples")}</span>
+2104:                       </button>
+2105:                       <button
+2106:                         type="button"
+2107:                         onClick={() => setPasskeyProvider("system")}
+2108:                         disabled={recoveryBusy}
+2109:                         className={`rounded-lg border px-2 py-2 text-[11px] font-semibold ${passkeyProvider === "system" ? "border-indigo-500 bg-indigo-950/70 text-indigo-200" : "border-slate-700 bg-slate-900 text-slate-400"}`}
+2110:                       >
+2111:                         {ft("systemPasskey")}
+2112:                         <span className="mt-1 block text-[9px] font-normal opacity-75">{ft("systemPasskeyExamples")}</span>
+2113:                       </button>
+2114:                     </div>
+2115:                     <p className="mt-2 text-[10px] leading-4 text-slate-500">{ft("providerHint")}</p>
+2116:                     <button
+2117:                       onClick={setupRecoveryVault}
+2118:                       disabled={recoveryBusy || Boolean(pendingRecovery)}
+2119:                       className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+2120:                     >
+2121:                       {recoveryBusy ? ft("processing") : pendingRecovery ? ft("saveCFirst") : ft("setupRecoveryButton")}
+2122:                     </button>
+2123:                   </>
+2124:                 )}
+2125:               </div>
+2126:             )}
+2127: 
+2128:             <div className={`mt-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 ${!extensionIdentity ? "border-indigo-800/50" : ""}`}>
+2129:               <h3 className="text-sm font-semibold text-indigo-200 flex items-center gap-1.5">
+2130:                 <span>📱 {ft("restoreToolSummary")}</span>
+2131:               </h3>
+2132:               <div className="mt-3 border-t border-slate-800 pt-3">
+2133:                 <p className="text-[11px] leading-5 text-slate-400">{ft("restoreToolBody")}</p>
+2134:                 <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label={ft("restoreProviderLabel")}>
+2135:                   <button type="button" onClick={() => setPasskeyProvider("password-manager")} disabled={recoveryBusy} className={`rounded-lg border px-2 py-2 text-[11px] font-semibold ${passkeyProvider === "password-manager" ? "border-indigo-500 bg-indigo-950/70 text-indigo-200" : "border-slate-700 bg-slate-900 text-slate-400"}`}>{ft("passwordManager")}</button>
+2136:                   <button type="button" onClick={() => setPasskeyProvider("system")} disabled={recoveryBusy} className={`rounded-lg border px-2 py-2 text-[11px] font-semibold ${passkeyProvider === "system" ? "border-indigo-500 bg-indigo-950/70 text-indigo-200" : "border-slate-700 bg-slate-900 text-slate-400"}`}>{ft("systemPasskey")}</button>
+2137:                 </div>
+2138:                 <label className="mt-3 block text-[11px] font-semibold text-slate-400" htmlFor="recovery-code-c">{ft("pasteSavedC")}</label>
+2139:                 <textarea
+2140:                   id="recovery-code-c"
+2141:                   value={recoveryCodeInput}
+2142:                   onChange={(event) => setRecoveryCodeInput(event.target.value)}
+2143:                   rows={3}
+2144:                   placeholder="CHAMBER-C1. ..."
+2145:                   className="mt-2 w-full resize-none rounded-xl border border-slate-700 bg-slate-900 p-3 font-mono text-xs text-amber-200 outline-none focus:border-indigo-500"
+2146:                 />
+2147:                 <button
+2148:                   onClick={restoreRecoveryVault}
+2149:                   disabled={recoveryBusy}
+2150:                   className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 shadow-md"
+2151:                 >
+2152:                   {ft("restoreBC")}
+2153:                 </button>
+2154:                 {extensionIdentity && (
+2155:                   <button
+2156:                     onClick={restoreWithLocalAAndVaultB}
+2157:                     disabled={recoveryBusy}
+2158:                     className="mt-2 w-full rounded-xl border border-slate-700 bg-transparent px-4 py-2.5 text-xs font-semibold text-slate-400 hover:border-indigo-700 hover:text-indigo-200 disabled:opacity-50"
+2159:                   >
+2160:                     {ft("repairAB")}
+2161:                   </button>
+2162:                 )}
+2163:               </div>
+2164:             </div>
+2165: 
+2166:             {recoveryStatus && (
+2167:               <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/80 p-3 text-xs leading-5 text-slate-300">{recoveryStatus}</div>
+2168:             )}
+2169:           </section>
+2170:         </div>
+2171:       )}
+2172: 
+2173:       {/* Main Flow */}
+2174:       <main className="flex-1 w-full max-w-xl mx-auto px-4 py-6">
+2175:         {!extensionIdentity && (
+2176:           <div className="mb-5 rounded-xl border border-amber-500/40 bg-slate-900/95 p-4 text-xs leading-5 text-amber-100 shadow-xl">
+2177:             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+2178:               <div>
+2179:                 <div className="font-bold text-sm text-amber-300 flex items-center gap-1.5">
+2180:                   <span>📱 {ft("mobileNotBoundTitle")}</span>
+2181:                 </div>
+2182:                 <div className="mt-1 text-[11px] text-slate-300/85 leading-relaxed">
+2183:                   {ft("mobileNotBoundBody")}
+2184:                 </div>
+2185:               </div>
+2186:               <button
+2187:                 onClick={() => setShowRecovery(true)}
+2188:                 className="shrink-0 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-lg transition-all flex items-center justify-center gap-1.5 hover:opacity-90"
+2189:                 style={{ backgroundColor: "var(--accent-primary)" }}
+2190:               >
+2191:                 🔐 {ft("passwordRecoveryUnlock")}
+2192:               </button>
+2193:             </div>
+2194:           </div>
+2195:         )}
+2196:         {extensionIdentity && ownerWallet && !isTimelineOwner && (
+2197:           <div className="mb-5 rounded-xl border border-amber-800/60 bg-amber-950/20 p-3 text-xs leading-5 text-amber-200">
+2198:             {ft("wrongIdentity", { identity: chamberIdentityLabel })}
+2199:           </div>
+2200:         )}
+2201:         {showReadingRequests && isTimelineOwner && (
+2202:           <section className="mb-6 rounded-2xl border border-indigo-800/50 bg-slate-900/90 p-4 shadow-xl">
+2203:             <div className="mb-3 flex items-center justify-between">
+2204:               <div>
+2205:                 <h2 className="text-sm font-bold text-indigo-100">{ft("requestsTitle")}</h2>
+2206:                 <p className="mt-1 text-[9px] text-slate-500">{ft("requestsBody")}</p>
+2207:               </div>
+2208:               <button onClick={() => setShowReadingRequests(false)} className="text-xs text-slate-500 hover:text-white">✕</button>
+2209:             </div>
+2210:             {readingRequests.length === 0 ? (
+2211:               <div className="rounded-xl bg-slate-950/60 p-4 text-center text-xs text-slate-500">{ft("noRequests")}</div>
+2212:             ) : (
+2213:               <div className="space-y-3">
+2214:                 {readingRequests.map((request) => (
+2215:                   <div key={request.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+2216:                     <div className="text-xs font-semibold text-slate-200">
+2217:                       {request.requesterAlias ? `@${request.requesterAlias}` : `${request.requesterWallet.slice(0, 8)}…${request.requesterWallet.slice(-6)}`}
+2218:                     </div>
+2219:                     {request.requesterAlias && <div className="mt-0.5 font-mono text-[9px] text-slate-600">{request.requesterWallet.slice(0, 8)}…{request.requesterWallet.slice(-6)}</div>}
+2220:                     <div className="mt-1 text-[9px] text-slate-500">{ft("requestPost", { post: `${request.postTxId.slice(0, 10)}…`, date: new Date(request.createdAt).toLocaleString(locale) })}</div>
+2221:                     {request.requesterNote && (
+2222:                       <div className="mt-2 p-2 rounded-lg bg-indigo-950/40 border border-indigo-900/50 text-[11px] text-indigo-200">
+2223:                   <span className="font-bold text-indigo-400">💬 {ft("requestNote")}</span>{request.requesterNote}
+2224:                       </div>
+2225:                     )}
+2226:                     {request.status === "pending" ? (
+2227:                       <div className="mt-3 grid grid-cols-2 gap-2">
+2228:                         <button
+2229:                           onClick={() => decideReadingRequest(request, "approved")}
+2230:                           disabled={accessBusyId === request.id}
