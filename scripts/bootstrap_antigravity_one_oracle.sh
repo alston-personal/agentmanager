@@ -43,6 +43,11 @@ else
   exit 5
 fi
 
+echo "agentos_active_continuation_seed=RUNNING"
+PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
+  python3 "$TARGET/scripts/seed_active_continuation.py"
+echo "agentos_active_continuation_seed=PASS"
+
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 "$TARGET/scripts/install_antigravity_one_mcp_oracle.py"
 
