@@ -1,0 +1,43 @@
+name: MetaShield Fix Unlock Recovery v1.0.67 v2
+
+on:
+  push:
+    paths:
+      - '.github/workflows/metashield-fix-unlock-recovery-v1067-v2.yml'
+      - 'scripts/metashield_fix_unlock_recovery_v1067.py'
+      - 'scripts/metashield_deploy_unlock_recovery_v1067.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Copy deploy files
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_fix_unlock_recovery_v1067.py "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_fix_unlock_recovery_v1067.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_deploy_unlock_recovery_v1067.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_deploy_unlock_recovery_v1067.sh"
+      - name: Deploy and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_deploy_unlock_recovery_v1067.sh" | tee .agentos/evidence/metashield-unlock-recovery-v1067.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metashield-unlock-recovery-v1.0.67
+          path: .agentos/evidence/metashield-unlock-recovery-v1067.txt
+          if-no-files-found: error
