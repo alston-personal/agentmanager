@@ -7,7 +7,7 @@ from typing import Any
 
 from agentos_node.one_mcp import OracleLocalGateway
 
-HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.2"
+HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.3"
 SOURCE = "ONE_PREINVOCATION_IR"
 CORE_PROJECT_ID = "agentos-core"
 IR_SCHEMA = "agentos.ir/v1"
@@ -42,6 +42,22 @@ def _core_workspace_present(paths: list[str]) -> bool:
     candidates.
     """
     return any(Path(value).name.casefold() == CORE_REPO_BASENAME for value in paths)
+
+
+def _executor_identity(model_name: Any) -> tuple[str, bool]:
+    """Bind only identities that the PreInvocation caller context can prove.
+
+    The generic MCP server cannot know which IDE executor invoked a tool.  The
+    Antigravity PreInvocation payload does include the current modelName, so the
+    hook is the narrow layer that may bind a Gemini/Codex executor class.  Do not
+    guess an identity from generic GPT/model-family names.
+    """
+    normalized = str(model_name or "").strip().casefold()
+    if "codex" in normalized:
+        return "antigravity-codex", True
+    if "gemini" in normalized:
+        return "antigravity-gemini", True
+    return "antigravity-unknown", False
 
 
 def _canonical_ir_from_resolution(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], str]:
@@ -136,6 +152,7 @@ def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None 
     result = one.resolve(CORE_PROJECT_ID)
     execution_head, canonical_ir, index_id = _canonical_ir_from_resolution(result)
     ir = _compact_ir(result, execution_head, canonical_ir, index_id)
+    executor_class, identity_bound = _executor_identity(payload.get("modelName"))
 
     envelope = {
         "schema": HOOK_SCHEMA,
@@ -145,7 +162,9 @@ def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None 
         "realm_id": status.get("realm_id"),
         "node_id": status.get("node_id"),
         "surface": "antigravity",
-        "executor_class": "antigravity-gemini",
+        "executor_class": executor_class,
+        "executor_identity_bound": identity_bound,
+        "executor_identity_source": "preinvocation-modelName",
         "model_name": payload.get("modelName"),
         "credential_exposed": False,
         "canonical_ir": ir,
@@ -158,7 +177,8 @@ def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None 
         "still wins. Continue from canonical_ir.goal / pending_tasks / "
         "continuation / next_action and obey mutation_allowed. When reporting "
         "bootstrap provenance, state source=ONE_PREINVOCATION_IR and include "
-        "index_id + ir_id.\n"
+        "index_id + ir_id + executor_class + model_name. If "
+        "executor_identity_bound=false, do not guess the executor identity.\n"
         + json.dumps(envelope, ensure_ascii=False, sort_keys=True)
     )
     return {"injectSteps": [{"ephemeralMessage": message}]}
