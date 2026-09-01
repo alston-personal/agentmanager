@@ -31,6 +31,7 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows and live executor evidence |
 | Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
 | Canonical continuation IR (`agentos.ir/v1`) | Implemented + verified for AgentOS Core E2 | `agent_core/project_continuation_index.py`, `agent_core/resolve_facade.py`, `agentos_node/antigravity_one_hook.py` | `tests/test_project_continuation_index.py`, `tests/test_resolve_facade.py`, `tests/test_antigravity_one_hook.py`, `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
+| Guarded Canonical IR handoff / parent fence | Implemented + tested | `agent_core/canonical_ir_handoff.py`, guarded `agent_core/project_continuation_index.py` | `tests/test_canonical_ir_handoff.py`, `tests/test_project_continuation_index.py` |
 | Fresh Antigravity Gemini continuation with only `繼續` | Verified for one concrete E2 slice | Oracle `PreInvocation` hydration from ONE Canonical IR plus read-only MCP adapter | two independent fresh built-in Gemini sessions reproduced `ONE_PREINVOCATION_IR / agentos-core / idx-core-152 / ir-core-152`; see `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
 | Model-independent Cognitive IR across arbitrary executors/models | Research | bounded `agentos.ir/v1` continuity exists, but the general cross-model projection/benchmark is not yet canonical | requires repeatable Gemini -> ONE -> fresh Codex and broader cross-model continuity experiments |
 | General zero-cost model/executor/machine switch with only `continue` | Target / not yet proven generally | one Antigravity Gemini E2 slice is verified; portability/generalization remain open | E3 and broader continuity benchmarks still required |
@@ -41,9 +42,13 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 
 Compaction, replay, stale tool results, or executor switching must not replace a newer goal/correction with an older one. `scripts/continuation_state.py` currently protects this narrow invariant and has regression tests.
 
+### Canonical IR advancement is parent-fenced
+
+A writer advancing an existing Canonical IR generation must supply the exact current `index_id` and `ir_id`, create a new generation, and set the new IR's `parent_ir_id` to that expected parent. The comparison occurs while holding the same continuation-index lock used for publication. A concurrent or stale writer therefore fails before mutation instead of overwriting newer continuation state.
+
 ### Evidence is not intent
 
-Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal.
+Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal. Handoff evidence is bounded and credential-field checked before it can enter Canonical IR.
 
 ### Capability does not imply authority
 
@@ -55,7 +60,7 @@ Reusable/cross-project work should resolve existing responsibility and resources
 
 ### Models are executors, not the durable source of truth
 
-AgentOS does not assume access to model activations or model-specific internal state. Durable coordination and continuity state must remain external and transportable.
+AgentOS does not assume access to model activations or model-specific internal state. Durable coordination and continuity state must remain external and transportable. Executors may report evidence, but Core-owned governed writers advance canonical state.
 
 ## What changed from the early AgentOS architecture
 
@@ -73,6 +78,8 @@ Old documents that describe only the memory/pulse era must be treated as histori
 ## Current research boundary: Cognitive IR
 
 AgentOS now has a concrete bounded Canonical IR path for project continuation: `agentos.ir/v1` can be published together with an `agentos.execution-head/v1` generation fence and hydrated into a fresh Antigravity Gemini session through ONE. That specific E2 path is implemented and live-verified.
+
+The same bounded path now also has a Core-owned guarded handoff writer. Advancing a head requires the exact previous `index_id` / `ir_id` under the publication lock, preserving authoritative constraints/decisions and appending bounded sanitized evidence into a child IR generation. This solves the immediate E2 -> E3 handoff problem without introducing a second focus/state system.
 
 The unresolved research question is broader: whether one model-independent working-state representation and projection layer can preserve useful continuity across arbitrary model families, executors, and machines with consistently low reconstruction cost. Public model interfaces do not provide a portable common activation state, and different models need not have identical internal representations.
 
