@@ -17,15 +17,17 @@ MCP_PACKAGE = "mcp>=2,<3"
 GLOBAL_RULE_START = "<!-- AGENTOS_ONE_BOOTSTRAP_START -->"
 GLOBAL_RULE_END = "<!-- AGENTOS_ONE_BOOTSTRAP_END -->"
 GLOBAL_RULE = """<!-- AGENTOS_ONE_BOOTSTRAP_START -->
-## AgentOS ONE bootstrap — pre-invocation hydration is authoritative
+## AgentOS ONE bootstrap — canonical IR hydration is authoritative
 
-This machine participates in AgentOS ONE through a trusted Oracle-local pre-invocation hook plus the `agentos-one` MCP server.
+This machine participates in AgentOS ONE through a trusted Oracle-local PreInvocation hook plus the `agentos-one` MCP server.
 
-On the first model invocation of a fresh Antigravity conversation, AgentOS injects canonical ONE state before the model is called when the active workspace resolves to an AgentOS project. Treat an injected `source=ONE_PREINVOCATION_HOOK` envelope as the primary continuity source. Newer explicit user intent always wins.
+For the current Core acceptance slice, when a fresh Antigravity conversation contains the canonical `agentmanager` checkout, AgentOS loads the single authoritative `agentos-core` continuation before the model is called. The injected envelope has `source=ONE_PREINVOCATION_IR` and contains a validated `agentos.ir/v1` whose `index_id` matches the canonical `agentos.execution-head/v1` generation.
 
-Do not reconstruct the current AgentOS goal from Pulse boards, PM2 listings, local memory files, vendor conversation history, or prior chat summaries before using the injected ONE state. Those sources may only be consulted later as supporting evidence.
+Treat that Canonical IR—not workspace ordering, Pulse boards, PM2 listings, local memory files, vendor conversation history, or prior chat summaries—as the durable continuation state. Newer explicit user intent always wins.
 
-The `agentos-one` MCP tools remain available for explicit live queries (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). If no ONE pre-invocation hydration is present in an AgentOS-governed workspace, use the MCP tools and report `ONE_BOOTSTRAP_BLOCKED` if they are unavailable. Never claim ONE continuity merely because local AgentOS files are readable.
+Multi-root sibling workspaces are context only. They MUST NOT be treated as candidate current projects and MUST NOT be enumerated to reconstruct continuation. If the IR head is absent, malformed, or generation-mismatched, report `ONE_IR_HEAD_UNRESOLVED` and do not fabricate a continuation from local state.
+
+The `agentos-one` MCP tools remain available for explicit live queries (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). They are not a replacement for the injected canonical IR on fresh Core continuation.
 
 Never expose Realm/node credentials. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
 <!-- AGENTOS_ONE_BOOTSTRAP_END -->
@@ -231,7 +233,11 @@ def probe_preinvocation_hook(python: Path, repo_root: Path) -> dict[str, Any]:
         "invocationNum": 0,
         "initialNumSteps": 1,
         "conversationId": "agentos-installer-probe",
-        "workspacePaths": [str(Path("/home/ubuntu/agentmanager"))],
+        "workspacePaths": [
+            "/home/ubuntu/zeus-writer",
+            "/home/ubuntu/agentmanager",
+            "/home/ubuntu/privacy-guard",
+        ],
         "transcriptPath": "",
         "artifactDirectoryPath": "",
         "modelName": "installer-probe",
@@ -256,12 +262,38 @@ def probe_preinvocation_hook(python: Path, repo_root: Path) -> dict[str, Any]:
     if not isinstance(steps, list) or not steps:
         raise RuntimeError(f"PreInvocation hook produced no hydration: {output}")
     message = str((steps[0] or {}).get("ephemeralMessage") or "")
-    if "ONE_PREINVOCATION_HOOK" not in message:
-        raise RuntimeError("PreInvocation hook hydration lacks ONE provenance")
+    if "ONE_IR_HEAD_UNRESOLVED" in message:
+        raise RuntimeError(f"Canonical IR hook probe failed closed: {message[-3000:]}")
+    if "ONE_PREINVOCATION_IR" not in message:
+        raise RuntimeError("PreInvocation hydration lacks canonical IR provenance")
+    try:
+        envelope = json.loads(message.rsplit("\n", 1)[-1])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("PreInvocation hydration envelope is not parseable JSON") from exc
+    canonical_ir = envelope.get("canonical_ir") if isinstance(envelope, dict) else None
+    if not isinstance(canonical_ir, dict):
+        raise RuntimeError("PreInvocation hydration contains no canonical_ir")
+    if canonical_ir.get("schema_version") != "agentos.ir/v1":
+        raise RuntimeError("PreInvocation hydration is not agentos.ir/v1")
+    index_id = str(canonical_ir.get("index_id") or "").strip()
+    ir_id = str(canonical_ir.get("ir_id") or "").strip()
+    head = canonical_ir.get("execution_head") if isinstance(canonical_ir.get("execution_head"), dict) else {}
+    if not index_id or not ir_id:
+        raise RuntimeError("PreInvocation hydration is missing index_id or ir_id")
+    if str(head.get("index_id") or "").strip() != index_id:
+        raise RuntimeError("PreInvocation hydration execution-head / IR generation mismatch")
+    if canonical_ir.get("project_id") != "agentos-core":
+        raise RuntimeError("PreInvocation hydration selected a non-Core project")
+    serialized = json.dumps(envelope, ensure_ascii=False).casefold()
+    if "zeus-writer" in serialized or "privacy-guard" in serialized:
+        raise RuntimeError("PreInvocation hydration leaked sibling workspace state")
     return {
         "ok": True,
-        "schema": "agentos.antigravity-one-preinvocation-probe/v0.1",
-        "source": "ONE_PREINVOCATION_HOOK",
+        "schema": "agentos.antigravity-one-preinvocation-probe/v0.2",
+        "source": "ONE_PREINVOCATION_IR",
+        "project_id": "agentos-core",
+        "index_id": index_id,
+        "ir_id": ir_id,
         "credential_exposed": False,
     }
 
@@ -296,7 +328,7 @@ def main() -> int:
     print(
         json.dumps(
             {
-                "schema": "agentos.antigravity-one-oracle-install/v0.2",
+                "schema": "agentos.antigravity-one-oracle-install/v0.3",
                 "ok": True,
                 "mode": "oracle-local",
                 "probe": evidence,
