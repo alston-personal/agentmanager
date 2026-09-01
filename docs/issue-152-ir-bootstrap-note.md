@@ -4,7 +4,7 @@
 
 Fresh Antigravity executor continuity is hydrated from the existing Canonical IR contract, not reconstructed from workspace roots, Pulse/PM2 state, or a new conversation/project focus store.
 
-Current Core path:
+Current Core acceptance path:
 
 ```text
 Antigravity PreInvocation
@@ -12,9 +12,8 @@ Antigravity PreInvocation
   -> resolve canonical `agentos-core`
   -> validate `agentos.execution-head/v1` generation
   -> validate matching `agentos.ir/v1` `index_id`
-  -> bind caller executor identity only from current PreInvocation `modelName`
   -> inject one bounded Canonical IR envelope
-  -> current Antigravity model invocation
+  -> active Antigravity model first invocation
 ```
 
 The current canonical continuation publisher (`agent_core/project_continuation_index.py`) is intentionally restricted to `agentos-core` and atomically publishes:
@@ -24,45 +23,35 @@ The current canonical continuation publisher (`agent_core/project_continuation_i
 
 Both share one `index_id`; the continuation contains the `agentos.ir/v1` Canonical IR.
 
-## Multi-root rule
+## Workspace gate rule
 
-Antigravity `workspacePaths` are only a gate proving that the Core checkout (`agentmanager`) is present. Sibling roots must never become candidate current projects. The hook resolves only `agentos-core` for this acceptance slice.
+Antigravity `workspacePaths` are only a gate proving that the active workspace is inside the canonical Core checkout tree. The accepted gate includes both the repository root and descendants, for example:
 
-## Executor identity boundary
+- `/home/ubuntu/agentmanager`
+- `/home/ubuntu/agentmanager/workspace/if-tv-station`
 
-Canonical continuity and executor identity are separate claims.
+A descendant workspace name is never a project selector. Once the gate is open, #152 resolves exactly `agentos-core`; `if-tv-station`, another nested workspace, or sibling roots must not replace the canonical continuation. Prefix lookalikes such as `/home/ubuntu/agentmanager-old` are not accepted as descendants.
 
-The Antigravity `PreInvocation` payload contains the current `modelName`, so that hook may bind a recognized caller as `antigravity-gemini` or `antigravity-codex`. Unrecognized model names remain `antigravity-unknown` with `executor_identity_bound=false`; the hook must not guess from a generic model family name.
+This descendant rule is required because Antigravity may report the active nested workspace rather than the repository root in a fresh executor conversation.
 
-The shared stdio MCP process has no reliable per-tool caller-model context. Its responses therefore prove only the Antigravity surface / ONE connection and explicitly return the executor identity as unbound. MCP must not claim `antigravity-gemini` merely because the original E2 adapter was built for Gemini.
+## Executor identity rule
+
+The PreInvocation hook may bind the active Antigravity executor only from the hook payload's current `modelName`. A Codex-bearing model name binds `antigravity-codex`; a Gemini-bearing model name binds `antigravity-gemini`; unknown names remain `antigravity-unknown` with `executor_identity_bound=false`.
+
+The generic MCP stdio process has no trustworthy caller-model context and therefore reports `antigravity-unbound`. MCP connectivity must not be used to fabricate Gemini/Codex identity evidence.
 
 ## Fail-closed rule
 
 If the execution head or Canonical IR is missing, malformed, or has a mismatched generation, inject/report `ONE_IR_HEAD_UNRESOLVED`. Do not fall back to workspace enumeration, Pulse, PM2, local memory, or vendor conversation reconstruction.
 
-If the current model name cannot prove an executor class, continuity hydration may still proceed, but an executor-specific E2/E3 acceptance must not be marked verified from that session without separate valid identity evidence.
+## Live acceptance
 
-## Live E2 acceptance
-
-E2 is live-verified for the built-in Antigravity Gemini surface. Two completely fresh conversations received only `繼續` and independently recovered:
+A fresh built-in Antigravity executor conversation receives only `繼續` and must continue from the injected IR. Evidence should expose at least:
 
 - `source=ONE_PREINVOCATION_IR`
 - `project_id=agentos-core`
-- `index_id=idx-core-152`
-- `ir_id=ir-core-152`
+- `index_id=<canonical generation>`
+- `ir_id=<canonical IR>`
+- executor identity bound by PreInvocation when the model name proves it
 
-Evidence is preserved in `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md`.
-
-## E3 acceptance target
-
-The next child generation is intended for a completely fresh built-in Antigravity Codex session. After guarded E2 -> E3 advancement and reload, a fresh Codex conversation receiving only `繼續` must recover the child Canonical IR and expose at least:
-
-- `source=ONE_PREINVOCATION_IR`
-- `project_id=agentos-core`
-- `index_id=idx-core-152-e3-1`
-- `ir_id=ir-core-152-e3-1`
-- `executor_class=antigravity-codex`
-- `executor_identity_bound=true`
-- the actual `model_name`
-
-No sibling-project state should appear unless newer explicit user intent asks for it. E3 remains unverified until live evidence passes.
+No sibling/nested-project state should become the durable continuation merely because that workspace is active.
