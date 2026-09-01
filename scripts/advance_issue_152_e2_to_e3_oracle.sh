@@ -36,9 +36,20 @@ PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 -m unittest \
     tests.test_project_continuation_index \
     tests.test_canonical_ir_handoff \
+    tests.test_antigravity_one_hook \
+    tests.test_one_mcp_stdio_identity \
     -v
 
 echo "agentos_e3_contract_tests=PASS"
+
+# Install the exact same immutable runtime snapshot into Antigravity global
+# hook/MCP configuration before advancing the live IR.  The installer probes
+# against the still-current E2 parent, so any runtime/config regression fails
+# before canonical mutation.
+echo "agentos_e3_antigravity_runtime_install=RUNNING"
+PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
+  python3 "$TARGET/scripts/install_antigravity_one_mcp_oracle.py"
+echo "agentos_e3_antigravity_runtime_install=PASS"
 
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 "$TARGET/scripts/advance_issue_152_e2_to_e3.py"
@@ -79,3 +90,4 @@ PY
 echo "agentos_issue_152_e2_to_e3=PASS"
 echo "agentos_e3_index_id=$EXPECTED_INDEX"
 echo "agentos_e3_ir_id=$EXPECTED_IR"
+echo "antigravity_reload_required=YES"
