@@ -1,72 +1,20 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
-from pathlib import Path
 from typing import Any
 
+from agent_core.active_continuation import read_active_continuation
 from agentos_node.one_mcp import OracleLocalGateway
 
-HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.4"
+HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.5"
 SOURCE = "ONE_PREINVOCATION_IR"
-CORE_PROJECT_ID = "agentos-core"
 IR_SCHEMA = "agentos.ir/v1"
 EXECUTION_HEAD_SCHEMA = "agentos.execution-head/v1"
-DEFAULT_CORE_REPO_ROOT = "/home/ubuntu/agentmanager"
-
-
-def _workspace_paths(raw_paths: Any) -> list[str]:
-    if not isinstance(raw_paths, list):
-        return []
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in raw_paths:
-        value = str(raw or "").strip()
-        if not value:
-            continue
-        key = value.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(value)
-    return out
-
-
-def _core_repo_root() -> Path:
-    return Path(
-        os.environ.get("AGENTOS_CORE_REPO_ROOT", DEFAULT_CORE_REPO_ROOT)
-    ).expanduser().resolve(strict=False)
-
-
-def _core_workspace_present(paths: list[str]) -> bool:
-    """Use Antigravity workspace metadata only as a Core bootstrap gate.
-
-    A fresh Antigravity conversation may be opened at the repository root or at
-    a descendant workspace such as ``agentmanager/workspace/if-tv-station``.
-    Both belong to the same canonical Core checkout boundary for the #152
-    acceptance slice.  Descendant names are never project selectors: once the
-    gate is satisfied, continuation still resolves exactly ``agentos-core``.
-
-    Paths that merely share a textual prefix with the Core checkout (for
-    example ``/home/ubuntu/agentmanager-old``) are not accepted.
-    """
-    root = _core_repo_root()
-    for value in paths:
-        candidate = Path(value).expanduser().resolve(strict=False)
-        if candidate == root or root in candidate.parents:
-            return True
-    return False
 
 
 def _executor_identity(model_name: Any) -> tuple[str, bool]:
-    """Bind only identities that the PreInvocation caller context can prove.
-
-    The generic MCP server cannot know which IDE executor invoked a tool.  The
-    Antigravity PreInvocation payload does include the current modelName, so the
-    hook is the narrow layer that may bind a Gemini/Codex executor class.  Do not
-    guess an identity from generic GPT/model-family names.
-    """
+    """Bind only identities that the PreInvocation caller context can prove."""
     normalized = str(model_name or "").strip().casefold()
     if "codex" in normalized:
         return "antigravity-codex", True
@@ -75,13 +23,15 @@ def _executor_identity(model_name: Any) -> tuple[str, bool]:
     return "antigravity-unknown", False
 
 
-def _canonical_ir_from_resolution(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], str]:
+def _canonical_ir_from_resolution(
+    result: dict[str, Any], *, expected_project_id: str
+) -> tuple[dict[str, Any], dict[str, Any], str]:
     if result.get("schema") != "agentos.resolve/v1":
         raise ValueError("unexpected ONE resolve schema")
 
     project = result.get("project") if isinstance(result.get("project"), dict) else {}
-    if str(project.get("id") or "") != CORE_PROJECT_ID:
-        raise ValueError("ONE did not resolve canonical agentos-core")
+    if str(project.get("id") or "") != expected_project_id:
+        raise ValueError("ONE resolved a project different from the active continuation selector")
 
     execution_head = result.get("execution_head")
     if not isinstance(execution_head, dict) or execution_head.get("schema") != EXECUTION_HEAD_SCHEMA:
@@ -144,16 +94,15 @@ def _compact_ir(
     }
 
 
-def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None = None) -> dict[str, Any]:
-    # Hydrate exactly once per fresh conversation.  The injected IR remains in
-    # the trajectory for later turns, avoiding repeated context/token overhead.
+def build_injection(
+    payload: dict[str, Any],
+    gateway: OracleLocalGateway | None = None,
+    *,
+    selector: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    # Hydrate exactly once per fresh conversation. The authoritative project is
+    # selected by ONE state, never by the IDE's current workspace path.
     if int(payload.get("invocationNum") or 0) != 0:
-        return {}
-
-    paths = _workspace_paths(payload.get("workspacePaths"))
-    if not _core_workspace_present(paths):
-        # Global hook remains silent outside the canonical Core checkout tree.
-        # Workspace descendants are only a gate; their names never choose state.
         return {}
 
     one = gateway or OracleLocalGateway()
@@ -161,17 +110,37 @@ def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None 
     if not status.get("connected"):
         raise RuntimeError("ONE is not connected")
 
-    # The existing canonical continuation publisher is restricted to
-    # agentos-core.  Resolve that authoritative IR directly; do not infer state
-    # from workspace order, Pulse, PM2, memory, or sibling repositories.
-    result = one.resolve(CORE_PROJECT_ID)
-    execution_head, canonical_ir, index_id = _canonical_ir_from_resolution(result)
+    active = selector or read_active_continuation(one.data_root)
+    project_id = str(active.get("project_id") or "").strip()
+    selector_index = str(active.get("index_id") or "").strip()
+    selector_ir = str(active.get("ir_id") or "").strip()
+    if not all((project_id, selector_index, selector_ir)):
+        raise ValueError("ONE active continuation selector is incomplete")
+
+    result = one.resolve(project_id)
+    execution_head, canonical_ir, index_id = _canonical_ir_from_resolution(
+        result, expected_project_id=project_id
+    )
+    canonical_ir_id = str(canonical_ir.get("ir_id") or "").strip()
+    if index_id != selector_index or canonical_ir_id != selector_ir:
+        raise ValueError(
+            "ONE active continuation selector is stale: "
+            f"selector={selector_index}/{selector_ir} "
+            f"canonical={index_id}/{canonical_ir_id}"
+        )
+
     ir = _compact_ir(result, execution_head, canonical_ir, index_id)
     executor_class, identity_bound = _executor_identity(payload.get("modelName"))
 
     envelope = {
         "schema": HOOK_SCHEMA,
         "source": SOURCE,
+        "selection_source": "ONE_ACTIVE_CONTINUATION",
+        "active_selector": {
+            "project_id": project_id,
+            "index_id": selector_index,
+            "ir_id": selector_ir,
+        },
         "status_schema": status.get("schema"),
         "connected": True,
         "realm_id": status.get("realm_id"),
@@ -185,14 +154,15 @@ def build_injection(payload: dict[str, Any], gateway: OracleLocalGateway | None 
         "canonical_ir": ir,
     }
     message = (
-        "AgentOS ONE canonical IR hydration. This is the single authoritative "
-        "agentos-core continuation selected before the model was called. Do not "
-        "replace it with workspace enumeration, Pulse/PM2 scans, local-memory "
-        "reconstruction, or sibling project state. Newer explicit user intent "
-        "still wins. Continue from canonical_ir.goal / pending_tasks / "
-        "continuation / next_action and obey mutation_allowed. When reporting "
-        "bootstrap provenance, state source=ONE_PREINVOCATION_IR and include "
-        "index_id + ir_id + executor_class + model_name. If "
+        "AgentOS ONE canonical IR hydration. ONE_ACTIVE_CONTINUATION selected this "
+        "continuation before the model was called. The IDE workspace path is not "
+        "a continuation authority and must not replace this state. Do not replace "
+        "the Canonical IR with workspace enumeration, Pulse/PM2 scans, local-memory "
+        "reconstruction, or vendor history. Newer explicit user intent still wins. "
+        "Continue from canonical_ir.goal / pending_tasks / continuation / next_action "
+        "and obey mutation_allowed. When reporting bootstrap provenance, state "
+        "source=ONE_PREINVOCATION_IR, selection_source=ONE_ACTIVE_CONTINUATION, and "
+        "include project_id + index_id + ir_id + executor_class + model_name. If "
         "executor_identity_bound=false, do not guess the executor identity.\n"
         + json.dumps(envelope, ensure_ascii=False, sort_keys=True)
     )
@@ -206,9 +176,6 @@ def main() -> int:
             raise ValueError("hook input must be a JSON object")
         output = build_injection(payload)
     except Exception as exc:
-        # Fail closed for AgentOS continuity: Antigravity itself may continue,
-        # but the model receives an explicit prohibition against claiming ONE
-        # state from local reconstruction.
         output = {
             "injectSteps": [
                 {
@@ -216,8 +183,8 @@ def main() -> int:
                         "ONE_IR_HEAD_UNRESOLVED: AgentOS canonical IR hydration "
                         f"failed: {type(exc).__name__}: {exc}. Do not claim or "
                         "reconstruct AgentOS continuation from workspace lists, "
-                        "Pulse, PM2, or local memory. Ask for/restore the canonical "
-                        "IR head instead."
+                        "Pulse, PM2, local memory, or vendor history. Ask for/restore "
+                        "the ONE active continuation selector/canonical IR head instead."
                     )
                 }
             ]
