@@ -1,0 +1,200 @@
+{
+  "vaultRecords": [
+    {
+      "idSuffix": "9e52b6b2",
+      "idLength": 36,
+      "setIdSuffix": "7002e774",
+      "identityAlias": "sunlake",
+      "payloadPresent": true,
+      "credentialPresent": true
+    }
+  ],
+  "echoContracts": {
+    "GET_RECOVERY_VAULT_STATUS": {
+      "fieldRefs": [
+        "accessCapability",
+        "accountId",
+        "confirmed",
+        "credential",
+        "error",
+        "hasLocalA",
+        "identityAlias",
+        "identityDisplayName",
+        "pendingRecoveryCodeC",
+        "requestId",
+        "setId",
+        "sharingKeyId",
+        "sharingPublicKey",
+        "success",
+        "walletAddress"
+      ],
+      "recoveryLiterals": [
+        "CONFIRM_RECOVERY_VAULT",
+        "FINALIZE_RECOVERY_VAULT",
+        "GET_RECOVERY_VAULT_STATUS",
+        "NATIVE_PASSKEY_",
+        "NATIVE_PASSKEY_AUTHENTICATE",
+        "NATIVE_PASSKEY_REGISTER",
+        "PREPARE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_AB",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/cancel",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeySetupFailed",
+        "passkeyVerifyFailed",
+        "recoveryComplete",
+        "recoveryFailed",
+        "recoveryPendingC",
+        "recoveryStatusFailed",
+        "systemPasskeyTimeout",
+        "vaultRotateFailed",
+        "waitingManagerPasskey",
+        "waitingSystemPasskey"
+      ]
+    },
+    "/recovery/passkey/authenticate/options": {
+      "fieldRefs": [
+        "accountId",
+        "confirmed",
+        "hasLocalA"
+      ],
+      "recoveryLiterals": [
+        ");\n          setRecoveryStatus(ft(",
+        "CONFIRM_RECOVERY_VAULT",
+        "FINALIZE_RECOVERY_VAULT",
+        "GET_RECOVERY_VAULT_STATUS",
+        "PREPARE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_AB",
+        "RESTORE_RECOVERY_VAULT",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/cancel",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeySetupFailed",
+        "passkeyVerifyFailed",
+        "vaultRotateFailed",
+        "waitingManagerPasskey",
+        "waitingSystemPasskey"
+      ]
+    },
+    "/recovery/passkey/authenticate/verify": {
+      "fieldRefs": [
+        "accountId",
+        "confirmed",
+        "hasLocalA"
+      ],
+      "recoveryLiterals": [
+        ");\n          setRecoveryStatus(ft(",
+        ");\n      setRecoveryStatus(ft(",
+        "CONFIRM_RECOVERY_VAULT",
+        "FINALIZE_RECOVERY_VAULT",
+        "GET_RECOVERY_VAULT_STATUS",
+        "PREPARE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_AB",
+        "RESTORE_RECOVERY_VAULT",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/cancel",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeySetupFailed",
+        "passkeyVerifyFailed",
+        "vaultRotateFailed",
+        "waitingManagerPasskey",
+        "waitingSystemPasskey"
+      ]
+    },
+    "RESTORE_RECOVERY_AB": {
+      "fieldRefs": [
+        "accountId",
+        "confirmed",
+        "hasLocalA"
+      ],
+      "recoveryLiterals": [
+        "));\n    } catch (error: any) {\n      setRecoveryStatus(ft(",
+        ");\n          setRecoveryStatus(ft(",
+        ");\n      setRecoveryStatus(ft(",
+        "CONFIRM_RECOVERY_VAULT",
+        "FINALIZE_RECOVERY_VAULT",
+        "GET_RECOVERY_VAULT_STATUS",
+        "PREPARE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_AB",
+        "RESTORE_RECOVERY_VAULT",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/cancel",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/register/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeyVerifyFailed",
+        "vaultRotateFailed",
+        "waitingManagerPasskey",
+        "waitingSystemPasskey"
+      ]
+    },
+    "RESTORE_RECOVERY_VAULT": {
+      "fieldRefs": [
+        "accountId",
+        "hasLocalA"
+      ],
+      "recoveryLiterals": [
+        "));\n    } catch (error: any) {\n      setRecoveryStatus(ft(",
+        ");\n          setRecoveryStatus(ft(",
+        ");\n      setRecoveryStatus(ft(",
+        "FINALIZE_RECOVERY_VAULT",
+        "GET_RECOVERY_VAULT_STATUS",
+        "PREPARE_RECOVERY_VAULT",
+        "RESTORE_RECOVERY_AB",
+        "RESTORE_RECOVERY_VAULT",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/options",
+        "https://studio.milkcat.org/chamber-api/recovery/passkey/authenticate/verify",
+        "https://studio.milkcat.org/chamber-api/recovery/vault/rotate",
+        "passkeyReadFailed",
+        "passkeyVerifyFailed",
+        "vaultRotateFailed"
+      ]
+    }
+  },
+  "recentRecoveryLogLines": [
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration options issued (b5a3dba7)"
+    },
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration options issued (9e52b6b2)"
+    },
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration verified (9e52b6b2)"
+    },
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration options issued (26cd3813)"
+    }
+  ],
+  "apiContracts": {
+    "/recovery/passkey/authenticate/options": {
+      "routePresent": true,
+      "mentionsAccountId": true,
+      "mentionsShareB": true,
+      "mentionsSessionToken": true,
+      "mentionsVault": true
+    },
+    "/recovery/passkey/authenticate/verify": {
+      "routePresent": true,
+      "mentionsAccountId": true,
+      "mentionsShareB": true,
+      "mentionsSessionToken": true,
+      "mentionsVault": true
+    }
+  }
+}
