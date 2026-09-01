@@ -1,0 +1,141 @@
+name: LeopardCat Governed Reading UI Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-production-deploy-reading-ui.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy reading controls and social OG release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          OLD=127833770b96004e99936aac7fb99cce384c004d
+          TARGET=cf66410136e0eadbee8a15ca0a72f0f1b01595a4
+
+          echo '=== preflight ==='
+          test -d "$ROOT/.git"
+          test "$(git -C "$ROOT" branch --show-current)" = main
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo "head_before=$HEAD"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+
+          mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
+          for f in "${DIRTY[@]:-}"; do
+            test -z "$f" && continue
+            case "$f" in
+              website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;;
+              *) echo "unexpected_dirty=$f"; exit 20 ;;
+            esac
+          done
+          echo "dirty_allowed=${#DIRTY[@]}"
+          rm -rf "$WEB/node_modules/.vite"
+
+          BACKUP=/tmp/leopardcat-stats-reading-ui.json
+          cp "$WEB/stats.json" "$BACKUP"
+          git -C "$ROOT" checkout -- website/dist/index.html
+
+          echo '=== sync source ==='
+          git -C "$ROOT" fetch origin main
+          git -C "$ROOT" merge --ff-only origin/main
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
+          cp "$BACKUP" "$WEB/stats.json"
+
+          echo '=== verify release contracts ==='
+          grep -q 'reading-config-card' "$WEB/index.html"
+          grep -q 'reading.control-surface' "$ROOT/governance/capabilities.json"
+          grep -q '1200' "$WEB/main.js"
+          grep -q '630' "$WEB/main.js"
+          grep -q 'measuredPoolWidth' "$WEB/main.js"
+          grep -q 'Reading setup intrinsic-width containment' "$WEB/style.css"
+          echo 'reading_control_surface=present'
+          echo 'landscape_og_surface=present'
+          echo 'adaptive_manual_fan=present'
+
+          echo '=== build production frontend ==='
+          test -e "$WEB/public/art/renders"
+          test -e "$WEB/public/cards"
+          cd "$WEB"
+          npm ci
+          npm run build
+
+          JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
+          CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
+          test -n "$JS_ASSET"
+          test -n "$CSS_ASSET"
+          test -f "dist$JS_ASSET"
+          test -f "dist$CSS_ASSET"
+          echo "js_asset=$JS_ASSET"
+          echo "css_asset=$CSS_ASSET"
+
+          echo '=== restart governed service ==='
+          systemctl --user stop leopardcat-tarot.service || true
+          for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
+            cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+            cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then
+              echo "terminating_stale_pid=$pid"
+              kill "$pid" || true
+            fi
+          done
+          for i in $(seq 1 20); do
+            if ! ss -ltnp 2>/dev/null | grep -q ':8088'; then break; fi
+            sleep 1
+          done
+          if ss -ltnp 2>/dev/null | grep -q ':8088'; then
+            echo 'port_8088_still_busy=YES'
+            exit 21
+          fi
+
+          systemctl --user start leopardcat-tarot.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/api/v1/methods >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          systemctl --user is-active leopardcat-tarot.service
+
+          echo '=== verify served and public bundles ==='
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-reading-ui.js
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-reading-ui.css
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-reading-ui.js | awk '{print $1}')"
+          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-reading-ui.css | awk '{print $1}')"
+          grep -q 'reading-config-card' /tmp/leopardcat-reading-ui.css
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"
+          test "$code" = 200
+          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-public-reading-ui.js
+          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$CSS_ASSET" -o /tmp/leopardcat-public-reading-ui.css
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-public-reading-ui.js | awk '{print $1}')"
+          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-public-reading-ui.css | awk '{print $1}')"
+          grep -q 'reading-config-card' /tmp/leopardcat-public-reading-ui.css
+
+          echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
+          echo 'leopardcat_reading_ui_deploy=PASS'
+          REMOTE
