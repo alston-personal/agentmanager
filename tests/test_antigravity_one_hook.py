@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import json
 import unittest
 
 from agentos_node.antigravity_one_hook import build_injection
 
 
 class FakeGateway:
-    def __init__(self):
+    def __init__(self, *, index_id="idx-7"):
         self.resolved = []
+        self.index_id = index_id
 
     def status(self):
         return {
@@ -20,46 +20,60 @@ class FakeGateway:
 
     def resolve(self, project):
         self.resolved.append(project)
-        if project == "unrelated":
-            raise KeyError(project)
         return {
             "schema": "agentos.resolve/v1",
-            "project": {"id": project, "name": project},
-            "project_resolution": {
-                "resolved": {
-                    "project_id": project,
-                    "repo": f"example/{project}",
-                    "branch": "core/integration",
-                    "canonical_path": f"/home/ubuntu/{project}",
-                    "node": "oracle-core-node",
+            "project": {"id": "agentos-core", "name": "AgentOS Core"},
+            "mutation_allowed": False,
+            "execution_head": {
+                "schema": "agentos.execution-head/v1",
+                "index_id": self.index_id,
+                "active_goal": "Complete #152 Antigravity IR hydration",
+                "execution_head": {"status": "in_progress"},
+            },
+            "continuation": {
+                "canonical_ir": {
+                    "schema_version": "agentos.ir/v1",
+                    "index_id": self.index_id,
+                    "ir_id": "ir-core-152",
+                    "parent_ir_id": "ir-core-151",
+                    "goal": "Complete #152 Antigravity IR hydration",
+                    "constraints": ["Do not infer current state from workspace order"],
+                    "decisions": ["Canonical IR is the durable continuation state"],
+                    "pending_tasks": ["Run fresh Gemini regression"],
+                    "continuation": {"recommended_action": "Run fresh Gemini regression"},
+                    "capability": "agentos.one.resolve",
                 }
             },
-            "mutation_allowed": False,
-            "active_goal": "continue canonical work",
-            "next_action": "run next verified step",
-            "availability": {"continuation": True},
+            "next_action": "Run fresh Gemini regression",
             "provenance": {"continuation": "project/continuity/latest.json"},
         }
 
 
 class AntigravityOneHookTests(unittest.TestCase):
-    def test_first_invocation_injects_one_hydration(self):
+    def test_first_invocation_hydrates_single_canonical_ir(self):
         gateway = FakeGateway()
         output = build_injection(
             {
                 "invocationNum": 0,
-                "workspacePaths": ["/home/ubuntu/agentmanager"],
+                "workspacePaths": [
+                    "/home/ubuntu/zeus-writer",
+                    "/home/ubuntu/agentmanager",
+                    "/home/ubuntu/privacy-guard",
+                ],
                 "modelName": "gemini-test",
             },
             gateway,
         )
         self.assertIn("injectSteps", output)
         message = output["injectSteps"][0]["ephemeralMessage"]
-        self.assertIn("ONE_PREINVOCATION_HOOK", message)
-        self.assertIn("realm-test", message)
-        self.assertIn("continue canonical work", message)
+        self.assertIn("ONE_PREINVOCATION_IR", message)
+        self.assertIn("ir-core-152", message)
+        self.assertIn("idx-7", message)
+        self.assertIn("Complete #152 Antigravity IR hydration", message)
+        self.assertNotIn("zeus-writer", message)
+        self.assertNotIn("privacy-guard", message)
         self.assertNotIn("token", message.casefold())
-        self.assertEqual(gateway.resolved, ["agentmanager"])
+        self.assertEqual(gateway.resolved, ["agentos-core"])
 
     def test_later_invocation_is_silent(self):
         gateway = FakeGateway()
@@ -73,16 +87,33 @@ class AntigravityOneHookTests(unittest.TestCase):
         self.assertEqual(output, {})
         self.assertEqual(gateway.resolved, [])
 
-    def test_unrelated_workspace_is_silent(self):
+    def test_workspace_without_core_is_silent(self):
         gateway = FakeGateway()
         output = build_injection(
             {
                 "invocationNum": 0,
-                "workspacePaths": ["/tmp/unrelated"],
+                "workspacePaths": ["/home/ubuntu/zeus-writer"],
             },
             gateway,
         )
         self.assertEqual(output, {})
+        self.assertEqual(gateway.resolved, [])
+
+    def test_index_generation_mismatch_fails_closed(self):
+        class MismatchGateway(FakeGateway):
+            def resolve(self, project):
+                result = super().resolve(project)
+                result["continuation"]["canonical_ir"]["index_id"] = "idx-other"
+                return result
+
+        with self.assertRaisesRegex(ValueError, "index generation mismatch"):
+            build_injection(
+                {
+                    "invocationNum": 0,
+                    "workspacePaths": ["/home/ubuntu/agentmanager"],
+                },
+                MismatchGateway(),
+            )
 
 
 if __name__ == "__main__":
