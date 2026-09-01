@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+from agent_core.active_continuation import activate_continuation
 from agent_core.canonical_ir_handoff import advance_canonical_ir
 from agent_core.resolve_facade import resolve_continuation
 
@@ -20,12 +21,23 @@ GOAL = (
 NEXT_ACTION = (
     "Reload Antigravity only if required by runtime changes, then open a completely fresh built-in "
     "Antigravity Codex conversation and send only '繼續'; verify it reports source=ONE_PREINVOCATION_IR, "
-    "project=agentos-core, index_id=idx-core-152-e3-1, ir_id=ir-core-152-e3-1, and continues the E3 goal."
+    "selection_source=ONE_ACTIVE_CONTINUATION, project=agentos-core, "
+    "index_id=idx-core-152-e3-1, ir_id=ir-core-152-e3-1, and continues the E3 goal regardless of IDE workspace."
 )
 
 
 def _data_root() -> Path:
     return Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+
+
+def _activate_e3(root: Path) -> dict:
+    return activate_continuation(
+        PROJECT_ID,
+        index_id=NEW_INDEX,
+        ir_id=NEW_IR,
+        reason="#152 E3 cross-executor continuity is the active canonical task",
+        data_root=root,
+    )
 
 
 def main() -> int:
@@ -38,16 +50,18 @@ def main() -> int:
     current_ir = str(ir.get("ir_id") or "").strip()
 
     if current_index == NEW_INDEX and current_ir == NEW_IR:
+        activation = _activate_e3(root)
         print(
             json.dumps(
                 {
                     "schema": "agentos.issue-152-e2-to-e3/v1",
                     "ok": True,
                     "advanced": False,
-                    "reason": "already advanced",
+                    "reason": "already advanced; active selector reconciled",
                     "project_id": PROJECT_ID,
                     "index_id": NEW_INDEX,
                     "ir_id": NEW_IR,
+                    "active_selector": activation,
                     "credential_exposed": False,
                 },
                 ensure_ascii=False,
@@ -87,13 +101,14 @@ def main() -> int:
             "next_action": NEXT_ACTION,
             "pending_tasks": [
                 "Open a completely fresh built-in Antigravity Codex conversation and send only '繼續'.",
-                "Verify the fresh Codex session receives ONE_PREINVOCATION_IR with the E3 child generation.",
-                "Capture a second fresh Codex regression before marking E3 generally stable for this surface.",
+                "Verify the fresh Codex session receives ONE_PREINVOCATION_IR selected by ONE_ACTIVE_CONTINUATION with the E3 child generation regardless of current workspace.",
+                "Capture a second fresh Codex regression before marking E3 stable for this surface.",
                 "Persist sanitized E3 evidence and update AgentOS current state after live verification.",
             ],
             "decisions_append": [
                 "E2 Antigravity Gemini fresh-session Canonical IR continuity is VERIFIED from two independent fresh sessions.",
                 "Advance E2 -> E3 through the Core-owned guarded Canonical IR writer; executors do not directly mutate canonical state.",
+                "Fresh executor continuation selection is owned by the ONE active-continuation pointer, not IDE workspacePaths.",
             ],
             "evidence": [
                 {
@@ -119,6 +134,7 @@ def main() -> int:
         },
         data_root=root,
     )
+    activation = _activate_e3(root)
     print(
         json.dumps(
             {
@@ -128,6 +144,7 @@ def main() -> int:
                 "project_id": PROJECT_ID,
                 "parent": {"index_id": EXPECTED_INDEX, "ir_id": EXPECTED_IR},
                 "child": {"index_id": NEW_INDEX, "ir_id": NEW_IR},
+                "active_selector": activation,
                 "credential_exposed": False,
                 "handoff_receipt": receipt,
             },
