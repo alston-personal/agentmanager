@@ -1,0 +1,155 @@
+459:   await chrome.storage.local.remove([prefix + "recoveryPendingExportAt"]);
+460:   await chrome.storage.local.remove([prefix + "recoveryPendingShareC"]);
+461:   return true;
+462: }
+463: 
+464: async function restoreFromRecoveryVault(suppliedShareB, recoveryCodeC, currentUserId) {
+465:   const decoded = decodeRecoveryCode(recoveryCodeC);
+466:   let shareB = suppliedShareB;
+467:   const currentPrefix = currentUserId && currentUserId !== "default" ? `user_${currentUserId}_` : "";
+468:   const localData = currentPrefix ? await chrome.storage.local.get([currentPrefix + "recoveryLocalShare"]) : {};
+469:   const localShare = currentPrefix ? localData[currentPrefix + "recoveryLocalShare"] : null;
+470:   let recoveryShares;
+471:   if (localShare?.setId === decoded.setId) {
+472:     shareB = localShare;
+473:     recoveryShares = [localShare.share, decoded.share];
+474:   } else {
+475:     if (shareB?.format !== "chamber-recovery-share-v2" || ![1, 2].includes(Number(shareB?.share?.x))) throw new Error(t("crypto.vaultBInvalid"));
+476:     recoveryShares = [shareB.share, decoded.share];
+477:   }
+478:   if (decoded.setId && decoded.setId !== shareB.setId) throw new Error(t("crypto.shareSetMismatch"));
+479:   const ownerUserId = String(shareB.ownerUserId || shareB.facebookUserId || "");
+480:   if (currentUserId && currentUserId !== "default" && ownerUserId !== String(currentUserId)) {
+481:     throw new Error(t("crypto.accountMismatch"));
+482:   }
+483:   const ownerSecret = ChamberSecretSharing.combine2of3(recoveryShares);
+484:   if (await recoveryChecksum(ownerUserId, shareB.ownerAddress, ownerSecret) !== shareB.checksum) {
+485:     throw new Error(t("crypto.checksumFailed"));
+486:   }
+487:   const prefix = `user_${ownerUserId}_`;
+488:   if (await shouldPreserveCurrentOwnerKey(ownerUserId, shareB.ownerAddress)) {
+489:     const legacy = await storeLegacyOwnerKey(ownerUserId, shareB, ownerSecret);
+490:     return {
+491:       legacy: true,
+492:       preservedCurrentOwner: true,
+493:       ownerAddress: legacy.ownerAddress,
+494:       setId: decoded.setId,
+495:       accountId: decoded.accountId || "",
+496:       needsVaultRotation: Boolean(suppliedShareB),
+497:     };
+498:   }
+499:   const update = {
+500:     [prefix + (shareB.keyTier === "custom" ? "customWalletAddress" : "nativeWalletAddress")]: shareB.ownerAddress,
+501:     [prefix + (shareB.keyTier === "custom" ? "customWalletPrivateKey" : "<redacted>")]: ownerSecret,
+502:     lastFbUserId: ownerUserId,
+503:   };
+504:   if (shareB.identityAlias) update[prefix + "identityAlias"] = shareB.identityAlias;
+505:   await chrome.storage.local.set(update);
+506:   await restoreSharingIdentityFromRecovery(shareB.sharingIdentityEnvelope, ownerSecret, prefix);
+507:   if (!suppliedShareB && localShare?.setId === decoded.setId) {
+508:     return { local: true, setId: decoded.setId, accountId: decoded.accountId || "" };
+509:   }
+510:   // B+C were both exposed during disaster recovery. Prepare a fresh set; Echo
+511:   // replaces B in the same passkey-protected Vault before showing the new C.
+512:   return { ...(await prepareRecoveryVault(ownerUserId)), accountId: decoded.accountId || "" };
+513: }
+514: 
+515: async function restoreFromLocalAAndVaultB(shareB, currentUserId) {
+516:   if (!currentUserId || currentUserId === "default") throw new Error(t("crypto.facebookAccountRequired"));
+517:   if (shareB?.format !== "chamber-recovery-share-v2" || Number(shareB?.share?.x) !== 2) throw new Error(t("crypto.vaultBInvalid"));
+518:   const prefix = `user_${currentUserId}_`;
+519:   const data = await chrome.storage.local.get([prefix + "recoveryLocalShare", prefix + "recoveryVaultAccountId"]);
+520:   const localShare = data[prefix + "recoveryLocalShare"];
+521:   if (!localShare || Number(localShare.share?.x) !== 1 || localShare.setId !== shareB.setId) throw new Error(t("crypto.localVaultMismatch"));
+522:   const ownerSecret = ChamberSecretSharing.combine2of3([localShare.share, shareB.share]);
+523:   const ownerUserId = String(shareB.ownerUserId || shareB.facebookUserId || "");
+524:   if (await recoveryChecksum(ownerUserId, shareB.ownerAddress, ownerSecret) !== shareB.checksum) throw new Error(t("crypto.localVaultChecksumFailed"));
+525:   if (await shouldPreserveCurrentOwnerKey(ownerUserId, shareB.ownerAddress)) {
+526:     const legacy = await storeLegacyOwnerKey(ownerUserId, shareB, ownerSecret);
+527:     return {
+528:       legacy: true,
+529:       preservedCurrentOwner: true,
+530:       ownerAddress: legacy.ownerAddress,
+531:       accountId: data[prefix + "recoveryVaultAccountId"] || "",
+532:       setId: shareB.setId,
+533:     };
+534:   }
+535:   const update = {
+536:     [prefix + (shareB.keyTier === "custom" ? "customWalletAddress" : "nativeWalletAddress")]: shareB.ownerAddress,
+537:     [prefix + (shareB.keyTier === "custom" ? "customWalletPrivateKey" : "<redacted>")]: ownerSecret,
+538:     lastFbUserId: ownerUserId,
+539:   };
+540:   if (shareB.identityAlias) update[prefix + "identityAlias"] = shareB.identityAlias;
+541:   await chrome.storage.local.set(update);
+542:   await restoreSharingIdentityFromRecovery(shareB.sharingIdentityEnvelope, ownerSecret, prefix);
+543:   return { accountId: data[prefix + "recoveryVaultAccountId"] || "", setId: shareB.setId };
+544: }
+545: 
+546: async function recoveryCoverageForOwnerKey(userId, ownerAddress) {
+547:   const prefix = `user_${userId || "default"}_`;
+548:   const keys = [
+549:     prefix + "recoveryLocalShare",
+550:     prefix + "recoveryVaultAccountId",
+551:     prefix + "recoveryExportConfirmedVersion",
+552:   ];
+553:   const data = await chrome.storage.local.get(keys);
+554:   const localShare = data[prefix + "recoveryLocalShare"];
+555:   const expectedOwner = String(ownerAddress || "").toLowerCase();
+556:   const recoveredOwner = String(localShare?.ownerAddress || "").toLowerCase();
+557:   const setId = String(localShare?.setId || "");
+558:   const accountId = String(data[prefix + "recoveryVaultAccountId"] || "");
+559:   const confirmed = data[prefix + "recoveryExportConfirmedVersion"] === "2-of-3-vault-v1";
+560:   const hasLocalA = Number(localShare?.share?.x) === 1;
+561:   const ownerMatches = Boolean(expectedOwner && recoveredOwner && expectedOwner === recoveredOwner);
+562:   const verified = Boolean(confirmed && hasLocalA && setId && accountId && ownerMatches);
+563:   return {
+564:     state: verified ? "RECOVERY_COVERED" : "RECOVERY_INCOMPLETE",
+565:     verified,
+566:     setId,
+567:     accountId,
+568:     ownerKeyId: expectedOwner,
+569:     ownerMatches,
+570:   };
+571: }
+572: 
+573: async function recoveryVaultStatus(userId) {
+574:   const prefix = `user_${userId || "default"}_`;
+575:   const data = await chrome.storage.local.get([
+576:     prefix + "recoveryLocalShare",
+577:     prefix + "recoveryVaultAccountId",
+578:     prefix + "recoveryExportConfirmedVersion",
+579:     prefix + "recoveryPendingShareC"
+580:   ]);
+581:   const setId = data[prefix + "recoveryLocalShare"]?.setId || "";
+582:   const accountId = data[prefix + "recoveryVaultAccountId"] || "";
+583:   const pendingShareC = data[prefix + "recoveryPendingShareC"];
+584:   return {
+585:     hasLocalA: Boolean(data[prefix + "recoveryLocalShare"]?.share?.x === 1),
+586:     setId,
+587:     accountId,
+588:     confirmed: data[prefix + "recoveryExportConfirmedVersion"] === "2-of-3-vault-v1",
+589:     pendingRecoveryCodeC: setId && accountId && pendingShareC
+590:       ? encodeRecoveryCode(setId, pendingShareC, accountId)
+591:       : ""
+592:   };
+593: }
+594: 
+595: async function decryptBytes(data, iv, ownerSecret) {
+596:   const key = await deriveOwnerKey(ownerSecret);
+597:   return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(iv) }, key, base64ToBytes(data)));
+598: }
+599: 
+600: async function encryptContent(text, ownerSecret) {
+601:   try {
+602:     const key = await deriveOwnerKey(ownerSecret);
+603:     const iv = crypto.getRandomValues(new Uint8Array(12));
+604:     const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text)));
+605:     return { ciphertext: bytesToBase64(ciphertext), iv: bytesToBase64(iv), encrypted: true, algorithm: "AES-GCM", key_version: "local-extension-v1" };
+606:   } catch (err) {
+607:     console.error("[Chamber] Encryption failed:", err);
+608:     throw new Error("Encryption failed: " + err.message);
+609:   }
+610: }
+611: 
+612: async function optimizeImageForDevnet(blob, targetBytes = 90 * 1024) {
+613:   if (!blob?.type?.startsWith("image/") || blob.type === "image/gif" || blob.size <= targetBytes) return blob;
