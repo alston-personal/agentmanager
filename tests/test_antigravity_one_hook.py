@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import unittest
 
-from agentos_node.antigravity_one_hook import build_injection
+from agentos_node.antigravity_one_hook import build_injection, _safe_failure_code
+from agentos_node.one_mcp import OneGatewayError
 
 
 class FakeGateway:
@@ -187,6 +188,16 @@ class AntigravityOneHookTests(unittest.TestCase):
                 MismatchGateway(),
                 selector=selector(),
             )
+
+    def test_failure_codes_do_not_echo_exception_details(self):
+        secret_error = RuntimeError("Bearer TOPSECRET /home/private/session")
+        code = _safe_failure_code(secret_error)
+        self.assertEqual(code, "one_hydration_runtime_failed")
+        self.assertNotIn("TOPSECRET", code)
+        self.assertNotIn("/home/private", code)
+
+        one_error = OneGatewayError("one_http_503")
+        self.assertEqual(_safe_failure_code(one_error), "one_http_503")
 
 
 if __name__ == "__main__":
