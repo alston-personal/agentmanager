@@ -13,33 +13,53 @@ Before architecture or system-level changes:
 
 Do not rely on older memory/pulse-era documents as current architecture if they disagree with `docs/CURRENT_STATE.md` and executable evidence.
 
-## Antigravity ONE self-bootstrap
+## Antigravity Gemini ONE self-bootstrap
 
-When the **actual executor/session inside the Antigravity IDE/2.0 surface** is asked to connect to, continue from, discover, or validate AgentOS ONE, it MUST read and follow:
+When the **Gemini executor/session inside the Antigravity IDE/2.0 surface** is asked to connect to, continue from, discover, or validate AgentOS ONE, it MUST read and follow:
 
 `.agents/skills/agentos-one-onboarding/SKILL.md`
 
-For Oracle-hosted Antigravity, fresh-session continuity is provided primarily by the global Antigravity `PreInvocation` hook installed in `~/.gemini/config/hooks.json`.
+For Oracle-hosted Antigravity Gemini, fresh-session continuity is provided primarily by the global Gemini-side `PreInvocation` hook installed in `~/.gemini/config/hooks.json`.
 
 Fresh continuation selection is owned by ONE, not by the IDE workspace. `agent_core/active_continuation.py` maintains a Realm/runtime-level `agentos.active-continuation/v1` pointer containing only `project_id + index_id + ir_id`. That pointer is **not a second state store**: the authoritative working state remains the referenced Canonical IR generation.
 
-Before the first model call, the hook reads that active selector, resolves the selected canonical project, verifies that the selector's `index_id`/`ir_id` still match the current `agentos.execution-head/v1` + `agentos.ir/v1` generation, then injects a bounded `source=ONE_PREINVOCATION_IR` envelope. If the selector is stale or invalid, the hook fails closed.
+Before the first Gemini model call, the hook reads that active selector, resolves the selected canonical project, verifies that the selector's `index_id`/`ir_id` still match the current `agentos.execution-head/v1` + `agentos.ir/v1` generation, then injects a bounded `source=ONE_PREINVOCATION_IR` envelope. If the selector is stale or invalid, the hook fails closed.
 
 `workspacePaths` are environment metadata only. A fresh conversation opened in `/home/ubuntu/acas`, under `agentmanager/workspace/...`, or in another IDE workspace MUST NOT use that path to choose durable continuation. Workspace enumeration, Pulse/PM2 state, local memory, or vendor conversation history must never replace the ONE-selected Canonical IR.
 
 The existing canonical publisher in `agent_core/project_continuation_index.py` is initially restricted to `agentos-core`; it atomically publishes `execution-head.json` and `continuity/latest.json` with one shared `index_id`. The selector may point only to an actually current canonical generation. Until project publishing is deliberately generalized, do not fabricate cross-project IR by scanning workspaces.
 
-The `agentos-one` MCP server remains the explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The PreInvocation hook and MCP adapter both use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
-
-Executor identity and connectivity are separate claims. The PreInvocation hook may bind built-in Gemini/Codex identity only from its current `modelName`. The generic MCP process has no trustworthy caller-model context and therefore reports an unbound Antigravity executor identity rather than pretending the caller is Gemini or Codex.
+The Gemini-side `agentos-one` MCP server remains an explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The PreInvocation hook and MCP adapter use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
 
 If the active selector, Canonical IR head, or generation fence is unavailable/malformed/stale, fail closed with `ONE_IR_HEAD_UNRESOLVED`; do not reconstruct current state from local evidence.
 
-If Oracle bootstrap is not installed, use the immutable bootstrap path documented by the onboarding skill. For enrolled external clients, use the client installer described there instead; do not make a desktop executor own Realm credentials.
+## OpenAI Codex IDE extension ONE bootstrap
 
-Important identity fence: built-in Antigravity Gemini, built-in Antigravity Codex, `agy`, standalone `gemini`, Claude, and Codex CLI are distinct executor/provider identities. One is not acceptable evidence for another.
+The OpenAI Codex IDE extension is a **separate extension/client** from the Gemini/Antigravity extension. Do not expect Codex to trigger `~/.gemini/config/hooks.json`, and do not use a retained Gemini PreInvocation attestation as evidence that a Codex thread was hydrated.
 
-A fresh Antigravity executor must be able to recover the ONE-selected canonical IR/goal/authority state without copied vendor conversation history before cross-executor integration is considered complete.
+Codex uses its own native bootstrap surfaces:
+
+- global Codex instructions in `~/.codex/AGENTS.md`;
+- Codex MCP configuration in `~/.codex/config.toml`;
+- AgentOS adapter `agentos_node/codex_one_mcp_stdio.py`.
+
+For a fresh Codex thread given a relative continuation instruction such as `continue` or `繼續`, Codex must call `agentos-one.one_resolve_active` before reconstructing work from workspace-local state. The tool resolves the ONE active selector and returns the referenced Canonical IR generation. Codex configuration contains bootstrap/discovery rules only; it MUST NOT contain a copied Canonical IR body.
+
+The Codex-side MCP projection is a trusted Oracle-local read-only surface. It may identify the Codex local harness from the Codex MCP configuration boundary, but the MCP process itself does not prove a specific vendor thread/model session. Realm/node credentials remain outside model-visible output.
+
+The current #152 E3 acceptance target is therefore **cross-extension continuity**:
+
+`Antigravity Gemini → AgentOS ONE Canonical IR → fresh OpenAI Codex IDE extension`
+
+The OpenAI Codex extension must recover the same ONE-selected project/generation from `one_resolve_active` without copied Gemini/Codex history and without using the current IDE workspace as continuation authority.
+
+## Shared executor identity boundary
+
+Connectivity, surface identity, executor identity, and model identity are separate claims. A Gemini PreInvocation `modelName` can bind a Gemini caller for that hook invocation; it cannot identify the separate OpenAI Codex extension. Likewise, a Codex MCP process proves the Codex local harness boundary but not an Antigravity Gemini model invocation.
+
+`agy`, standalone `gemini`, Antigravity Gemini, OpenAI Codex IDE extension, Codex CLI, Claude, and other providers are distinct executor/client identities. One is not acceptable evidence for another.
+
+If Oracle bootstrap is not installed, use the immutable bootstrap path documented by the relevant installer. For enrolled external clients, use the client installer rather than making a desktop executor own Realm credentials.
 
 ## Current architectural role
 
