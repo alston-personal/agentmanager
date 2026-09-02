@@ -24,6 +24,7 @@ on:
       - 'agent_core/spec_steward_acceptance.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
+      - 'agentos_node/spec_steward_worker.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -47,6 +48,7 @@ on:
       - 'tests/test_role_runtime.py'
       - 'tests/test_spec_steward_bootstrap.py'
       - 'tests/test_spec_steward_acceptance.py'
+      - 'tests/test_spec_steward_worker.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
@@ -57,6 +59,7 @@ on:
     branches:
       - core/issue-197-governed-wake-delivery-v2
       - core/issue-197-spec-steward-bootstrap
+      - core/issue-197-spec-steward-worker
       - core/issue-200-persistent-supervisor-loop
       - core/issue-200-governed-supervisor-delivery
       - core/integration
@@ -79,6 +82,7 @@ on:
       - 'agent_core/spec_steward_acceptance.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
+      - 'agentos_node/spec_steward_worker.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -102,6 +106,7 @@ on:
       - 'tests/test_role_runtime.py'
       - 'tests/test_spec_steward_bootstrap.py'
       - 'tests/test_spec_steward_acceptance.py'
+      - 'tests/test_spec_steward_worker.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
@@ -159,5 +164,6 @@ jobs:
       - name: Run Spec Steward bootstrap regressions
         run: python -m unittest tests.test_spec_steward_bootstrap -v
       - name: Run Spec Steward O3 acceptance regressions
-        if: ${{ hashFiles('tests/test_spec_steward_acceptance.py') != '' }}
         run: python -m unittest tests.test_spec_steward_acceptance -v
+      - name: Run Spec Steward Employee worker regressions
+        run: python -m unittest tests.test_spec_steward_worker -v
