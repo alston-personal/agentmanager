@@ -7,12 +7,16 @@ on:
     paths:
       - 'agent_core/executor_job_contract.py'
       - 'agent_core/controller_service.py'
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
       - 'tests/test_executor_job_action_relay.py'
       - 'tests/test_executor_job_controller_route.py'
+      - 'tests/test_executor_job_receipt_facade.py'
+      - 'tests/test_control_inbox_bridge.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
   push:
     branches:
@@ -20,12 +24,16 @@ on:
     paths:
       - 'agent_core/executor_job_contract.py'
       - 'agent_core/controller_service.py'
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
       - 'tests/test_executor_job_action_relay.py'
       - 'tests/test_executor_job_controller_route.py'
+      - 'tests/test_executor_job_receipt_facade.py'
+      - 'tests/test_control_inbox_bridge.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
   workflow_dispatch:
 
@@ -46,11 +54,15 @@ jobs:
             tests/test_executor_job_adapter.py \
             tests/test_executor_job_action_relay.py \
             tests/test_executor_job_controller_route.py \
+            tests/test_executor_job_receipt_facade.py \
+            tests/test_control_inbox_bridge.py \
             -q
       - name: Compile contract modules
         run: |
           python -m py_compile \
             agent_core/executor_job_contract.py \
             agent_core/controller_service.py \
+            agent_core/controller_api.py \
+            agent_core/control_inbox_bridge.py \
             agentos_node/executor_job_adapter.py \
             agentos_node/executor_job_action_relay.py
