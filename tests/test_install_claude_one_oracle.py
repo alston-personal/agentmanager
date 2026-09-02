@@ -95,6 +95,31 @@ class InstallClaudeOneOracleTests(unittest.TestCase):
             saved = json.loads(marker.read_text(encoding="utf-8"))
             self.assertEqual(saved["server"], SERVER_NAME)
 
+    def test_existing_owned_same_payload_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as td, patch("pathlib.Path.home", return_value=Path(td)):
+            home = Path(td)
+            marker = home / ".local" / "share" / "agentos" / "claude-one" / "managed-mcp.json"
+            marker.parent.mkdir(parents=True)
+            with patch.dict(os.environ, {}, clear=True):
+                payload = _mcp_payload(python=Path("/venv/python"), repo_root=Path("/runtime/snapshot"))
+            marker.write_text(
+                json.dumps({"schema": "agentos.claude-one-managed-mcp/v1", "server": SERVER_NAME, "payload": payload}),
+                encoding="utf-8",
+            )
+            calls: list[list[str]] = []
+
+            def fake_run(args: list[str], *, timeout: float = 20.0):
+                calls.append(args)
+                return FakeResult(returncode=0, stdout="exists")
+
+            with patch.dict(os.environ, {}, clear=True), patch("scripts.install_claude_one_oracle._run", side_effect=fake_run):
+                result = install_user_mcp(
+                    Path("/fake/claude"), python=Path("/venv/python"), repo_root=Path("/runtime/snapshot")
+                )
+            self.assertTrue(result["already_present"])
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][1:4], ["mcp", "get", SERVER_NAME])
+
 
 if __name__ == "__main__":
     unittest.main()
