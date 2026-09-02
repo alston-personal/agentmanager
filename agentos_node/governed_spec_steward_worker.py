@@ -17,7 +17,12 @@ from agentos_node.spec_steward_worker import (
 )
 
 
-ELIGIBLE_PRECLAIM_DELIVERY_STATES = {"queued", "awaiting_claim"}
+# `queued` proves that ONE accepted a task into its controller queue, but not that
+# the target Node actually received the wake.  Pre-claim worker authority begins
+# only after the Supervisor has reconciled a successful Node delivery receipt to
+# `awaiting_claim`.  This prevents a local wake-spool writer from pairing a forged
+# capsule with a merely queued Core delivery record.
+ELIGIBLE_PRECLAIM_DELIVERY_STATES = {"awaiting_claim"}
 
 
 def _read(path: Path) -> dict[str, Any] | None:
@@ -37,11 +42,12 @@ def require_governed_spec_steward_delivery(
     runtime_root: str | Path,
     capsule: dict[str, Any],
 ) -> dict[str, Any]:
-    """Require one exact Core/S4 authority record before Employee claim.
+    """Require one exact Node-acknowledged Core/S4 authority record before claim.
 
     Node wake persistence proves delivery only. It does not grant worker execution
     authority. This check binds the capsule back to the immutable Supervisor
-    reconcile intent and its separate one_direct delivery ledger.
+    reconcile intent and its separate one_direct delivery ledger, and requires the
+    Supervisor to have reconciled the Node delivery receipt before Employee claim.
     """
     root = Path(runtime_root).expanduser().resolve()
     wake = capsule.get("wake_intent")
