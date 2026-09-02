@@ -27,8 +27,9 @@ _REQUEST_FIELDS = ("job_type", "project_id", "executor_class", "workload_ref", "
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Persist only semantic identity fields, never transport-reserved fields."""
     validate_executor_job(request)
-    return {"schema": EXECUTOR_JOB_SCHEMA, **{key: request[key] for key in _REQUEST_FIELDS}}
+    return {key: request[key] for key in _REQUEST_FIELDS}
 
 
 def _request_from_receipt(receipt: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -47,9 +48,8 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
     validate_executor_job(request)
-    # Persist only fixed identity fields plus the adapter's already-sanitized
-    # semantic result. This is enough to reconstruct provenance after a worker
-    # or controller restart without retaining prompt/stdout/path/session data.
+    # ActionRelay owns receipt schema/capsule/action/timestamps. Persist only
+    # fixed job identity plus the adapter's already-sanitized semantic result.
     return {**_request_projection(request), **run_registered_executor_job(request=request)}
 
 
