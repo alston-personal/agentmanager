@@ -145,6 +145,49 @@ class GovernedSpecStewardWakeWorker:
     def __init__(self, **kwargs: Any) -> None:
         self.worker = SpecStewardWakeWorker(**kwargs)
 
+    def _exact_candidate(self, wake_id: str, presence_generation: int):
+        wake = str(wake_id or "").strip()
+        generation = int(presence_generation)
+        if not wake or generation < 1:
+            raise ValueError("spec_steward_worker_exact_wake_invalid")
+        matches = [
+            item
+            for item in self.worker._capsules()  # noqa: SLF001 - same bounded worker package
+            if str(item[2].get("wake_id") or "") == wake
+            and int(item[2].get("presence_generation") or 0) == generation
+        ]
+        if len(matches) > 1:
+            raise RuntimeError("spec_steward_worker_exact_wake_ambiguous")
+        return matches[0] if matches else None
+
+    def process_exact(
+        self,
+        *,
+        wake_id: str,
+        presence_generation: int,
+        now=None,
+    ) -> SpecStewardWorkerState | None:
+        """Process only one explicitly selected persisted wake capsule.
+
+        The shared Employee Worker Host uses this method so host dispatch evidence
+        cannot drift to a different inbox item between selection and child claim.
+        """
+        candidate = self._exact_candidate(wake_id, presence_generation)
+        if candidate is None:
+            return None
+        _, _, capsule = candidate
+        require_governed_spec_steward_delivery(self.worker.runtime_root, capsule)
+
+        # `SpecStewardWakeWorker.process_one()` intentionally owns all lifecycle
+        # transition logic. Pin its process-local candidate view to the exact wake
+        # already authorized above; no persistent state or global registry changes.
+        original_capsules = self.worker._capsules  # noqa: SLF001
+        self.worker._capsules = lambda: [candidate]  # type: ignore[method-assign]  # noqa: SLF001
+        try:
+            return self.worker.process_one(now=now)
+        finally:
+            self.worker._capsules = original_capsules  # type: ignore[method-assign]  # noqa: SLF001
+
     def process_one(self, *, now=None) -> SpecStewardWorkerState | None:
         candidates = self.worker._capsules()  # noqa: SLF001 - same bounded worker package
         if not candidates:
