@@ -1,0 +1,45 @@
+{
+  "capsules": [
+    {
+      "bucket": "receipts",
+      "capsule_id": "relay-3e3a83e211e64a0999bba6f716c3f859",
+      "receipt": {
+        "capsule_id": "relay-3e3a83e211e64a0999bba6f716c3f859",
+        "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.251-linux-arm64/resources/native-binary/claude",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "returncode": 124,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-09-02T03:08:20Z",
+        "timed_out": true
+      }
+    },
+    {
+      "bucket": "receipts",
+      "capsule_id": "relay-231dca9e44094a9d96b9aa57f3dad61c",
+      "receipt": {
+        "capsule_id": "relay-231dca9e44094a9d96b9aa57f3dad61c",
+        "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.251-linux-arm64/resources/native-binary/claude",
+        "executor_user": "ubuntu",
+        "ok": false,
+        "returncode": 124,
+        "schema": "agentos.antigravity-receipt/v1",
+        "started_at": "2026-09-02T03:11:22Z",
+        "timed_out": true
+      }
+    }
+  ],
+  "layout_presence": {
+    "inbox": true,
+    "legacy_spool": false,
+    "processing": true,
+    "receipts": true
+  },
+  "redaction": "Only allowlisted scalar receipt/worker fields are persisted; prompts, environment, raw logs, stdout/stderr, argv, and arbitrary files are excluded.",
+  "relay_root_present": true,
+  "schema": "agentos.antigravity-regression-diagnostic/v0",
+  "worker": {},
+  "worker_marker_layout": "missing",
+  "worker_proc_exe": null,
+  "worker_ready_present": false
+}
