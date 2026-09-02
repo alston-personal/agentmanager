@@ -31,10 +31,11 @@ class FakeDispatcher:
         }
 
 
-def _fabric(tmp_path: Path) -> RealmFabricStore:
+def _fabric(tmp_path: Path, *, include_capability: bool = True) -> RealmFabricStore:
     registry = NodeRegistry(tmp_path / "nodes.json")
     fabric = RealmFabricStore(tmp_path / "fabric.json", node_registry=registry)
     fabric.initialize_realm("realm-test")
+    capabilities = ["agentos.experience.regression"] if include_capability else []
     manifest = {
         "schema": "agentos.node-manifest/v0.1",
         "realm_id": "realm-test",
@@ -43,7 +44,7 @@ def _fabric(tmp_path: Path) -> RealmFabricStore:
         "hostname": "oracle",
         "platform": "Linux",
         "platform_release": "test",
-        "capabilities": ["agentos.experience.regression"],
+        "capabilities": capabilities,
         "tool_presence": {},
         "surface_inventory": {"surfaces": []},
     }
@@ -81,14 +82,7 @@ def test_executor_job_routes_to_local_dispatcher_not_thin_client_queue(tmp_path:
 
 
 def test_executor_job_requires_registered_semantic_capability(tmp_path: Path) -> None:
-    fabric = _fabric(tmp_path)
-    state = registry_state = fabric.node_registry.load()
-    # Replace the advertised heartbeat with no executor-job capability.
-    node = registry_state["nodes"]["oracle-core-node"]
-    node["manifest"]["capabilities"] = []
-    node["capabilities"] = []
-    fabric.node_registry.path.write_text(__import__("json").dumps(state), encoding="utf-8")
-
+    fabric = _fabric(tmp_path, include_capability=False)
     controller = ControllerService(fabric, executor_job_dispatcher=FakeDispatcher())
     with pytest.raises(ValueError, match="does not advertise capability"):
         controller.dispatch({
@@ -96,6 +90,7 @@ def test_executor_job_requires_registered_semantic_capability(tmp_path: Path) ->
             "action": "agentos.executor.job",
             "payload": canonical_experience_regression_request(),
         })
+    assert fabric.load()["tasks"].get("oracle-core-node", []) == []
 
 
 def test_executor_job_rejects_legacy_passthrough_and_caller_task_id(tmp_path: Path) -> None:
