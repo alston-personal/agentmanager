@@ -8,22 +8,26 @@ on:
     paths:
       - 'agent_core/employee_runtime.py'
       - 'agent_core/employee_lifecycle.py'
+      - 'agent_core/employee_wake.py'
       - 'agent_core/role_runtime.py'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
+      - 'tests/test_employee_wake.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.github/workflows/employee-runtime-guard.yml'
   push:
     branches:
-      - core/issue-151-employee-lifecycle
+      - core/issue-151-employee-wake-planner
       - core/integration
     paths:
       - 'agent_core/employee_runtime.py'
       - 'agent_core/employee_lifecycle.py'
+      - 'agent_core/employee_wake.py'
       - 'agent_core/role_runtime.py'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
+      - 'tests/test_employee_wake.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.github/workflows/employee-runtime-guard.yml'
@@ -47,5 +51,7 @@ jobs:
         run: python -m unittest tests.test_employee_runtime -v
       - name: Run Employee lifecycle regressions
         run: python -m unittest tests.test_employee_lifecycle -v
+      - name: Run Employee wake-planner regressions
+        run: python -m unittest tests.test_employee_wake -v
       - name: Run role hydration regressions
         run: python -m unittest tests.test_role_runtime -v
