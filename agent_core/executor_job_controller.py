@@ -56,16 +56,17 @@ class ExecutorJobController:
         return node
 
     def submit(self, *, node_id: str, request: Mapping[str, Any]) -> dict[str, Any]:
-        spec = validate_executor_job(request)
+        validate_executor_job(request)
         node = self._node(node_id)
         if node.get("status") != "online":
             raise ExecutorJobRoutingError("NODE_OFFLINE")
-        capabilities = set(node.get("capabilities") or [])
-        if spec.capability not in capabilities:
-            raise ExecutorJobRoutingError("EXECUTOR_JOB_CAPABILITY_NOT_ADVERTISED")
         if self._dispatcher is None:
             raise ExecutorJobRoutingError("EXECUTOR_JOB_DISPATCHER_UNAVAILABLE")
 
+        # Node liveness is a routing prerequisite only. Do not infer executor
+        # availability from the Node's generic capability list; the Node-local
+        # dispatcher/provider observation owns executor_available, routable,
+        # authorized, and successful as independent dimensions.
         job_id = self._dispatcher.submit(node_id=str(node_id), request=request)
         return project_executor_job_submission(
             job_id=job_id,
