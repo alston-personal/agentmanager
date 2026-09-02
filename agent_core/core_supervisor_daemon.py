@@ -79,6 +79,28 @@ def _one_data_root(value: str | None = None) -> Path:
     return root.resolve()
 
 
+def _require_existing_one_root(root: Path) -> str:
+    """Fail closed unless root already contains one coherent ONE Realm."""
+    fabric_path = root / "realm" / "fabric.json"
+    nodes_path = root / "realm" / "nodes.json"
+    if not fabric_path.is_file() or not nodes_path.is_file():
+        raise RuntimeError("supervisor_one_control_plane_state_missing")
+    try:
+        fabric = json.loads(fabric_path.read_text(encoding="utf-8"))
+        nodes = json.loads(nodes_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("supervisor_one_control_plane_state_invalid") from exc
+    if not isinstance(fabric, dict) or fabric.get("schema") != "agentos.realm-fabric/v0.1":
+        raise RuntimeError("supervisor_one_fabric_schema_invalid")
+    if not isinstance(nodes, dict) or nodes.get("schema") != "agentos.node-registry/v0.1":
+        raise RuntimeError("supervisor_one_node_registry_schema_invalid")
+    fabric_realm = str(fabric.get("realm_id") or "").strip()
+    node_realm = str(nodes.get("realm_id") or "").strip()
+    if not fabric_realm or not node_realm or fabric_realm != node_realm:
+        raise RuntimeError("supervisor_one_control_plane_realm_mismatch")
+    return fabric_realm
+
+
 def _instance_owner(service_id: str) -> str:
     return f"{service_id}.{uuid.uuid4().hex[:12]}"
 
@@ -129,6 +151,7 @@ def build_service(
         return service
 
     root = _one_data_root(str(one_data_root) if one_data_root is not None else None)
+    _require_existing_one_root(root)
     node_registry = NodeRegistry(path=root / "realm" / "nodes.json")
     fabric = RealmFabricStore(path=root / "realm" / "fabric.json", node_registry=node_registry)
     controller = ControllerService(fabric)
