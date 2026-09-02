@@ -43,10 +43,9 @@ def main() -> int:
         and record.get("ir_id") == expected_ir
         and record.get("selection_source") == "ONE_ACTIVE_CONTINUATION"
     )
-    identity_ok = (
-        record.get("executor_class") == "antigravity-codex"
-        and record.get("executor_identity_bound") is True
-    )
+    identity_bound = record.get("executor_identity_bound") is True
+    executor_is_codex = record.get("executor_class") == "antigravity-codex"
+    identity_ok = executor_is_codex and identity_bound
     credential_ok = record.get("credential_exposed") is False
 
     mismatch_reasons: list[str] = []
@@ -60,9 +59,9 @@ def main() -> int:
         mismatch_reasons.append("ir_id_mismatch")
     if record.get("selection_source") != "ONE_ACTIVE_CONTINUATION":
         mismatch_reasons.append("selection_source_mismatch")
-    if record.get("executor_class") != "antigravity-codex":
+    if not executor_is_codex:
         mismatch_reasons.append("executor_class_not_codex")
-    if record.get("executor_identity_bound") is not True:
+    if not identity_bound:
         mismatch_reasons.append("executor_identity_unbound")
     if not credential_ok:
         mismatch_reasons.append("credential_boundary_not_proven")
@@ -75,9 +74,11 @@ def main() -> int:
         verdict = "REAL_PREINVOCATION_FAIL_CLOSED"
         ok = False
         rc = 4
-    elif hydrated and generation_ok and credential_ok and not identity_ok:
-        # Hydration and state selection are proven even if Antigravity's real
-        # modelName is not descriptive enough to bind the executor class.
+    elif hydrated and generation_ok and credential_ok and identity_bound and not executor_is_codex:
+        verdict = "REAL_PREINVOCATION_HYDRATED_WRONG_EXECUTOR"
+        ok = False
+        rc = 8
+    elif hydrated and generation_ok and credential_ok and not identity_bound:
         verdict = "REAL_PREINVOCATION_HYDRATED_IDENTITY_UNBOUND"
         ok = False
         rc = 5
@@ -107,6 +108,8 @@ def main() -> int:
             "hydrated": hydrated,
             "generation_ok": generation_ok,
             "identity_ok": identity_ok,
+            "identity_bound": identity_bound,
+            "executor_is_codex": executor_is_codex,
             "credential_ok": credential_ok,
         },
         "recorded_at": record.get("recorded_at"),
