@@ -14,6 +14,18 @@ if PROJECT_ROOT not in sys.path:
 from agent_core.platform import get_platform_driver
 
 
+def _native_install_failed(result: dict[str, object]) -> bool:
+    """Return true only when a native service install was actually attempted and failed.
+
+    Platforms without a native service manager may intentionally use the portable
+    fallback manifest.  A Linux host that *has* systemd and ran the systemd
+    installer must not silently downgrade a failed mutation to a successful
+    manifest-only receipt.
+    """
+    raw = result.get("systemd_returncode")
+    return isinstance(raw, int) and not isinstance(raw, bool) and raw != 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install AgentOS services using the selected platform driver")
     parser.add_argument("--platform", default=None, help="Override platform selection")
@@ -27,7 +39,14 @@ def main() -> int:
         data_root=Path(args.data_root) if args.data_root else None,
     )
     result = driver.install_background_services()
-    print(json.dumps({"platform": driver.platform_name(), **result}, indent=2, ensure_ascii=False))
+    payload = {"platform": driver.platform_name(), **result}
+    if _native_install_failed(result):
+        payload["ok"] = False
+        payload["error_code"] = "native_background_service_install_failed"
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 2
+    payload["ok"] = True
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
 
 
