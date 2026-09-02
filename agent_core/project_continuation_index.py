@@ -67,6 +67,32 @@ def _index_id_from_continuation(value: dict[str, Any]) -> str:
     return direct or nested
 
 
+def _read_json_object(path: Path) -> dict[str, Any]:
+    _assert_plain_path(path)
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return value
+
+
+def _current_generation(execution_path: Path, continuation_path: Path) -> tuple[str, str]:
+    execution_head = _read_json_object(execution_path)
+    continuation = _read_json_object(continuation_path)
+    if execution_head.get("schema") != EXECUTION_HEAD_SCHEMA:
+        raise ValueError("current execution head has unsupported schema")
+    canonical_ir = continuation.get("canonical_ir") if isinstance(continuation.get("canonical_ir"), dict) else continuation
+    if canonical_ir.get("schema_version") != IR_SCHEMA:
+        raise ValueError("current continuation has unsupported IR schema")
+    head_index = str(execution_head.get("index_id") or "").strip()
+    continuation_index = _index_id_from_continuation(continuation)
+    if not head_index or head_index != continuation_index:
+        raise ValueError("current execution-head / continuation generation mismatch")
+    ir_id = str(canonical_ir.get("ir_id") or "").strip()
+    if not ir_id:
+        raise ValueError("current canonical IR has no ir_id")
+    return head_index, ir_id
+
+
 def validate_publish_params(params: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, Any]]:
     if not isinstance(params, dict):
         raise ValueError("params must be an object")
@@ -104,8 +130,25 @@ def publish_project_continuation(
     *,
     data_root: str | Path | None = None,
     governance_path: str | Path | None = None,
+    expected_index_id: str | None = None,
+    expected_ir_id: str | None = None,
 ) -> dict[str, Any]:
     project_id, execution_head, continuation = validate_publish_params(params)
+    if (expected_index_id is None) != (expected_ir_id is None):
+        raise ValueError("expected_index_id and expected_ir_id must be supplied together")
+    expected_index = str(expected_index_id or "").strip()
+    expected_ir = str(expected_ir_id or "").strip()
+    canonical_ir = continuation.get("canonical_ir") if isinstance(continuation.get("canonical_ir"), dict) else continuation
+    new_index = str(execution_head.get("index_id") or "").strip()
+    new_ir_id = str(canonical_ir.get("ir_id") or "").strip()
+    if expected_index:
+        if not expected_ir:
+            raise ValueError("expected_ir_id is required for guarded advancement")
+        if new_index == expected_index:
+            raise ValueError("guarded advancement must create a new index generation")
+        if new_ir_id == expected_ir:
+            raise ValueError("guarded advancement must create a new ir_id")
+
     root = Path(data_root) if data_root is not None else Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
 
     project = resolve_project_identity(project_id, governance_path=governance_path, data_root=root)
@@ -145,6 +188,21 @@ def publish_project_continuation(
     try:
         with os.fdopen(lock_fd, "r+") as lock_handle:
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            if expected_index:
+                current_index, current_ir = _current_generation(execution_path, continuation_path)
+                if current_index != expected_index or current_ir != expected_ir:
+                    raise ValueError(
+                        "stale canonical IR parent: "
+                        f"expected index={expected_index!r} ir={expected_ir!r}, "
+                        f"found index={current_index!r} ir={current_ir!r}"
+                    )
+                # Only after the expected parent is proven current do we validate
+                # the child lineage. This preserves stale-writer semantics: a
+                # stale caller must fail on the canonical parent fence rather
+                # than on a child-shape mismatch derived from stale expectations.
+                if str(canonical_ir.get("parent_ir_id") or "").strip() != expected_ir:
+                    raise ValueError("canonical_ir.parent_ir_id must match expected_ir_id")
+
             execution_tmp = _write_temp(project_dir, execution_path.name, execution_head)
             continuation_tmp = _write_temp(continuity_dir, continuation_path.name, continuation)
 
@@ -174,6 +232,9 @@ def publish_project_continuation(
         "schema": PUBLISH_SCHEMA,
         "project_id": project_id,
         "index_id": index_id,
+        "ir_id": new_ir_id,
+        "parent_ir_id": canonical_ir.get("parent_ir_id"),
+        "guarded_advance": bool(expected_index),
         "execution_head": {
             "path": str(execution_path),
             "sha256": _sha256(execution_head),

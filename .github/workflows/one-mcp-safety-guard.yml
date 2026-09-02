@@ -1,0 +1,43 @@
+name: ONE MCP Safety Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/one_mcp.py'
+      - 'agentos_node/one_mcp_stdio.py'
+      - 'agentos_node/antigravity_one_hook.py'
+      - 'tests/test_one_mcp.py'
+      - 'tests/test_one_mcp_stdio_identity.py'
+      - 'tests/test_antigravity_one_hook.py'
+      - '.github/workflows/one-mcp-safety-guard.yml'
+  push:
+    branches:
+      - core/issue-152-executor-awareness
+    paths:
+      - 'agentos_node/one_mcp.py'
+      - 'agentos_node/one_mcp_stdio.py'
+      - 'agentos_node/antigravity_one_hook.py'
+      - 'tests/test_one_mcp.py'
+      - 'tests/test_one_mcp_stdio_identity.py'
+      - 'tests/test_antigravity_one_hook.py'
+      - '.github/workflows/one-mcp-safety-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  one-mcp-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run ONE MCP and PreInvocation safety regressions
+        run: |
+          python -m unittest tests.test_one_mcp -v
+          python -m unittest tests.test_antigravity_one_hook -v

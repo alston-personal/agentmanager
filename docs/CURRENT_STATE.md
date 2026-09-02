@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-09-01  
+**Status date:** 2026-09-02  
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
 This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
@@ -9,9 +9,9 @@ This document exists to prevent architecture drift between code and prose. It is
 
 AgentOS has one continuity goal:
 
-> A user should be able to switch session, model, executor, or machine and continue useful work without manually reconstructing the project from a large conversation history.
+> A user should be able to switch session, model, executor, extension, or machine and continue useful work without manually reconstructing the project from a large conversation history.
 
-This goal is broader than memory retrieval. AgentOS treats durable project/working state as an external system concern and treats models as replaceable executors.
+This goal is broader than memory retrieval. AgentOS treats durable project/working state as an external system concern and treats models/executors/extensions as replaceable clients of that state.
 
 ## Reality map
 
@@ -28,13 +28,19 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
 | ChatGPT bootstrap transport into ONE | Implemented bootstrap; live regression still required | Bootstrap Control Inbox #50 → Oracle bridge → ONE | Issue #50 control command/result evidence; `docs/CHATGPT_ONE_TRANSPORT.md` |
 | Authority-driven transport routing | Implemented + tested candidate | `agent_core/transport_routing.py`, `governance/transport-routing.json` | `tests/test_transport_routing.py`; fresh ChatGPT session acceptance pending in #179 |
-| Antigravity Gemini ONE MCP awareness | Implementation candidate / not accepted | PR #167 `agentos_node/one_mcp.py` | fresh built-in Gemini E2/E3 acceptance still pending |
 | Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
 | Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
-| Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows |
+| Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows and live executor evidence |
 | Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
-| Model-independent Cognitive IR | Research | schema/experiments not yet canonical | requires cross-model continuity experiment |
-| Zero-cost model switch with only `continue` | Target / not yet proven generally | depends on future portable working-state layer | continuity benchmark still required |
+| Canonical continuation IR (`agentos.ir/v1`) | Implemented + verified for AgentOS Core E2/E3 slices | `agent_core/project_continuation_index.py`, `agent_core/resolve_facade.py`, Gemini/Codex consumers | Gemini E2 evidence plus `.agentos/evidence/issue-152-codex-extension-e3-verified-2026-09-02.md` |
+| Guarded Canonical IR handoff / parent fence | Implemented + tested | `agent_core/canonical_ir_handoff.py`, guarded `agent_core/project_continuation_index.py` | `tests/test_canonical_ir_handoff.py`, `tests/test_project_continuation_index.py` |
+| ONE active Canonical continuation selector | Implemented + verified for tested Gemini/Codex continuity slice | `agent_core/active_continuation.py`, `scripts/seed_active_continuation.py`, Gemini PreInvocation + Codex MCP consumers | unrelated-workspace Oracle probe plus two fresh Codex `one_resolve_active` observations |
+| Fresh Antigravity Gemini continuation with only `繼續` | Verified for one concrete E2 slice | Oracle Gemini-side `PreInvocation` hydration from ONE Canonical IR plus read-only MCP adapter | two independent fresh Gemini sessions reproduced `ONE_PREINVOCATION_IR / agentos-core / idx-core-152 / ir-core-152`; see `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
+| OpenAI Codex IDE extension ONE bootstrap | Implemented + live-verified | `agentos_node/codex_one_mcp_stdio.py`, `scripts/install_codex_one_oracle.py`, global `~/.codex/AGENTS.md` + `~/.codex/config.toml` managed blocks | two independent fresh Codex extension threads resolved the same ONE-selected E3 generation; `.agentos/evidence/issue-152-codex-extension-e3-verified-2026-09-02.md` |
+| Gemini extension → ONE → OpenAI Codex IDE extension E3 | **Verified for one concrete Oracle cross-extension slice** | corrected child handoff, Codex native AGENTS+MCP bootstrap, `one_resolve_active` receipt | #152 comments `5503435564` + `5503469931`; distinct receipt timestamps `02:28:29Z` and `02:32:25Z`; repository evidence file above |
+| Post-E3 canonical continuation | Implemented guarded handoff; live advancement pending | `scripts/advance_issue_152_after_e3_verified.py`, `scripts/advance_issue_152_after_e3_verified_oracle.sh` | parent-fenced from verified E3 generation; intended to resume broader #152 work instead of repeating completed regression |
+| Model-independent Cognitive IR across arbitrary executors/models/extensions | Research | bounded `agentos.ir/v1` continuity now has one verified Gemini→Codex cross-extension slice, but general cross-client projection/benchmark is not canonical | requires broader model/extension/machine experiments; do not generalize one verified slice |
+| General zero-cost model/executor/extension/machine switch with only `continue` | Target / not yet proven generally | Gemini E2 and Gemini→Codex E3 are verified concrete slices | broader continuity, client diversity, and machine portability benchmarks still required |
 
 ## Important invariants
 
@@ -42,9 +48,35 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 
 Compaction, replay, stale tool results, or executor switching must not replace a newer goal/correction with an older one. `scripts/continuation_state.py` currently protects this narrow invariant and has regression tests.
 
+### Canonical IR advancement is parent-fenced
+
+A writer advancing an existing Canonical IR generation must supply the exact current `index_id` and `ir_id`, create a new generation, and set the new IR's `parent_ir_id` to that expected parent. The comparison occurs while holding the same continuation-index lock used for publication. A concurrent or stale writer therefore fails before mutation instead of overwriting newer continuation state.
+
+### Active selector is a pointer, not another state store
+
+`agentos.active-continuation/v1` stores only `project_id + index_id + ir_id` (plus activation metadata). It does not duplicate goal, decisions, tasks, evidence, or model context. Those remain in the referenced Canonical IR. Selector reads revalidate the referenced generation; a stale selector fails closed.
+
+The current publisher is still restricted to `agentos-core`, so bootstrap may initialize a missing selector from that one supported canonical project. It must not silently overwrite an existing stale selector.
+
+### Workspace is not continuation authority
+
+The IDE's workspace must not choose durable continuation. This is evidence-backed: early E3 attempts continued local `if-tv-station` and ACAS work because continuation hydration was gated by workspace state. Supporting more workspace path shapes did not solve the problem; the workspace gate itself was architecturally wrong.
+
+Fresh client hydration now selects state from the ONE active selector. Workspace metadata may describe where execution occurs, but it cannot replace Canonical IR or silently switch project state.
+
+### Extension lifecycle is not shared by assumption
+
+Antigravity Gemini and the OpenAI Codex IDE extension are separate clients/extensions. `~/.gemini/config/hooks.json` is a Gemini-side lifecycle hook and is not evidence that a Codex extension thread was invoked or hydrated.
+
+The Codex extension uses its own native bootstrap surfaces: Codex home `AGENTS.md` instructions and Codex MCP configuration. Cross-extension continuity must be proven at each client's actual lifecycle boundary instead of assuming one extension's hook intercepts another.
+
+### Bootstrap instructions are not another state store
+
+Gemini hook rules, Codex `AGENTS.md`, and MCP config contain discovery/authority instructions only. They must not copy the current goal/decisions/tasks/IR generation body into client-specific config. The authoritative working state remains ONE Canonical IR, selected by the active pointer.
+
 ### Evidence is not intent
 
-Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal.
+Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal. Handoff evidence is bounded and credential-field checked before it can enter Canonical IR.
 
 ### Capability does not imply authority
 
@@ -64,7 +96,7 @@ Reusable/cross-project work should resolve existing responsibility and resources
 
 ### Models are executors, not the durable source of truth
 
-AgentOS does not assume access to model activations or model-specific internal state. Durable coordination and continuity state must remain external and transportable.
+AgentOS does not assume access to model activations or model-specific internal state. Durable coordination and continuity state must remain external and transportable. Executors may report evidence, but Core-owned governed writers advance canonical state.
 
 ## What changed from the early AgentOS architecture
 
@@ -75,29 +107,49 @@ Early documentation centered on:
 - manual `/report` handoff;
 - Logic/Data separation as the main architectural idea.
 
-Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, and an explicit transport-authority contract that prevents workflow-carrier capability from becoming control-plane authority.
+Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, an explicit transport-authority contract, a bounded Canonical IR continuation path, and a distinct ONE active-continuation pointer that selects which canonical generation a fresh client should hydrate.
 
 Old documents that describe only the memory/pulse era must be treated as historical unless they link back to this file.
 
 ## Current research boundary: Cognitive IR
 
-The unresolved question is not how to copy one model's hidden state into another model. Public model interfaces do not provide a portable common activation state, and different models need not have identical internal representations.
+AgentOS has a concrete bounded Canonical IR path for project continuation: `agentos.ir/v1` can be published together with an `agentos.execution-head/v1` generation fence and hydrated into a fresh Antigravity Gemini session through ONE. That E2 path is implemented and live-verified.
 
-The active hypothesis is instead:
+The same bounded path has a Core-owned guarded handoff writer. Advancing a head requires the exact previous `index_id` / `ir_id` under the publication lock, preserving authoritative constraints/decisions and appending bounded sanitized evidence into a child IR generation.
+
+The early E3 failures revealed two independent bootstrap problems. First, workspace membership cannot choose continuation; this led to the ONE active-selector design. Second, Antigravity Gemini and OpenAI Codex are separate extensions with separate lifecycle surfaces. A Gemini `PreInvocation` attestation therefore cannot prove a Codex extension invocation.
+
+The corrected E3 design preserves one canonical state while giving each client its native discovery path:
+
+```text
+Antigravity Gemini extension
+        ↓ Gemini PreInvocation
+ONE active selector → Canonical IR
+        ↑ one_resolve_active
+OpenAI Codex IDE extension
+        ↑ Codex AGENTS.md + MCP bootstrap
+```
+
+This concrete E3 slice is now live-verified from two independently fresh Codex IDE extension threads, each given only `繼續`, with independent terminal receipts proving `one_resolve_active` reached the same corrected Canonical IR generation and `credential_exposed=false`. No client-specific bootstrap file contained a copied IR body.
+
+This is meaningful evidence for the model-independent working-state hypothesis, but it is not proof of arbitrary portability. The unresolved research question remains broader: whether one model-independent working-state representation and projection layer can preserve useful continuity across arbitrary model families, executors, extensions, and machines with consistently low reconstruction cost. Public model interfaces do not provide a portable common activation state, and different clients need not expose the same lifecycle hooks.
+
+The active hypothesis remains:
 
 ```text
 full session / events
        ↓ encode/update
 model-independent working-state IR
-       ↓ hydrate/project
-new model / executor
+       ↓ active generation selector
+       ↓ client-native hydrate/project
+new model / executor / extension
        ↓
 functional continuation
 ```
 
 Success means the new executor can preserve the current goal, established decisions/constraints, rejected paths, open questions, and next direction well enough that a relative instruction such as `continue` remains meaningful.
 
-This layer is **not yet declared implemented**. Do not describe it as a finished feature until a repeatable cross-model continuity benchmark exists.
+Do not generalize the verified Gemini→Codex E3 slice into a claim of arbitrary cross-model continuity. The next #152 engineering step is the broader Node/executor lifecycle extraction and remaining real-client acceptance; the next research step is to repeat the continuity pattern across additional clients/models/machines.
 
 ## Documentation ownership rule
 
