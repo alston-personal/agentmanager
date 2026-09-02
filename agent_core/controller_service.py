@@ -49,19 +49,22 @@ class ControllerService:
 
     def _dispatch_executor_job(self, *, node_id: str, payload: Any, passthrough: dict[str, Any]) -> dict[str, Any]:
         if passthrough:
-            # Unlike the legacy #64 node-task path, executor jobs never accept
-            # arbitrary top-level passthrough fields.
             raise ValueError(f'unexpected executor-job controller fields: {sorted(passthrough)}')
         if not isinstance(payload, dict):
             raise ValueError('executor-job payload must be an object')
         validate_executor_job(payload)
         if node_id != self.EXECUTOR_JOB_NODE:
-            # The first proving workload has one fixed trusted Node-local route.
-            # Executor availability is deliberately NOT inferred from the Node's
-            # generic capability list; the Action Relay/provider receipt owns
-            # executor_available/routable/authorized/successful independently.
             raise ValueError(f'executor job is not routable to target node: {node_id}')
-        return self._executor_dispatcher().submit(node_id=node_id, request=payload)
+        submission = dict(self._executor_dispatcher().submit(node_id=node_id, request=payload))
+        # #50's hardened bridge historically calls the returned opaque id
+        # ``task_id``. Preserve that field name as a compatibility alias only;
+        # both values are the SAME Action Relay capsule/job ID. The caller's
+        # incoming ctl_* hint never becomes execution identity.
+        job_id = str(submission.get('job_id') or '')
+        if not job_id:
+            raise RuntimeError('executor-job dispatcher returned no job_id')
+        submission['task_id'] = job_id
+        return submission
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(request, dict):
@@ -88,10 +91,8 @@ class ControllerService:
         passthrough = {key: value for key, value in request.items() if key not in reserved}
 
         if action == self.EXECUTOR_JOB_ACTION:
-            if request.get('task_id') not in (None, ''):
-                # Relay capsule ID is the canonical executor-job ID. The caller
-                # may not choose/reuse a transport ID through this route.
-                raise ValueError('executor-job task_id is relay-owned')
+            # A legacy ctl_* task_id may arrive from #50. It is deliberately
+            # ignored and cannot select/reuse the Action Relay capsule ID.
             return self._dispatch_executor_job(
                 node_id=node_id,
                 payload=payload,
