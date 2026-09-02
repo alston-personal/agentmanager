@@ -18,7 +18,7 @@ git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
 SOURCE_COMMIT="$(git -C "$REPO" rev-parse FETCH_HEAD)"
 TARGET="$RUNTIME_ROOT/$SOURCE_COMMIT"
 
-if [ ! -f "$TARGET/scripts/oracle_codex_experience_regression.py" ]; then
+if [ ! -f "$TARGET/scripts/oracle_codex_experience_regression_entry_v2.py" ]; then
   TMP="$RUNTIME_ROOT/.issue117-$SOURCE_COMMIT-$$"
   rm -rf "$TMP"
   mkdir -p "$TMP" "$RUNTIME_ROOT"
@@ -57,7 +57,7 @@ set +e
 PYTHONPATH="$TARGET" \
 AGENT_DATA_ROOT="$DATA_ROOT" \
 AGENTOS_RUNTIME_SOURCE_COMMIT="$SOURCE_COMMIT" \
-  python3 "$TARGET/scripts/oracle_codex_experience_regression.py" \
+  python3 "$TARGET/scripts/oracle_codex_experience_regression_entry_v2.py" \
     --output "$OUTPUT"
 RC=$?
 set -e
