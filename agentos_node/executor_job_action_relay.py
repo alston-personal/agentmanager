@@ -19,11 +19,17 @@ from agent_core.executor_job_contract import (
 )
 from agentos_node.action_relay import ACTIONS, ActionRelayClient, main as action_relay_main
 from agentos_node.executor_job_adapter import run_registered_executor_job
+from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
 
 
 ACTION = "agentos.executor.job"
 DEFAULT_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
 _REQUEST_FIELDS = ("job_type", "project_id", "executor_class", "workload_ref", "authority")
+
+# Cross-slice integration is conditional by construction. #194 remains usable
+# without #117; once both are present in the same immutable runtime generation,
+# the trusted provider becomes available without a second daemon or model input.
+ISSUE117_PROVIDER_REGISTERED = register_issue117_provider_if_available()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
