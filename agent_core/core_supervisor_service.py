@@ -4,7 +4,6 @@ import fcntl
 import hashlib
 import json
 import os
-import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -81,15 +80,25 @@ class SupervisorCycleReceipt:
     next_poll_seconds: int
     dispatch_performed: bool = False
     authority_boundary: str = "persistent_observe_plan_only"
+    delivery_examined_count: int = 0
+    delivery_dispatch_count: int = 0
+    delivery_queued_count: int = 0
+    delivery_awaiting_claim_count: int = 0
+    delivery_claimed_count: int = 0
+    delivery_blocked_count: int = 0
+    delivery_unknown_count: int = 0
+    delivery_failed_count: int = 0
+    delivery_superseded_count: int = 0
+    delivery_error_count: int = 0
 
 
 class CoreSupervisorService:
-    """Persistent Core loop that observes and journals work, but does not dispatch it.
+    """Persistent Core loop for durable reconciliation and optional governed wake delivery.
 
-    S3 deliberately stops before execution authority. It owns singleton process
-    coordination, repeated reconciliation, durable intent journaling, cycle receipts,
-    crash-safe restart state, and adaptive polling. S4 is responsible for handing a
-    planned intent to governed ONE delivery.
+    S3 observe/plan behavior remains the default. S4 is enabled only when a
+    governed delivery driver is explicitly attached. Planning never itself grants
+    delivery authority, and the immutable reconcile-intent journal remains the
+    source evidence for what Core selected before any delivery decision.
     """
 
     def __init__(
@@ -118,6 +127,17 @@ class CoreSupervisorService:
         self.state_path = self.root / "state.json"
         self.intents_dir = self.root / "intents"
         self.cycles_dir = self.root / "cycles"
+        self.delivery_driver: Any | None = None
+
+    def attach_delivery_driver(self, driver: Any) -> None:
+        """Explicitly enable the S4 boundary for this service instance."""
+        if driver is None:
+            raise ValueError("supervisor_delivery_driver_required")
+        if self.delivery_driver is not None:
+            raise RuntimeError("supervisor_delivery_driver_already_attached")
+        if getattr(driver, "service", None) is not self:
+            raise ValueError("supervisor_delivery_driver_service_mismatch")
+        self.delivery_driver = driver
 
     def _lock(self):
         self.leader_lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,6 +224,10 @@ class CoreSupervisorService:
             raise RuntimeError("supervisor_leader_expired")
         return lease
 
+    def require_leader(self, generation: int, *, now: datetime | None = None) -> SupervisorLeaderLease:
+        """Public read/guard used by governed S4 components before crossing authority."""
+        return self._require_leader(generation, now=now or _now())
+
     def _persisted_reconcile_ids(self) -> set[str]:
         if not self.intents_dir.exists():
             return set()
@@ -265,13 +289,35 @@ class CoreSupervisorService:
         plan_digest = hashlib.sha256(
             json.dumps(plan_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
+
+        delivery_summary = None
+        delivery_top_error = 0
+        if self.delivery_driver is not None:
+            try:
+                delivery_summary = self.delivery_driver.advance_all(leader.generation, now=current)
+            except Exception:
+                # Never serialize exception text from an authority boundary. A
+                # later cycle may retry after the durable cause is corrected.
+                delivery_top_error = 1
+
+        dispatch_performed = bool(delivery_summary and delivery_summary.dispatch_performed)
         previous_digest = str(previous.get("last_plan_digest") or "")
         previous_poll = int(previous.get("next_poll_seconds") or self.base_poll_seconds)
-        if new_count > 0 or plan_digest != previous_digest:
+        delivery_needs_fast_poll = bool(
+            delivery_summary
+            and (delivery_summary.dispatch_count > 0 or delivery_summary.queued_count > 0)
+        )
+        if new_count > 0 or plan_digest != previous_digest or delivery_needs_fast_poll:
             next_poll = self.base_poll_seconds
         else:
             next_poll = min(self.max_poll_seconds, max(self.base_poll_seconds, previous_poll * 2))
         total_planned = len(self._persisted_reconcile_ids())
+
+        boundary = (
+            "persistent_observe_plan_plus_governed_wake_delivery"
+            if self.delivery_driver is not None
+            else "persistent_observe_plan_only"
+        )
         receipt = SupervisorCycleReceipt(
             schema=CYCLE_SCHEMA,
             cycle_generation=cycle_generation,
@@ -285,6 +331,18 @@ class CoreSupervisorService:
             error_count=len(plan.errors),
             blocked_assignment_count=len(blocked),
             next_poll_seconds=next_poll,
+            dispatch_performed=dispatch_performed,
+            authority_boundary=boundary,
+            delivery_examined_count=int(getattr(delivery_summary, "examined_count", 0)),
+            delivery_dispatch_count=int(getattr(delivery_summary, "dispatch_count", 0)),
+            delivery_queued_count=int(getattr(delivery_summary, "queued_count", 0)),
+            delivery_awaiting_claim_count=int(getattr(delivery_summary, "awaiting_claim_count", 0)),
+            delivery_claimed_count=int(getattr(delivery_summary, "claimed_count", 0)),
+            delivery_blocked_count=int(getattr(delivery_summary, "blocked_count", 0)),
+            delivery_unknown_count=int(getattr(delivery_summary, "unknown_count", 0)),
+            delivery_failed_count=int(getattr(delivery_summary, "failed_count", 0)),
+            delivery_superseded_count=int(getattr(delivery_summary, "superseded_count", 0)),
+            delivery_error_count=int(getattr(delivery_summary, "error_count", 0)) + delivery_top_error,
         )
         _atomic(self.cycles_dir / f"{cycle_generation:08d}.json", asdict(receipt))
         _atomic(
@@ -300,7 +358,18 @@ class CoreSupervisorService:
                 "next_poll_seconds": next_poll,
                 "planned_intent_count": total_planned,
                 "last_cycle_receipt": f"cycles/{cycle_generation:08d}.json",
-                "dispatch_performed": False,
+                "dispatch_performed": dispatch_performed,
+                "authority_boundary": boundary,
+                "delivery_examined_count": receipt.delivery_examined_count,
+                "delivery_dispatch_count": receipt.delivery_dispatch_count,
+                "delivery_queued_count": receipt.delivery_queued_count,
+                "delivery_awaiting_claim_count": receipt.delivery_awaiting_claim_count,
+                "delivery_claimed_count": receipt.delivery_claimed_count,
+                "delivery_blocked_count": receipt.delivery_blocked_count,
+                "delivery_unknown_count": receipt.delivery_unknown_count,
+                "delivery_failed_count": receipt.delivery_failed_count,
+                "delivery_superseded_count": receipt.delivery_superseded_count,
+                "delivery_error_count": receipt.delivery_error_count,
             },
         )
         return receipt
@@ -322,7 +391,18 @@ class CoreSupervisorService:
             "last_cycle_at": state.get("last_cycle_at"),
             "next_poll_seconds": state.get("next_poll_seconds"),
             "planned_intent_count": int(state.get("planned_intent_count") or 0),
-            "dispatch_performed": False,
+            "dispatch_performed": bool(state.get("dispatch_performed", False)),
+            "authority_boundary": state.get("authority_boundary", "persistent_observe_plan_only"),
+            "delivery_examined_count": int(state.get("delivery_examined_count") or 0),
+            "delivery_dispatch_count": int(state.get("delivery_dispatch_count") or 0),
+            "delivery_queued_count": int(state.get("delivery_queued_count") or 0),
+            "delivery_awaiting_claim_count": int(state.get("delivery_awaiting_claim_count") or 0),
+            "delivery_claimed_count": int(state.get("delivery_claimed_count") or 0),
+            "delivery_blocked_count": int(state.get("delivery_blocked_count") or 0),
+            "delivery_unknown_count": int(state.get("delivery_unknown_count") or 0),
+            "delivery_failed_count": int(state.get("delivery_failed_count") or 0),
+            "delivery_superseded_count": int(state.get("delivery_superseded_count") or 0),
+            "delivery_error_count": int(state.get("delivery_error_count") or 0),
         }
 
     def run_forever(
