@@ -11,6 +11,7 @@ on:
       - 'agent_core/control_inbox_bridge.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/issue117_experience_provider.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'tests/test_executor_job_contract.py'
@@ -19,6 +20,7 @@ on:
       - 'tests/test_executor_job_controller_route.py'
       - 'tests/test_executor_job_receipt_facade.py'
       - 'tests/test_executor_job_runtime_installer.py'
+      - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_control_inbox_bridge.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
   push:
@@ -31,6 +33,7 @@ on:
       - 'agent_core/control_inbox_bridge.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/issue117_experience_provider.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'tests/test_executor_job_contract.py'
@@ -39,6 +42,7 @@ on:
       - 'tests/test_executor_job_controller_route.py'
       - 'tests/test_executor_job_receipt_facade.py'
       - 'tests/test_executor_job_runtime_installer.py'
+      - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_control_inbox_bridge.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
   workflow_dispatch:
@@ -62,6 +66,7 @@ jobs:
             tests/test_executor_job_controller_route.py \
             tests/test_executor_job_receipt_facade.py \
             tests/test_executor_job_runtime_installer.py \
+            tests/test_issue117_experience_provider.py \
             tests/test_control_inbox_bridge.py \
             -q
       - name: Compile contract modules
@@ -72,7 +77,8 @@ jobs:
             agent_core/controller_api.py \
             agent_core/control_inbox_bridge.py \
             agentos_node/executor_job_adapter.py \
-            agentos_node/executor_job_action_relay.py
+            agentos_node/executor_job_action_relay.py \
+            agentos_node/issue117_experience_provider.py
       - name: Validate governed runtime installers
         run: |
           bash -n scripts/install_action_relay_user.sh
