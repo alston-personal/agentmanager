@@ -1,7 +1,7 @@
 {
   "schema": "agentos.core-workers/v0",
   "project_id": "agentos-core",
-  "generated_at": "2026-08-31T03:17:00Z",
+  "generated_at": "2026-09-02T08:12:00Z",
   "authority": {
     "canonical_integration_branch": "core/integration",
     "publication_branch": "main",
@@ -18,7 +18,10 @@
       "branch": "core/issue-117-experience-memory",
       "status": "blocked",
       "execution_lane": "separate-worker-thread",
-      "dependencies": [72, 160],
+      "dependencies": [
+        72,
+        160
+      ],
       "blocking_scope": [
         "agentos-core:experience-regression:claude",
         "agentos-core:experience-regression:codex"
@@ -143,7 +146,11 @@
       "execution_lane": "architecture-migration-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "children": [163, 164, 165],
+      "children": [
+        163,
+        164,
+        165
+      ],
       "evidence": [
         "docs/PROJECT_REPO_MAP.md",
         "docs/PRODUCT_MIGRATION_INVENTORY.md",
@@ -192,7 +199,12 @@
       "execution_lane": "architecture-extraction-umbrella",
       "dependencies": [],
       "blocking_scope": [],
-      "children": [151, 152, 153, 154],
+      "children": [
+        151,
+        152,
+        153,
+        154
+      ],
       "evidence": [
         "governance/legacy-core-proposals.json",
         "pull/150",
@@ -212,15 +224,87 @@
       "issue": 151,
       "name": "Agent Employee Runtime extraction",
       "branch": null,
-      "status": "queued",
+      "status": "accepted",
       "execution_lane": "independent-extraction-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "source_prs": [17],
-      "evidence": ["issue/151"],
+      "source_prs": [
+        17
+      ],
+      "evidence": [
+        "issue/151",
+        "issue/151#issuecomment-5504064405",
+        "pull/186",
+        "pull/191",
+        "pull/192",
+        "pull/193",
+        "pull/195",
+        "pull/196"
+      ],
       "non_authorities": [
         "legacy PR wholesale merge",
         "create competing canonical state store",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 197,
+      "name": "First live persistent Spec Steward Employee",
+      "branch": null,
+      "status": "running",
+      "execution_lane": "employee-operating-acceptance-worker",
+      "dependencies": [],
+      "blocking_scope": [
+        "agentos-core:spec-steward-live-acceptance"
+      ],
+      "related_issues": [
+        151,
+        200
+      ],
+      "evidence": [
+        "issue/197",
+        "pull/198",
+        "pull/204",
+        "pull/206",
+        "pull/208",
+        "merge/a5a290a58c88b7536d3e0bf1dd50112ae5cd8641",
+        "docs/SPEC_STEWARD_O3_LIVE_RUNBOOK.md"
+      ],
+      "non_authorities": [
+        "static CI as live acceptance",
+        "GitHub Actions as control-plane fallback",
+        "live Realm mutation without governed runtime authority",
+        "protected-main merge"
+      ]
+    },
+    {
+      "issue": 200,
+      "name": "Persistent Core Supervisor/Reconciler",
+      "branch": null,
+      "status": "running",
+      "execution_lane": "core-supervisor-runtime-worker",
+      "dependencies": [],
+      "blocking_scope": [
+        "agentos-core:core-supervisor-live-verification"
+      ],
+      "related_issues": [
+        197,
+        184,
+        152
+      ],
+      "evidence": [
+        "issue/200",
+        "pull/201",
+        "pull/202",
+        "pull/203",
+        "pull/205",
+        "docs/CORE_SUPERVISOR.md"
+      ],
+      "non_authorities": [
+        "arbitrary GitHub Issue execution",
+        "generic shell or argv authority",
+        "availability-driven GitHub Actions fallback",
+        "live runtime deployment without governed authority",
         "protected-main merge"
       ]
     },
@@ -232,9 +316,18 @@
       "execution_lane": "independent-extraction-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "source_prs": [22],
-      "related_issues": [72, 105, 117, 160],
-      "supersedes_issues": [161],
+      "source_prs": [
+        22
+      ],
+      "related_issues": [
+        72,
+        105,
+        117,
+        160
+      ],
+      "supersedes_issues": [
+        161
+      ],
       "evidence": [
         "issue/152",
         "pull/167",
@@ -259,8 +352,12 @@
       "execution_lane": "independent-extraction-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "source_prs": [43],
-      "evidence": ["issue/153"],
+      "source_prs": [
+        43
+      ],
+      "evidence": [
+        "issue/153"
+      ],
       "non_authorities": [
         "restore pulse/status as canonical authority",
         "legacy PR wholesale merge",
@@ -275,9 +372,14 @@
       "execution_lane": "independent-extraction-worker",
       "dependencies": [],
       "blocking_scope": [],
-      "source_prs": [18, 125],
+      "source_prs": [
+        18,
+        125
+      ],
       "product_handoff": "alston-personal/vendor-reputation-service#27",
-      "evidence": ["issue/154"],
+      "evidence": [
+        "issue/154"
+      ],
       "non_authorities": [
         "Vendor product ingestion in Core",
         "unapproved social publish",
@@ -314,7 +416,9 @@
       "branch": null,
       "status": "blocked",
       "execution_lane": "product-library-migration-worker",
-      "dependencies": [170],
+      "dependencies": [
+        170
+      ],
       "blocking_scope": [
         "model2ir:canonical-repository-establishment"
       ],
@@ -336,7 +440,9 @@
       "branch": null,
       "status": "blocked",
       "execution_lane": "product-migration-worker",
-      "dependencies": [170],
+      "dependencies": [
+        170
+      ],
       "blocking_scope": [
         "character-blueprint:canonical-repository-establishment"
       ],
@@ -454,6 +560,10 @@
     {
       "from": "agentos-core#164",
       "to": "agentos-core#170"
+    },
+    {
+      "from": "agentos-core#200:live-acceptance",
+      "to": "agentos-core#197"
     }
   ]
 }
