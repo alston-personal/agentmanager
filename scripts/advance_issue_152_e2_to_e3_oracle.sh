@@ -45,6 +45,7 @@ PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
     tests.test_canonical_ir_handoff \
     tests.test_active_continuation \
     tests.test_antigravity_one_hook \
+    tests.test_antigravity_preinvocation_attestation \
     tests.test_one_mcp_stdio_identity \
     -v
 echo "agentos_e3_contract_tests=PASS"
@@ -59,6 +60,9 @@ echo "agentos_e3_active_selector=PASS"
 
 # Install the same immutable runtime snapshot. The self-probe deliberately uses
 # /home/ubuntu/acas as workspace and must still hydrate the ONE-selected IR.
+# The hook also writes one sanitized last-invocation attestation into the data
+# layer. The installer probe intentionally becomes the baseline record; a real
+# fresh Codex invocation must overwrite it after reload.
 echo "agentos_e3_antigravity_runtime_install=RUNNING"
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 "$TARGET/scripts/install_antigravity_one_mcp_oracle.py"
@@ -116,4 +120,5 @@ PY
 echo "agentos_issue_152_e2_to_e3=PASS"
 echo "agentos_e3_index_id=$EXPECTED_INDEX"
 echo "agentos_e3_ir_id=$EXPECTED_IR"
+echo "agentos_preinvocation_attestation_path=$DATA_ROOT/runtime/antigravity-preinvocation-last.json"
 echo "antigravity_reload_required=YES"
