@@ -67,14 +67,12 @@ def test_executor_job_routes_to_local_dispatcher_not_thin_client_queue(tmp_path:
     dispatcher = FakeDispatcher()
     controller = ControllerService(fabric, executor_job_dispatcher=dispatcher)
     job = canonical_experience_regression_request()
-
     result = controller.dispatch({
         "schema": "agentos.controller-dispatch/v0.1",
         "node_id": "oracle-core-node",
         "action": "agentos.executor.job",
         "payload": job,
     })
-
     assert result["schema"] == "agentos.executor-job-submission/v1"
     assert result["job_id"] == "action-12345678"
     assert dispatcher.calls == [("oracle-core-node", job)]
