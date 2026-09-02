@@ -148,8 +148,6 @@ def publish_project_continuation(
             raise ValueError("guarded advancement must create a new index generation")
         if new_ir_id == expected_ir:
             raise ValueError("guarded advancement must create a new ir_id")
-        if str(canonical_ir.get("parent_ir_id") or "").strip() != expected_ir:
-            raise ValueError("canonical_ir.parent_ir_id must match expected_ir_id")
 
     root = Path(data_root) if data_root is not None else Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
 
@@ -198,6 +196,12 @@ def publish_project_continuation(
                         f"expected index={expected_index!r} ir={expected_ir!r}, "
                         f"found index={current_index!r} ir={current_ir!r}"
                     )
+                # Only after the expected parent is proven current do we validate
+                # the child lineage. This preserves stale-writer semantics: a
+                # stale caller must fail on the canonical parent fence rather
+                # than on a child-shape mismatch derived from stale expectations.
+                if str(canonical_ir.get("parent_ir_id") or "").strip() != expected_ir:
+                    raise ValueError("canonical_ir.parent_ir_id must match expected_ir_id")
 
             execution_tmp = _write_temp(project_dir, execution_path.name, execution_head)
             continuation_tmp = _write_temp(continuity_dir, continuation_path.name, continuation)
