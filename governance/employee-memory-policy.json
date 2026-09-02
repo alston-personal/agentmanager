@@ -1,0 +1,53 @@
+{
+  "schema": "agentos.employee-memory-policy/v1",
+  "default_effect": "deny",
+  "cross_employee_access": "deny",
+  "memory_classes": [
+    "working",
+    "continuity",
+    "governance_evidence",
+    "world_model"
+  ],
+  "role_rules": {
+    "core.root": {
+      "read": ["working", "continuity"],
+      "write": ["working", "continuity"]
+    },
+    "sector.paw": {
+      "read": ["working", "continuity"],
+      "write": ["working", "continuity"]
+    },
+    "sector.claw": {
+      "read": ["working", "continuity"],
+      "write": ["working", "continuity"]
+    },
+    "sector.weaver": {
+      "read": ["working", "continuity"],
+      "write": ["working", "continuity"]
+    },
+    "sector.whisperer": {
+      "read": ["working", "continuity"],
+      "write": ["working", "continuity"]
+    },
+    "governance.spec_steward": {
+      "read": ["working", "continuity", "governance_evidence"],
+      "write": ["working", "continuity", "governance_evidence"]
+    },
+    "governance.keeper": {
+      "read": ["working", "continuity", "governance_evidence"],
+      "write": ["working", "continuity", "governance_evidence"]
+    },
+    "system.cartographer": {
+      "read": ["working", "continuity", "world_model"],
+      "write": ["working", "continuity", "world_model"]
+    }
+  },
+  "invariants": [
+    "memory_access_requires_active_machine_hydrated_role",
+    "unknown_or_unlisted_role_does_not_grant_memory_access",
+    "unknown_memory_class_is_denied",
+    "cross_employee_private_memory_access_is_denied",
+    "employee_messages_and_handoffs_are_not_private_memory_bypass_channels",
+    "executor_provider_model_or_session_identity_never_grants_memory_authority"
+  ]
+}
