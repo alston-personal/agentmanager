@@ -1,0 +1,32 @@
+{
+  "extensionVersion": "1.0.67",
+  "sourceContract": {
+    "hasRecoveryFallbackCall": true,
+    "restoreReturnsBoolean": true,
+    "hasRetryAfterRecovery": true
+  },
+  "recentRecoveryLines": [
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration options issued (b5a3dba7)"
+    },
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration options issued (9e52b6b2)"
+    },
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration verified (9e52b6b2)"
+    },
+    {
+      "source": "chamber-api-out.log",
+      "text": "[Recovery] Passkey registration options issued (26cd3813)"
+    }
+  ],
+  "markers": {
+    "authOptionsSeen": false,
+    "authVerifySeen": false,
+    "restoreABSeen": false,
+    "errorSeen": false
+  }
+}
