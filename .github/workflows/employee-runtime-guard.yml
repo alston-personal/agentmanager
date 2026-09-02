@@ -16,6 +16,7 @@ on:
       - 'agent_core/core_supervisor.py'
       - 'agent_core/core_work_items.py'
       - 'agent_core/core_supervisor_service.py'
+      - 'agent_core/core_supervisor_daemon.py'
       - 'agent_core/role_runtime.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -29,8 +30,13 @@ on:
       - 'tests/test_core_supervisor.py'
       - 'tests/test_core_work_items.py'
       - 'tests/test_core_supervisor_service.py'
+      - 'tests/test_core_supervisor_daemon.py'
+      - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
+      - '.agent/scripts/agentos-core-supervisor.service'
+      - '.agent/scripts/agentos-core-supervisor.env.example'
+      - 'docs/CORE_SUPERVISOR.md'
       - '.github/workflows/employee-runtime-guard.yml'
   push:
     branches:
@@ -47,6 +53,7 @@ on:
       - 'agent_core/core_supervisor.py'
       - 'agent_core/core_work_items.py'
       - 'agent_core/core_supervisor_service.py'
+      - 'agent_core/core_supervisor_daemon.py'
       - 'agent_core/role_runtime.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -60,8 +67,13 @@ on:
       - 'tests/test_core_supervisor.py'
       - 'tests/test_core_work_items.py'
       - 'tests/test_core_supervisor_service.py'
+      - 'tests/test_core_supervisor_daemon.py'
+      - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
+      - '.agent/scripts/agentos-core-supervisor.service'
+      - '.agent/scripts/agentos-core-supervisor.env.example'
+      - 'docs/CORE_SUPERVISOR.md'
       - '.github/workflows/employee-runtime-guard.yml'
   workflow_dispatch:
 
@@ -99,5 +111,9 @@ jobs:
         run: python -m unittest tests.test_core_work_items -v
       - name: Run persistent Core Supervisor service regressions
         run: python -m unittest tests.test_core_supervisor_service -v
+      - name: Run Core Supervisor daemon regressions
+        run: python -m unittest tests.test_core_supervisor_daemon -v
+      - name: Run Core Supervisor service asset regressions
+        run: python -m unittest tests.test_core_supervisor_assets -v
       - name: Run role hydration regressions
         run: python -m unittest tests.test_role_runtime -v
