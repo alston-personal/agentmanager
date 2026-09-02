@@ -29,7 +29,85 @@ if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="$(command -v python3)"
 fi
 
+SUPERVISOR_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentos"
+SUPERVISOR_ENV_FILE="$SUPERVISOR_CONFIG_DIR/core-supervisor.env"
+SUPERVISOR_DELIVERY_ENV_FILE="$SUPERVISOR_CONFIG_DIR/core-supervisor-delivery.env"
+SUPERVISOR_UNIT_SRC="$LOGIC_ROOT/.agent/scripts/agentos-core-supervisor.service"
+SUPERVISOR_UNIT_DST="$USER_SYSTEMD_DIR/agentos-core-supervisor.service"
+SUPERVISOR_DELIVERY_DROPIN_SRC="$LOGIC_ROOT/.agent/scripts/agentos-core-supervisor-delivery.conf.example"
+SUPERVISOR_DROPIN_DIR="$USER_SYSTEMD_DIR/agentos-core-supervisor.service.d"
+SUPERVISOR_DELIVERY_DROPIN_DST="$SUPERVISOR_DROPIN_DIR/20-one-direct-filesystem.conf"
+
 mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
+
+render_supervisor_asset() {
+  local src="$1"
+  local dst="$2"
+  "$PYTHON_BIN" - "$src" "$dst" "$LOGIC_ROOT" "$SUPERVISOR_ENV_FILE" "$SUPERVISOR_DELIVERY_ENV_FILE" "$PYTHON_BIN" "$DATA_ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+src, dst, logic_root, env_file, delivery_env_file, python_bin, data_root = sys.argv[1:]
+text = Path(src).read_text(encoding="utf-8")
+replacements = {
+    "/home/ubuntu/agentmanager": logic_root,
+    "/home/ubuntu/.config/agentos/core-supervisor.env": env_file,
+    "/home/ubuntu/.config/agentos/core-supervisor-delivery.env": delivery_env_file,
+    "/usr/bin/python3": python_bin,
+    "/home/ubuntu/agent-data/employee-runtime": str(Path(data_root) / "employee-runtime"),
+    "/home/ubuntu/agent-data/realm": str(Path(data_root) / "realm"),
+}
+for old, new in replacements.items():
+    text = text.replace(old, new)
+Path(dst).parent.mkdir(parents=True, exist_ok=True)
+Path(dst).write_text(text, encoding="utf-8")
+PY
+}
+
+install_core_supervisor() {
+  test -f "$SUPERVISOR_UNIT_SRC" || { echo "Missing Supervisor service asset: $SUPERVISOR_UNIT_SRC" >&2; exit 2; }
+  test -f "$SUPERVISOR_DELIVERY_DROPIN_SRC" || { echo "Missing Supervisor delivery asset: $SUPERVISOR_DELIVERY_DROPIN_SRC" >&2; exit 2; }
+
+  mkdir -p "$SUPERVISOR_CONFIG_DIR" "$SUPERVISOR_DROPIN_DIR" "$DATA_ROOT/employee-runtime"
+  render_supervisor_asset "$SUPERVISOR_UNIT_SRC" "$SUPERVISOR_UNIT_DST"
+
+  # First install is deliberately S3-only. Existing host-local configuration is
+  # never replaced wholesale by the repository example.
+  if [ ! -f "$SUPERVISOR_ENV_FILE" ]; then
+    cat > "$SUPERVISOR_ENV_FILE" <<EOF
+AGENTOS_EMPLOYEE_RUNTIME_ROOT=$DATA_ROOT/employee-runtime
+AGENTOS_SUPERVISOR_SERVICE_ID=agentos-core-supervisor
+AGENTOS_SUPERVISOR_BASE_POLL_SECONDS=5
+AGENTOS_SUPERVISOR_MAX_POLL_SECONDS=60
+AGENTOS_SUPERVISOR_LEADER_LEASE_SECONDS=30
+AGENTOS_SUPERVISOR_DELIVERY_MODE=disabled
+EOF
+    chmod 600 "$SUPERVISOR_ENV_FILE"
+  fi
+
+  if [ "${AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT:-0}" = "1" ]; then
+    test -f "$DATA_ROOT/realm/fabric.json" || {
+      echo "Refusing Supervisor one_direct: missing existing $DATA_ROOT/realm/fabric.json" >&2
+      exit 2
+    }
+    test -f "$DATA_ROOT/realm/nodes.json" || {
+      echo "Refusing Supervisor one_direct: missing existing $DATA_ROOT/realm/nodes.json" >&2
+      exit 2
+    }
+    render_supervisor_asset "$SUPERVISOR_DELIVERY_DROPIN_SRC" "$SUPERVISOR_DELIVERY_DROPIN_DST"
+    cat > "$SUPERVISOR_DELIVERY_ENV_FILE" <<EOF
+AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct
+AGENTOS_SUPERVISOR_ONE_DATA_ROOT=$DATA_ROOT
+EOF
+    chmod 600 "$SUPERVISOR_DELIVERY_ENV_FILE"
+  else
+    if grep -Eq '^AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct([[:space:]]*)$' "$SUPERVISOR_ENV_FILE"; then
+      echo "Refusing Supervisor install: host env requests one_direct without AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT=1" >&2
+      exit 2
+    fi
+    rm -f "$SUPERVISOR_DELIVERY_ENV_FILE" "$SUPERVISOR_DELIVERY_DROPIN_DST"
+  fi
+}
 
 cat > "$USER_SYSTEMD_DIR/os-chronos.service" <<EOF
 [Unit]
@@ -156,6 +234,10 @@ StandardError=append:$DATA_ROOT/logs/lobster.log
 WantedBy=default.target
 EOF
 
+if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
+  install_core_supervisor
+fi
+
 systemctl --user daemon-reload
 
 # Stop and disable legacy pulse service if it exists
@@ -176,8 +258,11 @@ if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
   systemctl --user restart tg-commander.service
   systemctl --user restart cat-ink-syncer.service
   systemctl --user restart os-lobster.service
+  systemctl --user enable agentos-core-supervisor.service >/dev/null
+  systemctl --user restart agentos-core-supervisor.service
 else
-  echo "AGENT_MODE is not CORE; tg-commander.service, cat-ink-syncer.service, and os-lobster.service installed but not started."
+  systemctl --user disable --now agentos-core-supervisor.service 2>/dev/null || true
+  echo "AGENT_MODE is not CORE; tg-commander.service, cat-ink-syncer.service, os-lobster.service, and agentos-core-supervisor.service are not started."
 fi
 
 systemctl --user restart os-chronos.service
