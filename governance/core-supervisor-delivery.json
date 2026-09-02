@@ -1,0 +1,41 @@
+{
+  "schema": "agentos.core-supervisor-delivery-policy/v1",
+  "policy_id": "core-supervisor-employee-wake-v1",
+  "description": "Explicit authority for the persistent Core Supervisor to deliver only already-persisted Employee wake intents through the governed ONE control plane. Capability availability never grants authority.",
+  "reconcile_kinds": {
+    "employee_wake": {
+      "capability": "agent.employee.wake.deliver",
+      "intent_class": "control_plane",
+      "allowed_transports": [
+        "one_direct"
+      ],
+      "requires_live_supervisor_leader": true,
+      "requires_exact_persisted_wake": true,
+      "requires_current_wake_match": true,
+      "assignment_claim_authority": false,
+      "executor_selection_authority": false,
+      "provider_selection_authority": false,
+      "session_selection_authority": false,
+      "credential_authority": false
+    }
+  },
+  "failure_semantics": {
+    "authority_unavailable": "fail_closed_no_dispatch",
+    "presence_unavailable": "remain_retryable_without_authority_expansion",
+    "stale_wake": "supersede_without_dispatch",
+    "dispatch_ambiguous": "unknown_no_same_presence_retry",
+    "delivery_failed": "no_same_presence_retry",
+    "one_unavailable": "fail_closed_no_actions_fallback"
+  },
+  "invariants": [
+    "event_does_not_grant_authority",
+    "capability_availability_does_not_grant_authority",
+    "persisted_reconcile_intent_is_immutable_evidence",
+    "delivery_must_use_exact_persisted_wake_intent",
+    "delivery_does_not_claim_employee_assignment",
+    "delivery_does_not_select_executor_model_provider_or_session",
+    "github_actions_is_not_control_plane_fallback",
+    "one_failure_does_not_expand_authority",
+    "ambiguous_external_side_effect_is_unknown"
+  ]
+}
