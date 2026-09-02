@@ -168,7 +168,7 @@ class CoreSupervisorDeliveryTests(unittest.TestCase):
         planned = service.run_cycle(leader.generation, now=T0 + timedelta(seconds=1))
         self.assertEqual(planned.new_intent_count, 1)
 
-        self.runtime.update_assignment("audit-001", goal="Audit a different exact scope")
+        self.runtime.update_assignment("audit-001", thread_head="ir:changed-after-plan")
         authority = SupervisorWakeAuthorityResolver(requested_transport="one_direct")
         coordinator = SupervisorWakeCoordinator(
             service,
