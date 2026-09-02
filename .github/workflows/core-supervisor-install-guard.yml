@@ -1,0 +1,42 @@
+name: Core Supervisor Install Guard
+
+on:
+  push:
+    branches:
+      - core/issue-200-supervisor-install-contract
+      - core/integration
+    paths:
+      - 'scripts/install_systemd_user.sh'
+      - '.agent/scripts/agentos-core-supervisor.service'
+      - '.agent/scripts/agentos-core-supervisor.env.example'
+      - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
+      - 'tests/test_core_supervisor_assets.py'
+      - 'tests/test_core_supervisor_install_contract.py'
+      - '.github/workflows/core-supervisor-install-guard.yml'
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'scripts/install_systemd_user.sh'
+      - '.agent/scripts/agentos-core-supervisor.service'
+      - '.agent/scripts/agentos-core-supervisor.env.example'
+      - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
+      - 'tests/test_core_supervisor_assets.py'
+      - 'tests/test_core_supervisor_install_contract.py'
+      - '.github/workflows/core-supervisor-install-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  supervisor-install-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate installer shell syntax
+        run: bash -n scripts/install_systemd_user.sh
+      - name: Validate Supervisor service and install contracts
+        run: python -m unittest tests.test_core_supervisor_assets tests.test_core_supervisor_install_contract -v
