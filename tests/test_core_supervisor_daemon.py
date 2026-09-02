@@ -8,8 +8,11 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from agent_core.core_supervisor_daemon import (
+    _delivery_mode,
     _heartbeat_step,
     _process_singleton_lock,
+    _require_existing_one_root,
+    build_service,
     main,
     run_persistent,
 )
@@ -56,6 +59,30 @@ class _StopAfterWaits:
 
 
 class CoreSupervisorDaemonTests(unittest.TestCase):
+    def _write_one_root(self, root: Path, *, fabric_realm="realm-test", node_realm="realm-test"):
+        realm = root / "realm"
+        realm.mkdir(parents=True, exist_ok=True)
+        (realm / "fabric.json").write_text(
+            json.dumps({
+                "schema": "agentos.realm-fabric/v0.1",
+                "realm_id": fabric_realm,
+                "invites": {},
+                "join_requests": {},
+                "nodes": {},
+                "tasks": {},
+                "receipts": {},
+            }),
+            encoding="utf-8",
+        )
+        (realm / "nodes.json").write_text(
+            json.dumps({
+                "schema": "agentos.node-registry/v0.1",
+                "realm_id": node_realm,
+                "nodes": {},
+            }),
+            encoding="utf-8",
+        )
+
     def test_heartbeat_step_never_sleeps_past_half_leader_lease(self):
         self.assertEqual(_heartbeat_step(60, 30), 15)
         self.assertEqual(_heartbeat_step(10, 30), 10)
@@ -92,7 +119,7 @@ class CoreSupervisorDaemonTests(unittest.TestCase):
             self.assertFalse(payload["dispatch_performed"])
             self.assertFalse((root / "supervisor" / "leader.json").exists())
 
-    def test_once_cli_journals_pending_work_without_dispatch(self):
+    def test_once_cli_journals_pending_work_without_dispatch_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             runtime = EmployeeRuntime(root)
@@ -106,12 +133,71 @@ class CoreSupervisorDaemonTests(unittest.TestCase):
             payload = json.loads(out.getvalue())
             self.assertEqual(payload["new_intent_count"], 1)
             self.assertFalse(payload["dispatch_performed"])
+            self.assertEqual(payload["authority_boundary"], "persistent_observe_plan_only")
             intent_files = list((root / "supervisor" / "intents").glob("reconcile_*.json"))
             self.assertEqual(len(intent_files), 1)
 
     def test_runtime_root_must_be_explicit_absolute_path(self):
         with self.assertRaisesRegex(ValueError, "employee_runtime_root_must_be_absolute"):
             main(["--runtime-root", "relative/path", "--health"])
+
+    def test_delivery_mode_is_explicit_and_fail_closed(self):
+        self.assertEqual(_delivery_mode("disabled"), "disabled")
+        self.assertEqual(_delivery_mode("one_direct"), "one_direct")
+        with self.assertRaisesRegex(ValueError, "invalid_supervisor_delivery_mode"):
+            _delivery_mode("github_actions")
+        with self.assertRaisesRegex(ValueError, "invalid_supervisor_delivery_mode"):
+            _delivery_mode("auto")
+
+    def test_default_builder_does_not_attach_delivery_authority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            service = build_service(
+                runtime_root=root / "employee-runtime",
+                service_id="test-supervisor",
+                base_poll_seconds=2,
+                max_poll_seconds=16,
+            )
+            self.assertIsNone(service.delivery_driver)
+
+    def test_one_direct_builder_requires_existing_matching_one_realm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            runtime_root = root / "employee-runtime"
+            one_root = root / "one"
+            with self.assertRaisesRegex(RuntimeError, "supervisor_one_control_plane_state_missing"):
+                build_service(
+                    runtime_root=runtime_root,
+                    service_id="test-supervisor",
+                    base_poll_seconds=2,
+                    max_poll_seconds=16,
+                    delivery_mode="one_direct",
+                    one_data_root=one_root,
+                )
+            self.assertFalse((one_root / "realm" / "fabric.json").exists())
+            self.assertFalse((one_root / "realm" / "nodes.json").exists())
+
+            self._write_one_root(one_root, fabric_realm="realm-a", node_realm="realm-b")
+            with self.assertRaisesRegex(RuntimeError, "supervisor_one_control_plane_realm_mismatch"):
+                _require_existing_one_root(one_root)
+
+    def test_one_direct_builder_attaches_only_to_existing_matching_realm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            runtime_root = root / "employee-runtime"
+            one_root = root / "one"
+            self._write_one_root(one_root)
+            service = build_service(
+                runtime_root=runtime_root,
+                service_id="test-supervisor",
+                base_poll_seconds=2,
+                max_poll_seconds=16,
+                delivery_mode="one_direct",
+                one_data_root=one_root,
+            )
+            self.assertIsNotNone(service.delivery_driver)
+            self.assertEqual(service.delivery_driver.authority.requested_transport, "one_direct")
+            self.assertEqual(_require_existing_one_root(one_root), "realm-test")
 
 
 if __name__ == "__main__":
