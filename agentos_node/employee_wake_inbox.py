@@ -45,30 +45,30 @@ def _safe_id(value: Any, *, field: str) -> str:
     return text
 
 
-def _walk_safe(value: Any, *, path: str = "wake_intent") -> None:
+def _walk_safe(value: Any) -> None:
     if isinstance(value, dict):
         for raw_key, item in value.items():
             key = str(raw_key).strip().casefold()
             if key in FORBIDDEN_INTENT_KEYS:
-                raise ValueError(f"forbidden_employee_wake_field:{path}.{key}")
-            _walk_safe(item, path=f"{path}.{key}")
+                raise ValueError("forbidden_employee_wake_field")
+            _walk_safe(item)
         return
     if isinstance(value, list):
         if len(value) > 128:
             raise ValueError("employee_wake_list_too_large")
-        for index, item in enumerate(value):
-            _walk_safe(item, path=f"{path}[{index}]")
+        for item in value:
+            _walk_safe(item)
         return
     if isinstance(value, str):
         if len(value) > 4096:
             raise ValueError("employee_wake_string_too_large")
         lowered = value.casefold()
         if any(marker in lowered for marker in SECRET_MARKERS):
-            raise ValueError(f"employee_wake_secret_like_value:{path}")
+            raise ValueError("employee_wake_secret_like_value")
         return
     if value is None or isinstance(value, (bool, int, float)):
         return
-    raise ValueError(f"unsupported_employee_wake_value:{path}")
+    raise ValueError("unsupported_employee_wake_value")
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
@@ -105,12 +105,10 @@ def deliver_employee_wake(task: dict[str, Any], root: Path, *, expected_node_id:
     if route.get("schema") != WAKE_ROUTE_SCHEMA:
         raise ValueError("invalid_employee_wake_route_schema")
 
-    unexpected_intent = sorted(set(intent) - ALLOWED_INTENT_KEYS)
-    if unexpected_intent:
-        raise ValueError("unexpected_employee_wake_fields:" + ",".join(unexpected_intent))
-    unexpected_route = sorted(set(route) - ROUTE_KEYS)
-    if unexpected_route:
-        raise ValueError("unexpected_employee_wake_route_fields:" + ",".join(unexpected_route))
+    if set(intent) - ALLOWED_INTENT_KEYS:
+        raise ValueError("unexpected_employee_wake_fields")
+    if set(route) - ROUTE_KEYS:
+        raise ValueError("unexpected_employee_wake_route_fields")
     _walk_safe(intent)
 
     wake_id = _safe_id(intent.get("wake_id"), field="wake_id")
