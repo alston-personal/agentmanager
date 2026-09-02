@@ -6,10 +6,12 @@ on:
       - core/issue-200-supervisor-install-contract
       - core/integration
     paths:
+      - '.env.example'
       - 'scripts/install_systemd_user.sh'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
       - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
+      - 'docs/CORE_SUPERVISOR_INSTALL.md'
       - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_core_supervisor_install_contract.py'
       - 'tests/test_core_supervisor_installer_runtime.py'
@@ -18,10 +20,12 @@ on:
     branches:
       - core/integration
     paths:
+      - '.env.example'
       - 'scripts/install_systemd_user.sh'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
       - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
+      - 'docs/CORE_SUPERVISOR_INSTALL.md'
       - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_core_supervisor_install_contract.py'
       - 'tests/test_core_supervisor_installer_runtime.py'
