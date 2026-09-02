@@ -31,6 +31,13 @@ fi
 echo "agentos_e3_source_commit=$SOURCE_COMMIT"
 echo "agentos_e3_runtime_source=$TARGET"
 
+# Execute all Python/module resolution from the immutable snapshot itself.
+# PYTHONPATH alone is not sufficient for `python -m` or stdin execution because
+# the caller's current working directory is earlier on sys.path and may contain
+# an older agent_core package from the stable checkout.
+cd "$TARGET"
+echo "agentos_e3_execution_cwd=$PWD"
+
 echo "agentos_e3_contract_tests=RUNNING"
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 -m unittest \
@@ -42,7 +49,7 @@ PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
     -v
 echo "agentos_e3_contract_tests=PASS"
 
-# The active selector is a pointer only.  Seed it from the current canonical
+# The active selector is a pointer only. Seed it from the current canonical
 # generation when absent; if an existing selector is stale, fail closed rather
 # than silently moving it.
 echo "agentos_e3_active_selector=RUNNING"
@@ -50,7 +57,7 @@ PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 "$TARGET/scripts/seed_active_continuation.py"
 echo "agentos_e3_active_selector=PASS"
 
-# Install the same immutable runtime snapshot.  The self-probe deliberately uses
+# Install the same immutable runtime snapshot. The self-probe deliberately uses
 # /home/ubuntu/acas as workspace and must still hydrate the ONE-selected IR.
 echo "agentos_e3_antigravity_runtime_install=RUNNING"
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
