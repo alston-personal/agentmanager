@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import socket
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +71,9 @@ def _load_policy(path: Path) -> ThinClientPolicy:
     if not isinstance(data, dict):
         raise ValueError('client_policy_must_be_object')
     wake_raw = data.get('employee_wake_root')
-    wake_root = None if wake_raw in {None, ''} else _absolute_policy_path(str(wake_raw), 'employee_wake_root')
+    if wake_raw is not None and not isinstance(wake_raw, str):
+        raise ValueError('employee_wake_root_must_be_string_or_null')
+    wake_root = None if wake_raw in (None, '') else _absolute_policy_path(wake_raw, 'employee_wake_root')
     return ThinClientPolicy(
         allowed_executables=set(data.get('allowed_executables') or []),
         readable_roots=tuple(Path(p) for p in (data.get('readable_roots') or [])),
@@ -87,7 +90,7 @@ def _save_default_policy(
 ) -> None:
     workspace = str(Path(root or Path.home() / 'AgentOS').expanduser().resolve())
     wake_root = None
-    if employee_wake_root not in {None, ''}:
+    if employee_wake_root is not None and str(employee_wake_root) != '':
         wake_root = str(_absolute_policy_path(str(employee_wake_root), 'employee_wake_root'))
     payload = {
         'schema': 'agentos.client-policy/v0.1',
@@ -143,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             _save_default_policy(args.policy, args.root, args.employee_wake_root)
         except ValueError as exc:
-            print(f'error: {exc}', file=os.sys.stderr)
+            print(f'error: {exc}', file=sys.stderr)
             return 2
         return 0
 
