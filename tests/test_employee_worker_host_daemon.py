@@ -26,6 +26,10 @@ class EmployeeWorkerHostDaemonTests(unittest.TestCase):
         self.assertEqual(host.node_id, "oracle-core")
         self.assertTrue(host.runtime_root.is_absolute())
         self.assertTrue(host.wake_root.is_absolute())
+        self.assertEqual(host.runtime_root, (base / "data" / "employee-runtime").resolve())
+        self.assertEqual(host.host_state_root, (base / "data" / "employee-worker-host").resolve())
+        self.assertEqual(host.worker_state_root, (base / "data" / "employee-worker-state").resolve())
+        self.assertNotEqual(host.worker_state_root.parent, host.runtime_root)
 
     def test_build_host_fails_closed_without_wake_root(self):
         with tempfile.TemporaryDirectory() as td:
@@ -38,6 +42,24 @@ class EmployeeWorkerHostDaemonTests(unittest.TestCase):
                 clear=True,
             ):
                 with self.assertRaisesRegex(ValueError, "agentos_employee_wake_root_required"):
+                    build_host()
+
+    def test_build_host_rejects_overlapping_runtime_and_worker_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            runtime = base / "runtime"
+            with patch.dict(
+                os.environ,
+                {
+                    "AGENTOS_EMPLOYEE_RUNTIME_ROOT": str(runtime),
+                    "AGENTOS_EMPLOYEE_WAKE_ROOT": str(base / "wake"),
+                    "AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT": str(base / "host"),
+                    "AGENTOS_EMPLOYEE_WORKER_STATE_ROOT": str(runtime / "worker-state"),
+                    "AGENTOS_EMPLOYEE_WORKER_NODE_ID": "oracle-core",
+                },
+                clear=True,
+            ):
+                with self.assertRaisesRegex(ValueError, "roots_must_not_overlap"):
                     build_host()
 
     def test_singleton_lock_rejects_second_process_owner(self):
