@@ -26,6 +26,7 @@ on:
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/spec_steward_worker.py'
       - 'agentos_node/governed_spec_steward_worker.py'
+      - 'agentos_node/spec_steward_worker_cli.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -51,11 +52,13 @@ on:
       - 'tests/test_spec_steward_acceptance.py'
       - 'tests/test_spec_steward_worker.py'
       - 'tests/test_governed_spec_steward_worker.py'
+      - 'tests/test_spec_steward_worker_cli.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
       - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
       - 'docs/CORE_SUPERVISOR.md'
+      - 'docs/SPEC_STEWARD_O3_LIVE_RUNBOOK.md'
       - '.github/workflows/employee-runtime-guard.yml'
   push:
     branches:
@@ -86,6 +89,7 @@ on:
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/spec_steward_worker.py'
       - 'agentos_node/governed_spec_steward_worker.py'
+      - 'agentos_node/spec_steward_worker_cli.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -111,11 +115,13 @@ on:
       - 'tests/test_spec_steward_acceptance.py'
       - 'tests/test_spec_steward_worker.py'
       - 'tests/test_governed_spec_steward_worker.py'
+      - 'tests/test_spec_steward_worker_cli.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
       - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
       - 'docs/CORE_SUPERVISOR.md'
+      - 'docs/SPEC_STEWARD_O3_LIVE_RUNBOOK.md'
       - '.github/workflows/employee-runtime-guard.yml'
   workflow_dispatch:
 
@@ -173,3 +179,5 @@ jobs:
         run: python -m unittest tests.test_spec_steward_worker -v
       - name: Run governed Spec Steward worker authority regressions
         run: python -m unittest tests.test_governed_spec_steward_worker -v
+      - name: Run Spec Steward worker CLI regressions
+        run: python -m unittest tests.test_spec_steward_worker_cli -v
