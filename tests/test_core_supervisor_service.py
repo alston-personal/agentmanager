@@ -139,7 +139,7 @@ class CoreSupervisorServiceTests(unittest.TestCase):
             "audit-001", "lease-old", "ir:checkpoint", now=T0 + timedelta(seconds=10)
         )
         service = self.service()
-        leader = service.claim_leader(now=T0)
+        leader = service.claim_leader(lease_seconds=60, now=T0)
         receipt = service.run_cycle(leader.generation, now=T0 + timedelta(seconds=31))
         self.assertEqual(receipt.new_intent_count, 1)
         record = json.loads(next(service.intents_dir.glob("reconcile_*.json")).read_text(encoding="utf-8"))
