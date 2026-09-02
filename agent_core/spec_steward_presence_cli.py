@@ -7,7 +7,9 @@ from pathlib import Path
 from agent_core.employee_presence import EmployeePresenceRegistry
 from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.node_registry import NodeRegistry
-from agent_core.spec_steward_worker_contract import SPEC_STEWARD_EMPLOYEE_ID
+
+
+SPEC_STEWARD_EMPLOYEE_ID = "agentos-spec-steward"
 
 
 def _absolute_path(value: str, field: str) -> Path:
