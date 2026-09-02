@@ -1,0 +1,56 @@
+name: Control Inbox Bridge Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/control_inbox_bridge.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - '.agent/scripts/agentos-control-inbox-bridge.service'
+      - 'config/control-inbox.env.example'
+      - 'docs/CONTROL_INBOX_BRIDGE.md'
+      - 'docs/CHATGPT_ONE_TRANSPORT.md'
+      - '.github/workflows/control-inbox-bridge-guard.yml'
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/control_inbox_bridge.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - '.agent/scripts/agentos-control-inbox-bridge.service'
+      - 'config/control-inbox.env.example'
+      - 'docs/CONTROL_INBOX_BRIDGE.md'
+      - 'docs/CHATGPT_ONE_TRANSPORT.md'
+      - '.github/workflows/control-inbox-bridge-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run Control Inbox bridge regressions
+        run: python -m pytest tests/test_control_inbox_bridge.py -q
+      - name: Verify service is secret-free and bounded
+        shell: bash
+        run: |
+          set -euo pipefail
+          unit=.agent/scripts/agentos-control-inbox-bridge.service
+          env_example=config/control-inbox.env.example
+          grep -F 'ExecStart=/usr/bin/python3 -m agent_core.control_inbox_bridge' "$unit"
+          grep -F 'EnvironmentFile=/home/ubuntu/.config/agentos/control-inbox.env' "$unit"
+          grep -F 'AGENTOS_CONTROL_ALLOWED_ACTIONS=' "$env_example"
+          if grep -Eiq '(github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9]+|Bearer[[:space:]]+[A-Za-z0-9._-]+)' "$unit" "$env_example"; then
+            echo 'secret-like literal found in source-controlled runtime contract' >&2
+            exit 1
+          fi

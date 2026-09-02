@@ -1,0 +1,24 @@
+[Unit]
+Description=AgentOS ChatGPT Control Inbox to ONE Bridge
+Documentation=https://github.com/alston-personal/agentmanager/blob/core/integration/docs/CONTROL_INBOX_BRIDGE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/agentmanager
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/ubuntu/.config/agentos/control-inbox.env
+ExecStart=/usr/bin/python3 -m agent_core.control_inbox_bridge
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+# The bridge source/config is read-only at runtime; only its durable claim/result
+# state belongs under agent-data. Secrets stay in the external EnvironmentFile.
+ReadWritePaths=/home/ubuntu/agent-data/runtime/control-inbox
+
+[Install]
+WantedBy=default.target
