@@ -2,6 +2,7 @@ from agent_core.executor_job_contract import canonical_experience_regression_req
 from agentos_node.executor_job_adapter import (
     ExecutorJobProviderRegistry,
     execute_registered_executor_job,
+    run_registered_executor_job,
 )
 
 
@@ -39,30 +40,52 @@ def test_executor_class_mismatch_is_not_routable_or_authorized():
     assert receipt["classification"] == "EXECUTOR_CLASS_MISMATCH"
 
 
-def test_registered_provider_returns_only_sanitized_result_projection():
+def _private_provider_result():
+    return {
+        "experiment_id": "exp-1",
+        "verdict": "PASS",
+        "baseline_score": 0.14,
+        "hydrated_score": 1.0,
+        "uplift": 0.86,
+        "hydration_receipt_ok": True,
+        "credential_exposed": False,
+        "stdout": "private model output",
+        "stderr": "private diagnostics",
+        "prompt": "private prompt",
+        "session_id": "private session",
+        "path": "/home/ubuntu/private",
+        "credential": "must-not-persist",
+    }
+
+
+def _private_registry():
     registry = ExecutorJobProviderRegistry()
     registry.register(
         job_type="experience.regression",
         provider_id="issue117-v1",
         executor_class="openai-codex-local",
-        handler=lambda request: {
-            "experiment_id": "exp-1",
-            "verdict": "PASS",
-            "baseline_score": 0.14,
-            "hydrated_score": 1.0,
-            "uplift": 0.86,
-            "hydration_receipt_ok": True,
-            "credential_exposed": False,
-            "stdout": "private model output",
-            "stderr": "private diagnostics",
-            "prompt": "private prompt",
-            "session_id": "private session",
-        },
+        handler=lambda request: _private_provider_result(),
     )
+    return registry
+
+
+def test_registered_provider_is_sanitized_before_transport_persistence():
+    semantic = run_registered_executor_job(
+        request=canonical_experience_regression_request(),
+        registry=_private_registry(),
+    )
+    assert semantic["successful"] is True
+    assert semantic["credential_exposed"] is False
+    assert semantic["verdict"] == "PASS"
+    for forbidden in ("stdout", "stderr", "prompt", "session_id", "path", "credential"):
+        assert forbidden not in semantic
+
+
+def test_registered_provider_returns_only_sanitized_result_projection():
     receipt = execute_registered_executor_job(
         job_id="job-pass",
         request=canonical_experience_regression_request(),
-        registry=registry,
+        registry=_private_registry(),
     )
     assert receipt["executor_available"] is True
     assert receipt["routable"] is True
@@ -71,7 +94,7 @@ def test_registered_provider_returns_only_sanitized_result_projection():
     assert receipt["verdict"] == "PASS"
     assert receipt["hydration_receipt_ok"] is True
     assert receipt["credential_exposed"] is False
-    for forbidden in ("stdout", "stderr", "prompt", "session_id"):
+    for forbidden in ("stdout", "stderr", "prompt", "session_id", "path", "credential"):
         assert forbidden not in receipt
 
 
