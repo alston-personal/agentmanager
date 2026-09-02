@@ -25,6 +25,7 @@ class ControllerService:
     REQUEST_SCHEMA = 'agentos.controller-dispatch/v0.1'
     RECEIPT_SCHEMA = 'agentos.controller-dispatch-receipt/v0.1'
     EXECUTOR_JOB_ACTION = 'agentos.executor.job'
+    EXECUTOR_JOB_NODE = 'oracle-core-node'
 
     def __init__(self, fabric: RealmFabricStore, executor_job_dispatcher: Any | None = None):
         self.fabric = fabric
@@ -46,17 +47,20 @@ class ControllerService:
             raise ValueError(f'target node is not online: {node_id}')
         return node
 
-    def _dispatch_executor_job(self, *, node_id: str, node: dict[str, Any], payload: Any, passthrough: dict[str, Any]) -> dict[str, Any]:
+    def _dispatch_executor_job(self, *, node_id: str, payload: Any, passthrough: dict[str, Any]) -> dict[str, Any]:
         if passthrough:
             # Unlike the legacy #64 node-task path, executor jobs never accept
             # arbitrary top-level passthrough fields.
             raise ValueError(f'unexpected executor-job controller fields: {sorted(passthrough)}')
         if not isinstance(payload, dict):
             raise ValueError('executor-job payload must be an object')
-        spec = validate_executor_job(payload)
-        advertised = {str(x) for x in (node.get('capabilities') or []) if str(x)}
-        if spec.capability not in advertised:
-            raise ValueError(f'target node does not advertise capability: {spec.capability}')
+        validate_executor_job(payload)
+        if node_id != self.EXECUTOR_JOB_NODE:
+            # The first proving workload has one fixed trusted Node-local route.
+            # Executor availability is deliberately NOT inferred from the Node's
+            # generic capability list; the Action Relay/provider receipt owns
+            # executor_available/routable/authorized/successful independently.
+            raise ValueError(f'executor job is not routable to target node: {node_id}')
         return self._executor_dispatcher().submit(node_id=node_id, request=payload)
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -90,7 +94,6 @@ class ControllerService:
                 raise ValueError('executor-job task_id is relay-owned')
             return self._dispatch_executor_job(
                 node_id=node_id,
-                node=node,
                 payload=payload,
                 passthrough=passthrough,
             )
