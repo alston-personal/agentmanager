@@ -116,7 +116,6 @@ class EmployeeWakeDeliveryTests(unittest.TestCase):
         self.assertTrue(delivered.node_ok)
         self.assertTrue(delivered.node_wake_accepted)
 
-        # Wake delivery does not own execution authority.
         assignment = self.runtime.get_assignment("audit-001")
         self.assertEqual(assignment.state, "pending")
         self.assertIsNone(self.lifecycle.get_lease("audit-001"))
@@ -219,7 +218,7 @@ class EmployeeWakeDeliveryTests(unittest.TestCase):
 
     def test_interrupted_dispatch_record_becomes_unknown_and_is_not_redispatched(self):
         intent = self._intent()
-        path = self.delivery._path(intent.wake_id, 1)  # focused crash-state fixture
+        path = self.delivery._path(intent.wake_id, 1)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
@@ -263,6 +262,29 @@ class EmployeeWakeDeliveryTests(unittest.TestCase):
         state = self.delivery.reconcile(intent.wake_id, queued.presence_generation)
         self.assertEqual(state.status, "failed")
         self.assertFalse(state.node_wake_accepted)
+
+    def test_missing_one_state_fails_before_dispatch_and_creates_no_shadow_store(self):
+        intent = self._intent()
+        missing_root = self.root / "missing-one"
+        registry = NodeRegistry(path=missing_root / "realm" / "nodes.json")
+        fabric = RealmFabricStore(path=missing_root / "realm" / "fabric.json", node_registry=registry)
+        presence = EmployeePresenceRegistry(self.runtime, registry)
+        delivery = EmployeeWakeDelivery(presence, ControllerService(fabric))
+        with self.assertRaisesRegex(RuntimeError, "one_control_plane_state_missing"):
+            delivery.deliver_intent(intent, now=self.now)
+        self.assertFalse(fabric.path.exists())
+        self.assertFalse(registry.path.exists())
+        self.assertEqual(list(delivery.root.rglob("*.json")), [])
+
+    def test_mismatched_one_realm_fails_before_dispatch(self):
+        intent = self._intent()
+        self.node_registry.path.write_text(
+            json.dumps({"schema": "agentos.node-registry/v0.1", "realm_id": "other-realm", "nodes": {}}),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RuntimeError, "one_control_plane_realm_mismatch"):
+            self.delivery.deliver_intent(intent, now=self.now)
+        self.assertEqual(self.fabric.load()["tasks"].get("node-a", []), [])
 
     def test_presence_expiry_and_capability_freshness_fail_closed(self):
         with self.assertRaisesRegex(RuntimeError, "employee_presence_expired"):
