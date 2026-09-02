@@ -1,0 +1,34 @@
+{
+  "schema": "agentos.employee-skills/v1",
+  "default_effect": "deny",
+  "skills": {
+    "spec.audit": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Audit formal specifications for owner, target, implementation evidence, drift and closure gaps.",
+      "required_capabilities": [
+        "governance.spec.audit"
+      ],
+      "allowed_intents": [
+        "audit"
+      ],
+      "input_fields": [
+        "scope",
+        "target_refs"
+      ],
+      "output_types": [
+        "spec_drift_report",
+        "stale_spec_finding",
+        "closure_gap"
+      ],
+      "mutation_authority": false
+    }
+  },
+  "invariants": [
+    "skill_id_never_grants_capability_authority",
+    "employee_role_capabilities_must_cover_all_skill_required_capabilities",
+    "skill_contract_contains_no_executable_argv_shell_url_endpoint_or_credentials",
+    "skill_request_is_intent_only_and_requires_downstream_governed_execution",
+    "unknown_or_inactive_skill_fails_closed"
+  ]
+}

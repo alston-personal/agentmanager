@@ -10,30 +10,36 @@ on:
       - 'agent_core/employee_lifecycle.py'
       - 'agent_core/employee_wake.py'
       - 'agent_core/employee_memory.py'
+      - 'agent_core/employee_skills.py'
       - 'agent_core/role_runtime.py'
       - 'governance/employee-memory-policy.json'
+      - 'governance/employee-skills.json'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
       - 'tests/test_employee_wake.py'
       - 'tests/test_employee_memory.py'
+      - 'tests/test_employee_skills.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.github/workflows/employee-runtime-guard.yml'
   push:
     branches:
-      - core/issue-151-role-memory-policy
+      - core/issue-151-skill-hydration
       - core/integration
     paths:
       - 'agent_core/employee_runtime.py'
       - 'agent_core/employee_lifecycle.py'
       - 'agent_core/employee_wake.py'
       - 'agent_core/employee_memory.py'
+      - 'agent_core/employee_skills.py'
       - 'agent_core/role_runtime.py'
       - 'governance/employee-memory-policy.json'
+      - 'governance/employee-skills.json'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
       - 'tests/test_employee_wake.py'
       - 'tests/test_employee_memory.py'
+      - 'tests/test_employee_skills.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.github/workflows/employee-runtime-guard.yml'
@@ -61,5 +67,7 @@ jobs:
         run: python -m unittest tests.test_employee_wake -v
       - name: Run Employee memory-policy regressions
         run: python -m unittest tests.test_employee_memory -v
+      - name: Run Employee skill-hydration regressions
+        run: python -m unittest tests.test_employee_skills -v
       - name: Run role hydration regressions
         run: python -m unittest tests.test_role_runtime -v
