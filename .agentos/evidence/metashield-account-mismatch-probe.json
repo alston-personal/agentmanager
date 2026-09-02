@@ -1,0 +1,33 @@
+{
+  "extension/background.js": {
+    "hits": [
+      {
+        "line": 481,
+        "function": "restoreFromRecoveryVault",
+        "comparisons": [
+          "decoded.setId !== shareB.setId",
+          "localShare.setId !== shareB.setId",
+          "localShare?.setId === decoded.setId",
+          "ownerUserId !== String",
+          "setId !== setId"
+        ],
+        "identifiers": [
+          "accountId",
+          "decoded.accountId",
+          "decoded.setId",
+          "ownerAddress",
+          "setId"
+        ]
+      }
+    ],
+    "count": 1
+  },
+  "web-feed/app/[wallet_address]/[platform]/page.tsx": {
+    "hits": [],
+    "count": 0
+  },
+  "api/recovery-vault.js": {
+    "hits": [],
+    "count": 0
+  }
+}
