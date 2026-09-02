@@ -20,10 +20,11 @@ def main() -> int:
         raise SystemExit("ERROR: PreInvocation attestation path may not be a symlink")
     if not path.is_file():
         print(json.dumps({
-            "schema": "agentos.antigravity-preinvocation-inspection/v1",
+            "schema": "agentos.antigravity-preinvocation-inspection/v2",
             "ok": False,
             "verdict": "ATTESTATION_MISSING",
             "path": str(path),
+            "mismatch_reasons": ["attestation_missing"],
         }, ensure_ascii=False, indent=2, sort_keys=True))
         return 3
 
@@ -48,23 +49,66 @@ def main() -> int:
     )
     credential_ok = record.get("credential_exposed") is False
 
+    mismatch_reasons: list[str] = []
+    if not hydrated:
+        mismatch_reasons.append("hydration_not_emitted")
+    if record.get("project_id") != "agentos-core":
+        mismatch_reasons.append("project_id_mismatch")
+    if record.get("index_id") != expected_index:
+        mismatch_reasons.append("index_id_mismatch")
+    if record.get("ir_id") != expected_ir:
+        mismatch_reasons.append("ir_id_mismatch")
+    if record.get("selection_source") != "ONE_ACTIVE_CONTINUATION":
+        mismatch_reasons.append("selection_source_mismatch")
+    if record.get("executor_class") != "antigravity-codex":
+        mismatch_reasons.append("executor_class_not_codex")
+    if record.get("executor_identity_bound") is not True:
+        mismatch_reasons.append("executor_identity_unbound")
+    if not credential_ok:
+        mismatch_reasons.append("credential_boundary_not_proven")
+
     if installer_probe:
         verdict = "INSTALLER_PROBE_ONLY"
         ok = False
-    elif hydrated and generation_ok and identity_ok and credential_ok:
-        verdict = "REAL_CODEX_PREINVOCATION_HYDRATED"
-        ok = True
+        rc = 4
     elif record.get("outcome") == "fail-closed":
         verdict = "REAL_PREINVOCATION_FAIL_CLOSED"
         ok = False
+        rc = 4
+    elif hydrated and generation_ok and credential_ok and not identity_ok:
+        # Hydration and state selection are proven even if Antigravity's real
+        # modelName is not descriptive enough to bind the executor class.
+        verdict = "REAL_PREINVOCATION_HYDRATED_IDENTITY_UNBOUND"
+        ok = False
+        rc = 5
+    elif hydrated and not generation_ok:
+        verdict = "REAL_PREINVOCATION_HYDRATED_GENERATION_MISMATCH"
+        ok = False
+        rc = 6
+    elif hydrated and generation_ok and identity_ok and credential_ok:
+        verdict = "REAL_CODEX_PREINVOCATION_HYDRATED"
+        ok = True
+        rc = 0
+    elif record.get("outcome") == "no-injection":
+        verdict = "REAL_PREINVOCATION_NO_INJECTION"
+        ok = False
+        rc = 7
     else:
         verdict = "REAL_PREINVOCATION_UNEXPECTED"
         ok = False
+        rc = 4
 
     safe = {
-        "schema": "agentos.antigravity-preinvocation-inspection/v1",
+        "schema": "agentos.antigravity-preinvocation-inspection/v2",
         "ok": ok,
         "verdict": verdict,
+        "mismatch_reasons": mismatch_reasons,
+        "checks": {
+            "hydrated": hydrated,
+            "generation_ok": generation_ok,
+            "identity_ok": identity_ok,
+            "credential_ok": credential_ok,
+        },
         "recorded_at": record.get("recorded_at"),
         "runtime_source_commit": record.get("runtime_source_commit"),
         "hook_schema": record.get("hook_schema"),
@@ -82,7 +126,7 @@ def main() -> int:
         "credential_exposed": record.get("credential_exposed"),
     }
     print(json.dumps(safe, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if ok else 4
+    return rc
 
 
 if __name__ == "__main__":
