@@ -37,6 +37,7 @@ PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
     tests.test_experience \
     tests.test_experience_store \
     tests.test_experience_mcp_stdio \
+    tests.test_install_codex_experience_mcp_oracle \
     -v
 echo "agentos_issue117_contract_tests=PASS"
 
