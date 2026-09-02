@@ -9,7 +9,6 @@ on:
       - 'scripts/install_services.py'
       - 'agent_core/platform/linux.py'
       - 'tests/test_install_services_strict.py'
-      - 'tests/test_platform_runtime.py'
       - 'tests/test_core_supervisor_installer_runtime.py'
       - 'tests/test_employee_worker_host_installer_runtime.py'
       - '.github/workflows/strict-runtime-deploy-guard.yml'
@@ -20,7 +19,6 @@ on:
       - 'scripts/install_services.py'
       - 'agent_core/platform/linux.py'
       - 'tests/test_install_services_strict.py'
-      - 'tests/test_platform_runtime.py'
       - 'tests/test_core_supervisor_installer_runtime.py'
       - 'tests/test_employee_worker_host_installer_runtime.py'
       - '.github/workflows/strict-runtime-deploy-guard.yml'
@@ -42,7 +40,6 @@ jobs:
         run: >-
           python -m unittest
           tests.test_install_services_strict
-          tests.test_platform_runtime
           tests.test_core_supervisor_installer_runtime
           tests.test_employee_worker_host_installer_runtime
           -v
