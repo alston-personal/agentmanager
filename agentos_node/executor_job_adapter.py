@@ -26,6 +26,12 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "hydration_receipt_ok",
     "classification",
 )
+_PROVIDER_STATE_FIELDS = (
+    "executor_available",
+    "routable",
+    "authorized",
+    "successful",
+)
 
 
 @dataclass(frozen=True)
@@ -98,6 +104,15 @@ def _sanitize_provider_result(raw: Mapping[str, Any]) -> dict[str, Any]:
     return safe
 
 
+def _trusted_provider_state(raw: Mapping[str, Any], key: str, default: bool) -> bool:
+    if key not in raw:
+        return bool(default)
+    value = raw.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"trusted provider state must be boolean: {key}")
+    return value
+
+
 def run_registered_executor_job(
     *,
     request: Mapping[str, Any],
@@ -108,6 +123,11 @@ def run_registered_executor_job(
     This is the Action Relay boundary: providers receive only the validated
     semantic request. They never receive capsule IDs, spool paths, commands,
     credentials, or other transport authority.
+
+    Presence of a provider implementation does not imply that its executor is
+    currently available. A trusted provider may therefore report the four state
+    dimensions explicitly; model input can never set those values because it
+    cannot register or control the provider callable.
     """
     spec = validate_executor_job(request)
     binding = registry.get(spec.job_type)
@@ -143,12 +163,33 @@ def run_registered_executor_job(
         )
 
     result = _sanitize_provider_result(raw)
-    result["executor_available"] = True
-    result["routable"] = True
-    result["authorized"] = True
-    result["successful"] = result.get("verdict") == "PASS" and raw.get("credential_exposed") is not True
+    try:
+        executor_available = _trusted_provider_state(raw, "executor_available", True)
+        routable = _trusted_provider_state(raw, "routable", True)
+        authorized = _trusted_provider_state(raw, "authorized", True)
+        default_success = result.get("verdict") == "PASS" and raw.get("credential_exposed") is not True
+        successful = _trusted_provider_state(raw, "successful", default_success)
+    except ValueError:
+        return _semantic_failure(
+            "PROVIDER_STATE_INVALID",
+            executor_available=True,
+            routable=True,
+            authorized=True,
+        )
+
+    # An explicit credential-boundary violation can never be successful even if
+    # a faulty trusted provider reports otherwise. The unsafe value itself is
+    # not persisted or projected.
+    if raw.get("credential_exposed") is True:
+        successful = False
+        result["classification"] = "PROVIDER_CREDENTIAL_BOUNDARY_VIOLATION"
+
+    result["executor_available"] = executor_available
+    result["routable"] = routable
+    result["authorized"] = authorized
+    result["successful"] = successful
     result["credential_exposed"] = False
-    result["ok"] = bool(result["successful"])
+    result["ok"] = bool(successful)
     return result
 
 
