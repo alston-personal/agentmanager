@@ -2,7 +2,7 @@
 
 The adapter separates the generic ONE job transport from workload ownership.
 Core owns validation/routing semantics; issue-specific providers register a fixed
-callable under a known job type.  No caller-supplied command, argv, path, module,
+callable under a known job type. No caller-supplied command, argv, path, module,
 or executable can influence provider selection.
 """
 from __future__ import annotations
@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from agent_core.executor_job_contract import (
-    ExecutorJobContractError,
     JobTypeSpec,
     project_executor_job_receipt,
     validate_executor_job,
@@ -64,25 +63,70 @@ class ExecutorJobProviderRegistry:
 DEFAULT_PROVIDERS = ExecutorJobProviderRegistry()
 
 
-def _failure_receipt(
+def _semantic_failure(classification: str, *, executor_available: bool, routable: bool, authorized: bool) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "executor_available": bool(executor_available),
+        "routable": bool(routable),
+        "authorized": bool(authorized),
+        "successful": False,
+        "classification": classification,
+        "credential_exposed": False,
+    }
+
+
+def run_registered_executor_job(
     *,
-    job_id: str,
     request: Mapping[str, Any],
-    spec: JobTypeSpec,
-    executor_available: bool,
-    routable: bool,
-    authorized: bool,
-    classification: str,
+    registry: ExecutorJobProviderRegistry = DEFAULT_PROVIDERS,
 ) -> dict[str, Any]:
-    return project_executor_job_receipt(
-        job_id=job_id,
-        request=request,
-        executor_available=executor_available,
-        routable=routable,
-        authorized=authorized,
-        successful=False,
-        result={"classification": classification},
-    )
+    """Run one trusted semantic provider without knowing the transport job ID.
+
+    This is the Action Relay boundary: providers receive only the validated
+    semantic request. They never receive capsule IDs, spool paths, commands,
+    credentials, or other transport authority.
+    """
+    spec = validate_executor_job(request)
+    binding = registry.get(spec.job_type)
+    if binding is None:
+        return _semantic_failure(
+            "JOB_IMPLEMENTATION_UNAVAILABLE",
+            executor_available=False,
+            routable=False,
+            authorized=False,
+        )
+    if binding.executor_class != spec.executor_class:
+        return _semantic_failure(
+            "EXECUTOR_CLASS_MISMATCH",
+            executor_available=True,
+            routable=False,
+            authorized=False,
+        )
+    try:
+        raw = binding.handler(request)
+    except Exception as exc:
+        return _semantic_failure(
+            f"PROVIDER_ERROR_{type(exc).__name__.upper()}",
+            executor_available=True,
+            routable=True,
+            authorized=True,
+        )
+    if not isinstance(raw, Mapping):
+        return _semantic_failure(
+            "PROVIDER_RESULT_INVALID",
+            executor_available=True,
+            routable=True,
+            authorized=True,
+        )
+
+    result = dict(raw)
+    result["executor_available"] = True
+    result["routable"] = True
+    result["authorized"] = True
+    result["successful"] = result.get("verdict") == "PASS" and result.get("credential_exposed") is not True
+    result["credential_exposed"] = False
+    result["ok"] = bool(result["successful"])
+    return result
 
 
 def execute_registered_executor_job(
@@ -91,66 +135,14 @@ def execute_registered_executor_job(
     request: Mapping[str, Any],
     registry: ExecutorJobProviderRegistry = DEFAULT_PROVIDERS,
 ) -> dict[str, Any]:
-    """Execute exactly one registered provider and return a sanitized receipt.
-
-    Availability, routability, authorization, and success remain independent.
-    A missing provider is a normal bounded failure, never a shell fallback.
-    """
-    spec = validate_executor_job(request)
-    binding = registry.get(spec.job_type)
-    if binding is None:
-        return _failure_receipt(
-            job_id=job_id,
-            request=request,
-            spec=spec,
-            executor_available=False,
-            routable=False,
-            authorized=False,
-            classification="JOB_IMPLEMENTATION_UNAVAILABLE",
-        )
-    if binding.executor_class != spec.executor_class:
-        return _failure_receipt(
-            job_id=job_id,
-            request=request,
-            spec=spec,
-            executor_available=True,
-            routable=False,
-            authorized=False,
-            classification="EXECUTOR_CLASS_MISMATCH",
-        )
-
-    try:
-        raw = binding.handler(request)
-    except Exception as exc:
-        # Do not project exception text: it may include provider-local paths,
-        # model/session details, or other implementation-private material.
-        return _failure_receipt(
-            job_id=job_id,
-            request=request,
-            spec=spec,
-            executor_available=True,
-            routable=True,
-            authorized=True,
-            classification=f"PROVIDER_ERROR_{type(exc).__name__.upper()}",
-        )
-    if not isinstance(raw, Mapping):
-        return _failure_receipt(
-            job_id=job_id,
-            request=request,
-            spec=spec,
-            executor_available=True,
-            routable=True,
-            authorized=True,
-            classification="PROVIDER_RESULT_INVALID",
-        )
-
-    successful = raw.get("verdict") == "PASS" and raw.get("credential_exposed") is not True
+    """Compatibility wrapper that projects a formal transport receipt."""
+    semantic = run_registered_executor_job(request=request, registry=registry)
     return project_executor_job_receipt(
         job_id=job_id,
         request=request,
-        executor_available=True,
-        routable=True,
-        authorized=True,
-        successful=successful,
-        result=raw,
+        executor_available=bool(semantic.get("executor_available")),
+        routable=bool(semantic.get("routable")),
+        authorized=bool(semantic.get("authorized")),
+        successful=bool(semantic.get("successful")),
+        result=semantic,
     )
