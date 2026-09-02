@@ -91,7 +91,8 @@ class EmployeeWakeDelivery:
     This layer does not re-plan work. Its input is the exact wake intent already
     selected/journaled by Core. Delivery is scoped by Employee presence generation.
     A crash after persisting `dispatching` is UNKNOWN and is not blindly retried to
-    that same presence generation.
+    that same presence generation. Delivery also refuses to initialize missing ONE
+    state: fabric and Node Registry must already exist and identify the same Realm.
     """
 
     def __init__(self, presence: EmployeePresenceRegistry, controller: ControllerService) -> None:
@@ -106,6 +107,20 @@ class EmployeeWakeDelivery:
         payload = _read(self._path(wake_id, presence_generation))
         return EmployeeWakeDeliveryState(**payload) if payload else None
 
+    def _require_existing_one_control_plane(self) -> None:
+        fabric = self.controller.fabric
+        registry = fabric.node_registry
+        fabric_path = Path(fabric.path)
+        registry_path = Path(registry.path)
+        if not fabric_path.is_file() or not registry_path.is_file():
+            raise RuntimeError("one_control_plane_state_missing")
+        fabric_state = fabric.load()
+        registry_state = registry.load()
+        fabric_realm = str(fabric_state.get("realm_id") or "")
+        registry_realm = str(registry_state.get("realm_id") or "")
+        if not fabric_realm or not registry_realm or fabric_realm != registry_realm:
+            raise RuntimeError("one_control_plane_realm_mismatch")
+
     def deliver_intent(
         self,
         intent: EmployeeWakeIntent,
@@ -115,6 +130,7 @@ class EmployeeWakeDelivery:
         if not isinstance(intent, EmployeeWakeIntent):
             raise TypeError("employee_wake_intent_type_required")
         current = now or _utcnow()
+        self._require_existing_one_control_plane()
         route = self.presence.resolve(intent.employee_id, now=current)
         path = self._path(intent.wake_id, route.generation)
         existing = _read(path)
