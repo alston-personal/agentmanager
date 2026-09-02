@@ -37,5 +37,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run ONE MCP safety regressions
-        run: python -m unittest tests.test_one_mcp -v
+      - name: Run ONE MCP and PreInvocation safety regressions
+        run: |
+          python -m unittest tests.test_one_mcp -v
+          python -m unittest tests.test_antigravity_one_hook -v
