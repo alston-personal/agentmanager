@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.active_continuation import read_active_continuation
-from agentos_node.one_mcp import OracleLocalGateway
+from agentos_node.one_mcp import OneGatewayError, OracleLocalGateway
 
 HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.6"
 AUDIT_SCHEMA = "agentos.antigravity-preinvocation-attestation/v1"
@@ -31,6 +31,20 @@ def _executor_identity(model_name: Any) -> tuple[str, bool]:
     if "gemini" in normalized:
         return "antigravity-gemini", True
     return "antigravity-unknown", False
+
+
+def _safe_failure_code(exc: Exception) -> str:
+    """Map failures to bounded model-visible codes without echoing details."""
+    if isinstance(exc, OneGatewayError):
+        value = str(exc).strip()
+        return value[:96] if value else "one_gateway_error"
+    if isinstance(exc, (FileNotFoundError, KeyError)):
+        return "one_hydration_state_missing"
+    if isinstance(exc, ValueError):
+        return "one_hydration_validation_failed"
+    if isinstance(exc, RuntimeError):
+        return "one_hydration_runtime_failed"
+    return "one_hydration_internal_error"
 
 
 def _canonical_ir_from_resolution(
@@ -275,15 +289,16 @@ def main() -> int:
             _write_attestation(payload, None, outcome="fail-closed")
         except Exception:
             pass
+        code = _safe_failure_code(exc)
         output = {
             "injectSteps": [
                 {
                     "ephemeralMessage": (
                         "ONE_IR_HEAD_UNRESOLVED: AgentOS canonical IR hydration "
-                        f"failed: {type(exc).__name__}: {exc}. Do not claim or "
-                        "reconstruct AgentOS continuation from workspace lists, "
-                        "Pulse, PM2, local memory, or vendor history. Ask for/restore "
-                        "the ONE active continuation selector/canonical IR head instead."
+                        f"failed (code={code}). Do not claim or reconstruct AgentOS "
+                        "continuation from workspace lists, Pulse, PM2, local memory, "
+                        "or vendor history. Ask for/restore the ONE active continuation "
+                        "selector/canonical IR head instead."
                     )
                 }
             ]
