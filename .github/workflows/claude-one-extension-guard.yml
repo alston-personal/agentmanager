@@ -10,6 +10,9 @@ on:
     paths:
       - 'agentos_node/claude_one_mcp_stdio.py'
       - 'scripts/install_claude_one_oracle.py'
+      - 'scripts/advance_issue_185_to_claude_extension.py'
+      - 'scripts/prepare_issue_185_claude_extension_oracle.sh'
+      - 'scripts/inspect_issue_185_claude_extension.sh'
       - 'tests/test_claude_one_mcp_stdio.py'
       - 'tests/test_install_claude_one_oracle.py'
       - '.github/workflows/claude-one-extension-guard.yml'
@@ -30,8 +33,13 @@ jobs:
           python -m py_compile \
             agentos_node/claude_one_mcp_stdio.py \
             scripts/install_claude_one_oracle.py \
+            scripts/advance_issue_185_to_claude_extension.py \
             tests/test_claude_one_mcp_stdio.py \
             tests/test_install_claude_one_oracle.py
+      - name: Validate shell helpers
+        run: |
+          bash -n scripts/prepare_issue_185_claude_extension_oracle.sh
+          bash -n scripts/inspect_issue_185_claude_extension.sh
       - name: Run Claude ONE contract tests
         run: |
           python -m unittest -v \
