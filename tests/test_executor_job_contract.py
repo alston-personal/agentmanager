@@ -72,7 +72,7 @@ def test_unknown_job_type_fails_closed():
 def test_receipt_keeps_availability_routing_authority_and_success_independent():
     request = canonical_experience_regression_request()
     receipt = project_executor_job_receipt(
-        job_id="job-1",
+        job_id="job-12345678",
         request=request,
         executor_available=True,
         routable=False,
