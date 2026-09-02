@@ -1,0 +1,36 @@
+name: Node Employee Wake Policy Guard
+
+on:
+  push:
+    branches:
+      - core/issue-152-live-employee-wake-policy
+      - core/integration
+    paths:
+      - 'agentos_node/client_cli.py'
+      - 'agentos_node/thin_client.py'
+      - 'tests/test_client_employee_wake_policy.py'
+      - 'tests/test_thin_client.py'
+      - '.github/workflows/node-employee-wake-policy-guard.yml'
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/client_cli.py'
+      - 'agentos_node/thin_client.py'
+      - 'tests/test_client_employee_wake_policy.py'
+      - 'tests/test_thin_client.py'
+      - '.github/workflows/node-employee-wake-policy-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  node-wake-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Node wake policy and ThinClient regressions
+        run: python -m unittest tests.test_client_employee_wake_policy tests.test_thin_client -v

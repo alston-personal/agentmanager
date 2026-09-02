@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import socket
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -56,25 +57,47 @@ def _default_policy() -> Path:
     return Path.home() / '.agentos' / 'policy.json'
 
 
+def _absolute_policy_path(value: str | Path, field: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f'{field}_must_be_absolute')
+    return path.resolve()
+
+
 def _load_policy(path: Path) -> ThinClientPolicy:
     if not path.exists():
         raise FileNotFoundError(f'policy file not found: {path}; run `agentos-client policy-init` first')
     data = json.loads(path.read_text(encoding='utf-8-sig'))
+    if not isinstance(data, dict):
+        raise ValueError('client_policy_must_be_object')
+    wake_raw = data.get('employee_wake_root')
+    if wake_raw is not None and not isinstance(wake_raw, str):
+        raise ValueError('employee_wake_root_must_be_string_or_null')
+    wake_root = None if wake_raw in (None, '') else _absolute_policy_path(wake_raw, 'employee_wake_root')
     return ThinClientPolicy(
         allowed_executables=set(data.get('allowed_executables') or []),
         readable_roots=tuple(Path(p) for p in (data.get('readable_roots') or [])),
         writable_roots=tuple(Path(p) for p in (data.get('writable_roots') or [])),
+        employee_wake_root=wake_root,
         max_timeout_seconds=int(data.get('max_timeout_seconds') or 300),
     )
 
 
-def _save_default_policy(path: Path, root: str | None = None) -> None:
+def _save_default_policy(
+    path: Path,
+    root: str | None = None,
+    employee_wake_root: str | Path | None = None,
+) -> None:
     workspace = str(Path(root or Path.home() / 'AgentOS').expanduser().resolve())
+    wake_root = None
+    if employee_wake_root is not None and str(employee_wake_root) != '':
+        wake_root = str(_absolute_policy_path(str(employee_wake_root), 'employee_wake_root'))
     payload = {
         'schema': 'agentos.client-policy/v0.1',
         'allowed_executables': ['git', 'python', 'python.exe', 'python3', 'powershell', 'powershell.exe', 'pwsh', 'cmd', 'cmd.exe'],
         'readable_roots': [workspace],
         'writable_roots': [workspace],
+        'employee_wake_root': wake_root,
         'max_timeout_seconds': 120,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +105,7 @@ def _save_default_policy(path: Path, root: str | None = None) -> None:
     print(path)
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='agentos-client')
     parser.add_argument('--config', type=Path, default=_default_config())
     parser.add_argument('--policy', type=Path, default=_default_policy())
@@ -90,6 +113,10 @@ def main() -> int:
 
     p_policy = sub.add_parser('policy-init', help='create a conservative local execution policy')
     p_policy.add_argument('--root', help='workspace root ONE may read/write')
+    p_policy.add_argument(
+        '--employee-wake-root',
+        help='absolute local inbox root for governed Employee wake delivery; omitted means capability disabled',
+    )
 
     p_join = sub.add_parser('join', help='join Realm, install lifecycle supervisor, bootstrap inherited cognition, run regression, become ready')
     p_join.add_argument('--one', required=True, help='ONE base URL')
@@ -109,11 +136,18 @@ def main() -> int:
     sub.add_parser('verify', help='verify an already-enrolled Node including lifecycle supervisor and persist regression evidence')
     sub.add_parser('once', help='heartbeat, refresh discovery, pull tasks once, execute, return receipts')
     sub.add_parser('run', help='run persistent polling daemon')
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     if args.command == 'policy-init':
-        _save_default_policy(args.policy, args.root)
+        try:
+            _save_default_policy(args.policy, args.root, args.employee_wake_root)
+        except ValueError as exc:
+            print(f'error: {exc}', file=sys.stderr)
+            return 2
         return 0
 
     policy = _load_policy(args.policy)
