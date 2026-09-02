@@ -1,0 +1,35 @@
+name: Core Worker Graph Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+      - main
+    paths:
+      - 'governance/core-workers.json'
+      - 'tests/test_core_workers_graph.py'
+      - '.github/workflows/core-worker-graph-guard.yml'
+  push:
+    branches:
+      - core/worker-graph-refresh-197
+      - core/integration
+    paths:
+      - 'governance/core-workers.json'
+      - 'tests/test_core_workers_graph.py'
+      - '.github/workflows/core-worker-graph-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-graph:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Parse and validate Core worker graph
+        run: python -m unittest tests.test_core_workers_graph -v
