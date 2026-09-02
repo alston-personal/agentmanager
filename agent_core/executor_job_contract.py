@@ -1,16 +1,19 @@
 """Governed bounded executor-job contract for AgentOS ONE.
 
-This is deliberately not a remote shell contract.  A caller selects only a
-registered job type plus its bounded semantic inputs.  Node-local adapters own
-the executable mapping and credentials.
+This is deliberately not a remote shell contract. A caller selects only a
+registered job type plus its bounded semantic inputs. Node-local adapters own
+the executable mapping and credentials. Long-running executor work is submitted
+as an asynchronous job and observed later through an opaque job identifier.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Mapping
 
 
 EXECUTOR_JOB_SCHEMA = "agentos.executor-job/v1"
+EXECUTOR_JOB_SUBMISSION_SCHEMA = "agentos.executor-job-submission/v1"
 EXECUTOR_JOB_RECEIPT_SCHEMA = "agentos.executor-job-receipt/v1"
 
 FORBIDDEN_REQUEST_KEYS = {
@@ -20,8 +23,10 @@ FORBIDDEN_REQUEST_KEYS = {
     "script",
     "argv",
     "executable",
+    "binary",
     "cwd",
     "path",
+    "paths",
     "env",
     "environment",
     "token",
@@ -30,6 +35,12 @@ FORBIDDEN_REQUEST_KEYS = {
     "secret",
     "password",
 }
+
+# Opaque identifiers may cross the control plane, but path-like or URL-like
+# values may not. The format is intentionally transport-neutral; Oracle's
+# Action Relay currently produces ``action-<uuidhex>`` while another Node may
+# use a different safe prefix.
+_OPAQUE_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}\Z")
 
 
 class ExecutorJobContractError(ValueError):
@@ -109,6 +120,14 @@ def validate_executor_job(request: Mapping[str, Any]) -> JobTypeSpec:
     return spec
 
 
+def validate_executor_job_id(job_id: str) -> str:
+    """Validate an opaque durable identifier without accepting filesystem input."""
+    value = str(job_id or "").strip()
+    if not _OPAQUE_JOB_ID.fullmatch(value):
+        raise ExecutorJobContractError("job_id must be an opaque non-path identifier")
+    return value
+
+
 def canonical_experience_regression_request() -> dict[str, str]:
     spec = JOB_TYPES["experience.regression"]
     return {
@@ -118,6 +137,34 @@ def canonical_experience_regression_request() -> dict[str, str]:
         "executor_class": spec.executor_class,
         "workload_ref": spec.workload_ref,
         "authority": spec.authority,
+    }
+
+
+def project_executor_job_submission(
+    *,
+    job_id: str,
+    node_id: str,
+    request: Mapping[str, Any],
+    reused: bool = False,
+) -> dict[str, Any]:
+    """Project the asynchronous acknowledgement returned before execution ends."""
+    spec = validate_executor_job(request)
+    job_id = validate_executor_job_id(job_id)
+    node_id = str(node_id or "").strip()
+    if not node_id:
+        raise ExecutorJobContractError("node_id is required")
+    return {
+        "schema": EXECUTOR_JOB_SUBMISSION_SCHEMA,
+        "ok": True,
+        "state": "queued",
+        "job_id": job_id,
+        "node_id": node_id,
+        "job_type": spec.job_type,
+        "project_id": spec.project_id,
+        "executor_class": spec.executor_class,
+        "capability": spec.capability,
+        "reused": bool(reused),
+        "credential_exposed": False,
     }
 
 
@@ -133,8 +180,7 @@ def project_executor_job_receipt(
 ) -> dict[str, Any]:
     """Create the bounded model-visible result; never infer one state from another."""
     spec = validate_executor_job(request)
-    if not job_id:
-        raise ExecutorJobContractError("job_id is required")
+    job_id = validate_executor_job_id(job_id)
     summary: dict[str, Any] = {
         "schema": EXECUTOR_JOB_RECEIPT_SCHEMA,
         "job_id": job_id,
