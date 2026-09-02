@@ -132,6 +132,7 @@ class RealmEmployeeMessage:
     state: str = "queued"
     delivery_generation: int = 0
     active_claim_id: str | None = None
+    active_claimed_at: str | None = None
     active_claim_expires_at: str | None = None
     acknowledged_at: str | None = None
     receipt_id: str | None = None
@@ -173,15 +174,15 @@ class RealmEmployeeMessageReceipt:
 class EmployeeRealmMailbox:
     """ONE/Core-resident durable mailbox addressed by Employee identity.
 
-    The mailbox is deliberately independent of Node/model/session location.  A
+    The mailbox is deliberately independent of Node/model/session location. A
     message remains in ONE until a worker that currently owns an assignment for
-    the recipient Employee claims and acknowledges it.  This module chooses no
+    the recipient Employee claims and acknowledges it. This module chooses no
     Node, executor, external transport or capability carrier.
     """
 
     def __init__(self, lifecycle: EmployeeLifecycle) -> None:
         self.lifecycle = lifecycle
-        self.root = lifecycle.root / "realm" / "employee-mailbox"
+        self.root = lifecycle.runtime.root / "realm" / "employee-mailbox"
         self.messages_dir = self.root / "messages"
         self.receipts_dir = self.root / "receipts"
 
@@ -344,7 +345,7 @@ class EmployeeRealmMailbox:
                         recipient_employee_id=recipient_employee_id,
                         recipient_assignment_id=recipient_assignment_id,
                         delivery_generation=message.delivery_generation,
-                        claimed_at=payload.get("active_claimed_at") or _iso(current),
+                        claimed_at=message.active_claimed_at or _iso(current),
                         expires_at=message.active_claim_expires_at or _iso(current),
                         redelivery_required=message.delivery_generation > 1,
                         prior_delivery_state="unknown" if message.delivery_generation > 1 else "known",
@@ -410,11 +411,7 @@ class EmployeeRealmMailbox:
         payload = _read(path)
         if payload is None:
             raise FileNotFoundError(message_id)
-        message = RealmEmployeeMessage(**{
-            key: value
-            for key, value in payload.items()
-            if key in RealmEmployeeMessage.__dataclass_fields__
-        })
+        message = RealmEmployeeMessage(**payload)
         if message.recipient_employee_id != recipient_employee_id:
             raise PermissionError("employee_message_recipient_mismatch")
         if message.state == "acknowledged":
