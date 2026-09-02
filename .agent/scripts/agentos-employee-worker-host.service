@@ -1,0 +1,21 @@
+[Unit]
+Description=AgentOS Shared Employee Worker Host
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/.config/agentos/employee-worker-host.env
+ExecStart=/usr/bin/python3 -m agentos_node.employee_worker_host_daemon
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/ubuntu/agent-data/employee-wake-inbox
+ReadWritePaths=/home/ubuntu/agent-data/employee-runtime /home/ubuntu/agent-data/employee-worker-host /home/ubuntu/agent-data/employee-worker-state
+
+[Install]
+WantedBy=default.target
