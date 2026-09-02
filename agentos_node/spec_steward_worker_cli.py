@@ -27,6 +27,16 @@ def _worker_state_root(value: str) -> str:
     return _absolute_path(value, "worker_state_root")
 
 
+def _presence_generation(value: str) -> int:
+    try:
+        generation = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("presence_generation_must_be_integer") from exc
+    if generation < 1:
+        raise argparse.ArgumentTypeError("presence_generation_must_be_positive")
+    return generation
+
+
 def _safe_output(state: Any) -> dict[str, Any]:
     if state is None:
         return {
@@ -43,6 +53,8 @@ def _safe_output(state: Any) -> dict[str, Any]:
         "work_performed": state.status in {"checkpointed", "completed", "unknown"},
         "employee_id": state.employee_id,
         "assignment_id": state.assignment_id,
+        "wake_id": getattr(state, "wake_id", None),
+        "presence_generation": getattr(state, "presence_generation", None),
         "lease_generation": state.lease_generation,
         "thread_head": state.thread_head,
         "error_code": state.error_code,
@@ -64,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker-state-root", required=True, type=_worker_state_root)
     parser.add_argument("--node-id", required=True)
     parser.add_argument("--lease-seconds", type=int, default=60)
+    parser.add_argument("--wake-id", help="Optional exact persisted wake selector; must be paired with --presence-generation.")
+    parser.add_argument("--presence-generation", type=_presence_generation)
     parser.add_argument(
         "--once",
         action="store_true",
@@ -75,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    exact_requested = bool(args.wake_id) or args.presence_generation is not None
+    if exact_requested and (not args.wake_id or args.presence_generation is None):
+        raise SystemExit("--wake-id and --presence-generation must be provided together")
+
     worker = GovernedSpecStewardWakeWorker(
         runtime_root=args.runtime_root,
         wake_root=args.wake_root,
@@ -82,7 +100,13 @@ def main(argv: list[str] | None = None) -> int:
         node_id=args.node_id,
         lease_seconds=args.lease_seconds,
     )
-    state = worker.process_one()
+    if exact_requested:
+        state = worker.process_exact(
+            wake_id=args.wake_id,
+            presence_generation=args.presence_generation,
+        )
+    else:
+        state = worker.process_one()
     print(json.dumps(_safe_output(state), ensure_ascii=False, sort_keys=True))
     if state is None or state.status in {"checkpointed", "completed"}:
         return 0

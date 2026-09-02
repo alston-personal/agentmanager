@@ -1,0 +1,72 @@
+name: Employee Worker Host Guard
+
+on:
+  push:
+    branches:
+      - core/issue-152-employee-worker-host
+      - core/integration
+    paths:
+      - 'agentos_node/employee_worker_host.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'agentos_node/employee_worker_host_daemon.py'
+      - 'agentos_node/governed_spec_steward_worker.py'
+      - 'agentos_node/spec_steward_worker_cli.py'
+      - 'governance/employee-worker-adapters.json'
+      - '.agent/scripts/agentos-employee-worker-host.service'
+      - '.agent/scripts/agentos-employee-worker-host.env.example'
+      - 'scripts/install_systemd_user.sh'
+      - 'docs/EMPLOYEE_WORKER_HOST.md'
+      - 'tests/test_employee_worker_host.py'
+      - 'tests/test_employee_worker_host_daemon.py'
+      - 'tests/test_employee_worker_host_assets.py'
+      - 'tests/test_employee_worker_host_installer_runtime.py'
+      - 'tests/test_governed_spec_steward_worker_exact.py'
+      - '.github/workflows/employee-worker-host-guard.yml'
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/employee_worker_host.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'agentos_node/employee_worker_host_daemon.py'
+      - 'agentos_node/governed_spec_steward_worker.py'
+      - 'agentos_node/spec_steward_worker_cli.py'
+      - 'governance/employee-worker-adapters.json'
+      - '.agent/scripts/agentos-employee-worker-host.service'
+      - '.agent/scripts/agentos-employee-worker-host.env.example'
+      - 'scripts/install_systemd_user.sh'
+      - 'docs/EMPLOYEE_WORKER_HOST.md'
+      - 'tests/test_employee_worker_host.py'
+      - 'tests/test_employee_worker_host_daemon.py'
+      - 'tests/test_employee_worker_host_assets.py'
+      - 'tests/test_employee_worker_host_installer_runtime.py'
+      - 'tests/test_governed_spec_steward_worker_exact.py'
+      - '.github/workflows/employee-worker-host-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  worker-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install role parser dependency
+        run: python -m pip install --disable-pip-version-check PyYAML
+      - name: Validate installer shell syntax
+        run: bash -n scripts/install_systemd_user.sh
+      - name: Run shared worker host regressions
+        run: >-
+          python -m unittest
+          tests.test_employee_worker_host
+          tests.test_employee_worker_host_daemon
+          tests.test_employee_worker_host_assets
+          tests.test_employee_worker_host_installer_runtime
+          tests.test_governed_spec_steward_worker_exact
+          tests.test_governed_spec_steward_worker
+          tests.test_spec_steward_worker_cli
+          tests.test_core_supervisor_installer_runtime
+          -v
