@@ -136,6 +136,13 @@ class GovernedSpecStewardWorkerTests(unittest.TestCase):
         self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
         self.assertEqual(self.runtime.get_assignment(ASSIGNMENT_ID).state, "pending")
 
+    def test_merely_queued_delivery_cannot_authorize_local_capsule(self):
+        self._record_delivery("reconcile_queued", status="queued")
+        with self.assertRaisesRegex(PermissionError, "governed_delivery_missing"):
+            self._worker().process_one(now=T0)
+        self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
+        self.assertEqual(self.runtime.get_assignment(ASSIGNMENT_ID).state, "pending")
+
     def test_actions_like_transport_cannot_authorize_worker(self):
         self._record_delivery("reconcile_actions", transport="github_actions")
         with self.assertRaisesRegex(PermissionError, "governed_delivery_missing"):
@@ -148,8 +155,8 @@ class GovernedSpecStewardWorkerTests(unittest.TestCase):
             self._worker().process_one(now=T0)
         self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
 
-    def test_exact_s4_delivery_allows_bounded_worker_claim(self):
-        self._record_delivery("reconcile_exact")
+    def test_exact_node_acknowledged_s4_delivery_allows_bounded_worker_claim(self):
+        self._record_delivery("reconcile_exact", status="awaiting_claim")
         state = self._worker().process_one(now=T0)
         self.assertEqual(state.status, "checkpointed")
         self.assertEqual(state.lease_generation, 1)
