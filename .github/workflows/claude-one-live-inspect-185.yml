@@ -1,0 +1,24 @@
+name: Claude Extension ONE Live Inspect #185
+
+on:
+  push:
+    branches:
+      - core/issue-185-claude-extension-one
+    paths:
+      - '.agentos/acceptance/issue-185-claude-inspect-request.json'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect independent Claude extension ONE receipt
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+        run: |
+          set -euo pipefail
+          bash scripts/inspect_issue_185_claude_extension.sh
