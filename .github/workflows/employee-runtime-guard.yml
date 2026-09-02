@@ -15,6 +15,7 @@ on:
       - 'agent_core/employee_realm_mailbox.py'
       - 'agent_core/core_supervisor.py'
       - 'agent_core/core_work_items.py'
+      - 'agent_core/core_supervisor_service.py'
       - 'agent_core/role_runtime.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -27,12 +28,13 @@ on:
       - 'tests/test_employee_realm_mailbox.py'
       - 'tests/test_core_supervisor.py'
       - 'tests/test_core_work_items.py'
+      - 'tests/test_core_supervisor_service.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.github/workflows/employee-runtime-guard.yml'
   push:
     branches:
-      - core/issue-200-work-item-intake
+      - core/issue-200-persistent-supervisor-loop
       - core/integration
     paths:
       - 'agent_core/employee_runtime.py'
@@ -44,6 +46,7 @@ on:
       - 'agent_core/employee_realm_mailbox.py'
       - 'agent_core/core_supervisor.py'
       - 'agent_core/core_work_items.py'
+      - 'agent_core/core_supervisor_service.py'
       - 'agent_core/role_runtime.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -56,6 +59,7 @@ on:
       - 'tests/test_employee_realm_mailbox.py'
       - 'tests/test_core_supervisor.py'
       - 'tests/test_core_work_items.py'
+      - 'tests/test_core_supervisor_service.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.github/workflows/employee-runtime-guard.yml'
@@ -93,5 +97,7 @@ jobs:
         run: python -m unittest tests.test_core_supervisor -v
       - name: Run Core WorkItem intake regressions
         run: python -m unittest tests.test_core_work_items -v
+      - name: Run persistent Core Supervisor service regressions
+        run: python -m unittest tests.test_core_supervisor_service -v
       - name: Run role hydration regressions
         run: python -m unittest tests.test_role_runtime -v
