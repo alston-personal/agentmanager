@@ -1,6 +1,6 @@
 {
   "schema": "agentos.product-deployment-carriers/v0",
-  "generated_at": "2026-08-31T06:36:00Z",
+  "generated_at": "2026-09-02T03:23:00Z",
   "umbrella_issue": 118,
   "worker_issue": 175,
   "invariants": [
@@ -67,6 +67,23 @@
     },
     {
       "project_id": "layoutlib",
+      "workflow": ".github/workflows/oracle-integrate-layoutlab-official-site.yml",
+      "classification": "legacy_product_integration_carrier_validation_noise_observed",
+      "runtime_effect": "intended product integration/deployment carrier; no job started in observed run",
+      "trigger": "workflow_dispatch + push paths including workflow and Layout Lab integration script",
+      "generic_core_trigger_risk": false,
+      "observed_run": 33456886112,
+      "observed_conclusion": "failure",
+      "observed_jobs": 0,
+      "observed_runner_claim": false,
+      "observed_privileged_execution": false,
+      "observed_runtime_side_effect": "none_from_this_run",
+      "transport_routing_evidence": false,
+      "safe_immediate_action": "classify/fence under #175 without treating jobs=0 validation noise as a deploy or as ChatGPT control-plane carrier selection; preserve unique product semantics until replacement parity",
+      "retire_owner": "agentos-core#175 + agentos-core#96 + alston-personal/layoutlib#2"
+    },
+    {
+      "project_id": "layoutlib",
       "workflow": ".github/workflows/oracle-release-layoutlab-v07.yml",
       "classification": "retired_positive_pattern",
       "runtime_effect": "none; canonical-source notice only",
@@ -103,6 +120,23 @@
       "contents_permission": "write",
       "evidence": "direct git push",
       "safe_immediate_action": "preserve pinned working carrier; replace evidence write and migrate toward product request + Core #165 execution boundary",
+      "retire_owner": "agentos-core#175 + agentos-core#165 + alston-personal/vendor-reputation-service#27"
+    },
+    {
+      "project_id": "vendor-reputation",
+      "workflow": ".github/workflows/oracle-integrate-vendor-reputation.yml",
+      "classification": "legacy_product_integration_carrier_validation_noise_observed",
+      "runtime_effect": "intended product integration/deployment carrier; no job started in observed run",
+      "trigger": "workflow_dispatch + push paths on legacy vendor integration carrier",
+      "generic_core_trigger_risk": false,
+      "observed_run": 33456886833,
+      "observed_conclusion": "failure",
+      "observed_jobs": 0,
+      "observed_runner_claim": false,
+      "observed_privileged_execution": false,
+      "observed_runtime_side_effect": "none_from_this_run",
+      "transport_routing_evidence": false,
+      "safe_immediate_action": "classify/fence under #175 without treating jobs=0 validation noise as a deploy or as ChatGPT control-plane carrier selection; preserve unique product semantics until #165/product-owned replacement parity",
       "retire_owner": "agentos-core#175 + agentos-core#165 + alston-personal/vendor-reputation-service#27"
     },
     {
