@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from agent_core.active_continuation import read_active_continuation
 from agentos_node.one_mcp import OracleLocalGateway
 
-HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.5"
+HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.6"
+AUDIT_SCHEMA = "agentos.antigravity-preinvocation-attestation/v1"
 SOURCE = "ONE_PREINVOCATION_IR"
 IR_SCHEMA = "agentos.ir/v1"
 EXECUTION_HEAD_SCHEMA = "agentos.execution-head/v1"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _executor_identity(model_name: Any) -> tuple[str, bool]:
@@ -94,6 +104,78 @@ def _compact_ir(
     }
 
 
+def _audit_path() -> Path:
+    explicit = str(os.environ.get("AGENTOS_PREINVOCATION_AUDIT_PATH") or "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    root = Path(os.environ.get("AGENT_DATA_ROOT", "/home/ubuntu/agent-data"))
+    return root / "runtime" / "antigravity-preinvocation-last.json"
+
+
+def _conversation_hash(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _runtime_source_commit() -> str | None:
+    explicit = str(os.environ.get("AGENTOS_RUNTIME_SOURCE_COMMIT") or "").strip()
+    if explicit:
+        return explicit
+    candidate = Path(__file__).resolve().parents[1].name
+    return candidate if len(candidate) >= 12 else None
+
+
+def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None, *, outcome: str) -> None:
+    if int(payload.get("invocationNum") or 0) != 0:
+        return
+    executor_class, identity_bound = _executor_identity(payload.get("modelName"))
+    selector = envelope.get("active_selector") if isinstance(envelope, dict) and isinstance(envelope.get("active_selector"), dict) else {}
+    record = {
+        "schema": AUDIT_SCHEMA,
+        "recorded_at": _now(),
+        "runtime_source_commit": _runtime_source_commit(),
+        "hook_schema": HOOK_SCHEMA,
+        "outcome": outcome,
+        "invocation_num": 0,
+        "conversation_id_sha256": _conversation_hash(payload.get("conversationId")),
+        "model_name": payload.get("modelName"),
+        "executor_class": (envelope or {}).get("executor_class") or executor_class,
+        "executor_identity_bound": (envelope or {}).get("executor_identity_bound") if isinstance(envelope, dict) else identity_bound,
+        "injection_emitted": outcome == "hydrated",
+        "source": (envelope or {}).get("source"),
+        "selection_source": (envelope or {}).get("selection_source"),
+        "project_id": selector.get("project_id"),
+        "index_id": selector.get("index_id"),
+        "ir_id": selector.get("ir_id"),
+        "credential_exposed": False,
+    }
+    path = _audit_path()
+    if path.is_symlink():
+        raise ValueError("PreInvocation attestation path may not be a symlink")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, raw = tempfile.mkstemp(prefix=".antigravity-preinvocation-", suffix=".tmp", dir=str(path.parent))
+    tmp = Path(raw)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o640)
+            json.dump(record, handle, ensure_ascii=False, sort_keys=True, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        tmp = None
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+
+
 def build_injection(
     payload: dict[str, Any],
     gateway: OracleLocalGateway | None = None,
@@ -170,12 +252,29 @@ def build_injection(
 
 
 def main() -> int:
+    payload: dict[str, Any] = {}
     try:
         payload = json.load(sys.stdin)
         if not isinstance(payload, dict):
             raise ValueError("hook input must be a JSON object")
         output = build_injection(payload)
+        envelope: dict[str, Any] | None = None
+        steps = output.get("injectSteps") if isinstance(output, dict) else None
+        if isinstance(steps, list) and steps:
+            message = str((steps[0] or {}).get("ephemeralMessage") or "")
+            if "\n" in message:
+                try:
+                    parsed = json.loads(message.rsplit("\n", 1)[-1])
+                    envelope = parsed if isinstance(parsed, dict) else None
+                except json.JSONDecodeError:
+                    envelope = None
+        if int(payload.get("invocationNum") or 0) == 0:
+            _write_attestation(payload, envelope, outcome="hydrated" if envelope else "no-injection")
     except Exception as exc:
+        try:
+            _write_attestation(payload, None, outcome="fail-closed")
+        except Exception:
+            pass
         output = {
             "injectSteps": [
                 {
