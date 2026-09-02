@@ -6,18 +6,26 @@ on:
       - core/integration
     paths:
       - 'agent_core/executor_job_contract.py'
+      - 'agent_core/controller_service.py'
       - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
+      - 'tests/test_executor_job_action_relay.py'
+      - 'tests/test_executor_job_controller_route.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
   push:
     branches:
       - core/issue-194-bounded-executor-jobs
     paths:
       - 'agent_core/executor_job_contract.py'
+      - 'agent_core/controller_service.py'
       - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
+      - 'tests/test_executor_job_action_relay.py'
+      - 'tests/test_executor_job_controller_route.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
   workflow_dispatch:
 
@@ -36,9 +44,13 @@ jobs:
           python -m pytest \
             tests/test_executor_job_contract.py \
             tests/test_executor_job_adapter.py \
+            tests/test_executor_job_action_relay.py \
+            tests/test_executor_job_controller_route.py \
             -q
       - name: Compile contract modules
         run: |
           python -m py_compile \
             agent_core/executor_job_contract.py \
-            agentos_node/executor_job_adapter.py
+            agent_core/controller_service.py \
+            agentos_node/executor_job_adapter.py \
+            agentos_node/executor_job_action_relay.py
