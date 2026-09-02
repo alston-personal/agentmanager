@@ -46,15 +46,22 @@ class EmployeeRuntimeTest(unittest.TestCase):
             self.assertEqual(assignment.state, "active")
             self.assertEqual(assignment.thread_head, "thread:spec-audit")
 
-    def test_employee_memory_is_namespaced(self):
+    def test_unscoped_memory_access_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime = EmployeeRuntime(tmp)
-            runtime.create_employee("weaver", "Weaver")
-            runtime.create_employee("claw", "Claw")
-            runtime.write_memory("weaver", "current", {"spec": "A"})
-            runtime.write_memory("claw", "current", {"risk": "B"})
-            self.assertEqual(runtime.read_memory("weaver", "current"), {"spec": "A"})
-            self.assertEqual(runtime.read_memory("claw", "current"), {"risk": "B"})
+            runtime.create_employee(
+                "weaver",
+                "Weaver",
+                role_ids=["sector.weaver"],
+            )
+            with self.assertRaisesRegex(
+                PermissionError, "employee_memory_policy_required"
+            ):
+                runtime.write_memory("weaver", "current", {"spec": "A"})
+            with self.assertRaisesRegex(
+                PermissionError, "employee_memory_policy_required"
+            ):
+                runtime.read_memory("weaver", "current")
 
     def test_local_inbox_is_durable_but_not_cross_node_claim(self):
         with tempfile.TemporaryDirectory() as tmp:

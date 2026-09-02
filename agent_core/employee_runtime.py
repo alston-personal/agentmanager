@@ -91,6 +91,10 @@ class EmployeeRuntime:
     This runtime deliberately stores *references* to roles and skills. Hydrating those
     references into an effective role contract is handled by the role runtime so that
     employee identity stays independent from role-file representation and executor.
+
+    Private Employee memory is a governed resource.  Public callers must use
+    ``EmployeeMemoryService``; the storage primitives here are intentionally private
+    so role authorization cannot be bypassed by a convenient legacy helper.
     """
 
     def __init__(self, root: str | os.PathLike[str]) -> None:
@@ -204,18 +208,54 @@ class EmployeeRuntime:
         return assignment
 
     def write_memory(self, agent_id: str, key: str, value: Any) -> None:
-        agent_id = _safe_id(agent_id)
-        self.get_employee(agent_id)
-        key = _safe_id(key)
-        path = self.memory_dir / agent_id / f"{key}.json"
-        _atomic_json_write(path, {"value": value, "updated_at": _now()})
+        """Deprecated unscoped entrypoint; intentionally fails closed."""
+        raise PermissionError("employee_memory_policy_required")
 
     def read_memory(self, agent_id: str, key: str) -> Any:
+        """Deprecated unscoped entrypoint; intentionally fails closed."""
+        raise PermissionError("employee_memory_policy_required")
+
+    def _write_memory_record(
+        self,
+        agent_id: str,
+        memory_class: str,
+        key: str,
+        value: Any,
+    ) -> None:
+        """Storage primitive for EmployeeMemoryService after policy authorization."""
         agent_id = _safe_id(agent_id)
+        self.get_employee(agent_id)
+        memory_class = _safe_id(memory_class)
         key = _safe_id(key)
-        data = _read_json(self.memory_dir / agent_id / f"{key}.json", {})
+        path = self.memory_dir / agent_id / memory_class / f"{key}.json"
+        _atomic_json_write(
+            path,
+            {
+                "memory_class": memory_class,
+                "value": value,
+                "updated_at": _now(),
+            },
+        )
+
+    def _read_memory_record(
+        self,
+        agent_id: str,
+        memory_class: str,
+        key: str,
+    ) -> Any:
+        """Storage primitive for EmployeeMemoryService after policy authorization."""
+        agent_id = _safe_id(agent_id)
+        self.get_employee(agent_id)
+        memory_class = _safe_id(memory_class)
+        key = _safe_id(key)
+        data = _read_json(
+            self.memory_dir / agent_id / memory_class / f"{key}.json",
+            {},
+        )
         if not data:
             raise FileNotFoundError(key)
+        if data.get("memory_class") != memory_class:
+            raise ValueError("employee_memory_class_mismatch")
         return data.get("value")
 
     def send_message(
