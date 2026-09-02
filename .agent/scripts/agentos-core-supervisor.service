@@ -1,0 +1,21 @@
+[Unit]
+Description=AgentOS Core Supervisor (observe and plan only)
+After=local-fs.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/.config/agentos/core-supervisor.env
+ExecStart=/usr/bin/python3 -m agent_core.core_supervisor_daemon
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/agent-data/employee-runtime
+
+[Install]
+WantedBy=multi-user.target
