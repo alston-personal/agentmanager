@@ -75,6 +75,7 @@ def test_executor_job_routes_to_local_dispatcher_not_thin_client_queue(tmp_path:
     })
     assert result["schema"] == "agentos.executor-job-submission/v1"
     assert result["job_id"] == "action-12345678"
+    assert result["task_id"] == result["job_id"]
     assert dispatcher.calls == [("oracle-core-node", job)]
     assert fabric.load()["tasks"].get("oracle-core-node", []) == []
 
@@ -104,9 +105,10 @@ def test_first_registered_executor_job_cannot_be_routed_to_arbitrary_node(tmp_pa
         })
 
 
-def test_executor_job_rejects_legacy_passthrough_and_caller_task_id(tmp_path: Path) -> None:
+def test_executor_job_rejects_passthrough_but_ignores_legacy_task_id_authority(tmp_path: Path) -> None:
     fabric = _fabric(tmp_path)
-    controller = ControllerService(fabric, executor_job_dispatcher=FakeDispatcher())
+    dispatcher = FakeDispatcher()
+    controller = ControllerService(fabric, executor_job_dispatcher=dispatcher)
     base = {
         "node_id": "oracle-core-node",
         "action": "agentos.executor.job",
@@ -114,6 +116,7 @@ def test_executor_job_rejects_legacy_passthrough_and_caller_task_id(tmp_path: Pa
     }
     with pytest.raises(ValueError, match="unexpected executor-job controller fields"):
         controller.dispatch({**base, "provider": "anything"})
-    with pytest.raises(ValueError, match="relay-owned"):
-        controller.dispatch({**base, "task_id": "caller-selected"})
+    result = controller.dispatch({**base, "task_id": "ctl_caller_selected_but_non_authoritative"})
+    assert result["job_id"] == "action-12345678"
+    assert result["task_id"] == "action-12345678"
     assert fabric.load()["tasks"].get("oracle-core-node", []) == []
