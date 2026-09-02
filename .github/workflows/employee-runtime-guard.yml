@@ -19,11 +19,13 @@ on:
       - 'agent_core/core_work_items.py'
       - 'agent_core/core_supervisor_service.py'
       - 'agent_core/core_supervisor_daemon.py'
+      - 'agent_core/core_supervisor_delivery.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
+      - 'governance/core-supervisor-delivery.json'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
       - 'tests/test_employee_wake.py'
@@ -37,17 +39,20 @@ on:
       - 'tests/test_core_work_items.py'
       - 'tests/test_core_supervisor_service.py'
       - 'tests/test_core_supervisor_daemon.py'
+      - 'tests/test_core_supervisor_delivery.py'
       - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
+      - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
       - 'docs/CORE_SUPERVISOR.md'
       - '.github/workflows/employee-runtime-guard.yml'
   push:
     branches:
       - core/issue-197-governed-wake-delivery-v2
       - core/issue-200-persistent-supervisor-loop
+      - core/issue-200-governed-supervisor-delivery
       - core/integration
     paths:
       - 'agent_core/employee_runtime.py'
@@ -63,11 +68,13 @@ on:
       - 'agent_core/core_work_items.py'
       - 'agent_core/core_supervisor_service.py'
       - 'agent_core/core_supervisor_daemon.py'
+      - 'agent_core/core_supervisor_delivery.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
+      - 'governance/core-supervisor-delivery.json'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
       - 'tests/test_employee_wake.py'
@@ -81,11 +88,13 @@ on:
       - 'tests/test_core_work_items.py'
       - 'tests/test_core_supervisor_service.py'
       - 'tests/test_core_supervisor_daemon.py'
+      - 'tests/test_core_supervisor_delivery.py'
       - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_role_runtime.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
+      - '.agent/scripts/agentos-core-supervisor-delivery.conf.example'
       - 'docs/CORE_SUPERVISOR.md'
       - '.github/workflows/employee-runtime-guard.yml'
   workflow_dispatch:
@@ -130,6 +139,8 @@ jobs:
         run: python -m unittest tests.test_core_supervisor_service -v
       - name: Run Core Supervisor daemon regressions
         run: python -m unittest tests.test_core_supervisor_daemon -v
+      - name: Run governed Core Supervisor delivery regressions
+        run: python -m unittest tests.test_core_supervisor_delivery -v
       - name: Run Core Supervisor service asset regressions
         run: python -m unittest tests.test_core_supervisor_assets -v
       - name: Run role hydration regressions

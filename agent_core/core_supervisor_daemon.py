@@ -10,9 +10,18 @@ from pathlib import Path
 from threading import Event
 from typing import Iterator
 
+from agent_core.controller_service import ControllerService
+from agent_core.core_supervisor_delivery import (
+    SupervisorWakeAuthorityResolver,
+    SupervisorWakeCoordinator,
+)
 from agent_core.core_supervisor_service import CoreSupervisorService
 from agent_core.employee_lifecycle import EmployeeLifecycle
+from agent_core.employee_presence import EmployeePresenceRegistry
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.employee_wake_delivery import EmployeeWakeDelivery
+from agent_core.node_registry import NodeRegistry
+from agent_core.realm_fabric import RealmFabricStore
 
 
 def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
@@ -45,6 +54,51 @@ def _service_id(value: str | None = None) -> str:
     if not text or len(text) > 120 or any(ch in text for ch in "/\\\0"):
         raise ValueError("invalid_supervisor_service_id")
     return text
+
+
+def _delivery_mode(value: str | None = None) -> str:
+    mode = str(value or os.environ.get("AGENTOS_SUPERVISOR_DELIVERY_MODE") or "disabled").strip().lower()
+    if mode not in {"disabled", "one_direct"}:
+        raise ValueError("invalid_supervisor_delivery_mode")
+    return mode
+
+
+def _one_data_root(value: str | None = None) -> Path:
+    raw = str(
+        value
+        or os.environ.get("AGENTOS_SUPERVISOR_ONE_DATA_ROOT")
+        or os.environ.get("AGENTOS_DATA_ROOT")
+        or os.environ.get("AGENT_DATA_ROOT")
+        or ""
+    ).strip()
+    if not raw:
+        raise ValueError("supervisor_one_data_root_required")
+    root = Path(raw).expanduser()
+    if not root.is_absolute():
+        raise ValueError("supervisor_one_data_root_must_be_absolute")
+    return root.resolve()
+
+
+def _require_existing_one_root(root: Path) -> str:
+    """Fail closed unless root already contains one coherent ONE Realm."""
+    fabric_path = root / "realm" / "fabric.json"
+    nodes_path = root / "realm" / "nodes.json"
+    if not fabric_path.is_file() or not nodes_path.is_file():
+        raise RuntimeError("supervisor_one_control_plane_state_missing")
+    try:
+        fabric = json.loads(fabric_path.read_text(encoding="utf-8"))
+        nodes = json.loads(nodes_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("supervisor_one_control_plane_state_invalid") from exc
+    if not isinstance(fabric, dict) or fabric.get("schema") != "agentos.realm-fabric/v0.1":
+        raise RuntimeError("supervisor_one_fabric_schema_invalid")
+    if not isinstance(nodes, dict) or nodes.get("schema") != "agentos.node-registry/v0.1":
+        raise RuntimeError("supervisor_one_node_registry_schema_invalid")
+    fabric_realm = str(fabric.get("realm_id") or "").strip()
+    node_realm = str(nodes.get("realm_id") or "").strip()
+    if not fabric_realm or not node_realm or fabric_realm != node_realm:
+        raise RuntimeError("supervisor_one_control_plane_realm_mismatch")
+    return fabric_realm
 
 
 def _instance_owner(service_id: str) -> str:
@@ -81,15 +135,37 @@ def build_service(
     service_id: str,
     base_poll_seconds: int,
     max_poll_seconds: int,
+    delivery_mode: str = "disabled",
+    one_data_root: Path | None = None,
 ) -> CoreSupervisorService:
     runtime = EmployeeRuntime(runtime_root)
     lifecycle = EmployeeLifecycle(runtime)
-    return CoreSupervisorService(
+    service = CoreSupervisorService(
         lifecycle,
         owner_id=_instance_owner(service_id),
         base_poll_seconds=base_poll_seconds,
         max_poll_seconds=max_poll_seconds,
     )
+    mode = _delivery_mode(delivery_mode)
+    if mode == "disabled":
+        return service
+
+    root = _one_data_root(str(one_data_root) if one_data_root is not None else None)
+    _require_existing_one_root(root)
+    node_registry = NodeRegistry(path=root / "realm" / "nodes.json")
+    fabric = RealmFabricStore(path=root / "realm" / "fabric.json", node_registry=node_registry)
+    controller = ControllerService(fabric)
+    presence = EmployeePresenceRegistry(runtime, node_registry)
+    wake_delivery = EmployeeWakeDelivery(presence, controller)
+    authority = SupervisorWakeAuthorityResolver(requested_transport="one_direct")
+    coordinator = SupervisorWakeCoordinator(
+        service,
+        wake_delivery,
+        authority,
+        available_transports={"one_direct": True},
+    )
+    service.attach_delivery_driver(coordinator)
+    return service
 
 
 def run_persistent(
@@ -98,10 +174,7 @@ def run_persistent(
     stop_event: Event | None = None,
     leader_lease_seconds: int = 30,
 ) -> None:
-    """Run observe/plan cycles forever while heartbeating through long idle backoff.
-
-    This daemon never dispatches a reconcile intent. S4 owns governed ONE delivery.
-    """
+    """Run persistent reconcile cycles and any explicitly attached governed S4 driver."""
     stopper = stop_event or Event()
     retry_seconds = max(1, min(5, leader_lease_seconds // 2))
 
@@ -131,7 +204,7 @@ def run_persistent(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="AgentOS Core Supervisor (observe/plan only)")
+    parser = argparse.ArgumentParser(description="AgentOS Core Supervisor (S3 observe/plan; S4 governed delivery opt-in)")
     parser.add_argument("--runtime-root")
     parser.add_argument("--service-id")
     parser.add_argument("--once", action="store_true", help="Run one reconcile cycle and exit")
@@ -149,16 +222,23 @@ def main(argv: list[str] | None = None) -> int:
     base_poll = _env_int("AGENTOS_SUPERVISOR_BASE_POLL_SECONDS", 5, minimum=1, maximum=300)
     max_poll = _env_int("AGENTOS_SUPERVISOR_MAX_POLL_SECONDS", 60, minimum=base_poll, maximum=3600)
     leader_lease = _env_int("AGENTOS_SUPERVISOR_LEADER_LEASE_SECONDS", 30, minimum=5, maximum=300)
+    delivery_mode = _delivery_mode()
+    one_root = _one_data_root() if delivery_mode == "one_direct" else None
 
     service = build_service(
         runtime_root=root,
         service_id=service_id,
         base_poll_seconds=base_poll,
         max_poll_seconds=max_poll,
+        delivery_mode=delivery_mode,
+        one_data_root=one_root,
     )
 
     if args.health:
-        print(json.dumps(service.health(), ensure_ascii=False, sort_keys=True))
+        payload = service.health()
+        if service.delivery_driver is not None:
+            payload["delivery"] = service.delivery_driver.health()
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
         return 0
 
     with _process_singleton_lock(root):

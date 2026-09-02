@@ -1,8 +1,8 @@
 # AgentOS Core Supervisor
 
-Status: **S3 integration candidate — persistent observe/plan loop, no execution dispatch**.
+Status: **S4 source integration candidate — persistent reconciliation with explicit governed ONE wake delivery; live Oracle operating acceptance is still pending**.
 
-The Core Supervisor is the always-running reconciliation process for AgentOS. Employees remain durable organizational identities; they are not independent daemons. The Supervisor observes durable state and decides which assignment needs attention next.
+The Core Supervisor is the long-running reconciliation process for AgentOS. Employees remain durable organizational identities; they are not independent daemons. The Supervisor observes durable state, journals which Employee assignment needs attention, and may cross the S4 wake boundary only when an explicit machine policy authorizes the exact persisted wake through the existing ONE control plane.
 
 ## Core model
 
@@ -23,17 +23,35 @@ Issue event / Realm message / timer / dependency / user goal
              observe -> reconcile -> journal
                          |
                          v
-                planned ReconcileIntent
-                         |
-                    S4 boundary
+          immutable planned ReconcileIntent
                          |
                          v
-               governed ONE delivery
+                 S4 authority policy
+                         |
+                 exact-current-wake fence
+                         |
+                         v
+           existing Employee presence in ONE
+                         |
+                         v
+        ControllerService -> existing ONE queue
+                         |
+                         v
+               fixed Node wake inbox
+                         |
+                         v
+              authenticated Node receipt
+                         |
+                         v
+                    awaiting_claim
+                         |
+                         v
+          Employee lifecycle lease / receipt
 ```
 
-The invariant is **event != authority**. A GitHub Issue can trigger re-evaluation, but Issue prose is not an executable command and does not grant Node, executor, transport, capability, credential, or publication authority.
+The invariant is **event != authority**. A GitHub Issue can trigger re-evaluation, but Issue prose is not an executable command and does not grant Node, executor, transport, capability, credential, publication, or protected-branch authority.
 
-## What S3 does
+## S1-S3 persistent reconciliation
 
 The persistent service:
 
@@ -42,7 +60,7 @@ The persistent service:
 - scans durable Employee assignments;
 - respects live Employee leases and blocked WorkItem dependencies;
 - converts pending/resumable assignments into deterministic reconcile intents;
-- journals a reconcile intent before any future delivery attempt;
+- journals a reconcile intent before any delivery attempt;
 - preserves `prior_execution_state=unknown` when an Employee execution lease expired without a terminal receipt;
 - suppresses duplicate intents after restart;
 - writes durable cycle receipts and a read-only health projection;
@@ -50,23 +68,71 @@ The persistent service:
 - continues leader heartbeats during long idle backoff;
 - survives process restart without deleting pending work.
 
-## What S3 explicitly does not do
+The S3 reconcile record is immutable evidence. S4 does not rewrite it to claim that delivery happened.
 
-S3 does **not**:
+## S4 governed wake delivery
 
-- select a Node, executor, model, session, transport, or capability carrier;
-- execute Issue text, shell commands, argv, scripts, or filesystem mutations;
-- send a wake to a Node;
-- claim an Employee assignment on behalf of an executor;
-- invoke GitHub Actions as a control-plane fallback;
-- publish to protected `main`;
-- prove that the service is already installed or running on Oracle.
+S4 is opt-in and uses `governance/core-supervisor-delivery.json` plus the existing authority-driven `governance/transport-routing.json`.
 
-The source-controlled systemd unit uses `PrivateNetwork=true` intentionally. S3 has no network authority. S4 must cross a separate governed ONE delivery boundary.
+For the current `employee_wake` reconcile kind, S4 authorizes only:
 
-## CLI
+- capability: `agent.employee.wake.deliver`;
+- intent class: `control_plane`;
+- transport: explicit `one_direct`;
+- an exact already-persisted `EmployeeWakeIntent`.
 
-The production entrypoint is:
+It explicitly does **not** grant:
+
+- Employee assignment claim authority;
+- executor/model/provider/session selection authority;
+- generic shell, argv, filesystem, desktop, URL, or credential authority;
+- GitHub Actions fallback authority.
+
+Capability availability is checked only after authority is resolved. An online Node or an available runner never grants authority by itself.
+
+### Exact-current-wake fence
+
+A persisted wake can become stale after planning. For example, another executor may claim the assignment or the assignment goal/thread/role/skill state may change before delivery.
+
+Before a new delivery attempt, S4 recomputes the planner only as a validation read and requires the complete current wake projection to match the exact persisted wake. It does not replace or re-plan the delivery input. A mismatch becomes `superseded` and does not cross ONE.
+
+### Delivery ledger
+
+S4 writes a separate ledger:
+
+```text
+supervisor/
+  intents/                  # immutable S3 selection evidence
+  deliveries/               # S4 authority/delivery progression
+  cycles/
+  leader.json
+  state.json
+```
+
+Important delivery states include:
+
+- `blocked`: authority, presence, or pre-dispatch prerequisite unavailable;
+- `queued`: exact wake entered the existing ONE Node queue;
+- `awaiting_claim`: Node accepted the fixed wake capsule, but no executor owns the assignment yet;
+- `claimed`: a live Employee lifecycle lease at the expected generation is observed;
+- `unknown`: delivery crossed an ambiguous external boundary and is not blindly retried to the same presence;
+- `failed`: terminal Node wake failure for that presence generation;
+- `superseded`: the persisted wake is no longer the exact current wake;
+- `terminal_observed`: the underlying assignment is already terminal.
+
+A Node receipt is **not** treated as execution success. `wake_delivery.accepted=true` proves only that the Node wake inbox accepted the bounded capsule; it must also prove `executor_invoked=false` and `credential_exposed=false`. The Supervisor remains in `awaiting_claim` until a real Employee lifecycle lease is observed.
+
+If an Employee moves to a strictly newer presence generation before any assignment claim, the same exact wake may follow that new presence. The same presence is not blindly re-sent. If an execution lease later expires, S1 produces a new deterministic resume wake with `prior_execution_state=unknown`.
+
+## No shadow ONE
+
+S4 reuses the existing ONE control plane. `EmployeeWakeDelivery` refuses to dispatch unless both the existing Realm fabric and Node Registry already exist, carry non-empty Realm identities, and identify the same Realm.
+
+The Supervisor must never initialize a missing `fabric.json` or `nodes.json` as a side effect of enabling delivery. A missing or mismatched control-plane store is a fail-closed configuration error, not permission to create a second Realm.
+
+## CLI and opt-in configuration
+
+The production entrypoint remains:
 
 ```text
 python3 -m agent_core.core_supervisor_daemon
@@ -78,46 +144,50 @@ Read-only health:
 python3 -m agent_core.core_supervisor_daemon --health
 ```
 
-One reconciliation cycle, useful for bounded local validation:
+One bounded cycle:
 
 ```text
 python3 -m agent_core.core_supervisor_daemon --once
 ```
 
-`AGENTOS_EMPLOYEE_RUNTIME_ROOT` must resolve to an absolute durable runtime path. `AGENTOS_DATA_ROOT` may be used as a parent fallback, in which case the Employee runtime is `<data-root>/employee-runtime`.
+`AGENTOS_EMPLOYEE_RUNTIME_ROOT` must be an absolute durable runtime path. Non-secret configuration is documented in `.agent/scripts/agentos-core-supervisor.env.example`.
 
-Non-secret configuration is documented in `.agent/scripts/agentos-core-supervisor.env.example`.
+The default is deliberately:
+
+```text
+AGENTOS_SUPERVISOR_DELIVERY_MODE=disabled
+```
+
+S4 is enabled only by an explicit host-local configuration such as:
+
+```text
+AGENTOS_SUPERVISOR_DELIVERY_MODE=one_direct
+AGENTOS_SUPERVISOR_ONE_DATA_ROOT=/home/ubuntu/agent-data
+```
+
+Enabling `one_direct` attaches the S4 coordinator to that process; repository merge by itself does not enable it.
 
 ## Persistent-process safety
 
-Two independent fences are used:
+Two independent fences remain active:
 
 1. A long-held OS file lock at the runtime root prevents two local Supervisor daemon processes from operating concurrently.
 2. A durable leader lease/generation protects restart/takeover semantics. A new process instance uses a new owner identity; takeover after an expired leader is recorded with prior owner state `unknown`.
 
-The daemon never sleeps longer than half of the current leader lease without heartbeating, even when reconciliation backoff is longer than the lease.
+Every S4 advance requires the current Supervisor leader generation before crossing authority. The daemon never sleeps longer than half of the current leader lease without heartbeating, even when reconciliation backoff is longer than the lease.
 
-## Durable state
+## systemd sandbox
 
-Under the Employee runtime root:
+`.agent/scripts/agentos-core-supervisor.service` remains the safe S3 base template:
 
-```text
-supervisor/
-  process.lock
-  leader.json
-  state.json
-  work-items/
-  intents/
-  cycles/
-```
+- `PrivateNetwork=true`;
+- `NoNewPrivileges=true`;
+- `ProtectSystem=strict`;
+- write access limited to the Employee runtime root.
 
-`intents/*.json` are S3 planned records with `dispatch_performed=false`. A merge of S3 therefore must never be interpreted as evidence that a Node was awakened or that an executor ran.
+S4 does not silently widen the base unit. The optional `.agent/scripts/agentos-core-supervisor-delivery.conf.example` is a separate systemd drop-in that adds write access only to the existing ONE `realm/` directory needed by the local file-backed `one_direct` queue. `PrivateNetwork=true` remains in force; current S4 does not need generic outbound networking.
 
-## systemd template
-
-`.agent/scripts/agentos-core-supervisor.service` is a reference deployment template. Its write sandbox is intentionally limited to the configured Employee runtime area and its network namespace is private.
-
-Before installation, the host-specific paths in the service and env file must be checked against the actual runtime layout. Installing/enabling/restarting the service is a separate governed runtime mutation and requires its own receipt/evidence.
+Before installation, host-specific paths must be checked against the actual canonical runtime. Installing a drop-in, changing host-local env, enabling/restarting the service, creating a persistent Employee presence, or running a live Spec Steward assignment are governed runtime mutations and need independent receipts/evidence.
 
 **Repository merge != Oracle deployment != operating acceptance.**
 
@@ -125,8 +195,18 @@ Before installation, the host-specific paths in the service and env file must be
 
 - S1 deterministic reconcile kernel: integrated.
 - S2 event/WorkItem intake: integrated.
-- S3 persistent singleton loop: this slice.
-- S4 governed ONE wake delivery: separate authority boundary.
-- #197 Spec Steward: first end-to-end live Employee acceptance.
+- S3 persistent singleton loop: integrated.
+- #197 O2 exact governed Employee wake carrier: integrated.
+- S4 Supervisor -> exact persisted wake -> ONE delivery coordinator: this source slice.
+- #197 O3 Spec Steward: first real persistent Employee operating acceptance.
 
-The final acceptance is not static CI. A real persistent Supervisor must notice a pending Spec Steward assignment without a user saying `繼續`, cause a governed wake through ONE, observe executor/session turnover, resume the same Employee/assignment/thread safely, and stop waking after a terminal receipt.
+Static hosted CI can prove deterministic state transitions and the local ONE queue/Node receipt contract, but it cannot prove that Oracle is currently running the service or that a real executor/session transition occurred.
+
+The final acceptance requires a live persistent Supervisor to notice a pending Spec Steward assignment without a user saying `繼續`, deliver the exact wake through the authorized ONE path, observe a real executor claim/checkpoint, survive executor/session turnover or lease expiry, resume the same Employee/assignment/thread safely, persist a terminal sanitized Employee receipt, and stop waking terminal work.
+
+Success markers remain:
+
+- `CORE_SUPERVISOR_PERSISTENT_RECONCILIATION=VERIFIED`
+- `SPEC_STEWARD_PERSISTENT_EMPLOYEE=VERIFIED`
+
+Neither marker may be claimed from source merge or static CI alone.
