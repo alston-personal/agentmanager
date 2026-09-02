@@ -1,0 +1,44 @@
+name: Bounded Executor Job Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'tests/test_executor_job_contract.py'
+      - 'tests/test_executor_job_adapter.py'
+      - '.github/workflows/bounded-executor-job-guard.yml'
+  push:
+    branches:
+      - core/issue-194-bounded-executor-jobs
+    paths:
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'tests/test_executor_job_contract.py'
+      - 'tests/test_executor_job_adapter.py'
+      - '.github/workflows/bounded-executor-job-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run bounded executor-job contract tests
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest \
+            tests/test_executor_job_contract.py \
+            tests/test_executor_job_adapter.py \
+            -q
+      - name: Compile contract modules
+        run: |
+          python -m py_compile \
+            agent_core/executor_job_contract.py \
+            agentos_node/executor_job_adapter.py
