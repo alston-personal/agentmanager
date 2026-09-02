@@ -1,7 +1,9 @@
+import io
 import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -79,6 +81,71 @@ class OneMCPTests(unittest.TestCase):
             "Bearer TOPSECRET",
         )
 
+    def test_http_error_body_is_never_exposed(self):
+        cfg = one_mcp.ClientConfig(
+            "http://one",
+            "realm-test",
+            "node-test",
+            "TOPSECRET",
+        )
+        body = io.BytesIO(
+            b'{"node_token":"TOPSECRET","secret":"SERVERSECRET","path":"/private/path"}'
+        )
+        error = urllib.error.HTTPError(
+            "http://one/v1/bootstrap",
+            401,
+            "Unauthorized",
+            {},
+            body,
+        )
+        with mock.patch.object(
+            one_mcp.urllib.request,
+            "urlopen",
+            side_effect=error,
+        ):
+            with self.assertRaises(one_mcp.OneGatewayError) as ctx:
+                one_mcp.OneGateway(cfg).bootstrap()
+        text = str(ctx.exception)
+        self.assertEqual(text, "one_http_401")
+        self.assertNotIn("TOPSECRET", text)
+        self.assertNotIn("SERVERSECRET", text)
+        self.assertNotIn("/private/path", text)
+
+    def test_client_bootstrap_projects_executor_safe_fields_only(self):
+        cfg = one_mcp.ClientConfig(
+            "http://one",
+            "realm-test",
+            "node-test",
+            "TOPSECRET",
+        )
+        payload = {
+            "ok": True,
+            "schema": "agentos.node-bootstrap/v0.1",
+            "realm_id": "realm-test",
+            "node_id": "node-test",
+            "realm_node_count": 2,
+            "realm_capabilities": ["agentos.one.resolve"],
+            "node": {
+                "hostname": "private-host",
+                "metadata": {"path": "/home/private/work"},
+            },
+            "private_runtime": {"username": "private-user"},
+        }
+        with mock.patch.object(
+            one_mcp.urllib.request,
+            "urlopen",
+            return_value=FakeResponse(payload),
+        ):
+            bootstrap = one_mcp.OneGateway(cfg).bootstrap()
+        serialized = json.dumps(bootstrap)
+        self.assertEqual(bootstrap["realm_id"], "realm-test")
+        self.assertEqual(bootstrap["node_id"], "node-test")
+        self.assertEqual(bootstrap["projection"], "executor-safe-readonly")
+        self.assertNotIn("node", bootstrap)
+        self.assertNotIn("private-host", serialized)
+        self.assertNotIn("/home/private/work", serialized)
+        self.assertNotIn("private-user", serialized)
+
     def test_oracle_local_status_uses_node_registry_projection_without_token(self):
         gateway = one_mcp.OracleLocalGateway(
             data_root=Path("/tmp/agent-data-test"),
@@ -94,8 +161,10 @@ class OneMCPTests(unittest.TestCase):
                     "node_id": "oracle-core-node",
                     "role": "core",
                     "status": "online",
+                    "hostname": "private-oracle-host",
                     "capabilities": ["agentos.one.resolve"],
                     "surface_inventory": {"surfaces": []},
+                    "metadata": {"path": "/home/ubuntu/private"},
                 },
                 {
                     "node_id": "client-a",
@@ -129,6 +198,74 @@ class OneMCPTests(unittest.TestCase):
             bootstrap["inherited_surface_providers"],
             ["antigravity"],
         )
+        serialized = json.dumps(bootstrap)
+        self.assertNotIn("node", bootstrap)
+        self.assertNotIn("private-oracle-host", serialized)
+        self.assertNotIn("/home/ubuntu/private", serialized)
+
+    def test_resolve_keeps_canonical_ir_but_drops_project_source_paths(self):
+        gateway = one_mcp.OracleLocalGateway(
+            data_root=Path("/tmp/agent-data-test"),
+            core_node_id="oracle-core-node",
+        )
+        raw = {
+            "schema": "agentos.resolve/v1",
+            "intent": "continue",
+            "project": {
+                "id": "agentos-core",
+                "name": "AgentOS Core",
+                "aliases": ["core"],
+                "identity_source": "governance-directory",
+                "source": {
+                    "canonical_path": "/home/ubuntu/agentmanager",
+                    "repo": "private/repo",
+                },
+                "runtime": {"username": "ubuntu"},
+            },
+            "mutation_allowed": False,
+            "active_goal": "continue safely",
+            "execution_head": {
+                "schema": "agentos.execution-head/v1",
+                "index_id": "idx-1",
+                "active_goal": "continue safely",
+                "execution_head": {"status": "active"},
+                "private_path": "/secret/head",
+            },
+            "continuation": {
+                "canonical_ir": {
+                    "schema_version": "agentos.ir/v1",
+                    "index_id": "idx-1",
+                    "ir_id": "ir-1",
+                    "goal": "continue safely",
+                    "constraints": ["no secrets"],
+                    "decisions": [],
+                    "pending_tasks": ["next"],
+                    "continuation": {"next_action": "next"},
+                },
+                "ir_id": "ir-1",
+                "goal": "continue safely",
+            },
+            "node_context": {
+                "schema": "agentos.one-local-bootstrap/v0.1",
+                "realm_id": "realm-alston",
+                "node_id": "oracle-core-node",
+                "node": {"hostname": "private-host"},
+            },
+            "next_action": "next",
+            "availability": {"continuation": True},
+            "provenance": {"continuation": "project/continuity/latest.json"},
+        }
+        projected = one_mcp._project_resolve(raw)
+        serialized = json.dumps(projected)
+        self.assertEqual(
+            projected["continuation"]["canonical_ir"]["ir_id"],
+            "ir-1",
+        )
+        self.assertEqual(projected["project"]["id"], "agentos-core")
+        self.assertNotIn("source", projected["project"])
+        self.assertNotIn("/home/ubuntu/agentmanager", serialized)
+        self.assertNotIn("/secret/head", serialized)
+        self.assertNotIn("private-host", serialized)
 
     def test_gateway_mode_selects_oracle_local_when_no_client_config(self):
         with tempfile.TemporaryDirectory() as tmp:
