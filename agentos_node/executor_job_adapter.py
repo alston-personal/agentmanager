@@ -11,13 +11,21 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from agent_core.executor_job_contract import (
-    JobTypeSpec,
     project_executor_job_receipt,
     validate_executor_job,
 )
 
 
 Provider = Callable[[Mapping[str, Any]], Mapping[str, Any]]
+_SAFE_PROVIDER_RESULT_FIELDS = (
+    "experiment_id",
+    "verdict",
+    "baseline_score",
+    "hydrated_score",
+    "uplift",
+    "hydration_receipt_ok",
+    "classification",
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,21 @@ def _semantic_failure(classification: str, *, executor_available: bool, routable
     }
 
 
+def _sanitize_provider_result(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Bound provider output before it is persisted by Action Relay.
+
+    Final model-visible projection is also bounded by the Core receipt contract,
+    but persistence must be safe on its own. In particular stdout/stderr, paths,
+    prompts, session data and credentials never enter the relay receipt.
+    """
+    safe: dict[str, Any] = {}
+    for key in _SAFE_PROVIDER_RESULT_FIELDS:
+        value = raw.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+    return safe
+
+
 def run_registered_executor_job(
     *,
     request: Mapping[str, Any],
@@ -119,11 +142,11 @@ def run_registered_executor_job(
             authorized=True,
         )
 
-    result = dict(raw)
+    result = _sanitize_provider_result(raw)
     result["executor_available"] = True
     result["routable"] = True
     result["authorized"] = True
-    result["successful"] = result.get("verdict") == "PASS" and result.get("credential_exposed") is not True
+    result["successful"] = result.get("verdict") == "PASS" and raw.get("credential_exposed") is not True
     result["credential_exposed"] = False
     result["ok"] = bool(result["successful"])
     return result
