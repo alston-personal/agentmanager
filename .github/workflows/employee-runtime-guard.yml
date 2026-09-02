@@ -22,6 +22,8 @@ on:
       - 'agent_core/core_supervisor_delivery.py'
       - 'agent_core/spec_steward_bootstrap.py'
       - 'agent_core/spec_steward_acceptance.py'
+      - 'agent_core/spec_steward_o3_cli.py'
+      - 'agent_core/spec_steward_presence_cli.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/spec_steward_worker.py'
@@ -50,6 +52,8 @@ on:
       - 'tests/test_role_runtime.py'
       - 'tests/test_spec_steward_bootstrap.py'
       - 'tests/test_spec_steward_acceptance.py'
+      - 'tests/test_spec_steward_o3_cli.py'
+      - 'tests/test_spec_steward_presence_cli.py'
       - 'tests/test_spec_steward_worker.py'
       - 'tests/test_governed_spec_steward_worker.py'
       - 'tests/test_spec_steward_worker_cli.py'
@@ -85,6 +89,8 @@ on:
       - 'agent_core/core_supervisor_delivery.py'
       - 'agent_core/spec_steward_bootstrap.py'
       - 'agent_core/spec_steward_acceptance.py'
+      - 'agent_core/spec_steward_o3_cli.py'
+      - 'agent_core/spec_steward_presence_cli.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/spec_steward_worker.py'
@@ -113,6 +119,8 @@ on:
       - 'tests/test_role_runtime.py'
       - 'tests/test_spec_steward_bootstrap.py'
       - 'tests/test_spec_steward_acceptance.py'
+      - 'tests/test_spec_steward_o3_cli.py'
+      - 'tests/test_spec_steward_presence_cli.py'
       - 'tests/test_spec_steward_worker.py'
       - 'tests/test_governed_spec_steward_worker.py'
       - 'tests/test_spec_steward_worker_cli.py'
@@ -175,6 +183,10 @@ jobs:
         run: python -m unittest tests.test_spec_steward_bootstrap -v
       - name: Run Spec Steward O3 acceptance regressions
         run: python -m unittest tests.test_spec_steward_acceptance -v
+      - name: Run Spec Steward O3 operator CLI regressions
+        run: python -m unittest tests.test_spec_steward_o3_cli -v
+      - name: Run Spec Steward presence CLI regressions
+        run: python -m unittest tests.test_spec_steward_presence_cli -v
       - name: Run Spec Steward Employee worker regressions
         run: python -m unittest tests.test_spec_steward_worker -v
       - name: Run governed Spec Steward worker authority regressions
