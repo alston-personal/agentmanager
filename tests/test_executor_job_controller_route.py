@@ -105,7 +105,7 @@ def test_first_registered_executor_job_cannot_be_routed_to_arbitrary_node(tmp_pa
         })
 
 
-def test_executor_job_rejects_passthrough_but_ignores_legacy_task_id_authority(tmp_path: Path) -> None:
+def test_executor_job_rejects_passthrough_but_bridge_task_id_has_no_job_authority(tmp_path: Path) -> None:
     fabric = _fabric(tmp_path)
     dispatcher = FakeDispatcher()
     controller = ControllerService(fabric, executor_job_dispatcher=dispatcher)
@@ -119,4 +119,5 @@ def test_executor_job_rejects_passthrough_but_ignores_legacy_task_id_authority(t
     result = controller.dispatch({**base, "task_id": "ctl_caller_selected_but_non_authoritative"})
     assert result["job_id"] == "action-12345678"
     assert result["task_id"] == "action-12345678"
+    assert result["task_id"] != "ctl_caller_selected_but_non_authoritative"
     assert fabric.load()["tasks"].get("oracle-core-node", []) == []
