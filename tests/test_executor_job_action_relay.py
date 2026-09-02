@@ -37,6 +37,7 @@ def test_worker_terminal_receipt_projects_missing_provider_without_shell_fallbac
 
     raw = ActionRelayWorker(root).process_one()
     assert raw is not None
+    assert raw["schema"] == "agentos.action-receipt/v1"
     assert raw["action"] == ACTION
     assert raw["executor_available"] is False
     assert raw["classification"] == "JOB_IMPLEMENTATION_UNAVAILABLE"
@@ -50,6 +51,34 @@ def test_worker_terminal_receipt_projects_missing_provider_without_shell_fallbac
     assert receipt["successful"] is False
     assert receipt["classification"] == "JOB_IMPLEMENTATION_UNAVAILABLE"
     assert receipt["credential_exposed"] is False
+
+
+def test_terminal_receipt_reconstructs_job_provenance_after_dispatcher_restart(tmp_path: Path) -> None:
+    root = tmp_path / "relay"
+    first = ActionRelayExecutorJobDispatcher(root)
+    submission = first.submit(node_id="oracle-core-node", request=canonical_experience_regression_request())
+    job_id = submission["job_id"]
+    ActionRelayWorker(root).process_one()
+
+    # A fresh controller/dispatcher has no in-memory request cache. It must be
+    # able to recover only the fixed semantic identity persisted in the receipt.
+    restarted = ActionRelayExecutorJobDispatcher(root)
+    receipt = restarted.inspect(job_id)
+    assert receipt is not None
+    assert receipt["job_id"] == job_id
+    assert receipt["job_type"] == "experience.regression"
+    assert receipt["project_id"] == "agentos-core"
+    assert receipt["executor_class"] == "openai-codex-local"
+    assert receipt["classification"] == "JOB_IMPLEMENTATION_UNAVAILABLE"
+
+    persisted = json.loads((root / "receipts" / f"{job_id}.json").read_text(encoding="utf-8"))
+    assert persisted["schema"] == "agentos.action-receipt/v1"
+    assert persisted["action"] == ACTION
+    assert persisted["job_type"] == "experience.regression"
+    assert "request" not in persisted
+    assert "prompt" not in persisted
+    assert "stdout" not in persisted
+    assert "credential" not in persisted
 
 
 def test_interrupted_processing_is_unknown_and_never_replayed(tmp_path: Path) -> None:
