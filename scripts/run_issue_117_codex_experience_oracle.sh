@@ -33,12 +33,12 @@ echo "agentos_issue117_execution_cwd=$PWD"
 
 echo "agentos_issue117_contract_tests=RUNNING"
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
-  python3 -m unittest \
-    tests.test_experience \
-    tests.test_experience_store \
-    tests.test_experience_mcp_stdio \
-    tests.test_install_codex_experience_mcp_oracle \
-    -v
+  python3 -m pytest \
+    tests/test_experience_memory.py \
+    tests/test_experience_store.py \
+    tests/test_experience_mcp_stdio.py \
+    tests/test_install_codex_experience_mcp_oracle.py \
+    -q
 echo "agentos_issue117_contract_tests=PASS"
 
 echo "agentos_issue117_one_experience_seed=RUNNING"
