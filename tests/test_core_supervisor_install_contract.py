@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "install_systemd_user.sh"
 SERVICE = ROOT / ".agent" / "scripts" / "agentos-core-supervisor.service"
 ENV_EXAMPLE = ROOT / ".agent" / "scripts" / "agentos-core-supervisor.env.example"
+ROOT_ENV_EXAMPLE = ROOT / ".env.example"
 DELIVERY_DROPIN = ROOT / ".agent" / "scripts" / "agentos-core-supervisor-delivery.conf.example"
+DOC = ROOT / "docs" / "CORE_SUPERVISOR_INSTALL.md"
 
 
 class CoreSupervisorInstallContractTests(unittest.TestCase):
@@ -43,6 +45,21 @@ class CoreSupervisorInstallContractTests(unittest.TestCase):
         text = INSTALLER.read_text(encoding="utf-8")
         self.assertIn('if [ ! -f "$SUPERVISOR_ENV_FILE" ]', text)
         self.assertNotIn('cp "$LOGIC_ROOT/.agent/scripts/agentos-core-supervisor.env.example" "$SUPERVISOR_ENV_FILE"', text)
+
+    def test_repository_env_defaults_s4_install_gate_closed(self):
+        text = ROOT_ENV_EXAMPLE.read_text(encoding="utf-8")
+        self.assertRegex(
+            text,
+            re.compile(r"^AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT=0$", re.MULTILINE),
+        )
+
+    def test_deployment_doc_keeps_source_install_and_live_acceptance_separate(self):
+        text = DOC.read_text(encoding="utf-8")
+        self.assertIn("systemctl --user", text)
+        self.assertIn("AGENTOS_CORE_SUPERVISOR_ENABLE_ONE_DIRECT=1", text)
+        self.assertIn("does **not** initialize a Realm", text)
+        self.assertIn("Repository merge != installer execution != Oracle deployment != operating acceptance", text)
+        self.assertIn("CORE_SUPERVISOR_PERSISTENT_RECONCILIATION=VERIFIED", text)
 
     def test_source_assets_remain_secret_free(self):
         combined = "\n".join(
