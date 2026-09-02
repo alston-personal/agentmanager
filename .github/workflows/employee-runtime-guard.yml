@@ -20,12 +20,15 @@ on:
       - 'agent_core/core_supervisor_service.py'
       - 'agent_core/core_supervisor_daemon.py'
       - 'agent_core/core_supervisor_delivery.py'
+      - 'agent_core/spec_steward_bootstrap.py'
+      - 'agent_core/spec_steward_acceptance.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
       - 'governance/core-supervisor-delivery.json'
+      - 'governance/spec-steward-employee.json'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
       - 'tests/test_employee_wake.py'
@@ -42,6 +45,8 @@ on:
       - 'tests/test_core_supervisor_delivery.py'
       - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_role_runtime.py'
+      - 'tests/test_spec_steward_bootstrap.py'
+      - 'tests/test_spec_steward_acceptance.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
@@ -51,6 +56,7 @@ on:
   push:
     branches:
       - core/issue-197-governed-wake-delivery-v2
+      - core/issue-197-spec-steward-bootstrap
       - core/issue-200-persistent-supervisor-loop
       - core/issue-200-governed-supervisor-delivery
       - core/integration
@@ -69,12 +75,15 @@ on:
       - 'agent_core/core_supervisor_service.py'
       - 'agent_core/core_supervisor_daemon.py'
       - 'agent_core/core_supervisor_delivery.py'
+      - 'agent_core/spec_steward_bootstrap.py'
+      - 'agent_core/spec_steward_acceptance.py'
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
       - 'governance/core-supervisor-delivery.json'
+      - 'governance/spec-steward-employee.json'
       - 'tests/test_employee_runtime.py'
       - 'tests/test_employee_lifecycle.py'
       - 'tests/test_employee_wake.py'
@@ -91,6 +100,8 @@ on:
       - 'tests/test_core_supervisor_delivery.py'
       - 'tests/test_core_supervisor_assets.py'
       - 'tests/test_role_runtime.py'
+      - 'tests/test_spec_steward_bootstrap.py'
+      - 'tests/test_spec_steward_acceptance.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
@@ -145,3 +156,8 @@ jobs:
         run: python -m unittest tests.test_core_supervisor_assets -v
       - name: Run role hydration regressions
         run: python -m unittest tests.test_role_runtime -v
+      - name: Run Spec Steward bootstrap regressions
+        run: python -m unittest tests.test_spec_steward_bootstrap -v
+      - name: Run Spec Steward O3 acceptance regressions
+        if: ${{ hashFiles('tests/test_spec_steward_acceptance.py') != '' }}
+        run: python -m unittest tests.test_spec_steward_acceptance -v
