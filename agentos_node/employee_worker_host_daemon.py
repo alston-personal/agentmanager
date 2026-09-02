@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Event
@@ -38,6 +37,24 @@ def _node_id() -> str:
     if not value or len(value) > 256 or any(ch in value for ch in "/\\\0"):
         raise ValueError("invalid_agentos_employee_worker_node_id")
     return value
+
+
+def _inside(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _require_separate_roots(*roots: Path) -> None:
+    resolved = [root.resolve() for root in roots]
+    if len(set(resolved)) != len(resolved):
+        raise ValueError("employee_worker_host_roots_must_be_distinct")
+    for index, left in enumerate(resolved):
+        for right in resolved[index + 1 :]:
+            if _inside(left, right) or _inside(right, left):
+                raise ValueError("employee_worker_host_roots_must_not_overlap")
 
 
 @contextmanager
@@ -91,12 +108,13 @@ def build_host() -> ExactEmployeeWorkerHost:
     wake_root = _absolute_env("AGENTOS_EMPLOYEE_WAKE_ROOT")
     host_state_root = _absolute_env(
         "AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT",
-        str(runtime_root / "worker-host") if runtime_root else None,
+        str(data_root / "employee-worker-host") if data_root else None,
     )
     worker_state_root = _absolute_env(
         "AGENTOS_EMPLOYEE_WORKER_STATE_ROOT",
-        str(runtime_root / "worker-state") if runtime_root else None,
+        str(data_root / "employee-worker-state") if data_root else None,
     )
+    _require_separate_roots(runtime_root, wake_root, host_state_root, worker_state_root)
     return ExactEmployeeWorkerHost(
         runtime_root=runtime_root,
         wake_root=wake_root,
