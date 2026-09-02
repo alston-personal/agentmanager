@@ -37,8 +37,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
       - name: Run Control Inbox bridge regressions
-        run: python -m unittest tests.test_control_inbox_bridge -v
+        run: python -m pytest tests/test_control_inbox_bridge.py -q
       - name: Verify service is secret-free and bounded
         shell: bash
         run: |
