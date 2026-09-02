@@ -29,6 +29,12 @@ COMMON_RECEIPT_FIELDS = (
     'schema', 'node_id', 'task_id', 'action', 'ok', 'realm_id',
     'received_at', 'started_at', 'completed_at', 'status', 'state',
 )
+EXECUTOR_JOB_RECEIPT_FIELDS = (
+    'job_id', 'job_type', 'project_id', 'executor_class', 'capability',
+    'executor_available', 'routable', 'authorized', 'successful',
+    'credential_exposed', 'classification', 'experiment_id', 'verdict',
+    'baseline_score', 'hydrated_score', 'uplift', 'hydration_receipt_ok',
+)
 
 
 class OneControllerError(RuntimeError):
@@ -74,7 +80,7 @@ def _safe_scalar(value: Any) -> Any:
     if isinstance(value, (bool, int, float)) or value is None:
         return value
     if isinstance(value, str):
-        # Receipts are evidence, not a secret-bearing debug channel.  Keep bounded
+        # Receipts are evidence, not a secret-bearing debug channel. Keep bounded
         # scalar protocol data only; never echo authorization/token-like strings.
         lowered = value.lower()
         if any(marker in lowered for marker in ('bearer ', 'github_pat_', 'ghp_', 'token=', 'secret=')):
@@ -143,6 +149,17 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
                 processes.append(window['process_name'][:128])
         if processes:
             projected['processes'] = sorted(set(processes))[:64]
+    elif action == 'agentos.executor.job':
+        # Executor receipts are already sanitized by the Node-local adapter, but
+        # the public Control Inbox applies an independent allowlist. No raw model
+        # output, prompt, path, session identifier, provider detail, or credential
+        # can cross this GitHub-backed bootstrap surface.
+        for key in EXECUTOR_JOB_RECEIPT_FIELDS:
+            if key not in receipt:
+                continue
+            safe = _safe_scalar(receipt.get(key))
+            if safe is not None or receipt.get(key) is None:
+                projected[key] = safe
     return projected
 
 
