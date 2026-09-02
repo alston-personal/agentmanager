@@ -14,6 +14,7 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.employee_wake_inbox import deliver_employee_wake
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
 
@@ -40,6 +41,7 @@ class ThinClientPolicy:
     allowed_executables: set[str] = field(default_factory=set)
     readable_roots: tuple[Path, ...] = field(default_factory=tuple)
     writable_roots: tuple[Path, ...] = field(default_factory=tuple)
+    employee_wake_root: Path | None = None
     max_timeout_seconds: int = 300
 
     @staticmethod
@@ -100,6 +102,8 @@ class ThinClient:
             caps.append('filesystem.read')
         if self.policy.writable_roots:
             caps.append('filesystem.write')
+        if self.policy.employee_wake_root is not None:
+            caps.append('agent.employee.wake.deliver')
         if platform.system() == 'Windows':
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
@@ -169,6 +173,14 @@ class ThinClient:
                 result = self._read_file(task)
             elif action == 'filesystem.write':
                 result = self._write_file(task)
+            elif action == 'agent.employee.wake.deliver':
+                if self.policy.employee_wake_root is None:
+                    raise PermissionError('employee_wake_inbox_not_configured')
+                result = deliver_employee_wake(
+                    task,
+                    self.policy.employee_wake_root,
+                    expected_node_id=self.identity.node_id,
+                )
             elif action == 'agent.surface.inspect':
                 result = {'surface_inventory': self.surface_inventory()}
             elif action == 'agent.session.discover':
