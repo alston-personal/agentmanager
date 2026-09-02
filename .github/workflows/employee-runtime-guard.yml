@@ -25,6 +25,7 @@ on:
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/spec_steward_worker.py'
+      - 'agentos_node/governed_spec_steward_worker.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -49,6 +50,7 @@ on:
       - 'tests/test_spec_steward_bootstrap.py'
       - 'tests/test_spec_steward_acceptance.py'
       - 'tests/test_spec_steward_worker.py'
+      - 'tests/test_governed_spec_steward_worker.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
@@ -83,6 +85,7 @@ on:
       - 'agent_core/role_runtime.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/spec_steward_worker.py'
+      - 'agentos_node/governed_spec_steward_worker.py'
       - 'agentos_node/thin_client.py'
       - 'governance/employee-memory-policy.json'
       - 'governance/employee-skills.json'
@@ -107,6 +110,7 @@ on:
       - 'tests/test_spec_steward_bootstrap.py'
       - 'tests/test_spec_steward_acceptance.py'
       - 'tests/test_spec_steward_worker.py'
+      - 'tests/test_governed_spec_steward_worker.py'
       - '.agent/roles/**'
       - '.agent/scripts/agentos-core-supervisor.service'
       - '.agent/scripts/agentos-core-supervisor.env.example'
@@ -167,3 +171,5 @@ jobs:
         run: python -m unittest tests.test_spec_steward_acceptance -v
       - name: Run Spec Steward Employee worker regressions
         run: python -m unittest tests.test_spec_steward_worker -v
+      - name: Run governed Spec Steward worker authority regressions
+        run: python -m unittest tests.test_governed_spec_steward_worker -v
