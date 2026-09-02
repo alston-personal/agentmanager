@@ -1,0 +1,66 @@
+{
+  "schema": "agentos.employee-bootstrap/v1",
+  "bootstrap_id": "spec-steward-o3-v1",
+  "employee": {
+    "employee_id": "agentos-spec-steward",
+    "display_name": "AgentOS Spec Steward",
+    "role_ids": [
+      "governance.spec_steward"
+    ],
+    "skill_ids": [
+      "spec.audit"
+    ]
+  },
+  "initial_work_item": {
+    "schema": "agentos.core-work-item/v1",
+    "work_item_id": "spec-steward-o3-acceptance-v1",
+    "source_kind": "canonical_state",
+    "source_ref": "core:issue-197-o3",
+    "project_id": "agentos-core",
+    "employee_id": "agentos-spec-steward",
+    "assignment_id": "spec-steward-o3-acceptance-v1",
+    "goal": "Audit only the AgentOS Core #197 O3 persistent-Employee acceptance scope and emit closure-gap evidence needed to prove or block operating acceptance.",
+    "constraints": [
+      "scope-is-core-issue-197-o3-only",
+      "read-only-governance-audit",
+      "no-protected-main-publication",
+      "no-runtime-mutation-without-separate-authority",
+      "no-credential-or-session-identity-output",
+      "receipt-and-provenance-required"
+    ],
+    "dependency_refs": [],
+    "required_capabilities": [
+      "governance.spec.audit"
+    ],
+    "authority_requirements": [
+      "role-contract-must-cover-required-capability",
+      "skill-does-not-grant-capability-authority",
+      "runtime-mutation-requires-separate-authority"
+    ],
+    "source_revision": "spec-steward-o3-v1",
+    "state": "open"
+  },
+  "initial_thread_head": "o3:spec-steward-acceptance:start",
+  "acceptance_marker": "SPEC_STEWARD_PERSISTENT_EMPLOYEE=VERIFIED",
+  "acceptance_requires": [
+    "active_role_hydrated",
+    "active_skill_hydrated",
+    "governed_one_wake_delivered",
+    "executor_claim_observed",
+    "checkpoint_thread_head_observed",
+    "fresh_executor_or_session_resume_observed",
+    "private_memory_continuity_observed",
+    "credential_and_session_identity_not_exposed",
+    "terminal_sanitized_employee_receipt_persisted",
+    "carrier_and_authority_evidence_persisted"
+  ],
+  "invariants": [
+    "bootstrap_is_idempotent",
+    "bootstrap_never_reopens_terminal_assignment",
+    "bootstrap_never_overwrites_progressed_thread_head",
+    "employee_identity_is_not_executor_node_model_or_session_identity",
+    "role_status_active_is_not_operating_evidence",
+    "static_ci_cannot_emit_verified_marker",
+    "github_actions_is_not_control_plane_fallback"
+  ]
+}
