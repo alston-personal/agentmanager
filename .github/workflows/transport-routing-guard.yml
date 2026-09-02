@@ -9,6 +9,8 @@ on:
       - agent_core/transport_routing.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
+      - governance/product-deployment-carriers.json
+      - tests/test_product_deployment_carriers.py
       - docs/CHATGPT_ONE_TRANSPORT.md
       - AGENTS.md
       - docs/CURRENT_STATE.md
@@ -20,6 +22,8 @@ on:
       - agent_core/transport_routing.py
       - governance/transport-routing.json
       - tests/test_transport_routing.py
+      - governance/product-deployment-carriers.json
+      - tests/test_product_deployment_carriers.py
       - docs/CHATGPT_ONE_TRANSPORT.md
       - AGENTS.md
       - docs/CURRENT_STATE.md
@@ -71,3 +75,13 @@ jobs:
           assert policy['failure_semantics']['control_plane_transport_unavailable'] == 'fail_closed'
           assert policy['failure_semantics']['control_plane_transport_error'] == 'surface_error_no_workflow_fallback'
           PY
+
+  deployment-carrier-classification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate product deployment carrier JSON
+        run: python3 -m json.tool governance/product-deployment-carriers.json >/dev/null
+      - name: Assert no-job legacy Actions noise is not transport evidence
+        run: python3 -m unittest tests.test_product_deployment_carriers -v
