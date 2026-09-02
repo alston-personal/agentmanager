@@ -5,13 +5,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from agent_core.core_supervisor import RECONCILE_INTENT_SCHEMA
 from agent_core.core_supervisor_delivery import DELIVERY_STATE_SCHEMA
+from agent_core.core_supervisor_service import INTENT_RECORD_SCHEMA
 from agent_core.core_work_items import WorkItemStore
 from agent_core.employee_lifecycle import EmployeeLifecycle, RECEIPT_SCHEMA
 from agent_core.employee_memory import EmployeeMemoryPolicy, EmployeeMemoryService
+from agent_core.employee_presence import WAKE_CAPABILITY
 from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.employee_skills import EmployeeSkillRegistry, EmployeeSkillService
-from agent_core.employee_presence import WAKE_CAPABILITY
 from agent_core.role_runtime import RoleRegistry
 from agent_core.spec_steward_bootstrap import (
     DEFAULT_ROLE_REGISTRY_PATH,
@@ -88,6 +90,7 @@ class SpecStewardAcceptanceReport:
     checks: dict[str, bool]
     blocking_reasons: tuple[str, ...]
     qualifying_delivery_count: int
+    qualifying_wake_generations: tuple[int, ...]
     observed_lease_generation: int | None
     terminal_receipt_generation: int | None
     ready_for_live_marker: bool
@@ -99,6 +102,7 @@ class SpecStewardAcceptanceReport:
     def as_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["blocking_reasons"] = list(self.blocking_reasons)
+        value["qualifying_wake_generations"] = list(self.qualifying_wake_generations)
         return value
 
 
@@ -225,6 +229,51 @@ def _qualifying_deliveries(runtime: EmployeeRuntime, contract: SpecStewardBootst
             continue
         result.append(payload)
     return result
+
+
+def _qualifying_wake_generations(
+    runtime: EmployeeRuntime,
+    contract: SpecStewardBootstrapContract,
+    deliveries: list[dict[str, Any]],
+) -> tuple[int, ...]:
+    generations: set[int] = set()
+    intents_root = runtime.root / "supervisor" / "intents"
+    for delivery in deliveries:
+        reconcile_id = str(delivery.get("reconcile_id") or "").strip()
+        if not reconcile_id:
+            continue
+        try:
+            record = _read_json(intents_root / f"{reconcile_id}.json")
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if not record or record.get("schema") != INTENT_RECORD_SCHEMA:
+            continue
+        if record.get("reconcile_id") != reconcile_id or record.get("state") != "planned":
+            continue
+        if record.get("dispatch_performed") is not False:
+            continue
+        intent = record.get("intent")
+        if not isinstance(intent, dict) or intent.get("schema") != RECONCILE_INTENT_SCHEMA:
+            continue
+        if intent.get("employee_id") != contract.employee.employee_id:
+            continue
+        if intent.get("assignment_id") != contract.initial_work_item.assignment_id:
+            continue
+        wake = intent.get("wake_intent")
+        if not isinstance(wake, dict):
+            continue
+        if wake.get("wake_id") != delivery.get("wake_id"):
+            continue
+        if wake.get("employee_id") != contract.employee.employee_id:
+            continue
+        if wake.get("assignment_id") != contract.initial_work_item.assignment_id:
+            continue
+        if wake.get("credential_exposed") is not False:
+            continue
+        generation = int(wake.get("expected_lease_generation") or 0)
+        if generation >= 1:
+            generations.add(generation)
+    return tuple(sorted(generations))
 
 
 def _memory_continuity_ok(
@@ -366,6 +415,7 @@ def inspect_spec_steward_acceptance(
     )
 
     deliveries = _qualifying_deliveries(runtime, contract)
+    wake_generations = _qualifying_wake_generations(runtime, contract, deliveries)
     checks["governed_one_wake_delivery"] = bool(deliveries)
 
     try:
@@ -381,6 +431,11 @@ def inspect_spec_steward_acceptance(
         and lease.resumed_from_lease_id != lease.lease_id
         and lease.thread_head == assignment_thread_head
         and assignment_thread_head != contract.initial_thread_head
+    )
+    checks["initial_and_resume_wakes_governed"] = bool(
+        lease
+        and 1 in wake_generations
+        and int(lease.generation) in wake_generations
     )
     checks["fresh_executor_or_session_live_witness"] = _live_witness_ok(
         runtime, contract, current_lease=lease
@@ -426,6 +481,7 @@ def inspect_spec_steward_acceptance(
         checks=checks,
         blocking_reasons=blocking,
         qualifying_delivery_count=len(deliveries),
+        qualifying_wake_generations=wake_generations,
         observed_lease_generation=lease.generation if lease else None,
         terminal_receipt_generation=receipt_generation,
         ready_for_live_marker=not blocking,
