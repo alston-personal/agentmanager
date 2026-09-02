@@ -35,6 +35,9 @@ case "$RC" in
   7)
     echo "agentos_e3_real_session_hook=FIRED_NO_INJECTION"
     ;;
+  8)
+    echo "agentos_e3_real_session_hook=FIRED_AND_HYDRATED_WRONG_EXECUTOR"
+    ;;
   4)
     echo "agentos_e3_real_session_hook=NOT_PROVEN"
     ;;
