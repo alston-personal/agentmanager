@@ -33,4 +33,12 @@ assert.match(bg,/shouldPreserveCurrentOwnerKey\(ownerUserId, shareB\.ownerAddres
 assert.match(bg,/storeLegacyOwnerKey\(ownerUserId, shareB, ownerSecret\)/);
 console.log('historical_recovery_contract=PASS');
 ''')
+# Older Passkey bridge regression originally pinned exactly 1.0.66. Keep the
+# bridge assertions, but make the version check forward-compatible.
+passkey_test=tests/'passkey-recovery-bridge-contract.test.mjs'
+if passkey_test.exists():
+    pt=passkey_test.read_text()
+    pt=pt.replace("assert.equal(manifest.version, '1.0.66');", "assert.ok(Number(manifest.version.split('.').at(-1)) >= 66, `expected extension >= 1.0.66, got ${manifest.version}`);")
+    pt=pt.replace('assert.equal(manifest.version, "1.0.66");', 'assert.ok(Number(manifest.version.split(".").at(-1)) >= 66, `expected extension >= 1.0.66, got ${manifest.version}`);')
+    passkey_test.write_text(pt)
 print(f'version_before={before}\nversion_after=1.0.68\nhistorical_recovery_patch=PASS')
