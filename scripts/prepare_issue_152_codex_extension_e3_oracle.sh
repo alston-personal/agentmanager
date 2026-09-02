@@ -40,6 +40,7 @@ PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
     tests.test_canonical_ir_handoff \
     tests.test_active_continuation \
     tests.test_codex_one_mcp_stdio \
+    tests.test_install_codex_one_oracle \
     -v
 echo "agentos_codex_e3_contract_tests=PASS"
 
@@ -56,7 +57,6 @@ echo "agentos_codex_e3_install=PASS"
 PYTHONPATH="$TARGET" AGENT_DATA_ROOT="$DATA_ROOT" \
   python3 - <<'PY'
 import json
-import os
 from agentos_node.codex_one_mcp_stdio import _active_projection
 from agentos_node.one_mcp import OracleLocalGateway
 
