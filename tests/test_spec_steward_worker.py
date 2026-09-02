@@ -36,6 +36,16 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _assert_no_exact_keys(testcase: unittest.TestCase, value, forbidden: set[str]) -> None:
+    if isinstance(value, dict):
+        for raw_key, item in value.items():
+            testcase.assertNotIn(str(raw_key).casefold(), forbidden)
+            _assert_no_exact_keys(testcase, item, forbidden)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_no_exact_keys(testcase, item, forbidden)
+
+
 class SpecStewardWorkerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -198,7 +208,7 @@ class SpecStewardWorkerTests(unittest.TestCase):
         serialized = json.dumps(receipt, ensure_ascii=False)
         self.assertNotIn("process-a", serialized)
         self.assertNotIn("process-b", serialized)
-        self.assertNotIn("session_id", serialized)
+        _assert_no_exact_keys(self, receipt, {"session", "session_id"})
 
         # The worker may finish before the next Supervisor cycle observes the claim.
         blocked = inspect_spec_steward_acceptance(self.runtime)
@@ -218,6 +228,7 @@ class SpecStewardWorkerTests(unittest.TestCase):
         self.assertTrue(witness["fresh_executor_or_session"])
         self.assertTrue(witness["process_boundary_observed"])
         self.assertFalse(witness["session_identity_exposed"])
+        _assert_no_exact_keys(self, witness, {"session", "session_id"})
 
     def test_same_process_resume_cannot_produce_fresh_executor_witness(self):
         self._deliver_current_wake(now=T0, presence_generation=1)
