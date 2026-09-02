@@ -31,7 +31,7 @@ class FakeDispatcher:
         }
 
 
-def _fabric(tmp_path: Path, *, include_capability: bool = True) -> RealmFabricStore:
+def _fabric(tmp_path: Path, *, node_id: str = "oracle-core-node", include_capability: bool = False) -> RealmFabricStore:
     registry = NodeRegistry(tmp_path / "nodes.json")
     fabric = RealmFabricStore(tmp_path / "fabric.json", node_registry=registry)
     fabric.initialize_realm("realm-test")
@@ -39,7 +39,7 @@ def _fabric(tmp_path: Path, *, include_capability: bool = True) -> RealmFabricSt
     manifest = {
         "schema": "agentos.node-manifest/v0.1",
         "realm_id": "realm-test",
-        "node_id": "oracle-core-node",
+        "node_id": node_id,
         "role": "core",
         "hostname": "oracle",
         "platform": "Linux",
@@ -51,7 +51,7 @@ def _fabric(tmp_path: Path, *, include_capability: bool = True) -> RealmFabricSt
     registry.record_heartbeat({
         "schema": "agentos.node-heartbeat/v0.1",
         "realm_id": "realm-test",
-        "node_id": "oracle-core-node",
+        "node_id": node_id,
         "role": "core",
         "status": "online",
         "observed_at": "2099-01-01T00:00:00Z",
@@ -81,16 +81,29 @@ def test_executor_job_routes_to_local_dispatcher_not_thin_client_queue(tmp_path:
     assert fabric.load()["tasks"].get("oracle-core-node", []) == []
 
 
-def test_executor_job_requires_registered_semantic_capability(tmp_path: Path) -> None:
+def test_node_capability_does_not_claim_executor_availability(tmp_path: Path) -> None:
     fabric = _fabric(tmp_path, include_capability=False)
+    dispatcher = FakeDispatcher()
+    controller = ControllerService(fabric, executor_job_dispatcher=dispatcher)
+    result = controller.dispatch({
+        "node_id": "oracle-core-node",
+        "action": "agentos.executor.job",
+        "payload": canonical_experience_regression_request(),
+    })
+    assert result["ok"] is True
+    assert len(dispatcher.calls) == 1
+    assert fabric.load()["tasks"].get("oracle-core-node", []) == []
+
+
+def test_first_registered_executor_job_cannot_be_routed_to_arbitrary_node(tmp_path: Path) -> None:
+    fabric = _fabric(tmp_path, node_id="other-node")
     controller = ControllerService(fabric, executor_job_dispatcher=FakeDispatcher())
-    with pytest.raises(ValueError, match="does not advertise capability"):
+    with pytest.raises(ValueError, match="not routable to target node"):
         controller.dispatch({
-            "node_id": "oracle-core-node",
+            "node_id": "other-node",
             "action": "agentos.executor.job",
             "payload": canonical_experience_regression_request(),
         })
-    assert fabric.load()["tasks"].get("oracle-core-node", []) == []
 
 
 def test_executor_job_rejects_legacy_passthrough_and_caller_task_id(tmp_path: Path) -> None:
