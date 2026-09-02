@@ -1,0 +1,39 @@
+name: MetaShield Future Preservation Safety Preflight
+
+on:
+  push:
+    paths:
+      - '.github/workflows/metashield-future-safety-preflight.yml'
+      - 'scripts/metashield_future_safety_preflight.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run future preservation safety preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/metashield_future_safety_preflight.sh "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield_future_safety_preflight.sh"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" "bash /tmp/metashield_future_safety_preflight.sh /tmp/metashield-future-safety-preflight.txt"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/metashield-future-safety-preflight.txt" .agentos/evidence/metashield-future-safety-preflight.txt
+          cat .agentos/evidence/metashield-future-safety-preflight.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metashield-future-preservation-safety-preflight
+          path: .agentos/evidence/metashield-future-safety-preflight.txt
+          if-no-files-found: error
