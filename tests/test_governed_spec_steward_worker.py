@@ -76,6 +76,7 @@ class GovernedSpecStewardWorkerTests(unittest.TestCase):
         authority_policy_id: str = EXPECTED_AUTHORITY_POLICY,
         status: str = "awaiting_claim",
     ) -> None:
+        self.assertTrue(reconcile_id.startswith("reconcile_"))
         _write(
             self.runtime_root / "supervisor" / "intents" / f"{reconcile_id}.json",
             {
@@ -136,19 +137,19 @@ class GovernedSpecStewardWorkerTests(unittest.TestCase):
         self.assertEqual(self.runtime.get_assignment(ASSIGNMENT_ID).state, "pending")
 
     def test_actions_like_transport_cannot_authorize_worker(self):
-        self._record_delivery("reconcile-actions", transport="github_actions")
+        self._record_delivery("reconcile_actions", transport="github_actions")
         with self.assertRaisesRegex(PermissionError, "governed_delivery_missing"):
             self._worker().process_one(now=T0)
         self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
 
     def test_wrong_authority_policy_cannot_authorize_worker(self):
-        self._record_delivery("reconcile-wrong-policy", authority_policy_id="unrelated-policy")
+        self._record_delivery("reconcile_wrong_policy", authority_policy_id="unrelated-policy")
         with self.assertRaisesRegex(PermissionError, "governed_delivery_missing"):
             self._worker().process_one(now=T0)
         self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
 
     def test_exact_s4_delivery_allows_bounded_worker_claim(self):
-        self._record_delivery("reconcile-exact")
+        self._record_delivery("reconcile_exact")
         state = self._worker().process_one(now=T0)
         self.assertEqual(state.status, "checkpointed")
         self.assertEqual(state.lease_generation, 1)
@@ -157,14 +158,14 @@ class GovernedSpecStewardWorkerTests(unittest.TestCase):
         self.assertEqual(lease.generation, 1)
 
     def test_duplicate_authority_records_fail_ambiguous_instead_of_picking_one(self):
-        self._record_delivery("reconcile-one")
-        self._record_delivery("reconcile-two")
+        self._record_delivery("reconcile_one")
+        self._record_delivery("reconcile_two")
         with self.assertRaisesRegex(PermissionError, "governed_delivery_ambiguous"):
             self._worker().process_one(now=T0)
         self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
 
     def test_terminal_or_unknown_delivery_is_not_preclaim_authority(self):
-        self._record_delivery("reconcile-unknown", status="unknown")
+        self._record_delivery("reconcile_unknown", status="unknown")
         with self.assertRaisesRegex(PermissionError, "governed_delivery_missing"):
             self._worker().process_one(now=T0)
         self.assertIsNone(self.lifecycle.get_lease(ASSIGNMENT_ID))
