@@ -6,10 +6,12 @@ fixed semantic action only; no generic shell or argv surface is introduced.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
 from agent_core.executor_job_contract import (
+    EXECUTOR_JOB_SCHEMA,
     project_executor_job_receipt,
     project_executor_job_submission,
     validate_executor_job,
@@ -21,6 +23,23 @@ from agentos_node.executor_job_adapter import run_registered_executor_job
 
 ACTION = "agentos.executor.job"
 DEFAULT_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
+_REQUEST_FIELDS = ("job_type", "project_id", "executor_class", "workload_ref", "authority")
+
+
+def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
+    validate_executor_job(request)
+    return {"schema": EXECUTOR_JOB_SCHEMA, **{key: request[key] for key in _REQUEST_FIELDS}}
+
+
+def _request_from_receipt(receipt: Mapping[str, Any]) -> dict[str, Any] | None:
+    candidate = {"schema": EXECUTOR_JOB_SCHEMA}
+    for key in _REQUEST_FIELDS:
+        value = receipt.get(key)
+        if not isinstance(value, str) or not value:
+            return None
+        candidate[key] = value
+    validate_executor_job(candidate)
+    return candidate
 
 
 def _execute(params: dict[str, Any]) -> dict[str, Any]:
@@ -28,7 +47,10 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
     validate_executor_job(request)
-    return run_registered_executor_job(request=request)
+    # Persist only fixed identity fields plus the adapter's already-sanitized
+    # semantic result. This is enough to reconstruct provenance after a worker
+    # or controller restart without retaining prompt/stdout/path/session data.
+    return {**_request_projection(request), **run_registered_executor_job(request=request)}
 
 
 # Trusted-process registration. Importing this module extends the same fixed
@@ -53,31 +75,38 @@ class ActionRelayExecutorJobDispatcher:
         self._requests[job_id] = dict(request)
         return project_executor_job_submission(job_id=job_id, node_id=node_id, request=request)
 
+    def _recover_request(self, job_id: str) -> dict[str, Any] | None:
+        request = self._requests.get(job_id)
+        if request is not None:
+            return request
+        for base in (self.root / "inbox", self.root / "processing", self.root / "quarantine"):
+            path = base / f"{job_id}.json"
+            if not path.is_file():
+                continue
+            capsule = json.loads(path.read_text(encoding="utf-8"))
+            params = capsule.get("params") or {}
+            candidate = params.get("request") if isinstance(params, dict) else None
+            if isinstance(candidate, dict):
+                validate_executor_job(candidate)
+                request = dict(candidate)
+                self._requests[job_id] = request
+                return request
+        receipt_path = self.root / "receipts" / f"{job_id}.json"
+        if receipt_path.is_file():
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            request = _request_from_receipt(receipt)
+            if request is not None:
+                self._requests[job_id] = request
+                return request
+        return None
+
     def inspect(self, job_id: str) -> dict[str, Any] | None:
         job_id = validate_executor_job_id(job_id)
-        request = self._requests.get(job_id)
-        if request is None:
-            # Controller restart may lose the in-memory request cache. Recover
-            # only from the immutable relay capsule/receipt, never from caller
-            # supplied filesystem input.
-            for base in (self.root / "inbox", self.root / "processing", self.root / "quarantine"):
-                path = base / f"{job_id}.json"
-                if path.is_file():
-                    import json
-                    capsule = json.loads(path.read_text(encoding="utf-8"))
-                    params = capsule.get("params") or {}
-                    candidate = params.get("request") if isinstance(params, dict) else None
-                    if isinstance(candidate, dict):
-                        validate_executor_job(candidate)
-                        request = dict(candidate)
-                        self._requests[job_id] = request
-                        break
+        request = self._recover_request(job_id)
         receipt = self.client.receipt(job_id)
         if receipt is None:
             return None
         if request is None:
-            # A terminal receipt without a recoverable canonical request cannot
-            # safely be projected into the semantic contract.
             raise RuntimeError("executor-job request provenance unavailable")
         if receipt.get("action") not in (None, ACTION):
             raise RuntimeError("executor-job relay receipt action mismatch")
