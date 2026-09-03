@@ -1,0 +1,83 @@
+{
+  "schema": "agentos.experience-set/v1",
+  "project_id": "agentos-core",
+  "projection_only": true,
+  "artifacts": [
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "core.workspace-not-continuation-authority.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.one.resolve"],
+      "executor_scope": [],
+      "kind": "constraint",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {
+            "id": "canonical-authority",
+            "op": "require",
+            "predicate": "continuation.authority",
+            "arguments": [{"type": "symbol", "value": "ONE_CANONICAL_IR"}]
+          },
+          {
+            "id": "reject-workspace-authority",
+            "op": "forbid",
+            "predicate": "continuation.authority",
+            "arguments": [{"type": "symbol", "value": "WORKSPACE_VENDOR_HISTORY"}]
+          }
+        ],
+        "entrypoints": ["canonical-authority", "reject-workspace-authority"],
+        "expected_behavior_dimensions": ["workspace_is_continuation_authority"]
+      },
+      "display": {
+        "summary": "Workspace or vendor-local history is not continuation authority; resolve ONE Canonical IR."
+      },
+      "provenance": {
+        "sources": ["github-issue://alston-personal/agentmanager/152"],
+        "accepted_evidence": ["agentos-evidence://continuity/issue-152/e3"],
+        "extraction_id": "agentos-extraction://agentos-core/152/workspace-authority"
+      },
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "core.generic-continue-not-merge-authority.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["repository.merge"],
+      "executor_scope": [],
+      "kind": "constraint",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {
+            "id": "continue-not-authority",
+            "op": "forbid",
+            "predicate": "repository.merge.authorization_source",
+            "arguments": [{"type": "symbol", "value": "GENERIC_CONTINUE"}]
+          },
+          {
+            "id": "require-explicit-authority",
+            "op": "require",
+            "predicate": "repository.merge.authorization_source",
+            "arguments": [{"type": "symbol", "value": "EXPLICIT_CANONICAL_AUTHORITY"}]
+          }
+        ],
+        "entrypoints": ["continue-not-authority", "require-explicit-authority"],
+        "expected_behavior_dimensions": ["generic_continue_is_merge_authority"]
+      },
+      "display": {
+        "summary": "A generic continuation request does not itself authorize repository merge/publication."
+      },
+      "provenance": {
+        "sources": ["github-issue://alston-personal/agentmanager/117"],
+        "accepted_evidence": ["agentos-governance://core/publication-authority"],
+        "extraction_id": "agentos-extraction://agentos-core/117/merge-authority"
+      },
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    }
+  ]
+}
