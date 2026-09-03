@@ -60,35 +60,15 @@ jobs:
 
   deploy-one-server:
     needs: [contract, windows-contract]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 12
-    env:
-      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
-      - name: Validate deployment settings
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${DEPLOY_HOST_SOURCE:-}"
-          test -n "${DEPLOY_USER:-}"
-          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
-          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
-          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-          test -n "$DEPLOY_HOST"
-          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - uses: actions/checkout@v4
       - name: Install exact ONE server candidate with rollback
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$GITHUB_SHA" <<'REMOTE'
-          set -euo pipefail
-          SOURCE_COMMIT="$1"
+          SOURCE_COMMIT="$GITHUB_SHA"
           DATA=/home/ubuntu/agent-data
           ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
           RELEASE="$ROOT/releases/$SOURCE_COMMIT"
@@ -113,7 +93,7 @@ jobs:
           if [ ! -x "$RELEASE/venv/bin/agentos-one" ]; then
             python3 -m venv "$RELEASE/venv"
             "$RELEASE/venv/bin/python" -m pip install --disable-pip-version-check \
-              "git+https://github.com/alston-personal/agentmanager.git@$SOURCE_COMMIT"
+              "$GITHUB_WORKSPACE"
           fi
           cat > "$UNIT" <<EOF
           [Unit]
@@ -144,7 +124,6 @@ jobs:
           echo "one_server_source_commit=$SOURCE_COMMIT"
           echo 'one_server_active_resolve_candidate=PASS'
           trap - EXIT
-          REMOTE
 
   deploy-vopc-client:
     needs: deploy-one-server
