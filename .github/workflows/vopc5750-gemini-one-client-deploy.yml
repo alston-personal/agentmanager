@@ -71,13 +71,17 @@ jobs:
           SOURCE_COMMIT="$GITHUB_SHA"
           DATA=/home/ubuntu/agent-data
           ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
-          RELEASE="$ROOT/releases/$SOURCE_COMMIT"
           CURRENT="$ROOT/current"
+          SOURCE_ROOT="$ROOT/source-releases"
+          RELEASE="$SOURCE_ROOT/$SOURCE_COMMIT"
           UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
           BACKUP="$UNIT.pre-vopc-gemini-one"
 
           [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          mkdir -p "$ROOT/releases" "$HOME/.config/systemd/user" "$DATA/logs"
+          BASE_RELEASE=$(readlink -f "$CURRENT")
+          BASE_PYTHON="$BASE_RELEASE/venv/bin/python"
+          test -x "$BASE_PYTHON"
+          mkdir -p "$SOURCE_ROOT" "$HOME/.config/systemd/user" "$DATA/logs"
           if [ -f "$UNIT" ]; then cp "$UNIT" "$BACKUP"; fi
           rollback() {
             rc=$?
@@ -90,11 +94,16 @@ jobs:
           }
           trap rollback EXIT
 
-          if [ ! -x "$RELEASE/venv/bin/agentos-one" ]; then
-            python3 -m venv "$RELEASE/venv"
-            "$RELEASE/venv/bin/python" -m pip install --disable-pip-version-check \
-              "$GITHUB_WORKSPACE"
+          if [ ! -f "$RELEASE/agent_core/realm_server.py" ]; then
+            TMP="$SOURCE_ROOT/.install-$SOURCE_COMMIT-$GITHUB_RUN_ID"
+            rm -rf "$TMP"
+            mkdir -p "$TMP"
+            cp -a agent_core agentos_node runtime_core "$TMP/"
+            rm -rf "$RELEASE"
+            mv "$TMP" "$RELEASE"
           fi
+          (cd /tmp && PYTHONPATH="$RELEASE" "$BASE_PYTHON" -c \
+            "from agent_core.realm_server import RealmHTTPServer; from agentos_node.one_mcp import ClientOneGateway; print('candidate_import=PASS')")
           cat > "$UNIT" <<EOF
           [Unit]
           Description=AgentOS ONE Realm Fabric
@@ -103,7 +112,8 @@ jobs:
           [Service]
           Type=simple
           Environment=AGENT_DATA_ROOT=$DATA
-          ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
+          Environment=PYTHONPATH=$RELEASE
+          ExecStart=$BASE_PYTHON -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780
           Restart=always
           RestartSec=5
           StandardOutput=append:$DATA/logs/realm-fabric.log
@@ -120,8 +130,9 @@ jobs:
             sleep 1
           done
           curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
-          ln -sfn "$RELEASE" "$CURRENT"
           echo "one_server_source_commit=$SOURCE_COMMIT"
+          echo "one_server_source_release=$RELEASE"
+          echo "one_server_python_runtime=$BASE_RELEASE"
           echo 'one_server_active_resolve_candidate=PASS'
           trap - EXIT
 
