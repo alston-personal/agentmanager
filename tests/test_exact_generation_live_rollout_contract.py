@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPAIR = ROOT / "scripts" / "repair_antigravity_relay_user.sh"
 BOOTSTRAP = ROOT / "agentos_node" / "bootstrap_control.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "oracle-exact-generation-executor-job-rollout.yml"
+LEGACY_BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "oracle-bootstrap-transport-control-plane.yml"
 
 
 def _text(path: Path) -> str:
@@ -62,6 +63,22 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('executor_job_transport_receipt=PASS', text)
         self.assertIn('actions/upload-artifact@v4', text)
         self.assertNotIn("assert receipt['successful'] is True", text)
+
+    def test_legacy_bootstrap_is_manual_read_only_and_exact_generation_only(self):
+        text = _text(LEGACY_BOOTSTRAP_WORKFLOW)
+        compact = text.replace(' ', '')
+        trigger = text.split('permissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', trigger)
+        self.assertNotIn('\n  push:', trigger)
+        self.assertIn('permissions:\n  contents: read', text)
+        self.assertIn("test \"$GITHUB_REF\" = 'refs/heads/core/integration'", text)
+        self.assertIn("'params':{'source_commit':sha}", compact)
+        self.assertIn("assertr.get('source_commit')==expected", compact)
+        self.assertNotIn('contents: write', text)
+        self.assertNotIn('git push', text)
+        self.assertNotIn('HEAD:main', text)
+        self.assertNotIn('git reset --hard origin/main', text)
+        self.assertIn('bootstrap_evidence_scope=RUNNER_WORKSPACE_ONLY', text)
 
 
 if __name__ == "__main__":

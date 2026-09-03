@@ -1,23 +1,13 @@
 name: Oracle Bootstrap Transport Control Plane
 
+# Emergency/manual historical bootstrap only. Normal Core rollout is owned by
+# oracle-exact-generation-executor-job-rollout.yml. This workflow must never run
+# automatically, select mutable main, or write evidence back to repository state.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-bootstrap-transport-control-plane.yml'
-      - 'agentos_node/action_relay.py'
-      - 'agentos_node/bootstrap_control.py'
-      - 'scripts/update_scheduler_board.py'
-      - 'scripts/repair_antigravity_relay_user.sh'
-      - 'scripts/install_action_relay_user.sh'
-      - 'scripts/deploy_layoutlab_static.py'
-      - 'web_assets/layoutlab_official.html'
-      - 'web_assets/layoutlab_v0_5.html'
-      - 'web_assets/layoutlib-browser-v0.3.js'
-      - 'web_assets/layoutlib-browser-v0.5.js'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   bootstrap:
@@ -26,10 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dormant control hook and submit governed repair request
+      - name: Install dormant control hook and submit exact governed repair request
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
           mkdir -p .agentos/evidence
           OUT=.agentos/evidence/bootstrap-control-plane.txt
           LIVE=/home/ubuntu/agentmanager
@@ -37,7 +29,7 @@ jobs:
           ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="transport-repair-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
+          REQUEST_ID="transport-repair-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           REQUEST="$REQUESTS/$REQUEST_ID.request.json"
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
           ACTION_ROOT="$DATA/runtime/action-relay"
@@ -46,6 +38,9 @@ jobs:
             echo "timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "runner_identity=$(id)"
             echo "request_id=$REQUEST_ID"
+            echo "source_ref=core/integration"
+            echo "source_commit=$GITHUB_SHA"
+            echo "manual_emergency_invocation=YES"
             python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py agentos_node/action_relay.py
             echo 'canonical_py_compile=PASS'
             test -w "$LIVE/scripts/update_scheduler_board.py"
@@ -62,22 +57,37 @@ jobs:
             test "$(stat -c '%U' "$REQUESTS")" = ubuntu
             test "$(stat -c '%a' "$REQUESTS")" = 1777
             echo 'ubuntu_owned_rendezvous=PASS'
-            python3 - "$REQUEST" "$REQUEST_ID" <<'PY'
+            python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
           import json,os,sys
           from datetime import datetime,timezone
           from pathlib import Path
-          p=Path(sys.argv[1]); rid=sys.argv[2]
-          payload={'schema':'agentos.bootstrap-request/v1','request_id':rid,'action':'agentos.transport.repair','created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False}}
+          p=Path(sys.argv[1]); rid=sys.argv[2]; sha=sys.argv[3]
+          payload={
+              'schema':'agentos.bootstrap-request/v1',
+              'request_id':rid,
+              'action':'agentos.transport.repair',
+              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'params':{'source_commit':sha},
+              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
           tmp=p.with_suffix(p.suffix+'.tmp'); tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
           PY
             for i in $(seq 1 300); do [ -f "$RECEIPT" ] && break; sleep 1; done
             test -f "$RECEIPT" || { echo 'bootstrap_control_receipt=TIMEOUT'; exit 3; }
-            python3 - "$RECEIPT" <<'PY'
+            python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1])); assert r.get('schema')=='agentos.bootstrap-receipt/v1',r; assert r.get('action')=='agentos.transport.repair',r; assert r.get('executor_user')=='ubuntu',r; assert r.get('executor_uid')==1001,r
+          r=json.load(open(sys.argv[1])); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.transport.repair',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
           if not r.get('ok'): raise SystemExit('bootstrap repair failed: '+json.dumps(r,ensure_ascii=False)[-18000:])
-          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[])); assert 'antigravity_repair=PASS' in text,text[-18000:]; assert 'action_relay_install=PASS' in text,text[-18000:]
-          print('bootstrap_control_repair=PASS')
+          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
+          assert 'antigravity_repair=PASS' in text,text[-18000:]
+          assert f'agentos_source_commit={expected}' in text,text[-18000:]
+          assert 'action_relay_install=PASS' in text,text[-18000:]
+          print('bootstrap_control_exact_repair=PASS')
           PY
             RESTART_ID=$(PYTHONPATH="$PWD" python3 - <<'PY'
           from agentos_node.action_relay import ActionRelayClient
@@ -94,25 +104,15 @@ jobs:
             sleep 2
             grep -q '/usr/bin/sg agentos -c' /home/ubuntu/.config/systemd/user/agentos-antigravity-relay.service
             grep -q '/usr/bin/sg agentos -c' /home/ubuntu/.config/systemd/user/agentos-action-relay.service
-            for path in / /dashboard; do code=$(curl -sS -o /tmp/studio-bootstrap-control -w '%{http_code}' --retry 3 --retry-all-errors "https://studio.milkcat.org${path}"); echo "public_path=${path} http_code=${code}"; test "$code" = 200; done
             echo 'bootstrap_control_plane=PASS'
           } 2>&1 | tee "$OUT"
 
-      - name: Commit bootstrap control evidence
+      - name: Preserve local emergency evidence only
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          E=.agentos/evidence/bootstrap-control-plane.txt
-          test -f "$E" || exit 0
-          cp "$E" /tmp/bootstrap-control-plane.txt
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          cp /tmp/bootstrap-control-plane.txt "$E"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$E"
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): bootstrap deterministic control plane'
-          git push origin HEAD:main
+          test ! -f .agentos/evidence/bootstrap-control-plane.txt || {
+            echo 'bootstrap_evidence_scope=RUNNER_WORKSPACE_ONLY'
+            tail -n 80 .agentos/evidence/bootstrap-control-plane.txt
+          }
