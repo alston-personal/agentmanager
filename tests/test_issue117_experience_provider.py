@@ -140,6 +140,25 @@ def test_v2_classifies_agentos_pre_hydration_and_floor_failures() -> None:
     assert entry._fixed_classification(payload) == "EXPERIENCE_REGRESSION_PASS"
 
 
+def test_v2_prehydration_failure_is_bounded_and_preserves_evidence_path() -> None:
+    entry = _load_entry_v2()
+    failure = entry._bounded_prehydration_failure(PermissionError("/private/secret/path"))
+    assert failure["returncode"] == 78
+    assert failure["prehydration_failed"] is True
+    assert failure["prehydration_classification"] == "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+    assert failure["stdout"] == ""
+    assert failure["stderr_tail"] == ""
+    assert "/private/secret/path" not in str(failure)
+
+    payload = {
+        "baseline": {"run": {"returncode": 0, "timed_out": False}},
+        "hydrated": {"run": failure},
+        "checks": {"hydration_receipt_ok": False},
+        "verdict": "FAIL",
+    }
+    assert entry._fixed_classification(payload) == "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+
+
 def test_v2_hydrated_prompt_uses_supplied_projection_without_requiring_tool_call() -> None:
     entry = _load_entry_v2()
     projection = {
