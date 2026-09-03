@@ -36,6 +36,11 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertNotIn('HEAD:main', text)
         self.assertNotIn('origin/main', text)
 
+    def test_rollout_scopes_cross_owner_git_trust_without_global_mutation(self):
+        text = _text(WORKFLOW)
+        self.assertIn('git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD', text)
+        self.assertNotIn('git config --global --add safe.directory', text)
+
     def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
         text = _text(WORKFLOW)
         self.assertIn('canonical_experience_regression_request', text)
