@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 from agent_core.executor_job_contract import canonical_experience_regression_request
 from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry, execute_registered_executor_job
 from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_runtime(root: Path, *, codex_available: bool = True, credential_exposed: bool = False) -> None:
@@ -44,6 +48,15 @@ def _write_runtime(root: Path, *, codex_available: bool = True, credential_expos
         "raise SystemExit(0)\n",
         encoding="utf-8",
     )
+
+
+def _load_entry_v2():
+    path = ROOT / "scripts" / "oracle_codex_experience_regression_entry_v2.py"
+    spec = importlib.util.spec_from_file_location("_issue117_entry_v2_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_provider_is_not_registered_when_issue117_is_absent(tmp_path: Path) -> None:
@@ -108,3 +121,23 @@ def test_provider_credential_boundary_violation_is_forced_to_failure(tmp_path: P
     assert receipt["successful"] is False
     assert receipt["credential_exposed"] is False
     assert receipt["classification"] == "PROVIDER_CREDENTIAL_BOUNDARY_VIOLATION"
+
+
+def test_v2_projects_only_fixed_hydration_failure_classes() -> None:
+    entry = _load_entry_v2()
+    payload = {
+        "baseline": {"run": {"returncode": 0, "timed_out": False}},
+        "hydrated": {"run": {"returncode": 0, "timed_out": False, "stderr_tail": "PRIVATE"}},
+        "checks": {"hydration_receipt_ok": False},
+        "verdict": "FAIL",
+    }
+    assert entry._fixed_classification(payload) == "EXPERIENCE_HYDRATION_TOOL_NOT_OBSERVED"
+
+    payload["hydrated"]["run"]["returncode"] = 1
+    payload["hydrated"]["run"]["stderr_tail"] = "MCP transport failed at /private/path"
+    assert entry._fixed_classification(payload) == "EXPERIENCE_HYDRATED_MCP_RUNTIME_FAILED"
+    assert "/private/path" not in entry._fixed_classification(payload)
+
+    payload["hydrated"]["run"] = {"returncode": 0, "timed_out": False}
+    payload["checks"]["hydration_receipt_ok"] = True
+    assert entry._fixed_classification(payload) == "EXPERIENCE_MASTER_FLOOR_NOT_MET"
