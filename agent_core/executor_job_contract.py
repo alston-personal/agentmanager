@@ -36,6 +36,10 @@ FORBIDDEN_REQUEST_KEYS = {
     "password",
 }
 
+# Opaque identifiers may cross the control plane, but path-like or URL-like
+# values may not. The format is intentionally transport-neutral; Oracle's
+# Action Relay currently produces ``action-<uuidhex>`` while another Node may
+# use a different safe prefix.
 _OPAQUE_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}\Z")
 
 
@@ -80,19 +84,30 @@ def _reject_forbidden_keys(value: Any, *, prefix: str = "request") -> None:
 
 
 def validate_executor_job(request: Mapping[str, Any]) -> JobTypeSpec:
+    """Validate a declarative executor job without granting execution authority."""
     if not isinstance(request, Mapping):
         raise ExecutorJobContractError("executor job must be an object")
     _reject_forbidden_keys(request)
-    allowed = {"schema", "job_type", "project_id", "executor_class", "workload_ref", "authority"}
+
+    allowed = {
+        "schema",
+        "job_type",
+        "project_id",
+        "executor_class",
+        "workload_ref",
+        "authority",
+    }
     unexpected = set(request) - allowed
     if unexpected:
         raise ExecutorJobContractError(f"unexpected executor-job fields: {sorted(unexpected)}")
     if request.get("schema") != EXECUTOR_JOB_SCHEMA:
         raise ExecutorJobContractError("unsupported executor-job schema")
+
     job_type = str(request.get("job_type") or "").strip()
     spec = JOB_TYPES.get(job_type)
     if spec is None:
         raise ExecutorJobContractError("unsupported executor job type")
+
     exact = {
         "project_id": spec.project_id,
         "executor_class": spec.executor_class,
@@ -106,6 +121,7 @@ def validate_executor_job(request: Mapping[str, Any]) -> JobTypeSpec:
 
 
 def validate_executor_job_id(job_id: str) -> str:
+    """Validate an opaque durable identifier without accepting filesystem input."""
     value = str(job_id or "").strip()
     if not _OPAQUE_JOB_ID.fullmatch(value):
         raise ExecutorJobContractError("job_id must be an opaque non-path identifier")
@@ -124,7 +140,14 @@ def canonical_experience_regression_request() -> dict[str, str]:
     }
 
 
-def project_executor_job_submission(*, job_id: str, node_id: str, request: Mapping[str, Any], reused: bool = False) -> dict[str, Any]:
+def project_executor_job_submission(
+    *,
+    job_id: str,
+    node_id: str,
+    request: Mapping[str, Any],
+    reused: bool = False,
+) -> dict[str, Any]:
+    """Project the asynchronous acknowledgement returned before execution ends."""
     spec = validate_executor_job(request)
     job_id = validate_executor_job_id(job_id)
     node_id = str(node_id or "").strip()
@@ -145,7 +168,17 @@ def project_executor_job_submission(*, job_id: str, node_id: str, request: Mappi
     }
 
 
-def project_executor_job_receipt(*, job_id: str, request: Mapping[str, Any], executor_available: bool, routable: bool, authorized: bool, successful: bool, result: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def project_executor_job_receipt(
+    *,
+    job_id: str,
+    request: Mapping[str, Any],
+    executor_available: bool,
+    routable: bool,
+    authorized: bool,
+    successful: bool,
+    result: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create the bounded model-visible result; never infer one state from another."""
     spec = validate_executor_job(request)
     job_id = validate_executor_job_id(job_id)
     summary: dict[str, Any] = {
@@ -162,7 +195,16 @@ def project_executor_job_receipt(*, job_id: str, request: Mapping[str, Any], exe
         "credential_exposed": False,
     }
     if result is not None:
-        for key in ("experiment_id", "verdict", "baseline_score", "hydrated_score", "uplift", "hydration_receipt_ok", "classification"):
+        # Only explicitly safe scalar regression fields cross the boundary.
+        for key in (
+            "experiment_id",
+            "verdict",
+            "baseline_score",
+            "hydrated_score",
+            "uplift",
+            "hydration_receipt_ok",
+            "classification",
+        ):
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
                 summary[key] = value

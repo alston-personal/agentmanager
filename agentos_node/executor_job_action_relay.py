@@ -26,10 +26,14 @@ ACTION = "agentos.executor.job"
 DEFAULT_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
 _REQUEST_FIELDS = ("job_type", "project_id", "executor_class", "workload_ref", "authority")
 
+# Cross-slice integration is conditional by construction. #194 remains usable
+# without #117; once both are present in the same immutable runtime generation,
+# the trusted provider becomes available without a second daemon or model input.
 ISSUE117_PROVIDER_REGISTERED = register_issue117_provider_if_available()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Persist only semantic identity fields, never transport-reserved fields."""
     validate_executor_job(request)
     return {key: request[key] for key in _REQUEST_FIELDS}
 
@@ -50,9 +54,13 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
     validate_executor_job(request)
+    # ActionRelay owns receipt schema/capsule/action/timestamps. Persist only
+    # fixed job identity plus the adapter's already-sanitized semantic result.
     return {**_request_projection(request), **run_registered_executor_job(request=request)}
 
 
+# Trusted-process registration. Importing this module extends the same fixed
+# Action Relay ACTIONS table used by both producer and ubuntu worker process.
 if ACTION in ACTIONS and ACTIONS[ACTION] is not _execute:
     raise RuntimeError("executor-job Action Relay action already registered differently")
 ACTIONS[ACTION] = _execute
@@ -130,6 +138,7 @@ class ActionRelayExecutorJobDispatcher:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the original Action Relay worker with the fixed job action loaded."""
     return action_relay_main(argv)
 
 

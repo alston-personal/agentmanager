@@ -287,6 +287,46 @@ def test_receipt_projection_drops_username_paths_and_window_titles():
     assert 'C:/Users/private' not in rendered
 
 
+def test_executor_job_receipt_projection_preserves_governance_evidence_only():
+    projected = _project_receipt({
+        'schema': 'agentos.executor-job-receipt/v1',
+        'job_id': 'action-12345678',
+        'job_type': 'experience.regression',
+        'project_id': 'agentos-core',
+        'executor_class': 'openai-codex-local',
+        'capability': 'agentos.experience.regression',
+        'executor_available': True,
+        'routable': True,
+        'authorized': True,
+        'successful': True,
+        'credential_exposed': False,
+        'classification': 'EXPERIENCE_REGRESSION_PASS',
+        'experiment_id': 'exp-1',
+        'verdict': 'PASS',
+        'baseline_score': 0.25,
+        'hydrated_score': 0.95,
+        'uplift': 0.70,
+        'hydration_receipt_ok': True,
+        'stdout': 'private model output',
+        'stderr': '/home/ubuntu/private/log',
+        'prompt': 'private prompt',
+        'session_id': 'private-session',
+        'provider': 'private-provider',
+        'credentials': 'do-not-publish',
+    }, 'agentos.executor.job')
+    assert projected['job_id'] == 'action-12345678'
+    assert projected['executor_available'] is True
+    assert projected['routable'] is True
+    assert projected['authorized'] is True
+    assert projected['successful'] is True
+    assert projected['credential_exposed'] is False
+    assert projected['verdict'] == 'PASS'
+    assert projected['hydration_receipt_ok'] is True
+    rendered = json.dumps(projected)
+    for forbidden in ('private model output', '/home/ubuntu/private', 'private prompt', 'private-session', 'private-provider', 'do-not-publish'):
+        assert forbidden not in rendered
+
+
 def test_generic_execution_action_cannot_be_allowlisted(tmp_path: Path):
     with pytest.raises(ValueError, match='cannot be allowlisted'):
         _config(tmp_path, actions={'shell.exec'})

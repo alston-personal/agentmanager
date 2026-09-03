@@ -24,9 +24,16 @@ CONTROLLER_ACTION_CAPABILITY = {
 class ControllerService:
     """Governed controller-side facade for ONE."""
 
-    def __init__(self, fabric: RealmFabricStore, ota_policy: RuntimeOTAPolicyStore | None = None):
+    def __init__(self, fabric: RealmFabricStore, ota_policy: RuntimeOTAPolicyStore | None = None, executor_job_dispatcher: Any | None = None):
         self.fabric = fabric
         self.ota_policy = ota_policy or RuntimeOTAPolicyStore()
+        self._executor_job_dispatcher = executor_job_dispatcher
+
+    def _executor_dispatcher(self):
+        if self._executor_job_dispatcher is None:
+            from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+            self._executor_job_dispatcher = ActionRelayExecutorJobDispatcher()
+        return self._executor_job_dispatcher
 
     def realm(self) -> dict[str, Any]:
         node_map = self.nodes()
@@ -336,6 +343,11 @@ Write-Output 'agentos_source_commit=SOURCE_COMMIT'
         task_id = str(task_id or '').strip()
         if not task_id:
             raise ValueError('task_id is required')
+        if task_id.startswith('action-'):
+            receipt = self._executor_dispatcher().inspect(task_id)
+            if receipt is None:
+                raise KeyError(task_id)
+            return dict(receipt)
         receipt = self.fabric.get_receipt(task_id)
         if receipt is None:
             raise KeyError(task_id)

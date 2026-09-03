@@ -56,6 +56,10 @@ class ControllerService:
         if node_id != self.EXECUTOR_JOB_NODE:
             raise ValueError(f'executor job is not routable to target node: {node_id}')
         submission = dict(self._executor_dispatcher().submit(node_id=node_id, request=payload))
+        # #50's hardened bridge historically calls the returned opaque id
+        # ``task_id``. Preserve that field name as a compatibility alias only;
+        # both values are the SAME Action Relay capsule/job ID. The caller's
+        # incoming ctl_* hint never becomes execution identity.
         job_id = str(submission.get('job_id') or '')
         if not job_id:
             raise RuntimeError('executor-job dispatcher returned no job_id')
@@ -87,6 +91,8 @@ class ControllerService:
         passthrough = {key: value for key, value in request.items() if key not in reserved}
 
         if action == self.EXECUTOR_JOB_ACTION:
+            # A legacy ctl_* task_id may arrive from #50. It is deliberately
+            # ignored and cannot select/reuse the Action Relay capsule ID.
             return self._dispatch_executor_job(
                 node_id=node_id,
                 payload=payload,
