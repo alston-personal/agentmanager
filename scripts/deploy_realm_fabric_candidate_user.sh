@@ -137,7 +137,7 @@ echo "realm_fabric_new_pid=$NEW_PID"
 PROBE_BODY="$TMPDIR/resolve-active-probe.json"
 PROBE_CODE=$(curl -sS -o "$PROBE_BODY" -w '%{http_code}' --max-time 5 \
   -H 'Content-Type: application/json' \
-  -d '{"selection":"active"}' \
+  -d '{"selection":"active","node_id":"__active_resolve_probe__"}' \
   http://127.0.0.1:8780/v1/resolve)
 test "$PROBE_CODE" = 401
 ! grep -q '"error": "not found"\|"error":"not found"' "$PROBE_BODY"

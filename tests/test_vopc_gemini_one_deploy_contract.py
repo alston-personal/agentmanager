@@ -61,7 +61,10 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn('OLD_PID=$(systemctl --user show', text)
         self.assertIn('[ "$NEW_PID" != "${OLD_PID:-0}" ]', text)
         self.assertIn("ExecStart=/usr/bin/sg agentos", text)
-        self.assertIn("-d '{\"selection\":\"active\"}'", text)
+        self.assertIn(
+            "-d '{\"selection\":\"active\",\"node_id\":\"__active_resolve_probe__\"}'",
+            text,
+        )
         self.assertIn('test "$PROBE_CODE" = 401', text)
         self.assertIn('realm_fabric_active_resolve_route=PASS', text)
         self.assertNotIn("pip install", text)
