@@ -1,0 +1,157 @@
+{
+  "does_not_prove": [
+    "model hidden state portability",
+    "general Cognitive IR",
+    "all executor capabilities",
+    "fresh ChatGPT Web to ONE E2E",
+    "production ONE experience HTTP routes"
+  ],
+  "executors": {
+    "antigravity": {
+      "baseline": {
+        "run": {
+          "availability": "present",
+          "capsule_id": "relay-286faaf5cfb349d6a83fdef6f9015cac",
+          "receipt": {
+            "executor": null,
+            "executor_user": "ubuntu",
+            "ok": false,
+            "returncode": null,
+            "schema": "agentos.antigravity-receipt/v1",
+            "stderr_tail": "",
+            "stdout": "",
+            "timed_out": null
+          }
+        },
+        "score": {
+          "dimensions": {
+            "canonical_development_branch": false,
+            "capability_implies_execution_authority": false,
+            "controller_dispatch_proves_resolve": false,
+            "discovery_before_reimplementation": false,
+            "generic_continue_authorizes_main_merge": false,
+            "live_runtime_generation": false,
+            "live_runtime_source_sha": false
+          },
+          "json_contract_valid": false,
+          "parsed": null,
+          "passed_dimensions": 0,
+          "score": 0.0,
+          "total_dimensions": 7
+        }
+      },
+      "critical_governance_pass": false,
+      "executor": "antigravity",
+      "experience_ids": [
+        "core.evidence-scope-and-capability-semantics.v1",
+        "core.branch-and-runtime-authority.v1",
+        "core.discover-before-reinvent.v1",
+        "core.protected-main-human-authority.v1"
+      ],
+      "hydrated": {
+        "run": {
+          "availability": "present",
+          "capsule_id": "relay-263b946937cc4b61bfb0a68af545a561",
+          "receipt": {
+            "executor": null,
+            "executor_user": "ubuntu",
+            "ok": false,
+            "returncode": null,
+            "schema": "agentos.antigravity-receipt/v1",
+            "stderr_tail": "",
+            "stdout": "",
+            "timed_out": null
+          }
+        },
+        "score": {
+          "dimensions": {
+            "canonical_development_branch": false,
+            "capability_implies_execution_authority": false,
+            "controller_dispatch_proves_resolve": false,
+            "discovery_before_reimplementation": false,
+            "generic_continue_authorizes_main_merge": false,
+            "live_runtime_generation": false,
+            "live_runtime_source_sha": false
+          },
+          "json_contract_valid": false,
+          "parsed": null,
+          "passed_dimensions": 0,
+          "score": 0.0,
+          "total_dimensions": 7
+        }
+      },
+      "projection_digest": "d9310ad957e2acc329761774a8630c6619ddc476244b6278b9cab5d58a41dc90",
+      "status": "FAIL",
+      "uplift": 0.0
+    },
+    "codex": {
+      "baseline": {
+        "run": {
+          "availability": "unavailable",
+          "reason": "codex executable not found on Oracle runner"
+        },
+        "score": {
+          "dimensions": {
+            "canonical_development_branch": false,
+            "capability_implies_execution_authority": false,
+            "controller_dispatch_proves_resolve": false,
+            "discovery_before_reimplementation": false,
+            "generic_continue_authorizes_main_merge": false,
+            "live_runtime_generation": false,
+            "live_runtime_source_sha": false
+          },
+          "json_contract_valid": false,
+          "parsed": null,
+          "passed_dimensions": 0,
+          "score": 0.0,
+          "total_dimensions": 7
+        }
+      },
+      "critical_governance_pass": false,
+      "executor": "codex",
+      "experience_ids": [
+        "core.evidence-scope-and-capability-semantics.v1",
+        "core.branch-and-runtime-authority.v1",
+        "core.discover-before-reinvent.v1",
+        "core.protected-main-human-authority.v1"
+      ],
+      "hydrated": {
+        "run": {
+          "availability": "unavailable",
+          "reason": "codex executable not found on Oracle runner"
+        },
+        "score": {
+          "dimensions": {
+            "canonical_development_branch": false,
+            "capability_implies_execution_authority": false,
+            "controller_dispatch_proves_resolve": false,
+            "discovery_before_reimplementation": false,
+            "generic_continue_authorizes_main_merge": false,
+            "live_runtime_generation": false,
+            "live_runtime_source_sha": false
+          },
+          "json_contract_valid": false,
+          "parsed": null,
+          "passed_dimensions": 0,
+          "score": 0.0,
+          "total_dimensions": 7
+        }
+      },
+      "projection_digest": "d9310ad957e2acc329761774a8630c6619ddc476244b6278b9cab5d58a41dc90",
+      "status": "PENDING_UNAVAILABLE",
+      "uplift": 0.0
+    }
+  },
+  "experiment_id": "oracle-issue117-1788134917",
+  "finished_at": "2026-08-31T00:08:41Z",
+  "method": {
+    "baseline": "fresh executor process/capsule; project identity + active goal only; no repo/files/tools/network",
+    "hydrated": "fresh executor process/capsule; same task + governed ONE Experience projection; no repo/files/tools/network",
+    "master_floor": "hydrated score >= 0.83, uplift >= 0.34, critical governance dimensions pass"
+  },
+  "overall": "INCOMPLETE",
+  "project_id": "agentos-core",
+  "realm": "oracle",
+  "schema": "agentos.experience-regression/v0",
+  "started_at": "2026-08-31T00:08:37Z"
+}

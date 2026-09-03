@@ -1,0 +1,126 @@
+{
+  "schema": "agentos.experience-source-inventory/v0",
+  "project_id": "agentos-core",
+  "realm": "oracle",
+  "status": "inventory-complete-live-regression-pending",
+  "purpose": "Identify durable Oracle/AgentOS experience sources that may be extracted into governed ONE experience artifacts. This file is inventory evidence, not proof that hydration/regression has passed.",
+  "sources": [
+    {
+      "source_id": "oracle-antigravity-claude-relay-timeout",
+      "executor_family": ["antigravity", "claude"],
+      "kind": "verified-failure-pattern",
+      "source": "github-issue://alston-personal/agentmanager/72",
+      "evidence": [
+        "workflow-run://33227123813",
+        "historical-path://.agentos/evidence/relay-smoke.json",
+        "historical-path://.github/workflows/oracle-agentos-relay-smoke.yml"
+      ],
+      "observed": {
+        "relay_enqueue": "reached",
+        "executor_returncode": 124,
+        "timed_out": true,
+        "stdout_exact_match": false,
+        "executor_version_observed": "claude-code 2.1.247"
+      },
+      "experience_value": "Do not assume relay enqueue means executor liveness. Require deterministic no-tool executor smoke receipts and preserve timeout/CLI compatibility as a regression dimension.",
+      "recovery_proven": false,
+      "live_regression_required": true
+    },
+    {
+      "source_id": "oracle-codex-agentos-status-center",
+      "executor_family": ["codex"],
+      "kind": "accepted-historical-contribution",
+      "source": "git-commit://46a00b9e80a5241d8adf73264e9f67c8ad45abe2",
+      "evidence": [
+        "merged-pr://1"
+      ],
+      "observed": {
+        "commit_message": "Merge pull request #1 from alston-personal/codex/agentos-status-center",
+        "accepted_into_repository_history": true,
+        "notable_patterns": [
+          "capability boundary rule",
+          "discover/reuse capability before cross-project reinvention",
+          "spec stewardship",
+          "AgentOS status center"
+        ]
+      },
+      "experience_value": "Codex-originated accepted history contains reusable governance lessons, but authorship alone does not prove current Codex hydration quality.",
+      "live_regression_required": true
+    },
+    {
+      "source_id": "oracle-node-surface-discovery",
+      "executor_family": ["node", "claude-code", "codex", "cursor", "vscode"],
+      "kind": "accepted-runtime-discovery-evidence",
+      "source": "github-issue://alston-personal/agentmanager/76",
+      "evidence": [
+        "task://golden-discovery-1788009597"
+      ],
+      "observed": {
+        "node_id": "vopc5750",
+        "surface_count": 4,
+        "providers": ["claude-code", "codex", "cursor", "vscode"],
+        "discovery_ok": true
+      },
+      "experience_value": "A provider appearing in Node surface discovery proves discoverability, not executor experience regression or authority.",
+      "live_regression_required": true
+    },
+    {
+      "source_id": "oracle-controller-route-evidence",
+      "executor_family": ["chatgpt", "one", "node"],
+      "kind": "accepted-transport-procedure",
+      "source": "github-issue://alston-personal/agentmanager/64",
+      "evidence": [
+        "accepted-core-route://controller-dispatch"
+      ],
+      "experience_value": "Acceptance must probe the real transport path into ControllerService; health/PID/checkout are not acceptance and controller-route evidence is not resolve-route evidence.",
+      "live_regression_required": false
+    },
+    {
+      "source_id": "oracle-node-registry-integrity",
+      "executor_family": ["one", "node"],
+      "kind": "accepted-failure-and-recovery-pattern",
+      "source": "github-issue://alston-personal/agentmanager/71",
+      "evidence": [
+        "accepted-core-fix://node-registry-concurrent-atomic-publish"
+      ],
+      "experience_value": "Concurrent persistent registries require transaction-level locking plus atomic publish durability; a nominal atomic replace alone is insufficient if read/mutate/write races remain.",
+      "live_regression_required": false
+    }
+  ],
+  "regression_matrix": {
+    "antigravity_claude": {
+      "inventory": "present",
+      "baseline": "historical-failure-known",
+      "one_hydrated": "not-run",
+      "fresh_executor_live": "not-run",
+      "status": "PENDING"
+    },
+    "codex": {
+      "inventory": "present",
+      "baseline": "historical-contribution-known",
+      "one_hydrated": "not-run",
+      "fresh_executor_live": "not-run",
+      "status": "PENDING"
+    },
+    "node_realm": {
+      "inventory": "present",
+      "baseline": "accepted-runtime-evidence-exists",
+      "one_hydrated": "not-run",
+      "fresh_executor_live": "not-run",
+      "status": "PENDING"
+    },
+    "mature_chatgpt_reference": {
+      "inventory": "executor-local-reference-only",
+      "canonical_authority": false,
+      "one_hydrated": "not-run",
+      "status": "REFERENCE_ONLY"
+    }
+  },
+  "does_not_prove": [
+    "Antigravity/Claude recovery is complete",
+    "Codex can currently hydrate ONE experience",
+    "fresh ChatGPT can discover ONE experience",
+    "cross-model Cognitive IR is implemented",
+    "Master Experience Floor is satisfied"
+  ]
+}

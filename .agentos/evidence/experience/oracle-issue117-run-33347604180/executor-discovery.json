@@ -1,0 +1,128 @@
+{
+  "antigravity_extension_roots": [
+    {
+      "claude_executables": [],
+      "codex_executables": [],
+      "relevant_extensions": [],
+      "root": {
+        "exists": true,
+        "gid": 1001,
+        "mode": "0o700",
+        "mtime": "2026-08-29T09:29:08Z",
+        "owner": "ubuntu",
+        "path": "/home/ubuntu/.antigravity-ide-server/extensions",
+        "size": 4096,
+        "type": "dir",
+        "uid": 1001
+      }
+    },
+    {
+      "claude_executables": [],
+      "codex_executables": [],
+      "relevant_extensions": [],
+      "root": {
+        "exists": true,
+        "gid": 1001,
+        "mode": "0o700",
+        "mtime": "2026-05-18T00:26:52Z",
+        "owner": "ubuntu",
+        "path": "/home/ubuntu/.antigravity-server/extensions",
+        "size": 4096,
+        "type": "dir",
+        "uid": 1001
+      }
+    }
+  ],
+  "claude": {
+    "candidate_executables": [],
+    "path_executable": null,
+    "probes": {},
+    "selected_executable": null
+  },
+  "codex": {
+    "candidate_executables": [],
+    "path_executable": null,
+    "probes": {},
+    "selected_executable": null,
+    "state": {
+      "home": {
+        "exists": true,
+        "gid": 1001,
+        "mode": "0o775",
+        "mtime": "2026-08-31T01:18:56Z",
+        "owner": "ubuntu",
+        "path": "/home/ubuntu/.codex",
+        "size": 4096,
+        "type": "dir",
+        "uid": 1001
+      },
+      "known_files": {
+        ".env": {
+          "exists": false,
+          "path": "/home/ubuntu/.codex/.env"
+        },
+        "auth.json": {
+          "exists": true,
+          "gid": 1001,
+          "mode": "0o600",
+          "mtime": "2026-08-22T00:12:09Z",
+          "owner": "ubuntu",
+          "path": "/home/ubuntu/.codex/auth.json",
+          "size": 3973,
+          "type": "file",
+          "uid": 1001
+        },
+        "config.toml": {
+          "exists": true,
+          "gid": 1001,
+          "mode": "0o600",
+          "mtime": "2026-08-07T00:51:52Z",
+          "owner": "ubuntu",
+          "path": "/home/ubuntu/.codex/config.toml",
+          "size": 704,
+          "type": "file",
+          "uid": 1001
+        },
+        "version.json": {
+          "exists": false,
+          "path": "/home/ubuntu/.codex/version.json"
+        }
+      },
+      "session_roots": [
+        {
+          "exists": true,
+          "file_count": 41,
+          "gid": 1001,
+          "mode": "0o775",
+          "mtime": "2026-03-16T06:09:03Z",
+          "name": "sessions",
+          "newest_file_basename": "rollout-2026-08-20T16-33-42-01a01e4d-fc03-7c32-a719-fbf8346477c8.jsonl",
+          "newest_mtime": "2026-08-21T07:28:12Z",
+          "owner": "ubuntu",
+          "path": "/home/ubuntu/.codex/sessions",
+          "size": 4096,
+          "type": "dir",
+          "uid": 1001
+        },
+        {
+          "exists": false,
+          "name": "archived_sessions",
+          "path": "/home/ubuntu/.codex/archived_sessions"
+        }
+      ]
+    }
+  },
+  "process_executor_paths": {
+    "claude": [],
+    "codex": []
+  },
+  "redaction": "Read-only sanitized metadata only. No auth/session/config contents, tokens, environment variables, prompts, or arbitrary process command lines are persisted.",
+  "runner": {
+    "home": "/home/agentos-node",
+    "sudo_as_ubuntu": false,
+    "uid": 1004,
+    "user": "agentos-node"
+  },
+  "schema": "agentos.oracle-executor-discovery/v0",
+  "timestamp": "2026-08-31T01:27:03Z"
+}

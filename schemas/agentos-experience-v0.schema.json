@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.local/schemas/agentos-experience-v0.schema.json",
+  "title": "AgentOS Experience Artifact v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "experience_id",
+    "project_id",
+    "kind",
+    "summary",
+    "payload",
+    "provenance",
+    "authority",
+    "validity"
+  ],
+  "properties": {
+    "schema": {"const": "agentos.experience/v0"},
+    "experience_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "project_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "realm_scope": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "default": []},
+    "capability_scope": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "default": []},
+    "executor_scope": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "default": []},
+    "kind": {
+      "enum": ["decision", "procedure", "heuristic", "failure-pattern", "constraint", "benchmark-pattern"]
+    },
+    "summary": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "payload": {"type": "object"},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "accepted_evidence"],
+      "properties": {
+        "sources": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+        "accepted_evidence": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "created_at": {"type": ["string", "null"]}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["candidate", "accepted", "deprecated", "revoked"]},
+        "supersedes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "default": []},
+        "superseded_by": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "default": []}
+      }
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conditions", "invalidated_by"],
+      "properties": {
+        "conditions": {"type": "array", "items": {"type": "string"}},
+        "invalidated_by": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

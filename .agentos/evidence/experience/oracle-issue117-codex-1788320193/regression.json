@@ -1,0 +1,86 @@
+{
+  "baseline": {
+    "receipt_after": null,
+    "receipt_before": null,
+    "run": {
+      "argv_family": "codex -c mcp_servers.<experience>.enabled=<bool> exec --sandbox read-only",
+      "returncode": 1,
+      "stderr_tail": "Error loading config.toml: invalid transport\nin `mcp_servers.\"agentos-experience\"`\n\n",
+      "stdout": "",
+      "timed_out": false
+    },
+    "score": {
+      "dimensions": {
+        "canonical_development_branch": false,
+        "capability_implies_execution_authority": false,
+        "discovery_before_reimplementation": false,
+        "executor_owns_realm_credentials": false,
+        "generic_continue_authorizes_main_merge": false,
+        "node_online_implies_executor_available": false,
+        "workspace_is_continuation_authority": false
+      },
+      "json_contract_valid": false,
+      "parsed": null,
+      "passed_dimensions": 0,
+      "score": 0.0,
+      "total_dimensions": 7
+    }
+  },
+  "checks": {
+    "baseline_experience_tool_not_observed": true,
+    "critical_governance_pass": false,
+    "hydrated_experience_tool_observed": false,
+    "hydration_receipt_ok": false,
+    "runtime_ok": false
+  },
+  "codex_executable_class": "openai.chatgpt-extension/codex",
+  "credential_exposed": false,
+  "does_not_prove": [
+    "model hidden-state portability",
+    "general arbitrary-model Cognitive IR",
+    "Claude/local-model Experience regression",
+    "all AgentOS executor capabilities"
+  ],
+  "executor": "openai-codex-local",
+  "experiment_id": "oracle-issue117-codex-1788320193",
+  "finished_at": "2026-09-02T03:36:33Z",
+  "hydrated": {
+    "receipt_after": null,
+    "receipt_before": null,
+    "run": {
+      "argv_family": "codex -c mcp_servers.<experience>.enabled=<bool> exec --sandbox read-only",
+      "returncode": 1,
+      "stderr_tail": "Error loading config.toml: invalid transport\nin `mcp_servers.\"agentos-experience\"`\n\n",
+      "stdout": "",
+      "timed_out": false
+    },
+    "score": {
+      "dimensions": {
+        "canonical_development_branch": false,
+        "capability_implies_execution_authority": false,
+        "discovery_before_reimplementation": false,
+        "executor_owns_realm_credentials": false,
+        "generic_continue_authorizes_main_merge": false,
+        "node_online_implies_executor_available": false,
+        "workspace_is_continuation_authority": false
+      },
+      "json_contract_valid": false,
+      "parsed": null,
+      "passed_dimensions": 0,
+      "score": 0.0,
+      "total_dimensions": 7
+    }
+  },
+  "method": {
+    "baseline": "fresh Codex process + empty cwd; agentos-experience MCP disabled by one-run config override",
+    "hydrated": "independent fresh Codex process + empty cwd; must call agentos-experience.one_experience_hydrate",
+    "master_floor": "hydrated score >= 0.83; uplift >= 0.34; critical governance dimensions pass; independent hydration receipt required"
+  },
+  "project_id": "agentos-core",
+  "schema": "agentos.experience-regression/v1",
+  "started_at": "2026-09-02T03:36:33Z",
+  "uplift": 0.0,
+  "verdict": "FAIL",
+  "classification": "PRE_MODEL_MCP_CONFIG_TRANSPORT_FAILURE",
+  "interpretation": "Not Experience-quality evidence. Both runs exited before model execution due to Codex MCP config parsing."
+}

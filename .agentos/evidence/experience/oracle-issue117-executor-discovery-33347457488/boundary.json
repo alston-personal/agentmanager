@@ -1,0 +1,108 @@
+{
+  "paths": [
+    {
+      "exists": true,
+      "gid": 1001,
+      "list_error": "PermissionError",
+      "mode": "0o751",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu",
+      "readable": false,
+      "searchable": true,
+      "uid": 1001
+    },
+    {
+      "exists": true,
+      "gid": 1001,
+      "mode": "0o775",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu/.antigravity-ide-server",
+      "readable": true,
+      "relevant_children": [],
+      "searchable": true,
+      "uid": 1001
+    },
+    {
+      "exists": true,
+      "gid": 1001,
+      "list_error": "PermissionError",
+      "mode": "0o700",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu/.antigravity-ide-server/extensions",
+      "readable": false,
+      "searchable": false,
+      "uid": 1001
+    },
+    {
+      "exists": true,
+      "gid": 1001,
+      "mode": "0o775",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu/.antigravity-server",
+      "readable": true,
+      "relevant_children": [],
+      "searchable": true,
+      "uid": 1001
+    },
+    {
+      "exists": true,
+      "gid": 1001,
+      "list_error": "PermissionError",
+      "mode": "0o700",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu/.antigravity-server/extensions",
+      "readable": false,
+      "searchable": false,
+      "uid": 1001
+    },
+    {
+      "exists": true,
+      "gid": 1001,
+      "mode": "0o775",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu/.codex",
+      "readable": true,
+      "relevant_children": [],
+      "searchable": true,
+      "uid": 1001
+    },
+    {
+      "exists": true,
+      "gid": 1001,
+      "mode": "0o775",
+      "owner": "ubuntu",
+      "path": "/home/ubuntu/.codex/sessions",
+      "readable": true,
+      "relevant_children": [],
+      "searchable": true,
+      "uid": 1001
+    }
+  ],
+  "redaction": "Only ownership/mode/access, matching extension names, and matching Antigravity path tokens from ubuntu process metadata are retained. No arbitrary argv, environment, file contents, tokens, or session contents are persisted.",
+  "runner": {
+    "groups": [
+      {
+        "gid": 1004,
+        "name": "agentos-node"
+      },
+      {
+        "gid": 1005,
+        "name": "agentos"
+      }
+    ],
+    "uid": 1004,
+    "user": "agentos-node"
+  },
+  "schema": "agentos.oracle-executor-boundary/v0",
+  "timestamp": "2026-08-31T01:24:08Z",
+  "ubuntu_process_extension_paths": [
+    {
+      "antigravity_paths": [
+        "/home/ubuntu/.antigravity-ide-server/extensions/openai.chatgpt-26.820.71523-linux-arm64/bin/linux-aarch64/codex"
+      ],
+      "comm": "codex",
+      "pid": 1202584,
+      "uid": 1001
+    }
+  ]
+}

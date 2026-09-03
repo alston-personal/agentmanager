@@ -1,0 +1,162 @@
+name: Oracle Experience Regression
+
+on:
+  push:
+    branches:
+      - core/issue-117-experience-memory
+    paths:
+      - '.github/workflows/oracle-experience-regression.yml'
+      - 'agent_core/experience.py'
+      - 'scripts/oracle_experience_regression.py'
+      - 'scripts/oracle_experience_regression_entry.py'
+      - 'scripts/oracle_executor_discovery.py'
+      - 'scripts/inspect_antigravity_regression_runtime.py'
+      - 'experience/agentos-core-oracle.seed.json'
+      - 'tests/test_experience_memory.py'
+      - 'schemas/agentos-experience-v0.schema.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oracle-experience-regression-117
+  cancel-in-progress: false
+
+jobs:
+  regress:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/issue-117-experience-memory
+          fetch-depth: 0
+
+      - name: Verify non-production boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'core/issue-117-experience-memory'
+          echo "issue117_checkout=$(git rev-parse HEAD)"
+          echo "live_generation_is_not_modified=PASS"
+
+      - name: Run Experience contract tests
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q tests/test_experience_memory.py
+
+      - name: Discover Oracle executor surfaces and identity state
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
+          mkdir -p "$OUT_DIR"
+          python3 -m scripts.oracle_executor_discovery \
+            --output "$OUT_DIR/executor-discovery.json"
+          echo "python3=$(command -v python3 || true)"
+          test -d /home/ubuntu/agent-data/runtime/antigravity-relay && echo 'antigravity_relay_root=present' || echo 'antigravity_relay_root=missing'
+
+      - name: Bind discovered Antigravity Codex binary to regression PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          DISCOVERY=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}/executor-discovery.json"
+          WRAP_DIR="$RUNNER_TEMP/issue117-executor-bin"
+          mkdir -p "$WRAP_DIR"
+          python3 - "$DISCOVERY" "$WRAP_DIR/codex" <<'PY'
+          import json, pathlib, shlex, sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          exe=d.get('codex',{}).get('selected_executable')
+          sudo_ok=bool(d.get('runner',{}).get('sudo_as_ubuntu'))
+          out=pathlib.Path(sys.argv[2])
+          if not exe:
+              print('codex_wrapper=not_created:no_discovered_executable')
+              raise SystemExit(0)
+          q=shlex.quote(str(exe))
+          if sudo_ok:
+              body=f'''#!/usr/bin/env bash\nexec sudo -n -u ubuntu env HOME=/home/ubuntu CI=1 {q} "$@"\n'''
+              mode='sudo-ubuntu'
+          else:
+              body=f'''#!/usr/bin/env bash\nexport HOME=/home/ubuntu\nexport CI=1\nexec {q} "$@"\n'''
+              mode='runner-with-ubuntu-home'
+          out.write_text(body,encoding='utf-8')
+          out.chmod(0o755)
+          print('codex_wrapper=created')
+          print('codex_identity_mode='+mode)
+          print('codex_source_executable='+str(exe))
+          PY
+          echo "$WRAP_DIR" >> "$GITHUB_PATH"
+
+      - name: Run fresh baseline versus ONE-hydrated regressions
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
+          mkdir -p "$OUT_DIR"
+          python3 -m scripts.oracle_experience_regression_entry \
+            --seed experience/agentos-core-oracle.seed.json \
+            --output "$OUT_DIR/regression.json" \
+            --timeout 210
+          python3 - "$OUT_DIR/regression.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('overall='+str(p['overall']))
+          for name,item in p['executors'].items():
+              print(f"{name}_status={item['status']}")
+              print(f"{name}_baseline_score={item['baseline']['score']['score']}")
+              print(f"{name}_hydrated_score={item['hydrated']['score']['score']}")
+              print(f"{name}_uplift={item['uplift']}")
+          PY
+
+      - name: Capture sanitized Antigravity runtime diagnostic
+        if: always()
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUT_DIR=".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
+          test -f "$OUT_DIR/regression.json" || exit 0
+          python3 -m scripts.inspect_antigravity_regression_runtime \
+            --regression "$OUT_DIR/regression.json" \
+            --output "$OUT_DIR/antigravity-runtime.json"
+
+      - name: Persist branch-scoped regression evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(.agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}/*)
+          (( ${#files[@]} > 0 )) || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ".agentos/evidence/experience/oracle-issue117-run-${GITHUB_RUN_ID}"
+          git diff --cached --quiet && exit 0
+          git commit -m "evidence(agentos): Oracle experience regression ${GITHUB_RUN_ID}"
+          git fetch origin core/issue-117-experience-memory
+          git rebase origin/core/issue-117-experience-memory
+          git push origin HEAD:core/issue-117-experience-memory
+
+      - name: Enforce complete regression only after evidence is preserved
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=$(find .agentos/evidence/experience -maxdepth 2 -path "*/oracle-issue117-run-${GITHUB_RUN_ID}/regression.json" -print -quit)
+          test -n "$FILE"
+          python3 - "$FILE" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          if p.get('overall') != 'PASS':
+              statuses={k:v.get('status') for k,v in p.get('executors',{}).items()}
+              raise SystemExit('Experience regression incomplete: '+json.dumps(statuses,sort_keys=True))
+          print('experience_regression=PASS')
+          PY
