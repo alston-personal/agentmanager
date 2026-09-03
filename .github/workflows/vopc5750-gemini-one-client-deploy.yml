@@ -70,6 +70,22 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - name: Fingerprint Oracle Antigravity hook runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/home/ubuntu/.antigravity-ide-server
+          echo 'oracle_antigravity_runtime_fingerprint=BEGIN'
+          if [ -d "$ROOT" ]; then
+            find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | head -n 30
+            if command -v rg >/dev/null 2>&1; then
+              rg -a -l -m 1 'PreInvocation|injectSteps|ephemeralMessage|hooks\.json' "$ROOT" \
+                -g '*.js' -g '*.json' 2>/dev/null | head -n 40 || true
+            fi
+          else
+            echo 'oracle_antigravity_runtime_root=MISSING'
+          fi
+          echo 'oracle_antigravity_runtime_fingerprint=END'
       - name: Request exact ONE server candidate through ubuntu bootstrap boundary
         shell: bash
         run: |
@@ -173,6 +189,53 @@ jobs:
           script = r'''$ErrorActionPreference='Stop'
           $source='__SOURCE_COMMIT__'
           if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
+          Write-Output 'windows_antigravity_runtime_fingerprint=BEGIN'
+          $appRoot=Join-Path $env:LOCALAPPDATA 'Programs\Antigravity IDE'
+          $exe=Join-Path $appRoot 'Antigravity.exe'
+          if(Test-Path $exe){
+            $version=(Get-Item $exe).VersionInfo
+            Write-Output ('antigravity_file_version='+$version.FileVersion)
+            Write-Output ('antigravity_product_version='+$version.ProductVersion)
+          } else {
+            Write-Output 'antigravity_executable=MISSING'
+          }
+          foreach($relative in @('resources\app\product.json','resources\app\package.json')){
+            $manifest=Join-Path $appRoot $relative
+            if(Test-Path $manifest){
+              $parsed=Get-Content -Raw $manifest | ConvertFrom-Json
+              Write-Output ($relative.Replace('\','/')+'='+$parsed.version)
+            }
+          }
+          $hookConfigPath=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $settingsPath=Join-Path $env:USERPROFILE '.gemini\settings.json'
+          Write-Output ('gemini_hooks_config_exists='+(Test-Path $hookConfigPath).ToString().ToLowerInvariant())
+          Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
+          $outRoot=Join-Path $appRoot 'resources\app\out'
+          if(Test-Path $outRoot){
+            $matches=Get-ChildItem -Path $outRoot -Recurse -File -Include *.js,*.json -ErrorAction SilentlyContinue |
+              Select-String -Pattern 'PreInvocation','injectSteps','ephemeralMessage','hooks.json' -List -ErrorAction SilentlyContinue |
+              Select-Object -First 40
+            Write-Output ('antigravity_hook_contract_file_count='+@($matches).Count)
+            foreach($match in $matches){
+              $relativePath=$match.Path.Substring($appRoot.Length).TrimStart('\')
+              Write-Output ('antigravity_hook_contract_file='+$relativePath+';pattern='+$match.Pattern)
+            }
+          } else {
+            Write-Output 'antigravity_out_root=MISSING'
+          }
+          $logRoot=Join-Path $env:APPDATA 'Antigravity\logs'
+          if(Test-Path $logRoot){
+            $logMatches=Get-ChildItem -Path $logRoot -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddDays(-2) } |
+              Select-String -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json' -List -ErrorAction SilentlyContinue
+            Write-Output ('antigravity_recent_hook_log_file_count='+@($logMatches).Count)
+            foreach($match in ($logMatches | Select-Object -First 20)){
+              Write-Output ('antigravity_recent_hook_log_file='+$match.Path.Substring($logRoot.Length).TrimStart('\'))
+            }
+          } else {
+            Write-Output 'antigravity_log_root=MISSING'
+          }
+          Write-Output 'windows_antigravity_runtime_fingerprint=END'
           $root=Join-Path $env:LOCALAPPDATA 'AgentOS\one-mcp-source'
           $target=Join-Path $root $source
           $archive=Join-Path $env:TEMP ("agentos-one-"+$source+".zip")
@@ -279,3 +342,4 @@ jobs:
           print('vopc5750_gemini_one_client_deploy=PASS')
           print('antigravity_reload_required=YES')
           PY
+

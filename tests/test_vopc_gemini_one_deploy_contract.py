@@ -83,8 +83,12 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         client = text.split("deploy-vopc-client:", 1)[1]
         self.assertIn("http://127.0.0.1:8780/v1/controller/dispatch", client)
         self.assertIn("one_controller_dispatch=PASS", client)
+        self.assertIn("windows_antigravity_runtime_fingerprint=BEGIN", client)
+        self.assertIn("antigravity_hook_contract_file_count", client)
+        self.assertIn("antigravity_recent_hook_log_file_count", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 
 
 if __name__ == "__main__":
     unittest.main()
+
