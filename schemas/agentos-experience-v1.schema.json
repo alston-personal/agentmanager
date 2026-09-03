@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentos.local/schemas/agentos-experience-v1.schema.json",
+  "title": "AgentOS Governed Experience v1",
+  "type": "object",
+  "required": ["schema", "experience_id", "project_id", "kind", "ir", "provenance", "authority", "validity"],
+  "properties": {
+    "schema": {"const": "agentos.experience/v1"},
+    "experience_id": {"type": "string", "minLength": 1},
+    "project_id": {"type": "string", "minLength": 1},
+    "realm_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "capability_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "executor_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "kind": {"enum": ["decision", "procedure", "heuristic", "failure-pattern", "constraint", "benchmark-pattern"]},
+    "ir": {"$ref": "#/$defs/experienceIr"},
+    "display": {
+      "type": "object",
+      "properties": {"summary": {"type": "string", "minLength": 1}},
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["sources"],
+      "properties": {
+        "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "accepted_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "extraction_id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "authority": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["candidate", "accepted", "deprecated", "revoked"]},
+        "supersedes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "superseded_by": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    },
+    "validity": {
+      "type": "object",
+      "properties": {
+        "conditions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "invalidated_by": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "typedValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {"enum": ["symbol", "string", "number", "boolean", "null", "list", "object"]},
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "experienceIr": {
+      "type": "object",
+      "required": ["schema", "nodes", "entrypoints", "expected_behavior_dimensions"],
+      "properties": {
+        "schema": {"const": "agentos.experience-ir/v1"},
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "op", "predicate"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "op": {"enum": ["assert", "require", "forbid", "prefer", "avoid", "invoke", "match", "set"]},
+              "predicate": {"type": "string", "minLength": 1},
+              "arguments": {"type": "array", "items": {"$ref": "#/$defs/typedValue"}},
+              "value": {"$ref": "#/$defs/typedValue"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "entrypoints": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "expected_behavior_dimensions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
