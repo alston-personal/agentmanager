@@ -51,6 +51,12 @@ class FakeGateway:
             "provenance": {"continuation": "project/continuity/latest.json"},
         }
 
+    def resolve_active(self):
+        result = self.resolve("agentos-core")
+        result["selection_source"] = "ONE_ACTIVE_CONTINUATION"
+        result["active_selector"] = selector(self.index_id, self.ir_id)
+        return result
+
 
 def selector(index_id="idx-7", ir_id="ir-core-152"):
     return {
@@ -96,6 +102,22 @@ class AntigravityOneHookTests(unittest.TestCase):
         self.assertEqual(envelope["executor_class"], "antigravity-gemini")
         self.assertTrue(envelope["executor_identity_bound"])
         self.assertEqual(envelope["selection_source"], "ONE_ACTIVE_CONTINUATION")
+
+    def test_hook_resolves_active_selector_when_not_injected_by_caller(self):
+        gateway = FakeGateway()
+        output = build_injection(
+            {
+                "invocationNum": 0,
+                "workspacePaths": ["C:/unrelated/workspace"],
+                "modelName": "gemini-test",
+            },
+            gateway,
+        )
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["active_selector"]["ir_id"], "ir-core-152")
+        self.assertEqual(envelope["canonical_ir"]["project_id"], "agentos-core")
+        self.assertEqual(gateway.resolved, ["agentos-core"])
+        self.assertNotIn("unrelated", json.dumps(envelope))
 
     def test_acas_workspace_cannot_override_active_core_ir(self):
         gateway = FakeGateway()

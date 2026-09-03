@@ -1,0 +1,266 @@
+name: vopc5750 Gemini ONE Client Deploy
+
+on:
+  push:
+    branches:
+      - core/issue-152-vopc-gemini-one
+    paths:
+      - 'agent_core/realm_server.py'
+      - 'agentos_node/one_mcp.py'
+      - 'agentos_node/antigravity_one_hook.py'
+      - 'scripts/install_antigravity_one_mcp.py'
+      - 'tests/test_realm_resolve_endpoint.py'
+      - 'tests/test_one_mcp.py'
+      - 'tests/test_antigravity_one_hook.py'
+      - 'tests/test_install_antigravity_one_client.py'
+      - '.github/workflows/vopc5750-gemini-one-client-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vopc5750-gemini-one-client-deploy
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify active resolve and client hook contracts
+        run: |
+          python -m unittest \
+            tests.test_realm_resolve_endpoint \
+            tests.test_one_mcp \
+            tests.test_antigravity_one_hook \
+            tests.test_antigravity_preinvocation_attestation \
+            tests.test_install_antigravity_one_client -v
+
+  windows-contract:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify native Windows client hook behavior
+        shell: powershell
+        run: |
+          python -m unittest `
+            tests.test_one_mcp `
+            tests.test_antigravity_one_hook `
+            tests.test_antigravity_preinvocation_attestation `
+            tests.test_install_antigravity_one_client -v
+
+  deploy-one-server:
+    needs: [contract, windows-contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Validate deployment settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install exact ONE server candidate with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_COMMIT="$1"
+          DATA=/home/ubuntu/agent-data
+          ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
+          RELEASE="$ROOT/releases/$SOURCE_COMMIT"
+          CURRENT="$ROOT/current"
+          UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
+          BACKUP="$UNIT.pre-vopc-gemini-one"
+
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p "$ROOT/releases" "$HOME/.config/systemd/user" "$DATA/logs"
+          if [ -f "$UNIT" ]; then cp "$UNIT" "$BACKUP"; fi
+          rollback() {
+            rc=$?
+            if [ "$rc" -ne 0 ] && [ -f "$BACKUP" ]; then
+              cp "$BACKUP" "$UNIT"
+              systemctl --user daemon-reload
+              systemctl --user restart agentos-realm-fabric.service || true
+            fi
+            exit "$rc"
+          }
+          trap rollback EXIT
+
+          if [ ! -x "$RELEASE/venv/bin/agentos-one" ]; then
+            python3 -m venv "$RELEASE/venv"
+            "$RELEASE/venv/bin/python" -m pip install --disable-pip-version-check \
+              "git+https://github.com/alston-personal/agentmanager.git@$SOURCE_COMMIT"
+          fi
+          cat > "$UNIT" <<EOF
+          [Unit]
+          Description=AgentOS ONE Realm Fabric
+          After=network.target
+
+          [Service]
+          Type=simple
+          Environment=AGENT_DATA_ROOT=$DATA
+          ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
+          Restart=always
+          RestartSec=5
+          StandardOutput=append:$DATA/logs/realm-fabric.log
+          StandardError=append:$DATA/logs/realm-fabric.log
+
+          [Install]
+          WantedBy=default.target
+          EOF
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-realm-fabric.service
+          systemctl --user restart agentos-realm-fabric.service
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null && break
+            sleep 1
+          done
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
+          ln -sfn "$RELEASE" "$CURRENT"
+          echo "one_server_source_commit=$SOURCE_COMMIT"
+          echo 'one_server_active_resolve_candidate=PASS'
+          trap - EXIT
+          REMOTE
+
+  deploy-vopc-client:
+    needs: deploy-one-server
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 9
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install client-mode Gemini hook and MCP through enrolled Node
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 - <<'PY'
+          import json
+          import os
+          import time
+
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+
+          source = os.environ['GITHUB_SHA']
+          node_id = 'vopc5750'
+          store = RealmFabricStore()
+          controller = ControllerService(store)
+          node = controller.node(node_id)
+          if node.get('status') != 'online':
+              raise SystemExit('vopc5750 is not online')
+          roots = node.get('workspace_roots') or {}
+          cwd = (roots.get('readable') or [None])[0]
+          if not cwd:
+              raise SystemExit('vopc5750 has no governed readable workspace')
+
+          task_id = 'vopc5750-gemini-one-' + str(int(time.time()))
+          script = r'''$ErrorActionPreference='Stop'
+          $source='__SOURCE_COMMIT__'
+          if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS\one-mcp-source'
+          $target=Join-Path $root $source
+          $archive=Join-Path $env:TEMP ("agentos-one-"+$source+".zip")
+          $staging=Join-Path $env:TEMP ("agentos-one-"+$source)
+          if(-not (Test-Path (Join-Path $target 'scripts\install_antigravity_one_mcp.py'))){
+            New-Item -ItemType Directory -Force -Path $root | Out-Null
+            if(Test-Path $staging){ Remove-Item -Recurse -Force $staging }
+            if(Test-Path $archive){ Remove-Item -Force $archive }
+            Invoke-WebRequest -UseBasicParsing -Uri ("https://github.com/alston-personal/agentmanager/archive/"+$source+".zip") -OutFile $archive
+            Expand-Archive -Path $archive -DestinationPath $staging -Force
+            $expanded=Get-ChildItem -Directory $staging | Select-Object -First 1
+            if($null -eq $expanded){ throw 'source archive did not contain a directory' }
+            if(Test-Path $target){ Remove-Item -Recurse -Force $target }
+            Move-Item -Path $expanded.FullName -Destination $target
+            Remove-Item -Recurse -Force $staging
+            Remove-Item -Force $archive
+          }
+          $python=(Get-Command python -ErrorAction Stop).Source
+          & $python (Join-Path $target 'scripts\install_antigravity_one_mcp.py') --repo $target --mode client
+          if($LASTEXITCODE -ne 0){ throw 'AgentOS Gemini ONE installer failed' }
+          $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $mcp=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
+          $audit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
+          foreach($path in @($hooks,$mcp,$audit)){
+            if(-not (Test-Path $path)){ throw ("required AgentOS Gemini ONE artifact missing: "+$path) }
+          }
+          $hookConfig=Get-Content -Raw $hooks | ConvertFrom-Json
+          $mcpConfig=Get-Content -Raw $mcp | ConvertFrom-Json
+          $attestation=Get-Content -Raw $audit | ConvertFrom-Json
+          if($null -eq $hookConfig.'agentos-one-preinvocation'){ throw 'managed PreInvocation hook missing' }
+          if($null -eq $mcpConfig.mcpServers.'agentos-one'){ throw 'managed ONE MCP missing' }
+          if($attestation.outcome -ne 'hydrated'){ throw 'installer hook probe was not hydrated' }
+          if($attestation.source -ne 'ONE_PREINVOCATION_IR'){ throw 'installer hook probe source mismatch' }
+          if($attestation.selection_source -ne 'ONE_ACTIVE_CONTINUATION'){ throw 'installer selector source mismatch' }
+          if($attestation.executor_class -ne 'antigravity-gemini'){ throw 'installer executor identity mismatch' }
+          if($attestation.credential_exposed -ne $false){ throw 'credential isolation check failed' }
+          Write-Output ('agentos_source_commit='+$source)
+          Write-Output ('project_id='+$attestation.project_id)
+          Write-Output ('index_id='+$attestation.index_id)
+          Write-Output ('ir_id='+$attestation.ir_id)
+          Write-Output 'source=ONE_PREINVOCATION_IR'
+          Write-Output 'selection_source=ONE_ACTIVE_CONTINUATION'
+          Write-Output 'executor_class=antigravity-gemini'
+          Write-Output 'credential_exposed=false'
+          Write-Output 'agentos_vopc5750_gemini_one_install=PASS'
+          '''.replace('__SOURCE_COMMIT__', source)
+          task = {
+              'schema': 'agentos.node-task/v0.1',
+              'task_id': task_id,
+              'action': 'shell.exec',
+              'executable': 'powershell',
+              'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+              'cwd': cwd,
+              'timeout_seconds': 120,
+              'cognition_ids_used': [],
+          }
+          store.queue_task(node_id, task)
+          receipt = None
+          for _ in range(75):
+              receipt = store.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(2)
+          if receipt is None:
+              raise SystemExit('vopc5750 Gemini ONE installer receipt timeout')
+          print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
+          stdout = str(receipt.get('stdout') or '')
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0) != 0:
+              raise SystemExit('vopc5750 Gemini ONE installer receipt failed')
+          required = (
+              'agentos_vopc5750_gemini_one_install=PASS',
+              'source=ONE_PREINVOCATION_IR',
+              'selection_source=ONE_ACTIVE_CONTINUATION',
+              'executor_class=antigravity-gemini',
+              'credential_exposed=false',
+          )
+          missing = [marker for marker in required if marker not in stdout]
+          if missing:
+              raise SystemExit('vopc5750 Gemini ONE evidence missing: ' + ','.join(missing))
+          print('vopc5750_gemini_one_client_deploy=PASS')
+          print('antigravity_reload_required=YES')
+          PY

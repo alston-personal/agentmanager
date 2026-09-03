@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from agent_core.active_continuation import resolve_active_continuation
 from agent_core.controller_api import ControllerService as RuntimeControllerService
 from agent_core.controller_service import ControllerService as LegacyControllerService
 from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
@@ -263,6 +264,21 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 token = self._bearer()
                 self.fabric.authenticate(node_id, token)
                 node_context = bootstrap_snapshot(self.fabric, node_id, token)
+                selection = str(body.get('selection') or 'project').strip()
+                if selection not in {'project', 'active'}:
+                    raise ValueError('selection must be project or active')
+                if selection == 'active':
+                    active = resolve_active_continuation()
+                    selector = dict(active.get('selector') or {})
+                    result = dict(active.get('resolution') or {})
+                    result['node_context'] = node_context
+                    self._send(200, {
+                        'ok': True,
+                        **result,
+                        'active_selector': selector,
+                        'selection_source': 'ONE_ACTIVE_CONTINUATION',
+                    })
+                    return
                 project_query = str(body.get('project') or body.get('query') or '').strip()
                 if not project_query:
                     raise ValueError('project query is required')

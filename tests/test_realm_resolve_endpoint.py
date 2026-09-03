@@ -79,6 +79,52 @@ class TestRealmResolveEndpoint(unittest.TestCase):
         self.assertEqual(payload["project"]["id"], "metashield-protocol")
         resolver.assert_called_once_with("metashield-protocol", node_context={"node_id": "chatgpt-web-test"})
 
+    def test_enrolled_node_can_resolve_active_continuation(self):
+        enrolled = self._enroll()
+        active = {
+            "selector": {
+                "schema": "agentos.active-continuation/v1",
+                "project_id": "agentos-core",
+                "index_id": "idx-active",
+                "ir_id": "ir-active",
+            },
+            "resolution": {
+                "schema": "agentos.resolve/v1",
+                "intent": "continue",
+                "project": {"id": "agentos-core"},
+                "execution_head": {"index_id": "idx-active"},
+                "continuation": {
+                    "canonical_ir": {
+                        "schema_version": "agentos.ir/v1",
+                        "index_id": "idx-active",
+                        "ir_id": "ir-active",
+                    }
+                },
+            },
+        }
+        with patch(
+            "agent_core.realm_server.bootstrap_snapshot",
+            return_value={"node_id": "chatgpt-web-test"},
+        ), patch(
+            "agent_core.realm_server.resolve_active_continuation",
+            return_value=active,
+        ) as resolver:
+            status, payload = self._post(
+                {
+                    "schema": "agentos.resolve-request/v1",
+                    "node_id": "chatgpt-web-test",
+                    "intent": "continue",
+                    "selection": "active",
+                },
+                token=enrolled["node_token"],
+            )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["selection_source"], "ONE_ACTIVE_CONTINUATION")
+        self.assertEqual(payload["active_selector"]["ir_id"], "ir-active")
+        self.assertEqual(payload["node_context"]["node_id"], "chatgpt-web-test")
+        resolver.assert_called_once_with()
+
     def test_wrong_node_token_is_rejected_before_resolver(self):
         self._enroll()
         with patch("agent_core.realm_server.resolve_continuation") as resolver:

@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-09-02  
+**Status date:** 2026-09-03
 **Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
 
 This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
@@ -36,6 +36,7 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Guarded Canonical IR handoff / parent fence | Implemented + tested | `agent_core/canonical_ir_handoff.py`, guarded `agent_core/project_continuation_index.py` | `tests/test_canonical_ir_handoff.py`, `tests/test_project_continuation_index.py` |
 | ONE active Canonical continuation selector | Implemented + verified for tested Gemini/Codex continuity slice | `agent_core/active_continuation.py`, `scripts/seed_active_continuation.py`, Gemini PreInvocation + Codex MCP consumers | unrelated-workspace Oracle probe plus two fresh Codex `one_resolve_active` observations |
 | Fresh Antigravity Gemini continuation with only `繼續` | Verified for one concrete E2 slice | Oracle Gemini-side `PreInvocation` hydration from ONE Canonical IR plus read-only MCP adapter | two independent fresh Gemini sessions reproduced `ONE_PREINVOCATION_IR / agentos-core / idx-core-152 / ir-core-152`; see `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
+| Enrolled-client Antigravity Gemini ONE bootstrap | Implemented candidate; live `vopc5750` acceptance pending | authenticated `selection=active` resolve in `agent_core/realm_server.py`; client `one_resolve_active`; Windows-capable hook installer in `scripts/install_antigravity_one_mcp.py` | contract tests cover authenticated active selection, credential-safe projection, and Windows hook launcher; live proof still requires installer probe plus two fresh Gemini conversations |
 | OpenAI Codex IDE extension ONE bootstrap | Implemented + live-verified | `agentos_node/codex_one_mcp_stdio.py`, `scripts/install_codex_one_oracle.py`, global `~/.codex/AGENTS.md` + `~/.codex/config.toml` managed blocks | two independent fresh Codex extension threads resolved the same ONE-selected E3 generation; `.agentos/evidence/issue-152-codex-extension-e3-verified-2026-09-02.md` |
 | Gemini extension → ONE → OpenAI Codex IDE extension E3 | **Verified for one concrete Oracle cross-extension slice** | corrected child handoff, Codex native AGENTS+MCP bootstrap, `one_resolve_active` receipt | #152 comments `5503435564` + `5503469931`; distinct receipt timestamps `02:28:29Z` and `02:32:25Z`; repository evidence file above |
 | Post-E3 canonical continuation | Implemented guarded handoff; live advancement pending | `scripts/advance_issue_152_after_e3_verified.py`, `scripts/advance_issue_152_after_e3_verified_oracle.sh` | parent-fenced from verified E3 generation; intended to resume broader #152 work instead of repeating completed regression |

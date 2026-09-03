@@ -111,6 +111,55 @@ class OneMCPTests(unittest.TestCase):
         self.assertNotIn("SERVERSECRET", text)
         self.assertNotIn("/private/path", text)
 
+    def test_client_resolve_active_uses_authenticated_selector_request(self):
+        cfg = one_mcp.ClientConfig(
+            "http://one",
+            "realm-test",
+            "node-test",
+            "TOPSECRET",
+        )
+        seen = []
+        payload = {
+            "ok": True,
+            "schema": "agentos.resolve/v1",
+            "intent": "continue",
+            "project": {"id": "agentos-core"},
+            "execution_head": {"index_id": "idx-active"},
+            "continuation": {
+                "canonical_ir": {
+                    "schema_version": "agentos.ir/v1",
+                    "index_id": "idx-active",
+                    "ir_id": "ir-active",
+                }
+            },
+            "selection_source": "ONE_ACTIVE_CONTINUATION",
+            "active_selector": {
+                "schema": "agentos.active-continuation/v1",
+                "project_id": "agentos-core",
+                "index_id": "idx-active",
+                "ir_id": "ir-active",
+            },
+        }
+
+        def fake_urlopen(request, timeout):
+            seen.append(request)
+            return FakeResponse(payload)
+
+        with mock.patch.object(
+            one_mcp.urllib.request,
+            "urlopen",
+            side_effect=fake_urlopen,
+        ):
+            resolved = one_mcp.ClientOneGateway(cfg).resolve_active()
+
+        self.assertEqual(resolved["selection_source"], "ONE_ACTIVE_CONTINUATION")
+        self.assertEqual(resolved["active_selector"]["ir_id"], "ir-active")
+        self.assertEqual(seen[0].headers.get("Authorization"), "Bearer TOPSECRET")
+        submitted = json.loads(seen[0].data.decode("utf-8"))
+        self.assertEqual(submitted["selection"], "active")
+        self.assertNotIn("project", submitted)
+        self.assertNotIn("TOPSECRET", json.dumps(resolved))
+
     def test_client_bootstrap_projects_executor_safe_fields_only(self):
         cfg = one_mcp.ClientConfig(
             "http://one",

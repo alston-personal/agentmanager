@@ -9,8 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from agent_core.active_continuation import read_active_continuation
-from agentos_node.one_mcp import OneGatewayError, OracleLocalGateway
+from agentos_node.one_mcp import Gateway, OneGatewayError, create_gateway
 
 HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.6"
 AUDIT_SCHEMA = "agentos.antigravity-preinvocation-attestation/v1"
@@ -173,18 +172,20 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
     tmp = Path(raw)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), 0o640)
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o640)
             json.dump(record, handle, ensure_ascii=False, sort_keys=True, indent=2)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
         tmp = None
-        dir_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+        if os.name != "nt":
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
     finally:
         if tmp is not None:
             tmp.unlink(missing_ok=True)
@@ -192,7 +193,7 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
 
 def build_injection(
     payload: dict[str, Any],
-    gateway: OracleLocalGateway | None = None,
+    gateway: Gateway | None = None,
     *,
     selector: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -201,19 +202,26 @@ def build_injection(
     if int(payload.get("invocationNum") or 0) != 0:
         return {}
 
-    one = gateway or OracleLocalGateway()
+    one = gateway or create_gateway()
     status = one.status()
     if not status.get("connected"):
         raise RuntimeError("ONE is not connected")
 
-    active = selector or read_active_continuation(one.data_root)
+    active_result = None if selector is not None else one.resolve_active()
+    active = selector or (
+        active_result.get("active_selector")
+        if isinstance(active_result, dict)
+        else None
+    )
+    if not isinstance(active, dict):
+        raise ValueError("ONE active continuation selector is unavailable")
     project_id = str(active.get("project_id") or "").strip()
     selector_index = str(active.get("index_id") or "").strip()
     selector_ir = str(active.get("ir_id") or "").strip()
     if not all((project_id, selector_index, selector_ir)):
         raise ValueError("ONE active continuation selector is incomplete")
 
-    result = one.resolve(project_id)
+    result = active_result if isinstance(active_result, dict) else one.resolve(project_id)
     execution_head, canonical_ir, index_id = _canonical_ir_from_resolution(
         result, expected_project_id=project_id
     )

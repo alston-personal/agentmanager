@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import venv
@@ -13,6 +14,7 @@ from typing import Any
 
 MCP_PACKAGE = "mcp>=2,<3"
 SERVER_NAME = "agentos-one"
+HOOK_NAME = "agentos-one-preinvocation"
 CLIENT_MODE = "client"
 ORACLE_LOCAL_MODE = "oracle-local"
 
@@ -83,15 +85,11 @@ GLOBAL_RULE_END = "<!-- AGENTOS_ONE_BOOTSTRAP_END -->"
 GLOBAL_RULE = """<!-- AGENTOS_ONE_BOOTSTRAP_START -->
 ## AgentOS ONE bootstrap
 
-When the `agentos-one` MCP tools are available and the current workspace is governed by AgentOS (for example its `AGENTS.md` identifies AgentOS, or the user asks about AgentOS/ONE), use ONE before reconstructing state from vendor conversation history.
+This enrolled client participates in AgentOS ONE through a credential-isolated `PreInvocation` hook plus the `agentos-one` MCP server.
 
-For a fresh or relative request such as `continue` / `繼續` in an AgentOS-governed workspace:
-1. call `one_status`;
-2. identify the current project from workspace/repository context without guessing;
-3. call `one_resolve(project)` before continuing substantial work;
-4. treat canonical goal/continuation/authority returned by ONE as durable state, while newer explicit user intent always wins.
+On the first invocation of a fresh Antigravity conversation, the hook resolves ONE's active continuation before the model is called and injects the exact current Canonical IR generation. The workspace is environment metadata, not continuation authority. For explicit live checks, use `one_status`, `one_resolve_active`, or `one_resolve(project)`.
 
-Never expose Realm/node credentials. The MCP adapter owns the trust boundary. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
+If the hook reports `ONE_IR_HEAD_UNRESOLVED`, do not reconstruct AgentOS state from workspace files, Pulse, PM2, local memory, or vendor history. Never expose Realm/node credentials. The local adapter owns the trust boundary. `agy`, standalone `gemini`, Claude, and Codex are distinct executors and are not substitutes for the active Antigravity executor.
 <!-- AGENTOS_ONE_BOOTSTRAP_END -->
 """
 
@@ -130,6 +128,13 @@ def antigravity_mcp_config_path() -> Path:
     if current.exists() or current.parent.exists() or not legacy.exists():
         return current
     return legacy
+
+
+def antigravity_hooks_config_path() -> Path:
+    explicit = os.environ.get("AGENTOS_ANTIGRAVITY_HOOKS_CONFIG")
+    if explicit:
+        return Path(explicit).expanduser()
+    return Path.home() / ".gemini" / "config" / "hooks.json"
 
 
 def _venv_python(root: Path) -> Path:
@@ -184,6 +189,22 @@ def _load_json(path: Path) -> dict[str, Any]:
     return data
 
 
+def _backup(path: Path) -> None:
+    if not path.exists():
+        return
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    shutil.copy2(path, path.with_name(path.name + f".agentos-backup-{stamp}"))
+
+
+def _atomic_text(path: Path, content: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _backup(path)
+    tmp = path.with_suffix(path.suffix + ".agentos.tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
 def write_antigravity_config(
     path: Path,
     *,
@@ -200,6 +221,8 @@ def write_antigravity_config(
         "PYTHONPATH": str(repo_root),
         "AGENTOS_ONE_MCP_MODE": mode,
     }
+    if mode == CLIENT_MODE:
+        env["AGENTOS_CLIENT_CONFIG"] = str(discover_client_config())
     if mode == ORACLE_LOCAL_MODE:
         env["AGENT_DATA_ROOT"] = str(oracle_data_root())
         env["AGENTOS_CORE_NODE_ID"] = str(
@@ -237,6 +260,76 @@ def write_antigravity_config(
     )
     tmp.replace(path)
     return servers[SERVER_NAME]
+
+
+def write_hook_launcher(
+    state_root: Path,
+    *,
+    python: Path,
+    repo_root: Path,
+    client_config: Path,
+    audit_path: Path,
+) -> Path:
+    values = (python, repo_root, client_config, audit_path)
+    if any("\n" in str(value) or "\r" in str(value) for value in values):
+        raise ValueError("hook launcher paths must not contain newlines")
+    if os.name == "nt":
+        path = state_root / "agentos-one-preinvocation.cmd"
+        content = (
+            "@echo off\r\n"
+            f'set "PYTHONPATH={repo_root}"\r\n'
+            'set "AGENTOS_ONE_MCP_MODE=client"\r\n'
+            f'set "AGENTOS_CLIENT_CONFIG={client_config}"\r\n'
+            f'set "AGENTOS_PREINVOCATION_AUDIT_PATH={audit_path}"\r\n'
+            f'"{python}" -m agentos_node.antigravity_one_hook\r\n'
+        )
+    else:
+        path = state_root / "agentos-one-preinvocation.sh"
+        assignments = {
+            "PYTHONPATH": str(repo_root),
+            "AGENTOS_ONE_MCP_MODE": CLIENT_MODE,
+            "AGENTOS_CLIENT_CONFIG": str(client_config),
+            "AGENTOS_PREINVOCATION_AUDIT_PATH": str(audit_path),
+        }
+        exports = "\n".join(
+            f"export {key}={shlex.quote(value)}" for key, value in assignments.items()
+        )
+        content = (
+            "#!/usr/bin/env sh\nset -eu\n"
+            + exports
+            + "\nexec "
+            + shlex.quote(str(python))
+            + " -m agentos_node.antigravity_one_hook\n"
+        )
+    _atomic_text(path, content)
+    if os.name != "nt":
+        path.chmod(0o700)
+    return path
+
+
+def write_hooks_config(path: Path, *, launcher: Path) -> dict[str, Any]:
+    config = _load_json(path)
+    command = f'"{launcher}"' if os.name == "nt" else shlex.quote(str(launcher))
+    hook = {
+        "enabled": True,
+        "PreInvocation": [
+            {
+                "type": "command",
+                "command": command,
+                "timeout": 12,
+            }
+        ],
+    }
+    config[HOOK_NAME] = hook
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _backup(path)
+    tmp = path.with_suffix(path.suffix + ".agentos.tmp")
+    tmp.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+    return hook
 
 
 def state_root_for_mode(mode: str) -> Path:
@@ -289,6 +382,79 @@ def probe(
     return payload
 
 
+def probe_preinvocation_hook(
+    python: Path,
+    repo_root: Path,
+    *,
+    client_config: Path,
+    audit_path: Path,
+) -> dict[str, Any]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(repo_root)
+    env["AGENTOS_ONE_MCP_MODE"] = CLIENT_MODE
+    env["AGENTOS_CLIENT_CONFIG"] = str(client_config)
+    env["AGENTOS_PREINVOCATION_AUDIT_PATH"] = str(audit_path)
+    hook_input = {
+        "invocationNum": 0,
+        "initialNumSteps": 1,
+        "conversationId": "agentos-vopc-client-installer-probe",
+        "workspacePaths": [str(repo_root)],
+        "transcriptPath": "",
+        "artifactDirectoryPath": "",
+        "modelName": "gemini-client-installer-probe",
+    }
+    result = subprocess.run(
+        [str(python), "-m", "agentos_node.antigravity_one_hook"],
+        cwd=str(repo_root),
+        env=env,
+        input=json.dumps(hook_input),
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "PreInvocation hook probe failed: "
+            + (result.stderr or result.stdout)[-5000:]
+        )
+    output = json.loads(result.stdout or "{}")
+    steps = output.get("injectSteps") if isinstance(output, dict) else None
+    if not isinstance(steps, list) or not steps:
+        raise RuntimeError("PreInvocation hook produced no hydration")
+    message = str((steps[0] or {}).get("ephemeralMessage") or "")
+    if "ONE_IR_HEAD_UNRESOLVED" in message:
+        raise RuntimeError("PreInvocation hook failed closed")
+    if "ONE_PREINVOCATION_IR" not in message:
+        raise RuntimeError("PreInvocation hook lacks canonical provenance")
+    envelope = json.loads(message.rsplit("\n", 1)[-1])
+    selector = envelope.get("active_selector") or {}
+    canonical_ir = envelope.get("canonical_ir") or {}
+    if envelope.get("selection_source") != "ONE_ACTIVE_CONTINUATION":
+        raise RuntimeError("PreInvocation hook did not use active continuation")
+    if envelope.get("executor_class") != "antigravity-gemini":
+        raise RuntimeError("PreInvocation hook did not bind Gemini executor")
+    if envelope.get("executor_identity_bound") is not True:
+        raise RuntimeError("PreInvocation hook executor identity is unbound")
+    if canonical_ir.get("index_id") != selector.get("index_id"):
+        raise RuntimeError("PreInvocation hook index generation mismatch")
+    if canonical_ir.get("ir_id") != selector.get("ir_id"):
+        raise RuntimeError("PreInvocation hook IR generation mismatch")
+    if envelope.get("credential_exposed") is not False:
+        raise RuntimeError("PreInvocation hook credential isolation failed")
+    return {
+        "schema": "agentos.antigravity-one-client-preinvocation-probe/v1",
+        "ok": True,
+        "source": "ONE_PREINVOCATION_IR",
+        "selection_source": "ONE_ACTIVE_CONTINUATION",
+        "project_id": selector.get("project_id"),
+        "index_id": selector.get("index_id"),
+        "ir_id": selector.get("ir_id"),
+        "executor_class": envelope.get("executor_class"),
+        "credential_exposed": False,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -323,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     state_root = state_root_for_mode(mode)
     venv_root = state_root / "venv"
     python = ensure_mcp_venv(venv_root)
+    client_config = discover_client_config() if mode == CLIENT_MODE else None
     evidence = (
         None
         if args.no_probe
@@ -336,6 +503,28 @@ def main(argv: list[str] | None = None) -> int:
         repo_root=repo_root,
         mode=mode,
     )
+    hook_probe = None
+    hooks_config = None
+    hook = None
+    hook_launcher = None
+    if mode == CLIENT_MODE:
+        assert client_config is not None
+        audit_path = state_root / "antigravity-preinvocation-last.json"
+        hook_probe = probe_preinvocation_hook(
+            python,
+            repo_root,
+            client_config=client_config,
+            audit_path=audit_path,
+        )
+        hook_launcher = write_hook_launcher(
+            state_root,
+            python=python,
+            repo_root=repo_root,
+            client_config=client_config,
+            audit_path=audit_path,
+        )
+        hooks_config = antigravity_hooks_config_path()
+        hook = write_hooks_config(hooks_config, launcher=hook_launcher)
     print(
         json.dumps(
             {
@@ -349,8 +538,13 @@ def main(argv: list[str] | None = None) -> int:
                 "global_rule": str(global_rule),
                 "repo": str(repo_root),
                 "probe": evidence,
+                "preinvocation_hook_probe": hook_probe,
                 "credential_in_mcp_config": False,
-                "refresh_required": True,
+                "credential_in_hook_config": False,
+                "hooks_config": str(hooks_config) if hooks_config else None,
+                "hook_launcher": str(hook_launcher) if hook_launcher else None,
+                "hook": hook,
+                "reload_required": True,
                 "server_config": server,
             },
             ensure_ascii=False,
