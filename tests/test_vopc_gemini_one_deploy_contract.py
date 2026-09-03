@@ -85,6 +85,11 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn("one_controller_dispatch=PASS", client)
         self.assertIn("windows_antigravity_runtime_fingerprint=BEGIN", client)
         self.assertIn("antigravity_hook_contract_file_count", client)
+        self.assertIn("windows_hook_contract_", client)
+        self.assertIn("'PreInvocation','injectSteps','ephemeralMessage','hooks.json'", client)
+        self.assertIn("windows_product_", client)
+        self.assertIn("'nameShort','applicationName','dataFolderName'", client)
+        self.assertIn("windows_agent_process", client)
         self.assertIn("antigravity_recent_hook_log_file_count", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 

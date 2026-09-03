@@ -77,6 +77,22 @@ jobs:
           ROOT=/home/ubuntu/.antigravity-ide-server
           echo 'oracle_antigravity_runtime_fingerprint=BEGIN'
           if [ -d "$ROOT" ]; then
+            PRODUCT=$(find "$ROOT/bin" -mindepth 2 -maxdepth 2 -type f -name product.json 2>/dev/null | sort | tail -n 1 || true)
+            if [ -n "$PRODUCT" ]; then
+              python3 - "$PRODUCT" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          for key in ('nameShort','applicationName','dataFolderName','version','commit','quality'):
+              print('oracle_product_'+key+'='+str(p.get(key)))
+          PY
+              AGENT_DIR=$(dirname "$PRODUCT")/extensions/antigravity
+              if [ -d "$AGENT_DIR" ] && command -v rg >/dev/null 2>&1; then
+                for PATTERN in PreInvocation injectSteps ephemeralMessage hooks.json; do
+                  COUNT=$(rg -a -o "$PATTERN" "$AGENT_DIR" -g '*.js' -g '*.json' 2>/dev/null | wc -l || true)
+                  echo "oracle_hook_contract_${PATTERN}=$COUNT"
+                done
+              fi
+            fi
             find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p' || true
             if command -v rg >/dev/null 2>&1; then
               rg -a -l -m 1 'PreInvocation|injectSteps|ephemeralMessage|hooks\.json' "$ROOT" \
@@ -204,6 +220,9 @@ jobs:
             if(Test-Path $manifest){
               $parsed=Get-Content -Raw $manifest | ConvertFrom-Json
               Write-Output ($relative.Replace('\','/')+'='+$parsed.version)
+              foreach($key in @('nameShort','applicationName','dataFolderName','version','commit','quality')){
+                Write-Output ('windows_product_'+$key+'='+$parsed.$key)
+              }
             }
           }
           $hookConfigPath=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
@@ -212,6 +231,15 @@ jobs:
           Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
           $outRoot=Join-Path $appRoot 'resources\app\out'
           if(Test-Path $outRoot){
+            $agentBundle=Join-Path $outRoot 'jetskiAgent\main.js'
+            if(Test-Path $agentBundle){
+              foreach($pattern in @('PreInvocation','injectSteps','ephemeralMessage','hooks.json')){
+                $count=(Select-String -Path $agentBundle -Pattern $pattern -AllMatches -ErrorAction SilentlyContinue).Matches.Count
+                Write-Output ('windows_hook_contract_'+$pattern+'='+$count)
+              }
+            } else {
+              Write-Output 'windows_jetski_agent_bundle=MISSING'
+            }
             $matches=Get-ChildItem -Path $outRoot -Recurse -File -Include *.js,*.json -ErrorAction SilentlyContinue |
               Select-String -Pattern 'PreInvocation','injectSteps','ephemeralMessage','hooks.json' -List -ErrorAction SilentlyContinue |
               Select-Object -First 40
@@ -234,6 +262,15 @@ jobs:
             }
           } else {
             Write-Output 'antigravity_log_root=MISSING'
+          }
+          $appDataCandidates=Get-ChildItem -Path $env:APPDATA -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'gravity|windsurf|gemini' } |
+            Select-Object -ExpandProperty Name
+          foreach($name in $appDataCandidates){ Write-Output ('windows_appdata_candidate='+$name) }
+          $processes=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'Antigravity|language_server|jetski' -or $_.ExecutablePath -match 'Antigravity' }
+          foreach($process in $processes){
+            Write-Output ('windows_agent_process='+$process.Name+';path='+$process.ExecutablePath)
           }
           Write-Output 'windows_antigravity_runtime_fingerprint=END'
           $root=Join-Path $env:LOCALAPPDATA 'AgentOS\one-mcp-source'
@@ -342,3 +379,4 @@ jobs:
           print('vopc5750_gemini_one_client_deploy=PASS')
           print('antigravity_reload_required=YES')
           PY
+
