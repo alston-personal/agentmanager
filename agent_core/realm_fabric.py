@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,10 @@ class RealmFabricStore:
         data_root = Path(os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
         self.path = Path(path) if path else data_root / 'realm' / 'fabric.json'
         self.node_registry = node_registry or NodeRegistry()
+        # RealmHTTPServer is threaded. Keep every read-modify-write transaction
+        # in this process serialized so heartbeat persistence cannot overwrite a
+        # concurrently queued task or receipt.
+        self._state_lock = threading.RLock()
 
     def _empty(self) -> dict[str, Any]:
         return {
@@ -285,53 +290,57 @@ class RealmFabricStore:
         return node
 
     def record_heartbeat(self, heartbeat: dict[str, Any], token: str) -> dict[str, Any]:
-        node_id = str(heartbeat.get('node_id') or '')
-        self.authenticate(node_id, token)
-        entry = self.node_registry.record_heartbeat(heartbeat)
-        data = self.load()
-        data['nodes'][node_id]['last_seen_at'] = heartbeat.get('observed_at') or _utc_now()
-        self.save(data)
-        return entry
+        with self._state_lock:
+            node_id = str(heartbeat.get('node_id') or '')
+            self.authenticate(node_id, token)
+            entry = self.node_registry.record_heartbeat(heartbeat)
+            data = self.load()
+            data['nodes'][node_id]['last_seen_at'] = heartbeat.get('observed_at') or _utc_now()
+            self.save(data)
+            return entry
 
     def queue_task(self, node_id: str, task: dict[str, Any]) -> dict[str, Any]:
-        if task.get('schema') != 'agentos.node-task/v0.1':
-            raise ValueError('invalid task schema')
-        if not task.get('task_id'):
-            raise ValueError('task_id is required')
-        data = self.load()
-        if node_id not in data['nodes']:
-            raise KeyError(node_id)
-        queued = dict(task)
-        queued['queued_at'] = _utc_now()
-        data['tasks'].setdefault(node_id, []).append(queued)
-        self.save(data)
-        return queued
+        with self._state_lock:
+            if task.get('schema') != 'agentos.node-task/v0.1':
+                raise ValueError('invalid task schema')
+            if not task.get('task_id'):
+                raise ValueError('task_id is required')
+            data = self.load()
+            if node_id not in data['nodes']:
+                raise KeyError(node_id)
+            queued = dict(task)
+            queued['queued_at'] = _utc_now()
+            data['tasks'].setdefault(node_id, []).append(queued)
+            self.save(data)
+            return queued
 
     def pull_tasks(self, node_id: str, token: str, *, limit: int = 10) -> list[dict[str, Any]]:
-        self.authenticate(node_id, token)
-        data = self.load()
-        queue = list(data['tasks'].get(node_id, []))
-        take = queue[:max(1, min(limit, 50))]
-        data['tasks'][node_id] = queue[len(take):]
-        self.save(data)
-        return take
+        with self._state_lock:
+            self.authenticate(node_id, token)
+            data = self.load()
+            queue = list(data['tasks'].get(node_id, []))
+            take = queue[:max(1, min(limit, 50))]
+            data['tasks'][node_id] = queue[len(take):]
+            self.save(data)
+            return take
 
     def record_receipt(self, receipt: dict[str, Any], token: str) -> dict[str, Any]:
-        if receipt.get('schema') != 'agentos.node-receipt/v0.1':
-            raise ValueError('invalid receipt schema')
-        node_id = str(receipt.get('node_id') or '')
-        self.authenticate(node_id, token)
-        task_id = str(receipt.get('task_id') or '')
-        if not task_id:
-            raise ValueError('receipt task_id is required')
-        data = self.load()
-        data['receipts'][task_id] = {
-            **receipt,
-            'received_at': _utc_now(),
-        }
-        data['nodes'][node_id]['last_seen_at'] = _utc_now()
-        self.save(data)
-        return data['receipts'][task_id]
+        with self._state_lock:
+            if receipt.get('schema') != 'agentos.node-receipt/v0.1':
+                raise ValueError('invalid receipt schema')
+            node_id = str(receipt.get('node_id') or '')
+            self.authenticate(node_id, token)
+            task_id = str(receipt.get('task_id') or '')
+            if not task_id:
+                raise ValueError('receipt task_id is required')
+            data = self.load()
+            data['receipts'][task_id] = {
+                **receipt,
+                'received_at': _utc_now(),
+            }
+            data['nodes'][node_id]['last_seen_at'] = _utc_now()
+            self.save(data)
+            return data['receipts'][task_id]
 
     def get_receipt(self, task_id: str) -> dict[str, Any] | None:
         return self.load()['receipts'].get(task_id)

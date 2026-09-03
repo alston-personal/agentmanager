@@ -80,6 +80,11 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertNotIn("systemctl --user", server)
         self.assertNotIn("pip install", server)
 
+        client = text.split("deploy-vopc-client:", 1)[1]
+        self.assertIn("http://127.0.0.1:8780/v1/controller/dispatch", client)
+        self.assertIn("one_controller_dispatch=PASS", client)
+        self.assertNotIn("store.queue_task(node_id, task)", client)
+
 
 if __name__ == "__main__":
     unittest.main()

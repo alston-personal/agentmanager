@@ -1,6 +1,7 @@
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -97,6 +98,45 @@ class TestRealmFabric(unittest.TestCase):
                 policy=policy,
                 config_path=Path(self.tmp.name) / 'client-b.json',
             )
+
+    def test_concurrent_task_mutations_are_serialized(self):
+        invite = self.fabric.create_invite()
+        ThinClientTransport.enroll(
+            one_url=self.base_url,
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            node_id='win-test-01',
+            policy=ThinClientPolicy(readable_roots=(self.workspace,)),
+            config_path=self.config_path,
+        )
+        original_save = self.fabric.save
+
+        def slow_save(data):
+            time.sleep(0.02)
+            original_save(data)
+
+        self.fabric.save = slow_save
+        tasks = [
+            {
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': f'task-concurrent-{index}',
+                'action': 'filesystem.read',
+                'path': str(self.workspace / f'{index}.txt'),
+            }
+            for index in range(8)
+        ]
+        workers = [
+            threading.Thread(target=self.fabric.queue_task, args=('win-test-01', task))
+            for task in tasks
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+
+        queued = self.fabric.load()['tasks']['win-test-01']
+        self.assertEqual({task['task_id'] for task in queued}, {task['task_id'] for task in tasks})
 
 
 if __name__ == '__main__':

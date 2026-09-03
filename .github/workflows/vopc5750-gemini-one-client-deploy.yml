@@ -6,12 +6,14 @@ on:
       - core/issue-152-vopc-gemini-one
     paths:
       - 'agent_core/realm_server.py'
+      - 'agent_core/realm_fabric.py'
       - 'agentos_node/one_mcp.py'
       - 'agentos_node/antigravity_one_hook.py'
       - 'scripts/install_antigravity_one_mcp.py'
       - 'scripts/deploy_realm_fabric_candidate_user.sh'
       - 'agentos_node/bootstrap_control.py'
       - 'tests/test_realm_resolve_endpoint.py'
+      - 'tests/test_realm_fabric.py'
       - 'tests/test_one_mcp.py'
       - 'tests/test_antigravity_one_hook.py'
       - 'tests/test_install_antigravity_one_client.py'
@@ -150,6 +152,7 @@ jobs:
           import json
           import os
           import time
+          from urllib.request import Request, urlopen
 
           from agent_core.controller_api import ControllerService
           from agent_core.realm_fabric import RealmFabricStore
@@ -166,7 +169,7 @@ jobs:
           if not cwd:
               raise SystemExit('vopc5750 has no governed readable workspace')
 
-          task_id = 'vopc5750-gemini-one-' + str(int(time.time()))
+          task_id = 'vopc5750-gemini-one-' + source[:16]
           script = r'''$ErrorActionPreference='Stop'
           $source='__SOURCE_COMMIT__'
           if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
@@ -216,20 +219,44 @@ jobs:
           Write-Output 'credential_exposed=false'
           Write-Output 'agentos_vopc5750_gemini_one_install=PASS'
           '''.replace('__SOURCE_COMMIT__', source)
-          task = {
-              'schema': 'agentos.node-task/v0.1',
+          payload = {
+              'schema': 'agentos.controller-dispatch/v0.1',
               'task_id': task_id,
+              'node_id': node_id,
               'action': 'shell.exec',
-              'executable': 'powershell',
-              'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
-              'cwd': cwd,
-              'timeout_seconds': 120,
-              'cognition_ids_used': [],
+              'payload': {
+                  'executable': 'powershell',
+                  'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+                  'cwd': cwd,
+                  'timeout_seconds': 120,
+                  'cognition_ids_used': [],
+              },
           }
-          store.queue_task(node_id, task)
-          receipt = None
+          state = store.load()
+          receipt = (state.get('receipts') or {}).get(task_id)
+          pending = any(
+              item.get('task_id') == task_id
+              for item in (state.get('tasks') or {}).get(node_id, [])
+              if isinstance(item, dict)
+          )
+          if receipt is None and not pending:
+              body = json.dumps(payload).encode('utf-8')
+              request = Request(
+                  'http://127.0.0.1:8780/v1/controller/dispatch',
+                  data=body,
+                  headers={'Content-Type': 'application/json'},
+                  method='POST',
+              )
+              with urlopen(request, timeout=10) as response:
+                  submission = json.loads(response.read().decode('utf-8'))
+              if submission.get('ok') is not True or submission.get('task_id') != task_id:
+                  raise SystemExit('ONE controller did not accept Gemini installer task')
+              print('one_controller_dispatch=PASS')
+          else:
+              print('one_controller_dispatch=IDEMPOTENT_REUSE')
+          print('gemini_installer_task_id=' + task_id)
           for _ in range(75):
-              receipt = store.get_receipt(task_id)
+              receipt = receipt or store.get_receipt(task_id)
               if receipt:
                   break
               time.sleep(2)
