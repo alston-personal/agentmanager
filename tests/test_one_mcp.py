@@ -28,7 +28,11 @@ class OneMCPTests(unittest.TestCase):
     def test_localappdata_candidate(self):
         with mock.patch.dict(
             os.environ,
-            {"LOCALAPPDATA": r"C:\Users\test\AppData\Local"},
+            {
+                "LOCALAPPDATA": r"C:\Users\test\AppData\Local",
+                "USERPROFILE": r"C:\Users\test",
+                "HOME": r"C:\Users\test",
+            },
             clear=True,
         ):
             candidates = one_mcp.client_config_candidates()
@@ -316,6 +320,7 @@ class OneMCPTests(unittest.TestCase):
         self.assertNotIn("/secret/head", serialized)
         self.assertNotIn("private-host", serialized)
 
+    @unittest.skipIf(os.name == "nt", "Oracle-local gateway is Linux-only")
     def test_gateway_mode_selects_oracle_local_when_no_client_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
