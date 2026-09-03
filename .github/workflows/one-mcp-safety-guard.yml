@@ -7,20 +7,25 @@ on:
     paths:
       - 'agentos_node/one_mcp.py'
       - 'agentos_node/one_mcp_stdio.py'
+      - 'agentos_node/one_runtime_inspect.py'
       - 'agentos_node/antigravity_one_hook.py'
       - 'tests/test_one_mcp.py'
       - 'tests/test_one_mcp_stdio_identity.py'
+      - 'tests/test_one_runtime_inspect.py'
       - 'tests/test_antigravity_one_hook.py'
       - '.github/workflows/one-mcp-safety-guard.yml'
   push:
     branches:
       - core/issue-152-executor-awareness
+      - core/issue-184-one-runtime-inspect
     paths:
       - 'agentos_node/one_mcp.py'
       - 'agentos_node/one_mcp_stdio.py'
+      - 'agentos_node/one_runtime_inspect.py'
       - 'agentos_node/antigravity_one_hook.py'
       - 'tests/test_one_mcp.py'
       - 'tests/test_one_mcp_stdio_identity.py'
+      - 'tests/test_one_runtime_inspect.py'
       - 'tests/test_antigravity_one_hook.py'
       - '.github/workflows/one-mcp-safety-guard.yml'
   workflow_dispatch:
@@ -40,4 +45,6 @@ jobs:
       - name: Run ONE MCP and PreInvocation safety regressions
         run: |
           python -m unittest tests.test_one_mcp -v
+          python -m unittest tests.test_one_mcp_stdio_identity -v
+          python -m unittest tests.test_one_runtime_inspect -v
           python -m unittest tests.test_antigravity_one_hook -v
