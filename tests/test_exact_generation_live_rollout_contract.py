@@ -66,13 +66,14 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
 
     def test_legacy_bootstrap_is_manual_read_only_and_exact_generation_only(self):
         text = _text(LEGACY_BOOTSTRAP_WORKFLOW)
+        compact = text.replace(' ', '')
         trigger = text.split('permissions:', 1)[0]
         self.assertIn('workflow_dispatch:', trigger)
         self.assertNotIn('\n  push:', trigger)
         self.assertIn('permissions:\n  contents: read', text)
         self.assertIn("test \"$GITHUB_REF\" = 'refs/heads/core/integration'", text)
-        self.assertIn("'params':{'source_commit':sha}", text.replace(' ', ''))
-        self.assertIn("assert r.get('source_commit')==expected", text.replace(' ', ''))
+        self.assertIn("'params':{'source_commit':sha}", compact)
+        self.assertIn("assertr.get('source_commit')==expected", compact)
         self.assertNotIn('contents: write', text)
         self.assertNotIn('git push', text)
         self.assertNotIn('HEAD:main', text)
