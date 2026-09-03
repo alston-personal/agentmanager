@@ -5,79 +5,166 @@
   "artifacts": [
     {
       "schema": "agentos.experience/v1",
-      "experience_id": "core.workspace-not-continuation-authority.v1",
+      "experience_id": "core.branch-authority.v2",
       "project_id": "agentos-core",
       "realm_scope": ["*"],
-      "capability_scope": ["agentos.one.resolve"],
-      "executor_scope": [],
+      "capability_scope": ["agentos.core.develop", "repository.merge"],
+      "executor_scope": ["*"],
+      "kind": "decision",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {"id": "integration-branch", "op": "require", "predicate": "core.development.integration_branch", "arguments": [{"type": "symbol", "value": "core/integration"}]},
+          {"id": "issue-branch", "op": "require", "predicate": "core.development.focused_branch_pattern", "arguments": [{"type": "string", "value": "core/issue-<N>-<slug>"}]},
+          {"id": "runtime-facts-not-experience", "op": "forbid", "predicate": "experience.contains_mutable_runtime_fact", "arguments": [{"type": "symbol", "value": "BRANCH_HEAD_PID_HEALTH_OR_CHECKOUT_SHA"}]},
+          {"id": "deployment-needs-evidence", "op": "forbid", "predicate": "deployment.acceptance_source", "arguments": [{"type": "symbol", "value": "MUTABLE_RUNTIME_OBSERVATION_ONLY"}]}
+        ],
+        "entrypoints": ["integration-branch", "issue-branch", "runtime-facts-not-experience", "deployment-needs-evidence"],
+        "expected_behavior_dimensions": ["uses_core_integration", "mutable_runtime_fact_as_experience", "branch_head_implies_deployment_acceptance"]
+      },
+      "display": {"summary": "Core development uses core/integration plus focused core/issue-* branches; mutable runtime facts are resolved live rather than learned as Experience."},
+      "provenance": {"sources": ["docs/CORE_BRANCH_MODEL.md", "docs/CORE_DEPLOYMENT_AUTHORITY.md"], "accepted_evidence": []},
+      "authority": {"status": "accepted", "supersedes": ["core.branch-and-runtime-authority.v1"], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "core.protected-main-human-authority.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["repository.mutate", "repository.merge"],
+      "executor_scope": ["*"],
       "kind": "constraint",
       "ir": {
         "schema": "agentos.experience-ir/v1",
         "nodes": [
-          {
-            "id": "canonical-authority",
-            "op": "require",
-            "predicate": "continuation.authority",
-            "arguments": [{"type": "symbol", "value": "ONE_CANONICAL_IR"}]
-          },
-          {
-            "id": "reject-workspace-authority",
-            "op": "forbid",
-            "predicate": "continuation.authority",
-            "arguments": [{"type": "symbol", "value": "WORKSPACE_VENDOR_HISTORY"}]
-          }
+          {"id": "main-human-authority", "op": "require", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "SEPARATE_EXPLICIT_HUMAN_AUTHORIZATION"}]},
+          {"id": "continue-not-authority", "op": "forbid", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "GENERIC_CONTINUE"}]},
+          {"id": "capability-not-authority", "op": "forbid", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "TOOL_CAPABILITY_CI_OR_MERGEABILITY"}]}
         ],
-        "entrypoints": ["canonical-authority", "reject-workspace-authority"],
-        "expected_behavior_dimensions": ["workspace_is_continuation_authority"]
+        "entrypoints": ["main-human-authority", "continue-not-authority", "capability-not-authority"],
+        "expected_behavior_dimensions": ["generic_continue_is_protected_main_merge_authority", "capability_implies_protected_main_authority"]
       },
-      "display": {
-        "summary": "Workspace or vendor-local history is not continuation authority; resolve ONE Canonical IR."
-      },
-      "provenance": {
-        "sources": ["github-issue://alston-personal/agentmanager/152"],
-        "accepted_evidence": ["agentos-evidence://continuity/issue-152/e3"],
-        "extraction_id": "agentos-extraction://agentos-core/152/workspace-authority"
-      },
+      "display": {"summary": "Protected-main merge requires separate explicit human authorization; CI, capability, mergeability, or generic continue do not grant it."},
+      "provenance": {"sources": [".agent/governance/protected_branches.yaml", "docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md"], "accepted_evidence": ["github-ruleset://21844290"]},
       "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
       "validity": {"conditions": [], "invalidated_by": []}
     },
     {
       "schema": "agentos.experience/v1",
-      "experience_id": "core.generic-continue-not-merge-authority.v1",
+      "experience_id": "core.evidence-scope-and-capability-semantics.v2",
       "project_id": "agentos-core",
       "realm_scope": ["*"],
-      "capability_scope": ["repository.merge"],
-      "executor_scope": [],
+      "capability_scope": ["agentos.one.resolve", "agentos.controller.dispatch", "agentos.capability.discover"],
+      "executor_scope": ["*"],
+      "kind": "heuristic",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {"id": "exact-evidence-path", "op": "require", "predicate": "evidence.claim_path_match", "arguments": [{"type": "boolean", "value": true}]},
+          {"id": "capability-states-distinct", "op": "assert", "predicate": "capability.states_are_distinct", "value": {"type": "list", "value": ["advertised", "transport-routable", "execution-authorized", "successfully-executed"]}},
+          {"id": "dispatch-not-resolve-proof", "op": "forbid", "predicate": "evidence.resolve_proof_source", "arguments": [{"type": "symbol", "value": "CONTROLLER_DISPATCH_ONLY"}]},
+          {"id": "capability-not-execution-authority", "op": "forbid", "predicate": "execution.authority_source", "arguments": [{"type": "symbol", "value": "CAPABILITY_ADVERTISEMENT_ONLY"}]}
+        ],
+        "entrypoints": ["exact-evidence-path", "capability-states-distinct", "dispatch-not-resolve-proof", "capability-not-execution-authority"],
+        "expected_behavior_dimensions": ["evidence_scope_exact", "controller_dispatch_proves_resolve", "capability_implies_execution_authority"]
+      },
+      "display": {"summary": "Evidence must prove the exact claimed path; advertised, routable, authorized, and successfully executed capability states remain distinct."},
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/64", "docs/CURRENT_STATE.md"], "accepted_evidence": ["issue-64://controller-service-entered"]},
+      "authority": {"status": "accepted", "supersedes": ["core.evidence-scope-and-capability-semantics.v1"], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "core.discover-before-reinvent.v2",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.capability.discover", "project.resolve"],
+      "executor_scope": ["*"],
+      "kind": "procedure",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {"id": "resolve-project", "op": "invoke", "predicate": "project.resolve_identity"},
+          {"id": "discover-existing", "op": "invoke", "predicate": "project.discover_responsibility_resources_capabilities"},
+          {"id": "reuse-accepted", "op": "prefer", "predicate": "implementation.reuse_accepted_capability"},
+          {"id": "use-owning-core-issue", "op": "require", "predicate": "missing_shared_capability.ownership", "arguments": [{"type": "symbol", "value": "OWNING_CORE_ISSUE"}]},
+          {"id": "implement-after-discovery", "op": "forbid", "predicate": "implementation.parallel_reinvention_before_discovery"}
+        ],
+        "entrypoints": ["resolve-project", "discover-existing", "reuse-accepted", "use-owning-core-issue", "implement-after-discovery"],
+        "expected_behavior_dimensions": ["discovers_existing_capability_before_implementing", "respects_core_ownership"]
+      },
+      "display": {"summary": "Resolve project identity and existing responsibilities/resources/capabilities before creating parallel implementations."},
+      "provenance": {"sources": ["docs/AGENTOS_NODE.md", "github-issue://alston-personal/agentmanager/137"], "accepted_evidence": []},
+      "authority": {"status": "accepted", "supersedes": ["core.discover-before-reinvent.v1"], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "core.workspace-not-continuation-authority.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.one.resolve", "project.resolve"],
+      "executor_scope": ["*"],
       "kind": "constraint",
       "ir": {
         "schema": "agentos.experience-ir/v1",
         "nodes": [
-          {
-            "id": "continue-not-authority",
-            "op": "forbid",
-            "predicate": "repository.merge.authorization_source",
-            "arguments": [{"type": "symbol", "value": "GENERIC_CONTINUE"}]
-          },
-          {
-            "id": "require-explicit-authority",
-            "op": "require",
-            "predicate": "repository.merge.authorization_source",
-            "arguments": [{"type": "symbol", "value": "EXPLICIT_CANONICAL_AUTHORITY"}]
-          }
+          {"id": "canonical-authority", "op": "require", "predicate": "continuation.authority", "arguments": [{"type": "symbol", "value": "ONE_CANONICAL_IR_ACTIVE_POINTER"}]},
+          {"id": "reject-workspace-authority", "op": "forbid", "predicate": "continuation.authority", "arguments": [{"type": "symbol", "value": "IDE_WORKSPACE_GIT_STATUS_LOCAL_TODO_VENDOR_HISTORY_PULSE_OR_MODEL_MEMORY"}]}
         ],
-        "entrypoints": ["continue-not-authority", "require-explicit-authority"],
-        "expected_behavior_dimensions": ["generic_continue_is_merge_authority"]
+        "entrypoints": ["canonical-authority", "reject-workspace-authority"],
+        "expected_behavior_dimensions": ["workspace_is_continuation_authority"]
       },
-      "display": {
-        "summary": "A generic continuation request does not itself authorize repository merge/publication."
-      },
-      "provenance": {
-        "sources": ["github-issue://alston-personal/agentmanager/117"],
-        "accepted_evidence": ["agentos-governance://core/publication-authority"],
-        "extraction_id": "agentos-extraction://agentos-core/117/merge-authority"
-      },
+      "display": {"summary": "Workspace/vendor-local state is not durable continuation authority; resolve ONE Canonical IR selected by the active continuation pointer."},
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/152"], "accepted_evidence": ["issue-152://E3_GEMINI_ONE_CODEX_EXTENSION_CONTINUITY_VERIFIED"]},
       "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
       "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "core.node-executor-boundary.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["executor.dispatch", "executor.liveness", "agentos.capability.discover"],
+      "executor_scope": ["*"],
+      "kind": "constraint",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {"id": "node-executor-distinct", "op": "assert", "predicate": "realm.node_and_executor_are_distinct", "value": {"type": "boolean", "value": true}},
+          {"id": "node-online-not-liveness", "op": "forbid", "predicate": "executor.liveness_proof_source", "arguments": [{"type": "symbol", "value": "NODE_ONLINE_ONLY"}]},
+          {"id": "executor-no-realm-credential-ownership", "op": "forbid", "predicate": "realm.transport_credential_owner", "arguments": [{"type": "symbol", "value": "EXECUTOR_ADAPTER"}]}
+        ],
+        "entrypoints": ["node-executor-distinct", "node-online-not-liveness", "executor-no-realm-credential-ownership"],
+        "expected_behavior_dimensions": ["node_and_executor_are_distinct", "node_online_implies_executor_available", "executor_owns_realm_credentials"]
+      },
+      "display": {"summary": "Nodes are durable Realm/control participants; executors are independent capability providers, so Node online does not prove executor liveness."},
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/152"], "accepted_evidence": ["issue-152://node-executor-boundary"]},
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v1",
+      "experience_id": "executor.antigravity-relay-liveness.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["oracle"],
+      "capability_scope": ["executor.dispatch", "executor.liveness"],
+      "executor_scope": ["antigravity", "claude"],
+      "kind": "failure-pattern",
+      "ir": {
+        "schema": "agentos.experience-ir/v1",
+        "nodes": [
+          {"id": "enqueue-not-liveness", "op": "forbid", "predicate": "executor.liveness_proof_source", "arguments": [{"type": "symbol", "value": "RELAY_ENQUEUE_ONLY"}]},
+          {"id": "fresh-success-required", "op": "require", "predicate": "executor.trusted_workload_precondition", "arguments": [{"type": "symbol", "value": "FRESH_SUCCESSFUL_DETERMINISTIC_LIVENESS_RECEIPT"}]}
+        ],
+        "entrypoints": ["enqueue-not-liveness", "fresh-success-required"],
+        "expected_behavior_dimensions": ["relay_enqueue_proves_executor_liveness", "fresh_liveness_receipt_required"]
+      },
+      "display": {"summary": "Relay enqueue alone does not prove Claude executor liveness; a historical timeout exists, so trust requires a fresh successful deterministic liveness receipt."},
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/72"], "accepted_evidence": ["workflow-run://33227123813"]},
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": ["historical failure remains relevant until a newer successful liveness regression supersedes it"], "invalidated_by": []}
     }
   ]
 }
