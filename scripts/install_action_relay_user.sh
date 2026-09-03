@@ -9,6 +9,7 @@ fi
 REPO="${AGENTOS_REPO:-$HOME/agentmanager}"
 DATA="${AGENT_DATA_ROOT:-$HOME/agent-data}"
 RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
+LEGACY_RUNTIME_ROOT="${RUNTIME_ROOT}.legacy-pre-worktree"
 RELAY_ROOT="$DATA/runtime/action-relay"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-action-relay.service"
@@ -31,11 +32,6 @@ done
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 mkdir -p "$(dirname "$RUNTIME_ROOT")" "$UNIT_DIR"
 
-# The Action Relay spool may be created by the agentos-node runner and therefore
-# legitimately be owned by agentos-node:agentos. Membership in agentos grants
-# ubuntu access, but Linux still forbids ubuntu from chgrp/chmod on another
-# user's inode. Treat an already-correct shared boundary as immutable instead
-# of trying to seize ownership. Only repair metadata when ubuntu owns the inode.
 ensure_shared_dir() {
   local path="$1"
   mkdir -p "$path"
@@ -75,9 +71,6 @@ else
   ensure_shared_dir "$RELAY_ROOT/quarantine"
 fi
 
-# A caller may choose only an allowlisted source ref; the installer resolves it
-# once to an immutable commit. When an expected commit is supplied by an outer
-# governed repair/rollout, both generations must match exactly.
 git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
 SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
 if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
@@ -85,15 +78,30 @@ if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_C
   exit 4
 fi
 
+# Historical Action Relay generations were materialized as a plain directory.
+# Migrate that legitimate pre-worktree layout without deleting it. The migration
+# is deliberately narrow: only an ubuntu-owned, non-symlink directory may move,
+# and an existing deterministic backup makes the operation fail closed rather
+# than overwriting prior evidence.
+if [ -e "$RUNTIME_ROOT" ] && [ ! -e "$RUNTIME_ROOT/.git" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+  test -d "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root is not a directory: $RUNTIME_ROOT" >&2; exit 2; }
+  test ! -L "$RUNTIME_ROOT" || { echo "ERROR: legacy runtime root must not be a symlink: $RUNTIME_ROOT" >&2; exit 2; }
+  owner=$(stat -c '%U' "$RUNTIME_ROOT")
+  test "$owner" = ubuntu || { echo "ERROR: legacy runtime root must be ubuntu-owned: path=$RUNTIME_ROOT owner=$owner" >&2; exit 5; }
+  test ! -e "$LEGACY_RUNTIME_ROOT" || { echo "ERROR: legacy runtime backup already exists: $LEGACY_RUNTIME_ROOT" >&2; exit 2; }
+  mv "$RUNTIME_ROOT" "$LEGACY_RUNTIME_ROOT"
+  echo "action_relay_legacy_runtime_migrated=PASS backup=$LEGACY_RUNTIME_ROOT"
+fi
+
 if [ -e "$RUNTIME_ROOT/.git" ]; then
   git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"
 else
-  if [ -e "$RUNTIME_ROOT" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    echo "ERROR: non-empty runtime root is not a worktree: $RUNTIME_ROOT" >&2; exit 2
-  fi
   rmdir "$RUNTIME_ROOT" 2>/dev/null || true
   git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"
 fi
+
+test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"
+echo "action_relay_runtime_worktree=PASS"
 
 (
   cd "$RUNTIME_ROOT"
@@ -118,19 +126,9 @@ WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
 Environment=AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF
 Environment=AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT
-# Actions such as agentos.antigravity.restart and layoutlab.api.restart call
-# systemctl --user from inside the relay worker. Pin them to ubuntu's existing
-# user manager explicitly; the GitHub runner has a different session/bus.
 Environment=XDG_RUNTIME_DIR=/run/user/1001
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 UMask=0007
-# sg is the deliberate supplementary-group bootstrap boundary for this old
-# ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
-# it prevents the setgid helper from establishing the already-authorized
-# agentos group context.
-# The extension module registers only the fixed bounded executor-job action,
-# then delegates to the original Action Relay main. There is still one worker,
-# one spool, and one at-most-once transport.
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT'
 Restart=on-failure
 RestartSec=3
@@ -144,8 +142,6 @@ systemctl --user daemon-reload
 systemctl --user enable --now agentos-action-relay.service
 systemctl --user restart agentos-action-relay.service
 
-# Require stable liveness, not a transient active sample immediately before
-# an auto-restart failure. The worker must remain active for three observations.
 stable=0
 for i in $(seq 1 20); do
   if systemctl --user is-active --quiet agentos-action-relay.service; then
