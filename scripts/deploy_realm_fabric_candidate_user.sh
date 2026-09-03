@@ -41,6 +41,8 @@ rollback() {
   set +e
   if [ "$rc" -ne 0 ]; then
     echo 'realm_fabric_candidate_rollback=STARTED' >&2
+    systemctl --user status agentos-realm-fabric.service --no-pager >&2 || true
+    journalctl --user -u agentos-realm-fabric.service -n 80 --no-pager >&2 || true
     if [ "$HAD_UNIT" = 1 ]; then
       cp "$UNIT_BACKUP" "$UNIT"
     else
@@ -107,15 +109,26 @@ chmod 0644 "$UNIT"
 
 systemctl --user daemon-reload
 systemctl --user enable agentos-realm-fabric.service >/dev/null
+OLD_PID=$(systemctl --user show agentos-realm-fabric.service -p MainPID --value 2>/dev/null || true)
 systemctl --user restart agentos-realm-fabric.service
 for i in $(seq 1 30); do
-  if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then
-    break
+  NEW_PID=$(systemctl --user show agentos-realm-fabric.service -p MainPID --value 2>/dev/null || true)
+  if [ -n "$NEW_PID" ] && [ "$NEW_PID" != 0 ] && [ "$NEW_PID" != "${OLD_PID:-0}" ] && \
+     systemctl --user is-active --quiet agentos-realm-fabric.service && \
+     curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then
+    sleep 1
+    if systemctl --user is-active --quiet agentos-realm-fabric.service && \
+       curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then
+      break
+    fi
   fi
   sleep 1
 done
 systemctl --user is-active --quiet agentos-realm-fabric.service
 curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
+test "${NEW_PID:-0}" != "${OLD_PID:-0}"
+echo "realm_fabric_old_pid=${OLD_PID:-unknown}"
+echo "realm_fabric_new_pid=$NEW_PID"
 
 # No credential is supplied: 401 proves the active-resolve route exists while
 # preserving the Node-owned bearer boundary. A stale server would return 404.
