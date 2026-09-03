@@ -123,21 +123,34 @@ def test_provider_credential_boundary_violation_is_forced_to_failure(tmp_path: P
     assert receipt["classification"] == "PROVIDER_CREDENTIAL_BOUNDARY_VIOLATION"
 
 
-def test_v2_projects_only_fixed_hydration_failure_classes() -> None:
+def test_v2_classifies_agentos_pre_hydration_and_floor_failures() -> None:
     entry = _load_entry_v2()
     payload = {
         "baseline": {"run": {"returncode": 0, "timed_out": False}},
-        "hydrated": {"run": {"returncode": 0, "timed_out": False, "stderr_tail": "PRIVATE"}},
+        "hydrated": {"run": {"returncode": 0, "timed_out": False}},
         "checks": {"hydration_receipt_ok": False},
         "verdict": "FAIL",
     }
-    assert entry._fixed_classification(payload) == "EXPERIENCE_HYDRATION_TOOL_NOT_OBSERVED"
+    assert entry._fixed_classification(payload) == "EXPERIENCE_AGENTOS_PREHYDRATION_NOT_OBSERVED"
 
-    payload["hydrated"]["run"]["returncode"] = 1
-    payload["hydrated"]["run"]["stderr_tail"] = "MCP transport failed at /private/path"
-    assert entry._fixed_classification(payload) == "EXPERIENCE_HYDRATED_MCP_RUNTIME_FAILED"
-    assert "/private/path" not in entry._fixed_classification(payload)
-
-    payload["hydrated"]["run"] = {"returncode": 0, "timed_out": False}
     payload["checks"]["hydration_receipt_ok"] = True
     assert entry._fixed_classification(payload) == "EXPERIENCE_MASTER_FLOOR_NOT_MET"
+
+    payload["verdict"] = "PASS"
+    assert entry._fixed_classification(payload) == "EXPERIENCE_REGRESSION_PASS"
+
+
+def test_v2_hydrated_prompt_uses_supplied_projection_without_requiring_tool_call() -> None:
+    entry = _load_entry_v2()
+    projection = {
+        "schema": "agentos.experience-hydration/v0",
+        "source": "ONE_EXPERIENCE",
+        "project_id": "agentos-core",
+        "items": [{"payload": {"canonical_development_branch": "core/integration"}}],
+        "credential_exposed": False,
+    }
+    prompt = entry._hydrated_prompt(projection)
+    assert "ONE_EXPERIENCE_PROJECTION" in prompt
+    assert '"canonical_development_branch": "core/integration"' in prompt
+    assert "Do not call tools for this benchmark" in prompt
+    assert "must call agentos-experience" not in prompt
