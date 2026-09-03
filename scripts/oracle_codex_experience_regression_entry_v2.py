@@ -6,7 +6,8 @@ feature. Baseline remains a completely fresh Codex process. For the hydrated lan
 AgentOS resolves a bounded ONE Experience projection before launching another fresh
 Codex process, records the independent hydration receipt, and injects only that
 projection into the executor context. Executors may discover more Experience later,
-but the minimum floor must not depend on the model deciding to call a tool.
+but the minimum floor must not depend on the model deciding to call a tool or on
+an MCP transport module being importable.
 """
 from __future__ import annotations
 
@@ -35,20 +36,20 @@ def _require_module(name: str, classification: str):
 
 
 def _prehydrate() -> dict[str, object]:
-    # Fixed canonical import probes make a missing runtime dependency diagnosable
-    # without exposing ModuleNotFoundError.name, paths, or traceback text.
-    _require_module("agent_core.experience", "EXPERIENCE_PREHYDRATION_AGENT_CORE_EXPERIENCE_MISSING")
-    _require_module("agent_core.experience_store", "EXPERIENCE_PREHYDRATION_EXPERIENCE_STORE_MODULE_MISSING")
-    mcp_module = _require_module(
-        "agentos_node.experience_mcp_stdio",
-        "EXPERIENCE_PREHYDRATION_MCP_MODULE_MISSING",
+    # Master Floor uses the executor-neutral Core primitive. MCP is an optional
+    # discovery surface and is deliberately not part of this minimum guarantee.
+    runtime = _require_module(
+        "agent_core.experience_runtime",
+        "EXPERIENCE_PREHYDRATION_CORE_RUNTIME_MISSING",
     )
-    return mcp_module.one_experience_hydrate(
+    return runtime.prehydrate_experience(
         project_id=regression.PROJECT_ID,
         active_goal=regression.GOAL,
         realm="oracle",
         executor="codex",
-        capabilities=regression.CAPABILITIES,
+        capabilities=tuple(regression.CAPABILITIES),
+        surface="codex-local",
+        executor_class="openai-codex-local",
     )
 
 
@@ -204,11 +205,11 @@ def _correct_method_evidence(path: Path | None) -> None:
             "unchanged hydration receipt independently proves non-access"
         )
         method["hydrated"] = (
-            "AgentOS pre-executor hydration from ONE Experience + independent receipt, followed by a fresh "
+            "AgentOS Core pre-executor hydration from ONE Experience + independent receipt, followed by a fresh "
             "Codex process receiving only the bounded projection as context"
         )
     payload["config_override_used"] = False
-    payload["hydration_delivery"] = "agentos-pre-executor-projection"
+    payload["hydration_delivery"] = "agentos-core-pre-executor-projection"
     payload["executor_tool_call_required_for_floor"] = False
     payload["classification"] = _fixed_classification(payload)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
