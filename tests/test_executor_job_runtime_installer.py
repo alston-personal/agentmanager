@@ -26,8 +26,23 @@ def test_action_relay_runtime_is_resolved_once_to_an_immutable_commit():
     assert 'if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then' in text
     assert 'git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"' in text
     assert 'worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"' in text
+    assert 'test "$(git -C "$RUNTIME_ROOT" rev-parse HEAD)" = "$SOURCE_COMMIT"' in text
     assert 'reset --hard origin/main' not in text
     assert 'worktree add --detach "$RUNTIME_ROOT" origin/main' not in text
+
+
+def test_action_relay_migrates_only_safe_legacy_plain_runtime_without_deleting_it():
+    text = INSTALLER.read_text(encoding="utf-8")
+    assert 'LEGACY_RUNTIME_ROOT="${RUNTIME_ROOT}.legacy-pre-worktree"' in text
+    assert 'test -d "$RUNTIME_ROOT"' in text
+    assert 'test ! -L "$RUNTIME_ROOT"' in text
+    assert "owner=$(stat -c '%U' \"$RUNTIME_ROOT\")" in text
+    assert 'test "$owner" = ubuntu' in text
+    assert 'test ! -e "$LEGACY_RUNTIME_ROOT"' in text
+    assert 'mv "$RUNTIME_ROOT" "$LEGACY_RUNTIME_ROOT"' in text
+    assert 'action_relay_legacy_runtime_migrated=PASS' in text
+    assert 'rm -rf "$RUNTIME_ROOT"' not in text
+    assert 'non-empty runtime root is not a worktree' not in text
 
 
 def test_outer_repair_passes_same_generation_to_action_relay_installer():
