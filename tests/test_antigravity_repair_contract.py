@@ -49,6 +49,15 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertNotIn('NoNewPrivileges=true', unit_section)
         self.assertIn('UMask=0007', unit_section)
 
+    def test_realm_boundary_uses_authorized_agentos_group_for_bounded_executor_dispatch(self):
+        text = _text(SCRIPT)
+        realm_section = text.split('cat > "$REALM_UNIT" <<EOF', 1)[1].split('EOF', 1)[0]
+        self.assertIn("ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'", realm_section)
+        self.assertIn('Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME', realm_section)
+        self.assertIn('UMask=0007', realm_section)
+        self.assertNotIn('NoNewPrivileges=true', realm_section)
+        self.assertIn('realm_fabric_group_context=agentos', text)
+
     def test_relay_provider_is_explicit_allowlisted_and_not_capsule_controlled(self):
         text = _text(SCRIPT)
         self.assertIn('PROVIDER="${AGENTOS_ANTIGRAVITY_PROVIDER:-claude}"', text)

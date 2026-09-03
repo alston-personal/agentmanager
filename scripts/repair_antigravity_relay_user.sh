@@ -144,7 +144,7 @@ EOF
 )
 cat > "$REALM_UNIT" <<EOF
 [Unit]
-Description=AgentOS ONE Realm Fabric (ubuntu Core identity)
+Description=AgentOS ONE Realm Fabric (ubuntu Core identity, agentos boundary)
 After=network.target
 
 [Service]
@@ -153,7 +153,11 @@ WorkingDirectory=$REALM_RUNTIME
 Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
 UMask=0007
-ExecStart=/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780
+# ONE dispatches only bounded semantic executor jobs, but that still requires
+# access to the shared Action Relay spool. The long-lived ubuntu user manager
+# predates the agentos supplementary-group grant, so establish the already-
+# authorized group boundary explicitly without sudo or broader filesystem mode.
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'
 Restart=always
 RestartSec=3
 PrivateTmp=true
@@ -213,6 +217,7 @@ echo "action_relay_install=PASS"
 echo "action_relay_source_generation_pinned=PASS"
 echo "realm_fabric_install=PASS"
 echo "realm_fabric_runtime_closure=PASS"
+echo "realm_fabric_group_context=agentos"
 echo "realm_fabric_device_flow=PASS"
 echo "realm_fabric_bootstrap_route=PASS"
 echo "realm_fabric_benchmark_route=PASS"
