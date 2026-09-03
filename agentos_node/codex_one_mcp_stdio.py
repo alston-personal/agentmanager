@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_core.active_continuation import resolve_active_continuation
+from agent_core.historical_ir import discover_historical_irs
 from agentos_node.one_mcp import OracleLocalGateway
 
 SURFACE = "codex-local"
@@ -133,6 +134,18 @@ def create_server(gateway: OracleLocalGateway | None = None):
     def one_resolve(project: str) -> dict[str, Any]:
         """Explicitly resolve a named canonical project through ONE."""
         return _project_codex_client(one.resolve(project))
+
+    @server.tool()
+    def one_historical_ir_discover(project_id: str, limit: int = 50) -> dict[str, Any]:
+        """List bounded Historical IR metadata for review; it never changes active continuation."""
+        return _project_codex_client({
+            "schema": "agentos.historical-ir-discovery/v1",
+            "source": "ONE_HISTORICAL_IR",
+            "project_id": project_id,
+            "items": discover_historical_irs(project_id, data_root=Path(one.data_root), limit=limit),
+            "active_ir_mutated": False,
+            "credential_exposed": False,
+        })
 
     return server
 

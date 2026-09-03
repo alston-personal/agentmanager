@@ -30,6 +30,11 @@ def test_backfill_creates_reviewable_candidates_without_raw_transcript(tmp_path:
     assert candidate["promotion_required"] is True
     assert candidate["source_files"] == ["walkthrough.md"]
     assert "secret" not in json.dumps(candidate)
+    historical_path = next((tmp_path / "historical-ir").rglob("*.json"))
+    historical = json.loads(historical_path.read_text(encoding="utf-8"))
+    assert historical["schema_version"] == "agentos.historical-ir/v1"
+    assert historical["source"]["raw_conversation_copied"] is False
+    assert historical["observations"][0]["value"] == "completed"
 
 
 def test_backfill_is_idempotent_and_ignores_non_terminal_conversations(tmp_path: Path):
@@ -50,6 +55,8 @@ def test_backfill_is_idempotent_and_ignores_non_terminal_conversations(tmp_path:
     assert second["existing_candidates"] == 1
     assert second["before_candidate_count"] == 1
     assert second["after_candidate_count"] == 1
+    assert second["created_historical_irs"] == 0
+    assert second["existing_historical_irs"] == 1
 
 
 def test_backfill_is_bounded(tmp_path: Path):
@@ -73,10 +80,13 @@ def test_node_join_exposes_opt_in_historical_backfill_arguments():
             "/history/projects",
             "--historical-candidate-root",
             "/history/candidates",
+            "--historical-ir-root",
+            "/history/irs",
             "--historical-max-conversations",
             "25",
         ]
     )
     assert args.historical_projects_root == Path("/history/projects")
     assert args.historical_candidate_root == Path("/history/candidates")
+    assert args.historical_ir_root == Path("/history/irs")
     assert args.historical_max_conversations == 25

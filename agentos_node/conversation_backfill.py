@@ -13,6 +13,8 @@ import re
 import tempfile
 from typing import Any
 
+from agent_core.historical_ir import build_historical_ir, historical_ir_digest
+
 
 SCHEMA = "agentos.conversation-experience-candidate/v1"
 REPORT_SCHEMA = "agentos.conversation-backfill-report/v1"
@@ -98,6 +100,7 @@ def backfill_conversation_candidates(
     *,
     projects_root: Path,
     candidate_root: Path,
+    historical_ir_root: Path | None = None,
     max_conversations: int = 100,
 ) -> dict[str, Any]:
     """Recover bounded candidates from ``<project>/logs/conversations/<id>``.
@@ -107,10 +110,11 @@ def backfill_conversation_candidates(
     """
     projects_root = Path(projects_root)
     candidate_root = Path(candidate_root)
+    historical_ir_root = Path(historical_ir_root) if historical_ir_root is not None else candidate_root.parent / "historical-ir"
     if max_conversations < 1 or max_conversations > 500:
         raise ValueError("max_conversations must be between 1 and 500")
     before_candidate_count = _candidate_count(candidate_root)
-    scanned = created = existing = 0
+    scanned = created = existing = historical_created = historical_existing = 0
     candidates: list[dict[str, Any]] = []
     for project in sorted(path for path in projects_root.iterdir() if path.is_dir() and not path.is_symlink()):
         conversations = project / "logs" / "conversations"
@@ -123,6 +127,16 @@ def backfill_conversation_candidates(
             candidate = _candidate(project.name, conversation)
             if candidate is None:
                 continue
+            historical_ir = build_historical_ir(candidate)
+            historical_path = historical_ir_root / project.name / f"{historical_ir['historical_ir_id']}.json"
+            if historical_path.is_file():
+                current_ir = json.loads(historical_path.read_text(encoding="utf-8"))
+                if current_ir != historical_ir:
+                    raise ValueError("Historical IR id collision with different content")
+                historical_existing += 1
+            else:
+                _write_json(historical_path, historical_ir)
+                historical_created += 1
             output = candidate_root / project.name / f"{candidate['candidate_id']}.json"
             if output.is_file():
                 current = json.loads(output.read_text(encoding="utf-8"))
@@ -140,13 +154,20 @@ def backfill_conversation_candidates(
         "ok": True,
         "projects_root": str(projects_root),
         "candidate_root": str(candidate_root),
+        "historical_ir_root": str(historical_ir_root),
         "scanned_conversations": scanned,
         "candidate_count": len(candidates),
         "before_candidate_count": before_candidate_count,
         "after_candidate_count": _candidate_count(candidate_root),
         "created_candidates": created,
         "existing_candidates": existing,
-        "candidates": [{key: item[key] for key in ("candidate_id", "project_id", "conversation_id", "source_digest", "signals")} for item in candidates],
+        "created_historical_irs": historical_created,
+        "existing_historical_irs": historical_existing,
+        "candidates": [{
+            **{key: item[key] for key in ("candidate_id", "project_id", "conversation_id", "source_digest", "signals")},
+            "historical_ir_id": build_historical_ir(item)["historical_ir_id"],
+            "historical_ir_digest": historical_ir_digest(build_historical_ir(item)),
+        } for item in candidates],
         "promotion_performed": False,
         "raw_conversation_copied": False,
         "credential_exposed": False,

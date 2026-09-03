@@ -15,12 +15,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--projects-root", required=True)
     parser.add_argument("--candidate-root", required=True)
+    parser.add_argument("--historical-ir-root", help="output root for immutable Historical IR records")
     parser.add_argument("--max-conversations", type=int, default=100)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     report = backfill_conversation_candidates(
         projects_root=Path(args.projects_root),
         candidate_root=Path(args.candidate_root),
+        historical_ir_root=Path(args.historical_ir_root) if args.historical_ir_root else None,
         max_conversations=args.max_conversations,
     )
     output = Path(args.output)

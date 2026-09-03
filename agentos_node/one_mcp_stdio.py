@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from agent_core.historical_ir import discover_historical_irs
 from agentos_node.one_mcp import Gateway, create_gateway
 from agentos_node.one_runtime_inspect import inspect_oracle_runtime
 
@@ -71,6 +72,18 @@ def create_server(gateway: Gateway | None = None):
     def one_resolve(project: str) -> dict[str, Any]:
         """Resolve project identity, active goal, continuation and mutation boundary from ONE."""
         return _unbind_executor_identity(one.resolve(project))
+
+    @server.tool()
+    def one_historical_ir_discover(project_id: str, limit: int = 50) -> dict[str, Any]:
+        """List bounded Historical IR metadata for review; it never changes active continuation."""
+        return _unbind_executor_identity({
+            "schema": "agentos.historical-ir-discovery/v1",
+            "source": "ONE_HISTORICAL_IR",
+            "project_id": project_id,
+            "items": discover_historical_irs(project_id, data_root=getattr(one, "data_root", None), limit=limit),
+            "active_ir_mutated": False,
+            "credential_exposed": False,
+        })
 
     @server.tool()
     def one_runtime_inspect() -> dict[str, Any]:

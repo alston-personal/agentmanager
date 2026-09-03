@@ -126,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_join.add_argument('--timeout-seconds', type=int, default=600)
     p_join.add_argument('--historical-projects-root', type=Path, help='optional <project>/logs/conversations root for bounded post-join candidate backfill')
     p_join.add_argument('--historical-candidate-root', type=Path, help='local output root for reviewable historical Experience candidates')
+    p_join.add_argument('--historical-ir-root', type=Path, help='local output root for immutable Historical IR records')
     p_join.add_argument('--historical-max-conversations', type=int, default=100)
 
     p_enroll = sub.add_parser('enroll', help='legacy one-time invitation enrollment')
@@ -188,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
             historical_backfill = backfill_conversation_candidates(
                 projects_root=args.historical_projects_root,
                 candidate_root=candidate_root,
+                historical_ir_root=args.historical_ir_root,
                 max_conversations=args.historical_max_conversations,
             )
         print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion, 'historical_experience_backfill': historical_backfill}))
