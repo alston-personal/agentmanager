@@ -228,7 +228,7 @@ jobs:
                   'executable': 'powershell',
                   'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
                   'cwd': cwd,
-                  'timeout_seconds': 120,
+                  'timeout_seconds': 300,
                   'cognition_ids_used': [],
               },
           }
@@ -255,7 +255,7 @@ jobs:
           else:
               print('one_controller_dispatch=IDEMPOTENT_REUSE')
           print('gemini_installer_task_id=' + task_id)
-          for _ in range(75):
+          for _ in range(165):
               receipt = receipt or store.get_receipt(task_id)
               if receipt:
                   break
