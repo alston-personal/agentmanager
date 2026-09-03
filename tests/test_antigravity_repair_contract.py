@@ -15,20 +15,32 @@ class AntigravityRepairContractTests(unittest.TestCase):
     def test_repair_is_branch_aware_and_allowlisted(self):
         text = _text(SCRIPT)
         self.assertIn('SOURCE_REF="${AGENTOS_REF:-main}"', text)
+        self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
         # core/integration is the governed integration generation. Development
         # worker branches remain excluded from the runtime repair allowlist.
         self.assertIn('main|core/integration|feature/realm-node-fabric-readiness', text)
         self.assertNotIn('core/issue-194-bounded-executor-jobs)', text)
         self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
         self.assertIn('SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
+        self.assertIn('[ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]', text)
         self.assertNotIn('origin/main:', text)
 
-    def test_repair_materializes_join_bootstrap_generation(self):
+    def test_realm_runtime_materializes_complete_exact_core_package(self):
         text = _text(SCRIPT)
-        self.assertIn('show_source agent_core/node_bootstrap.py', text)
-        self.assertIn('install -m 0664 "$TMPDIR/node_bootstrap.py" "$REALM_RUNTIME/agent_core/node_bootstrap.py"', text)
-        self.assertIn('realm_fabric_bootstrap_route=PASS', text)
-        self.assertIn('realm_fabric_benchmark_route=PASS', text)
+        self.assertIn('git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$REALM_RUNTIME"', text)
+        self.assertIn('rm -rf "$REALM_RUNTIME/agent_core"', text)
+        self.assertIn('test -f "$REALM_RUNTIME/agent_core/controller_api.py"', text)
+        self.assertIn('test -f "$REALM_RUNTIME/agent_core/controller_service.py"', text)
+        self.assertIn('test -f "$REALM_RUNTIME/agent_core/executor_job_contract.py"', text)
+        self.assertNotIn('show_source agent_core/node_bootstrap.py', text)
+        self.assertIn('realm_fabric_runtime_closure=PASS', text)
+
+    def test_realm_runtime_can_lazy_load_same_generation_action_runtime(self):
+        text = _text(SCRIPT)
+        self.assertIn('ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-/home/ubuntu/.local/share/agentos/action-runtime}"', text)
+        self.assertIn('Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME', text)
+        self.assertIn('AGENTOS_ACTION_RUNTIME_ROOT="$ACTION_RUNTIME"', text)
+        self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
 
     def test_relay_boundary_uses_authorized_agentos_group_before_worker_start(self):
         text = _text(SCRIPT)

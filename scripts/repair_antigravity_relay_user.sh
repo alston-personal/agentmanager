@@ -9,6 +9,7 @@ fi
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 RUNTIME="${AGENTOS_RUNTIME_VNEXT:-/home/ubuntu/.local/share/agentos/runtime-vnext}"
 REALM_RUNTIME="${AGENTOS_REALM_RUNTIME:-/home/ubuntu/.local/share/agentos/realm-fabric/current}"
+ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-/home/ubuntu/.local/share/agentos/action-runtime}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 SOURCE_REF="${AGENTOS_REF:-main}"
 EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
@@ -39,7 +40,7 @@ for user in ubuntu agentos-node; do
 done
 
 test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
-mkdir -p "$RUNTIME/agentos_node" "$REALM_RUNTIME/agent_core" "$UNIT_DIR"
+mkdir -p "$RUNTIME/agentos_node" "$REALM_RUNTIME" "$UNIT_DIR"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -62,26 +63,24 @@ show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
 show_source agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 show_source scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
 
-# Realm Fabric is intentionally tiny and stdlib-only. Materialize the complete set
-# required by the selected realm_server generation. Device enrollment uses request ->
-# human approval -> claim, so no enrollment secret enters GitHub control.
-show_source agent_core/__init__.py > "$TMPDIR/agent_core_init.py"
-show_source agent_core/node_registry.py > "$TMPDIR/node_registry.py"
-show_source agent_core/node_bootstrap.py > "$TMPDIR/node_bootstrap.py"
-show_source agent_core/realm_fabric.py > "$TMPDIR/realm_fabric.py"
-show_source agent_core/realm_server.py > "$TMPDIR/realm_server.py"
-show_source agent_core/realm_cli.py > "$TMPDIR/realm_cli.py"
-
 install -m 0664 "$TMPDIR/__init__.py" "$RUNTIME/agentos_node/__init__.py"
 install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
 install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
-install -m 0664 "$TMPDIR/agent_core_init.py" "$REALM_RUNTIME/agent_core/__init__.py"
-install -m 0664 "$TMPDIR/node_registry.py" "$REALM_RUNTIME/agent_core/node_registry.py"
-install -m 0664 "$TMPDIR/node_bootstrap.py" "$REALM_RUNTIME/agent_core/node_bootstrap.py"
-install -m 0664 "$TMPDIR/realm_fabric.py" "$REALM_RUNTIME/agent_core/realm_fabric.py"
-install -m 0664 "$TMPDIR/realm_server.py" "$REALM_RUNTIME/agent_core/realm_server.py"
-install -m 0664 "$TMPDIR/realm_cli.py" "$REALM_RUNTIME/agent_core/realm_cli.py"
-test -f "$REALM_RUNTIME/agent_core/node_bootstrap.py"
+
+# Realm Server is no longer a tiny hand-curated subset: it imports the runtime
+# controller, legacy compatibility controller, resolve facade and their Core
+# dependencies. Materialize the complete agent_core package from the SAME exact
+# commit so Python dependency closure cannot silently drift behind realm_server.
+rm -rf "$REALM_RUNTIME/agent_core"
+git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$REALM_RUNTIME"
+test -f "$REALM_RUNTIME/agent_core/realm_server.py"
+test -f "$REALM_RUNTIME/agent_core/controller_api.py"
+test -f "$REALM_RUNTIME/agent_core/controller_service.py"
+test -f "$REALM_RUNTIME/agent_core/executor_job_contract.py"
+PYTHONPATH="$REALM_RUNTIME" python3 -m py_compile \
+  "$REALM_RUNTIME/agent_core/realm_server.py" \
+  "$REALM_RUNTIME/agent_core/controller_api.py" \
+  "$REALM_RUNTIME/agent_core/controller_service.py"
 
 WORKER_SHA256=$(sha256sum "$RUNTIME/agentos_node/antigravity_relay_worker.py" | awk '{print $1}')
 python3 - "$MANIFEST" "$SOURCE_REF" "$SOURCE_COMMIT" "$PROVIDER" "$WORKER_SHA256" <<'PY'
@@ -136,11 +135,12 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
-# Install ONE Realm Fabric as a separate localhost-only Core service. It has no
-# public route here; first-node bootstrap uses the existing private transport.
+# Install ONE Realm Fabric as a separate localhost-only Core service. Core code
+# comes from REALM_RUNTIME; bounded Node-side executor dispatch is loaded lazily
+# from the Action Relay worktree, which is pinned to the same SOURCE_COMMIT below.
 (
   cd "$REALM_RUNTIME"
-  AGENT_DATA_ROOT="$DATA_ROOT" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
+  PYTHONPATH="$REALM_RUNTIME:$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
 )
 cat > "$REALM_UNIT" <<EOF
 [Unit]
@@ -150,7 +150,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$REALM_RUNTIME
-Environment=PYTHONPATH=$REALM_RUNTIME
+Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
 UMask=0007
 ExecStart=/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780
@@ -180,6 +180,7 @@ PY
 # The Action Relay must consume the exact same governed generation selected by
 # this repair. It must not independently fall back to mutable origin/main.
 AGENTOS_REPO="$REPO" \
+AGENTOS_ACTION_RUNTIME_ROOT="$ACTION_RUNTIME" \
 AGENTOS_ACTION_SOURCE_REF="$SOURCE_REF" \
 AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT" \
 bash "$TMPDIR/install_action_relay_user.sh"
@@ -211,12 +212,14 @@ echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
 echo "action_relay_source_generation_pinned=PASS"
 echo "realm_fabric_install=PASS"
+echo "realm_fabric_runtime_closure=PASS"
 echo "realm_fabric_device_flow=PASS"
 echo "realm_fabric_bootstrap_route=PASS"
 echo "realm_fabric_benchmark_route=PASS"
 echo "realm_fabric_port=8780"
 echo "runtime=$RUNTIME"
 echo "realm_runtime=$REALM_RUNTIME"
+echo "action_runtime=$ACTION_RUNTIME"
 echo "spool=$SPOOL"
 echo "unit=$UNIT"
 echo "realm_unit=$REALM_UNIT"
