@@ -1,4 +1,10 @@
-"""ONE-owned Experience artifact persistence for issue #117."""
+"""ONE-owned Experience artifact persistence for issue #117.
+
+Accepted Experience is external ONE data. Repository JSON is a governed
+seed/provenance carrier. Schema migration is explicit and only permitted when the
+installed legacy set byte-semantically matches a repository-approved legacy seed
+and preserves the complete experience_id set.
+"""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -13,6 +19,7 @@ from typing import Any, Iterator
 from agent_core.experience import ExperienceQuery, discover_experience, hydrate_experience, validate_experience
 
 SET_SCHEMA = "agentos.experience-set/v1"
+LEGACY_SET_SCHEMA = "agentos.experience-set/v0"
 
 
 def _data_root() -> Path:
@@ -33,6 +40,23 @@ def _canonical_bytes(value: Any) -> bytes:
 
 def digest_set(value: dict[str, Any]) -> str:
     return "sha256:" + sha256(_canonical_bytes(value)).hexdigest()
+
+
+def _artifact_ids(value: dict[str, Any]) -> tuple[str, ...]:
+    artifacts = value.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("experience set artifacts must be a list")
+    ids: list[str] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise ValueError("experience artifact must be an object")
+        experience_id = str(artifact.get("experience_id") or "").strip()
+        if not experience_id:
+            raise ValueError("experience artifact id is required")
+        ids.append(experience_id)
+    if len(ids) != len(set(ids)):
+        raise ValueError("duplicate experience_id")
+    return tuple(ids)
 
 
 def validate_set(value: dict[str, Any], *, project_id: str | None = None) -> dict[str, Any]:
@@ -62,6 +86,17 @@ def validate_set(value: dict[str, Any], *, project_id: str | None = None) -> dic
     return value
 
 
+def _validate_known_legacy(value: dict[str, Any], *, project_id: str) -> dict[str, Any]:
+    if value.get("schema") != LEGACY_SET_SCHEMA:
+        raise ValueError("known migration source must be Experience set v0")
+    if str(value.get("project_id") or "").strip() != project_id:
+        raise ValueError("legacy Experience project mismatch")
+    if value.get("projection_only") is not True:
+        raise ValueError("legacy Experience set must be projection-only")
+    _artifact_ids(value)
+    return value
+
+
 @contextmanager
 def _lock(path: Path) -> Iterator[None]:
     lock = path.with_suffix(path.suffix + ".lock")
@@ -76,6 +111,26 @@ def _lock(path: Path) -> Iterator[None]:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _atomic_write(target: Path, value: dict[str, Any]) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(_canonical_bytes(value))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, target)
+        dir_fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 def read_experience_set(project_id: str, *, data_root: Path | None = None) -> dict[str, Any]:
     path = experience_path(project_id, data_root=data_root)
     if path.is_symlink():
@@ -85,51 +140,86 @@ def read_experience_set(project_id: str, *, data_root: Path | None = None) -> di
     return validate_set(json.loads(path.read_text(encoding="utf-8")), project_id=project_id)
 
 
-def seed_experience_set(seed_path: Path, *, data_root: Path | None = None) -> dict[str, Any]:
+def seed_experience_set(
+    seed_path: Path,
+    *,
+    data_root: Path | None = None,
+    migrate_from: Path | None = None,
+) -> dict[str, Any]:
     seed_path = Path(seed_path)
     incoming = validate_set(json.loads(seed_path.read_text(encoding="utf-8")))
     project_id = incoming["project_id"]
     target = experience_path(project_id, data_root=data_root)
     incoming_digest = digest_set(incoming)
     target.parent.mkdir(parents=True, exist_ok=True)
+
     with _lock(target):
         if target.is_symlink():
             raise ValueError("experience store path must not be a symlink")
         if target.exists():
-            current = validate_set(json.loads(target.read_text(encoding="utf-8")), project_id=project_id)
-            current_digest = digest_set(current)
-            if current_digest != incoming_digest:
-                raise ValueError("ONE Experience already exists with a different digest; refusing implicit overwrite")
+            raw_current = json.loads(target.read_text(encoding="utf-8"))
+            if raw_current.get("schema") == SET_SCHEMA:
+                current = validate_set(raw_current, project_id=project_id)
+                current_digest = digest_set(current)
+                if current_digest != incoming_digest:
+                    raise ValueError("ONE Experience already exists with a different digest; refusing implicit overwrite")
+                return {
+                    "schema": "agentos.experience-seed-receipt/v1",
+                    "ok": True,
+                    "seeded": False,
+                    "migrated": False,
+                    "project_id": project_id,
+                    "digest": current_digest,
+                    "path": str(target),
+                    "credential_exposed": False,
+                }
+
+            if migrate_from is None:
+                raise ValueError("legacy ONE Experience requires an explicit known migration source")
+            expected_path = Path(migrate_from)
+            expected_legacy = _validate_known_legacy(
+                json.loads(expected_path.read_text(encoding="utf-8")),
+                project_id=project_id,
+            )
+            current_legacy = _validate_known_legacy(raw_current, project_id=project_id)
+            current_digest = digest_set(current_legacy)
+            expected_digest = digest_set(expected_legacy)
+            if current_digest != expected_digest:
+                raise ValueError("installed legacy Experience does not match approved migration source")
+            if set(_artifact_ids(current_legacy)) != set(_artifact_ids(incoming)):
+                raise ValueError("Experience migration would add/drop accepted experience IDs; refusing migration")
+
+            backup = target.with_name(f"accepted.v0.{current_digest.split(':', 1)[1]}.json")
+            if backup.is_symlink():
+                raise ValueError("Experience migration backup path must not be a symlink")
+            if backup.exists():
+                backup_value = json.loads(backup.read_text(encoding="utf-8"))
+                if digest_set(backup_value) != current_digest:
+                    raise ValueError("Experience migration backup exists with unexpected content")
+            else:
+                _atomic_write(backup, current_legacy)
+            _atomic_write(target, incoming)
             return {
                 "schema": "agentos.experience-seed-receipt/v1",
                 "ok": True,
-                "seeded": False,
+                "seeded": True,
+                "migrated": True,
                 "project_id": project_id,
-                "digest": current_digest,
+                "from_schema": LEGACY_SET_SCHEMA,
+                "from_digest": current_digest,
+                "digest": incoming_digest,
+                "backup_path": str(backup),
                 "path": str(target),
                 "credential_exposed": False,
             }
-        fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
-        tmp = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(_canonical_bytes(incoming))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(tmp, 0o640)
-            os.replace(tmp, target)
-            dir_fd = os.open(target.parent, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        finally:
-            if tmp.exists():
-                tmp.unlink()
+
+        _atomic_write(target, incoming)
+
     return {
         "schema": "agentos.experience-seed-receipt/v1",
         "ok": True,
         "seeded": True,
+        "migrated": False,
         "project_id": project_id,
         "digest": incoming_digest,
         "path": str(target),
