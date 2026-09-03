@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agentos_node.conversation_backfill import backfill_conversation_candidates
-from agentos_node.executor_experience_recovery import plan_executor_experience_recovery
+from agentos_node.executor_experience_recovery import enqueue_executor_experience_harvest
 from agentos_node.onboarding import check_windows_node_supervisor, install_windows_node_supervisor
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         lifecycle = install_windows_node_supervisor()
         transport = build_client(config, policy)
         completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
-        executor_recovery = plan_executor_experience_recovery(transport.client.capability_manifest())
+        executor_recovery = enqueue_executor_experience_harvest(transport.client.capability_manifest())
         historical_backfill = None
         if args.historical_projects_root:
             candidate_root = args.historical_candidate_root or (args.config.parent / 'experience-candidates')

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentos_node.session_bridge import FileSessionBridge
+
 
 SCHEMA = "agentos.executor-experience-recovery/v1"
 HARVEST_CAPABILITY = "agent.context.harvest"
@@ -47,3 +49,30 @@ def plan_executor_experience_recovery(manifest: dict[str, Any]) -> dict[str, Any
         "raw_conversation_scraped": False,
         "credential_exposed": False,
     }
+
+
+def enqueue_executor_experience_harvest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Queue one bounded, summary-only harvest request for each eligible executor.
+
+    The provider owns any private conversation history and must return only
+    approved summary-derived Historical IR.  This function never reads chats,
+    waits for a provider, or promotes an Experience.
+    """
+    report = plan_executor_experience_recovery(manifest)
+    requests: list[dict[str, Any]] = []
+    for provider in report["eligible_providers"]:
+        request = FileSessionBridge.from_environment(provider).request(
+            "harvest",
+            payload={
+                "schema": "agentos.experience-harvest-request/v1",
+                "output_schema": "agentos.historical-ir/v1",
+                "summary_only": True,
+                "raw_conversation_allowed": False,
+                "credential_exposed": False,
+                "max_items": 100,
+            },
+        )
+        requests.append({"provider": provider, "request_id": request["request_id"]})
+    report["harvest_requests_enqueued"] = len(requests)
+    report["harvest_requests"] = requests
+    return report
