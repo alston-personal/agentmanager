@@ -17,10 +17,11 @@
           {"id": "integration-branch", "op": "require", "predicate": "core.development.integration_branch", "arguments": [{"type": "symbol", "value": "core/integration"}]},
           {"id": "issue-branch", "op": "require", "predicate": "core.development.focused_branch_pattern", "arguments": [{"type": "string", "value": "core/issue-<N>-<slug>"}]},
           {"id": "runtime-facts-not-experience", "op": "forbid", "predicate": "experience.contains_mutable_runtime_fact", "arguments": [{"type": "symbol", "value": "BRANCH_HEAD_PID_HEALTH_OR_CHECKOUT_SHA"}]},
-          {"id": "deployment-needs-evidence", "op": "forbid", "predicate": "deployment.acceptance_source", "arguments": [{"type": "symbol", "value": "MUTABLE_RUNTIME_OBSERVATION_ONLY"}]}
+          {"id": "deployment-needs-evidence", "op": "forbid", "predicate": "deployment.acceptance_source", "arguments": [{"type": "symbol", "value": "MUTABLE_RUNTIME_OBSERVATION_ONLY"}]},
+          {"id": "observe-canonical-branch", "op": "set", "predicate": "canonical_development_branch", "value": {"type": "string", "value": "core/integration"}}
         ],
-        "entrypoints": ["integration-branch", "issue-branch", "runtime-facts-not-experience", "deployment-needs-evidence"],
-        "expected_behavior_dimensions": ["uses_core_integration", "mutable_runtime_fact_as_experience", "branch_head_implies_deployment_acceptance"]
+        "entrypoints": ["integration-branch", "issue-branch", "runtime-facts-not-experience", "deployment-needs-evidence", "observe-canonical-branch"],
+        "expected_behavior_dimensions": ["canonical_development_branch"]
       },
       "display": {"summary": "Core development uses core/integration plus focused core/issue-* branches; mutable runtime facts are resolved live rather than learned as Experience."},
       "provenance": {"sources": ["docs/CORE_BRANCH_MODEL.md", "docs/CORE_DEPLOYMENT_AUTHORITY.md"], "accepted_evidence": []},
@@ -40,10 +41,11 @@
         "nodes": [
           {"id": "main-human-authority", "op": "require", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "SEPARATE_EXPLICIT_HUMAN_AUTHORIZATION"}]},
           {"id": "continue-not-authority", "op": "forbid", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "GENERIC_CONTINUE"}]},
-          {"id": "capability-not-authority", "op": "forbid", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "TOOL_CAPABILITY_CI_OR_MERGEABILITY"}]}
+          {"id": "capability-not-authority", "op": "forbid", "predicate": "repository.protected_main.merge_authority", "arguments": [{"type": "symbol", "value": "TOOL_CAPABILITY_CI_OR_MERGEABILITY"}]},
+          {"id": "observe-generic-continue", "op": "set", "predicate": "generic_continue_authorizes_main_merge", "value": {"type": "boolean", "value": false}}
         ],
-        "entrypoints": ["main-human-authority", "continue-not-authority", "capability-not-authority"],
-        "expected_behavior_dimensions": ["generic_continue_is_protected_main_merge_authority", "capability_implies_protected_main_authority"]
+        "entrypoints": ["main-human-authority", "continue-not-authority", "capability-not-authority", "observe-generic-continue"],
+        "expected_behavior_dimensions": ["generic_continue_authorizes_main_merge"]
       },
       "display": {"summary": "Protected-main merge requires separate explicit human authorization; CI, capability, mergeability, or generic continue do not grant it."},
       "provenance": {"sources": [".agent/governance/protected_branches.yaml", "docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md"], "accepted_evidence": ["github-ruleset://21844290"]},
@@ -64,10 +66,11 @@
           {"id": "exact-evidence-path", "op": "require", "predicate": "evidence.claim_path_match", "arguments": [{"type": "boolean", "value": true}]},
           {"id": "capability-states-distinct", "op": "assert", "predicate": "capability.states_are_distinct", "value": {"type": "list", "value": ["advertised", "transport-routable", "execution-authorized", "successfully-executed"]}},
           {"id": "dispatch-not-resolve-proof", "op": "forbid", "predicate": "evidence.resolve_proof_source", "arguments": [{"type": "symbol", "value": "CONTROLLER_DISPATCH_ONLY"}]},
-          {"id": "capability-not-execution-authority", "op": "forbid", "predicate": "execution.authority_source", "arguments": [{"type": "symbol", "value": "CAPABILITY_ADVERTISEMENT_ONLY"}]}
+          {"id": "capability-not-execution-authority", "op": "forbid", "predicate": "execution.authority_source", "arguments": [{"type": "symbol", "value": "CAPABILITY_ADVERTISEMENT_ONLY"}]},
+          {"id": "observe-capability-authority", "op": "set", "predicate": "capability_implies_execution_authority", "value": {"type": "boolean", "value": false}}
         ],
-        "entrypoints": ["exact-evidence-path", "capability-states-distinct", "dispatch-not-resolve-proof", "capability-not-execution-authority"],
-        "expected_behavior_dimensions": ["evidence_scope_exact", "controller_dispatch_proves_resolve", "capability_implies_execution_authority"]
+        "entrypoints": ["exact-evidence-path", "capability-states-distinct", "dispatch-not-resolve-proof", "capability-not-execution-authority", "observe-capability-authority"],
+        "expected_behavior_dimensions": ["capability_implies_execution_authority"]
       },
       "display": {"summary": "Evidence must prove the exact claimed path; advertised, routable, authorized, and successfully executed capability states remain distinct."},
       "provenance": {"sources": ["github-issue://alston-personal/agentmanager/64", "docs/CURRENT_STATE.md"], "accepted_evidence": ["issue-64://controller-service-entered"]},
@@ -89,10 +92,11 @@
           {"id": "discover-existing", "op": "invoke", "predicate": "project.discover_responsibility_resources_capabilities"},
           {"id": "reuse-accepted", "op": "prefer", "predicate": "implementation.reuse_accepted_capability"},
           {"id": "use-owning-core-issue", "op": "require", "predicate": "missing_shared_capability.ownership", "arguments": [{"type": "symbol", "value": "OWNING_CORE_ISSUE"}]},
-          {"id": "implement-after-discovery", "op": "forbid", "predicate": "implementation.parallel_reinvention_before_discovery"}
+          {"id": "implement-after-discovery", "op": "forbid", "predicate": "implementation.parallel_reinvention_before_discovery"},
+          {"id": "observe-discovery-order", "op": "set", "predicate": "discovery_before_reimplementation", "value": {"type": "boolean", "value": true}}
         ],
-        "entrypoints": ["resolve-project", "discover-existing", "reuse-accepted", "use-owning-core-issue", "implement-after-discovery"],
-        "expected_behavior_dimensions": ["discovers_existing_capability_before_implementing", "respects_core_ownership"]
+        "entrypoints": ["resolve-project", "discover-existing", "reuse-accepted", "use-owning-core-issue", "implement-after-discovery", "observe-discovery-order"],
+        "expected_behavior_dimensions": ["discovery_before_reimplementation"]
       },
       "display": {"summary": "Resolve project identity and existing responsibilities/resources/capabilities before creating parallel implementations."},
       "provenance": {"sources": ["docs/AGENTOS_NODE.md", "github-issue://alston-personal/agentmanager/137"], "accepted_evidence": []},
@@ -111,9 +115,10 @@
         "schema": "agentos.experience-ir/v1",
         "nodes": [
           {"id": "canonical-authority", "op": "require", "predicate": "continuation.authority", "arguments": [{"type": "symbol", "value": "ONE_CANONICAL_IR_ACTIVE_POINTER"}]},
-          {"id": "reject-workspace-authority", "op": "forbid", "predicate": "continuation.authority", "arguments": [{"type": "symbol", "value": "IDE_WORKSPACE_GIT_STATUS_LOCAL_TODO_VENDOR_HISTORY_PULSE_OR_MODEL_MEMORY"}]}
+          {"id": "reject-workspace-authority", "op": "forbid", "predicate": "continuation.authority", "arguments": [{"type": "symbol", "value": "IDE_WORKSPACE_GIT_STATUS_LOCAL_TODO_VENDOR_HISTORY_PULSE_OR_MODEL_MEMORY"}]},
+          {"id": "observe-workspace-authority", "op": "set", "predicate": "workspace_is_continuation_authority", "value": {"type": "boolean", "value": false}}
         ],
-        "entrypoints": ["canonical-authority", "reject-workspace-authority"],
+        "entrypoints": ["canonical-authority", "reject-workspace-authority", "observe-workspace-authority"],
         "expected_behavior_dimensions": ["workspace_is_continuation_authority"]
       },
       "display": {"summary": "Workspace/vendor-local state is not durable continuation authority; resolve ONE Canonical IR selected by the active continuation pointer."},
@@ -134,10 +139,12 @@
         "nodes": [
           {"id": "node-executor-distinct", "op": "assert", "predicate": "realm.node_and_executor_are_distinct", "value": {"type": "boolean", "value": true}},
           {"id": "node-online-not-liveness", "op": "forbid", "predicate": "executor.liveness_proof_source", "arguments": [{"type": "symbol", "value": "NODE_ONLINE_ONLY"}]},
-          {"id": "executor-no-realm-credential-ownership", "op": "forbid", "predicate": "realm.transport_credential_owner", "arguments": [{"type": "symbol", "value": "EXECUTOR_ADAPTER"}]}
+          {"id": "executor-no-realm-credential-ownership", "op": "forbid", "predicate": "realm.transport_credential_owner", "arguments": [{"type": "symbol", "value": "EXECUTOR_ADAPTER"}]},
+          {"id": "observe-node-liveness", "op": "set", "predicate": "node_online_implies_executor_available", "value": {"type": "boolean", "value": false}},
+          {"id": "observe-credential-owner", "op": "set", "predicate": "executor_owns_realm_credentials", "value": {"type": "boolean", "value": false}}
         ],
-        "entrypoints": ["node-executor-distinct", "node-online-not-liveness", "executor-no-realm-credential-ownership"],
-        "expected_behavior_dimensions": ["node_and_executor_are_distinct", "node_online_implies_executor_available", "executor_owns_realm_credentials"]
+        "entrypoints": ["node-executor-distinct", "node-online-not-liveness", "executor-no-realm-credential-ownership", "observe-node-liveness", "observe-credential-owner"],
+        "expected_behavior_dimensions": ["node_online_implies_executor_available", "executor_owns_realm_credentials"]
       },
       "display": {"summary": "Nodes are durable Realm/control participants; executors are independent capability providers, so Node online does not prove executor liveness."},
       "provenance": {"sources": ["github-issue://alston-personal/agentmanager/152"], "accepted_evidence": ["issue-152://node-executor-boundary"]},
