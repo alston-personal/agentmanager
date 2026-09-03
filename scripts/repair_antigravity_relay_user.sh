@@ -11,6 +11,7 @@ RUNTIME="${AGENTOS_RUNTIME_VNEXT:-/home/ubuntu/.local/share/agentos/runtime-vnex
 REALM_RUNTIME="${AGENTOS_REALM_RUNTIME:-/home/ubuntu/.local/share/agentos/realm-fabric/current}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 SOURCE_REF="${AGENTOS_REF:-main}"
+EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 PROVIDER="${AGENTOS_ANTIGRAVITY_PROVIDER:-claude}"
 SPOOL="$DATA_ROOT/runtime/antigravity-relay"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
@@ -22,6 +23,11 @@ case "$SOURCE_REF" in
   main|core/integration|feature/realm-node-fabric-readiness) ;;
   *) echo "ERROR: AGENTOS_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
 esac
+
+if [ -n "$EXPECTED_SOURCE_COMMIT" ] && ! printf '%s' "$EXPECTED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "ERROR: AGENTOS_SOURCE_COMMIT must be an exact lowercase 40-hex commit SHA" >&2
+  exit 6
+fi
 
 case "$PROVIDER" in
   claude|agy) ;;
@@ -39,10 +45,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 # Runtime repair must not depend on the mutable checkout being clean or fast-forwardable.
 # Fetch one explicitly allowlisted ref, then materialize only trusted runtime inputs from
-# FETCH_HEAD. This preserves local checkout state and lets a development branch be tested
-# without writing or merging main.
+# FETCH_HEAD. When an exact commit is supplied by the bounded bootstrap contract, fail
+# closed unless that allowlisted ref resolves to the same immutable generation.
 git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
 SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
+  echo "ERROR: runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT" >&2
+  exit 7
+fi
 show_source() {
   git -C "$REPO" show "$SOURCE_COMMIT:$1"
 }

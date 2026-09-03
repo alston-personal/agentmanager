@@ -1,0 +1,200 @@
+name: Oracle Exact Generation Executor Job Rollout
+
+# Canonical live rollout for the bounded executor-job transport. This workflow
+# runs only after the rollout contract itself (or one of its pinned runtime
+# inputs) lands on core/integration. It never writes repository state and never
+# grants shell/argv/env authority to the submitted executor job.
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-exact-generation-executor-job-rollout.yml'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'scripts/install_action_relay_user.sh'
+      - 'agent_core/executor_job_contract.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/issue117_experience_provider.py'
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight immutable integration generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          git cat-file -e "$GITHUB_SHA^{commit}"
+          echo "rollout_source_ref=core/integration"
+          echo "rollout_source_commit=$GITHUB_SHA"
+
+      - name: Publish bounded bootstrap hook and request exact transport generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="exact-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          python3 -m py_compile agentos_node/bootstrap_control.py scripts/update_scheduler_board.py
+          test -w "$LIVE/scripts/update_scheduler_board.py"
+          test -w "$LIVE/agentos_node" || test -w "$LIVE/agentos_node/bootstrap_control.py"
+          cat scripts/update_scheduler_board.py > "$LIVE/scripts/update_scheduler_board.py"
+          if [ -e "$LIVE/agentos_node/bootstrap_control.py" ]; then
+            cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          else
+            cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"
+          fi
+          chmod 0664 "$LIVE/scripts/update_scheduler_board.py" "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/update_scheduler_board.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          request_id = sys.argv[2]
+          sha = sys.argv[3]
+          params={"source_commit": sha}
+          payload = {
+              "schema": "agentos.bootstrap-request/v1",
+              "request_id": request_id,
+              "action": "agentos.transport.repair",
+              "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "params": params,
+              "authority": {
+                  "source": "github-actions",
+                  "target_user": "ubuntu",
+                  "arbitrary_shell": False,
+              },
+          }
+          tmp = path.with_suffix(path.suffix + ".tmp")
+          tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          os.chmod(tmp, 0o644)
+          tmp.replace(path)
+          os.chmod(path, 0o644)
+          PY
+
+          for i in $(seq 1 360); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'exact_generation_bootstrap_receipt=TIMEOUT'; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json, sys
+          receipt = json.load(open(sys.argv[1], encoding="utf-8"))
+          expected = sys.argv[2]
+          assert receipt.get("schema") == "agentos.bootstrap-receipt/v1", receipt
+          assert receipt.get("action") == "agentos.transport.repair", receipt
+          assert receipt.get("executor_user") == "ubuntu", receipt
+          assert receipt.get("executor_uid") == 1001, receipt
+          assert receipt.get("source_commit") == expected, receipt
+          assert receipt.get("ok") is True, receipt
+          text = "\n".join(
+              str(step.get("stdout", "")) + "\n" + str(step.get("stderr", ""))
+              for step in receipt.get("steps", [])
+          )
+          assert "antigravity_repair=PASS" in text, text[-12000:]
+          assert "agentos_source_ref=core/integration" in text, text[-12000:]
+          assert f"agentos_source_commit={expected}" in text, text[-12000:]
+          assert "action_relay_install=PASS" in text, text[-12000:]
+          assert "action_relay_source_generation_pinned=PASS" in text, text[-12000:]
+          print("exact_generation_transport_repair=PASS")
+          print("action_relay_exact_generation=PASS")
+          PY
+          # AGENTOS_REF=core/integration is fixed by bootstrap_control for exact repairs;
+          # the request itself cannot select or widen the runtime source lane.
+
+      - name: Submit real bounded executor job and collect sanitized action receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME=/home/ubuntu/.local/share/agentos/action-runtime
+          ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
+          EVIDENCE="$RUNNER_TEMP/executor-job-live-receipt.json"
+
+          test "$(git -C "$RUNTIME" rev-parse HEAD)" = "$GITHUB_SHA"
+          grep -q "AGENTOS_ACTION_RUNTIME_SOURCE_REF=core/integration" /home/ubuntu/.config/systemd/user/agentos-action-relay.service
+          grep -q "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$GITHUB_SHA" /home/ubuntu/.config/systemd/user/agentos-action-relay.service
+
+          PYTHONPATH="$RUNTIME" python3 - "$ACTION_ROOT" "$EVIDENCE" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          from agent_core.executor_job_contract import canonical_experience_regression_request
+          from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+
+          root = Path(sys.argv[1])
+          evidence = Path(sys.argv[2])
+          dispatcher = ActionRelayExecutorJobDispatcher(root)
+          submission = dispatcher.submit(
+              node_id="oracle-action-relay",
+              request=canonical_experience_regression_request(),
+          )
+          job_id = submission["job_id"]
+          assert job_id.startswith("action-"), submission
+          receipt_path = root / "receipts" / f"{job_id}.json"
+          for _ in range(500):
+              if receipt_path.is_file():
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit("executor job action receipt timeout")
+
+          receipt = dispatcher.inspect(job_id)
+          assert isinstance(receipt, dict), receipt
+          assert receipt.get("job_id") == job_id, receipt
+          assert receipt.get("job_type") == "experience.regression", receipt
+          assert receipt.get("project_id") == "agentos-core", receipt
+          assert receipt.get("credential_exposed") is False, receipt
+          safe = {
+              key: receipt.get(key)
+              for key in (
+                  "schema", "job_id", "job_type", "project_id", "executor_class",
+                  "capability", "executor_available", "routable", "authorized",
+                  "successful", "credential_exposed", "experiment_id", "verdict",
+                  "baseline_score", "hydrated_score", "uplift",
+                  "hydration_receipt_ok", "classification",
+              )
+              if key in receipt
+          }
+          evidence.write_text(json.dumps(safe, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          print("executor_job_transport_receipt=PASS")
+          print("executor_job_id=" + job_id)
+          print("executor_job_classification=" + str(receipt.get("classification")))
+          print("executor_job_successful=" + str(bool(receipt.get("successful"))).lower())
+          PY
+
+      - name: Upload sanitized rollout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-exact-generation-executor-job-${{ github.run_id }}
+          path: ${{ runner.temp }}/executor-job-live-receipt.json
+          if-no-files-found: warn
+          retention-days: 14

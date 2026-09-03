@@ -138,7 +138,13 @@ def _run_canonical_script(
 
 def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
     if action == ACTION_REPAIR_TRANSPORT:
-        return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra={"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"})
+        env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
+        if source_commit:
+            # Exact-generation transport repairs are an integration-lane rollout.
+            # The request cannot select a branch; Core fixes the only allowed lane
+            # and the repair script independently verifies FETCH_HEAD == source_commit.
+            env_extra["AGENTOS_REF"] = "core/integration"
+        return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra=env_extra)
     if action == ACTION_DEPLOY_REALM_GATEWAY:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")

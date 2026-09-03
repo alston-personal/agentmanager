@@ -9,6 +9,7 @@ on:
       - 'agent_core/controller_service.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
+      - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/issue117_experience_provider.py'
@@ -22,7 +23,9 @@ on:
       - 'tests/test_executor_job_runtime_installer.py'
       - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_control_inbox_bridge.py'
+      - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
+      - '.github/workflows/oracle-exact-generation-executor-job-rollout.yml'
   push:
     branches:
       - core/issue-194-bounded-executor-jobs
@@ -31,6 +34,7 @@ on:
       - 'agent_core/controller_service.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
+      - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/issue117_experience_provider.py'
@@ -44,7 +48,9 @@ on:
       - 'tests/test_executor_job_runtime_installer.py'
       - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_control_inbox_bridge.py'
+      - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
+      - '.github/workflows/oracle-exact-generation-executor-job-rollout.yml'
   workflow_dispatch:
 
 permissions:
@@ -68,6 +74,7 @@ jobs:
             tests/test_executor_job_runtime_installer.py \
             tests/test_issue117_experience_provider.py \
             tests/test_control_inbox_bridge.py \
+            tests/test_exact_generation_live_rollout_contract.py \
             -q
       - name: Verify current issue117 worker contract compatibility
         run: |
@@ -116,6 +123,7 @@ jobs:
             agent_core/controller_service.py \
             agent_core/controller_api.py \
             agent_core/control_inbox_bridge.py \
+            agentos_node/bootstrap_control.py \
             agentos_node/executor_job_adapter.py \
             agentos_node/executor_job_action_relay.py \
             agentos_node/issue117_experience_provider.py

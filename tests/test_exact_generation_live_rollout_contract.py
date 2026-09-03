@@ -1,0 +1,50 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REPAIR = ROOT / "scripts" / "repair_antigravity_relay_user.sh"
+BOOTSTRAP = ROOT / "agentos_node" / "bootstrap_control.py"
+WORKFLOW = ROOT / ".github" / "workflows" / "oracle-exact-generation-executor-job-rollout.yml"
+
+
+def _text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
+    def test_transport_repair_fails_closed_on_generation_drift(self):
+        text = _text(REPAIR)
+        self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
+        self.assertIn('^[0-9a-f]{40}$', text)
+        self.assertIn('[ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]', text)
+        self.assertIn('runtime source generation mismatch', text)
+        self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
+
+    def test_bootstrap_exact_repair_owns_integration_lane_selection(self):
+        text = _text(BOOTSTRAP)
+        self.assertIn('env_extra["AGENTOS_REF"] = "core/integration"', text)
+        self.assertIn('env["AGENTOS_SOURCE_COMMIT"] = source_commit', text)
+        self.assertNotIn('source_ref', text.split('unknown = set(params) - {"source_commit"}', 1)[0])
+
+    def test_rollout_is_integration_only_and_never_writes_main(self):
+        text = _text(WORKFLOW)
+        self.assertIn('branches:\n      - core/integration', text)
+        self.assertIn('params={"source_commit": sha}', text)
+        self.assertIn('AGENTOS_REF=core/integration', text)
+        self.assertNotIn('git push', text)
+        self.assertNotIn('HEAD:main', text)
+        self.assertNotIn('origin/main', text)
+
+    def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
+        text = _text(WORKFLOW)
+        self.assertIn('canonical_experience_regression_request', text)
+        self.assertIn('ActionRelayExecutorJobDispatcher', text)
+        self.assertIn('credential_exposed', text)
+        self.assertIn('executor_job_transport_receipt=PASS', text)
+        self.assertIn('actions/upload-artifact@v4', text)
+        self.assertNotIn("assert receipt['successful'] is True", text)
+
+
+if __name__ == "__main__":
+    unittest.main()
