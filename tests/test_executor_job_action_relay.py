@@ -30,7 +30,10 @@ def test_submit_uses_existing_action_relay_capsule_and_same_job_id(tmp_path: Pat
     assert "command" not in json.dumps(capsule).casefold()
 
 
-def test_worker_terminal_receipt_projects_missing_provider_without_shell_fallback(tmp_path: Path) -> None:
+def test_worker_terminal_receipt_projects_registered_provider_executor_unavailable_without_shell_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AGENTOS_CODEX_EXECUTABLE", "/__agentos_intentionally_missing_codex__")
     root = tmp_path / "relay"
     dispatcher = ActionRelayExecutorJobDispatcher(root)
     submission = dispatcher.submit(node_id="oracle-core-node", request=canonical_experience_regression_request())
@@ -40,20 +43,23 @@ def test_worker_terminal_receipt_projects_missing_provider_without_shell_fallbac
     assert raw["schema"] == "agentos.action-receipt/v1"
     assert raw["action"] == ACTION
     assert raw["executor_available"] is False
-    assert raw["classification"] == "JOB_IMPLEMENTATION_UNAVAILABLE"
+    assert raw["classification"] == "EXPERIENCE_CODEX_EXECUTOR_UNAVAILABLE"
 
     receipt = dispatcher.inspect(submission["job_id"])
     assert receipt is not None
     assert receipt["job_id"] == submission["job_id"]
     assert receipt["executor_available"] is False
-    assert receipt["routable"] is False
-    assert receipt["authorized"] is False
+    assert receipt["routable"] is True
+    assert receipt["authorized"] is True
     assert receipt["successful"] is False
-    assert receipt["classification"] == "JOB_IMPLEMENTATION_UNAVAILABLE"
+    assert receipt["classification"] == "EXPERIENCE_CODEX_EXECUTOR_UNAVAILABLE"
     assert receipt["credential_exposed"] is False
 
 
-def test_terminal_receipt_reconstructs_job_provenance_after_dispatcher_restart(tmp_path: Path) -> None:
+def test_terminal_receipt_reconstructs_job_provenance_after_dispatcher_restart(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("AGENTOS_CODEX_EXECUTABLE", "/__agentos_intentionally_missing_codex__")
     root = tmp_path / "relay"
     first = ActionRelayExecutorJobDispatcher(root)
     submission = first.submit(node_id="oracle-core-node", request=canonical_experience_regression_request())
@@ -69,7 +75,7 @@ def test_terminal_receipt_reconstructs_job_provenance_after_dispatcher_restart(t
     assert receipt["job_type"] == "experience.regression"
     assert receipt["project_id"] == "agentos-core"
     assert receipt["executor_class"] == "openai-codex-local"
-    assert receipt["classification"] == "JOB_IMPLEMENTATION_UNAVAILABLE"
+    assert receipt["classification"] == "EXPERIENCE_CODEX_EXECUTOR_UNAVAILABLE"
 
     persisted = json.loads((root / "receipts" / f"{job_id}.json").read_text(encoding="utf-8"))
     assert persisted["schema"] == "agentos.action-receipt/v1"
