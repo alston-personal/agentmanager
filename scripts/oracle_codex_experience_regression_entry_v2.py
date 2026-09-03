@@ -9,6 +9,7 @@ benchmark vocabulary; display summaries are never used as learned authority.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from pathlib import Path
@@ -20,10 +21,39 @@ from agent_core.experience_observation import compile_experience_observations
 from scripts import oracle_codex_experience_regression as regression
 
 
-def _prehydrate() -> dict[str, object]:
-    from agentos_node.experience_mcp_stdio import one_experience_hydrate
+class _PrehydrationDependencyMissing(RuntimeError):
+    def __init__(self, classification: str):
+        super().__init__(classification)
+        self.classification = classification
 
-    return one_experience_hydrate(
+
+def _require_module(name: str, classification: str):
+    try:
+        return importlib.import_module(name)
+    except ModuleNotFoundError:
+        raise _PrehydrationDependencyMissing(classification) from None
+
+
+def _prehydrate() -> dict[str, object]:
+    # Fixed canonical probes identify which runtime dependency is missing without
+    # exposing ModuleNotFoundError.name, local paths, or traceback text.
+    _require_module(
+        "agent_core.experience",
+        "EXPERIENCE_PREHYDRATION_AGENT_CORE_EXPERIENCE_MISSING",
+    )
+    _require_module(
+        "agent_core.experience_store",
+        "EXPERIENCE_PREHYDRATION_EXPERIENCE_STORE_MODULE_MISSING",
+    )
+    _require_module(
+        "agent_core.experience_observation",
+        "EXPERIENCE_PREHYDRATION_OBSERVATION_MODULE_MISSING",
+    )
+    mcp_module = _require_module(
+        "agentos_node.experience_mcp_stdio",
+        "EXPERIENCE_PREHYDRATION_MCP_MODULE_MISSING",
+    )
+    return mcp_module.one_experience_hydrate(
         project_id=regression.PROJECT_ID,
         active_goal=regression.GOAL,
         realm="oracle",
@@ -63,7 +93,9 @@ If a key is listed in missing_dimensions, return null for that key. Never infer 
 
 def _bounded_prehydration_failure(exc: Exception) -> dict[str, object]:
     """Represent pre-executor hydration failure without exposing messages or traces."""
-    if isinstance(exc, FileNotFoundError):
+    if isinstance(exc, _PrehydrationDependencyMissing):
+        classification = exc.classification
+    elif isinstance(exc, FileNotFoundError):
         classification = "EXPERIENCE_PREHYDRATION_STORE_MISSING"
     elif isinstance(exc, PermissionError):
         classification = "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
