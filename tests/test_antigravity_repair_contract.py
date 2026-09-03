@@ -16,6 +16,8 @@ class AntigravityRepairContractTests(unittest.TestCase):
         text = _text(SCRIPT)
         self.assertIn('SOURCE_REF="${AGENTOS_REF:-main}"', text)
         self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
+        # core/integration is the governed integration generation. Development
+        # worker branches remain excluded from the runtime repair allowlist.
         self.assertIn('main|core/integration|feature/realm-node-fabric-readiness', text)
         self.assertNotIn('core/issue-194-bounded-executor-jobs)', text)
         self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
