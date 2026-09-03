@@ -10,6 +10,26 @@ from scripts import install_antigravity_one_mcp as installer
 
 
 class InstallAntigravityOneClientTests(unittest.TestCase):
+    def test_empty_existing_json_config_is_treated_as_unconfigured(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "mcp_config.json"
+            path.write_text("\ufeff  \r\n\t", encoding="utf-8")
+            self.assertEqual(installer._load_json(path), {})
+
+    def test_malformed_nonempty_json_config_still_fails_closed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "mcp_config.json"
+            path.write_text('{"mcpServers":', encoding="utf-8")
+            with self.assertRaises(json.JSONDecodeError):
+                installer._load_json(path)
+
+    def test_nonobject_json_config_is_rejected(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "mcp_config.json"
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                installer._load_json(path)
+
     def test_windows_hook_launcher_keeps_credential_out_of_config(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -47,3 +67,4 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

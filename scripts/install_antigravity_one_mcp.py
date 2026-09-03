@@ -183,7 +183,10 @@ def ensure_mcp_venv(venv_root: Path) -> Path:
 def _load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    raw = path.read_text(encoding="utf-8-sig")
+    if not raw.strip():
+        return {}
+    data = json.loads(raw)
     if not isinstance(data, dict):
         raise ValueError(f"MCP config must be a JSON object: {path}")
     return data
@@ -557,3 +560,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
