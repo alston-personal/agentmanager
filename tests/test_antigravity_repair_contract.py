@@ -16,8 +16,6 @@ class AntigravityRepairContractTests(unittest.TestCase):
         text = _text(SCRIPT)
         self.assertIn('SOURCE_REF="${AGENTOS_REF:-main}"', text)
         self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
-        # core/integration is the governed integration generation. Development
-        # worker branches remain excluded from the runtime repair allowlist.
         self.assertIn('main|core/integration|feature/realm-node-fabric-readiness', text)
         self.assertNotIn('core/issue-194-bounded-executor-jobs)', text)
         self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
@@ -48,6 +46,15 @@ class AntigravityRepairContractTests(unittest.TestCase):
         unit_section = text.split('cat > "$UNIT" <<EOF', 1)[1].split('EOF', 1)[0]
         self.assertNotIn('NoNewPrivileges=true', unit_section)
         self.assertIn('UMask=0007', unit_section)
+
+    def test_realm_boundary_uses_authorized_agentos_group_for_bounded_executor_dispatch(self):
+        text = _text(SCRIPT)
+        realm_section = text.split('cat > "$REALM_UNIT" <<EOF', 1)[1].split('EOF', 1)[0]
+        self.assertIn("ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'", realm_section)
+        self.assertIn('Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME', realm_section)
+        self.assertIn('UMask=0007', realm_section)
+        self.assertNotIn('NoNewPrivileges=true', realm_section)
+        self.assertIn('realm_fabric_group_context=agentos', text)
 
     def test_relay_provider_is_explicit_allowlisted_and_not_capsule_controlled(self):
         text = _text(SCRIPT)
