@@ -76,9 +76,11 @@ PY
 )
 
 if [ ! -d "$RELEASE/agent_core" ]; then
-  mv "$TMPDIR/agent_core" "$RELEASE"
+  mkdir -p "$RELEASE"
+  mv "$TMPDIR/agent_core" "$RELEASE/agent_core"
 fi
 test -f "$RELEASE/agent_core/realm_server.py"
+echo 'realm_fabric_versioned_release=PASS'
 
 cat > "$UNIT" <<EOF
 [Unit]
