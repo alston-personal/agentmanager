@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentos_node.conversation_backfill import backfill_conversation_candidates
 from agentos_node.session_bridge import FileSessionBridge
 
 
@@ -75,4 +76,18 @@ def enqueue_executor_experience_harvest(manifest: dict[str, Any]) -> dict[str, A
         requests.append({"provider": provider, "request_id": request["request_id"]})
     report["harvest_requests_enqueued"] = len(requests)
     report["harvest_requests"] = requests
+    return report
+
+
+def run_post_join_experience_recovery(
+    manifest: dict[str, Any], *, projects_root: str, candidate_root: str, historical_ir_root: str, max_conversations: int = 100,
+) -> dict[str, Any]:
+    """Run the join-equivalent recovery flow for an already enrolled Node."""
+    report = enqueue_executor_experience_harvest(manifest)
+    report["historical_backfill"] = backfill_conversation_candidates(
+        projects_root=projects_root,
+        candidate_root=candidate_root,
+        historical_ir_root=historical_ir_root,
+        max_conversations=max_conversations,
+    )
     return report

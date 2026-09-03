@@ -1,6 +1,6 @@
 import json
 
-from agentos_node.executor_experience_recovery import enqueue_executor_experience_harvest, plan_executor_experience_recovery
+from agentos_node.executor_experience_recovery import enqueue_executor_experience_harvest, plan_executor_experience_recovery, run_post_join_experience_recovery
 
 
 def test_only_running_executor_with_declared_harvest_bridge_is_eligible():
@@ -38,3 +38,16 @@ def test_eligible_gemini_queues_summary_only_historical_ir_harvest(monkeypatch, 
     assert request["operation"] == "harvest"
     assert request["payload"]["output_schema"] == "agentos.historical-ir/v1"
     assert request["payload"]["raw_conversation_allowed"] is False
+
+
+def test_existing_node_can_run_join_equivalent_recovery(tmp_path):
+    conversation = tmp_path / "projects" / "p" / "logs" / "conversations" / "old"
+    conversation.mkdir(parents=True)
+    (conversation / "walkthrough.md").write_text("PASS", encoding="utf-8")
+    report = run_post_join_experience_recovery(
+        {"node_id": "core", "surface_inventory": {"surfaces": []}},
+        projects_root=str(tmp_path / "projects"), candidate_root=str(tmp_path / "candidates"),
+        historical_ir_root=str(tmp_path / "historical-ir"),
+    )
+    assert report["historical_backfill"]["created_historical_irs"] == 1
+    assert report["harvest_requests_enqueued"] == 0
