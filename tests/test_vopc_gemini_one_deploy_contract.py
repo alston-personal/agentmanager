@@ -1,5 +1,4 @@
 import json
-import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -50,6 +49,7 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn('if [ "$(id -un)" != "ubuntu" ]', text)
         self.assertIn('^[0-9a-f]{40}$', text)
         self.assertIn('git -C "$REPO" archive "$SOURCE_COMMIT" agent_core', text)
+        self.assertIn("grep -Fq \"if selection == 'active':\"", text)
         self.assertIn('realm_fabric_candidate_rollback=COMPLETED', text)
         self.assertIn("ExecStart=/usr/bin/sg agentos", text)
         self.assertIn("-d '{\"selection\":\"active\"}'", text)

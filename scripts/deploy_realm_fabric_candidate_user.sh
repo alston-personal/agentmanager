@@ -22,6 +22,7 @@ RELEASE="$SOURCE_ROOT/$SOURCE_COMMIT"
 }
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+echo 'realm_fabric_source_commit_verified=PASS'
 
 mkdir -p "$SOURCE_ROOT" "$UNIT_DIR" "$DATA_ROOT/logs"
 TMPDIR=$(mktemp -d "$SOURCE_ROOT/.candidate-$SOURCE_COMMIT.XXXXXX")
@@ -56,12 +57,15 @@ trap rollback EXIT
 
 git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$TMPDIR"
 test -f "$TMPDIR/agent_core/realm_server.py"
-grep -Fq 'selection == "active"' "$TMPDIR/agent_core/realm_server.py"
+echo 'realm_fabric_source_archive=PASS'
+grep -Fq "if selection == 'active':" "$TMPDIR/agent_core/realm_server.py"
 grep -Fq 'ONE_ACTIVE_CONTINUATION' "$TMPDIR/agent_core/realm_server.py"
+echo 'realm_fabric_active_resolve_source_guard=PASS'
 PYTHONPATH="$TMPDIR:$ACTION_RUNTIME" /usr/bin/python3 -m py_compile \
   "$TMPDIR/agent_core/realm_server.py" \
   "$TMPDIR/agent_core/continuation_resolver.py" \
   "$TMPDIR/agent_core/realm_cli.py"
+echo 'realm_fabric_candidate_compile=PASS'
 (
   cd /tmp
   PYTHONPATH="$TMPDIR:$ACTION_RUNTIME" /usr/bin/python3 - <<'PY'
