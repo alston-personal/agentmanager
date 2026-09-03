@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 from agent_core.executor_job_contract import canonical_experience_regression_request
+from agent_core.experience_observation import compile_experience_observations
 from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry, execute_registered_executor_job
 from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_runtime(root: Path, *, codex_available: bool = True, credential_exposed: bool = False) -> None:
@@ -44,6 +49,15 @@ def _write_runtime(root: Path, *, codex_available: bool = True, credential_expos
         "raise SystemExit(0)\n",
         encoding="utf-8",
     )
+
+
+def _load_entry_v2():
+    path = ROOT / "scripts" / "oracle_codex_experience_regression_entry_v2.py"
+    spec = importlib.util.spec_from_file_location("_issue117_entry_v2_test", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_provider_is_not_registered_when_issue117_is_absent(tmp_path: Path) -> None:
@@ -108,3 +122,82 @@ def test_provider_credential_boundary_violation_is_forced_to_failure(tmp_path: P
     assert receipt["successful"] is False
     assert receipt["credential_exposed"] is False
     assert receipt["classification"] == "PROVIDER_CREDENTIAL_BOUNDARY_VIOLATION"
+
+
+def test_v2_classifies_agentos_pre_hydration_and_floor_failures() -> None:
+    entry = _load_entry_v2()
+    payload = {
+        "baseline": {"run": {"returncode": 0, "timed_out": False}},
+        "hydrated": {"run": {"returncode": 0, "timed_out": False}},
+        "checks": {"hydration_receipt_ok": False},
+        "verdict": "FAIL",
+    }
+    assert entry._fixed_classification(payload) == "EXPERIENCE_AGENTOS_PREHYDRATION_NOT_OBSERVED"
+
+    payload["checks"]["hydration_receipt_ok"] = True
+    assert entry._fixed_classification(payload) == "EXPERIENCE_MASTER_FLOOR_NOT_MET"
+
+    payload["verdict"] = "PASS"
+    assert entry._fixed_classification(payload) == "EXPERIENCE_REGRESSION_PASS"
+
+
+def test_v2_prehydration_failure_is_bounded_and_preserves_evidence_path() -> None:
+    entry = _load_entry_v2()
+    failure = entry._bounded_prehydration_failure(PermissionError("/private/secret/path"))
+    assert failure["returncode"] == 78
+    assert failure["prehydration_failed"] is True
+    assert failure["prehydration_classification"] == "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+    assert failure["stdout"] == ""
+    assert failure["stderr_tail"] == ""
+    assert "/private/secret/path" not in str(failure)
+
+    payload = {
+        "baseline": {"run": {"returncode": 0, "timed_out": False}},
+        "hydrated": {"run": failure},
+        "checks": {"hydration_receipt_ok": False},
+        "verdict": "FAIL",
+    }
+    assert entry._fixed_classification(payload) == "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+
+
+def test_v2_hydrated_prompt_is_compiled_from_experience_ir_without_tool_discretion() -> None:
+    entry = _load_entry_v2()
+    projection = {
+        "schema": "agentos.experience-hydration/v1",
+        "source": "ONE_EXPERIENCE",
+        "project_id": "agentos-core",
+        "digest": "sha256:test",
+        "experience_ids": ["core.branch-authority.v2"],
+        "items": [{
+            "experience_id": "core.branch-authority.v2",
+            "semantic_digest": "sha256:item",
+            "expected_behavior_dimensions": ["canonical_development_branch"],
+            "ir": {
+                "schema": "agentos.experience-ir/v1",
+                "nodes": [{
+                    "id": "observe-canonical-branch",
+                    "op": "set",
+                    "predicate": "canonical_development_branch",
+                    "value": {"type": "string", "value": "core/integration"},
+                }],
+                "entrypoints": ["observe-canonical-branch"],
+                "expected_behavior_dimensions": ["canonical_development_branch"],
+            },
+        }],
+        "credential_exposed": False,
+    }
+    observations = compile_experience_observations(
+        projection,
+        allowed_dimensions=entry.regression.DIMENSIONS,
+    )
+    assert observations["values"]["canonical_development_branch"] == "core/integration"
+    assert "canonical_development_branch" not in observations["missing_dimensions"]
+
+    prompt = entry._hydrated_prompt(projection)
+    assert "ONE_EXPERIENCE_OBSERVATIONS" in prompt
+    assert "ONE_EXPERIENCE_IR_PROJECTION" in prompt
+    assert "agentos.experience-ir/v1" in prompt
+    assert '\"canonical_development_branch\": \"core/integration\"' in prompt
+    assert "Do not call tools for this benchmark" in prompt
+    assert "must call agentos-experience" not in prompt
+    assert "token" not in prompt.lower()
