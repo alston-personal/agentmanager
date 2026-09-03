@@ -53,13 +53,27 @@ Otherwise return null. Never infer protected-branch authority.
 
 
 def _bounded_prehydration_failure(exc: Exception) -> dict[str, object]:
-    """Represent pre-executor hydration failure without exposing paths or traces."""
+    """Represent pre-executor hydration failure without exposing messages or traces."""
     if isinstance(exc, FileNotFoundError):
         classification = "EXPERIENCE_PREHYDRATION_STORE_MISSING"
     elif isinstance(exc, PermissionError):
         classification = "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+    elif isinstance(exc, ModuleNotFoundError):
+        classification = "EXPERIENCE_PREHYDRATION_IMPORT_MISSING"
+    elif isinstance(exc, ImportError):
+        classification = "EXPERIENCE_PREHYDRATION_IMPORT_FAILED"
     elif isinstance(exc, ValueError):
         classification = "EXPERIENCE_PREHYDRATION_CONTRACT_INVALID"
+    elif isinstance(exc, TypeError):
+        classification = "EXPERIENCE_PREHYDRATION_TYPE_ERROR"
+    elif isinstance(exc, KeyError):
+        classification = "EXPERIENCE_PREHYDRATION_KEY_ERROR"
+    elif isinstance(exc, AttributeError):
+        classification = "EXPERIENCE_PREHYDRATION_ATTRIBUTE_ERROR"
+    elif isinstance(exc, RuntimeError):
+        classification = "EXPERIENCE_PREHYDRATION_RUNTIME_ERROR"
+    elif isinstance(exc, OSError):
+        classification = "EXPERIENCE_PREHYDRATION_IO_ERROR"
     else:
         classification = "EXPERIENCE_PREHYDRATION_FAILED"
     return {
