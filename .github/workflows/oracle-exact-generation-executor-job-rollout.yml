@@ -139,7 +139,10 @@ jobs:
           ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
           EVIDENCE="$RUNNER_TEMP/executor-job-live-receipt.json"
 
-          test "$(git -C "$RUNTIME" rev-parse HEAD)" = "$GITHUB_SHA"
+          # The canonical worktree is ubuntu-owned by design while this workflow
+          # runs as agentos-node. Trust only this one path for this one command;
+          # do not mutate global Git safe.directory configuration.
+          test "$(git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD)" = "$GITHUB_SHA"
           grep -q "AGENTOS_ACTION_RUNTIME_SOURCE_REF=core/integration" /home/ubuntu/.config/systemd/user/agentos-action-relay.service
           grep -q "AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$GITHUB_SHA" /home/ubuntu/.config/systemd/user/agentos-action-relay.service
 
