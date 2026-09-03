@@ -63,14 +63,14 @@ grep -Fq 'ONE_ACTIVE_CONTINUATION' "$TMPDIR/agent_core/realm_server.py"
 echo 'realm_fabric_active_resolve_source_guard=PASS'
 PYTHONPATH="$TMPDIR:$ACTION_RUNTIME" /usr/bin/python3 -m py_compile \
   "$TMPDIR/agent_core/realm_server.py" \
-  "$TMPDIR/agent_core/continuation_resolver.py" \
+  "$TMPDIR/agent_core/active_continuation.py" \
   "$TMPDIR/agent_core/realm_cli.py"
 echo 'realm_fabric_candidate_compile=PASS'
 (
   cd /tmp
   PYTHONPATH="$TMPDIR:$ACTION_RUNTIME" /usr/bin/python3 - <<'PY'
 from agent_core.realm_server import RealmHTTPServer
-from agent_core.continuation_resolver import resolve_active_continuation
+from agent_core.active_continuation import resolve_active_continuation
 print("realm_fabric_candidate_import=PASS")
 PY
 )

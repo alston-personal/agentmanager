@@ -50,6 +50,8 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn('^[0-9a-f]{40}$', text)
         self.assertIn('git -C "$REPO" archive "$SOURCE_COMMIT" agent_core', text)
         self.assertIn("grep -Fq \"if selection == 'active':\"", text)
+        self.assertIn('"$TMPDIR/agent_core/active_continuation.py"', text)
+        self.assertTrue((ROOT / "agent_core" / "active_continuation.py").is_file())
         self.assertIn('realm_fabric_candidate_rollback=COMPLETED', text)
         self.assertIn("ExecStart=/usr/bin/sg agentos", text)
         self.assertIn("-d '{\"selection\":\"active\"}'", text)
