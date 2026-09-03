@@ -18,6 +18,9 @@ from contextlib import contextmanager
 from agent_core.experience import ExperienceQuery, discover_experience, hydrate_experience, validate_experience
 
 SET_SCHEMA = "agentos.experience-set/v0"
+REGRESSION_SCHEMA = "agentos.experience-regression/v1"
+PROMOTION_RECEIPT_SCHEMA = "agentos.experience-regression-promotion-receipt/v1"
+ISSUE117_EXPERIENCE_ID = "core.experience-regression-ceiling-aware.v1"
 
 
 def _data_root() -> Path:
@@ -34,6 +37,26 @@ def experience_path(project_id: str, *, data_root: Path | None = None) -> Path:
 
 def _canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+def _atomic_write(path: Path, value: dict[str, Any]) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(_canonical_bytes(value))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, path)
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def digest_set(value: dict[str, Any]) -> str:
@@ -114,23 +137,7 @@ def seed_experience_set(seed_path: Path, *, data_root: Path | None = None) -> di
                 "path": str(target),
                 "credential_exposed": False,
             }
-        fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
-        tmp = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(_canonical_bytes(incoming))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(tmp, 0o640)
-            os.replace(tmp, target)
-            dir_fd = os.open(target.parent, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        finally:
-            if tmp.exists():
-                tmp.unlink()
+        _atomic_write(target, incoming)
     return {
         "schema": "agentos.experience-seed-receipt/v1",
         "ok": True,
@@ -140,6 +147,161 @@ def seed_experience_set(seed_path: Path, *, data_root: Path | None = None) -> di
         "path": str(target),
         "credential_exposed": False,
     }
+
+
+def _score(value: dict[str, Any], lane: str) -> float | None:
+    score = value.get(lane)
+    if not isinstance(score, dict):
+        return None
+    score = score.get("score")
+    if not isinstance(score, dict):
+        return None
+    result = score.get("score")
+    return float(result) if isinstance(result, (int, float)) and not isinstance(result, bool) else None
+
+
+def _validate_regression_evidence(value: dict[str, Any]) -> None:
+    if value.get("schema") != REGRESSION_SCHEMA:
+        raise ValueError("unsupported regression evidence schema")
+    if value.get("project_id") != "agentos-core":
+        raise ValueError("regression evidence project mismatch")
+    if value.get("executor") != "openai-codex-local":
+        raise ValueError("regression evidence executor mismatch")
+    checks = value.get("checks")
+    if not isinstance(checks, dict):
+        raise ValueError("regression evidence checks are required")
+    required_checks = {
+        "hydration_receipt_ok",
+        "uplift_requirement_met",
+        "no_regressed_dimensions",
+        "critical_governance_pass",
+    }
+    if any(checks.get(key) is not True for key in required_checks):
+        raise ValueError("regression evidence did not satisfy promotion checks")
+    baseline = _score(value, "baseline")
+    hydrated = _score(value, "hydrated")
+    uplift = value.get("uplift")
+    required_uplift = value.get("required_uplift")
+    if baseline is None or hydrated is None or not isinstance(uplift, (int, float)) or not isinstance(required_uplift, (int, float)):
+        raise ValueError("regression evidence scores are required")
+    if value.get("verdict") != "PASS" or value.get("classification") != "EXPERIENCE_REGRESSION_PASS":
+        raise ValueError("only a passing regression may be promoted")
+    if value.get("credential_exposed") is not False:
+        raise ValueError("regression evidence credential boundary failed")
+    if hydrated < 0.83 or uplift + 1e-12 < required_uplift or hydrated < baseline:
+        raise ValueError("regression evidence score requirements failed")
+    if value.get("regressed_dimensions") != []:
+        raise ValueError("regression evidence contains dimension regressions")
+    if not isinstance(value.get("improved_dimensions"), list) or not value["improved_dimensions"]:
+        raise ValueError("regression evidence must identify an improved dimension")
+
+
+def _validate_authority_receipt(receipt: dict[str, Any], *, evidence_digest: str) -> None:
+    if receipt.get("schema") != "agentos.experience-promotion-authority/v1":
+        raise ValueError("unsupported promotion authority receipt")
+    if receipt.get("project_id") != "agentos-core" or receipt.get("approved") is not True:
+        raise ValueError("promotion authority is not approved for agentos-core")
+    if receipt.get("evidence_sha256") != evidence_digest:
+        raise ValueError("promotion authority receipt is not bound to this evidence")
+    if not isinstance(receipt.get("approved_by"), str) or not receipt["approved_by"].strip():
+        raise ValueError("promotion authority receipt requires approved_by")
+
+
+def promote_issue117_regression_evidence(
+    evidence_path: Path,
+    authority_receipt: dict[str, Any],
+    *,
+    data_root: Path | None = None,
+) -> dict[str, Any]:
+    """Promote verified #117 evidence through the Core-owned Experience store.
+
+    The caller must provide a human/Core authority receipt bound to the exact
+    evidence digest. This deliberately cannot promote arbitrary conversation
+    text or replace an existing Experience artifact.
+    """
+    root = (data_root or _data_root()).resolve()
+    evidence_path = Path(evidence_path)
+    if evidence_path.is_symlink() or not evidence_path.is_file():
+        raise ValueError("regression evidence must be a regular file")
+    evidence_root = root / "projects" / "agentos-core" / "evidence"
+    try:
+        evidence_path.resolve().relative_to(evidence_root.resolve())
+    except ValueError:
+        raise ValueError("regression evidence must be stored in the AgentOS data-layer evidence directory") from None
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    if not isinstance(evidence, dict):
+        raise ValueError("regression evidence must be an object")
+    _validate_regression_evidence(evidence)
+    evidence_digest = "sha256:" + sha256(evidence_path.read_bytes()).hexdigest()
+    _validate_authority_receipt(authority_receipt, evidence_digest=evidence_digest)
+
+    target = experience_path("agentos-core", data_root=root)
+    with _lock(target):
+        current = read_experience_set("agentos-core", data_root=root)
+        before_digest = digest_set(current)
+        existing = next((item for item in current["artifacts"] if item["experience_id"] == ISSUE117_EXPERIENCE_ID), None)
+        artifact = {
+            "schema": "agentos.experience/v0",
+            "experience_id": ISSUE117_EXPERIENCE_ID,
+            "project_id": "agentos-core",
+            "kind": "benchmark-pattern",
+            "summary": "Experience regression must separately prove the Master Experience Floor and a ceiling-aware before/after uplift; a strong baseline may only have its remaining score headroom available.",
+            "payload": {
+                "benchmark_schema": REGRESSION_SCHEMA,
+                "master_floor_score": 0.83,
+                "uplift_rule": "min(0.34, 1.0 - baseline_score)",
+                "baseline_score": _score(evidence, "baseline"),
+                "hydrated_score": _score(evidence, "hydrated"),
+                "uplift": evidence["uplift"],
+                "required_uplift": evidence["required_uplift"],
+                "improved_dimensions": list(evidence["improved_dimensions"]),
+                "regressed_dimensions": [],
+                "hydration_receipt_ok": True,
+                "credential_exposed": False,
+            },
+            "provenance": {
+                "sources": [f"evidence://agentos-core/{evidence_path.name}"],
+                "accepted_evidence": [evidence_digest],
+            },
+            "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+            "validity": {
+                "conditions": ["The regression contract and its Core-owned authority receipt remain valid."],
+                "invalidated_by": [],
+            },
+            "realm_scope": ["oracle"],
+            "capability_scope": ["agentos.core.develop", "agentos.one.resolve", "repository.merge"],
+            "executor_scope": ["codex"],
+        }
+        validate_experience(artifact)
+        if existing is not None:
+            if existing != artifact:
+                raise ValueError("issue117 Experience already exists with different promoted evidence")
+            return {
+                "schema": PROMOTION_RECEIPT_SCHEMA,
+                "ok": True,
+                "promoted": False,
+                "project_id": "agentos-core",
+                "experience_id": ISSUE117_EXPERIENCE_ID,
+                "evidence_sha256": evidence_digest,
+                "before_digest": before_digest,
+                "after_digest": before_digest,
+                "credential_exposed": False,
+            }
+        updated = dict(current)
+        updated["artifacts"] = [*current["artifacts"], artifact]
+        validate_set(updated, project_id="agentos-core")
+        _atomic_write(target, updated)
+        return {
+            "schema": PROMOTION_RECEIPT_SCHEMA,
+            "ok": True,
+            "promoted": True,
+            "project_id": "agentos-core",
+            "experience_id": ISSUE117_EXPERIENCE_ID,
+            "evidence_sha256": evidence_digest,
+            "before_digest": before_digest,
+            "after_digest": digest_set(updated),
+            "credential_exposed": False,
+        }
 
 
 def discover_from_one(query: ExperienceQuery, *, data_root: Path | None = None) -> list[dict[str, Any]]:
