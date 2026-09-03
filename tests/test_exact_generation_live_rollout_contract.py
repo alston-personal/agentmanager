@@ -30,8 +30,8 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
     def test_rollout_is_integration_only_and_never_writes_main(self):
         text = _text(WORKFLOW)
         self.assertIn('branches:\n      - core/integration', text)
-        self.assertIn('params={"source_commit": sha}', text)
-        self.assertIn('AGENTOS_REF=core/integration', text)
+        self.assertIn('"params": {"source_commit": sha}', text)
+        self.assertIn('agentos_source_ref=core/integration', text)
         self.assertNotIn('git push', text)
         self.assertNotIn('HEAD:main', text)
         self.assertNotIn('origin/main', text)
@@ -41,10 +41,23 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD', text)
         self.assertNotIn('git config --global --add safe.directory', text)
 
+    def test_live_submission_enters_one_controller_before_action_relay(self):
+        text = _text(WORKFLOW)
+        self.assertIn('http://127.0.0.1:8780/v1/controller/dispatch', text)
+        self.assertIn('"schema": "agentos.controller-dispatch/v0.1"', text)
+        self.assertIn('"node_id": "oracle-core-node"', text)
+        self.assertIn('"action": "agentos.executor.job"', text)
+        self.assertIn('assert submission.get("schema") == "agentos.executor-job-submission/v1"', text)
+        self.assertIn('assert submission.get("task_id") == job_id', text)
+        self.assertIn('one_controller_dispatch=PASS', text)
+        submit_section = text.split('Submit through ONE and collect bounded executor receipt', 1)[1]
+        self.assertNotIn('dispatcher.submit(', submit_section)
+
     def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
         text = _text(WORKFLOW)
         self.assertIn('canonical_experience_regression_request', text)
         self.assertIn('ActionRelayExecutorJobDispatcher', text)
+        self.assertIn('dispatcher.inspect(job_id)', text)
         self.assertIn('credential_exposed', text)
         self.assertIn('executor_job_transport_receipt=PASS', text)
         self.assertIn('actions/upload-artifact@v4', text)
