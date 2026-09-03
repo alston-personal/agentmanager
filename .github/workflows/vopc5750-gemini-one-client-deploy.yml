@@ -77,10 +77,10 @@ jobs:
           ROOT=/home/ubuntu/.antigravity-ide-server
           echo 'oracle_antigravity_runtime_fingerprint=BEGIN'
           if [ -d "$ROOT" ]; then
-            find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | head -n 30
+            find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p'
             if command -v rg >/dev/null 2>&1; then
               rg -a -l -m 1 'PreInvocation|injectSteps|ephemeralMessage|hooks\.json' "$ROOT" \
-                -g '*.js' -g '*.json' 2>/dev/null | head -n 40 || true
+                -g '*.js' -g '*.json' 2>/dev/null | sed -n '1,40p' || true
             fi
           else
             echo 'oracle_antigravity_runtime_root=MISSING'
@@ -342,4 +342,3 @@ jobs:
           print('vopc5750_gemini_one_client_deploy=PASS')
           print('antigravity_reload_required=YES')
           PY
-
