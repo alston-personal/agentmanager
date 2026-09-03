@@ -4,6 +4,7 @@ import copy
 from typing import Any
 
 from agentos_node.one_mcp import Gateway, create_gateway
+from agentos_node.one_runtime_inspect import inspect_oracle_runtime
 
 
 def _unbind_executor_identity(value: dict[str, Any]) -> dict[str, Any]:
@@ -27,6 +28,22 @@ def _unbind_executor_identity(value: dict[str, Any]) -> dict[str, Any]:
     mark_unbound(result)
     mark_unbound(result.get("node_context"))
     return result
+
+
+def _runtime_inspect(one: Gateway) -> dict[str, Any]:
+    if str(getattr(one, "mode", "")) != "oracle-local":
+        return {
+            "schema": "agentos.one-runtime-inspect/v0.1",
+            "mode": str(getattr(one, "mode", "unknown")),
+            "supported": False,
+            "reason": "oracle_local_only",
+            "credential_exposed": False,
+            "mutation_allowed": False,
+        }
+    return inspect_oracle_runtime(
+        data_root=getattr(one, "data_root", None),
+        core_node_id=getattr(one, "core_node_id", None),
+    )
 
 
 def create_server(gateway: Gateway | None = None):
@@ -54,6 +71,11 @@ def create_server(gateway: Gateway | None = None):
     def one_resolve(project: str) -> dict[str, Any]:
         """Resolve project identity, active goal, continuation and mutation boundary from ONE."""
         return _unbind_executor_identity(one.resolve(project))
+
+    @server.tool()
+    def one_runtime_inspect() -> dict[str, Any]:
+        """Return fixed, sanitized Oracle runtime facts; accepts no command, path, unit, or credential input."""
+        return _unbind_executor_identity(_runtime_inspect(one))
 
     return server
 
