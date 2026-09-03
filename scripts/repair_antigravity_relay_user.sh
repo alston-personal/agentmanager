@@ -19,6 +19,7 @@ UNIT_DIR="/home/ubuntu/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
 REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
 MANIFEST="$RUNTIME/runtime-provenance.json"
+CODEX_CONFIG="/home/ubuntu/.codex/config.toml"
 
 case "$SOURCE_REF" in
   main|core/integration|feature/realm-node-fabric-readiness) ;;
@@ -188,6 +189,42 @@ AGENTOS_ACTION_RUNTIME_ROOT="$ACTION_RUNTIME" \
 AGENTOS_ACTION_SOURCE_REF="$SOURCE_REF" \
 AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT" \
 bash "$TMPDIR/install_action_relay_user.sh"
+
+# #117 Experience hydration is an executor-local, read-only cognitive input. Keep
+# its code and Codex MCP configuration on the SAME immutable Action Runtime used
+# by the bounded executor provider. Existing accepted Experience is never silently
+# replaced: the seed helper refuses a digest mismatch and therefore fails closed.
+for required in \
+  agent_core/experience.py \
+  agent_core/experience_store.py \
+  agentos_node/experience_mcp_stdio.py \
+  scripts/seed_one_experience.py \
+  scripts/install_codex_experience_mcp_oracle.py \
+  experience/agentos-core-oracle.seed.json; do
+  test -f "$ACTION_RUNTIME/$required" || { echo "ERROR: Experience runtime input missing: $required" >&2; exit 8; }
+done
+PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" python3 -m py_compile \
+  "$ACTION_RUNTIME/agent_core/experience.py" \
+  "$ACTION_RUNTIME/agent_core/experience_store.py" \
+  "$ACTION_RUNTIME/agentos_node/experience_mcp_stdio.py" \
+  "$ACTION_RUNTIME/scripts/seed_one_experience.py" \
+  "$ACTION_RUNTIME/scripts/install_codex_experience_mcp_oracle.py"
+(
+  cd "$ACTION_RUNTIME"
+  PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" \
+    python3 scripts/seed_one_experience.py --seed experience/agentos-core-oracle.seed.json >/dev/null
+  echo "one_experience_seed=PASS"
+  PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" \
+    python3 scripts/install_codex_experience_mcp_oracle.py >/dev/null
+  echo "codex_experience_mcp_install=PASS"
+)
+test -f "$CODEX_CONFIG"
+grep -Fq '# AGENTOS_EXPERIENCE_MCP_START' "$CODEX_CONFIG"
+grep -Fq '[mcp_servers."agentos-experience"]' "$CODEX_CONFIG"
+grep -Fq "cwd = \"$ACTION_RUNTIME\"" "$CODEX_CONFIG"
+grep -Fq "PYTHONPATH = \"$ACTION_RUNTIME\"" "$CODEX_CONFIG"
+echo "codex_experience_mcp_exact_runtime=PASS"
+
 systemctl --user is-active --quiet agentos-action-relay.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
 for i in $(seq 1 20); do
@@ -215,6 +252,9 @@ echo "antigravity_runtime_manifest=$MANIFEST"
 echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
 echo "action_relay_source_generation_pinned=PASS"
+echo "one_experience_seed=PASS"
+echo "codex_experience_mcp_install=PASS"
+echo "codex_experience_mcp_exact_runtime=PASS"
 echo "realm_fabric_install=PASS"
 echo "realm_fabric_runtime_closure=PASS"
 echo "realm_fabric_group_context=agentos"
