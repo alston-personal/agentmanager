@@ -77,7 +77,7 @@ jobs:
           ROOT=/home/ubuntu/.antigravity-ide-server
           echo 'oracle_antigravity_runtime_fingerprint=BEGIN'
           if [ -d "$ROOT" ]; then
-            find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p'
+            find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p' || true
             if command -v rg >/dev/null 2>&1; then
               rg -a -l -m 1 'PreInvocation|injectSteps|ephemeralMessage|hooks\.json' "$ROOT" \
                 -g '*.js' -g '*.json' 2>/dev/null | sed -n '1,40p' || true
