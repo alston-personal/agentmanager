@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agentos_node.conversation_backfill import backfill_conversation_candidates
+from agentos_node.executor_experience_recovery import plan_executor_experience_recovery
 from agentos_node.onboarding import check_windows_node_supervisor, install_windows_node_supervisor
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
@@ -183,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         lifecycle = install_windows_node_supervisor()
         transport = build_client(config, policy)
         completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
+        executor_recovery = plan_executor_experience_recovery(transport.client.capability_manifest())
         historical_backfill = None
         if args.historical_projects_root:
             candidate_root = args.historical_candidate_root or (args.config.parent / 'experience-candidates')
@@ -192,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
                 historical_ir_root=args.historical_ir_root,
                 max_conversations=args.historical_max_conversations,
             )
-        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion, 'historical_experience_backfill': historical_backfill}))
+        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion, 'executor_experience_recovery': executor_recovery, 'historical_experience_backfill': historical_backfill}))
         return 0 if completion.get('node_ready') else 2
 
     if args.command == 'enroll':
