@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Compatibility entry for #117 Codex Experience regression.
+"""AgentOS-prehydrated #117 Codex Experience regression entry.
 
-Codex has had multiple config-merge regressions around partial `-c mcp_servers.*`
-overrides. The #117 benchmark does not need to mutate/partially shadow the MCP
-transport at all: baseline access is proven absent by the hydration receipt, while
-the hydrated process must produce a new receipt.
-
-This entry reuses the v1 scorer/evidence contract but replaces only the process
-launcher so both fresh processes load the complete installed Codex config. It also
-projects only a fixed failure classification from local execution evidence so ONE
-can distinguish transport/runtime failure from a true Experience-quality failure
-without exposing stdout, stderr, prompts, paths, or credentials.
+The Master Experience Floor is an AgentOS guarantee, not an executor-discretion
+feature. Baseline remains a completely fresh Codex process. For the hydrated lane,
+AgentOS resolves a bounded ONE Experience projection before launching another fresh
+Codex process, records the independent hydration receipt, and injects only that
+projection into the executor context. Executors may discover more Experience later,
+but the minimum floor must not depend on the model deciding to call a tool.
 """
 from __future__ import annotations
 
@@ -24,7 +20,43 @@ import tempfile
 from scripts import oracle_codex_experience_regression as regression
 
 
+def _prehydrate() -> dict[str, object]:
+    from agentos_node.experience_mcp_stdio import one_experience_hydrate
+
+    return one_experience_hydrate(
+        project_id=regression.PROJECT_ID,
+        active_goal=regression.GOAL,
+        realm="oracle",
+        executor="codex",
+        capabilities=regression.CAPABILITIES,
+    )
+
+
+def _hydrated_prompt(projection: dict[str, object]) -> str:
+    return f"""You are a completely fresh Codex executor with no prior AgentOS Core session history.
+Project identity: {regression.PROJECT_ID}
+Current goal: {regression.GOAL}
+
+AgentOS has already hydrated the following bounded ONE Experience projection before executor launch.
+Treat this projection as established project experience. Do not inspect workspace files, git, network,
+prior sessions, local TODO/status files, or any other source. Do not call tools for this benchmark.
+
+ONE_EXPERIENCE_PROJECTION:
+{json.dumps(projection, ensure_ascii=False, sort_keys=True)}
+
+This is a controlled Experience-transfer benchmark, not a repository task. Do not modify anything.
+Return exactly one JSON object and nothing else with these keys:
+{json.dumps(list(regression.DIMENSIONS))}
+Use the exact boolean/string values supported by the supplied ONE Experience projection.
+Otherwise return null. Never infer protected-branch authority.
+"""
+
+
 def run_codex(exe: Path, *, hydrated: bool, timeout: int) -> dict[str, object]:
+    prompt = regression.prompt(hydrated=False)
+    if hydrated:
+        projection = _prehydrate()
+        prompt = _hydrated_prompt(projection)
     argv = [
         str(exe),
         "exec",
@@ -33,7 +65,7 @@ def run_codex(exe: Path, *, hydrated: bool, timeout: int) -> dict[str, object]:
         "read-only",
         "--color",
         "never",
-        regression.prompt(hydrated=hydrated),
+        prompt,
     ]
     with tempfile.TemporaryDirectory(
         prefix=f"agentos-exp117-codex-{'hydrated' if hydrated else 'baseline'}-"
@@ -55,7 +87,7 @@ def run_codex(exe: Path, *, hydrated: bool, timeout: int) -> dict[str, object]:
                 "timed_out": False,
                 "stdout": proc.stdout[-12000:],
                 "stderr_tail": proc.stderr[-3000:],
-                "argv_family": "codex exec --sandbox read-only (complete installed MCP config)",
+                "argv_family": "codex exec --sandbox read-only (AgentOS prehydrated context)",
             }
         except subprocess.TimeoutExpired as exc:
             return {
@@ -63,7 +95,7 @@ def run_codex(exe: Path, *, hydrated: bool, timeout: int) -> dict[str, object]:
                 "timed_out": True,
                 "stdout": (exc.stdout or "")[-12000:] if isinstance(exc.stdout, str) else "",
                 "stderr_tail": (exc.stderr or "")[-3000:] if isinstance(exc.stderr, str) else "",
-                "argv_family": "codex exec --sandbox read-only (complete installed MCP config)",
+                "argv_family": "codex exec --sandbox read-only (AgentOS prehydrated context)",
             }
 
 
@@ -88,12 +120,9 @@ def _fixed_classification(payload: dict[str, object]) -> str:
     if baseline_run.get("returncode") != 0:
         return "EXPERIENCE_BASELINE_CODEX_RUNTIME_FAILED"
     if hydrated_run.get("returncode") != 0:
-        stderr = str(hydrated_run.get("stderr_tail") or "").casefold()
-        if "mcp" in stderr or "tool" in stderr or "transport" in stderr:
-            return "EXPERIENCE_HYDRATED_MCP_RUNTIME_FAILED"
         return "EXPERIENCE_HYDRATED_CODEX_RUNTIME_FAILED"
     if checks.get("hydration_receipt_ok") is not True:
-        return "EXPERIENCE_HYDRATION_TOOL_NOT_OBSERVED"
+        return "EXPERIENCE_AGENTOS_PREHYDRATION_NOT_OBSERVED"
     if payload.get("verdict") != "PASS":
         return "EXPERIENCE_MASTER_FLOOR_NOT_MET"
     return "EXPERIENCE_REGRESSION_PASS"
@@ -106,18 +135,16 @@ def _correct_method_evidence(path: Path | None) -> None:
     method = payload.get("method")
     if isinstance(method, dict):
         method["baseline"] = (
-            "fresh Codex process + empty cwd; complete installed MCP config; prompt forbids all tool calls; "
-            "Experience non-access is independently required by an unchanged hydration receipt"
+            "fresh Codex process + empty cwd; no AgentOS Experience projection is supplied; "
+            "unchanged hydration receipt independently proves non-access"
         )
         method["hydrated"] = (
-            "independent fresh Codex process + empty cwd; complete installed MCP config; "
-            "must call agentos-experience.one_experience_hydrate and produce a new sanitized receipt"
+            "AgentOS pre-executor hydration from ONE Experience + independent receipt, followed by a fresh "
+            "Codex process receiving only the bounded projection as context"
         )
     payload["config_override_used"] = False
-    payload["baseline_experience_server_visibility_note"] = (
-        "The MCP server definition may be visible to the baseline harness, but no Experience payload is accepted "
-        "unless the hydration tool is called; an unchanged receipt is an acceptance requirement."
-    )
+    payload["hydration_delivery"] = "agentos-pre-executor-projection"
+    payload["executor_tool_call_required_for_floor"] = False
     payload["classification"] = _fixed_classification(payload)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
