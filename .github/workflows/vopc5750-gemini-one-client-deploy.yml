@@ -9,10 +9,13 @@ on:
       - 'agentos_node/one_mcp.py'
       - 'agentos_node/antigravity_one_hook.py'
       - 'scripts/install_antigravity_one_mcp.py'
+      - 'scripts/deploy_realm_fabric_candidate_user.sh'
+      - 'agentos_node/bootstrap_control.py'
       - 'tests/test_realm_resolve_endpoint.py'
       - 'tests/test_one_mcp.py'
       - 'tests/test_antigravity_one_hook.py'
       - 'tests/test_install_antigravity_one_client.py'
+      - 'tests/test_vopc_gemini_one_deploy_contract.py'
       - '.github/workflows/vopc5750-gemini-one-client-deploy.yml'
   workflow_dispatch:
 
@@ -39,7 +42,8 @@ jobs:
             tests.test_one_mcp \
             tests.test_antigravity_one_hook \
             tests.test_antigravity_preinvocation_attestation \
-            tests.test_install_antigravity_one_client -v
+            tests.test_install_antigravity_one_client \
+            tests.test_vopc_gemini_one_deploy_contract -v
 
   windows-contract:
     runs-on: windows-latest
@@ -64,77 +68,71 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Install exact ONE server candidate with rollback
+      - name: Request exact ONE server candidate through ubuntu bootstrap boundary
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_COMMIT="$GITHUB_SHA"
-          DATA=/home/ubuntu/agent-data
-          ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
-          CURRENT="$ROOT/current"
-          SOURCE_ROOT="$ROOT/source-releases"
-          RELEASE="$SOURCE_ROOT/$SOURCE_COMMIT"
-          UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
-          BACKUP="$UNIT.pre-vopc-gemini-one"
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="realm-fabric-gemini-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
 
-          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          BASE_RELEASE=$(readlink -f "$CURRENT")
-          BASE_PYTHON="$BASE_RELEASE/venv/bin/python"
-          test -x "$BASE_PYTHON"
-          mkdir -p "$SOURCE_ROOT" "$HOME/.config/systemd/user" "$DATA/logs"
-          if [ -f "$UNIT" ]; then cp "$UNIT" "$BACKUP"; fi
-          rollback() {
-            rc=$?
-            if [ "$rc" -ne 0 ] && [ -f "$BACKUP" ]; then
-              cp "$BACKUP" "$UNIT"
-              systemctl --user daemon-reload
-              systemctl --user restart agentos-realm-fabric.service || true
-            fi
-            exit "$rc"
-          }
-          trap rollback EXIT
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          test -w "$LIVE/agentos_node/bootstrap_control.py"
+          cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
 
-          if [ ! -f "$RELEASE/agent_core/realm_server.py" ]; then
-            TMP="$SOURCE_ROOT/.install-$SOURCE_COMMIT-$GITHUB_RUN_ID"
-            rm -rf "$TMP"
-            mkdir -p "$TMP"
-            cp -a agent_core agentos_node runtime_core "$TMP/"
-            rm -rf "$RELEASE"
-            mv "$TMP" "$RELEASE"
-          fi
-          (cd /tmp && PYTHONPATH="$RELEASE" "$BASE_PYTHON" -c \
-            "from agent_core.realm_server import RealmHTTPServer; from agentos_node.one_mcp import ClientOneGateway; print('candidate_import=PASS')")
-          cat > "$UNIT" <<EOF
-          [Unit]
-          Description=AgentOS ONE Realm Fabric
-          After=network.target
-
-          [Service]
-          Type=simple
-          Environment=AGENT_DATA_ROOT=$DATA
-          Environment=PYTHONPATH=$RELEASE
-          ExecStart=$BASE_PYTHON -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780
-          Restart=always
-          RestartSec=5
-          StandardOutput=append:$DATA/logs/realm-fabric.log
-          StandardError=append:$DATA/logs/realm-fabric.log
-
-          [Install]
-          WantedBy=default.target
-          EOF
-          systemctl --user daemon-reload
-          systemctl --user enable --now agentos-realm-fabric.service
-          systemctl --user restart agentos-realm-fabric.service
-          for i in $(seq 1 30); do
-            curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null && break
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
             sleep 1
           done
-          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
-          echo "one_server_source_commit=$SOURCE_COMMIT"
-          echo "one_server_source_release=$RELEASE"
-          echo "one_server_python_runtime=$BASE_RELEASE"
-          echo 'one_server_active_resolve_candidate=PASS'
-          trap - EXIT
+          test -d "$REQUESTS" && test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          p=Path(sys.argv[1]); rid=sys.argv[2]; source_commit=sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':rid,
+            'action':'agentos.realm_fabric.deploy',
+            'params':{'source_commit':source_commit},
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=p.with_suffix(p.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
+          PY
+
+          for i in $(seq 1 240); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'realm_fabric_receipt=TIMEOUT'; exit 3; }
+          cat "$RECEIPT"
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1])); source_commit=sys.argv[2]
+          assert r.get('schema') == 'agentos.bootstrap-receipt/v1', r
+          assert r.get('action') == 'agentos.realm_fabric.deploy', r
+          assert r.get('executor_user') == 'ubuntu', r
+          assert r.get('executor_uid') == 1001, r
+          assert r.get('source_commit') == source_commit, r
+          assert r.get('ok') is True, r
+          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
+          assert f'realm_fabric_source_commit={source_commit}' in text, text[-12000:]
+          assert 'realm_fabric_candidate_import=PASS' in text, text[-12000:]
+          assert 'realm_fabric_active_resolve_route=PASS' in text, text[-12000:]
+          assert 'realm_fabric_credential_exposed=false' in text, text[-12000:]
+          assert 'realm_fabric_candidate_deploy=PASS' in text, text[-12000:]
+          print('one_server_active_resolve_candidate=PASS')
+          print('one_server_bootstrap_boundary=PASS')
+          PY
 
   deploy-vopc-client:
     needs: deploy-one-server
