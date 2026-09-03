@@ -56,6 +56,8 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn('mv "$TMPDIR/agent_core" "$RELEASE/agent_core"', text)
         self.assertIn('realm_fabric_candidate_rollback=COMPLETED', text)
         self.assertIn('journalctl --user -u agentos-realm-fabric.service', text)
+        self.assertIn('systemctl --user cat agentos-realm-fabric.service', text)
+        self.assertIn('tail -n 120 "$DATA_ROOT/logs/realm-fabric.log"', text)
         self.assertIn('OLD_PID=$(systemctl --user show', text)
         self.assertIn('[ "$NEW_PID" != "${OLD_PID:-0}" ]', text)
         self.assertIn("ExecStart=/usr/bin/sg agentos", text)

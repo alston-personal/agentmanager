@@ -42,7 +42,9 @@ rollback() {
   if [ "$rc" -ne 0 ]; then
     echo 'realm_fabric_candidate_rollback=STARTED' >&2
     systemctl --user status agentos-realm-fabric.service --no-pager >&2 || true
+    systemctl --user cat agentos-realm-fabric.service >&2 || true
     journalctl --user -u agentos-realm-fabric.service -n 80 --no-pager >&2 || true
+    tail -n 120 "$DATA_ROOT/logs/realm-fabric.log" >&2 || true
     if [ "$HAD_UNIT" = 1 ]; then
       cp "$UNIT_BACKUP" "$UNIT"
     else
