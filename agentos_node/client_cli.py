@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from agentos_node.conversation_backfill import backfill_conversation_candidates
 from agentos_node.onboarding import check_windows_node_supervisor, install_windows_node_supervisor
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
@@ -123,6 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_join.add_argument('--node-id', default=socket.gethostname().lower())
     p_join.add_argument('--expires-minutes', type=int, default=10)
     p_join.add_argument('--timeout-seconds', type=int, default=600)
+    p_join.add_argument('--historical-projects-root', type=Path, help='optional <project>/logs/conversations root for bounded post-join candidate backfill')
+    p_join.add_argument('--historical-candidate-root', type=Path, help='local output root for reviewable historical Experience candidates')
+    p_join.add_argument('--historical-max-conversations', type=int, default=100)
 
     p_enroll = sub.add_parser('enroll', help='legacy one-time invitation enrollment')
     p_enroll.add_argument('--one', required=True, help='ONE base URL')
@@ -178,7 +182,15 @@ def main(argv: list[str] | None = None) -> int:
         lifecycle = install_windows_node_supervisor()
         transport = build_client(config, policy)
         completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
-        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion}))
+        historical_backfill = None
+        if args.historical_projects_root:
+            candidate_root = args.historical_candidate_root or (args.config.parent / 'experience-candidates')
+            historical_backfill = backfill_conversation_candidates(
+                projects_root=args.historical_projects_root,
+                candidate_root=candidate_root,
+                max_conversations=args.historical_max_conversations,
+            )
+        print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion, 'historical_experience_backfill': historical_backfill}))
         return 0 if completion.get('node_ready') else 2
 
     if args.command == 'enroll':

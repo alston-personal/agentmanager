@@ -31,6 +31,7 @@ $files = @(
   'agentos_node/__init__.py',
   'agentos_node/thin_client.py',
   'agentos_node/interactive_desktop.py',
+  'agentos_node/conversation_backfill.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py'
 )
