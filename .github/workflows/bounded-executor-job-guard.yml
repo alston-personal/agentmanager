@@ -9,10 +9,12 @@ on:
       - 'agent_core/controller_service.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/experience_runtime.py'
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/issue117_experience_provider.py'
+      - 'agentos_node/experience_mcp_stdio.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/oracle_codex_experience_regression.py'
@@ -36,10 +38,12 @@ on:
       - 'agent_core/controller_service.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/experience_runtime.py'
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/executor_job_adapter.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'agentos_node/issue117_experience_provider.py'
+      - 'agentos_node/experience_mcp_stdio.py'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/oracle_codex_experience_regression.py'
@@ -127,10 +131,12 @@ jobs:
             agent_core/controller_service.py \
             agent_core/controller_api.py \
             agent_core/control_inbox_bridge.py \
+            agent_core/experience_runtime.py \
             agentos_node/bootstrap_control.py \
             agentos_node/executor_job_adapter.py \
             agentos_node/executor_job_action_relay.py \
             agentos_node/issue117_experience_provider.py \
+            agentos_node/experience_mcp_stdio.py \
             scripts/oracle_codex_experience_regression.py \
             scripts/oracle_codex_experience_regression_entry_v2.py
       - name: Validate governed runtime installers
