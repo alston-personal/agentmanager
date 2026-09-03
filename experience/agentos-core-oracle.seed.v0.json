@@ -1,0 +1,127 @@
+{
+  "schema": "agentos.experience-set/v0",
+  "project_id": "agentos-core",
+  "projection_only": true,
+  "note": "Approved legacy source retained only for fail-closed v0 to Experience IR v1 migration.",
+  "artifacts": [
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "core.branch-authority.v2",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.core.develop", "repository.merge"],
+      "executor_scope": ["*"],
+      "kind": "decision",
+      "summary": "Core development uses core/integration plus focused core/issue-* branches; mutable runtime generation/SHA are live state and must be resolved at execution time rather than memorized as Experience.",
+      "payload": {
+        "canonical_development_branch": "core/integration",
+        "issue_branch_pattern": "core/issue-<N>-<slug>",
+        "mutable_runtime_facts_belong_in_experience": false,
+        "rule": "A branch head, PID, checkout HEAD, or health response is not deployment acceptance."
+      },
+      "provenance": {"sources": ["docs/CORE_BRANCH_MODEL.md", "docs/CORE_DEPLOYMENT_AUTHORITY.md"], "accepted_evidence": []},
+      "authority": {"status": "accepted", "supersedes": ["core.branch-and-runtime-authority.v1"], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "core.protected-main-human-authority.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["repository.mutate", "repository.merge"],
+      "executor_scope": ["*"],
+      "kind": "constraint",
+      "summary": "Passing CI, mergeability, review state, tool capability, or generic continue never grants protected-main merge authority; separate explicit human authorization is required.",
+      "payload": {
+        "protected_branch": "main",
+        "required_authority": "separate explicit human authorization",
+        "generic_continue_is_authorization": false,
+        "capability_implies_authority": false
+      },
+      "provenance": {"sources": [".agent/governance/protected_branches.yaml", "docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md"], "accepted_evidence": ["github-ruleset://21844290"]},
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "core.evidence-scope-and-capability-semantics.v2",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.one.resolve", "agentos.controller.dispatch", "agentos.capability.discover"],
+      "executor_scope": ["*"],
+      "kind": "heuristic",
+      "summary": "Evidence must prove the exact claimed path, and capability states must remain distinct: advertised is not routable, routable is not authorized, and authorized is not successful execution.",
+      "payload": {
+        "capability_semantics": ["advertised", "transport-routable", "execution-authorized", "successfully-executed"],
+        "controller_dispatch_proves_resolve": false,
+        "capability_implies_execution_authority": false,
+        "acceptance_rule": "Probe the real target transport/capability path and preserve a receipt."
+      },
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/64", "docs/CURRENT_STATE.md"], "accepted_evidence": ["issue-64://controller-service-entered"]},
+      "authority": {"status": "accepted", "supersedes": ["core.evidence-scope-and-capability-semantics.v1"], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "core.discover-before-reinvent.v2",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.capability.discover", "project.resolve"],
+      "executor_scope": ["*"],
+      "kind": "procedure",
+      "summary": "Resolve existing project responsibility, resources, capabilities, and open Core ownership before creating a parallel implementation or rediscovering AgentOS from source.",
+      "payload": {
+        "procedure": ["resolve project identity", "discover responsibility/resources/capabilities", "reuse accepted capability when present", "file/use the owning Core issue for missing shared capability", "only then implement the missing capability"]
+      },
+      "provenance": {"sources": ["docs/AGENTOS_NODE.md", "github-issue://alston-personal/agentmanager/137"], "accepted_evidence": []},
+      "authority": {"status": "accepted", "supersedes": ["core.discover-before-reinvent.v1"], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "core.workspace-not-continuation-authority.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["agentos.one.resolve", "project.resolve"],
+      "executor_scope": ["*"],
+      "kind": "constraint",
+      "summary": "IDE workspace, git status, local TODO files, vendor history, Pulse, and local model memory are not durable continuation authority; resolve current continuation from ONE Canonical IR.",
+      "payload": {"workspace_is_continuation_authority": false, "canonical_continuation_authority": "ONE Canonical IR selected by the active continuation pointer"},
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/152"], "accepted_evidence": ["issue-152://E3_GEMINI_ONE_CODEX_EXTENSION_CONTINUITY_VERIFIED"]},
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "core.node-executor-boundary.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["*"],
+      "capability_scope": ["executor.dispatch", "executor.liveness", "agentos.capability.discover"],
+      "executor_scope": ["*"],
+      "kind": "constraint",
+      "summary": "A Node is the durable Realm/control participant; executors are independently live capability providers. Node online does not prove executor availability, and executor adapters do not own Realm transport credentials.",
+      "payload": {"node_online_implies_executor_available": false, "executor_owns_realm_credentials": false, "node_and_executor_are_distinct": true},
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/152"], "accepted_evidence": ["issue-152://node-executor-boundary"]},
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": [], "invalidated_by": []}
+    },
+    {
+      "schema": "agentos.experience/v0",
+      "experience_id": "executor.antigravity-relay-liveness.v1",
+      "project_id": "agentos-core",
+      "realm_scope": ["oracle"],
+      "capability_scope": ["executor.dispatch", "executor.liveness"],
+      "executor_scope": ["antigravity", "claude"],
+      "kind": "failure-pattern",
+      "summary": "Antigravity relay enqueue does not prove Claude executor liveness. A deterministic no-tool capsule previously timed out at about 180 seconds with returncode 124; future acceptance requires a fresh successful receipt.",
+      "payload": {
+        "historical_failure": {"returncode": 124, "timed_out": true, "stdout_exact_match": false},
+        "recovery_proven": false,
+        "required_regression": "Fresh no-tool deterministic receipt with ok=true, timed_out=false, returncode=0 before trusting executor workloads."
+      },
+      "provenance": {"sources": ["github-issue://alston-personal/agentmanager/72"], "accepted_evidence": ["workflow-run://33227123813"]},
+      "authority": {"status": "accepted", "supersedes": [], "superseded_by": []},
+      "validity": {"conditions": ["historical failure remains relevant until a newer successful liveness regression supersedes it"], "invalidated_by": []}
+    }
+  ]
+}
