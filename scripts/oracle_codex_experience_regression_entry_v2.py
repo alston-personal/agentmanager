@@ -52,10 +52,34 @@ Otherwise return null. Never infer protected-branch authority.
 """
 
 
+def _bounded_prehydration_failure(exc: Exception) -> dict[str, object]:
+    """Represent pre-executor hydration failure without exposing paths or traces."""
+    if isinstance(exc, FileNotFoundError):
+        classification = "EXPERIENCE_PREHYDRATION_STORE_MISSING"
+    elif isinstance(exc, PermissionError):
+        classification = "EXPERIENCE_PREHYDRATION_PERMISSION_DENIED"
+    elif isinstance(exc, ValueError):
+        classification = "EXPERIENCE_PREHYDRATION_CONTRACT_INVALID"
+    else:
+        classification = "EXPERIENCE_PREHYDRATION_FAILED"
+    return {
+        "returncode": 78,
+        "timed_out": False,
+        "stdout": "",
+        "stderr_tail": "",
+        "argv_family": "agentos pre-executor hydration (Codex not launched)",
+        "prehydration_failed": True,
+        "prehydration_classification": classification,
+    }
+
+
 def run_codex(exe: Path, *, hydrated: bool, timeout: int) -> dict[str, object]:
     prompt = regression.prompt(hydrated=False)
     if hydrated:
-        projection = _prehydrate()
+        try:
+            projection = _prehydrate()
+        except Exception as exc:
+            return _bounded_prehydration_failure(exc)
         prompt = _hydrated_prompt(projection)
     argv = [
         str(exe),
@@ -113,6 +137,11 @@ def _fixed_classification(payload: dict[str, object]) -> str:
     baseline_run = baseline.get("run") if isinstance(baseline.get("run"), dict) else {}
     hydrated_run = hydrated.get("run") if isinstance(hydrated.get("run"), dict) else {}
 
+    if hydrated_run.get("prehydration_failed") is True:
+        bounded = hydrated_run.get("prehydration_classification")
+        if isinstance(bounded, str) and bounded.startswith("EXPERIENCE_PREHYDRATION_"):
+            return bounded
+        return "EXPERIENCE_PREHYDRATION_FAILED"
     if baseline_run.get("timed_out") is True:
         return "EXPERIENCE_BASELINE_CODEX_TIMEOUT"
     if hydrated_run.get("timed_out") is True:
