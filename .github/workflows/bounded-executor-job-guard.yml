@@ -26,6 +26,7 @@ on:
       - 'tests/test_executor_job_receipt_facade.py'
       - 'tests/test_executor_job_runtime_installer.py'
       - 'tests/test_issue117_experience_provider.py'
+      - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_control_inbox_bridge.py'
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
@@ -55,6 +56,7 @@ on:
       - 'tests/test_executor_job_receipt_facade.py'
       - 'tests/test_executor_job_runtime_installer.py'
       - 'tests/test_issue117_experience_provider.py'
+      - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_control_inbox_bridge.py'
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
@@ -81,6 +83,7 @@ jobs:
             tests/test_executor_job_receipt_facade.py \
             tests/test_executor_job_runtime_installer.py \
             tests/test_issue117_experience_provider.py \
+            tests/test_issue117_regression_floor.py \
             tests/test_control_inbox_bridge.py \
             tests/test_exact_generation_live_rollout_contract.py \
             -q
