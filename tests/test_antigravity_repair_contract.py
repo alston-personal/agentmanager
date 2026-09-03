@@ -86,6 +86,27 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('bash "$TMPDIR/install_action_relay_user.sh"', text)
         self.assertIn('action_relay_source_generation_pinned=PASS', text)
 
+    def test_experience_mcp_is_seeded_and_installed_from_exact_action_runtime(self):
+        text = _text(SCRIPT)
+        for path in (
+            'agent_core/experience.py',
+            'agent_core/experience_store.py',
+            'agentos_node/experience_mcp_stdio.py',
+            'scripts/seed_one_experience.py',
+            'scripts/install_codex_experience_mcp_oracle.py',
+            'experience/agentos-core-oracle.seed.json',
+        ):
+            self.assertIn(path, text)
+        self.assertIn('cd "$ACTION_RUNTIME"', text)
+        self.assertIn('python3 scripts/seed_one_experience.py --seed experience/agentos-core-oracle.seed.json', text)
+        self.assertIn('python3 scripts/install_codex_experience_mcp_oracle.py', text)
+        self.assertIn('grep -Fq "cwd = \\"$ACTION_RUNTIME\\"" "$CODEX_CONFIG"', text)
+        self.assertIn('grep -Fq "PYTHONPATH = \\"$ACTION_RUNTIME\\"" "$CODEX_CONFIG"', text)
+        self.assertIn('one_experience_seed=PASS', text)
+        self.assertIn('codex_experience_mcp_install=PASS', text)
+        self.assertIn('codex_experience_mcp_exact_runtime=PASS', text)
+        self.assertNotIn('AGENTOS_EXPERIENCE_MCP_ALLOW_OVERWRITE', text)
+
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)
         self.assertIn('ensure_shared_dir()', text)
