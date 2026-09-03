@@ -1,0 +1,121 @@
+name: LeopardCat Governed Full Master Share Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-production-deploy-full-master-share.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy full Master sharing release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          OLD=cf66410136e0eadbee8a15ca0a72f0f1b01595a4
+          TARGET=a572d068bae82fe24ec307f4169bc6f2e241ffe6
+
+          echo '=== preflight ==='
+          test -d "$ROOT/.git"
+          test "$(git -C "$ROOT" branch --show-current)" = main
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo "head_before=$HEAD"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+
+          mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
+          for f in "${DIRTY[@]:-}"; do
+            test -z "$f" && continue
+            case "$f" in
+              website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;;
+              *) echo "unexpected_dirty=$f"; exit 20 ;;
+            esac
+          done
+          rm -rf "$WEB/node_modules/.vite"
+          BACKUP=/tmp/leopardcat-stats-full-share-${GITHUB_RUN_ID:-manual}.json
+          cp "$WEB/stats.json" "$BACKUP"
+          git -C "$ROOT" checkout -- website/dist/index.html
+
+          echo '=== sync source ==='
+          git -C "$ROOT" fetch origin main
+          git -C "$ROOT" merge --ff-only origin/main
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
+          cp "$BACKUP" "$WEB/stats.json"
+
+          echo '=== verify source contracts ==='
+          grep -q 'sharing.full-master-text' "$ROOT/governance/capabilities.json"
+          grep -q 'buildSocialShareText' "$WEB/main.js"
+          grep -q 'latestMasterInterpretation' "$WEB/main.js"
+          grep -q 'prepareFacebookShare' "$WEB/main.js"
+          grep -q 'share-content-controls' "$WEB/index.html"
+          grep -q 'share-include-question' "$WEB/index.html"
+          grep -q 'share_full_mode' "$WEB/public/locales_v10.json"
+          grep -q 'sharing.reading-og-share-preview' "$ROOT/governance/capabilities.json"
+          echo 'full_master_share_source=present'
+
+          echo '=== build production frontend ==='
+          test -e "$WEB/public/art/renders"
+          test -e "$WEB/public/cards"
+          cd "$WEB"
+          npm ci
+          npm run build
+          JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
+          CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
+          test -n "$JS_ASSET"; test -n "$CSS_ASSET"
+          test -f "dist$JS_ASSET"; test -f "dist$CSS_ASSET"
+          echo "js_asset=$JS_ASSET"
+          echo "css_asset=$CSS_ASSET"
+
+          echo '=== restart service ==='
+          systemctl --user stop leopardcat-tarot.service || true
+          for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
+            cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+            cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then kill "$pid" || true; fi
+          done
+          for i in $(seq 1 20); do ! ss -ltnp 2>/dev/null | grep -q ':8088' && break; sleep 1; done
+          ! ss -ltnp 2>/dev/null | grep -q ':8088'
+          systemctl --user start leopardcat-tarot.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/ >/tmp/leopardcat-root.html; then break; fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet leopardcat-tarot.service
+
+          echo '=== verify local/public bundle ==='
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-full-share-local.js
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-full-share-local.css
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-full-share-local.js | awk '{print $1}')"
+          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-full-share-local.css | awk '{print $1}')"
+          grep -q '完整大師解讀' /tmp/leopardcat-root.html
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"; test "$code" = 200
+          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-full-share-public.js
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-full-share-public.js | awk '{print $1}')"
+          curl -fsS --max-time 8 https://leopardcat-tarot.milkcat.org/ -o /tmp/leopardcat-full-share-public.html
+          grep -q '完整大師解讀' /tmp/leopardcat-full-share-public.html
+          echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
+          echo 'leopardcat_full_master_share_deploy=PASS'
+          REMOTE
