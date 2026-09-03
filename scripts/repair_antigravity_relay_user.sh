@@ -19,7 +19,7 @@ REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
 MANIFEST="$RUNTIME/runtime-provenance.json"
 
 case "$SOURCE_REF" in
-  main|feature/realm-node-fabric-readiness) ;;
+  main|core/integration|feature/realm-node-fabric-readiness) ;;
   *) echo "ERROR: AGENTOS_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
 esac
 
@@ -167,7 +167,12 @@ print('antigravity_provider=' + worker.provider)
 PY
 )
 
-AGENTOS_REPO="$REPO" bash "$TMPDIR/install_action_relay_user.sh"
+# The Action Relay must consume the exact same governed generation selected by
+# this repair. It must not independently fall back to mutable origin/main.
+AGENTOS_REPO="$REPO" \
+AGENTOS_ACTION_SOURCE_REF="$SOURCE_REF" \
+AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT" \
+bash "$TMPDIR/install_action_relay_user.sh"
 systemctl --user is-active --quiet agentos-action-relay.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
 for i in $(seq 1 20); do
@@ -194,6 +199,7 @@ echo "antigravity_worker_sha256=$WORKER_SHA256"
 echo "antigravity_runtime_manifest=$MANIFEST"
 echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
+echo "action_relay_source_generation_pinned=PASS"
 echo "realm_fabric_install=PASS"
 echo "realm_fabric_device_flow=PASS"
 echo "realm_fabric_bootstrap_route=PASS"

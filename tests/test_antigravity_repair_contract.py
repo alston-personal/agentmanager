@@ -15,7 +15,10 @@ class AntigravityRepairContractTests(unittest.TestCase):
     def test_repair_is_branch_aware_and_allowlisted(self):
         text = _text(SCRIPT)
         self.assertIn('SOURCE_REF="${AGENTOS_REF:-main}"', text)
-        self.assertIn('main|feature/realm-node-fabric-readiness', text)
+        # core/integration is the governed integration generation. Development
+        # worker branches remain excluded from the runtime repair allowlist.
+        self.assertIn('main|core/integration|feature/realm-node-fabric-readiness', text)
+        self.assertNotIn('core/issue-194-bounded-executor-jobs)', text)
         self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
         self.assertIn('SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
         self.assertNotIn('origin/main:', text)
@@ -54,6 +57,13 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('Environment=AGENTOS_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT', text)
         self.assertIn('Environment=AGENTOS_RUNTIME_WORKER_SHA256=$WORKER_SHA256', text)
         self.assertIn('antigravity_runtime_manifest=$MANIFEST', text)
+
+    def test_action_relay_receives_same_immutable_runtime_generation(self):
+        text = _text(SCRIPT)
+        self.assertIn('AGENTOS_ACTION_SOURCE_REF="$SOURCE_REF"', text)
+        self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
+        self.assertIn('bash "$TMPDIR/install_action_relay_user.sh"', text)
+        self.assertIn('action_relay_source_generation_pinned=PASS', text)
 
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)

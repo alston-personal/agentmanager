@@ -12,6 +12,17 @@ RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-r
 RELAY_ROOT="$DATA/runtime/action-relay"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-action-relay.service"
+SOURCE_REF="${AGENTOS_ACTION_SOURCE_REF:-main}"
+EXPECTED_SOURCE_COMMIT="${AGENTOS_ACTION_SOURCE_COMMIT:-}"
+
+case "$SOURCE_REF" in
+  main|core/integration|feature/realm-node-fabric-readiness) ;;
+  *) echo "ERROR: AGENTOS_ACTION_SOURCE_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
+esac
+if [ -n "$EXPECTED_SOURCE_COMMIT" ] && ! printf '%s' "$EXPECTED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "ERROR: AGENTOS_ACTION_SOURCE_COMMIT must be a lowercase 40-character git SHA" >&2
+  exit 4
+fi
 
 for user in ubuntu agentos-node; do
   id -Gn "$user" | tr ' ' '\n' | grep -qx agentos || { echo "ERROR: $user must belong to agentos group" >&2; exit 3; }
@@ -64,22 +75,34 @@ else
   ensure_shared_dir "$RELAY_ROOT/quarantine"
 fi
 
-git -C "$REPO" fetch origin main
+# A caller may choose only an allowlisted source ref; the installer resolves it
+# once to an immutable commit. When an expected commit is supplied by an outer
+# governed repair/rollout, both generations must match exactly.
+git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
+  echo "ERROR: Action Relay source generation mismatch: expected=$EXPECTED_SOURCE_COMMIT observed=$SOURCE_COMMIT" >&2
+  exit 4
+fi
+
 if [ -e "$RUNTIME_ROOT/.git" ]; then
-  git -C "$RUNTIME_ROOT" reset --hard origin/main
+  git -C "$RUNTIME_ROOT" reset --hard "$SOURCE_COMMIT"
 else
   if [ -e "$RUNTIME_ROOT" ] && [ -n "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
     echo "ERROR: non-empty runtime root is not a worktree: $RUNTIME_ROOT" >&2; exit 2
   fi
   rmdir "$RUNTIME_ROOT" 2>/dev/null || true
-  git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" origin/main
+  git -C "$REPO" worktree add --detach "$RUNTIME_ROOT" "$SOURCE_COMMIT"
 fi
 
 (
   cd "$RUNTIME_ROOT"
   PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
-from agentos_node.action_relay import ACTIONS
+from agentos_node.executor_job_action_relay import ACTION, ACTIONS
+assert ACTION == 'agentos.executor.job'
+assert ACTION in ACTIONS
 print('action_runtime_import=ok')
+print('executor_job_action_loaded=PASS')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
 )
@@ -93,6 +116,8 @@ After=default.target
 Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
+Environment=AGENTOS_ACTION_RUNTIME_SOURCE_REF=$SOURCE_REF
+Environment=AGENTOS_ACTION_RUNTIME_SOURCE_COMMIT=$SOURCE_COMMIT
 # Actions such as agentos.antigravity.restart and layoutlab.api.restart call
 # systemctl --user from inside the relay worker. Pin them to ubuntu's existing
 # user manager explicitly; the GitHub runner has a different session/bus.
@@ -103,7 +128,10 @@ UMask=0007
 # ubuntu user-manager session. NoNewPrivileges cannot be enabled here because
 # it prevents the setgid helper from establishing the already-authorized
 # agentos group context.
-ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.action_relay --root $RELAY_ROOT'
+# The extension module registers only the fixed bounded executor-job action,
+# then delegates to the original Action Relay main. There is still one worker,
+# one spool, and one at-most-once transport.
+ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agentos_node.executor_job_action_relay --root $RELAY_ROOT'
 Restart=on-failure
 RestartSec=3
 PrivateTmp=true
@@ -138,9 +166,12 @@ if [ "$stable" -lt 3 ]; then
 fi
 
 echo "action_relay_install=PASS"
+echo "action_relay_executor_job_extension=PASS"
 echo "action_relay_group_context=agentos"
 echo "action_relay_user_bus=ubuntu:/run/user/1001/bus"
 echo "action_relay_stable_liveness=PASS"
+echo "action_relay_source_ref=$SOURCE_REF"
+echo "action_relay_source_commit=$SOURCE_COMMIT"
 echo "runtime=$RUNTIME_ROOT"
 echo "spool=$RELAY_ROOT"
 echo "unit=$UNIT"

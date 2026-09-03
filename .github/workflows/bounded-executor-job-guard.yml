@@ -1,0 +1,125 @@
+name: Bounded Executor Job Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/executor_job_contract.py'
+      - 'agent_core/controller_service.py'
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/issue117_experience_provider.py'
+      - 'scripts/install_action_relay_user.sh'
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'tests/test_executor_job_contract.py'
+      - 'tests/test_executor_job_adapter.py'
+      - 'tests/test_executor_job_action_relay.py'
+      - 'tests/test_executor_job_controller_route.py'
+      - 'tests/test_executor_job_receipt_facade.py'
+      - 'tests/test_executor_job_runtime_installer.py'
+      - 'tests/test_issue117_experience_provider.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - '.github/workflows/bounded-executor-job-guard.yml'
+  push:
+    branches:
+      - core/issue-194-bounded-executor-jobs
+    paths:
+      - 'agent_core/executor_job_contract.py'
+      - 'agent_core/controller_service.py'
+      - 'agent_core/controller_api.py'
+      - 'agent_core/control_inbox_bridge.py'
+      - 'agentos_node/executor_job_adapter.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/issue117_experience_provider.py'
+      - 'scripts/install_action_relay_user.sh'
+      - 'scripts/repair_antigravity_relay_user.sh'
+      - 'tests/test_executor_job_contract.py'
+      - 'tests/test_executor_job_adapter.py'
+      - 'tests/test_executor_job_action_relay.py'
+      - 'tests/test_executor_job_controller_route.py'
+      - 'tests/test_executor_job_receipt_facade.py'
+      - 'tests/test_executor_job_runtime_installer.py'
+      - 'tests/test_issue117_experience_provider.py'
+      - 'tests/test_control_inbox_bridge.py'
+      - '.github/workflows/bounded-executor-job-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run bounded executor-job contract tests
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest \
+            tests/test_executor_job_contract.py \
+            tests/test_executor_job_adapter.py \
+            tests/test_executor_job_action_relay.py \
+            tests/test_executor_job_controller_route.py \
+            tests/test_executor_job_receipt_facade.py \
+            tests/test_executor_job_runtime_installer.py \
+            tests/test_issue117_experience_provider.py \
+            tests/test_control_inbox_bridge.py \
+            -q
+      - name: Verify current issue117 worker contract compatibility
+        run: |
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/scripts"
+          git fetch --no-tags origin core/issue-117-experience-memory
+          dep=$(git rev-parse FETCH_HEAD)
+          git show "$dep:scripts/oracle_codex_experience_regression.py" > "$tmp/scripts/oracle_codex_experience_regression.py"
+          git show "$dep:scripts/oracle_codex_experience_regression_entry_v2.py" > "$tmp/scripts/oracle_codex_experience_regression_entry_v2.py"
+          ISSUE117_ROOT="$tmp" ISSUE117_COMMIT="$dep" AGENTOS_CODEX_EXECUTABLE=/__agentos_intentionally_missing_codex__ python - <<'PY'
+          import os
+          from pathlib import Path
+          from agent_core.executor_job_contract import canonical_experience_regression_request
+          from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry, execute_registered_executor_job
+          from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
+
+          root = Path(os.environ['ISSUE117_ROOT'])
+          base = (root / 'scripts/oracle_codex_experience_regression.py').read_text(encoding='utf-8')
+          entry = (root / 'scripts/oracle_codex_experience_regression_entry_v2.py').read_text(encoding='utf-8')
+          assert 'parser.add_argument("--output", required=True)' in base
+          assert 'parser.add_argument("--timeout", type=int, default=180)' in base
+          assert 'from scripts import oracle_codex_experience_regression as regression' in entry
+          assert 'regression.main()' in entry
+
+          registry = ExecutorJobProviderRegistry()
+          assert register_issue117_provider_if_available(registry=registry, runtime_root=root) is True
+          receipt = execute_registered_executor_job(
+              job_id='job-cross-lane-117',
+              request=canonical_experience_regression_request(),
+              registry=registry,
+          )
+          assert receipt['executor_available'] is False, receipt
+          assert receipt['routable'] is True, receipt
+          assert receipt['authorized'] is True, receipt
+          assert receipt['successful'] is False, receipt
+          assert receipt['classification'] == 'EXPERIENCE_CODEX_EXECUTOR_UNAVAILABLE', receipt
+          assert receipt['credential_exposed'] is False, receipt
+          print('issue117_provider_contract=PASS')
+          print('issue117_source_commit=' + os.environ['ISSUE117_COMMIT'])
+          PY
+      - name: Compile contract modules
+        run: |
+          python -m py_compile \
+            agent_core/executor_job_contract.py \
+            agent_core/controller_service.py \
+            agent_core/controller_api.py \
+            agent_core/control_inbox_bridge.py \
+            agentos_node/executor_job_adapter.py \
+            agentos_node/executor_job_action_relay.py \
+            agentos_node/issue117_experience_provider.py
+      - name: Validate governed runtime installers
+        run: |
+          bash -n scripts/install_action_relay_user.sh
+          bash -n scripts/repair_antigravity_relay_user.sh
