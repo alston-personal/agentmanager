@@ -37,6 +37,15 @@ class RealmFabricInstallerTests(unittest.TestCase):
         self.assertLess(restart, active)
         self.assertNotIn('enable --now agentos-realm-fabric.service', self.text)
 
+    def test_restarted_service_uses_bounded_health_readiness_window(self):
+        self.assertIn('realm_ready=0', self.text)
+        self.assertIn('for _ in $(seq 1 10); do', self.text)
+        self.assertIn('curl -fsS --max-time 2 "http://127.0.0.1:$PORT/v1/health"', self.text)
+        self.assertIn('sleep 1', self.text)
+        self.assertIn('if [ "$realm_ready" -ne 1 ]; then', self.text)
+        self.assertIn('Realm Fabric did not become healthy after restart', self.text)
+        self.assertIn('exit 4', self.text)
+
 
 if __name__ == "__main__":
     unittest.main()
