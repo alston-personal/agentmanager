@@ -1,0 +1,106 @@
+name: Issue 238 Live Employee Probe
+
+on:
+  push:
+    branches:
+      - ops/issue-238-live-employee-probe
+    paths:
+      - ".github/workflows/issue238-live-employee-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe live Employee runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+          set -a
+          source .env
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+
+          echo "checkout_sha=$(git rev-parse HEAD)"
+          echo "agent_mode=${AGENT_MODE:-<unset>}"
+          echo "worker_enable=${AGENTOS_CORE_EMPLOYEE_WORKER_HOST_ENABLE:-<unset>}"
+          echo "worker_node_id=${AGENTOS_EMPLOYEE_WORKER_NODE_ID:-<unset>}"
+          echo "wake_root=${AGENTOS_EMPLOYEE_WAKE_ROOT:-<unset>}"
+          if [ -n "${AGENTOS_EMPLOYEE_WAKE_ROOT:-}" ]; then
+            test -d "$AGENTOS_EMPLOYEE_WAKE_ROOT" && echo "wake_root_exists=true" || echo "wake_root_exists=false"
+          fi
+
+          for unit in agentos-core-supervisor.service agentos-employee-worker-host.service agentos-realm-fabric.service agentos-action-relay.service; do
+            state="$(systemctl --user is-active "$unit" 2>/dev/null || true)"
+            enabled="$(systemctl --user is-enabled "$unit" 2>/dev/null || true)"
+            pid="$(systemctl --user show "$unit" -p MainPID --value 2>/dev/null || true)"
+            echo "service=$unit active=$state enabled=$enabled pid=${pid:-0}"
+          done
+
+          echo "supervisor_env_exists=$([ -f "$HOME/.config/agentos/core-supervisor.env" ] && echo true || echo false)"
+          echo "supervisor_delivery_env_exists=$([ -f "$HOME/.config/agentos/core-supervisor-delivery.env" ] && echo true || echo false)"
+          echo "worker_env_exists=$([ -f "$HOME/.config/agentos/employee-worker-host.env" ] && echo true || echo false)"
+          if [ -f "$HOME/.config/agentos/core-supervisor.env" ]; then
+            grep -E '^(AGENTOS_SUPERVISOR_DELIVERY_MODE|AGENTOS_EMPLOYEE_RUNTIME_ROOT)=' "$HOME/.config/agentos/core-supervisor.env" || true
+          fi
+          if [ -f "$HOME/.config/agentos/core-supervisor-delivery.env" ]; then
+            grep -E '^(AGENTOS_SUPERVISOR_DELIVERY_MODE|AGENTOS_SUPERVISOR_ONE_DATA_ROOT)=' "$HOME/.config/agentos/core-supervisor-delivery.env" || true
+          fi
+          if [ -f "$HOME/.config/agentos/employee-worker-host.env" ]; then
+            grep -E '^(AGENTOS_EMPLOYEE_RUNTIME_ROOT|AGENTOS_EMPLOYEE_WAKE_ROOT|AGENTOS_EMPLOYEE_WORKER_HOST_STATE_ROOT|AGENTOS_EMPLOYEE_WORKER_STATE_ROOT|AGENTOS_EMPLOYEE_WORKER_NODE_ID)=' "$HOME/.config/agentos/employee-worker-host.env" || true
+          fi
+
+          RUNTIME_ROOT="$DATA_ROOT/employee-runtime"
+          echo "runtime_root=$RUNTIME_ROOT"
+          for kind in employees assignments messages; do
+            dir="$RUNTIME_ROOT/$kind"
+            if [ -d "$dir" ]; then
+              echo "$kind=$(find "$dir" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort | paste -sd, -)"
+            else
+              echo "$kind=<missing>"
+            fi
+          done
+
+          if [ -f governance/employee-worker-adapters-v2.json ]; then
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('governance/employee-worker-adapters-v2.json')
+          d=json.loads(p.read_text())
+          print('adapter_schema='+str(d.get('schema')))
+          adapters=d.get('adapters') or []
+          print('adapter_runner_kinds='+','.join(str(a.get('runner_kind')) for a in adapters))
+          PY
+          else
+            echo "adapter_registry_missing=true"
+          fi
+          REMOTE
