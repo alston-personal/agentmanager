@@ -1,0 +1,74 @@
+name: Oracle Drift Probe
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-drift-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate probe connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Read-only Oracle checkout drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+
+          echo "=== ORACLE_DRIFT_PROBE ==="
+          echo "head=$(git rev-parse HEAD)"
+          echo "branch=$(git symbolic-ref --short -q HEAD || echo DETACHED)"
+          echo "origin=$(git remote get-url origin | sed -E 's#(https?://)[^/@]+@#\1***@#')"
+          echo "tracked_dirty_count=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+
+          echo "--- name-status ---"
+          git diff --name-status -- .
+
+          echo "--- numstat ---"
+          git diff --numstat -- .
+
+          echo "--- sha256 modified tracked files ---"
+          while IFS= read -r path; do
+            [ -f "$path" ] || continue
+            sha256sum -- "$path"
+          done < <(git diff --name-only --diff-filter=ACMRT -- .)
+
+          echo "--- file modes ---"
+          git diff --summary -- .
+
+          echo "=== END_ORACLE_DRIFT_PROBE ==="
+          REMOTE
