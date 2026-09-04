@@ -388,6 +388,16 @@ jobs:
             Write-Output 'native_lifecycle_acceptance=PENDING'
           }
           Write-Output 'antigravity_hook_diagnostic_summary=BEGIN'
+          if(Test-Path $hooks){
+            $currentHooks=Get-Content -Raw $hooks | ConvertFrom-Json
+            $managedHandler=@($currentHooks.'agentos-one-preinvocation'.PreInvocation)[0]
+            Write-Output ('managed_hook_command='+$managedHandler.command)
+            Write-Output ('managed_hooks_last_write_utc='+(Get-Item $hooks).LastWriteTimeUtc.ToString('o'))
+          }
+          $languageServers=Get-CimInstance Win32_Process -Filter "Name='language_server_windows_x64.exe'" -ErrorAction SilentlyContinue
+          foreach($serverProcess in $languageServers){
+            Write-Output ('language_server_process_id='+$serverProcess.ProcessId+';creation_date='+$serverProcess.CreationDate)
+          }
           if(Test-Path $settingsPath){
             $settingsText=Get-Content -Raw $settingsPath
             foreach($match in [regex]::Matches($settingsText,'(?i)"[^"\r\n]*hook[^"\r\n]*"\s*:\s*(true|false|"[^"\r\n]{0,80}"|[0-9]+)')){

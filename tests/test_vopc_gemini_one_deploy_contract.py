@@ -95,6 +95,8 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn("os.environ['GITHUB_RUN_ID']", client)
         self.assertIn("native_lifecycle_acceptance=PASS", client)
         self.assertIn("gemini-launcher-acceptance", client)
+        self.assertIn("managed_hooks_last_write_utc", client)
+        self.assertIn("language_server_process_id", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 
 
