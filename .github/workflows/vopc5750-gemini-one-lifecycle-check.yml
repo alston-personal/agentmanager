@@ -93,6 +93,7 @@ jobs:
               Write-Output 'isolated_lifecycle_probe=FAIL'
               if($probeOutput -match 'code=([^\)]+)'){ Write-Output ('isolated_lifecycle_probe_code='+$Matches[1]) }
               $client=Get-Content -Raw ([string]$server.env.AGENTOS_CLIENT_CONFIG) | ConvertFrom-Json
+              Write-Output ('client_one_url='+[string]$client.one_url)
               $headers=@{Authorization=('Bearer '+[string]$client.node_token);Accept='application/json'}
               $body=@{schema='agentos.resolve-request/v1';intent='continue';selection='active';node_id=[string]$client.node_id} | ConvertTo-Json -Compress
               try {
