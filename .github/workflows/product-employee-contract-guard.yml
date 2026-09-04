@@ -1,0 +1,37 @@
+name: Product Employee Contract Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - '.agent/roles/registry.yaml'
+      - 'governance/employee-skills.json'
+      - 'governance/zeus-writer-employee.json'
+      - 'governance/youtube-ai-manager-employee.json'
+      - 'governance/employee-worker-adapters.json'
+      - 'agentos_node/employee_worker_host.py'
+      - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/product_employee_worker_cli.py'
+      - 'tests/test_product_employee_contracts.py'
+      - 'tests/test_product_employee_worker.py'
+      - '.github/workflows/product-employee-contract-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest pyyaml
+      - name: Verify product Employee contracts
+        run: python -m pytest -q tests/test_product_employee_contracts.py
