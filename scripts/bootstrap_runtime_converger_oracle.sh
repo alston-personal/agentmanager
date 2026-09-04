@@ -68,14 +68,45 @@ systemctl --user is-active --quiet agentos-action-relay.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
 curl -fsS --max-time 5 http://127.0.0.1:8780/v1/health >/dev/null
 
-# Local source-level proof that the manifest now sees the installed marker.
+# Local source-level proof that the manifest sees the installed marker.
 AGENT_DATA_ROOT="$DATA" python3 - <<'PY'
 from agent_core.realm_server import _core_node_manifest
 manifest = _core_node_manifest("bootstrap-proof")
 assert "node.runtime.converge" in set(manifest.get("capabilities") or [])
 PY
 
+# Operating proof: the restarted Realm process must have persisted its own Core
+# manifest + heartbeat into the durable Node Registry. Source presence alone is
+# not acceptance. Retry briefly only for process-start scheduling; never mutate
+# the registry from this bootstrap proof.
+registered=0
+for _ in $(seq 1 10); do
+  if AGENT_DATA_ROOT="$DATA" python3 - <<'PY'
+from agent_core.node_registry import NodeRegistry
+
+node_map = NodeRegistry().node_map()
+matches = [n for n in node_map.get("nodes", []) if n.get("node_id") == "oracle-core-node"]
+assert len(matches) == 1
+node = matches[0]
+assert node.get("status") == "online"
+assert "node.runtime.converge" in set(node.get("capabilities") or [])
+assert node.get("heartbeat_age_seconds") is not None
+assert node.get("heartbeat_age_seconds") <= node.get("heartbeat_stale_after_seconds", 30)
+PY
+  then
+    registered=1
+    break
+  fi
+  sleep 1
+done
+if [ "$registered" -ne 1 ]; then
+  rm -f "$MARKER"
+  echo "ERROR: restarted Realm did not self-register oracle-core-node with live bounded converge capability" >&2
+  exit 4
+fi
+
 echo "runtime_converger_bootstrap=PASS"
 echo "runtime_converger_source_ref=$SOURCE_REF"
 echo "runtime_converger_source_commit=$SOURCE_COMMIT"
 echo "runtime_converger_capability=node.runtime.converge"
+echo "runtime_converger_core_node_registration=PASS"

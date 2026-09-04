@@ -33,6 +33,26 @@ def test_bootstrap_uses_fixed_installers_and_verifies_installed_marker():
     assert '"node.runtime.converge" in set(manifest.get("capabilities") or [])' in text
 
 
+def test_bootstrap_requires_operating_core_self_registration_without_registry_mutation():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    assert "from agent_core.node_registry import NodeRegistry" in text
+    assert 'n.get("node_id") == "oracle-core-node"' in text
+    assert 'node.get("status") == "online"' in text
+    assert '"node.runtime.converge" in set(node.get("capabilities") or [])' in text
+    assert 'node.get("heartbeat_age_seconds") <= node.get("heartbeat_stale_after_seconds", 30)' in text
+    assert 'runtime_converger_core_node_registration=PASS' in text
+    assert "register_manifest(" not in text
+    assert "record_heartbeat(" not in text
+
+
+def test_failed_live_registration_revokes_capability_marker():
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    failure_gate = text.index('if [ "$registered" -ne 1 ]')
+    marker_remove = text.index('rm -f "$MARKER"', failure_gate)
+    failure_exit = text.index('exit 4', failure_gate)
+    assert failure_gate < marker_remove < failure_exit
+
+
 def test_bootstrap_has_no_generic_execution_inputs():
     text = BOOTSTRAP.read_text(encoding="utf-8")
     forbidden = ("$3", "$4", "eval ", "bash -c", "sh -c", "--command", "--argv", "--module", "--executable")
