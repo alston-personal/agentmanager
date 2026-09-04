@@ -1,0 +1,47 @@
+{
+  "schema": "agentos.runtime-converge-policy/v1",
+  "capability": "node.runtime.converge",
+  "target_node_ids": ["oracle-core-node"],
+  "allowed_repository": "alston-personal/agentmanager",
+  "allowed_source_refs": ["core/integration"],
+  "require_exact_commit": true,
+  "require_clean_tracked_checkout": true,
+  "require_health_check": true,
+  "rollback_on_failed_health": true,
+  "ambiguous_state": "unknown_no_blind_retry",
+  "bootstrap_authority": "explicit_manual_deploy_only",
+  "steady_state_transport": "one_direct",
+  "forbidden_request_fields": [
+    "argv",
+    "command",
+    "credentials",
+    "environment",
+    "executable",
+    "module",
+    "password",
+    "script",
+    "shell",
+    "token"
+  ],
+  "receipt_fields": [
+    "request_id",
+    "node_id",
+    "source_ref",
+    "source_commit",
+    "previous_commit",
+    "resulting_commit",
+    "health",
+    "rollback",
+    "status",
+    "observed_at"
+  ],
+  "invariants": [
+    "capability_availability_does_not_grant_authority",
+    "no_generic_shell_or_argv",
+    "no_credential_readback",
+    "no_protected_main_mutation",
+    "github_actions_is_not_steady_state_control_plane",
+    "one_failure_does_not_expand_authority",
+    "ambiguous_external_side_effect_is_unknown"
+  ]
+}
