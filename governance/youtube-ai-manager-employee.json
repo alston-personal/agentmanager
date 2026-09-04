@@ -1,0 +1,67 @@
+{
+  "schema": "agentos.employee-bootstrap/v1",
+  "bootstrap_id": "youtube-ai-manager-product-v1",
+  "employee": {
+    "employee_id": "youtube-ai-manager",
+    "display_name": "YouTube AI Manager",
+    "role_ids": [
+      "product.youtube_ai_manager"
+    ],
+    "skill_ids": [
+      "youtube.optimization.scan"
+    ]
+  },
+  "initial_work_item": {
+    "schema": "agentos.core-work-item/v1",
+    "work_item_id": "youtube-ai-manager-scan-v1",
+    "source_kind": "canonical_state",
+    "source_ref": "core:issue-238:youtube-ai-manager",
+    "project_id": "youtube-ai-manager",
+    "employee_id": "youtube-ai-manager",
+    "assignment_id": "youtube-ai-manager-scan-v1",
+    "goal": "Perform a grounded read-only optimization scan of explicitly authorized YouTube channel/video scope and persist candidates or an authorization blocker; do not mutate external metadata without separately configured authority.",
+    "constraints": [
+      "authorized-channel-scope-required",
+      "read-only-first",
+      "no-external-youtube-api-mutation-authority",
+      "status-or-memory-symlinks-are-not-liveness-proof",
+      "no-credential-or-session-identity-output",
+      "receipt-and-provenance-required"
+    ],
+    "dependency_refs": [],
+    "required_capabilities": [
+      "youtube.optimization.scan"
+    ],
+    "authority_requirements": [
+      "role-contract-must-cover-required-capability",
+      "skill-does-not-grant-external-api-write-authority",
+      "external-metadata-mutation-requires-separate-governed-authority",
+      "runtime-mutation-requires-separate-authority"
+    ],
+    "source_revision": "youtube-ai-manager-product-v1",
+    "state": "open"
+  },
+  "initial_thread_head": "product:youtube-ai-manager:start",
+  "acceptance_marker": "YOUTUBE_AI_MANAGER_PERSISTENT_EMPLOYEE=VERIFIED",
+  "acceptance_requires": [
+    "active_role_hydrated",
+    "active_skill_hydrated",
+    "authorized-read-scope-resolved-or-explicitly-blocked",
+    "governed_one_wake_delivered",
+    "executor_claim_observed",
+    "optimization-scan-checkpoint-observed",
+    "fresh-executor-or-session-resume-observed",
+    "status-or-memory-symlink-not-used-as-liveness-proof",
+    "credential-and-session-identity-not-exposed",
+    "terminal-or-checkpoint-sanitized-employee-receipt-persisted"
+  ],
+  "invariants": [
+    "employee_identity_is_not_executor_node_model_or_session_identity",
+    "bootstrap_never_overwrites_progressed_thread_head",
+    "bootstrap_never_reopens_terminal_assignment",
+    "role_status_active_is_not_operating_evidence",
+    "static_ci_cannot_emit_verified_marker",
+    "github_actions_is_not_control_plane_fallback",
+    "external_api_write_requires_separate_authority"
+  ]
+}
