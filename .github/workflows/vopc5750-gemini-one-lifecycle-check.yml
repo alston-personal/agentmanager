@@ -30,11 +30,23 @@ jobs:
           from urllib.request import Request, urlopen
 
           from agent_core.controller_api import ControllerService
+          from agent_core.active_continuation import resolve_active_continuation
           from agent_core.realm_fabric import RealmFabricStore
 
           node_id = 'vopc5750'
           task_id = 'vopc-gemini-lifecycle-' + os.environ['GITHUB_RUN_ID']
           store = RealmFabricStore()
+          try:
+              active = resolve_active_continuation(data_root=os.environ['AGENT_DATA_ROOT'])
+              selector = active.get('active_selector') or {}
+              print('oracle_active_selector=' + json.dumps({
+                  'project_id': selector.get('project_id'),
+                  'index_id': selector.get('index_id'),
+                  'ir_id': selector.get('ir_id'),
+                  'selection_source': active.get('selection_source'),
+              }, sort_keys=True))
+          except Exception as exc:
+              print('oracle_active_selector_error=' + type(exc).__name__)
           node = ControllerService(store).node(node_id)
           roots = node.get('workspace_roots') or {}
           cwd = (roots.get('readable') or [None])[0]
