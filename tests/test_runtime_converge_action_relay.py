@@ -59,6 +59,30 @@ def test_fixed_runtime_install_converges_product_employee_profile_after_realm(mo
     ]
 
 
+def test_current_generation_still_reconciles_fixed_runtime(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True))
+    installs = []
+    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: installs.append(repo) or True)
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert installs == [tmp_path]
+    assert result["classification"] == "CURRENT_GENERATION_RECONCILED"
+    assert result["status"] == "completed"
+    assert result["health"] == "passed"
+    assert result["idempotent"] is True
+    assert result["resulting_commit"] == SHA
+
+
+def test_current_generation_reconcile_failure_is_not_reported_healthy(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True))
+    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: False)
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert result["classification"] == "CURRENT_GENERATION_RECONCILE_FAILED"
+    assert result["status"] == "failed"
+    assert result["health"] == "failed"
+    assert result["idempotent"] is True
+    assert result["rollback"] == "not_needed"
+
+
 def test_preflight_refuses_dirty_checkout(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
 

@@ -149,7 +149,13 @@ def _safe_failure(request: Mapping[str, Any], classification: str, *, previous: 
 
 
 def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -> dict[str, Any]:
-    """Converge the Oracle Core checkout to an exact current core/integration head."""
+    """Converge exact source and reconcile its fixed operating profile.
+
+    Source equality is not operating-profile equality.  Even when HEAD already
+    equals the requested generation, the source-owned installer sequence is
+    replayed idempotently so stopped services or missing host-local profile state
+    cannot survive a successful convergence receipt.
+    """
     canonical = validate_runtime_converge_request(request).as_payload()
     previous: str | None = None
     try:
@@ -158,7 +164,7 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
         return _safe_failure(canonical, str(exc))
 
     if idempotent:
-        healthy = _health()
+        reconciled = _install_fixed_runtime(repo)
         return {
             "request_id": canonical["request_id"],
             "node_id": canonical["node_id"],
@@ -167,10 +173,10 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
             "source_commit": canonical["source_commit"],
             "previous_commit": previous,
             "resulting_commit": previous,
-            "health": "passed" if healthy else "failed",
+            "health": "passed" if reconciled else "failed",
             "rollback": "not_needed",
-            "status": "completed" if healthy else "failed",
-            "classification": "ALREADY_CONVERGED" if healthy else "CURRENT_GENERATION_UNHEALTHY",
+            "status": "completed" if reconciled else "failed",
+            "classification": "CURRENT_GENERATION_RECONCILED" if reconciled else "CURRENT_GENERATION_RECONCILE_FAILED",
             "idempotent": True,
             "credential_exposed": False,
             "observed_at": _utc_now(),
