@@ -1,0 +1,17 @@
+[Unit]
+Description=AgentOS Oracle Product Employee Wake Node
+After=network.target agentos-realm-fabric.service
+Requires=agentos-realm-fabric.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/agentmanager
+EnvironmentFile=/home/ubuntu/agentmanager/.env
+ExecStart=/usr/bin/python3 -m agentos_node.employee_wake_node --data-root /home/ubuntu/agent-data --config /home/ubuntu/agent-data/employee-wake-node/client.json --wake-root /home/ubuntu/agent-data/employee-wakes --runtime-root /home/ubuntu/agent-data/employee-runtime run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
