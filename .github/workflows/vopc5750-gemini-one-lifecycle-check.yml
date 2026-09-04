@@ -100,6 +100,13 @@ jobs:
                 Write-Output 'direct_active_request=PASS'
               } catch {
                 $detail=[string]$_.ErrorDetails.Message
+                if((-not $detail) -and $null -ne $_.Exception.Response){
+                  try {
+                    $reader=New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                    $detail=$reader.ReadToEnd()
+                    $reader.Dispose()
+                  } catch { $detail='' }
+                }
                 $category='unclassified_http_error'
                 if($detail -match 'stale'){ $category='active_selector_stale' }
                 elseif($detail -match 'selector.*missing|selector missing'){ $category='active_selector_missing' }
@@ -108,6 +115,10 @@ jobs:
                 elseif($detail -match 'execution-head / IR generation mismatch'){ $category='canonical_generation_mismatch' }
                 elseif($detail -match 'project query is required'){ $category='server_active_selection_not_applied' }
                 elseif($detail -match 'selection must be project or active'){ $category='server_selection_contract_mismatch' }
+                elseif($detail -match 'node_id is required'){ $category='node_id_missing' }
+                elseif($detail -match 'invalid resolve request schema'){ $category='request_schema_mismatch' }
+                elseif($detail -match 'only continue intent'){ $category='request_intent_mismatch' }
+                elseif($detail -match 'ValueError'){ $category='other_server_validation_error' }
                 Write-Output ('direct_active_request='+$category)
               }
             } else {
