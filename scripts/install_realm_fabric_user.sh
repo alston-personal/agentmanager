@@ -22,6 +22,15 @@ if [ "${AGENT_MODE:-CLIENT}" != "CORE" ]; then
   exit 2
 fi
 
+# The Realm reads bounded installed-capability markers from group-protected
+# AgentOS runtime state. Do not rely on the long-lived systemd --user manager's
+# supplemental-group snapshot: a user can be added to agentos after that manager
+# started. Verify membership in account state, then enter the group explicitly
+# for the service process just as the governed Action Relay does.
+command -v sg >/dev/null 2>&1 || { echo "Realm Fabric requires sg for the agentos execution boundary" >&2; exit 3; }
+getent group agentos >/dev/null || { echo "Missing agentos group" >&2; exit 3; }
+id -Gn "$(id -un)" | tr ' ' '\n' | grep -qx agentos || { echo "Realm Fabric service user must belong to agentos group" >&2; exit 3; }
+
 DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
 FABRIC_FILE="$DATA_ROOT/realm/fabric.json"
 REQUESTED_REALM_ID="${AGENTOS_REALM_ID:-}"
@@ -69,7 +78,8 @@ Type=simple
 WorkingDirectory=$LOGIC_ROOT
 EnvironmentFile=$ENV_FILE
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
-ExecStart=$PYTHON_BIN -m agent_core.realm_cli serve --host 127.0.0.1 --port $PORT
+Environment=PYTHONPATH=$LOGIC_ROOT
+ExecStart=/usr/bin/sg agentos -c '$PYTHON_BIN -m agent_core.realm_cli serve --host 127.0.0.1 --port $PORT'
 Restart=always
 RestartSec=5
 StandardOutput=append:$DATA_ROOT/logs/realm-fabric.log
@@ -88,7 +98,7 @@ systemctl --user enable agentos-realm-fabric.service
 systemctl --user restart agentos-realm-fabric.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
 
-# systemd may report the process active before the HTTP listener is ready.
+# systemd may report the wrapper active before the HTTP listener is ready.
 # Accept only after a bounded readiness window; never turn a transient startup
 # race into an unbounded wait or a false-positive health result.
 realm_ready=0
@@ -107,3 +117,4 @@ fi
 echo
 echo "realm_id=$REALM_ID"
 echo "realm_fabric_port=$PORT"
+echo "realm_group_boundary=agentos"

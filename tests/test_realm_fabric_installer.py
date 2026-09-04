@@ -27,6 +27,17 @@ class RealmFabricInstallerTests(unittest.TestCase):
         self.assertIn('exit 4', self.text)
         self.assertNotIn('REALM_ID="${AGENTOS_REALM_ID:-realm-primary}"', self.text)
 
+    def test_installer_requires_and_enters_agentos_group_boundary(self):
+        self.assertIn('command -v sg >/dev/null 2>&1', self.text)
+        self.assertIn('getent group agentos >/dev/null', self.text)
+        self.assertIn("grep -qx agentos", self.text)
+        self.assertIn('Environment=PYTHONPATH=$LOGIC_ROOT', self.text)
+        self.assertIn(
+            "ExecStart=/usr/bin/sg agentos -c '$PYTHON_BIN -m agent_core.realm_cli serve --host 127.0.0.1 --port $PORT'",
+            self.text,
+        )
+        self.assertIn('realm_group_boundary=agentos', self.text)
+
     def test_installer_restarts_existing_service_after_unit_update(self):
         daemon_reload = self.text.index('systemctl --user daemon-reload')
         enable = self.text.index('systemctl --user enable agentos-realm-fabric.service')
