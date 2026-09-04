@@ -391,6 +391,7 @@ def probe_preinvocation_hook(
     *,
     client_config: Path,
     audit_path: Path,
+    launcher: Path | None = None,
 ) -> dict[str, Any]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo_root)
@@ -406,8 +407,23 @@ def probe_preinvocation_hook(
         "artifactDirectoryPath": "",
         "modelName": "gemini-client-installer-probe",
     }
+    if launcher is None:
+        command = [str(python), "-m", "agentos_node.antigravity_one_hook"]
+        execution = "python-module"
+    elif os.name == "nt":
+        command = [
+            os.environ.get("COMSPEC", "cmd.exe"),
+            "/d",
+            "/s",
+            "/c",
+            f'""{launcher}""',
+        ]
+        execution = "windows-cmd-launcher"
+    else:
+        command = ["/bin/sh", str(launcher)]
+        execution = "posix-shell-launcher"
     result = subprocess.run(
-        [str(python), "-m", "agentos_node.antigravity_one_hook"],
+        command,
         cwd=str(repo_root),
         env=env,
         input=json.dumps(hook_input),
@@ -455,6 +471,7 @@ def probe_preinvocation_hook(
         "ir_id": selector.get("ir_id"),
         "executor_class": envelope.get("executor_class"),
         "credential_exposed": False,
+        "execution": execution,
     }
 
 
@@ -513,18 +530,19 @@ def main(argv: list[str] | None = None) -> int:
     if mode == CLIENT_MODE:
         assert client_config is not None
         audit_path = state_root / "antigravity-preinvocation-last.json"
-        hook_probe = probe_preinvocation_hook(
-            python,
-            repo_root,
-            client_config=client_config,
-            audit_path=audit_path,
-        )
         hook_launcher = write_hook_launcher(
             state_root,
             python=python,
             repo_root=repo_root,
             client_config=client_config,
             audit_path=audit_path,
+        )
+        hook_probe = probe_preinvocation_hook(
+            python,
+            repo_root,
+            client_config=client_config,
+            audit_path=audit_path,
+            launcher=hook_launcher,
         )
         hooks_config = antigravity_hooks_config_path()
         hook = write_hooks_config(hooks_config, launcher=hook_launcher)
@@ -560,4 +578,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

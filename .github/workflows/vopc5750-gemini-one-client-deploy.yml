@@ -217,7 +217,7 @@ jobs:
           if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
           Write-Output 'windows_antigravity_runtime_fingerprint=BEGIN'
           $appRoot=Join-Path $env:LOCALAPPDATA 'Programs\Antigravity IDE'
-          $exe=Join-Path $appRoot 'Antigravity.exe'
+          $exe=Join-Path $appRoot 'Antigravity IDE.exe'
           if(Test-Path $exe){
             $version=(Get-Item $exe).VersionInfo
             Write-Output ('antigravity_file_version='+$version.FileVersion)
@@ -248,6 +248,20 @@ jobs:
             }
           }
           Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
+          if(Test-Path $hookConfigPath){
+            $safeHooks=Get-Content -Raw $hookConfigPath | ConvertFrom-Json
+            foreach($property in $safeHooks.PSObject.Properties){
+              $hook=$property.Value
+              $events=@($hook.PSObject.Properties.Name | Where-Object { $_ -in @('PreToolUse','PostToolUse','PreInvocation','PostInvocation','Stop') }) -join ','
+              Write-Output ('windows_hook_shape=name:'+ $property.Name +';enabled:'+ $hook.enabled +';events:'+ $events)
+              foreach($handler in @($hook.PreInvocation)){
+                if($null -ne $handler){
+                  $commandLeaf=Split-Path ([string]$handler.command).Trim('"') -Leaf
+                  Write-Output ('windows_preinvocation_shape=type:'+ $handler.type +';command_leaf:'+ $commandLeaf +';timeout:'+ $handler.timeout)
+                }
+              }
+            }
+          }
           $outRoot=Join-Path $appRoot 'resources\app\out'
           if(Test-Path $outRoot){
             $agentBundle=Join-Path $outRoot 'jetskiAgent\main.js'
@@ -270,17 +284,21 @@ jobs:
           } else {
             Write-Output 'antigravity_out_root=MISSING'
           }
-          $logRoot=Join-Path $env:APPDATA 'Antigravity\logs'
-          if(Test-Path $logRoot){
-            $logMatches=Get-ChildItem -Path $logRoot -Recurse -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddDays(-2) } |
-              Select-String -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json' -List -ErrorAction SilentlyContinue
-            Write-Output ('antigravity_recent_hook_log_file_count='+@($logMatches).Count)
-            foreach($match in ($logMatches | Select-Object -First 20)){
-              Write-Output ('antigravity_recent_hook_log_file='+$match.Path.Substring($logRoot.Length).TrimStart('\'))
+          foreach($dataName in @('Antigravity','Antigravity IDE')){
+            $dataRoot=Join-Path $env:APPDATA $dataName
+            $logRoot=Join-Path $dataRoot 'logs'
+            Write-Output ('antigravity_data_root='+$dataName+';exists='+(Test-Path $dataRoot).ToString().ToLowerInvariant())
+            if(Test-Path $logRoot){
+              $logMatches=Get-ChildItem -Path $logRoot -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddDays(-2) } |
+                Select-String -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json','command failed','failed to parse' -List -ErrorAction SilentlyContinue
+              Write-Output ('antigravity_recent_hook_log_file_count='+$dataName+':'+@($logMatches).Count)
+              foreach($match in ($logMatches | Select-Object -First 20)){
+                Write-Output ('antigravity_recent_hook_log_file='+$dataName+':'+$match.Path.Substring($logRoot.Length).TrimStart('\'))
+              }
+            } else {
+              Write-Output ('antigravity_log_root='+$dataName+':MISSING')
             }
-          } else {
-            Write-Output 'antigravity_log_root=MISSING'
           }
           $appDataCandidates=Get-ChildItem -Path $env:APPDATA -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match 'gravity|windsurf|gemini' } |
@@ -330,6 +348,17 @@ jobs:
           if($attestation.selection_source -ne 'ONE_ACTIVE_CONTINUATION'){ throw 'installer selector source mismatch' }
           if($attestation.executor_class -ne 'antigravity-gemini'){ throw 'installer executor identity mismatch' }
           if($attestation.credential_exposed -ne $false){ throw 'credential isolation check failed' }
+          $launcher=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\agentos-one-preinvocation.cmd'
+          if(-not (Test-Path $launcher)){ throw 'managed Windows hook launcher missing' }
+          $launcherInput=@{
+            invocationNum=0; initialNumSteps=1; conversationId='agentos-vopc-launcher-acceptance';
+            workspacePaths=@($target); transcriptPath=''; artifactDirectoryPath=''; modelName='gemini-launcher-acceptance'
+          } | ConvertTo-Json -Compress
+          $launcherOutput=$launcherInput | & $env:COMSPEC /d /s /c ('""'+$launcher+'""')
+          if($LASTEXITCODE -ne 0){ throw 'managed Windows hook launcher execution failed' }
+          $launcherResult=$launcherOutput | ConvertFrom-Json
+          if(@($launcherResult.injectSteps).Count -lt 1){ throw 'managed Windows hook launcher emitted no injectSteps' }
+          Write-Output 'windows_hook_launcher_acceptance=PASS'
           Write-Output ('agentos_source_commit='+$source)
           Write-Output ('project_id='+$attestation.project_id)
           Write-Output ('index_id='+$attestation.index_id)
@@ -400,4 +429,3 @@ jobs:
           print('vopc5750_gemini_one_client_deploy=PASS')
           print('antigravity_reload_required=YES')
           PY
-

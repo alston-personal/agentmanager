@@ -64,7 +64,57 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
         self.assertIn("one_resolve_active", installer.GLOBAL_RULE)
         self.assertIn("workspace is environment metadata", installer.GLOBAL_RULE)
 
+    def test_windows_probe_executes_the_managed_cmd_launcher(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            completed = mock.Mock(returncode=0, stderr="")
+            completed.stdout = json.dumps(
+                {
+                    "injectSteps": [
+                        {
+                            "ephemeralMessage": (
+                                "ONE_PREINVOCATION_IR\n"
+                                + json.dumps(
+                                    {
+                                        "selection_source": "ONE_ACTIVE_CONTINUATION",
+                                        "executor_class": "antigravity-gemini",
+                                        "executor_identity_bound": True,
+                                        "credential_exposed": False,
+                                        "active_selector": {
+                                            "project_id": "agentos-core",
+                                            "index_id": "idx-1",
+                                            "ir_id": "ir-1",
+                                        },
+                                        "canonical_ir": {
+                                            "index_id": "idx-1",
+                                            "ir_id": "ir-1",
+                                        },
+                                    }
+                                )
+                            )
+                        }
+                    ]
+                }
+            )
+            launcher = root / "state path" / "hook.cmd"
+            with (
+                mock.patch.object(installer.os, "name", "nt"),
+                mock.patch.dict(installer.os.environ, {"COMSPEC": "cmd.exe"}),
+                mock.patch.object(installer.subprocess, "run", return_value=completed) as run,
+            ):
+                evidence = installer.probe_preinvocation_hook(
+                    root / "python.exe",
+                    root,
+                    client_config=root / "client.json",
+                    audit_path=root / "audit.json",
+                    launcher=launcher,
+                )
+            self.assertEqual(evidence["execution"], "windows-cmd-launcher")
+            self.assertEqual(
+                run.call_args.args[0],
+                ["cmd.exe", "/d", "/s", "/c", f'""{launcher}""'],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-
