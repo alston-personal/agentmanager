@@ -1,0 +1,69 @@
+name: Oracle Realm Exact Context Probe
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-realm-exact-context-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect service-equivalent import context
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+          set -a
+          source .env
+          set +a
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          PY="$ROOT/.venv/bin/python3"
+          [ -x "$PY" ] || PY="$(command -v python3)"
+          echo "head=$(git rev-parse HEAD)"
+          echo "python=$PY"
+          echo "cwd=$PWD"
+          AGENT_DATA_ROOT="$DATA_ROOT" "$PY" - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          import agent_core.realm_server as rs
+          import agent_core.runtime_converge_capability as rc
+          print('sys_path_0='+str(sys.path[0]))
+          print('realm_server_file='+rs.__file__)
+          print('runtime_capability_file='+rc.__file__)
+          print('marker_path='+str(rc.default_marker_path()))
+          print('marker_exists='+str(rc.default_marker_path().is_file()).lower())
+          print('installed_caps='+','.join(rc.installed_core_capabilities()))
+          print('manifest_caps='+','.join(rs._core_node_manifest('realm-alston').get('capabilities') or []))
+          PY
+          echo "--- unit source binding ---"
+          systemctl --user cat agentos-realm-fabric.service --no-pager | grep -E '^(WorkingDirectory|Environment=PYTHONPATH|Environment=AGENT_DATA_ROOT|ExecStart)=' || true
+          REMOTE
