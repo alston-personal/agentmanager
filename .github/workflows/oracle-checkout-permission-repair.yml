@@ -1,0 +1,92 @@
+name: Oracle Checkout Permission Repair
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-checkout-permission-repair.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Repair exact rollback drift and shared checkout modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+
+          OLD_SHA="42f21560c7d7e6692373938358f57b9262e198f0"
+          TARGET_SHA="1dbdf20d76597e438c900df7ccb434a962e05075"
+          COMPRESSION=".agent/rules/COMPRESSION_PROMPT.md"
+          SOURCES="agentos_runtime.egg-info/SOURCES.txt"
+
+          [ "$(git rev-parse HEAD)" = "$OLD_SHA" ] || { echo "repair_refused=head_mismatch"; exit 2; }
+          dirty="$(git diff --name-only -- . | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n' "$COMPRESSION" "$SOURCES" | LC_ALL=C sort)"
+          [ "$dirty" = "$expected" ] || { echo "repair_refused=unexpected_dirty_set"; printf '%s\n' "$dirty"; exit 2; }
+
+          git fetch origin "$TARGET_SHA"
+          tmp_target="$(mktemp)"
+          tmp_old="$(mktemp)"
+          trap 'rm -f "$tmp_target" "$tmp_old"' EXIT
+          git show "$TARGET_SHA:$COMPRESSION" > "$tmp_target"
+          cmp -s "$tmp_target" "$COMPRESSION" || { echo "repair_refused=compression_not_exact_target"; exit 2; }
+          git show "$OLD_SHA:$COMPRESSION" > "$tmp_old"
+
+          sudo -n true
+          cat "$tmp_old" | sudo -n tee "$COMPRESSION" >/dev/null
+          git restore --source="$OLD_SHA" -- "$SOURCES"
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "repair_failed=tracked_tree_not_clean"; exit 2; }
+
+          [ "$(stat -c %G .agentos)" = "agentos" ] || { echo "repair_refused=agentos_group_mismatch"; exit 2; }
+          [ "$(stat -c %G .agentos/evidence)" = "agentos" ] || { echo "repair_refused=evidence_group_mismatch"; exit 2; }
+          sudo -n chmod 2775 .agentos .agentos/evidence
+          [ "$(stat -c %a .agentos)" = "2775" ] || { echo "repair_failed=agentos_mode"; exit 2; }
+          [ "$(stat -c %a .agentos/evidence)" = "2775" ] || { echo "repair_failed=evidence_mode"; exit 2; }
+
+          for path in \
+            .agentos/evidence/layoutlab-official-v2.txt \
+            agentos_node/bootstrap_control.py \
+            'dashboard/app/api/agentos/[...path]/route.ts'; do
+            [ ! -e "$path" ] || { echo "repair_refused=blocker_reappeared:$path"; exit 2; }
+          done
+
+          echo "rollback_drift_repaired=true"
+          echo "agentos_mode=2775"
+          echo "evidence_mode=2775"
+          echo "tracked_dirty_count=0"
+          REMOTE
