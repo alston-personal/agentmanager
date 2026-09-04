@@ -296,14 +296,7 @@ jobs:
             } else {
               Write-Output 'windows_jetski_agent_bundle=MISSING'
             }
-            $matches=Get-ChildItem -Path $outRoot -Recurse -File -Include *.js,*.json -ErrorAction SilentlyContinue |
-              Select-String -Pattern 'PreInvocation','injectSteps','ephemeralMessage','hooks.json' -List -ErrorAction SilentlyContinue |
-              Select-Object -First 40
-            Write-Output ('antigravity_hook_contract_file_count='+@($matches).Count)
-            foreach($match in $matches){
-              $relativePath=$match.Path.Substring($appRoot.Length).TrimStart('\')
-              Write-Output ('antigravity_hook_contract_file='+$relativePath+';pattern='+$match.Pattern)
-            }
+            Write-Output 'antigravity_hook_contract_file_count=targeted-runtime-inspector'
           } else {
             Write-Output 'antigravity_out_root=MISSING'
           }
@@ -312,19 +305,7 @@ jobs:
             $logRoot=Join-Path $dataRoot 'logs'
             Write-Output ('antigravity_data_root='+$dataName+';exists='+(Test-Path $dataRoot).ToString().ToLowerInvariant())
             if(Test-Path $logRoot){
-              $logMatches=Get-ChildItem -Path $logRoot -Recurse -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddDays(-2) } |
-                Select-String -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json','command failed','failed to parse' -List -ErrorAction SilentlyContinue
-              Write-Output ('antigravity_recent_hook_log_file_count='+$dataName+':'+@($logMatches).Count)
-              foreach($match in ($logMatches | Select-Object -First 20)){
-                Write-Output ('antigravity_recent_hook_log_file='+$dataName+':'+$match.Path.Substring($logRoot.Length).TrimStart('\'))
-                $evidence=Select-String -Path $match.Path -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json','command failed','failed to parse','customization root' -ErrorAction SilentlyContinue | Select-Object -Last 4
-                foreach($entry in $evidence){
-                  $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
-                  if($safe.Length -gt 600){ $safe=$safe.Substring(0,600) }
-                  Write-Output ('antigravity_hook_log_evidence='+$dataName+':'+$safe)
-                }
-              }
+              Write-Output ('antigravity_recent_hook_log_file_count='+$dataName+':targeted-latest-session')
             } else {
               Write-Output ('antigravity_log_root='+$dataName+':MISSING')
             }
@@ -427,26 +408,6 @@ jobs:
             }
           }
           $finalLogRoot=Join-Path $env:APPDATA 'Antigravity IDE\logs'
-          if(Test-Path $finalLogRoot){
-            $recentLogs=Get-ChildItem -Path $finalLogRoot -Recurse -File -ErrorAction SilentlyContinue |
-              Where-Object { $_.LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddDays(-3) }
-            $entries=$recentLogs | Select-String -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json','command failed','failed to parse','customization root' -ErrorAction SilentlyContinue | Select-Object -Last 30
-            foreach($entry in $entries){
-              $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
-              if($safe.Length -gt 600){ $safe=$safe.Substring(0,600) }
-              Write-Output ('antigravity_hook_log_evidence='+$safe)
-            }
-          }
-          foreach($dataName in @('Antigravity','Antigravity IDE')){
-            $candidateLogRoot=Join-Path (Join-Path $env:APPDATA $dataName) 'logs'
-            if(Test-Path $candidateLogRoot){
-              $newestFiles=Get-ChildItem -Path $candidateLogRoot -Recurse -File -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 35
-              foreach($file in $newestFiles){
-                Write-Output ('recent_log_file='+$dataName+';last_write_utc='+$file.LastWriteTimeUtc.ToString('o')+';path='+$file.FullName.Substring($candidateLogRoot.Length).TrimStart('\'))
-              }
-            }
-          }
           $geminiRoot=Join-Path $env:USERPROFILE '.gemini'
           $allHookConfigs=Get-ChildItem -Path $geminiRoot -Recurse -File -Filter 'hooks.json' -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName.Substring($geminiRoot.Length).Split([char]'\',[System.StringSplitOptions]::RemoveEmptyEntries).Count -le 4 }
@@ -464,6 +425,7 @@ jobs:
           if($null -ne $latestSession){
             $lsMain=Join-Path $latestSession.FullName 'ls-main.log'
             if(Test-Path $lsMain){
+              Write-Output ('recent_log_file=Antigravity IDE;last_write_utc='+(Get-Item $lsMain).LastWriteTimeUtc.ToString('o')+';path='+$lsMain.Substring((Join-Path $env:APPDATA 'Antigravity IDE\logs').Length).TrimStart('\'))
               $loadEvidence=Select-String -Path $lsMain -Pattern 'hooks.json','customization root','app_data_dir','PreInvocation','jsonhook__','JSON hook command','command_hook_executor' -ErrorAction SilentlyContinue | Select-Object -Last 120
               foreach($entry in $loadEvidence){
                 $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
