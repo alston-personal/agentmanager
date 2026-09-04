@@ -11,7 +11,9 @@ on:
       - 'governance/youtube-ai-manager-employee.json'
       - 'governance/product-employee-worker-plan.json'
       - 'governance/employee-worker-adapters.json'
+      - 'governance/employee-worker-adapters-v2.json'
       - 'agentos_node/employee_worker_host.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/product_employee_worker_cli.py'
       - 'tests/test_product_employee_contracts.py'
@@ -36,8 +38,9 @@ jobs:
           python-version: '3.12'
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check pytest pyyaml
-      - name: Verify product Employee contracts and runner plan
+      - name: Verify product Employee contracts and bounded runner host
         run: >-
           python -m pytest -q
           tests/test_product_employee_contracts.py
           tests/test_product_employee_worker_plan.py
+          tests/test_product_employee_worker.py
