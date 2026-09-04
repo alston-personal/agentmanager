@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -10,9 +11,17 @@ MARKER_SCHEMA = "agentos.action-relay-capabilities/v1"
 MARKER_ACTION = "agentos.runtime.converge"
 NODE_CAPABILITY = "node.runtime.converge"
 ALLOWED_SOURCE_REF = "core/integration"
-DEFAULT_MARKER = Path("/home/ubuntu/agent-data/runtime/action-relay/capabilities.json")
 EXPECTED_ACTIONS = {"agentos.executor.job", MARKER_ACTION}
 EXPECTED_NODE_CAPABILITIES = {NODE_CAPABILITY}
+
+
+def default_marker_path() -> Path:
+    data_root = Path(
+        os.environ.get("AGENT_DATA_ROOT")
+        or os.environ.get("AGENT_DATA_DIR")
+        or (Path.home() / "agent-data")
+    )
+    return data_root / "runtime" / "action-relay" / "capabilities.json"
 
 
 def validate_installed_marker(payload: Any) -> dict[str, Any] | None:
@@ -40,8 +49,8 @@ def validate_installed_marker(payload: Any) -> dict[str, Any] | None:
     }
 
 
-def installed_core_capabilities(marker_path: str | Path = DEFAULT_MARKER) -> list[str]:
-    path = Path(marker_path)
+def installed_core_capabilities(marker_path: str | Path | None = None) -> list[str]:
+    path = Path(marker_path) if marker_path is not None else default_marker_path()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeError):
