@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.node_registry import NodeRegistry
@@ -56,7 +52,6 @@ def test_local_wake_enrollment_is_idempotent_and_credential_file_is_private(tmp_
     registry = NodeRegistry(data_root / "realm" / "nodes.json")
     fabric = RealmFabricStore(data_root / "realm" / "fabric.json", node_registry=registry)
     fabric.initialize_realm("realm-test")
-    registry.initialize_realm("realm-test")
     config_path = data_root / "employee-wake-node" / "client.json"
     wake_root = data_root / "employee-wakes"
 
@@ -68,6 +63,9 @@ def test_local_wake_enrollment_is_idempotent_and_credential_file_is_private(tmp_
     stored = fabric.load()
     assert NODE_ID in stored["nodes"]
     assert first.node_token not in json.dumps(stored)
+    node_map = registry.node_map()
+    wake_node = next(node for node in node_map["nodes"] if node["node_id"] == NODE_ID)
+    assert wake_node["capabilities"] == ["agent.employee.wake.deliver"]
 
 
 def test_product_employee_bootstrap_is_idempotent_and_preserves_progress(tmp_path: Path):
