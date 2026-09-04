@@ -354,7 +354,7 @@ jobs:
             invocationNum=0; initialNumSteps=1; conversationId='agentos-vopc-launcher-acceptance';
             workspacePaths=@($target); transcriptPath=''; artifactDirectoryPath=''; modelName='gemini-launcher-acceptance'
           } | ConvertTo-Json -Compress
-          $launcherOutput=$launcherInput | & $env:COMSPEC /d /s /c ('call "'+$launcher+'"')
+          $launcherOutput=$launcherInput | & $launcher
           if($LASTEXITCODE -ne 0){ throw 'managed Windows hook launcher execution failed' }
           $launcherResult=$launcherOutput | ConvertFrom-Json
           if(@($launcherResult.injectSteps).Count -lt 1){ throw 'managed Windows hook launcher emitted no injectSteps' }

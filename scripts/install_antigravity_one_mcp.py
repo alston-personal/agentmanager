@@ -411,13 +411,7 @@ def probe_preinvocation_hook(
         command = [str(python), "-m", "agentos_node.antigravity_one_hook"]
         execution = "python-module"
     elif os.name == "nt":
-        command = [
-            os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/s",
-            "/c",
-            f'call "{launcher}"',
-        ]
+        command = f'call "{launcher}"'
         execution = "windows-cmd-launcher"
     else:
         command = ["/bin/sh", str(launcher)]
@@ -431,6 +425,12 @@ def probe_preinvocation_hook(
         capture_output=True,
         timeout=30,
         check=False,
+        shell=os.name == "nt" and launcher is not None,
+        executable=(
+            os.environ.get("COMSPEC", "cmd.exe")
+            if os.name == "nt" and launcher is not None
+            else None
+        ),
     )
     if result.returncode != 0:
         raise RuntimeError(
