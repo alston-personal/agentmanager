@@ -1,0 +1,116 @@
+name: vopc5750 Gemini ONE Lifecycle Check
+
+on:
+  push:
+    branches:
+      - core/issue-152-vopc-gemini-one
+    paths:
+      - '.github/workflows/vopc5750-gemini-one-lifecycle-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-vopc-lifecycle:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read isolated Gemini lifecycle evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import Request, urlopen
+
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id = 'vopc5750'
+          task_id = 'vopc-gemini-lifecycle-' + os.environ['GITHUB_RUN_ID']
+          store = RealmFabricStore()
+          node = ControllerService(store).node(node_id)
+          roots = node.get('workspace_roots') or {}
+          cwd = (roots.get('readable') or [None])[0]
+          if node.get('status') != 'online' or not cwd:
+              raise SystemExit('vopc5750 is not available for lifecycle check')
+
+          script = r'''$ErrorActionPreference='Stop'
+          $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $audit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
+          Write-Output ('lifecycle_check_utc='+(Get-Date).ToUniversalTime().ToString('o'))
+          if(Test-Path $hooks){
+            $config=Get-Content -Raw $hooks | ConvertFrom-Json
+            $handler=@($config.'agentos-one-preinvocation'.PreInvocation)[0]
+            Write-Output ('managed_hook_command='+$handler.command)
+            Write-Output ('managed_hook_last_write_utc='+(Get-Item $hooks).LastWriteTimeUtc.ToString('o'))
+          } else { Write-Output 'managed_hook_config=MISSING' }
+          if(Test-Path $audit){
+            $record=Get-Content -Raw $audit | ConvertFrom-Json
+            $safe=[ordered]@{
+              schema=$record.schema; recorded_at=$record.recorded_at; outcome=$record.outcome
+              model_name=$record.model_name; conversation_id_sha256=$record.conversation_id_sha256
+              source=$record.source; selection_source=$record.selection_source
+              project_id=$record.project_id; index_id=$record.index_id; ir_id=$record.ir_id
+              executor_class=$record.executor_class; executor_identity_bound=$record.executor_identity_bound
+              credential_exposed=$record.credential_exposed; workspace_path_count=$record.workspace_path_count
+              workspace_paths_sha256=$record.workspace_paths_sha256
+            }
+            Write-Output ('lifecycle_attestation='+($safe | ConvertTo-Json -Compress))
+          } else { Write-Output 'lifecycle_attestation=MISSING' }
+          $logs=Join-Path $env:APPDATA 'Antigravity IDE\logs'
+          $session=Get-ChildItem -Path $logs -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if($null -ne $session){
+            $log=Join-Path $session.FullName 'ls-main.log'
+            Write-Output ('latest_ls_main='+$log)
+            if(Test-Path $log){
+              $lines=Select-String -Path $log -Pattern 'Loaded hooks.json','jsonhook__','JSON hook command','command_hook_executor','PreInvocation' -ErrorAction SilentlyContinue | Select-Object -Last 80
+              foreach($entry in $lines){
+                $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
+                if($safe.Length -gt 900){ $safe=$safe.Substring(0,900) }
+                Write-Output ('hook_log='+$safe)
+              }
+            }
+          }
+          '''
+          payload = {
+              'schema': 'agentos.controller-dispatch/v0.1',
+              'task_id': task_id,
+              'node_id': node_id,
+              'action': 'shell.exec',
+              'payload': {
+                  'executable': 'powershell',
+                  'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+                  'cwd': cwd,
+                  'timeout_seconds': 60,
+                  'cognition_ids_used': [],
+              },
+          }
+          request = Request(
+              'http://127.0.0.1:8780/v1/controller/dispatch',
+              data=json.dumps(payload).encode('utf-8'),
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          with urlopen(request, timeout=10) as response:
+              accepted = json.loads(response.read().decode('utf-8'))
+          if accepted.get('ok') is not True:
+              raise SystemExit('ONE controller rejected lifecycle check')
+          receipt = None
+          for _ in range(70):
+              receipt = store.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+          if not receipt:
+              raise SystemExit('lifecycle check receipt timeout')
+          print(str(receipt.get('stdout') or ''))
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0) != 0:
+              raise SystemExit('lifecycle check failed')
+          PY
