@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           ROOT="$1"
           REF="core/integration"
-          EXPECTED="1dbdf20d76597e438c900df7ccb434a962e05075"
+          EXPECTED="dcb4930de480fbd4316131ad300434f57f6c3f82"
           EXPECTED_PREVIOUS="42f21560c7d7e6692373938358f57b9262e198f0"
           ORIGINAL_MANUAL_RUN="33846887821"
           cd "$ROOT"
@@ -108,9 +108,6 @@ jobs:
           git checkout --detach "$EXPECTED"
           [ "$(git rev-parse HEAD)" = "$EXPECTED" ]
 
-          # Source-local import proof. The production services and Action Relay
-          # resolve from the exact checkout/worktree; no system-site mutation is
-          # required for this one-time bootstrap.
           PYTHONPATH="$ROOT" python3 - <<'PY'
           import agent_core
           import agentos_node
