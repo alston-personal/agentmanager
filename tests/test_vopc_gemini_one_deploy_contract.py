@@ -99,6 +99,7 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn("language_server_process_id", client)
         self.assertIn("hook_candidate_runtime", client)
         self.assertIn("recent_log_file", client)
+        self.assertIn("hook_backup_shape", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 
 

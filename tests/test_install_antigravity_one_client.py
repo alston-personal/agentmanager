@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import inspect
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -63,6 +64,16 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
                 hook["PreInvocation"][0]["command"],
                 f'call "{launcher}"',
             )
+
+    def test_unchanged_hooks_config_is_not_rewritten(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "hooks.json"
+            launcher = Path(raw) / "hook.sh"
+            installer.write_hooks_config(path, launcher=launcher)
+            first = path.stat().st_mtime_ns
+            time.sleep(0.001)
+            installer.write_hooks_config(path, launcher=launcher)
+            self.assertEqual(path.stat().st_mtime_ns, first)
 
     def test_global_rule_requires_dynamic_preinvocation(self):
         self.assertIn("PreInvocation", installer.GLOBAL_RULE)

@@ -328,13 +328,16 @@ def write_hooks_config(path: Path, *, launcher: Path) -> dict[str, Any]:
         ],
     }
     config[HOOK_NAME] = hook
+    content = (
+        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.read_text(encoding="utf-8-sig") == content:
+        return hook
     _backup(path)
     tmp = path.with_suffix(path.suffix + ".agentos.tmp")
-    tmp.write_text(
-        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    tmp.write_text(content, encoding="utf-8")
     tmp.replace(path)
     return hook
 

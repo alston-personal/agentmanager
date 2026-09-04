@@ -252,6 +252,17 @@ jobs:
               Write-Output ('windows_hook_candidate='+$candidate+';exists=false')
             }
           }
+          $hookBackups=Get-ChildItem -Path $hookConfigPath.Substring(0,$hookConfigPath.LastIndexOf('\')) -Filter 'hooks.json.agentos-backup-*' -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 12
+          foreach($backup in $hookBackups){
+            try {
+              $backupHooks=Get-Content -Raw $backup.FullName | ConvertFrom-Json
+              $backupCommand=@($backupHooks.'agentos-one-preinvocation'.PreInvocation)[0].command
+              Write-Output ('hook_backup_shape=last_write_utc='+$backup.LastWriteTimeUtc.ToString('o')+';command='+$backupCommand)
+            } catch {
+              Write-Output ('hook_backup_shape=last_write_utc='+$backup.LastWriteTimeUtc.ToString('o')+';parse_error=true')
+            }
+          }
           Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
           if(Test-Path $settingsPath){
             $settingsText=Get-Content -Raw $settingsPath
