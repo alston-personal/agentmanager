@@ -447,6 +447,31 @@ jobs:
               }
             }
           }
+          $geminiRoot=Join-Path $env:USERPROFILE '.gemini'
+          $allHookConfigs=Get-ChildItem -Path $geminiRoot -Recurse -File -Filter 'hooks.json' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName.Substring($geminiRoot.Length).Split([char]'\',[System.StringSplitOptions]::RemoveEmptyEntries).Count -le 4 }
+          foreach($hookFile in $allHookConfigs){
+            try {
+              $parsedHooks=Get-Content -Raw $hookFile.FullName | ConvertFrom-Json
+              $managed=@($parsedHooks.'agentos-one-preinvocation'.PreInvocation)[0]
+              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName.Substring($geminiRoot.Length).TrimStart('\') +';last_write_utc:'+ $hookFile.LastWriteTimeUtc.ToString('o') +';managed_command:'+ $managed.command)
+            } catch {
+              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName.Substring($geminiRoot.Length).TrimStart('\') +';parse_error:true')
+            }
+          }
+          $latestSession=Get-ChildItem -Path (Join-Path $env:APPDATA 'Antigravity IDE\logs') -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if($null -ne $latestSession){
+            $lsMain=Join-Path $latestSession.FullName 'ls-main.log'
+            if(Test-Path $lsMain){
+              $loadEvidence=Select-String -Path $lsMain -Pattern 'hooks.json','customization root','app_data_dir','PreInvocation','jsonhook__' -ErrorAction SilentlyContinue | Select-Object -First 80
+              foreach($entry in $loadEvidence){
+                $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
+                if($safe.Length -gt 800){ $safe=$safe.Substring(0,800) }
+                Write-Output ('latest_ls_hook_evidence='+$safe)
+              }
+            }
+          }
           Write-Output 'antigravity_hook_diagnostic_summary=END'
           Write-Output ('agentos_source_commit='+$source)
           Write-Output ('project_id='+$attestation.project_id)
