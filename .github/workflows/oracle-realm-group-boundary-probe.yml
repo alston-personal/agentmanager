@@ -1,0 +1,72 @@
+name: Oracle Realm Group Boundary Probe
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-realm-group-boundary-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect effective process groups
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          set -a
+          source .env
+          set +a
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          RELAY_ROOT="$DATA_ROOT/runtime/action-relay"
+          realm_pid="$(systemctl --user show agentos-realm-fabric.service -p MainPID --value)"
+          manager_pid="$(systemctl --user show --property MainPID --value 2>/dev/null || true)"
+          agentos_gid="$(getent group agentos | cut -d: -f3)"
+          echo "agentos_gid=$agentos_gid"
+          echo "ssh_groups=$(id -G | tr ' ' ',')"
+          echo "realm_pid=$realm_pid"
+          grep '^Groups:' "/proc/$realm_pid/status" | sed 's/^/realm_/'
+          if [ -n "$manager_pid" ] && [ -r "/proc/$manager_pid/status" ]; then
+            echo "user_manager_pid=$manager_pid"
+            grep '^Groups:' "/proc/$manager_pid/status" | sed 's/^/user_manager_/'
+          fi
+          for p in "$DATA_ROOT/runtime" "$RELAY_ROOT"; do
+            if [ -e "$p" ]; then stat -c 'path=%n uid=%u gid=%g mode=%a user=%U group=%G' "$p"; fi
+          done
+          if [ -e "$RELAY_ROOT/capabilities.json" ]; then
+            stat -c 'path=%n uid=%u gid=%g mode=%a user=%U group=%G' "$RELAY_ROOT/capabilities.json"
+          else
+            echo "marker_exists=false"
+          fi
+          if grep '^Groups:' "/proc/$realm_pid/status" | grep -qw "$agentos_gid"; then
+            echo "realm_has_agentos_group=true"
+          else
+            echo "realm_has_agentos_group=false"
+          fi
+          REMOTE
