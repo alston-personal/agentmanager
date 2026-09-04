@@ -87,7 +87,23 @@ systemctl --user daemon-reload
 systemctl --user enable agentos-realm-fabric.service
 systemctl --user restart agentos-realm-fabric.service
 systemctl --user is-active --quiet agentos-realm-fabric.service
-curl -fsS --max-time 5 "http://127.0.0.1:$PORT/v1/health"
+
+# systemd may report the process active before the HTTP listener is ready.
+# Accept only after a bounded readiness window; never turn a transient startup
+# race into an unbounded wait or a false-positive health result.
+realm_ready=0
+for _ in $(seq 1 10); do
+  if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/v1/health"; then
+    realm_ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$realm_ready" -ne 1 ]; then
+  echo "Realm Fabric did not become healthy after restart" >&2
+  exit 4
+fi
+
 echo
 echo "realm_id=$REALM_ID"
 echo "realm_fabric_port=$PORT"
