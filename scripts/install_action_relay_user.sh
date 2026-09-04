@@ -11,6 +11,7 @@ DATA="${AGENT_DATA_ROOT:-$HOME/agent-data}"
 RUNTIME_ROOT="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
 LEGACY_RUNTIME_ROOT="${RUNTIME_ROOT}.legacy-pre-worktree"
 RELAY_ROOT="$DATA/runtime/action-relay"
+CAPABILITY_MARKER="$RELAY_ROOT/capabilities.json"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT="$UNIT_DIR/agentos-action-relay.service"
 SOURCE_REF="${AGENTOS_ACTION_SOURCE_REF:-main}"
@@ -107,10 +108,14 @@ echo "action_relay_runtime_worktree=PASS"
   cd "$RUNTIME_ROOT"
   PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
 from agentos_node.executor_job_action_relay import ACTION, ACTIONS
+from agentos_node.runtime_converge_action_relay import ACTION as CONVERGE_ACTION
 assert ACTION == 'agentos.executor.job'
+assert CONVERGE_ACTION == 'agentos.runtime.converge'
 assert ACTION in ACTIONS
+assert CONVERGE_ACTION in ACTIONS
 print('action_runtime_import=ok')
 print('executor_job_action_loaded=PASS')
+print('runtime_converge_action_loaded=PASS')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
 )
@@ -155,14 +160,38 @@ done
 
 systemctl --user --no-pager --full status agentos-action-relay.service || true
 if [ "$stable" -lt 3 ]; then
+  rm -f "$CAPABILITY_MARKER"
   echo '=== ACTION RELAY STARTUP JOURNAL ===' >&2
   journalctl --user -u agentos-action-relay.service -n 80 --no-pager >&2 || true
   echo 'action_relay_install=FAIL' >&2
   exit 4
 fi
 
+# Capability availability is installed-state evidence, not a source-code claim.
+# Publish only after the exact immutable runtime imports both fixed semantic
+# actions and the worker demonstrates stable liveness. The marker contains no
+# credentials, executable path, argv, environment or mutable authority.
+PYTHONPATH="$RUNTIME_ROOT" python3 - "$CAPABILITY_MARKER" "$SOURCE_REF" "$SOURCE_COMMIT" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+from agentos_node.runtime_converge_action_relay import capability_marker_payload
+
+path = Path(sys.argv[1])
+payload = capability_marker_payload(source_ref=sys.argv[2], source_commit=sys.argv[3])
+tmp = path.with_suffix('.tmp')
+tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+os.chmod(tmp, 0o640)
+tmp.replace(path)
+PY
+chgrp agentos "$CAPABILITY_MARKER"
+
 echo "action_relay_install=PASS"
 echo "action_relay_executor_job_extension=PASS"
+echo "action_relay_runtime_converge_extension=PASS"
+echo "action_relay_capability_marker=PASS"
 echo "action_relay_group_context=agentos"
 echo "action_relay_user_bus=ubuntu:/run/user/1001/bus"
 echo "action_relay_stable_liveness=PASS"
