@@ -8,7 +8,6 @@ service names and installer sequence are fixed here.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import urllib.request
@@ -150,7 +149,7 @@ def _safe_failure(request: Mapping[str, Any], classification: str, *, previous: 
 
 def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -> dict[str, Any]:
     """Converge the Oracle Core checkout to an exact current core/integration head."""
-    canonical = validate_runtime_converge_request(request)
+    canonical = validate_runtime_converge_request(request).as_payload()
     previous: str | None = None
     try:
         previous, idempotent = _preflight(repo, canonical)
@@ -197,8 +196,6 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
             "observed_at": _utc_now(),
         }
 
-    # Failed target health/install. Restore exactly the previous accepted checkout
-    # and re-run the same fixed installers. No mutable ref and no caller code.
     rollback_checkout = bool(previous) and _checkout_exact(repo, previous)
     rollback_health = rollback_checkout and _install_fixed_runtime(repo)
     if rollback_health:
@@ -222,9 +219,6 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
     if set(params) != {"request"} or not isinstance(params.get("request"), dict):
         raise ValueError("runtime-converge relay accepts only a canonical request object")
     result = converge_runtime(dict(params["request"]))
-    # A fixed allowlist is persisted to the Action Relay receipt. Subprocess
-    # stdout/stderr, filesystem paths, service environment and credentials never
-    # become relay result data.
     return {key: result.get(key) for key in SAFE_RESULT_FIELDS}
 
 
@@ -239,7 +233,7 @@ class ActionRelayRuntimeConvergeDispatcher:
         self.client = ActionRelayClient(self.root)
 
     def submit(self, *, request: Mapping[str, Any]) -> dict[str, Any]:
-        canonical = validate_runtime_converge_request(request)
+        canonical = validate_runtime_converge_request(request).as_payload()
         capsule = self.client.submit(ACTION, {"request": canonical})
         return {
             "schema": "agentos.runtime-converge-submission/v1",
