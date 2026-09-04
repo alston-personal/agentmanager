@@ -90,10 +90,11 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn("windows_product_", client)
         self.assertIn("'nameShort','applicationName','dataFolderName'", client)
         self.assertIn("windows_agent_process", client)
+        self.assertIn("inspect_antigravity_hook_contract.py", client)
         self.assertIn("antigravity_recent_hook_log_file_count", client)
+        self.assertIn("os.environ['GITHUB_RUN_ID']", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 
 
 if __name__ == "__main__":
     unittest.main()
-

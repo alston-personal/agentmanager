@@ -211,7 +211,12 @@ jobs:
           if not cwd:
               raise SystemExit('vopc5750 has no governed readable workspace')
 
-          task_id = 'vopc5750-gemini-one-' + source[:16]
+          task_id = (
+              'vopc5750-gemini-one-'
+              + source[:12]
+              + '-'
+              + os.environ['GITHUB_RUN_ID']
+          )
           script = r'''$ErrorActionPreference='Stop'
           $source='__SOURCE_COMMIT__'
           if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
