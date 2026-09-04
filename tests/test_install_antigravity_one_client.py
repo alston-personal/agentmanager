@@ -65,7 +65,7 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             self.assertEqual(hook["PreInvocation"][0]["timeout"], 12)
             self.assertEqual(
                 hook["PreInvocation"][0]["command"],
-                f'cmd.exe /d /c call "{launcher}"',
+                str(launcher),
             )
 
     def test_unchanged_hooks_config_is_not_rewritten(self):
@@ -131,7 +131,7 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
                     ]
                 }
             )
-            launcher = root / "state path" / "hook.cmd"
+            launcher = root / "state_path" / "hook.cmd"
             with (
                 mock.patch.object(installer.os, "name", "nt"),
                 mock.patch.dict(installer.os.environ, {"COMSPEC": "cmd.exe"}),
@@ -147,10 +147,14 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             self.assertEqual(evidence["execution"], "windows-cmd-launcher")
             self.assertEqual(
                 run.call_args.args[0],
-                f'cmd.exe /d /c call "{launcher}"',
+                str(launcher),
             )
             self.assertIs(run.call_args.kwargs["shell"], True)
             self.assertEqual(run.call_args.kwargs["executable"], "cmd.exe")
+
+    def test_windows_hook_command_rejects_ambiguous_whitespace(self):
+        with self.assertRaisesRegex(ValueError, "must not contain whitespace"):
+            installer._windows_hook_command(Path("C:/Users/Space User/hook.cmd"))
 
 
 if __name__ == "__main__":

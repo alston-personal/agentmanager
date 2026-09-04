@@ -138,8 +138,12 @@ def antigravity_hooks_config_path() -> Path:
 
 
 def _windows_hook_command(launcher: Path) -> str:
-    command_processor = os.environ.get("COMSPEC", "cmd.exe")
-    return f'{command_processor} /d /c call "{launcher}"'
+    value = str(launcher)
+    if any(character.isspace() for character in value):
+        raise ValueError(
+            "Windows Antigravity hook launcher path must not contain whitespace"
+        )
+    return value
 
 
 def _venv_python(root: Path) -> Path:
