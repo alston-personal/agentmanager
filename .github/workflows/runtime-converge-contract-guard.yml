@@ -13,9 +13,12 @@ on:
       - 'agentos_node/runtime_converge_action_relay.py'
       - 'agentos_node/executor_job_action_relay.py'
       - 'scripts/install_action_relay_user.sh'
+      - 'scripts/bootstrap_runtime_converger_oracle.sh'
+      - '.github/workflows/deploy-agentos-core.yml'
       - 'tests/test_runtime_converge_contract.py'
       - 'tests/test_runtime_converge_action_relay.py'
       - 'tests/test_runtime_converge_capability.py'
+      - 'tests/test_runtime_converge_bootstrap_contract.py'
       - '.github/workflows/runtime-converge-contract-guard.yml'
   workflow_dispatch:
 
@@ -40,3 +43,4 @@ jobs:
           tests/test_runtime_converge_contract.py
           tests/test_runtime_converge_action_relay.py
           tests/test_runtime_converge_capability.py
+          tests/test_runtime_converge_bootstrap_contract.py
