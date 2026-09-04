@@ -62,7 +62,7 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             self.assertEqual(hook["PreInvocation"][0]["timeout"], 12)
             self.assertEqual(
                 hook["PreInvocation"][0]["command"],
-                f'call "{launcher}"',
+                f'cmd.exe /d /c call "{launcher}"',
             )
 
     def test_unchanged_hooks_config_is_not_rewritten(self):
@@ -80,16 +80,7 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
         self.assertIn("one_resolve_active", installer.GLOBAL_RULE)
         self.assertIn("workspace is environment metadata", installer.GLOBAL_RULE)
 
-    def test_hooks_follow_antigravity_runtime_app_data_scope(self):
-        with tempfile.TemporaryDirectory() as raw:
-            home = Path(raw)
-            runtime_root = home / ".gemini" / "antigravity-ide"
-            runtime_root.mkdir(parents=True)
-            with mock.patch.object(installer.Path, "home", return_value=home):
-                path = installer.antigravity_hooks_config_path()
-            self.assertEqual(path, runtime_root / "hooks.json")
-
-    def test_hooks_fall_back_to_legacy_config_scope(self):
+    def test_hooks_use_runtime_reported_config_scope(self):
         with tempfile.TemporaryDirectory() as raw:
             home = Path(raw)
             with mock.patch.object(installer.Path, "home", return_value=home):
@@ -153,7 +144,7 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             self.assertEqual(evidence["execution"], "windows-cmd-launcher")
             self.assertEqual(
                 run.call_args.args[0],
-                f'call "{launcher}"',
+                f'cmd.exe /d /c call "{launcher}"',
             )
             self.assertIs(run.call_args.kwargs["shell"], True)
             self.assertEqual(run.call_args.kwargs["executable"], "cmd.exe")

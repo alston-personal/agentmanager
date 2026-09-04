@@ -134,16 +134,12 @@ def antigravity_hooks_config_path() -> Path:
     explicit = os.environ.get("AGENTOS_ANTIGRAVITY_HOOKS_CONFIG")
     if explicit:
         return Path(explicit).expanduser()
-    app_data_dir = str(
-        os.environ.get(
-            "AGENTOS_ANTIGRAVITY_APP_DATA_DIR",
-            "antigravity-ide",
-        )
-    ).strip()
-    runtime_root = Path.home() / ".gemini" / app_data_dir
-    if runtime_root.is_dir():
-        return runtime_root / "hooks.json"
     return Path.home() / ".gemini" / "config" / "hooks.json"
+
+
+def _windows_hook_command(launcher: Path) -> str:
+    command_processor = os.environ.get("COMSPEC", "cmd.exe")
+    return f'{command_processor} /d /c call "{launcher}"'
 
 
 def _venv_python(root: Path) -> Path:
@@ -322,7 +318,7 @@ def write_hook_launcher(
 def write_hooks_config(path: Path, *, launcher: Path) -> dict[str, Any]:
     config = _load_json(path)
     command = (
-        f'call "{launcher}"'
+        _windows_hook_command(launcher)
         if os.name == "nt"
         else shlex.quote(str(launcher))
     )
@@ -427,7 +423,7 @@ def probe_preinvocation_hook(
         command = [str(python), "-m", "agentos_node.antigravity_one_hook"]
         execution = "python-module"
     elif os.name == "nt":
-        command = f'call "{launcher}"'
+        command = _windows_hook_command(launcher)
         execution = "windows-cmd-launcher"
     else:
         command = ["/bin/sh", str(launcher)]

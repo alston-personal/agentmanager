@@ -361,7 +361,7 @@ jobs:
           if($LASTEXITCODE -ne 0){ throw 'Antigravity hook runtime inspection failed' }
           & $python (Join-Path $target 'scripts\install_antigravity_one_mcp.py') --repo $target --mode client
           if($LASTEXITCODE -ne 0){ throw 'AgentOS Gemini ONE installer failed' }
-          $hooks=Join-Path $env:USERPROFILE '.gemini\antigravity-ide\hooks.json'
+          $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
           $mcp=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
           $probeAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-installer-probe.json'
           $lifecycleAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
