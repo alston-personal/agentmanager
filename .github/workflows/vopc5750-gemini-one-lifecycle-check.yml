@@ -42,6 +42,7 @@ jobs:
               raise SystemExit('vopc5750 is not available for lifecycle check')
 
           script = r'''$ErrorActionPreference='Stop'
+          Write-Output 'lifecycle_diagnostic_revision=one-http-400-v1'
           $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
           $audit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
           Write-Output ('lifecycle_check_utc='+(Get-Date).ToUniversalTime().ToString('o'))
