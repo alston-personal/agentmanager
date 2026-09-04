@@ -92,6 +92,7 @@ def _install_fixed_runtime(repo: Path) -> bool:
     steps = (
         (["python3", "scripts/install_services.py"], 240),
         (["bash", "scripts/install_realm_fabric_user.sh"], 120),
+        (["bash", "scripts/activate_product_employees_oracle.sh"], 240),
     )
     for argv, timeout in steps:
         result = _run(argv, cwd=repo, timeout=timeout)
