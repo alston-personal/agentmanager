@@ -9,6 +9,7 @@ from agent_core.runtime_converge_capability import (
     MARKER_ACTION,
     MARKER_SCHEMA,
     NODE_CAPABILITY,
+    default_marker_path,
     installed_core_capabilities,
     validate_installed_marker,
 )
@@ -37,6 +38,15 @@ def test_valid_installed_marker_advertises_only_runtime_converge(tmp_path: Path)
     validated = validate_installed_marker(marker())
     assert validated is not None
     assert validated["source_commit"] == SHA
+
+
+def test_default_marker_follows_runtime_data_root(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("AGENT_DATA_ROOT", str(tmp_path))
+    path = tmp_path / "runtime" / "action-relay" / "capabilities.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(marker()), encoding="utf-8")
+    assert default_marker_path() == path
+    assert installed_core_capabilities() == [NODE_CAPABILITY]
 
 
 def test_missing_corrupt_or_wrong_provenance_marker_fails_closed(tmp_path: Path):
