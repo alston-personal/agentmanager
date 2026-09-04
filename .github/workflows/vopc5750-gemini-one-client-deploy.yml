@@ -373,6 +373,25 @@ jobs:
           } else {
             Write-Output 'lifecycle_attestation_present=false'
           }
+          Write-Output 'antigravity_hook_diagnostic_summary=BEGIN'
+          if(Test-Path $settingsPath){
+            $settingsText=Get-Content -Raw $settingsPath
+            foreach($match in [regex]::Matches($settingsText,'(?i)"[^"\r\n]*hook[^"\r\n]*"\s*:\s*(true|false|"[^"\r\n]{0,80}"|[0-9]+)')){
+              Write-Output ('windows_hook_setting='+$match.Value)
+            }
+          }
+          $finalLogRoot=Join-Path $env:APPDATA 'Antigravity IDE\logs'
+          if(Test-Path $finalLogRoot){
+            $recentLogs=Get-ChildItem -Path $finalLogRoot -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddDays(-3) }
+            $entries=$recentLogs | Select-String -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json','command failed','failed to parse','customization root' -ErrorAction SilentlyContinue | Select-Object -Last 30
+            foreach($entry in $entries){
+              $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
+              if($safe.Length -gt 600){ $safe=$safe.Substring(0,600) }
+              Write-Output ('antigravity_hook_log_evidence='+$safe)
+            }
+          }
+          Write-Output 'antigravity_hook_diagnostic_summary=END'
           Write-Output ('agentos_source_commit='+$source)
           Write-Output ('project_id='+$attestation.project_id)
           Write-Output ('index_id='+$attestation.index_id)
