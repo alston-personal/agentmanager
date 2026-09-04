@@ -73,7 +73,20 @@ jobs:
 
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           CAPABILITY_MARKER="$DATA_ROOT/runtime/action-relay/capabilities.json"
+          FABRIC_FILE="$DATA_ROOT/realm/fabric.json"
           mkdir -p "$DATA_ROOT/runtime"
+          [ -f "$FABRIC_FILE" ] || { echo "bootstrap_refused=existing_fabric_missing"; exit 2; }
+          EXISTING_REALM_ID="$(python3 - "$FABRIC_FILE" <<'PY'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          value = str(data.get('realm_id') or '').strip()
+          if not value:
+              raise SystemExit(2)
+          print(value)
+          PY
+          )"
+          [ -n "$EXISTING_REALM_ID" ] || { echo "bootstrap_refused=existing_realm_id_missing"; exit 2; }
 
           rollback() {
             rc=$?
@@ -91,6 +104,7 @@ jobs:
 
           echo "human_authority_source_run=$ORIGINAL_MANUAL_RUN"
           echo "bootstrap_target=$EXPECTED"
+          echo "preserved_realm_id=$EXISTING_REALM_ID"
           git checkout --detach "$EXPECTED"
           [ "$(git rev-parse HEAD)" = "$EXPECTED" ]
 
@@ -114,6 +128,7 @@ jobs:
           set +a
           [ "${AGENT_MODE:-CLIENT}" = "CORE" ] || { echo "bootstrap_refused=agent_mode_not_core"; exit 2; }
           [ -n "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ] || { echo "bootstrap_refused=control_plane_token_missing"; exit 2; }
+          export AGENTOS_REALM_ID="$EXISTING_REALM_ID"
 
           PYTHONPATH="$ROOT" python3 scripts/install_services.py
           systemctl --user is-active --quiet agentos-control-plane.service
@@ -132,5 +147,6 @@ jobs:
           echo "source_ref=$REF"
           echo "source_commit=$EXPECTED"
           echo "previous_sha=$PREVIOUS_SHA"
+          echo "realm_id_preserved=$EXISTING_REALM_ID"
           echo "editable_install_used=false"
           REMOTE
