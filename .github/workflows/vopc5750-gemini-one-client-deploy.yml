@@ -225,6 +225,7 @@ jobs:
           $rootHookConfigPath=Join-Path $env:USERPROFILE '.gemini\hooks.json'
           $runtimeHookConfigPath=Join-Path $env:USERPROFILE '.gemini\antigravity-ide\hooks.json'
           $settingsPath=Join-Path $env:USERPROFILE '.gemini\settings.json'
+          Write-Output 'windows_antigravity_bounded_deploy=BEGIN'
           $root=Join-Path $env:LOCALAPPDATA 'AgentOS\one-mcp-source'
           $target=Join-Path $root $source
           $archive=Join-Path $env:TEMP ("agentos-one-"+$source+".zip")
@@ -340,6 +341,7 @@ jobs:
           Write-Output 'executor_class=antigravity-gemini'
           Write-Output 'credential_exposed=false'
           Write-Output 'agentos_vopc5750_gemini_one_install=PASS'
+          Write-Output 'windows_antigravity_bounded_deploy=END'
           '''.replace('__SOURCE_COMMIT__', source)
           payload = {
               'schema': 'agentos.controller-dispatch/v0.1',
