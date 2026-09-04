@@ -1,0 +1,108 @@
+name: Oracle Target Collision Sweep
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-target-collision-sweep.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Sweep only untracked paths that collide with exact target
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+
+          OLD_SHA="42f21560c7d7e6692373938358f57b9262e198f0"
+          TARGET_SHA="1dbdf20d76597e438c900df7ccb434a962e05075"
+          SOURCES="agentos_runtime.egg-info/SOURCES.txt"
+          [ "$(git rev-parse HEAD)" = "$OLD_SHA" ] || { echo "sweep_refused=head_mismatch"; exit 2; }
+
+          dirty="$(git diff --name-only -- .)"
+          if [ -n "$dirty" ]; then
+            [ "$dirty" = "$SOURCES" ] || { echo "sweep_refused=unexpected_tracked_drift"; printf '%s\n' "$dirty"; exit 2; }
+            git restore --source="$OLD_SHA" -- "$SOURCES"
+          fi
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "sweep_refused=tracked_tree_not_clean"; exit 2; }
+
+          git fetch origin "$TARGET_SHA"
+          collisions="$(mktemp)"
+          trap 'rm -f "$collisions"' EXIT
+          while IFS= read -r -d '' path; do
+            if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
+              printf '%s\n' "$path" >> "$collisions"
+            fi
+          done < <(git ls-files --others --exclude-standard -z)
+
+          count="$(wc -l < "$collisions" | tr -d ' ')"
+          [ "$count" -gt 0 ] || { echo "collision_count=0"; exit 0; }
+          [ "$count" -le 100 ] || { echo "sweep_refused=collision_count_too_large:$count"; exit 2; }
+
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP_ROOT="$DATA_ROOT/runtime/backups/oracle-target-collisions-$STAMP"
+          mkdir -p "$BACKUP_ROOT/files"
+          chmod 700 "$BACKUP_ROOT" "$BACKUP_ROOT/files"
+          cp "$collisions" "$BACKUP_ROOT/files.txt"
+          printf '%s\n' "$OLD_SHA" > "$BACKUP_ROOT/head.txt"
+          printf '%s\n' "$TARGET_SHA" > "$BACKUP_ROOT/target.txt"
+          sudo -n true
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ -e "$path" ] || [ -L "$path" ] || { echo "sweep_refused=source_missing:$path"; exit 2; }
+            git cat-file -e "$TARGET_SHA:$path" || { echo "sweep_refused=target_missing:$path"; exit 2; }
+            dest="$BACKUP_ROOT/files/$path"
+            mkdir -p "$(dirname "$dest")"
+            sudo -n mv -- "$path" "$dest"
+            sudo -n chown "$(id -u):$(id -g)" "$dest"
+          done < "$collisions"
+
+          chmod -R go-rwx "$BACKUP_ROOT"
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ ! -e "$path" ] && [ ! -L "$path" ] || { echo "sweep_failed=collision_still_present:$path"; exit 2; }
+          done < "$collisions"
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "sweep_failed=tracked_tree_dirty"; exit 2; }
+
+          echo "collision_sweep_completed=true"
+          echo "collision_count=$count"
+          echo "backup_name=$(basename "$BACKUP_ROOT")"
+          echo "tracked_dirty_count=0"
+          REMOTE
