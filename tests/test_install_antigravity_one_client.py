@@ -80,6 +80,22 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
         self.assertIn("one_resolve_active", installer.GLOBAL_RULE)
         self.assertIn("workspace is environment metadata", installer.GLOBAL_RULE)
 
+    def test_hooks_follow_antigravity_runtime_app_data_scope(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            runtime_root = home / ".gemini" / "antigravity-ide"
+            runtime_root.mkdir(parents=True)
+            with mock.patch.object(installer.Path, "home", return_value=home):
+                path = installer.antigravity_hooks_config_path()
+            self.assertEqual(path, runtime_root / "hooks.json")
+
+    def test_hooks_fall_back_to_legacy_config_scope(self):
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            with mock.patch.object(installer.Path, "home", return_value=home):
+                path = installer.antigravity_hooks_config_path()
+            self.assertEqual(path, home / ".gemini" / "config" / "hooks.json")
+
     def test_installer_probe_and_lifecycle_use_separate_audits(self):
         source = inspect.getsource(installer.main)
         self.assertIn("antigravity-preinvocation-installer-probe.json", source)

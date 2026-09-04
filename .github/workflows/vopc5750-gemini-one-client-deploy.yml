@@ -242,9 +242,10 @@ jobs:
           }
           $hookConfigPath=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
           $rootHookConfigPath=Join-Path $env:USERPROFILE '.gemini\hooks.json'
+          $runtimeHookConfigPath=Join-Path $env:USERPROFILE '.gemini\antigravity-ide\hooks.json'
           $settingsPath=Join-Path $env:USERPROFILE '.gemini\settings.json'
           Write-Output ('gemini_hooks_config_exists='+(Test-Path $hookConfigPath).ToString().ToLowerInvariant())
-          foreach($candidate in @($rootHookConfigPath,$hookConfigPath)){
+          foreach($candidate in @($rootHookConfigPath,$hookConfigPath,$runtimeHookConfigPath)){
             if(Test-Path $candidate){
               $hash=(Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant()
               Write-Output ('windows_hook_candidate='+$candidate+';exists=true;sha256='+$hash)
@@ -360,7 +361,7 @@ jobs:
           if($LASTEXITCODE -ne 0){ throw 'Antigravity hook runtime inspection failed' }
           & $python (Join-Path $target 'scripts\install_antigravity_one_mcp.py') --repo $target --mode client
           if($LASTEXITCODE -ne 0){ throw 'AgentOS Gemini ONE installer failed' }
-          $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $hooks=Join-Path $env:USERPROFILE '.gemini\antigravity-ide\hooks.json'
           $mcp=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
           $probeAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-installer-probe.json'
           $lifecycleAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
@@ -400,7 +401,7 @@ jobs:
           }
           Write-Output 'antigravity_hook_diagnostic_summary=BEGIN'
           Write-Output ('diagnostic_utc_now='+(Get-Date).ToUniversalTime().ToString('o'))
-          foreach($candidate in @($rootHookConfigPath,$hookConfigPath)){
+          foreach($candidate in @($rootHookConfigPath,$hookConfigPath,$runtimeHookConfigPath)){
             if(Test-Path $candidate){
               Write-Output ('hook_candidate_runtime='+$candidate+';last_write_utc='+(Get-Item $candidate).LastWriteTimeUtc.ToString('o')+';sha256='+(Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant())
             } else {

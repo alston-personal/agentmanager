@@ -134,6 +134,15 @@ def antigravity_hooks_config_path() -> Path:
     explicit = os.environ.get("AGENTOS_ANTIGRAVITY_HOOKS_CONFIG")
     if explicit:
         return Path(explicit).expanduser()
+    app_data_dir = str(
+        os.environ.get(
+            "AGENTOS_ANTIGRAVITY_APP_DATA_DIR",
+            "antigravity-ide",
+        )
+    ).strip()
+    runtime_root = Path.home() / ".gemini" / app_data_dir
+    if runtime_root.is_dir():
+        return runtime_root / "hooks.json"
     return Path.home() / ".gemini" / "config" / "hooks.json"
 
 
