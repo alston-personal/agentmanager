@@ -1,0 +1,42 @@
+{
+  "schema": "agentos.product-employee-worker-plan/v1",
+  "status": "proposed_source_slice",
+  "issue": 238,
+  "shared_host_required": true,
+  "runners": [
+    {
+      "runner_kind": "zeus_writer_v1",
+      "employee_id": "zeus-writer",
+      "assignment_id": "zeus-writer-continuation-v1",
+      "role_ids": ["product.zeus_writer"],
+      "skill_ids": ["writing.project.continue"],
+      "stage": "Z1",
+      "network": false,
+      "credentials": false,
+      "external_mutation": false,
+      "result_schema": "agentos.zeus-writer-worker-result/v1"
+    },
+    {
+      "runner_kind": "youtube_ai_manager_scan_v1",
+      "employee_id": "youtube-ai-manager",
+      "assignment_id": "youtube-ai-manager-optimization-v1",
+      "role_ids": ["product.youtube_ai_manager"],
+      "skill_ids": ["youtube.optimization.scan"],
+      "stage": "Y1",
+      "network": false,
+      "credentials": false,
+      "external_mutation": false,
+      "result_schema": "agentos.youtube-ai-manager-scan-result/v1"
+    }
+  ],
+  "invariants": [
+    "runner_kind_is_source_enum_not_executable_authority",
+    "one_shared_worker_host_not_daemon_per_role",
+    "exact_governed_wake_required_before_claim",
+    "child_environment_is_credential_isolated",
+    "unknown_runner_or_result_schema_fails_closed",
+    "github_actions_is_not_control_plane_fallback",
+    "youtube_read_authority_does_not_imply_mutation_authority",
+    "zeus_legacy_pulse_status_possession_is_not_canonical_authority"
+  ]
+}
