@@ -97,6 +97,8 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn("gemini-launcher-acceptance", client)
         self.assertIn("managed_hooks_last_write_utc", client)
         self.assertIn("language_server_process_id", client)
+        self.assertIn("hook_candidate_runtime", client)
+        self.assertIn("recent_log_file", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 
 

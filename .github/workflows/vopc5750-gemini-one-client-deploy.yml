@@ -388,6 +388,14 @@ jobs:
             Write-Output 'native_lifecycle_acceptance=PENDING'
           }
           Write-Output 'antigravity_hook_diagnostic_summary=BEGIN'
+          Write-Output ('diagnostic_utc_now='+(Get-Date).ToUniversalTime().ToString('o'))
+          foreach($candidate in @($rootHookConfigPath,$hookConfigPath)){
+            if(Test-Path $candidate){
+              Write-Output ('hook_candidate_runtime='+$candidate+';last_write_utc='+(Get-Item $candidate).LastWriteTimeUtc.ToString('o')+';sha256='+(Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant())
+            } else {
+              Write-Output ('hook_candidate_runtime='+$candidate+';missing=true')
+            }
+          }
           if(Test-Path $hooks){
             $currentHooks=Get-Content -Raw $hooks | ConvertFrom-Json
             $managedHandler=@($currentHooks.'agentos-one-preinvocation'.PreInvocation)[0]
@@ -396,7 +404,9 @@ jobs:
           }
           $languageServers=Get-CimInstance Win32_Process -Filter "Name='language_server_windows_x64.exe'" -ErrorAction SilentlyContinue
           foreach($serverProcess in $languageServers){
-            Write-Output ('language_server_process_id='+$serverProcess.ProcessId+';creation_date='+$serverProcess.CreationDate)
+            $safeCommand=([string]$serverProcess.CommandLine) -replace '(?i)(authorization|token|credential)[=:]\S+','$1=[REDACTED]'
+            if($safeCommand.Length -gt 900){ $safeCommand=$safeCommand.Substring(0,900) }
+            Write-Output ('language_server_process_id='+$serverProcess.ProcessId+';session_id='+$serverProcess.SessionId+';creation_date='+$serverProcess.CreationDate+';command_line='+$safeCommand)
           }
           if(Test-Path $settingsPath){
             $settingsText=Get-Content -Raw $settingsPath
@@ -413,6 +423,16 @@ jobs:
               $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
               if($safe.Length -gt 600){ $safe=$safe.Substring(0,600) }
               Write-Output ('antigravity_hook_log_evidence='+$safe)
+            }
+          }
+          foreach($dataName in @('Antigravity','Antigravity IDE')){
+            $candidateLogRoot=Join-Path (Join-Path $env:APPDATA $dataName) 'logs'
+            if(Test-Path $candidateLogRoot){
+              $newestFiles=Get-ChildItem -Path $candidateLogRoot -Recurse -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 35
+              foreach($file in $newestFiles){
+                Write-Output ('recent_log_file='+$dataName+';last_write_utc='+$file.LastWriteTimeUtc.ToString('o')+';path='+$file.FullName.Substring($candidateLogRoot.Length).TrimStart('\'))
+              }
             }
           }
           Write-Output 'antigravity_hook_diagnostic_summary=END'
