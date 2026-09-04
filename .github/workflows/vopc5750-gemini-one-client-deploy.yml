@@ -381,7 +381,7 @@ jobs:
           Write-Output 'windows_hook_launcher_acceptance=PASS'
           if(Test-Path $lifecycleAudit){
             $lifecycle=Get-Content -Raw $lifecycleAudit | ConvertFrom-Json
-            Write-Output ('lifecycle_attestation_present=true;model_name='+$lifecycle.model_name+';recorded_at='+$lifecycle.recorded_at+';conversation_id_sha256='+$lifecycle.conversation_id_sha256)
+            Write-Output ('lifecycle_attestation_present=true;model_name='+$lifecycle.model_name+';recorded_at='+$lifecycle.recorded_at+';conversation_id_sha256='+$lifecycle.conversation_id_sha256+';workspace_path_count='+$lifecycle.workspace_path_count+';workspace_paths_sha256='+$lifecycle.workspace_paths_sha256)
             $syntheticModels=@('gemini-client-installer-probe','gemini-launcher-acceptance')
             if(
               $lifecycle.outcome -eq 'hydrated' -and

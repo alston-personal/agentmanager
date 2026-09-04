@@ -132,6 +132,20 @@ def _conversation_hash(value: Any) -> str | None:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _workspace_paths_hash(value: Any) -> tuple[int, str | None]:
+    if not isinstance(value, list):
+        return 0, None
+    normalized = [str(item).strip() for item in value if str(item).strip()]
+    if not normalized:
+        return 0, None
+    encoded = json.dumps(
+        sorted(normalized, key=str.casefold),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return len(normalized), "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def _runtime_source_commit() -> str | None:
     explicit = str(os.environ.get("AGENTOS_RUNTIME_SOURCE_COMMIT") or "").strip()
     if explicit:
@@ -145,6 +159,9 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
         return
     executor_class, identity_bound = _executor_identity(payload.get("modelName"))
     selector = envelope.get("active_selector") if isinstance(envelope, dict) and isinstance(envelope.get("active_selector"), dict) else {}
+    workspace_path_count, workspace_paths_sha256 = _workspace_paths_hash(
+        payload.get("workspacePaths")
+    )
     record = {
         "schema": AUDIT_SCHEMA,
         "recorded_at": _now(),
@@ -154,6 +171,8 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
         "invocation_num": 0,
         "conversation_id_sha256": _conversation_hash(payload.get("conversationId")),
         "model_name": payload.get("modelName"),
+        "workspace_path_count": workspace_path_count,
+        "workspace_paths_sha256": workspace_paths_sha256,
         "executor_class": (envelope or {}).get("executor_class") or executor_class,
         "executor_identity_bound": (envelope or {}).get("executor_identity_bound") if isinstance(envelope, dict) else identity_bound,
         "injection_emitted": outcome == "hydrated",

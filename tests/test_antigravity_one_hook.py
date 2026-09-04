@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import unittest
 
-from agentos_node.antigravity_one_hook import build_injection, _safe_failure_code
+from agentos_node.antigravity_one_hook import (
+    _safe_failure_code,
+    _workspace_paths_hash,
+    build_injection,
+)
 from agentos_node.one_mcp import OneGatewayError
 
 
@@ -73,6 +77,13 @@ def envelope_from(output):
 
 
 class AntigravityOneHookTests(unittest.TestCase):
+    def test_workspace_attestation_is_hashed_and_order_stable(self):
+        count_a, digest_a = _workspace_paths_hash(["D:/agentos", "D:/agent-data"])
+        count_b, digest_b = _workspace_paths_hash(["D:/agent-data", "D:/agentos"])
+        self.assertEqual(count_a, 2)
+        self.assertEqual((count_a, digest_a), (count_b, digest_b))
+        self.assertTrue(str(digest_a).startswith("sha256:"))
+
     def test_first_invocation_hydrates_active_canonical_ir(self):
         gateway = FakeGateway()
         output = build_injection(
