@@ -253,6 +253,12 @@ jobs:
             }
           }
           Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
+          if(Test-Path $settingsPath){
+            $settingsText=Get-Content -Raw $settingsPath
+            foreach($match in [regex]::Matches($settingsText,'(?i)"[^"\r\n]*hook[^"\r\n]*"\s*:\s*(true|false|"[^"\r\n]{0,80}"|[0-9]+)')){
+              Write-Output ('windows_hook_setting='+$match.Value)
+            }
+          }
           if(Test-Path $hookConfigPath){
             $safeHooks=Get-Content -Raw $hookConfigPath | ConvertFrom-Json
             foreach($property in $safeHooks.PSObject.Properties){
@@ -300,6 +306,12 @@ jobs:
               Write-Output ('antigravity_recent_hook_log_file_count='+$dataName+':'+@($logMatches).Count)
               foreach($match in ($logMatches | Select-Object -First 20)){
                 Write-Output ('antigravity_recent_hook_log_file='+$dataName+':'+$match.Path.Substring($logRoot.Length).TrimStart('\'))
+                $evidence=Select-String -Path $match.Path -Pattern 'PreInvocation','agentos-one-preinvocation','hooks.json','command failed','failed to parse','customization root' -ErrorAction SilentlyContinue | Select-Object -Last 4
+                foreach($entry in $evidence){
+                  $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
+                  if($safe.Length -gt 600){ $safe=$safe.Substring(0,600) }
+                  Write-Output ('antigravity_hook_log_evidence='+$dataName+':'+$safe)
+                }
               }
             } else {
               Write-Output ('antigravity_log_root='+$dataName+':MISSING')
