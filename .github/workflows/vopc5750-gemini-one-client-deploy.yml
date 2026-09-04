@@ -220,106 +220,11 @@ jobs:
           script = r'''$ErrorActionPreference='Stop'
           $source='__SOURCE_COMMIT__'
           if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
-          Write-Output 'windows_antigravity_runtime_fingerprint=BEGIN'
           $appRoot=Join-Path $env:LOCALAPPDATA 'Programs\Antigravity IDE'
-          $exe=Join-Path $appRoot 'Antigravity IDE.exe'
-          if(Test-Path $exe){
-            $version=(Get-Item $exe).VersionInfo
-            Write-Output ('antigravity_file_version='+$version.FileVersion)
-            Write-Output ('antigravity_product_version='+$version.ProductVersion)
-          } else {
-            Write-Output 'antigravity_executable=MISSING'
-          }
-          foreach($relative in @('resources\app\product.json','resources\app\package.json')){
-            $manifest=Join-Path $appRoot $relative
-            if(Test-Path $manifest){
-              $parsed=Get-Content -Raw $manifest | ConvertFrom-Json
-              Write-Output ($relative.Replace('\','/')+'='+$parsed.version)
-              foreach($key in @('nameShort','applicationName','dataFolderName','version','commit','quality')){
-                Write-Output ('windows_product_'+$key+'='+$parsed.$key)
-              }
-            }
-          }
           $hookConfigPath=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
           $rootHookConfigPath=Join-Path $env:USERPROFILE '.gemini\hooks.json'
           $runtimeHookConfigPath=Join-Path $env:USERPROFILE '.gemini\antigravity-ide\hooks.json'
           $settingsPath=Join-Path $env:USERPROFILE '.gemini\settings.json'
-          Write-Output ('gemini_hooks_config_exists='+(Test-Path $hookConfigPath).ToString().ToLowerInvariant())
-          foreach($candidate in @($rootHookConfigPath,$hookConfigPath,$runtimeHookConfigPath)){
-            if(Test-Path $candidate){
-              $hash=(Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant()
-              Write-Output ('windows_hook_candidate='+$candidate+';exists=true;sha256='+$hash)
-            } else {
-              Write-Output ('windows_hook_candidate='+$candidate+';exists=false')
-            }
-          }
-          $hookBackups=Get-ChildItem -Path $hookConfigPath.Substring(0,$hookConfigPath.LastIndexOf('\')) -Filter 'hooks.json.agentos-backup-*' -File -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 12
-          foreach($backup in $hookBackups){
-            try {
-              $backupHooks=Get-Content -Raw $backup.FullName | ConvertFrom-Json
-              $backupCommand=@($backupHooks.'agentos-one-preinvocation'.PreInvocation)[0].command
-              Write-Output ('hook_backup_shape=last_write_utc='+$backup.LastWriteTimeUtc.ToString('o')+';command='+$backupCommand)
-            } catch {
-              Write-Output ('hook_backup_shape=last_write_utc='+$backup.LastWriteTimeUtc.ToString('o')+';parse_error=true')
-            }
-          }
-          Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
-          if(Test-Path $settingsPath){
-            $settingsText=Get-Content -Raw $settingsPath
-            foreach($match in [regex]::Matches($settingsText,'(?i)"[^"\r\n]*hook[^"\r\n]*"\s*:\s*(true|false|"[^"\r\n]{0,80}"|[0-9]+)')){
-              Write-Output ('windows_hook_setting='+$match.Value)
-            }
-          }
-          if(Test-Path $hookConfigPath){
-            $safeHooks=Get-Content -Raw $hookConfigPath | ConvertFrom-Json
-            foreach($property in $safeHooks.PSObject.Properties){
-              $hook=$property.Value
-              $events=@($hook.PSObject.Properties.Name | Where-Object { $_ -in @('PreToolUse','PostToolUse','PreInvocation','PostInvocation','Stop') }) -join ','
-              Write-Output ('windows_hook_shape=name:'+ $property.Name +';enabled:'+ $hook.enabled +';events:'+ $events)
-              foreach($handler in @($hook.PreInvocation)){
-                if($null -ne $handler){
-                  $commandLeaf=Split-Path ([string]$handler.command).Trim('"') -Leaf
-                  Write-Output ('windows_preinvocation_shape=type:'+ $handler.type +';command_leaf:'+ $commandLeaf +';timeout:'+ $handler.timeout)
-                }
-              }
-            }
-          }
-          $outRoot=Join-Path $appRoot 'resources\app\out'
-          if(Test-Path $outRoot){
-            $agentBundle=Join-Path $outRoot 'jetskiAgent\main.js'
-            if(Test-Path $agentBundle){
-              foreach($pattern in @('PreInvocation','injectSteps','ephemeralMessage','hooks.json')){
-                $count=(Select-String -Path $agentBundle -Pattern $pattern -AllMatches -ErrorAction SilentlyContinue).Matches.Count
-                Write-Output ('windows_hook_contract_'+$pattern+'='+$count)
-              }
-            } else {
-              Write-Output 'windows_jetski_agent_bundle=MISSING'
-            }
-            Write-Output 'antigravity_hook_contract_file_count=targeted-runtime-inspector'
-          } else {
-            Write-Output 'antigravity_out_root=MISSING'
-          }
-          foreach($dataName in @('Antigravity','Antigravity IDE')){
-            $dataRoot=Join-Path $env:APPDATA $dataName
-            $logRoot=Join-Path $dataRoot 'logs'
-            Write-Output ('antigravity_data_root='+$dataName+';exists='+(Test-Path $dataRoot).ToString().ToLowerInvariant())
-            if(Test-Path $logRoot){
-              Write-Output ('antigravity_recent_hook_log_file_count='+$dataName+':targeted-latest-session')
-            } else {
-              Write-Output ('antigravity_log_root='+$dataName+':MISSING')
-            }
-          }
-          $appDataCandidates=Get-ChildItem -Path $env:APPDATA -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'gravity|windsurf|gemini' } |
-            Select-Object -ExpandProperty Name
-          foreach($name in $appDataCandidates){ Write-Output ('windows_appdata_candidate='+$name) }
-          $processes=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'Antigravity|language_server|jetski' -or $_.ExecutablePath -match 'Antigravity' }
-          foreach($process in $processes){
-            Write-Output ('windows_agent_process='+$process.Name+';path='+$process.ExecutablePath)
-          }
-          Write-Output 'windows_antigravity_runtime_fingerprint=END'
           $root=Join-Path $env:LOCALAPPDATA 'AgentOS\one-mcp-source'
           $target=Join-Path $root $source
           $archive=Join-Path $env:TEMP ("agentos-one-"+$source+".zip")
@@ -395,12 +300,6 @@ jobs:
             Write-Output ('managed_hook_command='+$managedHandler.command)
             Write-Output ('managed_hooks_last_write_utc='+(Get-Item $hooks).LastWriteTimeUtc.ToString('o'))
           }
-          $languageServers=Get-CimInstance Win32_Process -Filter "Name='language_server_windows_x64.exe'" -ErrorAction SilentlyContinue
-          foreach($serverProcess in $languageServers){
-            $safeCommand=([string]$serverProcess.CommandLine) -replace '(?i)(authorization|token|credential)[=:]\S+','$1=[REDACTED]'
-            if($safeCommand.Length -gt 900){ $safeCommand=$safeCommand.Substring(0,900) }
-            Write-Output ('language_server_process_id='+$serverProcess.ProcessId+';session_id='+$serverProcess.SessionId+';creation_date='+$serverProcess.CreationDate+';command_line='+$safeCommand)
-          }
           if(Test-Path $settingsPath){
             $settingsText=Get-Content -Raw $settingsPath
             foreach($match in [regex]::Matches($settingsText,'(?i)"[^"\r\n]*hook[^"\r\n]*"\s*:\s*(true|false|"[^"\r\n]{0,80}"|[0-9]+)')){
@@ -408,16 +307,13 @@ jobs:
             }
           }
           $finalLogRoot=Join-Path $env:APPDATA 'Antigravity IDE\logs'
-          $geminiRoot=Join-Path $env:USERPROFILE '.gemini'
-          $allHookConfigs=Get-ChildItem -Path $geminiRoot -Recurse -File -Filter 'hooks.json' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName.Substring($geminiRoot.Length).Split([char]'\',[System.StringSplitOptions]::RemoveEmptyEntries).Count -le 4 }
-          foreach($hookFile in $allHookConfigs){
+          foreach($hookFile in @($rootHookConfigPath,$hookConfigPath,$runtimeHookConfigPath) | Where-Object { Test-Path $_ } | ForEach-Object { Get-Item $_ }){
             try {
               $parsedHooks=Get-Content -Raw $hookFile.FullName | ConvertFrom-Json
               $managed=@($parsedHooks.'agentos-one-preinvocation'.PreInvocation)[0]
-              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName.Substring($geminiRoot.Length).TrimStart('\') +';last_write_utc:'+ $hookFile.LastWriteTimeUtc.ToString('o') +';managed_command:'+ $managed.command)
+              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName +';last_write_utc:'+ $hookFile.LastWriteTimeUtc.ToString('o') +';managed_command:'+ $managed.command)
             } catch {
-              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName.Substring($geminiRoot.Length).TrimStart('\') +';parse_error:true')
+              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName +';parse_error:true')
             }
           }
           $latestSession=Get-ChildItem -Path (Join-Path $env:APPDATA 'Antigravity IDE\logs') -Directory -ErrorAction SilentlyContinue |
