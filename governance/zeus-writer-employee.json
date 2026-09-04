@@ -1,0 +1,71 @@
+{
+  "schema": "agentos.employee-bootstrap/v1",
+  "bootstrap_id": "zeus-writer-product-v1",
+  "employee": {
+    "employee_id": "zeus-writer",
+    "display_name": "Zeus Writer",
+    "role_ids": [
+      "product.zeus_writer"
+    ],
+    "skill_ids": [
+      "writing.project.continue"
+    ]
+  },
+  "initial_work_item": {
+    "schema": "agentos.core-work-item/v1",
+    "work_item_id": "zeus-writer-continuation-v1",
+    "source_kind": "canonical_state",
+    "source_ref": "core:issue-238:zeus-writer",
+    "project_id": "zeus-writer",
+    "employee_id": "zeus-writer",
+    "assignment_id": "zeus-writer-continuation-v1",
+    "goal": "Continue the currently canonical assigned Zeus Writer writing project from durable editorial state; if no unambiguous current project is selected, fail closed with an editorial blocker instead of guessing.",
+    "constraints": [
+      "canonical-project-assignment-required",
+      "canonical-ir-and-employee-state-override-legacy-pulse-status-or-possession-directives",
+      "writing-surface-only",
+      "no-foreign-product-carrier-development",
+      "no-protected-branch-publication-authority",
+      "existing-publisher-reacts-only-to-separately-accepted-source",
+      "no-credential-or-session-identity-output",
+      "receipt-and-provenance-required"
+    ],
+    "dependency_refs": [
+      "core:issue-213"
+    ],
+    "required_capabilities": [
+      "writing.project.continue"
+    ],
+    "authority_requirements": [
+      "role-contract-must-cover-required-capability",
+      "skill-does-not-grant-repository-write-authority",
+      "source-commit-or-publication-requires-separate-governed-authority",
+      "runtime-mutation-requires-separate-authority"
+    ],
+    "source_revision": "zeus-writer-product-v1",
+    "state": "open"
+  },
+  "initial_thread_head": "product:zeus-writer:start",
+  "acceptance_marker": "ZEUS_WRITER_PERSISTENT_EMPLOYEE=VERIFIED",
+  "acceptance_requires": [
+    "active_role_hydrated",
+    "active_skill_hydrated",
+    "canonical_assignment_selected_or_explicitly_blocked",
+    "governed_one_wake_delivered",
+    "executor_claim_observed",
+    "writing_checkpoint_thread_head_observed",
+    "fresh_executor_or_session_resume_observed",
+    "legacy_pulse_status_not_used_as_authority",
+    "credential_and_session_identity_not_exposed",
+    "terminal_or_checkpoint_sanitized_employee_receipt_persisted"
+  ],
+  "invariants": [
+    "employee_identity_is_not_executor_node_model_or_session_identity",
+    "bootstrap_never_overwrites-progressed-thread-head",
+    "bootstrap-never-reopens-terminal-assignment",
+    "role-status-active-is-not-operating-evidence",
+    "static-ci-cannot-emit-verified-marker",
+    "github-actions-is-not-control-plane-fallback",
+    "foreign-product-code-in-zeus-writer-does-not-become-role-authority"
+  ]
+}
