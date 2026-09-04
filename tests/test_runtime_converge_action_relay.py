@@ -42,6 +42,23 @@ def test_relay_registers_fixed_semantic_action_without_generic_carrier():
     assert "stderr" not in relay.SAFE_RESULT_FIELDS
 
 
+def test_fixed_runtime_install_converges_product_employee_profile_after_realm(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(argv, *, cwd, timeout=180):
+        calls.append((list(argv), cwd, timeout))
+        return Proc(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(relay, "_run", fake_run)
+    monkeypatch.setattr(relay, "_health", lambda: True)
+    assert relay._install_fixed_runtime(tmp_path) is True
+    assert calls == [
+        (["python3", "scripts/install_services.py"], tmp_path, 240),
+        (["bash", "scripts/install_realm_fabric_user.sh"], tmp_path, 120),
+        (["bash", "scripts/activate_product_employees_oracle.sh"], tmp_path, 240),
+    ]
+
+
 def test_preflight_refuses_dirty_checkout(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
 
