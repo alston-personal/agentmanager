@@ -1,0 +1,78 @@
+name: Oracle Permission Probe
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-permission-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Read ownership and permissions only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          echo "user=$(id -un)"
+          echo "uid=$(id -u)"
+          echo "head=$(git rev-parse HEAD)"
+          echo "tracked_dirty_count=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+          for path in \
+            .agentos \
+            .agentos/evidence \
+            .agentos/evidence/layoutlab-official-v2.txt \
+            agentos_node \
+            agentos_node/bootstrap_control.py \
+            dashboard/app/api/agentos \
+            'dashboard/app/api/agentos/[...path]' \
+            'dashboard/app/api/agentos/[...path]/route.ts' \
+            "$DATA_ROOT" \
+            "$DATA_ROOT/runtime" \
+            "$DATA_ROOT/runtime/backups"; do
+            if [ -e "$path" ]; then
+              stat -c 'stat=%A uid=%u gid=%g user=%U group=%G path=%n' -- "$path"
+            else
+              echo "missing=$path"
+            fi
+          done
+          if command -v getfacl >/dev/null 2>&1; then
+            getfacl -cp .agentos/evidence agentos_node 'dashboard/app/api/agentos/[...path]' "$DATA_ROOT/runtime/backups" 2>/dev/null || true
+          fi
+          echo "sudo_noninteractive=$((sudo -n true >/dev/null 2>&1 && echo 1) || echo 0)"
+          REMOTE
