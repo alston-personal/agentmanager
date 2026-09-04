@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           ROOT="$1"
           REF="core/integration"
-          EXPECTED="34ea3e75a8fd0f701a0ca78a02820680d5c5fa99"
+          EXPECTED="2bf676a8b40dbe0469929325aa5a2de0d9af836b"
           EXPECTED_PREVIOUS="42f21560c7d7e6692373938358f57b9262e198f0"
           ORIGINAL_MANUAL_RUN="33846887821"
           cd "$ROOT"
