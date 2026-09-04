@@ -22,6 +22,58 @@
         "closure_gap"
       ],
       "mutation_authority": false
+    },
+    "writing.project.continue": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Continue an explicitly assigned writing project from durable project and editorial state and produce bounded writing progress or a blocker.",
+      "required_capabilities": [
+        "writing.project.continue"
+      ],
+      "allowed_intents": [
+        "continue",
+        "revise",
+        "checkpoint"
+      ],
+      "input_fields": [
+        "project_id",
+        "assignment_id",
+        "thread_head",
+        "editorial_constraints"
+      ],
+      "output_types": [
+        "writing_checkpoint",
+        "chapter_candidate",
+        "editorial_blocker"
+      ],
+      "mutation_authority": false
+    },
+    "youtube.optimization.scan": {
+      "status": "active",
+      "version": "1",
+      "purpose": "Inspect explicitly authorized YouTube channel or video state and produce grounded optimization candidates without granting API-side mutation authority.",
+      "required_capabilities": [
+        "youtube.optimization.scan"
+      ],
+      "allowed_intents": [
+        "scan",
+        "analyze",
+        "recommend"
+      ],
+      "input_fields": [
+        "project_id",
+        "assignment_id",
+        "channel_scope",
+        "video_scope"
+      ],
+      "output_types": [
+        "optimization_scan",
+        "metadata_candidate",
+        "subtitle_candidate",
+        "playlist_candidate",
+        "authorization_blocker"
+      ],
+      "mutation_authority": false
     }
   },
   "invariants": [
@@ -29,6 +81,7 @@
     "employee_role_capabilities_must_cover_all_skill_required_capabilities",
     "skill_contract_contains_no_executable_argv_shell_url_endpoint_or_credentials",
     "skill_request_is_intent_only_and_requires_downstream_governed_execution",
-    "unknown_or_inactive_skill_fails_closed"
+    "unknown_or_inactive_skill_fails_closed",
+    "product_employee_skill_never_grants_repository_or_external_api_write_authority"
   ]
 }
