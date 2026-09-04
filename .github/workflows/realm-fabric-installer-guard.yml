@@ -1,0 +1,23 @@
+name: Realm Fabric Installer Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - "scripts/install_realm_fabric_user.sh"
+      - "tests/test_realm_fabric_installer.py"
+      - ".github/workflows/realm-fabric-installer-guard.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer shell
+        run: bash -n scripts/install_realm_fabric_user.sh
+      - name: Run Realm installer regression tests
+        run: python3 -m unittest tests.test_realm_fabric_installer
