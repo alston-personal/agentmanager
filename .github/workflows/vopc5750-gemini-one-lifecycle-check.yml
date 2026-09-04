@@ -78,6 +78,24 @@ jobs:
             }
             Write-Output ('lifecycle_attestation='+($safe | ConvertTo-Json -Compress))
           } else { Write-Output 'lifecycle_attestation=MISSING' }
+          $mcpPath=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
+          if(Test-Path $mcpPath){
+            $mcp=Get-Content -Raw $mcpPath | ConvertFrom-Json
+            $server=$mcp.mcpServers.'agentos-one'
+            $env:PYTHONPATH=[string]$server.env.PYTHONPATH
+            $env:AGENTOS_ONE_MCP_MODE='client'
+            $env:AGENTOS_CLIENT_CONFIG=[string]$server.env.AGENTOS_CLIENT_CONFIG
+            $env:AGENTOS_PREINVOCATION_AUDIT_PATH=Join-Path $env:TEMP 'agentos-lifecycle-isolated-probe.json'
+            $probe=@{invocationNum=0;initialNumSteps=1;conversationId='isolated-lifecycle-probe';workspacePaths=@();modelName='gemini-lifecycle-isolated-probe'} | ConvertTo-Json -Compress
+            $probeOutput=$probe | & ([string]$server.command) -m agentos_node.antigravity_one_hook
+            if($LASTEXITCODE -ne 0){ throw 'isolated lifecycle probe process failed' }
+            if($probeOutput -match 'ONE_IR_HEAD_UNRESOLVED'){
+              Write-Output 'isolated_lifecycle_probe=FAIL'
+              if($probeOutput -match 'code=([^\)]+)'){ Write-Output ('isolated_lifecycle_probe_code='+$Matches[1]) }
+            } else {
+              Write-Output 'isolated_lifecycle_probe=PASS'
+            }
+          }
           $logs=Join-Path $env:APPDATA 'Antigravity IDE\logs'
           $session=Get-ChildItem -Path $logs -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
           if($null -ne $session){
