@@ -1,0 +1,108 @@
+name: Oracle Drift Cleanup
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-drift-cleanup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate cleanup connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify backup and clean exact tracked drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+
+          EXPECTED_HEAD="42f21560c7d7e6692373938358f57b9262e198f0"
+          EXPECTED_BACKUP="oracle-drift-20260904T070517Z"
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          BACKUP_ROOT="$DATA_ROOT/runtime/backups/$EXPECTED_BACKUP"
+
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_HEAD" ] || {
+            echo "cleanup_refused=head_mismatch"
+            exit 2
+          }
+          [ -d "$BACKUP_ROOT" ] || {
+            echo "cleanup_refused=backup_missing"
+            exit 2
+          }
+          for f in head.txt branch.txt status.txt tracked.patch files.txt sha256.txt files.tar.gz; do
+            [ -s "$BACKUP_ROOT/$f" ] || {
+              echo "cleanup_refused=backup_incomplete:$f"
+              exit 2
+            }
+          done
+          [ "$(cat "$BACKUP_ROOT/head.txt")" = "$EXPECTED_HEAD" ] || {
+            echo "cleanup_refused=backup_head_mismatch"
+            exit 2
+          }
+
+          expected_files=$(cat <<'EOF'
+          agent_core/ai_client.py
+          agentos.code-workspace.template
+          litellm/config.yml
+          pyproject.toml
+          runtime_core/__init__.py
+          scripts/generate_daily_report.py
+          scripts/update_scheduler_board.py
+          EOF
+          )
+          actual_files="$(git diff --name-only --diff-filter=ACMRT -- . | LC_ALL=C sort)"
+          expected_sorted="$(printf '%s\n' "$expected_files" | sed '/^$/d' | LC_ALL=C sort)"
+          [ "$actual_files" = "$expected_sorted" ] || {
+            echo "cleanup_refused=dirty_file_set_changed"
+            printf 'actual:\n%s\n' "$actual_files"
+            exit 2
+          }
+          [ "$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')" = "7" ] || {
+            echo "cleanup_refused=dirty_count_changed"
+            exit 2
+          }
+
+          git reset --hard HEAD
+
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || {
+            echo "cleanup_failed=tracked_tree_not_clean"
+            exit 2
+          }
+          echo "cleanup_completed=true"
+          echo "backup_name=$EXPECTED_BACKUP"
+          echo "head=$(git rev-parse HEAD)"
+          echo "tracked_dirty_count=0"
+          REMOTE
