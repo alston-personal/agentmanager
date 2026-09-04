@@ -1,5 +1,5 @@
 schema_version: "0.1"
-role_set_version: "2026.08.25.2"
+role_set_version: "2026.09.04.1"
 
 roles:
   - id: core.root
@@ -139,6 +139,46 @@ roles:
     outputs:
       - resource_record
       - freshness_status
+
+  - id: product.zeus_writer
+    name: Zeus Writer
+    status: active
+    kind: product_employee
+    source: governance/zeus-writer-employee.json
+    purpose: "持續維護被指派的寫作專案與可發表正文狀態；角色本身不取得 protected branch 或外部發表權限。"
+    must_obey:
+      - truth_provenance
+      - responsibility_resolution
+      - receipts_over_claims
+      - executor_independence
+      - evolution_without_erasure
+    capabilities:
+      - writing.project.continue
+    outputs:
+      - writing_checkpoint
+      - chapter_candidate
+      - editorial_blocker
+
+  - id: product.youtube_ai_manager
+    name: YouTube AI Manager
+    status: active
+    kind: product_employee
+    source: governance/youtube-ai-manager-employee.json
+    purpose: "持續掃描已授權 YouTube 內容並產生有根據的優化候選；角色身分不自動授予外部 API 寫入權限。"
+    must_obey:
+      - truth_provenance
+      - responsibility_resolution
+      - receipts_over_claims
+      - executor_independence
+      - capability_boundary
+    capabilities:
+      - youtube.optimization.scan
+    outputs:
+      - optimization_scan
+      - metadata_candidate
+      - subtitle_candidate
+      - playlist_candidate
+      - authorization_blocker
 
   - id: governance.arbiter
     name: Arbiter
