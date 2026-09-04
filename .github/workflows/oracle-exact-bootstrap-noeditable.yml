@@ -113,7 +113,6 @@ jobs:
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
           [ "${AGENT_MODE:-CLIENT}" = "CORE" ] || { echo "bootstrap_refused=agent_mode_not_core"; exit 2; }
-          [ "${AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0}" = "1" ] || { echo "bootstrap_refused=distributed_services_disabled"; exit 2; }
           [ -n "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ] || { echo "bootstrap_refused=control_plane_token_missing"; exit 2; }
 
           PYTHONPATH="$ROOT" python3 scripts/install_services.py
