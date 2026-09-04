@@ -93,6 +93,8 @@ class VopcGeminiOneDeployContractTests(unittest.TestCase):
         self.assertIn("inspect_antigravity_hook_contract.py", client)
         self.assertIn("antigravity_recent_hook_log_file_count", client)
         self.assertIn("os.environ['GITHUB_RUN_ID']", client)
+        self.assertIn("native_lifecycle_acceptance=PASS", client)
+        self.assertIn("gemini-launcher-acceptance", client)
         self.assertNotIn("store.queue_task(node_id, task)", client)
 
 
