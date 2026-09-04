@@ -40,7 +40,10 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             repo = root / "source tree"
             client = state / "client.json"
             audit = state / "mcp" / "antigravity-preinvocation-last.json"
-            with mock.patch.object(installer.os, "name", "nt"):
+            with (
+                mock.patch.object(installer.os, "name", "nt"),
+                mock.patch.dict(installer.os.environ, {"COMSPEC": "cmd.exe"}),
+            ):
                 launcher = installer.write_hook_launcher(
                     state,
                     python=python,
