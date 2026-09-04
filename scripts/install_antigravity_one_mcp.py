@@ -416,7 +416,7 @@ def probe_preinvocation_hook(
             "/d",
             "/s",
             "/c",
-            f'""{launcher}""',
+            f'call "{launcher}"',
         ]
         execution = "windows-cmd-launcher"
     else:

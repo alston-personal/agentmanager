@@ -112,7 +112,7 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             self.assertEqual(evidence["execution"], "windows-cmd-launcher")
             self.assertEqual(
                 run.call_args.args[0],
-                ["cmd.exe", "/d", "/s", "/c", f'""{launcher}""'],
+                ["cmd.exe", "/d", "/s", "/c", f'call "{launcher}"'],
             )
 
 
