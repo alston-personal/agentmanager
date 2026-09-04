@@ -312,7 +312,11 @@ def write_hook_launcher(
 
 def write_hooks_config(path: Path, *, launcher: Path) -> dict[str, Any]:
     config = _load_json(path)
-    command = f'"{launcher}"' if os.name == "nt" else shlex.quote(str(launcher))
+    command = (
+        f'call "{launcher}"'
+        if os.name == "nt"
+        else shlex.quote(str(launcher))
+    )
     hook = {
         "enabled": True,
         "PreInvocation": [

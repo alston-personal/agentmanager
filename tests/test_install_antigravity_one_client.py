@@ -59,6 +59,10 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
             self.assertNotIn("node_token", serialized)
             self.assertNotIn("TOPSECRET", serialized)
             self.assertEqual(hook["PreInvocation"][0]["timeout"], 12)
+            self.assertEqual(
+                hook["PreInvocation"][0]["command"],
+                f'call "{launcher}"',
+            )
 
     def test_global_rule_requires_dynamic_preinvocation(self):
         self.assertIn("PreInvocation", installer.GLOBAL_RULE)
