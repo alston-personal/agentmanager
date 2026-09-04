@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe wake-capable node map
+      - name: Inspect dormant node service
         shell: bash
         run: |
           set -euo pipefail
@@ -41,41 +41,30 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
           cd "$1"
-          set -a
-          source .env
-          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
-          set +a
-          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           echo "checkout_sha=$(git rev-parse HEAD)"
-          python3 - "$DATA_ROOT/realm/nodes.json" "$DATA_ROOT/realm/fabric.json" <<'PY'
-          import json,sys
+          echo "node_active=$(systemctl --user is-active agentos-node.service 2>/dev/null || true)"
+          echo "node_enabled=$(systemctl --user is-enabled agentos-node.service 2>/dev/null || true)"
+          systemctl --user show agentos-node.service -p MainPID -p Result -p ExecMainStatus -p FragmentPath --no-pager || true
+          echo "--- installed unit safe fields ---"
+          systemctl --user cat agentos-node.service --no-pager 2>/dev/null | grep -E '^(Description|WorkingDirectory|ExecStart|Restart|RestartSec|EnvironmentFile)=' || true
+          echo "--- recent journal ---"
+          journalctl --user -u agentos-node.service -n 40 --no-pager 2>/dev/null | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
+          echo "--- candidate client files metadata only ---"
+          for p in "$HOME/.agentos/client.json" "$HOME/.agentos/policy.json" "$HOME/.config/agentos/client.json" "$HOME/.config/agentos/policy.json"; do
+            if [ -e "$p" ]; then stat -c 'path=%n mode=%a owner=%U group=%G size=%s' "$p"; fi
+          done
+          echo "--- policy safe fields only ---"
+          python3 - <<'PY'
+          import json
           from pathlib import Path
-          nodes_path, fabric_path = map(Path, sys.argv[1:])
-          print('nodes_json_exists='+str(nodes_path.is_file()).lower())
-          print('fabric_json_exists='+str(fabric_path.is_file()).lower())
-          if nodes_path.is_file():
-              d=json.loads(nodes_path.read_text())
-              print('node_registry_schema='+str(d.get('schema') or ''))
-              print('node_registry_realm='+str(d.get('realm_id') or ''))
-              entries=d.get('nodes') or {}
-              if isinstance(entries, dict):
-                  entries=list(entries.values())
-              for n in entries:
-                  if not isinstance(n,dict): continue
-                  caps=sorted(str(x) for x in (n.get('capabilities') or []))
-                  print('node='+str(n.get('node_id') or '')+' status='+str(n.get('status') or '')+' role='+str(n.get('role') or '')+' caps='+','.join(caps))
-          if fabric_path.is_file():
-              d=json.loads(fabric_path.read_text())
-              print('fabric_realm='+str(d.get('realm_id') or ''))
-              print('fabric_node_ids='+','.join(sorted(str(x) for x in (d.get('nodes') or {}).keys())))
-              tasks=d.get('tasks') or {}
-              for node_id, queue in sorted(tasks.items()):
-                  print('fabric_queue='+str(node_id)+' depth='+str(len(queue) if isinstance(queue,list) else -1))
+          for p in [Path.home()/'.agentos/policy.json', Path.home()/'.config/agentos/policy.json']:
+              if not p.is_file(): continue
+              try: d=json.loads(p.read_text(encoding='utf-8-sig'))
+              except Exception: continue
+              print('policy_path='+str(p))
+              print('policy_allowed_executables_count='+str(len(d.get('allowed_executables') or [])))
+              print('policy_readable_roots_count='+str(len(d.get('readable_roots') or [])))
+              print('policy_writable_roots_count='+str(len(d.get('writable_roots') or [])))
+              print('policy_employee_wake_root='+str(d.get('employee_wake_root')))
           PY
-          echo "--- relevant user services ---"
-          systemctl --user list-unit-files --type=service --no-pager | grep -E 'agentos|employee' | head -n 100 || true
-          echo "--- relevant processes ---"
-          ps -eo pid,args | grep -E 'agentos_node.(thin_client|client_cli)|employee_worker_host|core_supervisor' | grep -v grep || true
-          echo "--- client config hints (names only) ---"
-          find "$HOME/.config/agentos" -maxdepth 2 -type f -printf '%p\n' 2>/dev/null | sort | head -n 100 || true
           REMOTE
