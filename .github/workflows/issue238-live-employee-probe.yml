@@ -33,62 +33,49 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe activation boundary
+      - name: Probe wake-capable node map
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
-          ROOT="$1"
-          cd "$ROOT"
+          cd "$1"
           set -a
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          REALM_ID="$(python3 - "$DATA_ROOT/realm/fabric.json" <<'PY'
-          import json,sys
-          from pathlib import Path
-          print(json.loads(Path(sys.argv[1]).read_text())['realm_id'])
-          PY
-          )"
           echo "checkout_sha=$(git rev-parse HEAD)"
-          echo "realm_id=$REALM_ID"
-          echo "venv_python_exists=$([ -x "$ROOT/venv/bin/python3" ] && echo true || echo false)"
-          echo "dotvenv_python_exists=$([ -x "$ROOT/.venv/bin/python3" ] && echo true || echo false)"
-          if [ -x "$ROOT/venv/bin/python3" ]; then readlink -f "$ROOT/venv/bin/python3" | sed 's#^#venv_python_real=#'; fi
-          if [ -x "$ROOT/.venv/bin/python3" ]; then readlink -f "$ROOT/.venv/bin/python3" | sed 's#^#dotvenv_python_real=#'; fi
-
-          REALM_NODES="$DATA_ROOT/realm/$REALM_ID/nodes"
-          echo "realm_nodes_root=$REALM_NODES"
-          if [ -d "$REALM_NODES" ]; then
-            for node in "$REALM_NODES"/*; do
-              [ -d "$node" ] || continue
-              nid="$(basename "$node")"
-              q="$node/queue"
-              echo "realm_node=$nid queue_exists=$([ -d "$q" ] && echo true || echo false) queue=$q"
-              manifest="$node/manifest.json"
-              if [ -f "$manifest" ]; then
-                python3 - "$manifest" <<'PY'
+          python3 - "$DATA_ROOT/realm/nodes.json" "$DATA_ROOT/realm/fabric.json" <<'PY'
           import json,sys
           from pathlib import Path
-          d=json.loads(Path(sys.argv[1]).read_text())
-          print('manifest_node='+str(d.get('node_id') or ''))
-          print('manifest_caps='+','.join(str(x) for x in (d.get('capabilities') or [])))
+          nodes_path, fabric_path = map(Path, sys.argv[1:])
+          print('nodes_json_exists='+str(nodes_path.is_file()).lower())
+          print('fabric_json_exists='+str(fabric_path.is_file()).lower())
+          if nodes_path.is_file():
+              d=json.loads(nodes_path.read_text())
+              print('node_registry_schema='+str(d.get('schema') or ''))
+              print('node_registry_realm='+str(d.get('realm_id') or ''))
+              entries=d.get('nodes') or {}
+              if isinstance(entries, dict):
+                  entries=list(entries.values())
+              for n in entries:
+                  if not isinstance(n,dict): continue
+                  caps=sorted(str(x) for x in (n.get('capabilities') or []))
+                  print('node='+str(n.get('node_id') or '')+' status='+str(n.get('status') or '')+' role='+str(n.get('role') or '')+' caps='+','.join(caps))
+          if fabric_path.is_file():
+              d=json.loads(fabric_path.read_text())
+              print('fabric_realm='+str(d.get('realm_id') or ''))
+              print('fabric_node_ids='+','.join(sorted(str(x) for x in (d.get('nodes') or {}).keys())))
+              tasks=d.get('tasks') or {}
+              for node_id, queue in sorted(tasks.items()):
+                  print('fabric_queue='+str(node_id)+' depth='+str(len(queue) if isinstance(queue,list) else -1))
           PY
-              fi
-            done
-          fi
-
-          for p in "$DATA_ROOT/employee-wakes" "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-worker-host" "$DATA_ROOT/employee-worker-state"; do
-            echo "candidate_path=$p exists=$([ -e "$p" ] && echo true || echo false)"
-          done
-
-          echo "--- source unit ---"
-          grep '^ExecStart=' .agent/scripts/agentos-employee-worker-host.service || true
-          echo "--- installed unit ---"
-          systemctl --user cat agentos-employee-worker-host.service --no-pager 2>/dev/null | grep -E '^(ExecStart|EnvironmentFile)=' || true
-          echo "--- supervisor delivery source hints ---"
-          grep -R "AGENTOS_SUPERVISOR_DELIVERY_NODE_ID\|AGENTOS_SUPERVISOR_DELIVERY_QUEUE_ROOT\|employee-wakes" -n agent_core .agent/scripts scripts 2>/dev/null | head -n 80 || true
+          echo "--- relevant user services ---"
+          systemctl --user list-unit-files --type=service --no-pager | grep -E 'agentos|employee' | head -n 100 || true
+          echo "--- relevant processes ---"
+          ps -eo pid,args | grep -E 'agentos_node.(thin_client|client_cli)|employee_worker_host|core_supervisor' | grep -v grep || true
+          echo "--- client config hints (names only) ---"
+          find "$HOME/.config/agentos" -maxdepth 2 -type f -printf '%p\n' 2>/dev/null | sort | head -n 100 || true
           REMOTE
