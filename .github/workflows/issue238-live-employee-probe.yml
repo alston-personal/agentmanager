@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe runtime generations and product Employee liveness
+      - name: Probe maintenance self-heal and product Employee liveness
         shell: bash
         run: |
           set -euo pipefail
@@ -48,10 +48,15 @@ jobs:
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
           echo "checkout_sha=$(git rev-parse HEAD)"
-          if [ -d "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; else echo "action_runtime_sha=missing"; fi
+          if [ -e "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; else echo "action_runtime_sha=missing"; fi
           echo "action_relay_service=$(systemctl --user is-active agentos-action-relay.service 2>/dev/null || true)"
           echo "maintenance_timer=$(systemctl --user is-active agent-maintenance.timer 2>/dev/null || true)"
+          echo "maintenance_service=$(systemctl --user is-active agent-maintenance.service 2>/dev/null || true)"
           systemctl --user list-timers agent-maintenance.timer --all --no-pager 2>/dev/null | tail -n +2 | head -n 2 || true
+          echo "--- maintenance journal sanitized ---"
+          journalctl --user -u agent-maintenance.service -n 80 --no-pager 2>/dev/null \
+            | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' \
+            | tail -n 80 || true
           python3 - "$DATA_ROOT" <<'PY'
           import json, sys
           from pathlib import Path
@@ -72,8 +77,6 @@ jobs:
               n=(d.get('nodes') or {}).get('oracle-employee-wake-node') or {}
               print('wake_node_status='+str(n.get('status') or 'missing'))
               print('wake_node_caps='+','.join(str(x) for x in (n.get('capabilities') or [])))
-          for svc in ('agentos-core-supervisor.service','agentos-employee-wake-node.service','agentos-employee-worker-host.service'):
-              pass
           for eid in ('zeus-writer','youtube-ai-manager'):
               p=root/'employee-runtime/employees'/f'{eid}.json'
               print(f'employee_{eid}_exists='+str(p.is_file()).lower())
