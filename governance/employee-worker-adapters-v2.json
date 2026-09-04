@@ -1,0 +1,38 @@
+{
+  "schema": "agentos.employee-worker-adapters/v2",
+  "adapters": [
+    {
+      "adapter_id": "spec-steward-o3",
+      "status": "active",
+      "runner_kind": "spec_steward_o3",
+      "employee_id": "agentos-spec-steward",
+      "assignment_id": "spec-steward-o3-acceptance-v1",
+      "role_ids": ["governance.spec_steward"],
+      "skill_ids": ["spec.audit"]
+    },
+    {
+      "adapter_id": "zeus-writer-v1",
+      "status": "active",
+      "runner_kind": "zeus_writer_v1",
+      "employee_id": "zeus-writer",
+      "assignment_id": "zeus-writer-continuation-v1",
+      "role_ids": ["product.zeus_writer"],
+      "skill_ids": ["writing.project.continue"]
+    },
+    {
+      "adapter_id": "youtube-ai-manager-scan-v1",
+      "status": "active",
+      "runner_kind": "youtube_ai_manager_scan_v1",
+      "employee_id": "youtube-ai-manager",
+      "assignment_id": "youtube-ai-manager-scan-v1",
+      "role_ids": ["product.youtube_ai_manager"],
+      "skill_ids": ["youtube.optimization.scan"]
+    }
+  ],
+  "invariants": [
+    "runner_kind_is_source_controlled_enum_not_executable_authority",
+    "one_shared_host_process_for_all_employee_runners",
+    "unknown_runner_kind_fails_closed",
+    "product_runners_start_without_network_or_product_credentials"
+  ]
+}
