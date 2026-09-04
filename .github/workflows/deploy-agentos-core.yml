@@ -18,6 +18,16 @@ on:
         required: true
         default: main
         type: string
+      expected_sha:
+        description: Optional exact lowercase 40-char SHA; required for runtime-converger bootstrap
+        required: false
+        default: ''
+        type: string
+      bootstrap_runtime_converger:
+        description: Explicit one-time install of bounded node.runtime.converge carrier (core/integration only)
+        required: false
+        default: false
+        type: boolean
       verify_public_url:
         description: Also verify AGENTOS_CONTROL_PLANE_PUBLIC_URL after local health succeeds
         required: false
@@ -42,6 +52,8 @@ jobs:
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
       DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || '' }}
+      BOOTSTRAP_RUNTIME_CONVERGER: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_runtime_converger || false }}
       VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
 
     steps:
@@ -88,6 +100,20 @@ jobs:
           fi
           echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
 
+          if [ "$BOOTSTRAP_RUNTIME_CONVERGER" = "true" ]; then
+            if [ "$DEPLOY_REF" != "core/integration" ]; then
+              echo "Runtime converger bootstrap requires deploy_ref=core/integration" >&2
+              exit 2
+            fi
+            if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "Runtime converger bootstrap requires exact lowercase expected_sha" >&2
+              exit 2
+            fi
+          elif [ -n "$EXPECTED_SHA" ] && ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "expected_sha must be empty or a lowercase 40-character SHA" >&2
+            exit 2
+          fi
+
       - name: Start SSH agent
         id: ssh_agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -132,13 +158,17 @@ jobs:
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$ROOT" "$DEPLOY_REF" <<'REMOTE'
+            bash -s -- "$ROOT" "$DEPLOY_REF" "$EXPECTED_SHA" "$BOOTSTRAP_RUNTIME_CONVERGER" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"
           REF="$2"
+          EXPECTED="$3"
+          BOOTSTRAP_CONVERGER="$4"
           cd "$ROOT"
 
           PREVIOUS_SHA="$(git rev-parse HEAD)"
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          CAPABILITY_MARKER="$DATA_ROOT/runtime/action-relay/capabilities.json"
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
@@ -146,6 +176,13 @@ jobs:
               git checkout --detach "$PREVIOUS_SHA" || true
               python3 -m pip install -e . || true
               python3 scripts/install_services.py || true
+              if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
+                # A carrier candidate may already have been installed. Remove its
+                # advertisement before restoring the previous Realm generation so
+                # ONE cannot claim a capability whose rollback state is ambiguous.
+                rm -f "$CAPABILITY_MARKER" || true
+                bash scripts/install_realm_fabric_user.sh || true
+              fi
               curl -fsS http://127.0.0.1:8765/health || true
             fi
             exit "$rc"
@@ -154,6 +191,14 @@ jobs:
 
           git fetch --prune origin "$REF"
           TARGET_SHA="$(git rev-parse FETCH_HEAD)"
+          if [ -n "$EXPECTED" ] && [ "$TARGET_SHA" != "$EXPECTED" ]; then
+            echo "Refusing deployment: expected SHA does not equal current ref head" >&2
+            exit 2
+          fi
+          if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
+            [ "$REF" = "core/integration" ] || { echo "Converger bootstrap ref mismatch" >&2; exit 2; }
+            [ "$TARGET_SHA" = "$EXPECTED" ] || { echo "Converger bootstrap exact-SHA mismatch" >&2; exit 2; }
+          fi
           echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
           git checkout --detach "$TARGET_SHA"
 
@@ -185,8 +230,12 @@ jobs:
           echo
           systemctl --user --no-pager --full status agentos-control-plane.service | head -n 30
 
-          mkdir -p "${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}/runtime"
-          printf '%s\n' "$PREVIOUS_SHA" > "${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}/runtime/previous-agentos-core-sha"
+          if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
+            bash scripts/bootstrap_runtime_converger_oracle.sh "$REF" "$TARGET_SHA"
+          fi
+
+          mkdir -p "$DATA_ROOT/runtime"
+          printf '%s\n' "$PREVIOUS_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
           trap - EXIT
           REMOTE
 
@@ -251,4 +300,5 @@ jobs:
           echo "Target host: ${DEPLOY_HOST:-unresolved}"
           echo "Target ref: ${DEPLOY_REF}"
           echo "Stable checkout: ${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          echo "Runtime converger bootstrap requested: ${BOOTSTRAP_RUNTIME_CONVERGER}"
           echo "Public verification requested: ${VERIFY_PUBLIC_URL}"
