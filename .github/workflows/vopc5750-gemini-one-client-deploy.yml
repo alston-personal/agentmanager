@@ -464,7 +464,7 @@ jobs:
           if($null -ne $latestSession){
             $lsMain=Join-Path $latestSession.FullName 'ls-main.log'
             if(Test-Path $lsMain){
-              $loadEvidence=Select-String -Path $lsMain -Pattern 'hooks.json','customization root','app_data_dir','PreInvocation','jsonhook__' -ErrorAction SilentlyContinue | Select-Object -First 80
+              $loadEvidence=Select-String -Path $lsMain -Pattern 'hooks.json','customization root','app_data_dir','PreInvocation','jsonhook__','JSON hook command','command_hook_executor' -ErrorAction SilentlyContinue | Select-Object -Last 120
               foreach($entry in $loadEvidence){
                 $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
                 if($safe.Length -gt 800){ $safe=$safe.Substring(0,800) }
