@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,15 @@ class InstallAntigravityOneClientTests(unittest.TestCase):
         self.assertIn("PreInvocation", installer.GLOBAL_RULE)
         self.assertIn("one_resolve_active", installer.GLOBAL_RULE)
         self.assertIn("workspace is environment metadata", installer.GLOBAL_RULE)
+
+    def test_installer_probe_and_lifecycle_use_separate_audits(self):
+        source = inspect.getsource(installer.main)
+        self.assertIn("antigravity-preinvocation-installer-probe.json", source)
+        self.assertIn("antigravity-preinvocation-last.json", source)
+        self.assertLess(
+            source.index("probe_launcher = write_hook_launcher"),
+            source.index("hook_launcher = write_hook_launcher"),
+        )
 
     def test_windows_probe_executes_the_managed_cmd_launcher(self):
         with tempfile.TemporaryDirectory() as raw:

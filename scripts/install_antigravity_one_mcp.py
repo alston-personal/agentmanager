@@ -529,20 +529,32 @@ def main(argv: list[str] | None = None) -> int:
     hook_launcher = None
     if mode == CLIENT_MODE:
         assert client_config is not None
-        audit_path = state_root / "antigravity-preinvocation-last.json"
-        hook_launcher = write_hook_launcher(
-            state_root,
+        lifecycle_audit_path = (
+            state_root / "antigravity-preinvocation-last.json"
+        )
+        probe_audit_path = (
+            state_root / "antigravity-preinvocation-installer-probe.json"
+        )
+        probe_launcher = write_hook_launcher(
+            state_root / "installer-probe",
             python=python,
             repo_root=repo_root,
             client_config=client_config,
-            audit_path=audit_path,
+            audit_path=probe_audit_path,
         )
         hook_probe = probe_preinvocation_hook(
             python,
             repo_root,
             client_config=client_config,
-            audit_path=audit_path,
-            launcher=hook_launcher,
+            audit_path=probe_audit_path,
+            launcher=probe_launcher,
+        )
+        hook_launcher = write_hook_launcher(
+            state_root,
+            python=python,
+            repo_root=repo_root,
+            client_config=client_config,
+            audit_path=lifecycle_audit_path,
         )
         hooks_config = antigravity_hooks_config_path()
         hook = write_hooks_config(hooks_config, launcher=hook_launcher)

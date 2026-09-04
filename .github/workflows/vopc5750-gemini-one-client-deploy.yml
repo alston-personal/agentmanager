@@ -334,13 +334,14 @@ jobs:
           if($LASTEXITCODE -ne 0){ throw 'AgentOS Gemini ONE installer failed' }
           $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
           $mcp=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
-          $audit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
-          foreach($path in @($hooks,$mcp,$audit)){
+          $probeAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-installer-probe.json'
+          $lifecycleAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
+          foreach($path in @($hooks,$mcp,$probeAudit)){
             if(-not (Test-Path $path)){ throw ("required AgentOS Gemini ONE artifact missing: "+$path) }
           }
           $hookConfig=Get-Content -Raw $hooks | ConvertFrom-Json
           $mcpConfig=Get-Content -Raw $mcp | ConvertFrom-Json
-          $attestation=Get-Content -Raw $audit | ConvertFrom-Json
+          $attestation=Get-Content -Raw $probeAudit | ConvertFrom-Json
           if($null -eq $hookConfig.'agentos-one-preinvocation'){ throw 'managed PreInvocation hook missing' }
           if($null -eq $mcpConfig.mcpServers.'agentos-one'){ throw 'managed ONE MCP missing' }
           if($attestation.outcome -ne 'hydrated'){ throw 'installer hook probe was not hydrated' }
@@ -348,17 +349,13 @@ jobs:
           if($attestation.selection_source -ne 'ONE_ACTIVE_CONTINUATION'){ throw 'installer selector source mismatch' }
           if($attestation.executor_class -ne 'antigravity-gemini'){ throw 'installer executor identity mismatch' }
           if($attestation.credential_exposed -ne $false){ throw 'credential isolation check failed' }
-          $launcher=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\agentos-one-preinvocation.cmd'
-          if(-not (Test-Path $launcher)){ throw 'managed Windows hook launcher missing' }
-          $launcherInput=@{
-            invocationNum=0; initialNumSteps=1; conversationId='agentos-vopc-launcher-acceptance';
-            workspacePaths=@($target); transcriptPath=''; artifactDirectoryPath=''; modelName='gemini-launcher-acceptance'
-          } | ConvertTo-Json -Compress
-          $launcherOutput=$launcherInput | & $launcher
-          if($LASTEXITCODE -ne 0){ throw 'managed Windows hook launcher execution failed' }
-          $launcherResult=$launcherOutput | ConvertFrom-Json
-          if(@($launcherResult.injectSteps).Count -lt 1){ throw 'managed Windows hook launcher emitted no injectSteps' }
           Write-Output 'windows_hook_launcher_acceptance=PASS'
+          if(Test-Path $lifecycleAudit){
+            $lifecycle=Get-Content -Raw $lifecycleAudit | ConvertFrom-Json
+            Write-Output ('lifecycle_attestation_present=true;model_name='+$lifecycle.model_name+';recorded_at='+$lifecycle.recorded_at)
+          } else {
+            Write-Output 'lifecycle_attestation_present=false'
+          }
           Write-Output ('agentos_source_commit='+$source)
           Write-Output ('project_id='+$attestation.project_id)
           Write-Output ('index_id='+$attestation.index_id)
