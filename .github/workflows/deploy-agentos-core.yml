@@ -59,6 +59,7 @@ jobs:
     steps:
       - name: Report bootstrap run started to PR 2
         if: ${{ github.event_name == 'push' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -67,13 +68,15 @@ jobs:
           <!-- agentos-core-bootstrap-start -->
           Distributed AgentOS Core bootstrap run **STARTED**.
 
-          - main workflow commit: `${GITHUB_SHA}`
-          - deployment performed at this stage: `false`
+          - main workflow commit: ${GITHUB_SHA}
+          - deployment performed at this stage: false
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
           )
-          gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"; then
+            echo "WARN: bootstrap status reporting is unavailable; continuing with authoritative preflight/deploy path" >&2
+          fi
 
       - name: Validate deploy connection configuration
         id: config
@@ -175,17 +178,11 @@ jobs:
             if [ "$rc" -ne 0 ]; then
               echo "Deployment failed; attempting rollback to $PREVIOUS_SHA" >&2
               if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-                # Remove candidate advertisement before restoring the previous
-                # accepted generation. ONE must never retain a capability whose
-                # source/runtime generation became ambiguous.
                 rm -f "$CAPABILITY_MARKER" || true
               fi
               git checkout --detach "$PREVIOUS_SHA" || true
               PYTHONPATH="$ROOT" python3 scripts/install_services.py || true
               if [ "$BOOTSTRAP_CONVERGER" = "true" ] && [ -f scripts/install_realm_fabric_user.sh ]; then
-                # Previous accepted Core generations own their own Realm installer.
-                # Restart after checkout so process generation follows source
-                # generation instead of leaving a checkout/process split-brain.
                 bash scripts/install_realm_fabric_user.sh || true
               fi
               curl -fsS http://127.0.0.1:8765/health || true
@@ -205,8 +202,6 @@ jobs:
             [ "$TARGET_SHA" = "$EXPECTED" ] || { echo "Converger bootstrap exact-SHA mismatch" >&2; exit 2; }
           fi
 
-          # Never use a broad git clean. Refuse only when an untracked local path
-          # would be overwritten by the exact requested target tree.
           collisions="$(mktemp)"
           while IFS= read -r -d '' path; do
             if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
@@ -224,8 +219,6 @@ jobs:
           echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
           git checkout --detach "$TARGET_SHA"
 
-          # Runtime/services execute directly from the exact checkout. Do not
-          # mutate system/user site-packages as part of deployment.
           PYTHONPATH="$ROOT" python3 - <<'PY'
           import agent_core
           import agentos_node
@@ -237,7 +230,6 @@ jobs:
           bash -n scripts/install_systemd_user.sh
 
           set -a
-          # shellcheck disable=SC1091
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
@@ -291,6 +283,7 @@ jobs:
 
       - name: Report bootstrap result to PR 2
         if: ${{ always() && github.event_name == 'push' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           CONFIG_OUTCOME: ${{ steps.config.outcome }}
@@ -298,7 +291,6 @@ jobs:
           PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
         shell: bash
         run: |
-          set -euo pipefail
           if [ "$PREFLIGHT_OUTCOME" = "success" ]; then
             verdict="SUCCESS"
           else
@@ -308,17 +300,19 @@ jobs:
           <!-- agentos-core-bootstrap -->
           Distributed AgentOS Core bootstrap preflight: **${verdict}**
 
-          - main workflow commit: `${GITHUB_SHA}`
-          - config: `${CONFIG_OUTCOME}`
-          - ssh-agent: `${SSH_AGENT_OUTCOME}`
-          - Oracle preflight: `${PREFLIGHT_OUTCOME}`
-          - deployment performed: `false`
-          - next deploy ref: `feature/distributed-agentos-runtime`
+          - main workflow commit: ${GITHUB_SHA}
+          - config: ${CONFIG_OUTCOME}
+          - ssh-agent: ${SSH_AGENT_OUTCOME}
+          - Oracle preflight: ${PREFLIGHT_OUTCOME}
+          - deployment performed: false
+          - next deploy ref: feature/distributed-agentos-runtime
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
           )
-          gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"; then
+            echo "WARN: bootstrap result reporting is unavailable; authoritative job outcome is unchanged" >&2
+          fi
 
       - name: Deployment summary
         if: always()
