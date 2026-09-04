@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-27T02:19:48Z
+timestamp_utc=2026-09-04T01:40:25Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 agentos_node=/home/agentos-node/.local/bin/agentos-node
@@ -141,8 +141,8 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
 === DIRECTORY AUDIT ===
 # AgentOS Governance Directory Audit
 
-- Generated: `2026-08-27T02:19:49.215949+00:00`
-- Entities: **14**
+- Generated: `2026-09-04T01:40:26.246105+00:00`
+- Entities: **17**
 - Errors: **0**
 - Warnings: **4**
 
@@ -156,7 +156,7 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
 ## Operating Rule
 Before implementing a new cross-project/system capability: resolve it in the Governance Directory. If an active owner exists, reuse or extend that owner. Discovery is allowed only when resolution fails; newly discovered reusable capabilities must be registered.
 
-Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20260827_021949.md
+Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20260904_014026.md
 === ACCEPTANCE ===
-governance_directory=PASS entities=14
+governance_directory=PASS entities=17
 agentos_node_contract=PASS
