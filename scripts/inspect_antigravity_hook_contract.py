@@ -9,7 +9,15 @@ from pathlib import Path
 from typing import Any
 
 
-TOKENS = ("PreInvocation", "injectSteps", "ephemeralMessage", "hooks.json")
+TOKENS = (
+    "PreInvocation",
+    "injectSteps",
+    "ephemeralMessage",
+    "hooks.json",
+    ".gemini/config",
+    ".gemini/hooks",
+    "customization root",
+)
 MAX_CONTEXTS_PER_TOKEN = 6
 CONTEXT_RADIUS = 220
 
@@ -49,7 +57,9 @@ def _scan_file(path: Path) -> dict[str, Any]:
 
 
 def inspect(app_root: Path) -> dict[str, Any]:
-    product_path = app_root / "resources" / "app" / "product.json"
+    desktop_payload = app_root / "resources" / "app"
+    payload_root = desktop_payload if (desktop_payload / "product.json").is_file() else app_root
+    product_path = payload_root / "product.json"
     product: dict[str, Any] = {}
     if product_path.is_file():
         loaded = json.loads(product_path.read_text(encoding="utf-8-sig"))
@@ -65,12 +75,10 @@ def inspect(app_root: Path) -> dict[str, Any]:
                     "quality",
                 )
             }
-    targets = [app_root / "resources" / "app" / "out" / "jetskiAgent" / "main.js"]
+    targets = [payload_root / "out" / "jetskiAgent" / "main.js"]
     targets.extend(
         sorted(
-            (app_root / "resources" / "app" / "extensions" / "antigravity" / "bin").glob(
-                "language_server*"
-            )
+            (payload_root / "extensions" / "antigravity" / "bin").glob("language_server*")
         )
     )
     files = [_scan_file(path) for path in targets]
@@ -81,6 +89,7 @@ def inspect(app_root: Path) -> dict[str, Any]:
     return {
         "schema": "agentos.antigravity-hook-runtime-contract/v1",
         "app_root": str(app_root),
+        "layout": "desktop" if payload_root == desktop_payload else "server",
         "product": product,
         "tokens": totals,
         "files": files,

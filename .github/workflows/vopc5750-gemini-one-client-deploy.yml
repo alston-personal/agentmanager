@@ -94,7 +94,14 @@ jobs:
                   echo "oracle_hook_contract_${PATTERN}=$COUNT"
                 done
               fi
-              python3 scripts/inspect_antigravity_hook_contract.py --app-root "$(dirname "$(dirname "$PRODUCT")")"
+              for CANDIDATE in /home/ubuntu/.gemini/hooks.json /home/ubuntu/.gemini/config/hooks.json; do
+                if [ -f "$CANDIDATE" ]; then
+                  echo "oracle_hook_candidate=$CANDIDATE;exists=true;sha256=$(sha256sum "$CANDIDATE" | cut -d' ' -f1)"
+                else
+                  echo "oracle_hook_candidate=$CANDIDATE;exists=false"
+                fi
+              done
+              python3 scripts/inspect_antigravity_hook_contract.py --app-root "$(dirname "$PRODUCT")"
             fi
             find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p' || true
             if command -v rg >/dev/null 2>&1; then
@@ -229,8 +236,17 @@ jobs:
             }
           }
           $hookConfigPath=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $rootHookConfigPath=Join-Path $env:USERPROFILE '.gemini\hooks.json'
           $settingsPath=Join-Path $env:USERPROFILE '.gemini\settings.json'
           Write-Output ('gemini_hooks_config_exists='+(Test-Path $hookConfigPath).ToString().ToLowerInvariant())
+          foreach($candidate in @($rootHookConfigPath,$hookConfigPath)){
+            if(Test-Path $candidate){
+              $hash=(Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant()
+              Write-Output ('windows_hook_candidate='+$candidate+';exists=true;sha256='+$hash)
+            } else {
+              Write-Output ('windows_hook_candidate='+$candidate+';exists=false')
+            }
+          }
           Write-Output ('gemini_settings_exists='+(Test-Path $settingsPath).ToString().ToLowerInvariant())
           $outRoot=Join-Path $appRoot 'resources\app\out'
           if(Test-Path $outRoot){
