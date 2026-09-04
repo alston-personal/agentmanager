@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
@@ -177,9 +177,6 @@ jobs:
               python3 -m pip install -e . || true
               python3 scripts/install_services.py || true
               if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-                # A carrier candidate may already have been installed. Remove its
-                # advertisement before restoring the previous Realm generation so
-                # ONE cannot claim a capability whose rollback state is ambiguous.
                 rm -f "$CAPABILITY_MARKER" || true
                 bash scripts/install_realm_fabric_user.sh || true
               fi
@@ -206,7 +203,6 @@ jobs:
           bash -n scripts/install_systemd_user.sh
 
           set -a
-          # shellcheck disable=SC1091
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
