@@ -9,8 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from agent_core.active_continuation import read_active_continuation
-from agentos_node.one_mcp import OneGatewayError, OracleLocalGateway
+from agentos_node.one_mcp import Gateway, OneGatewayError, create_gateway
 
 HOOK_SCHEMA = "agentos.antigravity-one-preinvocation/v0.6"
 AUDIT_SCHEMA = "agentos.antigravity-preinvocation-attestation/v1"
@@ -133,6 +132,20 @@ def _conversation_hash(value: Any) -> str | None:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _workspace_paths_hash(value: Any) -> tuple[int, str | None]:
+    if not isinstance(value, list):
+        return 0, None
+    normalized = [str(item).strip() for item in value if str(item).strip()]
+    if not normalized:
+        return 0, None
+    encoded = json.dumps(
+        sorted(normalized, key=str.casefold),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return len(normalized), "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def _runtime_source_commit() -> str | None:
     explicit = str(os.environ.get("AGENTOS_RUNTIME_SOURCE_COMMIT") or "").strip()
     if explicit:
@@ -146,6 +159,9 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
         return
     executor_class, identity_bound = _executor_identity(payload.get("modelName"))
     selector = envelope.get("active_selector") if isinstance(envelope, dict) and isinstance(envelope.get("active_selector"), dict) else {}
+    workspace_path_count, workspace_paths_sha256 = _workspace_paths_hash(
+        payload.get("workspacePaths")
+    )
     record = {
         "schema": AUDIT_SCHEMA,
         "recorded_at": _now(),
@@ -155,6 +171,8 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
         "invocation_num": 0,
         "conversation_id_sha256": _conversation_hash(payload.get("conversationId")),
         "model_name": payload.get("modelName"),
+        "workspace_path_count": workspace_path_count,
+        "workspace_paths_sha256": workspace_paths_sha256,
         "executor_class": (envelope or {}).get("executor_class") or executor_class,
         "executor_identity_bound": (envelope or {}).get("executor_identity_bound") if isinstance(envelope, dict) else identity_bound,
         "injection_emitted": outcome == "hydrated",
@@ -173,18 +191,20 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
     tmp = Path(raw)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), 0o640)
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o640)
             json.dump(record, handle, ensure_ascii=False, sort_keys=True, indent=2)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)
         tmp = None
-        dir_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+        if os.name != "nt":
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
     finally:
         if tmp is not None:
             tmp.unlink(missing_ok=True)
@@ -192,7 +212,7 @@ def _write_attestation(payload: dict[str, Any], envelope: dict[str, Any] | None,
 
 def build_injection(
     payload: dict[str, Any],
-    gateway: OracleLocalGateway | None = None,
+    gateway: Gateway | None = None,
     *,
     selector: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -201,19 +221,26 @@ def build_injection(
     if int(payload.get("invocationNum") or 0) != 0:
         return {}
 
-    one = gateway or OracleLocalGateway()
+    one = gateway or create_gateway()
     status = one.status()
     if not status.get("connected"):
         raise RuntimeError("ONE is not connected")
 
-    active = selector or read_active_continuation(one.data_root)
+    active_result = None if selector is not None else one.resolve_active()
+    active = selector or (
+        active_result.get("active_selector")
+        if isinstance(active_result, dict)
+        else None
+    )
+    if not isinstance(active, dict):
+        raise ValueError("ONE active continuation selector is unavailable")
     project_id = str(active.get("project_id") or "").strip()
     selector_index = str(active.get("index_id") or "").strip()
     selector_ir = str(active.get("ir_id") or "").strip()
     if not all((project_id, selector_index, selector_ir)):
         raise ValueError("ONE active continuation selector is incomplete")
 
-    result = one.resolve(project_id)
+    result = active_result if isinstance(active_result, dict) else one.resolve(project_id)
     execution_head, canonical_ir, index_id = _canonical_ir_from_resolution(
         result, expected_project_id=project_id
     )

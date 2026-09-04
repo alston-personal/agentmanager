@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import unittest
 
-from agentos_node.antigravity_one_hook import build_injection, _safe_failure_code
+from agentos_node.antigravity_one_hook import (
+    _safe_failure_code,
+    _workspace_paths_hash,
+    build_injection,
+)
 from agentos_node.one_mcp import OneGatewayError
 
 
@@ -51,6 +55,12 @@ class FakeGateway:
             "provenance": {"continuation": "project/continuity/latest.json"},
         }
 
+    def resolve_active(self):
+        result = self.resolve("agentos-core")
+        result["selection_source"] = "ONE_ACTIVE_CONTINUATION"
+        result["active_selector"] = selector(self.index_id, self.ir_id)
+        return result
+
 
 def selector(index_id="idx-7", ir_id="ir-core-152"):
     return {
@@ -67,6 +77,13 @@ def envelope_from(output):
 
 
 class AntigravityOneHookTests(unittest.TestCase):
+    def test_workspace_attestation_is_hashed_and_order_stable(self):
+        count_a, digest_a = _workspace_paths_hash(["D:/agentos", "D:/agent-data"])
+        count_b, digest_b = _workspace_paths_hash(["D:/agent-data", "D:/agentos"])
+        self.assertEqual(count_a, 2)
+        self.assertEqual((count_a, digest_a), (count_b, digest_b))
+        self.assertTrue(str(digest_a).startswith("sha256:"))
+
     def test_first_invocation_hydrates_active_canonical_ir(self):
         gateway = FakeGateway()
         output = build_injection(
@@ -96,6 +113,22 @@ class AntigravityOneHookTests(unittest.TestCase):
         self.assertEqual(envelope["executor_class"], "antigravity-gemini")
         self.assertTrue(envelope["executor_identity_bound"])
         self.assertEqual(envelope["selection_source"], "ONE_ACTIVE_CONTINUATION")
+
+    def test_hook_resolves_active_selector_when_not_injected_by_caller(self):
+        gateway = FakeGateway()
+        output = build_injection(
+            {
+                "invocationNum": 0,
+                "workspacePaths": ["C:/unrelated/workspace"],
+                "modelName": "gemini-test",
+            },
+            gateway,
+        )
+        envelope = envelope_from(output)
+        self.assertEqual(envelope["active_selector"]["ir_id"], "ir-core-152")
+        self.assertEqual(envelope["canonical_ir"]["project_id"], "agentos-core")
+        self.assertEqual(gateway.resolved, ["agentos-core"])
+        self.assertNotIn("unrelated", json.dumps(envelope))
 
     def test_acas_workspace_cannot_override_active_core_ir(self):
         gateway = FakeGateway()

@@ -169,6 +169,16 @@ def _project_resolve(payload: dict[str, Any]) -> dict[str, Any]:
         "next_action": payload.get("next_action"),
         "availability": payload.get("availability") or {},
         "provenance": payload.get("provenance") or {},
+        "selection_source": payload.get("selection_source"),
+        "active_selector": (
+            {
+                key: payload.get("active_selector", {}).get(key)
+                for key in ("schema", "project_id", "index_id", "ir_id")
+                if key in payload.get("active_selector", {})
+            }
+            if isinstance(payload.get("active_selector"), dict)
+            else None
+        ),
     }
     return _redact(result)
 
@@ -235,6 +245,7 @@ class Gateway(Protocol):
     def bootstrap(self) -> dict[str, Any]: ...
     def capabilities(self) -> dict[str, Any]: ...
     def resolve(self, project: str) -> dict[str, Any]: ...
+    def resolve_active(self) -> dict[str, Any]: ...
     def probe(self) -> dict[str, Any]: ...
 
 
@@ -332,6 +343,21 @@ class ClientOneGateway:
             "intent": "continue",
             "node_id": self.config.node_id,
             "project": project,
+        }
+        payload = self._request(
+            "/v1/resolve",
+            method="POST",
+            body=body,
+            authenticated=True,
+        )
+        return _project_resolve(payload)
+
+    def resolve_active(self) -> dict[str, Any]:
+        body = {
+            "schema": "agentos.resolve-request/v1",
+            "intent": "continue",
+            "selection": "active",
+            "node_id": self.config.node_id,
         }
         payload = self._request(
             "/v1/resolve",
@@ -471,6 +497,16 @@ class OracleLocalGateway:
         )
         return _project_resolve(result)
 
+    def resolve_active(self) -> dict[str, Any]:
+        from agent_core.active_continuation import resolve_active_continuation
+
+        active = resolve_active_continuation(data_root=self.data_root)
+        result = dict(active["resolution"])
+        result["node_context"] = self.bootstrap()
+        result["active_selector"] = dict(active["selector"])
+        result["selection_source"] = "ONE_ACTIVE_CONTINUATION"
+        return _project_resolve(result)
+
     def probe(self) -> dict[str, Any]:
         result = self.status()
         result["probe"] = "PASS" if result.get("connected") else "FAIL"
@@ -535,6 +571,11 @@ def create_mcp_server(gateway: Gateway | None = None):
     def one_resolve(project: str) -> dict[str, Any]:
         """Resolve bounded canonical project continuity from ONE."""
         return one.resolve(project)
+
+    @server.tool()
+    def one_resolve_active() -> dict[str, Any]:
+        """Resolve the ONE-selected active Canonical IR without using workspace state."""
+        return one.resolve_active()
 
     return server
 

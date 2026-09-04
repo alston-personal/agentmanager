@@ -1,0 +1,405 @@
+name: vopc5750 Gemini ONE Client Deploy
+
+on:
+  push:
+    branches:
+      - core/issue-152-vopc-gemini-one
+    paths:
+      - 'agent_core/realm_server.py'
+      - 'agent_core/realm_fabric.py'
+      - 'agentos_node/one_mcp.py'
+      - 'agentos_node/antigravity_one_hook.py'
+      - 'scripts/install_antigravity_one_mcp.py'
+      - 'scripts/inspect_antigravity_hook_contract.py'
+      - 'scripts/deploy_realm_fabric_candidate_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+      - 'tests/test_realm_resolve_endpoint.py'
+      - 'tests/test_realm_fabric.py'
+      - 'tests/test_one_mcp.py'
+      - 'tests/test_antigravity_one_hook.py'
+      - 'tests/test_install_antigravity_one_client.py'
+      - 'tests/test_inspect_antigravity_hook_contract.py'
+      - 'tests/test_vopc_gemini_one_deploy_contract.py'
+      - '.github/workflows/vopc5750-gemini-one-client-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vopc5750-gemini-one-client-deploy
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify active resolve and client hook contracts
+        run: |
+          python -m unittest \
+            tests.test_realm_resolve_endpoint \
+            tests.test_one_mcp \
+            tests.test_antigravity_one_hook \
+            tests.test_antigravity_preinvocation_attestation \
+            tests.test_install_antigravity_one_client \
+            tests.test_vopc_gemini_one_deploy_contract -v
+
+  windows-contract:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify native Windows client hook behavior
+        shell: powershell
+        run: |
+          python -m unittest `
+            tests.test_one_mcp `
+            tests.test_antigravity_one_hook `
+            tests.test_antigravity_preinvocation_attestation `
+            tests.test_install_antigravity_one_client -v
+
+  deploy-one-server:
+    needs: [contract, windows-contract]
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fingerprint Oracle Antigravity hook runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/home/ubuntu/.antigravity-ide-server
+          echo 'oracle_antigravity_runtime_fingerprint=BEGIN'
+          if [ -d "$ROOT" ]; then
+            PRODUCT=$(find "$ROOT/bin" -mindepth 2 -maxdepth 2 -type f -name product.json 2>/dev/null | sort | tail -n 1 || true)
+            if [ -n "$PRODUCT" ]; then
+              python3 - "$PRODUCT" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          for key in ('nameShort','applicationName','dataFolderName','version','commit','quality'):
+              print('oracle_product_'+key+'='+str(p.get(key)))
+          PY
+              AGENT_DIR=$(dirname "$PRODUCT")/extensions/antigravity
+              if [ -d "$AGENT_DIR" ] && command -v rg >/dev/null 2>&1; then
+                for PATTERN in PreInvocation injectSteps ephemeralMessage hooks.json; do
+                  COUNT=$(rg -a -o "$PATTERN" "$AGENT_DIR" -g '*.js' -g '*.json' 2>/dev/null | wc -l || true)
+                  echo "oracle_hook_contract_${PATTERN}=$COUNT"
+                done
+              fi
+              for CANDIDATE in /home/ubuntu/.gemini/hooks.json /home/ubuntu/.gemini/config/hooks.json; do
+                if [ -f "$CANDIDATE" ]; then
+                  echo "oracle_hook_candidate=$CANDIDATE;exists=true;sha256=$(sha256sum "$CANDIDATE" | cut -d' ' -f1)"
+                else
+                  echo "oracle_hook_candidate=$CANDIDATE;exists=false"
+                fi
+              done
+              python3 scripts/inspect_antigravity_hook_contract.py --app-root "$(dirname "$PRODUCT")"
+            fi
+            find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p' || true
+            if command -v rg >/dev/null 2>&1; then
+              rg -a -l -m 1 'PreInvocation|injectSteps|ephemeralMessage|hooks\.json' "$ROOT" \
+                -g '*.js' -g '*.json' 2>/dev/null | sed -n '1,40p' || true
+            fi
+          else
+            echo 'oracle_antigravity_runtime_root=MISSING'
+          fi
+          echo 'oracle_antigravity_runtime_fingerprint=END'
+      - name: Request exact ONE server candidate through ubuntu bootstrap boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="realm-fabric-gemini-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          test -w "$LIVE/agentos_node/bootstrap_control.py"
+          cp agentos_node/bootstrap_control.py "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS" && test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          p=Path(sys.argv[1]); rid=sys.argv[2]; source_commit=sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':rid,
+            'action':'agentos.realm_fabric.deploy',
+            'params':{'source_commit':source_commit},
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=p.with_suffix(p.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
+          PY
+
+          for i in $(seq 1 240); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'realm_fabric_receipt=TIMEOUT'; exit 3; }
+          cat "$RECEIPT"
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1])); source_commit=sys.argv[2]
+          assert r.get('schema') == 'agentos.bootstrap-receipt/v1', r
+          assert r.get('action') == 'agentos.realm_fabric.deploy', r
+          assert r.get('executor_user') == 'ubuntu', r
+          assert r.get('executor_uid') == 1001, r
+          assert r.get('source_commit') == source_commit, r
+          assert r.get('ok') is True, r
+          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
+          assert f'realm_fabric_source_commit={source_commit}' in text, text[-12000:]
+          assert 'realm_fabric_candidate_import=PASS' in text, text[-12000:]
+          assert 'realm_fabric_active_resolve_route=PASS' in text, text[-12000:]
+          assert 'realm_fabric_credential_exposed=false' in text, text[-12000:]
+          assert 'realm_fabric_candidate_deploy=PASS' in text, text[-12000:]
+          print('one_server_active_resolve_candidate=PASS')
+          print('one_server_bootstrap_boundary=PASS')
+          PY
+
+  deploy-vopc-client:
+    needs: deploy-one-server
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 9
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install client-mode Gemini hook and MCP through enrolled Node
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import Request, urlopen
+
+          from agent_core.controller_api import ControllerService
+          from agent_core.realm_fabric import RealmFabricStore
+
+          source = os.environ['GITHUB_SHA']
+          node_id = 'vopc5750'
+          store = RealmFabricStore()
+          controller = ControllerService(store)
+          node = controller.node(node_id)
+          if node.get('status') != 'online':
+              raise SystemExit('vopc5750 is not online')
+          roots = node.get('workspace_roots') or {}
+          cwd = (roots.get('readable') or [None])[0]
+          if not cwd:
+              raise SystemExit('vopc5750 has no governed readable workspace')
+
+          task_id = (
+              'vopc5750-gemini-one-'
+              + source[:12]
+              + '-'
+              + os.environ['GITHUB_RUN_ID']
+          )
+          script = r'''$ErrorActionPreference='Stop'
+          $source='__SOURCE_COMMIT__'
+          if($source -notmatch '^[0-9a-f]{40}$'){ throw 'invalid source commit' }
+          $appRoot=Join-Path $env:LOCALAPPDATA 'Programs\Antigravity IDE'
+          $hookConfigPath=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $rootHookConfigPath=Join-Path $env:USERPROFILE '.gemini\hooks.json'
+          $runtimeHookConfigPath=Join-Path $env:USERPROFILE '.gemini\antigravity-ide\hooks.json'
+          $settingsPath=Join-Path $env:USERPROFILE '.gemini\settings.json'
+          Write-Output 'windows_antigravity_bounded_deploy=BEGIN'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS\one-mcp-source'
+          $target=Join-Path $root $source
+          $archive=Join-Path $env:TEMP ("agentos-one-"+$source+".zip")
+          $staging=Join-Path $env:TEMP ("agentos-one-"+$source)
+          if(-not (Test-Path (Join-Path $target 'scripts\install_antigravity_one_mcp.py'))){
+            New-Item -ItemType Directory -Force -Path $root | Out-Null
+            if(Test-Path $staging){ Remove-Item -Recurse -Force $staging }
+            if(Test-Path $archive){ Remove-Item -Force $archive }
+            Invoke-WebRequest -UseBasicParsing -Uri ("https://github.com/alston-personal/agentmanager/archive/"+$source+".zip") -OutFile $archive
+            Expand-Archive -Path $archive -DestinationPath $staging -Force
+            $expanded=Get-ChildItem -Directory $staging | Select-Object -First 1
+            if($null -eq $expanded){ throw 'source archive did not contain a directory' }
+            if(Test-Path $target){ Remove-Item -Recurse -Force $target }
+            Move-Item -Path $expanded.FullName -Destination $target
+            Remove-Item -Recurse -Force $staging
+            Remove-Item -Force $archive
+          }
+          $python=(Get-Command python -ErrorAction Stop).Source
+          & $python (Join-Path $target 'scripts\inspect_antigravity_hook_contract.py') --app-root $appRoot
+          if($LASTEXITCODE -ne 0){ throw 'Antigravity hook runtime inspection failed' }
+          & $python (Join-Path $target 'scripts\install_antigravity_one_mcp.py') --repo $target --mode client
+          if($LASTEXITCODE -ne 0){ throw 'AgentOS Gemini ONE installer failed' }
+          $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $mcp=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
+          $probeAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-installer-probe.json'
+          $lifecycleAudit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
+          foreach($path in @($hooks,$mcp,$probeAudit)){
+            if(-not (Test-Path $path)){ throw ("required AgentOS Gemini ONE artifact missing: "+$path) }
+          }
+          $hookConfig=Get-Content -Raw $hooks | ConvertFrom-Json
+          $mcpConfig=Get-Content -Raw $mcp | ConvertFrom-Json
+          $attestation=Get-Content -Raw $probeAudit | ConvertFrom-Json
+          if($null -eq $hookConfig.'agentos-one-preinvocation'){ throw 'managed PreInvocation hook missing' }
+          if($null -eq $mcpConfig.mcpServers.'agentos-one'){ throw 'managed ONE MCP missing' }
+          if($attestation.outcome -ne 'hydrated'){ throw 'installer hook probe was not hydrated' }
+          if($attestation.source -ne 'ONE_PREINVOCATION_IR'){ throw 'installer hook probe source mismatch' }
+          if($attestation.selection_source -ne 'ONE_ACTIVE_CONTINUATION'){ throw 'installer selector source mismatch' }
+          if($attestation.executor_class -ne 'antigravity-gemini'){ throw 'installer executor identity mismatch' }
+          if($attestation.credential_exposed -ne $false){ throw 'credential isolation check failed' }
+          Write-Output 'windows_hook_launcher_acceptance=PASS'
+          if(Test-Path $lifecycleAudit){
+            $lifecycle=Get-Content -Raw $lifecycleAudit | ConvertFrom-Json
+            Write-Output ('lifecycle_attestation_present=true;model_name='+$lifecycle.model_name+';recorded_at='+$lifecycle.recorded_at+';conversation_id_sha256='+$lifecycle.conversation_id_sha256+';workspace_path_count='+$lifecycle.workspace_path_count+';workspace_paths_sha256='+$lifecycle.workspace_paths_sha256)
+            $syntheticModels=@('gemini-client-installer-probe','gemini-launcher-acceptance')
+            if(
+              $lifecycle.outcome -eq 'hydrated' -and
+              $lifecycle.source -eq 'ONE_PREINVOCATION_IR' -and
+              $lifecycle.selection_source -eq 'ONE_ACTIVE_CONTINUATION' -and
+              $lifecycle.executor_class -eq 'antigravity-gemini' -and
+              $lifecycle.credential_exposed -eq $false -and
+              $lifecycle.model_name -notin $syntheticModels
+            ){
+              Write-Output 'native_lifecycle_acceptance=PASS'
+            } else {
+              Write-Output 'native_lifecycle_acceptance=PENDING'
+            }
+          } else {
+            Write-Output 'lifecycle_attestation_present=false'
+            Write-Output 'native_lifecycle_acceptance=PENDING'
+          }
+          Write-Output 'antigravity_hook_diagnostic_summary=BEGIN'
+          Write-Output ('diagnostic_utc_now='+(Get-Date).ToUniversalTime().ToString('o'))
+          foreach($candidate in @($rootHookConfigPath,$hookConfigPath,$runtimeHookConfigPath)){
+            if(Test-Path $candidate){
+              Write-Output ('hook_candidate_runtime='+$candidate+';last_write_utc='+(Get-Item $candidate).LastWriteTimeUtc.ToString('o')+';sha256='+(Get-FileHash -Algorithm SHA256 $candidate).Hash.ToLowerInvariant())
+            } else {
+              Write-Output ('hook_candidate_runtime='+$candidate+';missing=true')
+            }
+          }
+          if(Test-Path $hooks){
+            $currentHooks=Get-Content -Raw $hooks | ConvertFrom-Json
+            $managedHandler=@($currentHooks.'agentos-one-preinvocation'.PreInvocation)[0]
+            Write-Output ('managed_hook_command='+$managedHandler.command)
+            Write-Output ('managed_hooks_last_write_utc='+(Get-Item $hooks).LastWriteTimeUtc.ToString('o'))
+          }
+          if(Test-Path $settingsPath){
+            $settingsText=Get-Content -Raw $settingsPath
+            foreach($match in [regex]::Matches($settingsText,'(?i)"[^"\r\n]*hook[^"\r\n]*"\s*:\s*(true|false|"[^"\r\n]{0,80}"|[0-9]+)')){
+              Write-Output ('windows_hook_setting='+$match.Value)
+            }
+          }
+          $finalLogRoot=Join-Path $env:APPDATA 'Antigravity IDE\logs'
+          foreach($hookFile in @($rootHookConfigPath,$hookConfigPath,$runtimeHookConfigPath) | Where-Object { Test-Path $_ } | ForEach-Object { Get-Item $_ }){
+            try {
+              $parsedHooks=Get-Content -Raw $hookFile.FullName | ConvertFrom-Json
+              $managed=@($parsedHooks.'agentos-one-preinvocation'.PreInvocation)[0]
+              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName +';last_write_utc:'+ $hookFile.LastWriteTimeUtc.ToString('o') +';managed_command:'+ $managed.command)
+            } catch {
+              Write-Output ('discovered_hooks_config=path:'+ $hookFile.FullName +';parse_error:true')
+            }
+          }
+          $latestSession=Get-ChildItem -Path (Join-Path $env:APPDATA 'Antigravity IDE\logs') -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if($null -ne $latestSession){
+            $lsMain=Join-Path $latestSession.FullName 'ls-main.log'
+            if(Test-Path $lsMain){
+              Write-Output ('recent_log_file=Antigravity IDE;last_write_utc='+(Get-Item $lsMain).LastWriteTimeUtc.ToString('o')+';path='+$lsMain.Substring((Join-Path $env:APPDATA 'Antigravity IDE\logs').Length).TrimStart('\'))
+              $loadEvidence=Select-String -Path $lsMain -Pattern 'hooks.json','customization root','app_data_dir','PreInvocation','jsonhook__','JSON hook command','command_hook_executor' -ErrorAction SilentlyContinue | Select-Object -Last 120
+              foreach($entry in $loadEvidence){
+                $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
+                if($safe.Length -gt 800){ $safe=$safe.Substring(0,800) }
+                Write-Output ('latest_ls_hook_evidence='+$safe)
+              }
+            }
+          }
+          Write-Output 'antigravity_hook_diagnostic_summary=END'
+          Write-Output ('agentos_source_commit='+$source)
+          Write-Output ('project_id='+$attestation.project_id)
+          Write-Output ('index_id='+$attestation.index_id)
+          Write-Output ('ir_id='+$attestation.ir_id)
+          Write-Output 'source=ONE_PREINVOCATION_IR'
+          Write-Output 'selection_source=ONE_ACTIVE_CONTINUATION'
+          Write-Output 'executor_class=antigravity-gemini'
+          Write-Output 'credential_exposed=false'
+          Write-Output 'agentos_vopc5750_gemini_one_install=PASS'
+          Write-Output 'windows_antigravity_bounded_deploy=END'
+          '''.replace('__SOURCE_COMMIT__', source)
+          payload = {
+              'schema': 'agentos.controller-dispatch/v0.1',
+              'task_id': task_id,
+              'node_id': node_id,
+              'action': 'shell.exec',
+              'payload': {
+                  'executable': 'powershell',
+                  'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+                  'cwd': cwd,
+                  'timeout_seconds': 300,
+                  'cognition_ids_used': [],
+              },
+          }
+          state = store.load()
+          receipt = (state.get('receipts') or {}).get(task_id)
+          pending = any(
+              item.get('task_id') == task_id
+              for item in (state.get('tasks') or {}).get(node_id, [])
+              if isinstance(item, dict)
+          )
+          if receipt is None and not pending:
+              body = json.dumps(payload).encode('utf-8')
+              request = Request(
+                  'http://127.0.0.1:8780/v1/controller/dispatch',
+                  data=body,
+                  headers={'Content-Type': 'application/json'},
+                  method='POST',
+              )
+              with urlopen(request, timeout=10) as response:
+                  submission = json.loads(response.read().decode('utf-8'))
+              if submission.get('ok') is not True or submission.get('task_id') != task_id:
+                  raise SystemExit('ONE controller did not accept Gemini installer task')
+              print('one_controller_dispatch=PASS')
+          else:
+              print('one_controller_dispatch=IDEMPOTENT_REUSE')
+          print('gemini_installer_task_id=' + task_id)
+          for _ in range(165):
+              receipt = receipt or store.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(2)
+          if receipt is None:
+              raise SystemExit('vopc5750 Gemini ONE installer receipt timeout')
+          print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
+          stdout = str(receipt.get('stdout') or '')
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0) != 0:
+              raise SystemExit('vopc5750 Gemini ONE installer receipt failed')
+          required = (
+              'agentos_vopc5750_gemini_one_install=PASS',
+              'source=ONE_PREINVOCATION_IR',
+              'selection_source=ONE_ACTIVE_CONTINUATION',
+              'executor_class=antigravity-gemini',
+              'credential_exposed=false',
+          )
+          missing = [marker for marker in required if marker not in stdout]
+          if missing:
+              raise SystemExit('vopc5750 Gemini ONE evidence missing: ' + ','.join(missing))
+          print('vopc5750_gemini_one_client_deploy=PASS')
+          print('antigravity_reload_required=YES')
+          PY

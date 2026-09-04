@@ -19,7 +19,7 @@ When the **Gemini executor/session inside the Antigravity IDE/2.0 surface** is a
 
 `.agents/skills/agentos-one-onboarding/SKILL.md`
 
-For Oracle-hosted Antigravity Gemini, fresh-session continuity is provided primarily by the global Gemini-side `PreInvocation` hook installed in `~/.gemini/config/hooks.json`.
+For both Oracle-hosted Antigravity Gemini and enrolled external clients, fresh-session continuity is provided primarily by the global Gemini-side `PreInvocation` hook installed in `~/.gemini/config/hooks.json`. Oracle reads ONE state locally; an enrolled client resolves the active selector through its authenticated, credential-isolated ONE adapter. The executor never receives the Node bearer credential.
 
 Fresh continuation selection is owned by ONE, not by the IDE workspace. `agent_core/active_continuation.py` maintains a Realm/runtime-level `agentos.active-continuation/v1` pointer containing only `project_id + index_id + ir_id`. That pointer is **not a second state store**: the authoritative working state remains the referenced Canonical IR generation.
 
@@ -29,7 +29,7 @@ Before the first Gemini model call, the hook reads that active selector, resolve
 
 The existing canonical publisher in `agent_core/project_continuation_index.py` is initially restricted to `agentos-core`; it atomically publishes `execution-head.json` and `continuity/latest.json` with one shared `index_id`. The selector may point only to an actually current canonical generation. Until project publishing is deliberately generalized, do not fabricate cross-project IR by scanning workspaces.
 
-The Gemini-side `agentos-one` MCP server remains an explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve`). The PreInvocation hook and MCP adapter use the trusted Oracle-local read-only projection and expose no Realm/node credential to the model.
+The Gemini-side `agentos-one` MCP server remains an explicit live-query surface (`one_status`, `one_bootstrap`, `one_capabilities`, `one_resolve_active`, `one_resolve`). The PreInvocation hook and MCP adapter use either the trusted Oracle-local read-only projection or the enrolled-client authenticated projection and expose no Realm/node credential to the model.
 
 If the active selector, Canonical IR head, or generation fence is unavailable/malformed/stale, fail closed with `ONE_IR_HEAD_UNRESOLVED`; do not reconstruct current state from local evidence.
 

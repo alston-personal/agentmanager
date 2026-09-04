@@ -1,0 +1,178 @@
+name: vopc5750 Gemini ONE Lifecycle Check
+
+on:
+  push:
+    branches:
+      - core/issue-152-vopc-gemini-one
+    paths:
+      - '.github/workflows/vopc5750-gemini-one-lifecycle-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-vopc-lifecycle:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read isolated Gemini lifecycle evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE" python3 - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import Request, urlopen
+
+          from agent_core.controller_api import ControllerService
+          from agent_core.active_continuation import resolve_active_continuation
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id = 'vopc5750'
+          task_id = 'vopc-gemini-lifecycle-' + os.environ['GITHUB_RUN_ID']
+          store = RealmFabricStore()
+          try:
+              active = resolve_active_continuation(data_root=os.environ['AGENT_DATA_ROOT'])
+              selector = active.get('selector') or {}
+              print('oracle_active_selector=' + json.dumps({
+                  'project_id': selector.get('project_id'),
+                  'index_id': selector.get('index_id'),
+                  'ir_id': selector.get('ir_id'),
+                  'selection_source': 'ONE_ACTIVE_CONTINUATION',
+              }, sort_keys=True))
+          except Exception as exc:
+              print('oracle_active_selector_error=' + type(exc).__name__)
+          os.system("journalctl --user -u agentos-realm-fabric.service --since '2026-09-04 07:43:40 UTC' --until '2026-09-04 07:44:10 UTC' --no-pager -o cat | tail -n 80")
+          node = ControllerService(store).node(node_id)
+          roots = node.get('workspace_roots') or {}
+          cwd = (roots.get('readable') or [None])[0]
+          if node.get('status') != 'online' or not cwd:
+              raise SystemExit('vopc5750 is not available for lifecycle check')
+
+          script = r'''$ErrorActionPreference='Stop'
+          Write-Output 'lifecycle_diagnostic_revision=one-http-400-v1'
+          $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
+          $audit=Join-Path $env:LOCALAPPDATA 'AgentOS\state\mcp\antigravity-preinvocation-last.json'
+          Write-Output ('lifecycle_check_utc='+(Get-Date).ToUniversalTime().ToString('o'))
+          if(Test-Path $hooks){
+            $config=Get-Content -Raw $hooks | ConvertFrom-Json
+            $handler=@($config.'agentos-one-preinvocation'.PreInvocation)[0]
+            Write-Output ('managed_hook_command='+$handler.command)
+            Write-Output ('managed_hook_last_write_utc='+(Get-Item $hooks).LastWriteTimeUtc.ToString('o'))
+          } else { Write-Output 'managed_hook_config=MISSING' }
+          if(Test-Path $audit){
+            $record=Get-Content -Raw $audit | ConvertFrom-Json
+            $safe=[ordered]@{
+              schema=$record.schema; recorded_at=$record.recorded_at; outcome=$record.outcome
+              model_name=$record.model_name; conversation_id_sha256=$record.conversation_id_sha256
+              source=$record.source; selection_source=$record.selection_source
+              project_id=$record.project_id; index_id=$record.index_id; ir_id=$record.ir_id
+              executor_class=$record.executor_class; executor_identity_bound=$record.executor_identity_bound
+              credential_exposed=$record.credential_exposed; workspace_path_count=$record.workspace_path_count
+              workspace_paths_sha256=$record.workspace_paths_sha256
+            }
+            Write-Output ('lifecycle_attestation='+($safe | ConvertTo-Json -Compress))
+          } else { Write-Output 'lifecycle_attestation=MISSING' }
+          $mcpPath=Join-Path $env:USERPROFILE '.gemini\config\mcp_config.json'
+          if(Test-Path $mcpPath){
+            $mcp=Get-Content -Raw $mcpPath | ConvertFrom-Json
+            $server=$mcp.mcpServers.'agentos-one'
+            $env:PYTHONPATH=[string]$server.env.PYTHONPATH
+            $env:AGENTOS_ONE_MCP_MODE='client'
+            $env:AGENTOS_CLIENT_CONFIG=[string]$server.env.AGENTOS_CLIENT_CONFIG
+            $env:AGENTOS_PREINVOCATION_AUDIT_PATH=Join-Path $env:TEMP 'agentos-lifecycle-isolated-probe.json'
+            $probe=@{invocationNum=0;initialNumSteps=1;conversationId='isolated-lifecycle-probe';workspacePaths=@();modelName='gemini-lifecycle-isolated-probe'} | ConvertTo-Json -Compress
+            $probeOutput=$probe | & ([string]$server.command) -m agentos_node.antigravity_one_hook
+            if($LASTEXITCODE -ne 0){ throw 'isolated lifecycle probe process failed' }
+            if($probeOutput -match 'ONE_IR_HEAD_UNRESOLVED'){
+              Write-Output 'isolated_lifecycle_probe=FAIL'
+              if($probeOutput -match 'code=([^\)]+)'){ Write-Output ('isolated_lifecycle_probe_code='+$Matches[1]) }
+              $client=Get-Content -Raw ([string]$server.env.AGENTOS_CLIENT_CONFIG) | ConvertFrom-Json
+              Write-Output ('client_one_url='+[string]$client.one_url)
+              $headers=@{Authorization=('Bearer '+[string]$client.node_token);Accept='application/json'}
+              $body=@{schema='agentos.resolve-request/v1';intent='continue';selection='active';node_id=[string]$client.node_id} | ConvertTo-Json -Compress
+              try {
+                Invoke-RestMethod -Method Post -Uri (([string]$client.one_url).TrimEnd('/')+'/v1/resolve') -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+                Write-Output 'direct_active_request=PASS'
+              } catch {
+                $detail=[string]$_.ErrorDetails.Message
+                if((-not $detail) -and $null -ne $_.Exception.Response){
+                  try {
+                    $reader=New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                    $detail=$reader.ReadToEnd()
+                    $reader.Dispose()
+                  } catch { $detail='' }
+                }
+                $category='unclassified_http_error'
+                if($detail -match 'stale'){ $category='active_selector_stale' }
+                elseif($detail -match 'selector.*missing|selector missing'){ $category='active_selector_missing' }
+                elseif($detail -match 'unsupported active continuation selector schema'){ $category='active_selector_schema' }
+                elseif($detail -match 'no valid canonical continuation generation'){ $category='canonical_generation_missing' }
+                elseif($detail -match 'execution-head / IR generation mismatch'){ $category='canonical_generation_mismatch' }
+                elseif($detail -match 'project query is required'){ $category='server_active_selection_not_applied' }
+                elseif($detail -match 'selection must be project or active'){ $category='server_selection_contract_mismatch' }
+                elseif($detail -match 'node_id is required'){ $category='node_id_missing' }
+                elseif($detail -match 'invalid resolve request schema'){ $category='request_schema_mismatch' }
+                elseif($detail -match 'only continue intent'){ $category='request_intent_mismatch' }
+                elseif($detail -match 'ValueError'){ $category='other_server_validation_error' }
+                Write-Output ('direct_active_request='+$category)
+              }
+            } else {
+              Write-Output 'isolated_lifecycle_probe=PASS'
+            }
+          }
+          $logs=Join-Path $env:APPDATA 'Antigravity IDE\logs'
+          $session=Get-ChildItem -Path $logs -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+          if($null -ne $session){
+            $log=Join-Path $session.FullName 'ls-main.log'
+            Write-Output ('latest_ls_main='+$log)
+            if(Test-Path $log){
+              $lines=Select-String -Path $log -Pattern 'Loaded hooks.json','jsonhook__','JSON hook command','command_hook_executor','PreInvocation' -ErrorAction SilentlyContinue | Select-Object -Last 80
+              foreach($entry in $lines){
+                $safe=([string]$entry.Line) -replace '(?i)(authorization|token|credential)\s*[:=]\s*\S+','$1=[REDACTED]'
+                if($safe.Length -gt 900){ $safe=$safe.Substring(0,900) }
+                Write-Output ('hook_log='+$safe)
+              }
+            }
+          }
+          '''
+          payload = {
+              'schema': 'agentos.controller-dispatch/v0.1',
+              'task_id': task_id,
+              'node_id': node_id,
+              'action': 'shell.exec',
+              'payload': {
+                  'executable': 'powershell',
+                  'argv': ['-NoProfile', '-NonInteractive', '-Command', script],
+                  'cwd': cwd,
+                  'timeout_seconds': 60,
+                  'cognition_ids_used': [],
+              },
+          }
+          request = Request(
+              'http://127.0.0.1:8780/v1/controller/dispatch',
+              data=json.dumps(payload).encode('utf-8'),
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          with urlopen(request, timeout=10) as response:
+              accepted = json.loads(response.read().decode('utf-8'))
+          if accepted.get('ok') is not True:
+              raise SystemExit('ONE controller rejected lifecycle check')
+          receipt = None
+          for _ in range(70):
+              receipt = store.get_receipt(task_id)
+              if receipt:
+                  break
+              time.sleep(1)
+          if not receipt:
+              raise SystemExit('lifecycle check receipt timeout')
+          print(str(receipt.get('stdout') or ''))
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0) != 0:
+              raise SystemExit('lifecycle check failed')
+          PY
