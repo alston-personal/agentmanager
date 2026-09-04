@@ -1,177 +1,161 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-09-02  
-**Purpose:** canonical public map of what is implemented, what is verified, and what is still research.
+**Status date:** 2026-09-04  
+**Canonical development authority:** `core/integration`  
+**Purpose:** one concise reality map for implemented, verified, pending, research, and retired AgentOS Core architecture.
 
-This document exists to prevent architecture drift between code and prose. It is intentionally narrower than a roadmap: every item marked **Implemented** must have a concrete repository path; every item marked **Verified** must also have a test or evidence path.
+This document is intentionally evidence-bound. A source merge proves implementation, not live operation. A live receipt proves only the exact generation, route, capability, executor, and effect that the receipt attests.
 
 ## Product goal
 
-AgentOS has one continuity goal:
+AgentOS should let a user change conversation, model, executor, extension, Node, or machine without reconstructing the project from conversation history. Durable project state, accepted experience, authority, execution state, and evidence live outside model-local context. Models and IDE extensions are replaceable execution surfaces.
 
-> A user should be able to switch session, model, executor, extension, or machine and continue useful work without manually reconstructing the project from a large conversation history.
+## Canonical authority hierarchy
 
-This goal is broader than memory retrieval. AgentOS treats durable project/working state as an external system concern and treats models/executors/extensions as replaceable clients of that state.
+1. New explicit user intent and accepted governance constraints.
+2. Canonical Project Identity and repository ownership.
+3. ONE durable state: Canonical IR, active continuation pointer, Employee/assignment state, registries, dependency state.
+4. Accepted Experience IR, scoped and provenance-bound.
+5. Governed receipts/evidence from actual execution.
+6. Client-local workspace/history/config and legacy pulse/status files.
+
+Lower layers may inform higher layers but may not silently overwrite them.
 
 ## Reality map
 
-| Capability | State | Implementation | Verification / evidence |
-|---|---|---|---|
-| Logic / data separation | Implemented | `agent_core/config.py`, bootstrap/runtime scripts | existing bootstrap/runtime tests |
-| Session close / handoff record | Implemented | `agent_core/session_lifecycle.py`, `runtime_core/` | `tests/test_session_close.py` |
-| Continuation-state monotonicity | Implemented + tested | `scripts/continuation_state.py` | `tests/test_continuation_state.py` |
-| Persistent control plane | Implemented + tested | `agent_core/control_plane.py` | `tests/test_control_plane.py`, `.agentos/evidence/bootstrap-control-plane.txt` |
-| Node registry / capability discovery | Implemented + tested | `agent_core/node_registry.py`, `scripts/agentos_node.py` | `tests/test_agentos_node.py`, `tests/test_node_registry_v01.py` |
-| Governance responsibility resolution | Implemented + tested | `agent_core/governance_directory.py` | `tests/test_governance_directory.py`, governance audit workflow/evidence |
-| Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
-| Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
-| Platform driver abstraction | Implemented + tested | `agent_core/platform/`, `scripts/platform_runtime.py` | `tests/test_platform_runtime.py` |
-| ChatGPT bootstrap transport into ONE | Implemented bootstrap; live regression still required | Bootstrap Control Inbox #50 → Oracle bridge → ONE | Issue #50 control command/result evidence; `docs/CHATGPT_ONE_TRANSPORT.md` |
-| Authority-driven transport routing | Implemented + tested candidate | `agent_core/transport_routing.py`, `governance/transport-routing.json` | `tests/test_transport_routing.py`; fresh ChatGPT session acceptance pending in #179 |
-| Governance drift guard | Implemented + tested | `scripts/drift_guard.py`, constitution/role registries | `tests/test_drift_guard.py` |
-| Protected-branch authority guard | Implemented on governance branch | `.agent/governance/protected_branches.yaml`, `scripts/protected_branch_authority.py` | `tests/test_protected_branch_authority.py`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md` |
-| Evidence-first operational acceptance | Implemented | `.agentos/evidence/` | live acceptance files committed by workflows and live executor evidence |
-| Documentation Reality Guard | Implemented | `scripts/documentation_reality_guard.py` | `.github/workflows/documentation-reality-guard.yml`, `tests/test_documentation_reality_guard.py` |
-| Canonical continuation IR (`agentos.ir/v1`) | Implemented + verified for AgentOS Core E2/E3 slices | `agent_core/project_continuation_index.py`, `agent_core/resolve_facade.py`, Gemini/Codex consumers | Gemini E2 evidence plus `.agentos/evidence/issue-152-codex-extension-e3-verified-2026-09-02.md` |
-| Guarded Canonical IR handoff / parent fence | Implemented + tested | `agent_core/canonical_ir_handoff.py`, guarded `agent_core/project_continuation_index.py` | `tests/test_canonical_ir_handoff.py`, `tests/test_project_continuation_index.py` |
-| ONE active Canonical continuation selector | Implemented + verified for tested Gemini/Codex continuity slice | `agent_core/active_continuation.py`, `scripts/seed_active_continuation.py`, Gemini PreInvocation + Codex MCP consumers | unrelated-workspace Oracle probe plus two fresh Codex `one_resolve_active` observations |
-| Fresh Antigravity Gemini continuation with only `繼續` | Verified for one concrete E2 slice | Oracle Gemini-side `PreInvocation` hydration from ONE Canonical IR plus read-only MCP adapter | two independent fresh Gemini sessions reproduced `ONE_PREINVOCATION_IR / agentos-core / idx-core-152 / ir-core-152`; see `.agentos/evidence/issue-152-antigravity-gemini-e2-2026-09-01.md` |
-| OpenAI Codex IDE extension ONE bootstrap | Implemented + live-verified | `agentos_node/codex_one_mcp_stdio.py`, `scripts/install_codex_one_oracle.py`, global `~/.codex/AGENTS.md` + `~/.codex/config.toml` managed blocks | two independent fresh Codex extension threads resolved the same ONE-selected E3 generation; `.agentos/evidence/issue-152-codex-extension-e3-verified-2026-09-02.md` |
-| Gemini extension → ONE → OpenAI Codex IDE extension E3 | **Verified for one concrete Oracle cross-extension slice** | corrected child handoff, Codex native AGENTS+MCP bootstrap, `one_resolve_active` receipt | #152 comments `5503435564` + `5503469931`; distinct receipt timestamps `02:28:29Z` and `02:32:25Z`; repository evidence file above |
-| Post-E3 canonical continuation | Implemented guarded handoff; live advancement pending | `scripts/advance_issue_152_after_e3_verified.py`, `scripts/advance_issue_152_after_e3_verified_oracle.sh` | parent-fenced from verified E3 generation; intended to resume broader #152 work instead of repeating completed regression |
-| Model-independent Cognitive IR across arbitrary executors/models/extensions | Research | bounded `agentos.ir/v1` continuity now has one verified Gemini→Codex cross-extension slice, but general cross-client projection/benchmark is not canonical | requires broader model/extension/machine experiments; do not generalize one verified slice |
-| General zero-cost model/executor/extension/machine switch with only `continue` | Target / not yet proven generally | Gemini E2 and Gemini→Codex E3 are verified concrete slices | broader continuity, client diversity, and machine portability benchmarks still required |
+| Capability | Current state | Canonical implementation / evidence boundary |
+| --- | --- | --- |
+| Persistent control plane and Realm | Implemented and operating slices | `agent_core/control_plane.py`, Realm services/registry, exact live state must be read from runtime/Node receipts rather than a hard-coded historical generation |
+| Node Registry / Node Map | Implemented + tested | `agent_core/node_registry.py`; `agentos.node-registry/v0.1` and read-only `agentos.node-map/v0.1` |
+| Node heartbeat freshness | Implemented | reported `online` becomes effective `offline` when heartbeat is stale; current default stale floor is 30s with a minimum of 15s |
+| Node/runtime provenance and drift | Implemented | Node Map projects runtime convergence/drift/unknown; source equality alone is not operating-profile equality |
+| Bounded Oracle runtime convergence | Implemented + live accepted under #242 | typed `node.runtime.converge`, fixed source-owned installers, exact `core/integration` SHA, no caller shell/argv/path/service authority, rollback + sanitized receipts; #242 completed 2026-09-04 |
+| Action Relay generation reconciliation | Implemented | Core maintenance can reconcile an old immutable Action Relay runtime to current accepted Core generation without caller-supplied execution fields |
+| Node vs executor identity | Canonical invariant; broader extraction/acceptance still tracked by #152 | Node is durable Realm participant; executor/surface/backend/session are distinct identities; `Node online != executor available` |
+| Executor status semantics | Canonical invariant | `advertised != routable != authorized != successful`; do not collapse these into one capability flag |
+| ChatGPT Web → ONE | Bootstrap path implemented | authority-driven routing prefers direct ONE/MCP/App; current ChatGPT bootstrap may use Control Inbox #50; GitHub Actions is not a generic failure fallback |
+| Bounded executor jobs through ONE | Implemented slices | declarative fixed job types route through ONE → bounded Action Relay → sanitized durable receipt; no generic remote shell |
+| Canonical continuation IR | Implemented + verified concrete cross-extension slices | `agentos.ir/v1`, parent-fenced publication, active continuation selector; Gemini/Codex continuity has concrete accepted evidence, but arbitrary portability remains unproven |
+| Active continuation selector | Implemented | pointer stores project/index/IR identity only; it is not another state store and must fail closed on stale references |
+| Experience subsystem v0 prose design | Deprecated | PR #119 direction is superseded; do not merge wholesale |
+| Semantic Experience IR v1 | Active candidate under #117 | current focused design is `agentos.experience/v1` carrying `agentos.experience-ir/v1`, typed semantic nodes, stable digests, extraction validation, ONE-owned Experience Set, semantic hydration receipts; PR #229 remains unmerged as of this snapshot |
+| Master Experience Floor | Strong live evidence, issue still open | observed governed A/B reached baseline 6/7 → prehydrated 7/7; ceiling-aware criterion is the current candidate logic, but #117 remains open and canonical Experience IR integration/ablation evidence is not yet fully accepted |
+| General Cognitive IR across arbitrary models | Research | Canonical continuation IR and Experience IR are bounded concrete forms; do not claim portable hidden activations or arbitrary executor equivalence |
+| Agent Employee Runtime | Accepted foundation | durable Employee identity is distinct from executor/session/Node; durable assignments, leases, state/thread heads, scoped memory and receipts are canonical operating state |
+| Persistent Supervisor/Reconciler | Implemented/operating acceptance work | Supervisor is Core controller process, not an Employee; events reveal candidate work but do not grant authority; no daemon-per-role architecture |
+| Product Employees (Zeus Writer / YouTube AI Manager) | Source/runtime profile implemented; live production acceptance remains open under #238 | fixed Employee contracts, wake-only Node profile and shared Worker Host are source-controlled; real persistent writing/scan continuity and liveness markers still require operating evidence |
+| Project/repository identity | Canonical and explicit | `docs/PROJECT_REPO_MAP.md`, `governance/product-migrations.json`; project identity is never inferred solely from a repository name |
+| Parallel Core workers | Accepted | canonical Core thread is authority/control-plane; issue workers execute independently; dependencies block exact steps, not whole projects |
+| Evidence-first acceptance | Canonical | `.agentos/evidence/`, sanitized receipts, exact source/runtime identity; static CI cannot manufacture live VERIFIED markers |
+| Protected publication authority | Canonical | `core/issue-* -> core/integration`; publication to protected `main` is separate explicit authority and is never implied by `continue`, CI green, mergeability, capability availability, or worker completion |
 
-## Important invariants
+## Current Node Map semantics
 
-### Newer user intent must never be rolled back
+The canonical map is generated from ONE-side `NodeRegistry`; it is not a manually maintained list. `agentos.node-map/v0.1` includes:
 
-Compaction, replay, stale tool results, or executor switching must not replace a newer goal/correction with an older one. `scripts/continuation_state.py` currently protects this narrow invariant and has regression tests.
+- Realm id, Node count and effective online count;
+- each Node's role (`core` or `client`), hostname/platform, capabilities and tool presence;
+- `surface_inventory` for provider/IDE surfaces without pretending the surface equals a backend model;
+- heartbeat age and stale reason;
+- runtime provenance / converged, drifted, or unknown state;
+- workspace-root policy projection for legal execution placement;
+- Realm-level aggregate capabilities, tools, and surface providers.
 
-### Canonical IR advancement is parent-fenced
+Known real identities include Oracle/Core (`oracle-core-node`) and the Windows client `vopc5750`, but documentation must not hard-code them as the complete live Realm. Live membership and capabilities must come from Node Map / receipts.
 
-A writer advancing an existing Canonical IR generation must supply the exact current `index_id` and `ir_id`, create a new generation, and set the new IR's `parent_ir_id` to that expected parent. The comparison occurs while holding the same continuation-index lock used for publication. A concurrent or stale writer therefore fails before mutation instead of overwriting newer continuation state.
+Executor inventory is a child layer, not part of Node liveness. A Gemini, Codex, Claude-extension, desktop host, local backend, or Employee Worker Host can become unavailable while its host Node remains online.
 
-### Active selector is a pointer, not another state store
+## Runtime source and deployment identity
 
-`agentos.active-continuation/v1` stores only `project_id + index_id + ir_id` (plus activation metadata). It does not duplicate goal, decisions, tasks, evidence, or model context. Those remain in the referenced Canonical IR. Selector reads revalidate the referenced generation; a stale selector fails closed.
+The old fixed statement `live generation 6 / f842bee...` is retired. It was valid historical evidence, not a permanent runtime identity.
 
-The current publisher is still restricted to `agentos-core`, so bootstrap may initialize a missing selector from that one supported canonical project. It must not silently overwrite an existing stale selector.
+Canonical source development currently advances on `core/integration`; at this documentation refresh its observed head is `0c47fe2a0c325898814f4bea7c1e009359983477`. That value is a repository snapshot, not a claim that every live process is already on that SHA.
 
-### Workspace is not continuation authority
-
-The IDE's workspace must not choose durable continuation. This is evidence-backed: early E3 attempts continued local `if-tv-station` and ACAS work because continuation hydration was gated by workspace state. Supporting more workspace path shapes did not solve the problem; the workspace gate itself was architecturally wrong.
-
-Fresh client hydration now selects state from the ONE active selector. Workspace metadata may describe where execution occurs, but it cannot replace Canonical IR or silently switch project state.
-
-### Extension lifecycle is not shared by assumption
-
-Antigravity Gemini and the OpenAI Codex IDE extension are separate clients/extensions. `~/.gemini/config/hooks.json` is a Gemini-side lifecycle hook and is not evidence that a Codex extension thread was invoked or hydrated.
-
-The Codex extension uses its own native bootstrap surfaces: Codex home `AGENTS.md` instructions and Codex MCP configuration. Cross-extension continuity must be proven at each client's actual lifecycle boundary instead of assuming one extension's hook intercepts another.
-
-### Bootstrap instructions are not another state store
-
-Gemini hook rules, Codex `AGENTS.md`, and MCP config contain discovery/authority instructions only. They must not copy the current goal/decisions/tasks/IR generation body into client-specific config. The authoritative working state remains ONE Canonical IR, selected by the active pointer.
-
-### Evidence is not intent
-
-Tool results and execution evidence can inform decisions, but they do not silently rewrite the user's active goal. Handoff evidence is bounded and credential-field checked before it can enter Canonical IR.
-
-### Capability does not imply authority
-
-The presence of a mutation tool, a mergeable pull request, a reachable Actions runner, or passing CI does not create authority for a different class of operation. Agents must stop at `AWAITING_HUMAN_APPROVAL` for protected publication, and control-plane work must not opportunistically switch to GitHub Actions because ONE-side transport is unavailable.
-
-See `.agent/governance/protected_branches.yaml`, `docs/governance/decisions/GOV-2026-08-27-001-protected-branch-authority.md`, and `docs/CHATGPT_ONE_TRANSPORT.md`.
-
-### Transport failure does not expand authority
-
-For typed Realm/Node/control-plane intents, the authorized transport order is direct ONE → AgentOS MCP/App → Bootstrap Control Inbox. GitHub Actions is not in that allowlist and is not a failure fallback. GitHub Actions is reserved for explicitly typed workflow intents such as CI/tests, build/package, release, deployment, or separately authorized evidence workflows.
-
-The current ChatGPT Web path is therefore not yet a native direct ONE connection. It is a bootstrap path through GitHub comments into an Oracle bridge and then ONE. The GitHub mailbox is transport only; ONE remains the control-plane authority. The target is to replace that mailbox with an AgentOS MCP/App after equivalent acceptance evidence exists.
-
-### Discover before invent
-
-Reusable/cross-project work should resolve existing responsibility and resources before creating parallel implementations. See `docs/AGENTOS_NODE.md` and the Governance Directory.
-
-### Models are executors, not the durable source of truth
-
-AgentOS does not assume access to model activations or model-specific internal state. Durable coordination and continuity state must remain external and transportable. Executors may report evidence, but Core-owned governed writers advance canonical state.
-
-## What changed from the early AgentOS architecture
-
-Early documentation centered on:
-
-- `SHORT_TERM.md` / `LONG_TERM.md`;
-- pulse files and brain dumps;
-- manual `/report` handoff;
-- Logic/Data separation as the main architectural idea.
-
-Those mechanisms are historical foundations, not an adequate description of current AgentOS. Current code additionally contains explicit continuation reconciliation, a persistent control plane, node/capability governance, resource state, Realm cross-node execution, platform abstractions, committed execution evidence, documentation reality checks, explicit authority boundaries for protected mutations, an explicit transport-authority contract, a bounded Canonical IR continuation path, and a distinct ONE active-continuation pointer that selects which canonical generation a fresh client should hydrate.
-
-Old documents that describe only the memory/pulse era must be treated as historical unless they link back to this file.
-
-## Current research boundary: Cognitive IR
-
-AgentOS has a concrete bounded Canonical IR path for project continuation: `agentos.ir/v1` can be published together with an `agentos.execution-head/v1` generation fence and hydrated into a fresh Antigravity Gemini session through ONE. That E2 path is implemented and live-verified.
-
-The same bounded path has a Core-owned guarded handoff writer. Advancing a head requires the exact previous `index_id` / `ir_id` under the publication lock, preserving authoritative constraints/decisions and appending bounded sanitized evidence into a child IR generation.
-
-The early E3 failures revealed two independent bootstrap problems. First, workspace membership cannot choose continuation; this led to the ONE active-selector design. Second, Antigravity Gemini and OpenAI Codex are separate extensions with separate lifecycle surfaces. A Gemini `PreInvocation` attestation therefore cannot prove a Codex extension invocation.
-
-The corrected E3 design preserves one canonical state while giving each client its native discovery path:
+Every live acceptance must instead bind:
 
 ```text
-Antigravity Gemini extension
-        ↓ Gemini PreInvocation
-ONE active selector → Canonical IR
-        ↑ one_resolve_active
-OpenAI Codex IDE extension
-        ↑ Codex AGENTS.md + MCP bootstrap
+repository + source_ref + exact source_sha
+runtime/worktree generation
+service/capability profile
+receipt timestamp/id
+health/result
+rollback state when mutation occurred
+credential_exposed=false where applicable
 ```
 
-This concrete E3 slice is now live-verified from two independently fresh Codex IDE extension threads, each given only `繼續`, with independent terminal receipts proving `one_resolve_active` reached the same corrected Canonical IR generation and `credential_exposed=false`. No client-specific bootstrap file contained a copied IR body.
+`source SHA matches` is insufficient if required services/capability markers are absent or stale. Current `node.runtime.converge` therefore reconciles the fixed operating profile even when the checkout is already at the requested generation.
 
-This is meaningful evidence for the model-independent working-state hypothesis, but it is not proof of arbitrary portability. The unresolved research question remains broader: whether one model-independent working-state representation and projection layer can preserve useful continuity across arbitrary model families, executors, extensions, and machines with consistently low reconstruction cost. Public model interfaces do not provide a portable common activation state, and different clients need not expose the same lifecycle hooks.
+## Memory and IR boundaries
 
-The active hypothesis remains:
+### Canonical continuation IR
 
-```text
-full session / events
-       ↓ encode/update
-model-independent working-state IR
-       ↓ active generation selector
-       ↓ client-native hydrate/project
-new model / executor / extension
-       ↓
-functional continuation
-```
+`agentos.ir/v1` represents bounded durable working state: goal, accepted decisions/constraints, task direction, lineage and evidence references. Publication is parent-fenced. Workspace or client-local history cannot choose continuation authority.
 
-Success means the new executor can preserve the current goal, established decisions/constraints, rejected paths, open questions, and next direction well enough that a relative instruction such as `continue` remains meaningful.
+### Experience IR
 
-Do not generalize the verified Gemini→Codex E3 slice into a claim of arbitrary cross-model continuity. The next #152 engineering step is the broader Node/executor lifecycle extraction and remaining real-client acceptance; the next research step is to repeat the continuity pattern across additional clients/models/machines.
+Experience is reusable learned procedure/heuristic/failure knowledge, not another project-state store. Current #117 direction uses semantic Experience IR with provenance, scope, digest, expected behavior dimensions and extraction/acceptance fences. Human summaries are presentation only and must not define semantic identity.
 
-## Documentation ownership rule
+A hydration receipt identifies the exact accepted Experience items/digests used without copying their bodies into the receipt. New user intent outranks hydrated Experience.
 
-`README.md`, `ONBOARDING.md`, `AGENTS.md`, and this file are authoritative entry points. Architecture-sensitive implementation changes must update at least one of these files in the same change set.
+### General Cognitive IR
 
-The CI guard watches changes under core surfaces including:
+Still Research. Do not rename successful continuation or Experience slices into a claim that arbitrary model internal state is portable.
 
-- `agent_core/`
-- `runtime_core/`
-- `scripts/continuation_state.py`
-- `scripts/agentos_node.py`
-- `scripts/drift_guard.py`
-- `.agent/CONSTITUTION.yaml`
-- `.agent/roles/`
-- `.agent/governance/`
-- `.agentos/commands/`
-- relevant architecture workflows
+### Employee memory/state
 
-A code-only architecture change should fail CI until documentation is updated.
+Employee identity, assignment, lease, checkpoint/thread head, inbox/receipt and role-scoped memory are durable organizational state. Legacy `STATUS.md`, Pulse files, symlinked memory, old possession directives, and chat history can be migration evidence only; they are not current authority.
 
-## Updating this document
+## Project Identity / repository boundary
 
-When a capability moves between **Research → Implemented → Verified**, update the table with concrete implementation and verification paths. Never promote a capability based only on discussion or a roadmap.
+`agentmanager` owns Core/ONE/Realm/Node runtime, governance, receipts, canonical state and generic cross-repository capability contracts. Product UI, data, release intent, product CI/deployers and product-specific runtime logic belong to canonical product repositories.
 
-When implementation contradicts this file, fix the file immediately; do not preserve an obsolete narrative for continuity's sake.
+Current canonical map and unresolved identities are maintained in `docs/PROJECT_REPO_MAP.md`. Important unresolved boundaries include Character Blueprint and Model2IR repository assignment; historical Model2IR branches in `agentmanager` are migration provenance, not permission for continued product/library development in Core.
+
+An online environment is not defined by branch name. Deployment identity is environment + canonical repository + source ref + exact SHA/artifact + receipt.
+
+## Governance invariants
+
+- **Capability does not imply authority.** Presence of a tool/capability/runner does not authorize its use.
+- **Event does not imply authority.** Issue updates, timers, webhooks, messages, receipts and dependency changes trigger reconciliation only.
+- **Transport failure does not widen authority.** ONE failure never silently falls back to GitHub Actions for control-plane intents.
+- **No generic shell by reconstruction.** Bounded actions/jobs cannot accept executable, argv, shell, module, arbitrary path/service/environment or credentials merely for convenience.
+- **Ambiguous external effects remain `unknown`.** Do not blind-retry privileged side effects after timeout/crash.
+- **Capability growth requires governance growth.** Stronger mutation surfaces require tighter schemas, receipts, rollback, observability and non-authority statements.
+- **Core authority != Core serialization.** Independent worker lanes run concurrently; only declared dependency edges block exact steps.
+- **Publication is separate.** `main` remains accepted/publication state and is not an active agent workspace.
+
+## Receipts and evidence
+
+Receipts are proof records, not state or intent. They should be typed, bounded, sanitized and exact enough to answer:
+
+- who/what acted (Node, surface, executor adapter, backend identity when trustworthy);
+- what canonical project/source generation was used;
+- what declared capability/job/action was authorized;
+- whether routing, authorization and executor availability succeeded;
+- terminal result, timeout/unknown classification and rollback outcome;
+- relevant semantic digests rather than secret/raw bodies;
+- credential boundary (`credential_exposed=false` where that contract applies).
+
+A `VERIFIED` marker requires live evidence for the capability it names. Static/source CI may prove contracts and guards, but may not assert live service/product liveness.
+
+## Deprecated / superseded paths
+
+Treat these as historical or migration-only unless a current canonical document explicitly reactivates them:
+
+- `SHORT_TERM.md` / `LONG_TERM.md`, pulse-only memory, brain dumps and manual `/report` as primary continuation authority;
+- workspace-selected continuation;
+- client-specific config files containing copied Canonical IR bodies;
+- PR #119 prose-centric Experience v0 direction;
+- legacy direct-to-`main` Core proposal branches; extract still-needed deltas onto current `core/issue-*` branches rather than merging wholesale;
+- legacy Bootstrap auto-push / evidence-push path; current bootstrap is explicit and exact-generation, not steady-state control plane;
+- `node.runtime.converge -> shell.exec` / embedded script carrier; current converge is a fixed typed semantic action;
+- hard-coded historical runtime generation numbers as current truth;
+- treating Node OS/platform or Node online status as proof an executor is available;
+- treating Anthropic/Codex/Gemini extension brand as proof of actual backend model identity;
+- product-specific Oracle carriers inside Core after an equivalent governed product-owned path and parity receipt exist.
+
+## Canonical documentation ownership
+
+Primary entry points are `README.md`, `ONBOARDING.md`, `AGENTS.md`, this file, `docs/AGENTOS_NODE.md`, `docs/CORE_BRANCH_MAP.md`, `docs/CORE_WORKER_MODEL.md`, and `docs/PROJECT_REPO_MAP.md`.
+
+Architecture-sensitive changes must update the relevant canonical entry point in the same accepted change set. When implementation or live evidence contradicts prose, the prose must be corrected; historical claims belong in evidence/migration documents rather than being preserved as current reality.
