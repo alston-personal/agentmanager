@@ -10,6 +10,7 @@ on:
       - 'agentos_node/one_mcp.py'
       - 'agentos_node/antigravity_one_hook.py'
       - 'scripts/install_antigravity_one_mcp.py'
+      - 'scripts/inspect_antigravity_hook_contract.py'
       - 'scripts/deploy_realm_fabric_candidate_user.sh'
       - 'agentos_node/bootstrap_control.py'
       - 'tests/test_realm_resolve_endpoint.py'
@@ -17,6 +18,7 @@ on:
       - 'tests/test_one_mcp.py'
       - 'tests/test_antigravity_one_hook.py'
       - 'tests/test_install_antigravity_one_client.py'
+      - 'tests/test_inspect_antigravity_hook_contract.py'
       - 'tests/test_vopc_gemini_one_deploy_contract.py'
       - '.github/workflows/vopc5750-gemini-one-client-deploy.yml'
   workflow_dispatch:
@@ -92,6 +94,7 @@ jobs:
                   echo "oracle_hook_contract_${PATTERN}=$COUNT"
                 done
               fi
+              python3 scripts/inspect_antigravity_hook_contract.py --app-root "$(dirname "$(dirname "$PRODUCT")")"
             fi
             find "$ROOT" -maxdepth 6 -type f \( -name product.json -o -name package.json \) -print 2>/dev/null | sed -n '1,30p' || true
             if command -v rg >/dev/null 2>&1; then
@@ -291,6 +294,8 @@ jobs:
             Remove-Item -Force $archive
           }
           $python=(Get-Command python -ErrorAction Stop).Source
+          & $python (Join-Path $target 'scripts\inspect_antigravity_hook_contract.py') --app-root $appRoot
+          if($LASTEXITCODE -ne 0){ throw 'Antigravity hook runtime inspection failed' }
           & $python (Join-Path $target 'scripts\install_antigravity_one_mcp.py') --repo $target --mode client
           if($LASTEXITCODE -ne 0){ throw 'AgentOS Gemini ONE installer failed' }
           $hooks=Join-Path $env:USERPROFILE '.gemini\config\hooks.json'
