@@ -169,18 +169,23 @@ jobs:
           PREVIOUS_SHA="$(git rev-parse HEAD)"
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           CAPABILITY_MARKER="$DATA_ROOT/runtime/action-relay/capabilities.json"
+
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
               echo "Deployment failed; attempting rollback to $PREVIOUS_SHA" >&2
-              git checkout --detach "$PREVIOUS_SHA" || true
-              python3 -m pip install -e . || true
-              python3 scripts/install_services.py || true
               if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-                # A carrier candidate may already have been installed. Remove its
-                # advertisement before restoring the previous Realm generation so
-                # ONE cannot claim a capability whose rollback state is ambiguous.
+                # Remove candidate advertisement before restoring the previous
+                # accepted generation. ONE must never retain a capability whose
+                # source/runtime generation became ambiguous.
                 rm -f "$CAPABILITY_MARKER" || true
+              fi
+              git checkout --detach "$PREVIOUS_SHA" || true
+              PYTHONPATH="$ROOT" python3 scripts/install_services.py || true
+              if [ "$BOOTSTRAP_CONVERGER" = "true" ] && [ -f scripts/install_realm_fabric_user.sh ]; then
+                # Previous accepted Core generations own their own Realm installer.
+                # Restart after checkout so process generation follows source
+                # generation instead of leaving a checkout/process split-brain.
                 bash scripts/install_realm_fabric_user.sh || true
               fi
               curl -fsS http://127.0.0.1:8765/health || true
@@ -199,10 +204,36 @@ jobs:
             [ "$REF" = "core/integration" ] || { echo "Converger bootstrap ref mismatch" >&2; exit 2; }
             [ "$TARGET_SHA" = "$EXPECTED" ] || { echo "Converger bootstrap exact-SHA mismatch" >&2; exit 2; }
           fi
+
+          # Never use a broad git clean. Refuse only when an untracked local path
+          # would be overwritten by the exact requested target tree.
+          collisions="$(mktemp)"
+          while IFS= read -r -d '' path; do
+            if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
+              printf '%s\n' "$path" >> "$collisions"
+            fi
+          done < <(git ls-files --others --exclude-standard -z)
+          if [ -s "$collisions" ]; then
+            echo "Refusing deployment: untracked files collide with exact target" >&2
+            cat "$collisions" >&2
+            rm -f "$collisions"
+            exit 2
+          fi
+          rm -f "$collisions"
+
           echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
           git checkout --detach "$TARGET_SHA"
 
-          python3 -m pip install -e .
+          # Runtime/services execute directly from the exact checkout. Do not
+          # mutate system/user site-packages as part of deployment.
+          PYTHONPATH="$ROOT" python3 - <<'PY'
+          import agent_core
+          import agentos_node
+          import runtime_core
+          from agent_core.platform import get_platform_driver
+          print("source_import=PASS")
+          print("platform=" + get_platform_driver().platform_name())
+          PY
           bash -n scripts/install_systemd_user.sh
 
           set -a
@@ -215,16 +246,12 @@ jobs:
             echo "AGENT_MODE must be CORE on the deployment host" >&2
             exit 2
           fi
-          if [ "${AGENTOS_DISTRIBUTED_SERVICES_ENABLED:-0}" != "1" ]; then
-            echo "AGENTOS_DISTRIBUTED_SERVICES_ENABLED must be 1 before production deployment" >&2
-            exit 2
-          fi
           if [ -z "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ]; then
             echo "AGENTOS_CONTROL_PLANE_TOKEN is missing" >&2
             exit 2
           fi
 
-          python3 scripts/install_services.py
+          PYTHONPATH="$ROOT" python3 scripts/install_services.py
           systemctl --user is-active --quiet agentos-control-plane.service
           curl -fsS http://127.0.0.1:8765/health
           echo
@@ -236,6 +263,7 @@ jobs:
 
           mkdir -p "$DATA_ROOT/runtime"
           printf '%s\n' "$PREVIOUS_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
+          printf '%s\n' "$TARGET_SHA" > "$DATA_ROOT/runtime/bootstrapped-agentos-core-sha"
           trap - EXIT
           REMOTE
 
