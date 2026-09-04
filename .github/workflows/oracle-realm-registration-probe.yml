@@ -1,0 +1,85 @@
+name: Oracle Realm Registration Probe
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-realm-registration-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Resolve host
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Read Realm registration boundary state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          set -a
+          source .env
+          set +a
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          REALM="$DATA_ROOT/realm"
+          NODES="$REALM/nodes.json"
+          LOCK="$REALM/nodes.json.lock"
+          echo "head=$(git rev-parse HEAD)"
+          echo "user=$(id -un) uid=$(id -u) groups=$(id -Gn | tr ' ' ',')"
+          for path in "$DATA_ROOT" "$REALM" "$NODES" "$LOCK"; do
+            if [ -e "$path" ]; then
+              stat -c 'stat=%A mode=%a uid=%u gid=%g user=%U group=%G path=%n' -- "$path"
+            else
+              echo "missing=$path"
+            fi
+          done
+          systemctl --user show agentos-realm-fabric.service \
+            -p ActiveState -p SubState -p MainPID -p ExecMainPID -p ExecMainStatus -p NRestarts -p FragmentPath --no-pager
+          echo "--- unit ---"
+          systemctl --user cat agentos-realm-fabric.service --no-pager | sed -E 's#EnvironmentFile=.*#EnvironmentFile=<redacted-path>#'
+          echo "--- registry summary ---"
+          python3 - "$NODES" <<'PY'
+          import json, sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          if not p.is_file():
+              print('nodes_exists=false')
+          else:
+              data=json.loads(p.read_text(encoding='utf-8'))
+              nodes=data.get('nodes') or {}
+              print('nodes_exists=true')
+              print('registry_realm_id=' + str(data.get('realm_id')))
+              print('node_ids=' + ','.join(sorted(nodes.keys())))
+              for node_id, node in sorted(nodes.items()):
+                  print(f"node={node_id} status={node.get('status')} caps={','.join(node.get('capabilities') or [])} last_heartbeat={node.get('last_heartbeat_at')}")
+          PY
+          echo "tracked_dirty_count=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+          REMOTE
