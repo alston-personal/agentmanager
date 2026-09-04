@@ -19,7 +19,7 @@
     {
       "runner_kind": "youtube_ai_manager_scan_v1",
       "employee_id": "youtube-ai-manager",
-      "assignment_id": "youtube-ai-manager-optimization-v1",
+      "assignment_id": "youtube-ai-manager-scan-v1",
       "role_ids": ["product.youtube_ai_manager"],
       "skill_ids": ["youtube.optimization.scan"],
       "stage": "Y1",
