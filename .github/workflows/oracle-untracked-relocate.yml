@@ -1,0 +1,98 @@
+name: Oracle Untracked Relocate
+
+on:
+  push:
+    branches:
+      - ops/oracle-drift-probe-20260904
+    paths:
+      - ".github/workflows/oracle-untracked-relocate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  relocate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+
+    steps:
+      - name: Validate connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST_SOURCE:-}"
+          test -n "${DEPLOY_USER:-}"
+          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
+          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
+          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
+          test -n "$DEPLOY_HOST"
+          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Relocate exact blocking untracked files into local backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+
+          EXPECTED_HEAD="42f21560c7d7e6692373938358f57b9262e198f0"
+          TARGET_SHA="1dbdf20d76597e438c900df7ccb434a962e05075"
+          [ "$(git rev-parse HEAD)" = "$EXPECTED_HEAD" ] || { echo "relocate_refused=head_mismatch"; exit 2; }
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "relocate_refused=tracked_tree_dirty"; exit 2; }
+
+          files=$(cat <<'EOF'
+          .agentos/evidence/layoutlab-official-v2.txt
+          agentos_node/bootstrap_control.py
+          dashboard/app/api/agentos/[...path]/route.ts
+          EOF
+          )
+
+          git fetch origin "$TARGET_SHA"
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ -f "$path" ] || { echo "relocate_refused=missing_local:$path"; exit 2; }
+            git cat-file -e "$TARGET_SHA:$path" || { echo "relocate_refused=target_missing:$path"; exit 2; }
+          done <<< "$files"
+
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP_ROOT="$DATA_ROOT/runtime/backups/oracle-untracked-$STAMP"
+          mkdir -p "$BACKUP_ROOT/files"
+          chmod 700 "$BACKUP_ROOT" "$BACKUP_ROOT/files"
+          printf '%s\n' "$EXPECTED_HEAD" > "$BACKUP_ROOT/head.txt"
+          printf '%s\n' "$TARGET_SHA" > "$BACKUP_ROOT/target.txt"
+          printf '%s\n' "$files" > "$BACKUP_ROOT/files.txt"
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            dest="$BACKUP_ROOT/files/$path"
+            mkdir -p "$(dirname "$dest")"
+            mv -- "$path" "$dest"
+            sha256sum -- "$dest"
+          done <<< "$files" > "$BACKUP_ROOT/sha256.txt"
+          chmod -R go-rwx "$BACKUP_ROOT"
+
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            [ ! -e "$path" ] || { echo "relocate_failed=still_exists:$path"; exit 2; }
+          done <<< "$files"
+
+          echo "untracked_relocate_completed=true"
+          echo "backup_name=$(basename "$BACKUP_ROOT")"
+          echo "relocated_count=3"
+          echo "tracked_dirty_count=$(git status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
+          REMOTE
