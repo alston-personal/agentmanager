@@ -92,6 +92,24 @@ jobs:
             if($probeOutput -match 'ONE_IR_HEAD_UNRESOLVED'){
               Write-Output 'isolated_lifecycle_probe=FAIL'
               if($probeOutput -match 'code=([^\)]+)'){ Write-Output ('isolated_lifecycle_probe_code='+$Matches[1]) }
+              $client=Get-Content -Raw ([string]$server.env.AGENTOS_CLIENT_CONFIG) | ConvertFrom-Json
+              $headers=@{Authorization=('Bearer '+[string]$client.node_token);Accept='application/json'}
+              $body=@{schema='agentos.resolve-request/v1';intent='continue';selection='active';node_id=[string]$client.node_id} | ConvertTo-Json -Compress
+              try {
+                Invoke-RestMethod -Method Post -Uri (([string]$client.one_url).TrimEnd('/')+'/v1/resolve') -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+                Write-Output 'direct_active_request=PASS'
+              } catch {
+                $detail=[string]$_.ErrorDetails.Message
+                $category='unclassified_http_error'
+                if($detail -match 'stale'){ $category='active_selector_stale' }
+                elseif($detail -match 'selector.*missing|selector missing'){ $category='active_selector_missing' }
+                elseif($detail -match 'unsupported active continuation selector schema'){ $category='active_selector_schema' }
+                elseif($detail -match 'no valid canonical continuation generation'){ $category='canonical_generation_missing' }
+                elseif($detail -match 'execution-head / IR generation mismatch'){ $category='canonical_generation_mismatch' }
+                elseif($detail -match 'project query is required'){ $category='server_active_selection_not_applied' }
+                elseif($detail -match 'selection must be project or active'){ $category='server_selection_contract_mismatch' }
+                Write-Output ('direct_active_request='+$category)
+              }
             } else {
               Write-Output 'isolated_lifecycle_probe=PASS'
             }
