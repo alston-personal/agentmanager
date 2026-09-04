@@ -7,7 +7,18 @@ on:
     paths:
       - 'governance/runtime-converge.json'
       - 'agent_core/runtime_converge_contract.py'
+      - 'agent_core/runtime_converge_capability.py'
+      - 'agent_core/controller_service.py'
+      - 'agent_core/realm_server.py'
+      - 'agentos_node/runtime_converge_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'scripts/install_action_relay_user.sh'
+      - 'scripts/bootstrap_runtime_converger_oracle.sh'
+      - '.github/workflows/deploy-agentos-core.yml'
       - 'tests/test_runtime_converge_contract.py'
+      - 'tests/test_runtime_converge_action_relay.py'
+      - 'tests/test_runtime_converge_capability.py'
+      - 'tests/test_runtime_converge_bootstrap_contract.py'
       - '.github/workflows/runtime-converge-contract-guard.yml'
   workflow_dispatch:
 
@@ -26,5 +37,10 @@ jobs:
           python-version: '3.12'
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check pytest
-      - name: Verify bounded runtime converge contract
-        run: python -m pytest -q tests/test_runtime_converge_contract.py
+      - name: Verify bounded runtime converge contract and fixed relay
+        run: >-
+          python -m pytest -q
+          tests/test_runtime_converge_contract.py
+          tests/test_runtime_converge_action_relay.py
+          tests/test_runtime_converge_capability.py
+          tests/test_runtime_converge_bootstrap_contract.py

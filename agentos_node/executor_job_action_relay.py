@@ -1,8 +1,8 @@
 """Bounded executor-job extension for the existing ubuntu Action Relay.
 
 This module deliberately reuses ``agentos_node.action_relay`` and its spool,
-digest, at-most-once, quarantine, and ubuntu-owned worker boundary. It adds one
-fixed semantic action only; no generic shell or argv surface is introduced.
+digest, at-most-once, quarantine, and ubuntu-owned worker boundary. It loads
+fixed semantic actions only; no generic shell or argv surface is introduced.
 """
 from __future__ import annotations
 
@@ -26,14 +26,10 @@ ACTION = "agentos.executor.job"
 DEFAULT_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
 _REQUEST_FIELDS = ("job_type", "project_id", "executor_class", "workload_ref", "authority")
 
-# Cross-slice integration is conditional by construction. #194 remains usable
-# without #117; once both are present in the same immutable runtime generation,
-# the trusted provider becomes available without a second daemon or model input.
 ISSUE117_PROVIDER_REGISTERED = register_issue117_provider_if_available()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:
-    """Persist only semantic identity fields, never transport-reserved fields."""
     validate_executor_job(request)
     return {key: request[key] for key in _REQUEST_FIELDS}
 
@@ -54,20 +50,23 @@ def _execute(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("executor-job relay accepts only a canonical request object")
     request = dict(params["request"])
     validate_executor_job(request)
-    # ActionRelay owns receipt schema/capsule/action/timestamps. Persist only
-    # fixed job identity plus the adapter's already-sanitized semantic result.
     return {**_request_projection(request), **run_registered_executor_job(request=request)}
 
 
-# Trusted-process registration. Importing this module extends the same fixed
-# Action Relay ACTIONS table used by both producer and ubuntu worker process.
 if ACTION in ACTIONS and ACTIONS[ACTION] is not _execute:
     raise RuntimeError("executor-job Action Relay action already registered differently")
 ACTIONS[ACTION] = _execute
 
+from agentos_node import runtime_converge_action_relay as _runtime_converge_action_relay  # noqa: E402,F401
+
 
 class ActionRelayExecutorJobDispatcher:
-    """Submit/inspect bounded jobs through the existing Action Relay spool."""
+    """Submit/inspect fixed semantic work through the shared Action Relay spool.
+
+    ``inspect`` remains the historical controller receipt facade. It now routes
+    runtime-converge receipts by their persisted semantic action before applying
+    executor-job projection, so action-* IDs remain unambiguous.
+    """
 
     def __init__(self, root: str | Path = DEFAULT_ROOT):
         self.root = Path(root)
@@ -108,10 +107,12 @@ class ActionRelayExecutorJobDispatcher:
 
     def inspect(self, job_id: str) -> dict[str, Any] | None:
         job_id = validate_executor_job_id(job_id)
-        request = self._recover_request(job_id)
         receipt = self.client.receipt(job_id)
+        if receipt is not None and receipt.get("action") == _runtime_converge_action_relay.ACTION:
+            return _runtime_converge_action_relay.ActionRelayRuntimeConvergeDispatcher(self.root).inspect(job_id)
         if receipt is None:
             return None
+        request = self._recover_request(job_id)
         if request is None:
             raise RuntimeError("executor-job request provenance unavailable")
         if receipt.get("action") not in (None, ACTION):
@@ -138,7 +139,6 @@ class ActionRelayExecutorJobDispatcher:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the original Action Relay worker with the fixed job action loaded."""
     return action_relay_main(argv)
 
 

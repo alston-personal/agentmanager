@@ -19,6 +19,7 @@ from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
 from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
+from agent_core.runtime_converge_capability import installed_core_capabilities
 
 
 def _utc_now() -> str:
@@ -30,6 +31,8 @@ def _core_node_manifest(realm_id: str) -> dict[str, Any]:
     if not node_id:
         raise ValueError('AGENTOS_CORE_NODE_ID cannot be empty')
     tools = {name: bool(shutil.which(name)) for name in ('git', 'python3', 'curl', 'systemctl')}
+    capabilities = ['agentos.governance.read', 'agentos.one.resolve', 'agentos.realm.fabric']
+    capabilities.extend(capability for capability in installed_core_capabilities() if capability not in capabilities)
     return {
         'schema': 'agentos.node-manifest/v0.1',
         'realm_id': realm_id,
@@ -38,7 +41,7 @@ def _core_node_manifest(realm_id: str) -> dict[str, Any]:
         'hostname': socket.gethostname(),
         'platform': platform.system(),
         'platform_release': platform.release(),
-        'capabilities': ['agentos.governance.read', 'agentos.one.resolve', 'agentos.realm.fabric'],
+        'capabilities': capabilities,
         'tool_presence': tools,
         'surface_inventory': {'surfaces': []},
         'observed_at': _utc_now(),
