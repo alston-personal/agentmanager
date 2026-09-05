@@ -1,0 +1,50 @@
+name: Inspect Vendor Threads As Deploy User
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-vendor-threads-as-deploy-user.yml'
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Capture Threads producer evidence as governed deploy identity
+        shell: bash
+        run: |
+          OUT="$RUNNER_TEMP/vendor-threads-ubuntu.txt"
+          ssh -o StrictHostKeyChecking=no -p "${DEPLOY_SSH_PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' > "$OUT" <<'REMOTE'
+          set +e
+          ROOT=/home/ubuntu/agent-data/runtime/vendor-reputation
+          echo '=== ownership ==='
+          ls -lah "$ROOT"/threads-* 2>/dev/null
+          echo '=== evidence ==='
+          for f in "$ROOT"/threads-*; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            case "$f" in
+              *.json|*.txt|*.md) sed -n '1,260p' "$f" ;;
+              *) file "$f" ;;
+            esac
+          done
+          echo '=== producer candidates ==='
+          find /home/ubuntu -maxdepth 6 -type f \( -iname '*thread*' -o -iname '*vendor*reput*' \) 2>/dev/null | grep -vE '/node_modules/|/\.git/|vendor-reputation/threads-' | head -300
+          echo '=== exact producer refs ==='
+          grep -RniE --include='*.py' --include='*.sh' --include='*.yml' --include='*.yaml' --include='*.js' \
+            --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=runtime \
+            'normalized-replies|reply-blocks|public-evidence|rendered-text|visible-text|DcWVvpwGTSh' \
+            /home/ubuntu/agentmanager /home/ubuntu/zeus-writer /home/ubuntu 2>/dev/null | head -300
+          REMOTE
+          cat "$OUT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vendor-threads-ubuntu
+          path: ${{ runner.temp }}/vendor-threads-ubuntu.txt
+          retention-days: 1
