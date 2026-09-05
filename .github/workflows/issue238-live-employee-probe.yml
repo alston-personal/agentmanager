@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe relay self-heal and product Employee activation
+      - name: Probe autonomous product Employee lifecycle
         shell: bash
         run: |
           set -euo pipefail
@@ -51,28 +51,32 @@ jobs:
 
           echo "checkout_sha=$(git rev-parse HEAD)"
           if [ -e "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; else echo "action_runtime_sha=missing"; fi
-          echo "action_relay_service=$(systemctl --user is-active agentos-action-relay.service 2>/dev/null || true)"
-          echo "maintenance_timer=$(systemctl --user is-active agent-maintenance.timer 2>/dev/null || true)"
-          echo "maintenance_service=$(systemctl --user is-active agent-maintenance.service 2>/dev/null || true)"
+          for svc in agentos-action-relay.service agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
+          done
           echo "relay_reconcile_timer=$(systemctl --user is-active agentos-action-relay-reconcile.timer 2>/dev/null || true)"
-          echo "relay_reconcile_timer_enabled=$(systemctl --user is-enabled agentos-action-relay-reconcile.timer 2>/dev/null || true)"
-          echo "relay_reconcile_service=$(systemctl --user is-active agentos-action-relay-reconcile.service 2>/dev/null || true)"
-          echo "--- timers ---"
-          systemctl --user list-timers agent-maintenance.timer agentos-action-relay-reconcile.timer --all --no-pager 2>/dev/null || true
 
-          python3 - "$DATA_ROOT" <<'PY'
+          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT'" <<'PY'
           import json, sys
           from pathlib import Path
+
           root=Path(sys.argv[1])
+          safe_keys={
+              'schema','status','state','delivery_state','employee_id','assignment_id','work_item_id',
+              'wake_id','wake_attempt_id','presence_generation','expected_lease_generation','lease_generation',
+              'lease_id','node_id','runner_kind','adapter_id','thread_head','head','transport','authority_policy',
+              'dispatch_performed','task_id','source','updated_at','observed_at','created_at','expires_at',
+              'credential_exposed','session_identity_exposed','verified_marker_emitted','outcome','replayed'
+          }
+          target_employees={'zeus-writer','youtube-ai-manager'}
+          target_assignments={'zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'}
+
           marker=root/'runtime/action-relay/capabilities.json'
           if marker.is_file():
               try: d=json.loads(marker.read_text())
               except Exception: d={}
-              print('action_marker_source_ref='+str(d.get('source_ref') or ''))
               print('action_marker_source_commit='+str(d.get('source_commit') or ''))
-              print('action_marker_caps='+','.join(str(x) for x in (d.get('node_capabilities') or [])))
-          else:
-              print('action_marker_source_commit=missing')
+
           nodes=root/'realm/nodes.json'
           if nodes.is_file():
               try: d=json.loads(nodes.read_text())
@@ -80,36 +84,53 @@ jobs:
               n=(d.get('nodes') or {}).get('oracle-employee-wake-node') or {}
               print('wake_node_status='+str(n.get('status') or 'missing'))
               print('wake_node_caps='+','.join(str(x) for x in (n.get('capabilities') or [])))
-          else:
-              print('wake_node_status=missing')
-          for eid in ('zeus-writer','youtube-ai-manager'):
+
+          for eid in sorted(target_employees):
               ep=root/'employee-runtime/employees'/f'{eid}.json'
               print(f'employee_{eid}_exists='+str(ep.is_file()).lower())
               pp=root/'employee-runtime/realm/employee-presence'/f'{eid}.json'
               if pp.is_file():
                   try: p=json.loads(pp.read_text())
                   except Exception: p={}
-                  print(f'presence_{eid}_node='+str(p.get('node_id') or ''))
-                  print(f'presence_{eid}_generation='+str(p.get('generation') or ''))
-                  print(f'presence_{eid}_expires_at='+str(p.get('expires_at') or ''))
-          for aid in ('zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'):
+                  print('presence='+json.dumps({k:p.get(k) for k in safe_keys if k in p}, sort_keys=True))
+          for aid in sorted(target_assignments):
               ap=root/'employee-runtime/assignments'/f'{aid}.json'
               if ap.is_file():
                   try: a=json.loads(ap.read_text())
                   except Exception: a={}
-                  print(f'assignment_{aid}_state='+str(a.get('state') or ''))
-                  print(f'assignment_{aid}_thread_head='+str(a.get('thread_head') or ''))
+                  print('assignment='+json.dumps({k:a.get(k) for k in safe_keys if k in a}, sort_keys=True))
               else:
-                  print(f'assignment_{aid}_state=missing')
+                  print(f'assignment_{aid}=missing')
+
+          surfaces=[
+              root/'employee-runtime/supervisor',
+              root/'employee-wakes',
+              root/'employee-worker-host',
+              root/'employee-worker-state',
+          ]
+          for surface in surfaces:
+              print('surface='+str(surface.relative_to(root))+' exists='+str(surface.exists()).lower())
+              if not surface.exists():
+                  continue
+              files=sorted(surface.rglob('*.json'), key=lambda p:p.stat().st_mtime, reverse=True)[:30]
+              for p in files:
+                  try: d=json.loads(p.read_text())
+                  except Exception: continue
+                  if not isinstance(d,dict): continue
+                  text=json.dumps(d, sort_keys=True)
+                  if not any(x in text for x in target_employees|target_assignments):
+                      continue
+                  projected={k:d.get(k) for k in safe_keys if k in d}
+                  print('runtime_record='+json.dumps({
+                      'path':str(p.relative_to(root)),
+                      'fields':projected,
+                  }, sort_keys=True))
           PY
 
-          for svc in agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
-            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
-          done
-          echo "--- relay reconcile journal sanitized ---"
-          journalctl --user -u agentos-action-relay-reconcile.service -n 40 --no-pager 2>/dev/null \
+          echo "--- supervisor journal sanitized ---"
+          journalctl --user -u agentos-core-supervisor.service -n 50 --no-pager 2>/dev/null \
             | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
-          echo "--- recent maintenance journal sanitized ---"
-          journalctl --user -u agent-maintenance.service -n 20 --no-pager 2>/dev/null \
+          echo "--- worker host journal sanitized ---"
+          journalctl --user -u agentos-employee-worker-host.service -n 50 --no-pager 2>/dev/null \
             | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
           REMOTE
