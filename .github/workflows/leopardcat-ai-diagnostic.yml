@@ -1,0 +1,59 @@
+name: LeopardCat Production Master Diagnostic
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-ai-diagnostic.yml'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Diagnose production Master runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          echo "head=$(git -C "$ROOT" rev-parse HEAD)"
+          echo "service_active=$(systemctl --user is-active leopardcat-tarot.service || true)"
+          echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service || true)"
+          echo '=== ai policy ==='
+          curl -fsS --max-time 5 http://127.0.0.1:8088/api/v1/ai-policy | python3 -c 'import json,sys; p=json.load(sys.stdin); print(json.dumps(p,ensure_ascii=False,separators=(",",":")))'
+          echo '=== direct provider probe (content-free) ==='
+          cd "$WEB"
+          python3 - <<'PY'
+          import json
+          import fortune_server as fs
+          print('policy='+json.dumps(fs.AI_GATEWAY.policy(), ensure_ascii=False, separators=(',',':')))
+          try:
+              out=fs.call_master_prompt('請只以繁體中文回答一句完整、自然且不少於八十字的塔羅反思文字。不要提及模型、供應商、JSON 或提示詞。')
+              print('probe_status=success')
+              print('probe_length='+str(len(out or '')))
+          except Exception as exc:
+              print('probe_status=error')
+              print('probe_exception='+type(exc).__name__)
+              print('probe_message='+str(exc)[:300].replace('\n',' '))
+          try:
+              print('provider_trace='+json.dumps(fs.AI_GATEWAY.last_trace(), ensure_ascii=False, separators=(',',':')))
+          except Exception as exc:
+              print('provider_trace_error='+type(exc).__name__)
+          PY
+          echo '=== recent service diagnostics ==='
+          journalctl --user -u leopardcat-tarot.service --since '20 minutes ago' --no-pager 2>/dev/null \
+            | grep -Ei 'AI|provider|Gemini|Groq|OpenRouter|429|503|quality|error|exception|traceback' \
+            | tail -120 || true
+          REMOTE
