@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import grp
 import json
 import os
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 SOURCE_REF = "core/integration"
 MARKER_SCHEMA = "agentos.action-relay-capabilities/v1"
 SERVICE = "agentos-action-relay.service"
+SHARED_GROUP = "agentos"
+GROUP_REEXEC_GUARD = "AGENTOS_ACTION_RELAY_RECONCILE_GROUP_REEXEC"
 
 
 def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -32,9 +37,9 @@ def _git_value(repo: Path, *args: str) -> str:
 
 
 def _marker_current(marker: Path, *, source_commit: str) -> bool:
-    if not marker.is_file():
-        return False
     try:
+        if not marker.is_file():
+            return False
         payload = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
@@ -51,6 +56,40 @@ def _marker_current(marker: Path, *, source_commit: str) -> bool:
 def _service_active(repo: Path) -> bool:
     result = _run(["systemctl", "--user", "is-active", "--quiet", SERVICE], cwd=repo, timeout=20)
     return result.returncode == 0
+
+
+def _in_shared_group() -> bool:
+    try:
+        gid = grp.getgrnam(SHARED_GROUP).gr_gid
+    except KeyError:
+        return False
+    return gid == os.getgid() or gid in os.getgroups()
+
+
+def _reexec_in_shared_group() -> int | None:
+    """Enter the fixed cross-owner boundary without granting caller-selected execution.
+
+    Older ubuntu user-manager sessions may predate membership in ``agentos`` even
+    though the account is correctly configured on disk. The long-lived Action
+    Relay already uses ``sg agentos`` for the same reason. Reconciliation uses the
+    exact same source-owned group and exact current script; no argv, path, shell,
+    service, or credential comes from a caller.
+    """
+    if _in_shared_group():
+        return None
+    if os.environ.get(GROUP_REEXEC_GUARD) == "1":
+        raise RuntimeError("action_relay_reconcile_agentos_group_unavailable")
+    script = Path(__file__).resolve()
+    command = f"exec {shlex.quote(sys.executable)} {shlex.quote(str(script))}"
+    env = os.environ.copy()
+    env[GROUP_REEXEC_GUARD] = "1"
+    completed = subprocess.run(
+        ["/usr/bin/sg", SHARED_GROUP, "-c", command],
+        cwd=str(script.parent.parent),
+        env=env,
+        check=False,
+    )
+    return int(completed.returncode)
 
 
 def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
@@ -110,6 +149,19 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
 
 
 def main() -> int:
+    try:
+        reexec = _reexec_in_shared_group()
+    except RuntimeError as exc:
+        print(json.dumps({
+            "schema": "agentos.action-relay-generation-reconcile/v1",
+            "status": "failed",
+            "error_code": str(exc),
+            "credential_exposed": False,
+        }, sort_keys=True))
+        return 2
+    if reexec is not None:
+        return reexec
+
     repo = Path(__file__).resolve().parent.parent
     data_root = Path(os.environ.get("AGENT_DATA_ROOT") or os.environ.get("AGENT_DATA_DIR") or Path.home() / "agent-data")
     try:
