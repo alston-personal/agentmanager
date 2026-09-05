@@ -1,0 +1,25 @@
+name: Inspect AgentOS Threads Capability
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-threads-capability.yml'
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect AgentOS runtime for Threads modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== services ==='
+          systemctl --user --no-pager --type=service | grep -Ei 'agentos|thread' || true
+          echo '=== agentmanager filenames ==='
+          find /home/ubuntu/agentmanager -maxdepth 5 -type f \( -iname '*thread*' -o -iname '*social*' -o -iname '*meta*' \) -print 2>/dev/null | head -200 || true
+          echo '=== agent-data filenames ==='
+          find /home/ubuntu/agent-data -maxdepth 6 -type f \( -iname '*thread*' -o -iname '*social*' -o -iname '*meta*' \) -print 2>/dev/null | head -200 || true
+          echo '=== text matches ==='
+          grep -RniE --exclude-dir=.git --exclude='*.sqlite*' --exclude='*.log' 'threads(\.net|\.com)?|Threads API|threads_fetch|threads\.post|social\.threads' /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -300 || true
+          echo '=== runtime manifests/capabilities ==='
+          find /home/ubuntu -maxdepth 5 -type f \( -iname '*capabilit*' -o -iname '*manifest*.json' -o -iname '*registry*.json' \) -print 2>/dev/null | head -200 || true
