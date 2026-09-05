@@ -1,0 +1,55 @@
+name: LeopardCat Provider Language Trace
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-provider-language-trace.yml'
+permissions:
+  contents: read
+jobs:
+  trace:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Trace Japanese provider responses without server import
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import os, shlex, subprocess, sys
+          raw = subprocess.check_output(['systemctl','--user','show','leopardcat-tarot.service','-p','Environment','--value'], text=True)
+          for item in shlex.split(raw):
+              if '=' in item:
+                  k,v=item.split('=',1)
+                  if k in {'GEMINI_API_KEY','GEMINI_MODEL','GROQ_API_KEY','GROQ_MODEL','OPENROUTER_API_KEY','OPENROUTER_MODEL'}:
+                      os.environ[k]=v
+          sys.path.insert(0, '/home/ubuntu/leopardcat-tarot/website')
+          from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
+          prompt = MASTER_EXPERIENCE_CONTRACT + '\n\n日本語で、仕事の今後について自然で完結したタロット解釈を答えてください。短い一言ではなく、実用的な助言まで含めてください。'
+          gate=MasterExperienceQualityGate()
+          providers=[ZeroCostGeminiGateway(os.getenv('GEMINI_API_KEY')), ZeroCostGroqGateway(os.getenv('GROQ_API_KEY'))]
+          for p in providers:
+              print(f'provider={p.provider_id} configured={p.configured()} model={p.model}')
+              if not p.configured():
+                  continue
+              try:
+                  text=p.generate(prompt)
+                  print(f'provider={p.provider_id} raw_status=success raw_length={len(text)}')
+                  try:
+                      gate.validate(text)
+                      print(f'provider={p.provider_id} gate=pass')
+                  except AIUnavailable as e:
+                      print(f'provider={p.provider_id} gate=fail code={e.code}')
+              except AIUnavailable as e:
+                  d=e.public_diagnostics()
+                  print(f'provider={p.provider_id} raw_status=error code={e.code} http={d.get("http_status")} category={d.get("category")} finish={d.get("finish_reason")}')
+          PY
