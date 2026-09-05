@@ -13,6 +13,7 @@ from typing import Any
 SOURCE_REF = "core/integration"
 MARKER_SCHEMA = "agentos.action-relay-capabilities/v1"
 SERVICE = "agentos-action-relay.service"
+RECONCILE_TIMER = "agentos-action-relay-reconcile.timer"
 SHARED_GROUP = "agentos"
 GROUP_REEXEC_GUARD = "AGENTOS_ACTION_RELAY_RECONCILE_GROUP_REEXEC"
 
@@ -56,6 +57,25 @@ def _marker_current(marker: Path, *, source_commit: str) -> bool:
 def _service_active(repo: Path) -> bool:
     result = _run(["systemctl", "--user", "is-active", "--quiet", SERVICE], cwd=repo, timeout=20)
     return result.returncode == 0
+
+
+def _timer_enabled(repo: Path) -> bool:
+    result = _run(["systemctl", "--user", "is-enabled", "--quiet", RECONCILE_TIMER], cwd=repo, timeout=20)
+    return result.returncode == 0
+
+
+def _ensure_reconcile_timer(*, repo: Path, data_root: Path) -> bool:
+    if _timer_enabled(repo):
+        return False
+    installer = repo / "scripts" / "install_action_relay_reconcile_timer_user.sh"
+    if not installer.is_file():
+        raise RuntimeError("action_relay_reconcile_timer_installer_missing")
+    env = os.environ.copy()
+    env.update({"AGENTOS_REPO": str(repo), "AGENT_DATA_ROOT": str(data_root)})
+    installed = _run(["bash", str(installer)], cwd=repo, env=env, timeout=120)
+    if installed.returncode != 0 or not _timer_enabled(repo):
+        raise RuntimeError("action_relay_reconcile_timer_install_failed")
+    return True
 
 
 def _in_shared_group() -> bool:
@@ -114,12 +134,15 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
 
     marker = data_root / "runtime" / "action-relay" / "capabilities.json"
     if _marker_current(marker, source_commit=current) and _service_active(repo):
+        timer_installed = _ensure_reconcile_timer(repo=repo, data_root=data_root)
         return {
             "schema": "agentos.action-relay-generation-reconcile/v1",
             "status": "current",
             "source_ref": SOURCE_REF,
             "source_commit": current,
             "service_active": True,
+            "reconcile_timer_enabled": True,
+            "reconcile_timer_installed": timer_installed,
             "credential_exposed": False,
         }
 
@@ -137,6 +160,7 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         raise RuntimeError("action_relay_reconcile_marker_mismatch")
     if not _service_active(repo):
         raise RuntimeError("action_relay_reconcile_service_not_active")
+    timer_installed = _ensure_reconcile_timer(repo=repo, data_root=data_root)
 
     return {
         "schema": "agentos.action-relay-generation-reconcile/v1",
@@ -144,6 +168,8 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         "source_ref": SOURCE_REF,
         "source_commit": current,
         "service_active": True,
+        "reconcile_timer_enabled": True,
+        "reconcile_timer_installed": timer_installed,
         "credential_exposed": False,
     }
 
