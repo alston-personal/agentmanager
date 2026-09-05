@@ -1,0 +1,93 @@
+name: LeopardCat Governed Groq Fallback Deploy
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-groq-fallback-deploy.yml'
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy and live-smoke Groq fallbacks
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          OLD=a64639f28fff110266390fc5c410e15bb522ecb4
+          TARGET=a2a7626fe2e1677b896e640a606cd875cace68ca
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo "head_before=$HEAD"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+          mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
+          for f in "${DIRTY[@]:-}"; do
+            test -z "$f" && continue
+            case "$f" in website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;; *) echo "unexpected_dirty=$f"; exit 20;; esac
+          done
+          rm -rf "$WEB/node_modules/.vite"
+          BACKUP=/tmp/leopardcat-stats-groq-fallback-${GITHUB_RUN_ID:-manual}.json
+          cp "$WEB/stats.json" "$BACKUP"
+          git -C "$ROOT" checkout -- website/dist/index.html
+          git -C "$ROOT" fetch origin main
+          git -C "$ROOT" merge --ff-only origin/main
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          cp "$BACKUP" "$WEB/stats.json"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
+          grep -q 'openai/gpt-oss-20b' "$WEB/fortune_server.py"
+          grep -q 'qwen/qwen3.6-27b' "$WEB/fortune_server.py"
+          cd "$WEB"
+          npm ci >/dev/null
+          npm run build >/dev/null
+          systemctl --user stop leopardcat-tarot.service || true
+          for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
+            cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+            cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then kill "$pid" || true; fi
+          done
+          for i in $(seq 1 20); do ! ss -ltnp 2>/dev/null | grep -q ':8088' && break; sleep 1; done
+          systemctl --user start leopardcat-tarot.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/ >/dev/null; then break; fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet leopardcat-tarot.service
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, sys
+          failed=False
+          for lang,q in [('zh-TW','最近的方向應該怎麼看？'),('ja','これからの仕事の流れについて教えてください。')]:
+              payload={'method':'tarot','persona':'leopardcat','question':q,'lang':lang,'seed':'groq-fallback-live-'+lang,'input':{'deck_id':'leopardcat','spread':'single'}}
+              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=60) as r:
+                      data=json.loads(r.read().decode())
+                  ok=(r.status==200 and bool(data.get('reading')))
+                  print(f'case={lang} http={r.status} reading_present={bool(data.get("reading"))} reading_length={len(str(data.get("reading") or ""))}')
+                  failed = failed or not ok
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode('utf-8','replace')
+                  try:data=json.loads(raw)
+                  except Exception:data={}
+                  print(f'case={lang} http={e.code} code={data.get("code")} retryable={data.get("retryable")}')
+                  failed=True
+          if failed: raise SystemExit(42)
+          PY
+          echo '=== latest safe trace ==='
+          grep 'MASTER_PROVIDER_TRACE' "$WEB/fortune.log" | tail -6 || true
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"; test "$code" = 200
+          echo 'leopardcat_groq_fallback_deploy=PASS'
+          REMOTE
