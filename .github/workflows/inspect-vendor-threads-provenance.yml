@@ -1,0 +1,40 @@
+name: Inspect Vendor Threads Provenance
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-vendor-threads-provenance.yml'
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture vendor Threads evidence
+        shell: bash
+        run: |
+          OUT="$RUNNER_TEMP/vendor-threads-provenance.txt"
+          ROOT=/home/ubuntu/agent-data/runtime/vendor-reputation
+          {
+            echo '=== files ==='
+            find "$ROOT" -maxdepth 1 -type f -name 'threads-*' -printf '%f\n' 2>/dev/null | sort || true
+            echo '=== selected evidence content ==='
+            for f in "$ROOT"/threads-*; do
+              [ -f "$f" ] || continue
+              echo "--- $f ---"
+              case "$f" in
+                *.json|*.txt|*.md) sed -n '1,220p' "$f" ;;
+                *) file "$f" || true ;;
+              esac
+            done
+            echo '=== producer references outside runtime evidence ==='
+            grep -RniE --include='*.py' --include='*.sh' --include='*.yml' --include='*.yaml' --include='*.json' \
+              --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=runtime \
+              'vendor-reputation|normalized-replies|reply-blocks|visible-text|rendered-text|public-evidence|DcWVvpwGTSh' \
+              /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -300 || true
+          } > "$OUT" 2>&1
+          cat "$OUT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vendor-threads-provenance
+          path: ${{ runner.temp }}/vendor-threads-provenance.txt
+          retention-days: 1
