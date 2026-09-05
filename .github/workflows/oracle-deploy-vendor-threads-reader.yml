@@ -1,0 +1,63 @@
+name: Oracle Deploy Vendor Threads Reader
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/oracle-deploy-vendor-threads-reader.yml'
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy and live-probe localhost reader
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/vendor-reputation-service
+          TARGET=1f503067b7cd6347fd7854f15ccc66536537cfa6
+          SECRET=/home/ubuntu/agent-data/secrets/vendor-reputation.env
+          TEST_URL='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+          test -d "$ROOT/.git"
+          git -C "$ROOT" fetch origin main
+          git -C "$ROOT" checkout --detach "$TARGET"
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          set -a; . "$SECRET"; set +a
+          cd "$ROOT"
+          docker compose up -d --build threads-reader
+          for i in $(seq 1 50); do
+            curl -fsS --max-time 2 http://127.0.0.1:18766/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18766/healthz
+          curl -fsS --max-time 55 -H 'Content-Type: application/json' \
+            -d "$(python3 -c 'import json,sys; print(json.dumps({"url":sys.argv[1]}))' "$TEST_URL")" \
+            http://127.0.0.1:18766/v1/threads/resolve > /tmp/threads-reader-probe.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/threads-reader-probe.json'))
+          s=p['source']
+          assert p['schema']=='agentos.social.threads.public-post/v1'
+          assert s['type']=='threads'
+          assert s['url'].startswith('https://www.threads.com/@')
+          assert len(s['text']) > 10
+          print('threads_reader_schema='+p['schema'])
+          print('threads_reader_author_present='+str(bool(s.get('author'))).lower())
+          print('threads_reader_text_length='+str(len(s['text'])))
+          print('threads_reader_url='+s['url'])
+          print('vendor_threads_reader_deploy=PASS')
+          PY
+          REMOTE
