@@ -1,0 +1,46 @@
+name: LeopardCat Live Master Reading Smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-live-reading-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Smoke real production reading endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error
+          cases=[('zh-TW','最近的方向應該怎麼看？'),('ja','これからの仕事の流れについて教えてください。')]
+          for lang,q in cases:
+              payload={'method':'tarot','persona':'leopardcat','question':q,'lang':lang,'seed':'prod-smoke-'+lang,'input':{'deck_id':'leopardcat','spread':'single'}}
+              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=40) as r:
+                      data=json.loads(r.read().decode())
+                  text=str(data.get('reading') or '')
+                  print(f'case={lang} http=200 reading_present={bool(text)} reading_length={len(text)} reading_id_present={bool(data.get("reading_id"))}')
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode('utf-8','replace')
+                  try: data=json.loads(raw)
+                  except Exception: data={}
+                  print(f'case={lang} http={e.code} error={data.get("error")} code={data.get("code")} retryable={data.get("retryable")} reading_id_present={bool(data.get("reading_id"))}')
+          PY
+          REMOTE
