@@ -20,7 +20,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Trace full Master prompt rejection
+      - name: Qualify Groq Llama fallback with full Master prompt
         shell: bash
         run: |
           set -euo pipefail
@@ -28,31 +28,28 @@ jobs:
           set -euo pipefail
           cd /home/ubuntu/leopardcat-tarot/website
           python3 - <<'PY'
-          import json, os
+          import os
           from divination import ReadingRequest, build_default_engine
-          from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, ZeroCostOpenRouterGateway, ZeroCostProviderPool
+          from divination.ai_gateway import OpenAICompatibleZeroCostGateway, ZeroCostProviderPool
           def env(name):
-              value=os.environ.get(name)
-              if value: return value
               try:
                   for line in open('/home/ubuntu/agentmanager/.env', encoding='utf-8'):
                       if line.startswith(name+'='): return line.strip().split('=',1)[1]
               except Exception: pass
               return None
           engine=build_default_engine('/home/ubuntu/leopardcat-tarot/website')
-          envelope=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-full'))
-          providers=[ZeroCostGeminiGateway(env('GEMINI_API_KEY')),ZeroCostGroqGateway(env('GROQ_API_KEY'))]
-          if env('OPENROUTER_API_KEY') or env('OPENROUTER_MODEL'):
-              providers.append(ZeroCostOpenRouterGateway(env('OPENROUTER_API_KEY'), env('OPENROUTER_MODEL')))
-          pool=ZeroCostProviderPool(providers)
+          envelope=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-llama'))
+          print('master_prompt_chars='+str(len(envelope.master_prompt)))
+          llama=OpenAICompatibleZeroCostGateway(provider_id='groq-llama',api_key=env('GROQ_API_KEY'),model='llama-3.3-70b-versatile',base_url='https://api.groq.com/openai/v1',allowed_models={'llama-3.3-70b-versatile'})
+          pool=ZeroCostProviderPool([llama])
           try:
               out=pool.generate(envelope.master_prompt)
-              print('full_prompt_status=success')
-              print('full_prompt_length='+str(len(out or '')))
+              print('llama_full_prompt_status=success')
+              print('llama_output_length='+str(len(out or '')))
           except Exception as exc:
-              print('full_prompt_status=error')
-              print('full_prompt_exception='+type(exc).__name__)
-              print('full_prompt_message='+str(exc)[:250].replace('\n',' '))
-          print('full_prompt_trace='+json.dumps(pool.last_trace(),ensure_ascii=False,separators=(',',':')))
+              print('llama_full_prompt_status=error')
+              print('llama_exception='+type(exc).__name__)
+              print('llama_message='+str(exc)[:250].replace('\n',' '))
+          print('llama_trace='+str(pool.last_trace()))
           PY
           REMOTE
