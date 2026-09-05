@@ -7,13 +7,16 @@ service names and installer sequence are fixed here.
 """
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import re
 import subprocess
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 from agent_core.runtime_converge_contract import validate_runtime_converge_request
 from agentos_node.action_relay import ACTIONS, ActionRelayClient
@@ -23,6 +26,14 @@ ACTION = "agentos.runtime.converge"
 DEFAULT_RELAY_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
 DEFAULT_REPO = Path("/home/ubuntu/agentmanager")
 CAPABILITY_MARKER = DEFAULT_RELAY_ROOT / "capabilities.json"
+REQUEST_ID_FIELDS = (
+    "schema",
+    "request_id",
+    "node_id",
+    "repository",
+    "source_ref",
+    "source_commit",
+)
 ALLOWED_ORIGIN_RE = re.compile(
     r"^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
     r"alston-personal/agentmanager(?:\.git)?/?$"
@@ -234,6 +245,116 @@ if ACTION in ACTIONS and ACTIONS[ACTION] is not _execute:
 ACTIONS[ACTION] = _execute
 
 
+def _read_object(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _request_from_capsule(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    if payload.get("action") != ACTION:
+        return None
+    params = payload.get("params")
+    if not isinstance(params, Mapping):
+        return None
+    request = params.get("request")
+    if not isinstance(request, Mapping):
+        return None
+    try:
+        return validate_runtime_converge_request(request).as_payload()
+    except (TypeError, ValueError):
+        return None
+
+
+def _request_from_receipt(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    if payload.get("action") != ACTION or not payload.get("request_id"):
+        return None
+    candidate = {key: payload.get(key) for key in REQUEST_ID_FIELDS}
+    candidate["schema"] = "agentos.runtime-converge-request/v1"
+    try:
+        return validate_runtime_converge_request(candidate).as_payload()
+    except (TypeError, ValueError):
+        return None
+
+
+def _same_request_id(canonical: Mapping[str, Any], observed: Mapping[str, Any]) -> bool:
+    return str(observed.get("request_id") or "") == str(canonical["request_id"])
+
+
+def _require_same_request(canonical: Mapping[str, Any], observed: Mapping[str, Any]) -> None:
+    if not _same_request_id(canonical, observed):
+        return
+    for key in REQUEST_ID_FIELDS:
+        if str(observed.get(key) or "") != str(canonical.get(key) or ""):
+            raise RuntimeError("runtime_converge_request_id_collision")
+
+
+@contextmanager
+def _request_submit_lock(root: Path) -> Iterator[None]:
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / ".runtime-converge-submit.lock"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o660)
+    try:
+        os.fchmod(fd, 0o660)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def _existing_runtime_converge(root: Path, canonical: Mapping[str, Any]) -> tuple[str, str] | None:
+    """Resolve one durable request-id execution without replaying ambiguity.
+
+    Priority is intentionally conservative: a quarantined capsule with an
+    ``outcome=unknown`` receipt wins over any duplicate success left by older
+    buggy submitters.  A request whose execution outcome became unknown may not
+    be replayed merely because another duplicate happened to finish later.
+    """
+    buckets = {name: root / name for name in ("inbox", "processing", "receipts", "quarantine")}
+
+    # First bind quarantined raw capsules to their terminal unknown receipts.
+    for capsule_path in sorted(buckets["quarantine"].glob("action-*.json")) if buckets["quarantine"].exists() else []:
+        capsule = _read_object(capsule_path)
+        if not capsule:
+            continue
+        observed = _request_from_capsule(capsule)
+        if not observed or not _same_request_id(canonical, observed):
+            continue
+        _require_same_request(canonical, observed)
+        capsule_id = str(capsule.get("capsule_id") or capsule_path.stem)
+        receipt = _read_object(buckets["receipts"] / f"{capsule_id}.json")
+        if receipt and receipt.get("outcome") == "unknown":
+            return capsule_id, "unknown"
+
+    # A terminal receipt is authoritative for a clean request-id history.
+    for receipt_path in sorted(buckets["receipts"].glob("action-*.json")) if buckets["receipts"].exists() else []:
+        receipt = _read_object(receipt_path)
+        if not receipt:
+            continue
+        observed = _request_from_receipt(receipt)
+        if not observed or not _same_request_id(canonical, observed):
+            continue
+        _require_same_request(canonical, observed)
+        capsule_id = str(receipt.get("capsule_id") or receipt_path.stem)
+        return capsule_id, "unknown" if receipt.get("outcome") == "unknown" else "completed"
+
+    for bucket, state in (("processing", "processing"), ("inbox", "queued")):
+        directory = buckets[bucket]
+        for capsule_path in sorted(directory.glob("action-*.json")) if directory.exists() else []:
+            capsule = _read_object(capsule_path)
+            if not capsule:
+                continue
+            observed = _request_from_capsule(capsule)
+            if not observed or not _same_request_id(canonical, observed):
+                continue
+            _require_same_request(canonical, observed)
+            return str(capsule.get("capsule_id") or capsule_path.stem), state
+    return None
+
+
 class ActionRelayRuntimeConvergeDispatcher:
     def __init__(self, root: str | Path = DEFAULT_RELAY_ROOT):
         self.root = Path(root)
@@ -241,17 +362,25 @@ class ActionRelayRuntimeConvergeDispatcher:
 
     def submit(self, *, request: Mapping[str, Any]) -> dict[str, Any]:
         canonical = validate_runtime_converge_request(request).as_payload()
-        capsule = self.client.submit(ACTION, {"request": canonical})
+        with _request_submit_lock(self.root):
+            existing = _existing_runtime_converge(self.root, canonical)
+            if existing is None:
+                capsule = self.client.submit(ACTION, {"request": canonical})
+                task_id = str(capsule["capsule_id"])
+                state = "queued"
+            else:
+                task_id, state = existing
         return {
             "schema": "agentos.runtime-converge-submission/v1",
-            "ok": True,
+            "ok": state != "unknown",
             "action": "node.runtime.converge",
-            "task_id": str(capsule["capsule_id"]),
+            "task_id": task_id,
             "request_id": canonical["request_id"],
             "node_id": canonical["node_id"],
             "source_ref": canonical["source_ref"],
             "source_commit": canonical["source_commit"],
-            "state": "queued",
+            "state": state,
+            "deduplicated": existing is not None,
         }
 
     def inspect(self, task_id: str) -> dict[str, Any] | None:
