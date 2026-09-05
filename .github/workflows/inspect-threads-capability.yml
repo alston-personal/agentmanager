@@ -9,23 +9,26 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Trace social Threads ingestion producer
+      - name: Inspect known Threads evidence provenance
         shell: bash
         run: |
           set -euo pipefail
-          OUT="$RUNNER_TEMP/social-threads-module-contract.txt"
+          OUT="$RUNNER_TEMP/social-threads-provenance.txt"
+          ROOT=/home/ubuntu/agent-data/runtime/vendor-reputation
           {
-            echo '=== known vendor reputation artifacts ==='
-            ls -lah /home/ubuntu/agent-data/runtime/vendor-reputation/threads-* 2>/dev/null | head -80 || true
-            echo '=== producer references by exact artifact stem ==='
-            grep -RniE --exclude-dir=.git --exclude='*.sqlite*' 'vendor-reputation|normalized-replies|visible-text|rendered-text|reply-blocks|public-evidence' /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -500 || true
-            echo '=== social Threads URL/code references excluding employee_threads ==='
-            grep -RniE --exclude-dir=.git --exclude='employee_threads.py' --exclude='test_employee_threads.py' --exclude='*.sqlite*' 'threads\.com|threads\.net|www\.threads|Threads API|THREADS_' /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -500 || true
-            echo '=== likely scripts/modules ==='
-            find /home/ubuntu/agentmanager /home/ubuntu/agent-data -type f \( -iname '*thread*' -o -iname '*vendor*reput*' -o -iname '*social*' \) 2>/dev/null | grep -vE '/node_modules/|/\.git/' | head -300 || true
+            for f in \
+              "$ROOT/threads-DcWVvpwGTSh-public-evidence.json" \
+              "$ROOT/threads-DcWVvpwGTSh-visible-text.json" \
+              "$ROOT/threads-DcWVvpwGTSh-rendered-text.json" \
+              "$ROOT/threads-DcWVvpwGTSh-normalized-replies.json"; do
+              echo "=== $f ==="
+              if [ -f "$f" ]; then sed -n '1,260p' "$f"; else echo missing; fi
+            done
+            echo '=== nearby scripts modified around artifacts ==='
+            find /home/ubuntu/agent-data/runtime -maxdepth 5 -type f \( -name '*.py' -o -name '*.js' -o -name '*.mjs' -o -name '*.sh' -o -name '*.json' \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -250
           } | tee "$OUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: social-threads-module-contract
-          path: ${{ runner.temp }}/social-threads-module-contract.txt
+          name: social-threads-provenance
+          path: ${{ runner.temp }}/social-threads-provenance.txt
           retention-days: 1
