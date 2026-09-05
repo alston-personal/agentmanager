@@ -1,0 +1,37 @@
+name: LeopardCat Provider Capability Inspect
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-provider-capability-inspect.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect credential presence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          names=['OPENROUTER_API_KEY','OPENROUTER_MODEL','CEREBRAS_API_KEY','MISTRAL_API_KEY','TOGETHER_API_KEY','SAMBANOVA_API_KEY','HF_TOKEN','HUGGINGFACE_API_KEY','DEEPSEEK_API_KEY']
+          vals={}
+          try:
+              for line in open('/home/ubuntu/agentmanager/.env',encoding='utf-8'):
+                  if '=' in line and not line.lstrip().startswith('#'):
+                      k,v=line.rstrip('\n').split('=',1); vals[k]=v
+          except Exception: pass
+          for name in names:
+              print(f'{name}_configured={str(bool(vals.get(name))).lower()}')
+          PY
