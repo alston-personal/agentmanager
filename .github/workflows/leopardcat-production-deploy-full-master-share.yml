@@ -1,4 +1,4 @@
-name: LeopardCat Governed Threads Question Deploy
+name: LeopardCat Governed Language Quality Deploy
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy Threads question and language release
+      - name: Deploy and live-smoke language quality fix
         shell: bash
         run: |
           set -euo pipefail
@@ -33,9 +33,8 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=386c42488a361cfd1fc20c8a0bb35b1506465ead
-          TARGET=9d698ed400a89921b3aecf82bd4b4766ee85476c
-          TEST_URL='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
+          OLD=9d698ed400a89921b3aecf82bd4b4766ee85476c
+          TARGET=083f19c614253741c12fa7ffdaca6aff8ed3ac23
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
@@ -43,7 +42,6 @@ jobs:
           HEAD=$(git -C "$ROOT" rev-parse HEAD)
           echo "head_before=$HEAD"
           test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
-
           mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
           for f in "${DIRTY[@]:-}"; do
             test -z "$f" && continue
@@ -53,7 +51,7 @@ jobs:
             esac
           done
           rm -rf "$WEB/node_modules/.vite"
-          BACKUP=/tmp/leopardcat-stats-threads-question-${GITHUB_RUN_ID:-manual}.json
+          BACKUP=/tmp/leopardcat-stats-language-quality-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
           git -C "$ROOT" checkout -- website/dist/index.html
 
@@ -64,20 +62,16 @@ jobs:
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
           cp "$BACKUP" "$WEB/stats.json"
 
-          echo '=== verify source contracts ==='
-          grep -q 'reading.reply-language-follows-user' "$ROOT/governance/capabilities.json"
-          grep -q 'reading.threads-public-source' "$ROOT/governance/capabilities.json"
-          grep -q 'getQuestionLanguageTag' "$WEB/main.js"
-          grep -q 'resolveQuestionInput' "$WEB/main.js"
-          grep -q '/api/v1/sources/threads' "$WEB/main.js"
-          grep -q "if path == '/api/v1/sources/threads':" "$WEB/fortune_server.py"
-          grep -q "127.0.0.1:18766" "$WEB/fortune_server.py"
-          echo 'threads_question_language_source=present'
+          echo '=== verify quality source ==='
+          grep -q 'DENSE_SCRIPT' "$WEB/divination/ai_gateway.py"
+          grep -q '_minimum_chars_for' "$WEB/divination/ai_gateway.py"
+          test -f "$WEB/tests/test_language_aware_master_quality.py"
+          cd "$WEB"
+          python3 -m py_compile divination/ai_gateway.py
 
           echo '=== build production frontend ==='
           test -e "$WEB/public/art/renders"
           test -e "$WEB/public/cards"
-          cd "$WEB"
           npm ci
           npm run build
           JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
@@ -104,38 +98,40 @@ jobs:
           systemctl --user is-active --quiet leopardcat-tarot.service
 
           echo '=== verify local/public bundle ==='
-          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-threads-local.js
-          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-threads-local.css
-          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-threads-local.js | awk '{print $1}')"
-          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-threads-local.css | awk '{print $1}')"
-
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-language-local.js
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-language-local.css
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-language-local.js | awk '{print $1}')"
+          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-language-local.css | awk '{print $1}')"
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
           echo "public_http=$code"; test "$code" = 200
-          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-threads-public.js
-          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-threads-public.js | awk '{print $1}')"
+          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-language-public.js
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-language-public.js | awk '{print $1}')"
 
-          echo '=== live same-origin Threads source probe (content-free output) ==='
-          python3 - "$TEST_URL" <<'PY' >/tmp/leopardcat-threads-source-request.json
-          import json,sys
-          print(json.dumps({'url':sys.argv[1]}))
-          PY
-          probe_code=$(curl -sS -o /tmp/leopardcat-threads-source-response.json -w '%{http_code}' --max-time 58 \
-            -H 'Content-Type: application/json' --data-binary @/tmp/leopardcat-threads-source-request.json \
-            http://127.0.0.1:8088/api/v1/sources/threads)
-          echo "threads_source_http=$probe_code"; test "$probe_code" = 200
+          echo '=== live zh/ja Master smoke ==='
           python3 - <<'PY'
-          import json
-          p=json.load(open('/tmp/leopardcat-threads-source-response.json'))
-          s=p['source']
-          assert s['type']=='threads'
-          assert len(s['text']) > 10
-          assert s['url'].startswith('https://www.threads.com/@')
-          print('threads_source_type='+s['type'])
-          print('threads_source_author_present='+str(bool(s.get('author'))).lower())
-          print('threads_source_text_length='+str(len(s['text'])))
-          print('threads_source_url='+s['url'])
+          import json, urllib.request, urllib.error, sys
+          cases=[('zh-TW','最近的方向應該怎麼看？'),('ja','これからの仕事の流れについて教えてください。')]
+          failed=False
+          for lang,q in cases:
+              payload={'method':'tarot','persona':'leopardcat','question':q,'lang':lang,'seed':'prod-language-quality-'+lang,'input':{'deck_id':'leopardcat','spread':'single'}}
+              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=45) as r:
+                      data=json.loads(r.read().decode())
+                  text=str(data.get('reading') or '')
+                  ok=(r.status==200 and bool(text))
+                  print(f'case={lang} http={r.status} reading_present={str(bool(text)).lower()} reading_length={len(text)}')
+                  failed = failed or not ok
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode('utf-8','replace')
+                  try: data=json.loads(raw)
+                  except Exception: data={}
+                  print(f'case={lang} http={e.code} error={data.get("error")} code={data.get("code")} retryable={data.get("retryable")}')
+                  failed=True
+          if failed:
+              raise SystemExit(42)
           PY
 
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
-          echo 'leopardcat_threads_question_language_deploy=PASS'
+          echo 'leopardcat_language_quality_deploy=PASS'
           REMOTE
