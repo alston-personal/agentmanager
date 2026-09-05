@@ -9,21 +9,23 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Export AgentOS Threads module contract
+      - name: Trace social Threads ingestion producer
         shell: bash
         run: |
           set -euo pipefail
-          OUT="$RUNNER_TEMP/threads-module-contract.txt"
+          OUT="$RUNNER_TEMP/social-threads-module-contract.txt"
           {
-            echo '=== agent_core/employee_threads.py ==='
-            sed -n '1,320p' /home/ubuntu/agentmanager/agent_core/employee_threads.py
-            echo '=== tests/test_employee_threads.py ==='
-            sed -n '1,360p' /home/ubuntu/agentmanager/tests/test_employee_threads.py
-            echo '=== related runtime invocation matches ==='
-            grep -RniE --exclude-dir=.git --exclude='*.sqlite*' 'employee_threads|ThreadsEmployee|threads.*fetch|fetch.*threads' /home/ubuntu/agentmanager/agent_core /home/ubuntu/agentmanager/tests /home/ubuntu/agentmanager/*.py 2>/dev/null | head -240 || true
+            echo '=== known vendor reputation artifacts ==='
+            ls -lah /home/ubuntu/agent-data/runtime/vendor-reputation/threads-* 2>/dev/null | head -80 || true
+            echo '=== producer references by exact artifact stem ==='
+            grep -RniE --exclude-dir=.git --exclude='*.sqlite*' 'vendor-reputation|normalized-replies|visible-text|rendered-text|reply-blocks|public-evidence' /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -500 || true
+            echo '=== social Threads URL/code references excluding employee_threads ==='
+            grep -RniE --exclude-dir=.git --exclude='employee_threads.py' --exclude='test_employee_threads.py' --exclude='*.sqlite*' 'threads\.com|threads\.net|www\.threads|Threads API|THREADS_' /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -500 || true
+            echo '=== likely scripts/modules ==='
+            find /home/ubuntu/agentmanager /home/ubuntu/agent-data -type f \( -iname '*thread*' -o -iname '*vendor*reput*' -o -iname '*social*' \) 2>/dev/null | grep -vE '/node_modules/|/\.git/' | head -300 || true
           } | tee "$OUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: threads-module-contract
-          path: ${{ runner.temp }}/threads-module-contract.txt
+          name: social-threads-module-contract
+          path: ${{ runner.temp }}/social-threads-module-contract.txt
           retention-days: 1
