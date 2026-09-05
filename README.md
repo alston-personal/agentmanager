@@ -37,6 +37,7 @@ The repository currently contains working, tested slices of that architecture:
 - **Resource registry / world-state lookup** — query registered resources first and verify only when stale or missing.
 - **Cross-node / Realm fabric work** — node manifests, enrollment/control surfaces, and remote command artifacts.
 - **Platform abstraction** — Linux, Windows, and macOS runtime/service drivers.
+- **Public Threads source reader** — reusable read-side capability for resolving a public Threads post URL into author, post text, and canonical URL (`agent_core/social_threads.py`, `tests/test_social_threads.py`).
 - **Evidence-first operation** — `.agentos/evidence/` records acceptance and live-control-plane results rather than relying only on prose claims.
 
 See **[Current Architecture & Reality](docs/CURRENT_STATE.md)** for the maintained implementation map and current research boundary.
