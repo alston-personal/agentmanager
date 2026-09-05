@@ -1,4 +1,4 @@
-name: LeopardCat Governed Share Sanitize Deploy
+name: LeopardCat Governed Threads Question Deploy
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -24,7 +24,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy sanitized share release
+      - name: Deploy Threads question and language release
         shell: bash
         run: |
           set -euo pipefail
@@ -33,8 +33,9 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=a572d068bae82fe24ec307f4169bc6f2e241ffe6
-          TARGET=386c42488a361cfd1fc20c8a0bb35b1506465ead
+          OLD=386c42488a361cfd1fc20c8a0bb35b1506465ead
+          TARGET=9d698ed400a89921b3aecf82bd4b4766ee85476c
+          TEST_URL='https://www.threads.com/@nico1e.16/post/DcWVvpwGTSh'
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
@@ -52,7 +53,7 @@ jobs:
             esac
           done
           rm -rf "$WEB/node_modules/.vite"
-          BACKUP=/tmp/leopardcat-stats-share-sanitize-${GITHUB_RUN_ID:-manual}.json
+          BACKUP=/tmp/leopardcat-stats-threads-question-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
           git -C "$ROOT" checkout -- website/dist/index.html
 
@@ -64,14 +65,14 @@ jobs:
           cp "$BACKUP" "$WEB/stats.json"
 
           echo '=== verify source contracts ==='
-          grep -q 'sharing.full-master-text' "$ROOT/governance/capabilities.json"
-          grep -q 'normalizeMasterShareText' "$WEB/main.js"
-          grep -q "querySelectorAll('.hidden-quote" "$WEB/main.js"
-          grep -q 'applySingleCardShareFallback' "$WEB/main.js"
-          grep -q "searchParams.set('card'" "$WEB/main.js"
-          grep -q "searchParams.set('orientation'" "$WEB/main.js"
-          grep -q 'share-content-controls' "$WEB/index.html"
-          echo 'share_sanitize_singlecard_source=present'
+          grep -q 'reading.reply-language-follows-user' "$ROOT/governance/capabilities.json"
+          grep -q 'reading.threads-public-source' "$ROOT/governance/capabilities.json"
+          grep -q 'getQuestionLanguageTag' "$WEB/main.js"
+          grep -q 'resolveQuestionInput' "$WEB/main.js"
+          grep -q '/api/v1/sources/threads' "$WEB/main.js"
+          grep -q "if path == '/api/v1/sources/threads':" "$WEB/fortune_server.py"
+          grep -q "127.0.0.1:18766" "$WEB/fortune_server.py"
+          echo 'threads_question_language_source=present'
 
           echo '=== build production frontend ==='
           test -e "$WEB/public/art/renders"
@@ -103,15 +104,38 @@ jobs:
           systemctl --user is-active --quiet leopardcat-tarot.service
 
           echo '=== verify local/public bundle ==='
-          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-share-sanitize-local.js
-          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-share-sanitize-local.css
-          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-share-sanitize-local.js | awk '{print $1}')"
-          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-share-sanitize-local.css | awk '{print $1}')"
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-threads-local.js
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-threads-local.css
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-threads-local.js | awk '{print $1}')"
+          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-threads-local.css | awk '{print $1}')"
 
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
           echo "public_http=$code"; test "$code" = 200
-          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-share-sanitize-public.js
-          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-share-sanitize-public.js | awk '{print $1}')"
+          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-threads-public.js
+          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-threads-public.js | awk '{print $1}')"
+
+          echo '=== live same-origin Threads source probe (content-free output) ==='
+          python3 - "$TEST_URL" <<'PY' >/tmp/leopardcat-threads-source-request.json
+          import json,sys
+          print(json.dumps({'url':sys.argv[1]}))
+          PY
+          probe_code=$(curl -sS -o /tmp/leopardcat-threads-source-response.json -w '%{http_code}' --max-time 58 \
+            -H 'Content-Type: application/json' --data-binary @/tmp/leopardcat-threads-source-request.json \
+            http://127.0.0.1:8088/api/v1/sources/threads)
+          echo "threads_source_http=$probe_code"; test "$probe_code" = 200
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/leopardcat-threads-source-response.json'))
+          s=p['source']
+          assert s['type']=='threads'
+          assert len(s['text']) > 10
+          assert s['url'].startswith('https://www.threads.com/@')
+          print('threads_source_type='+s['type'])
+          print('threads_source_author_present='+str(bool(s.get('author'))).lower())
+          print('threads_source_text_length='+str(len(s['text'])))
+          print('threads_source_url='+s['url'])
+          PY
+
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
-          echo 'leopardcat_share_sanitize_singlecard_deploy=PASS'
+          echo 'leopardcat_threads_question_language_deploy=PASS'
           REMOTE
