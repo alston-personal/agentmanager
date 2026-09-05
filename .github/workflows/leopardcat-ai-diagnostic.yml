@@ -20,23 +20,36 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Groq account model availability
+      - name: Qualify fixed Groq fallbacks with full Master prompt
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
+          cd /home/ubuntu/leopardcat-tarot/website
           python3 - <<'PY'
-          import json, urllib.request
-          key=None
-          try:
-              for line in open('/home/ubuntu/agentmanager/.env',encoding='utf-8'):
-                  if line.startswith('GROQ_API_KEY='): key=line.strip().split('=',1)[1]
-          except Exception: pass
-          req=urllib.request.Request('https://api.groq.com/openai/v1/models',headers={'Authorization':f'Bearer {key}','Accept':'application/json'})
-          with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
-          ids=sorted(str(x.get('id')) for x in data.get('data',[]) if isinstance(x,dict) and x.get('id'))
-          candidates=[x for x in ids if any(t in x for t in ('llama','qwen','gpt-oss','compound'))]
-          print('groq_candidate_models='+json.dumps(candidates,separators=(',',':')))
+          import os
+          from divination import ReadingRequest, build_default_engine
+          from divination.ai_gateway import OpenAICompatibleZeroCostGateway, ZeroCostProviderPool
+          def env(name):
+              try:
+                  for line in open('/home/ubuntu/agentmanager/.env',encoding='utf-8'):
+                      if line.startswith(name+'='): return line.strip().split('=',1)[1]
+              except Exception: pass
+              return None
+          engine=build_default_engine('/home/ubuntu/leopardcat-tarot/website')
+          prompt=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-alt')).master_prompt
+          print('master_prompt_chars='+str(len(prompt)))
+          for model in ['qwen/qwen3.6-27b','openai/gpt-oss-20b']:
+              gw=OpenAICompatibleZeroCostGateway(provider_id='groq',api_key=env('GROQ_API_KEY'),model=model,base_url='https://api.groq.com/openai/v1',allowed_models={model})
+              pool=ZeroCostProviderPool([gw])
+              try:
+                  out=pool.generate(prompt)
+                  print(f'model={model} status=success output_length={len(out or "")}')
+                  print('trace='+str(pool.last_trace()))
+                  break
+              except Exception as exc:
+                  print(f'model={model} status=error exception={type(exc).__name__} message={str(exc)[:180].replace(chr(10)," ")}')
+                  print('trace='+str(pool.last_trace()))
           PY
           REMOTE
