@@ -9,25 +9,21 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect AgentOS runtime for Threads modules
+      - name: Export AgentOS Threads module contract
         shell: bash
         run: |
           set -euo pipefail
-          OUT="$RUNNER_TEMP/threads-capability-inspect.txt"
+          OUT="$RUNNER_TEMP/threads-module-contract.txt"
           {
-            echo '=== services ==='
-            systemctl --user --no-pager --type=service | grep -Ei 'agentos|thread' || true
-            echo '=== agentmanager filenames ==='
-            find /home/ubuntu/agentmanager -maxdepth 5 -type f \( -iname '*thread*' -o -iname '*social*' -o -iname '*meta*' \) -print 2>/dev/null | head -200 || true
-            echo '=== agent-data filenames ==='
-            find /home/ubuntu/agent-data -maxdepth 6 -type f \( -iname '*thread*' -o -iname '*social*' -o -iname '*meta*' \) -print 2>/dev/null | head -200 || true
-            echo '=== text matches ==='
-            grep -RniE --exclude-dir=.git --exclude='*.sqlite*' --exclude='*.log' 'threads(\.net|\.com)?|Threads API|threads_fetch|threads\.post|social\.threads' /home/ubuntu/agentmanager /home/ubuntu/agent-data 2>/dev/null | head -300 || true
-            echo '=== runtime manifests/capabilities ==='
-            find /home/ubuntu -maxdepth 5 -type f \( -iname '*capabilit*' -o -iname '*manifest*.json' -o -iname '*registry*.json' \) -print 2>/dev/null | head -200 || true
+            echo '=== agent_core/employee_threads.py ==='
+            sed -n '1,320p' /home/ubuntu/agentmanager/agent_core/employee_threads.py
+            echo '=== tests/test_employee_threads.py ==='
+            sed -n '1,360p' /home/ubuntu/agentmanager/tests/test_employee_threads.py
+            echo '=== related runtime invocation matches ==='
+            grep -RniE --exclude-dir=.git --exclude='*.sqlite*' 'employee_threads|ThreadsEmployee|threads.*fetch|fetch.*threads' /home/ubuntu/agentmanager/agent_core /home/ubuntu/agentmanager/tests /home/ubuntu/agentmanager/*.py 2>/dev/null | head -240 || true
           } | tee "$OUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: threads-capability-inspect
-          path: ${{ runner.temp }}/threads-capability-inspect.txt
+          name: threads-module-contract
+          path: ${{ runner.temp }}/threads-module-contract.txt
           retention-days: 1
