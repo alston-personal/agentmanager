@@ -20,36 +20,23 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Qualify Groq Llama fallback with full Master prompt
+      - name: Inspect Groq account model availability
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
-          cd /home/ubuntu/leopardcat-tarot/website
           python3 - <<'PY'
-          import os
-          from divination import ReadingRequest, build_default_engine
-          from divination.ai_gateway import OpenAICompatibleZeroCostGateway, ZeroCostProviderPool
-          def env(name):
-              try:
-                  for line in open('/home/ubuntu/agentmanager/.env', encoding='utf-8'):
-                      if line.startswith(name+'='): return line.strip().split('=',1)[1]
-              except Exception: pass
-              return None
-          engine=build_default_engine('/home/ubuntu/leopardcat-tarot/website')
-          envelope=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-llama'))
-          print('master_prompt_chars='+str(len(envelope.master_prompt)))
-          llama=OpenAICompatibleZeroCostGateway(provider_id='groq-llama',api_key=env('GROQ_API_KEY'),model='llama-3.3-70b-versatile',base_url='https://api.groq.com/openai/v1',allowed_models={'llama-3.3-70b-versatile'})
-          pool=ZeroCostProviderPool([llama])
+          import json, urllib.request
+          key=None
           try:
-              out=pool.generate(envelope.master_prompt)
-              print('llama_full_prompt_status=success')
-              print('llama_output_length='+str(len(out or '')))
-          except Exception as exc:
-              print('llama_full_prompt_status=error')
-              print('llama_exception='+type(exc).__name__)
-              print('llama_message='+str(exc)[:250].replace('\n',' '))
-          print('llama_trace='+str(pool.last_trace()))
+              for line in open('/home/ubuntu/agentmanager/.env',encoding='utf-8'):
+                  if line.startswith('GROQ_API_KEY='): key=line.strip().split('=',1)[1]
+          except Exception: pass
+          req=urllib.request.Request('https://api.groq.com/openai/v1/models',headers={'Authorization':f'Bearer {key}','Accept':'application/json'})
+          with urllib.request.urlopen(req,timeout=20) as r: data=json.load(r)
+          ids=sorted(str(x.get('id')) for x in data.get('data',[]) if isinstance(x,dict) and x.get('id'))
+          candidates=[x for x in ids if any(t in x for t in ('llama','qwen','gpt-oss','compound'))]
+          print('groq_candidate_models='+json.dumps(candidates,separators=(',',':')))
           PY
           REMOTE
