@@ -1,0 +1,43 @@
+name: LeopardCat Production Log Sink Inspect
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-log-sink-inspect.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect service logging and provider trace
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "head=$(git -C /home/ubuntu/leopardcat-tarot rev-parse HEAD)"
+          systemctl --user show leopardcat-tarot.service -p MainPID -p StandardOutput -p StandardError -p FragmentPath -p WorkingDirectory --no-pager
+          echo '=== unit ==='
+          systemctl --user cat leopardcat-tarot.service --no-pager
+          echo '=== journal tail ==='
+          journalctl --user -u leopardcat-tarot.service -n 80 --no-pager || true
+          echo '=== candidate logs ==='
+          find /home/ubuntu/leopardcat-tarot /home/ubuntu/.local/state /tmp -maxdepth 4 -type f \( -name '*.log' -o -name 'nohup.out' \) -mmin -30 2>/dev/null | head -50 || true
+          for f in $(find /home/ubuntu/leopardcat-tarot /home/ubuntu/.local/state /tmp -maxdepth 4 -type f \( -name '*.log' -o -name 'nohup.out' \) -mmin -30 2>/dev/null | head -50); do
+            if grep -q 'MASTER_PROVIDER_TRACE' "$f" 2>/dev/null; then
+              echo "trace_file=$f"
+              grep 'MASTER_PROVIDER_TRACE' "$f" | tail -10
+            fi
+          done
+          REMOTE
