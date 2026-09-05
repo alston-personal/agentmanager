@@ -20,36 +20,39 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Diagnose production Master runtime
+      - name: Trace full Master prompt rejection
         shell: bash
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
-          ROOT=/home/ubuntu/leopardcat-tarot
-          echo "head=$(git -C "$ROOT" rev-parse HEAD)"
-          echo "service_active=$(systemctl --user is-active leopardcat-tarot.service || true)"
-          echo '=== real reading probes ==='
+          cd /home/ubuntu/leopardcat-tarot/website
           python3 - <<'PY'
-          import json, urllib.request, urllib.error
-          cases=[
-            ('zh-TW','最近的方向應該怎麼看？','diag-zh'),
-            ('ja','これからの仕事について占ってください。','diag-ja'),
-          ]
-          for lang,q,seed in cases:
-              body={"method":"tarot","persona":"leopardcat","question":q,"lang":lang,"seed":seed,"input":{"deck_id":"leopardcat","spread":"single"}}
-              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=json.dumps(body,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'},method='POST')
+          import json, os
+          from divination import ReadingRequest, build_default_engine
+          from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, ZeroCostOpenRouterGateway, ZeroCostProviderPool
+          def env(name):
+              value=os.environ.get(name)
+              if value: return value
               try:
-                  with urllib.request.urlopen(req,timeout=45) as r:
-                      data=json.load(r); code=r.status
-              except urllib.error.HTTPError as e:
-                  code=e.code
-                  try: data=json.load(e)
-                  except Exception: data={}
-              print(f'case={lang} http={code} error={data.get("error")} code={data.get("code")} reading_present={bool(data.get("reading"))}')
+                  for line in open('/home/ubuntu/agentmanager/.env', encoding='utf-8'):
+                      if line.startswith(name+'='): return line.strip().split('=',1)[1]
+              except Exception: pass
+              return None
+          engine=build_default_engine('/home/ubuntu/leopardcat-tarot/website')
+          envelope=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-full'))
+          providers=[ZeroCostGeminiGateway(env('GEMINI_API_KEY')),ZeroCostGroqGateway(env('GROQ_API_KEY'))]
+          if env('OPENROUTER_API_KEY') or env('OPENROUTER_MODEL'):
+              providers.append(ZeroCostOpenRouterGateway(env('OPENROUTER_API_KEY'), env('OPENROUTER_MODEL')))
+          pool=ZeroCostProviderPool(providers)
+          try:
+              out=pool.generate(envelope.master_prompt)
+              print('full_prompt_status=success')
+              print('full_prompt_length='+str(len(out or '')))
+          except Exception as exc:
+              print('full_prompt_status=error')
+              print('full_prompt_exception='+type(exc).__name__)
+              print('full_prompt_message='+str(exc)[:250].replace('\n',' '))
+          print('full_prompt_trace='+json.dumps(pool.last_trace(),ensure_ascii=False,separators=(',',':')))
           PY
-          echo '=== recent service diagnostics ==='
-          journalctl --user -u leopardcat-tarot.service --since '30 minutes ago' --no-pager 2>/dev/null \
-            | grep -Ei 'AI|provider|Gemini|Groq|OpenRouter|429|503|quality|error|exception|traceback' \
-            | tail -160 || true
           REMOTE
