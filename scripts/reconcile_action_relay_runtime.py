@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import grp
 import json
 import os
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 SOURCE_REF = "core/integration"
 MARKER_SCHEMA = "agentos.action-relay-capabilities/v1"
 SERVICE = "agentos-action-relay.service"
+RECONCILE_TIMER = "agentos-action-relay-reconcile.timer"
+SHARED_GROUP = "agentos"
+GROUP_REEXEC_GUARD = "AGENTOS_ACTION_RELAY_RECONCILE_GROUP_REEXEC"
 
 
 def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None, timeout: int = 120) -> subprocess.CompletedProcess[str]:
@@ -32,9 +38,9 @@ def _git_value(repo: Path, *args: str) -> str:
 
 
 def _marker_current(marker: Path, *, source_commit: str) -> bool:
-    if not marker.is_file():
-        return False
     try:
+        if not marker.is_file():
+            return False
         payload = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
@@ -51,6 +57,59 @@ def _marker_current(marker: Path, *, source_commit: str) -> bool:
 def _service_active(repo: Path) -> bool:
     result = _run(["systemctl", "--user", "is-active", "--quiet", SERVICE], cwd=repo, timeout=20)
     return result.returncode == 0
+
+
+def _timer_enabled(repo: Path) -> bool:
+    result = _run(["systemctl", "--user", "is-enabled", "--quiet", RECONCILE_TIMER], cwd=repo, timeout=20)
+    return result.returncode == 0
+
+
+def _ensure_reconcile_timer(*, repo: Path, data_root: Path) -> bool:
+    if _timer_enabled(repo):
+        return False
+    installer = repo / "scripts" / "install_action_relay_reconcile_timer_user.sh"
+    if not installer.is_file():
+        raise RuntimeError("action_relay_reconcile_timer_installer_missing")
+    env = os.environ.copy()
+    env.update({"AGENTOS_REPO": str(repo), "AGENT_DATA_ROOT": str(data_root)})
+    installed = _run(["bash", str(installer)], cwd=repo, env=env, timeout=120)
+    if installed.returncode != 0 or not _timer_enabled(repo):
+        raise RuntimeError("action_relay_reconcile_timer_install_failed")
+    return True
+
+
+def _in_shared_group() -> bool:
+    try:
+        gid = grp.getgrnam(SHARED_GROUP).gr_gid
+    except KeyError:
+        return False
+    return gid == os.getgid() or gid in os.getgroups()
+
+
+def _reexec_in_shared_group() -> int | None:
+    """Enter the fixed cross-owner boundary without granting caller-selected execution.
+
+    Older ubuntu user-manager sessions may predate membership in ``agentos`` even
+    though the account is correctly configured on disk. The long-lived Action
+    Relay already uses ``sg agentos`` for the same reason. Reconciliation uses the
+    exact same source-owned group and exact current script; no argv, path, shell,
+    service, or credential comes from a caller.
+    """
+    if _in_shared_group():
+        return None
+    if os.environ.get(GROUP_REEXEC_GUARD) == "1":
+        raise RuntimeError("action_relay_reconcile_agentos_group_unavailable")
+    script = Path(__file__).resolve()
+    command = f"exec {shlex.quote(sys.executable)} {shlex.quote(str(script))}"
+    env = os.environ.copy()
+    env[GROUP_REEXEC_GUARD] = "1"
+    completed = subprocess.run(
+        ["/usr/bin/sg", SHARED_GROUP, "-c", command],
+        cwd=str(script.parent.parent),
+        env=env,
+        check=False,
+    )
+    return int(completed.returncode)
 
 
 def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
@@ -75,12 +134,15 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
 
     marker = data_root / "runtime" / "action-relay" / "capabilities.json"
     if _marker_current(marker, source_commit=current) and _service_active(repo):
+        timer_installed = _ensure_reconcile_timer(repo=repo, data_root=data_root)
         return {
             "schema": "agentos.action-relay-generation-reconcile/v1",
             "status": "current",
             "source_ref": SOURCE_REF,
             "source_commit": current,
             "service_active": True,
+            "reconcile_timer_enabled": True,
+            "reconcile_timer_installed": timer_installed,
             "credential_exposed": False,
         }
 
@@ -98,6 +160,7 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         raise RuntimeError("action_relay_reconcile_marker_mismatch")
     if not _service_active(repo):
         raise RuntimeError("action_relay_reconcile_service_not_active")
+    timer_installed = _ensure_reconcile_timer(repo=repo, data_root=data_root)
 
     return {
         "schema": "agentos.action-relay-generation-reconcile/v1",
@@ -105,11 +168,26 @@ def reconcile(*, repo: Path, data_root: Path) -> dict[str, Any]:
         "source_ref": SOURCE_REF,
         "source_commit": current,
         "service_active": True,
+        "reconcile_timer_enabled": True,
+        "reconcile_timer_installed": timer_installed,
         "credential_exposed": False,
     }
 
 
 def main() -> int:
+    try:
+        reexec = _reexec_in_shared_group()
+    except RuntimeError as exc:
+        print(json.dumps({
+            "schema": "agentos.action-relay-generation-reconcile/v1",
+            "status": "failed",
+            "error_code": str(exc),
+            "credential_exposed": False,
+        }, sort_keys=True))
+        return 2
+    if reexec is not None:
+        return reexec
+
     repo = Path(__file__).resolve().parent.parent
     data_root = Path(os.environ.get("AGENT_DATA_ROOT") or os.environ.get("AGENT_DATA_DIR") or Path.home() / "agent-data")
     try:
