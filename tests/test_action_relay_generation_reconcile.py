@@ -191,8 +191,7 @@ def test_timer_installer_has_fixed_group_context_and_no_caller_execution_surface
     assert "systemctl --user start agentos-action-relay-reconcile.service" not in source
 
 
-def test_maintenance_keeps_transitional_core_only_reconcile_fallback():
+def test_legacy_maintenance_no_longer_owns_relay_generation_reconcile():
     source = (Path(__file__).resolve().parents[1] / "scripts" / "maintenance.py").read_text(encoding="utf-8")
-    assert 'AGENT_MODE' in source
-    assert '== "CORE"' in source
-    assert 'run_script("reconcile_action_relay_runtime.py")' in source
+    assert 'run_script("reconcile_action_relay_runtime.py")' not in source
+    assert "agentos-action-relay-reconcile.timer" in source
