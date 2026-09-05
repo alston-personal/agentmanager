@@ -1,0 +1,49 @@
+name: LeopardCat Production Master HTTP Probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-ai-http-probe.yml'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe production reading endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "service_active=$(systemctl --user is-active leopardcat-tarot.service || true)"
+          echo "head=$(git -C /home/ubuntu/leopardcat-tarot rev-parse HEAD)"
+          cat >/tmp/leopardcat-ai-probe.json <<'JSON'
+          {"question":"請解讀這次牌局目前最值得注意的核心訊息。","lang":"zh-TW","method":"tarot","input":{"deck_id":"leopardcat"}}
+          JSON
+          code=$(curl -sS -o /tmp/leopardcat-ai-probe-response.json -w '%{http_code}' --max-time 70 -H 'Content-Type: application/json' --data-binary @/tmp/leopardcat-ai-probe.json http://127.0.0.1:8088/api/v1/readings || true)
+          echo "reading_http=$code"
+          python3 - <<'PY'
+          import json
+          p=json.load(open('/tmp/leopardcat-ai-probe-response.json'))
+          print('error='+str(p.get('error')))
+          print('code='+str(p.get('code')))
+          print('retryable='+str(p.get('retryable')))
+          print('reading_present='+str(bool(p.get('reading'))).lower())
+          print('reading_length='+str(len(p.get('reading') or '')))
+          print('method='+str(p.get('method')))
+          print('lang='+str(p.get('lang')))
+          PY
+          echo '=== recent filtered journal ==='
+          journalctl --user -u leopardcat-tarot.service --since '10 minutes ago' --no-pager 2>/dev/null | grep -Ei 'AI|provider|Gemini|Groq|OpenRouter|429|503|quality|error|exception|traceback' | tail -160 || true
+          REMOTE
