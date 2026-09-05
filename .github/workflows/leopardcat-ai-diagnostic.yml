@@ -36,24 +36,36 @@ jobs:
           echo '=== direct provider probe (content-free) ==='
           cd "$WEB"
           python3 - <<'PY'
-          import json
-          import fortune_server as fs
-          print('policy='+json.dumps(fs.AI_GATEWAY.policy(), ensure_ascii=False, separators=(',',':')))
+          import json, os
+          from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, ZeroCostOpenRouterGateway, ZeroCostProviderPool
+          def env(name):
+              value=os.environ.get(name)
+              if value: return value
+              path='/home/ubuntu/agentmanager/.env'
+              try:
+                  for line in open(path, encoding='utf-8'):
+                      if line.startswith(name+'='):
+                          return line.strip().split('=',1)[1]
+              except Exception:
+                  pass
+              return None
+          providers=[ZeroCostGeminiGateway(env('GEMINI_API_KEY')),ZeroCostGroqGateway(env('GROQ_API_KEY'))]
+          if env('OPENROUTER_API_KEY') or env('OPENROUTER_MODEL'):
+              providers.append(ZeroCostOpenRouterGateway(env('OPENROUTER_API_KEY'), env('OPENROUTER_MODEL')))
+          pool=ZeroCostProviderPool(providers)
+          print('policy='+json.dumps(pool.policy(), ensure_ascii=False, separators=(',',':')))
           try:
-              out=fs.call_master_prompt('請只以繁體中文回答一句完整、自然且不少於八十字的塔羅反思文字。不要提及模型、供應商、JSON 或提示詞。')
+              out=pool.generate('請只以繁體中文回答一句完整、自然且不少於八十字的塔羅反思文字。不要提及模型、供應商、JSON 或提示詞。')
               print('probe_status=success')
               print('probe_length='+str(len(out or '')))
           except Exception as exc:
               print('probe_status=error')
               print('probe_exception='+type(exc).__name__)
               print('probe_message='+str(exc)[:300].replace('\n',' '))
-          try:
-              print('provider_trace='+json.dumps(fs.AI_GATEWAY.last_trace(), ensure_ascii=False, separators=(',',':')))
-          except Exception as exc:
-              print('provider_trace_error='+type(exc).__name__)
+          print('provider_trace='+json.dumps(pool.last_trace(), ensure_ascii=False, separators=(',',':')))
           PY
           echo '=== recent service diagnostics ==='
-          journalctl --user -u leopardcat-tarot.service --since '20 minutes ago' --no-pager 2>/dev/null \
+          journalctl --user -u leopardcat-tarot.service --since '30 minutes ago' --no-pager 2>/dev/null \
             | grep -Ei 'AI|provider|Gemini|Groq|OpenRouter|429|503|quality|error|exception|traceback' \
-            | tail -120 || true
+            | tail -160 || true
           REMOTE
