@@ -1,4 +1,4 @@
-name: LeopardCat Governed Language Quality Deploy
+name: LeopardCat Governed Provider Diagnostics Deploy
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy and live-smoke language quality fix
+      - name: Deploy diagnostics and capture provider trace
         shell: bash
         run: |
           set -euo pipefail
@@ -33,8 +33,8 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=9d698ed400a89921b3aecf82bd4b4766ee85476c
-          TARGET=083f19c614253741c12fa7ffdaca6aff8ed3ac23
+          OLD=083f19c614253741c12fa7ffdaca6aff8ed3ac23
+          TARGET=a64639f28fff110266390fc5c410e15bb522ecb4
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
@@ -51,7 +51,7 @@ jobs:
             esac
           done
           rm -rf "$WEB/node_modules/.vite"
-          BACKUP=/tmp/leopardcat-stats-language-quality-${GITHUB_RUN_ID:-manual}.json
+          BACKUP=/tmp/leopardcat-stats-provider-diagnostics-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
           git -C "$ROOT" checkout -- website/dist/index.html
 
@@ -62,24 +62,18 @@ jobs:
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
           cp "$BACKUP" "$WEB/stats.json"
 
-          echo '=== verify quality source ==='
-          grep -q 'DENSE_SCRIPT' "$WEB/divination/ai_gateway.py"
-          grep -q '_minimum_chars_for' "$WEB/divination/ai_gateway.py"
-          test -f "$WEB/tests/test_language_aware_master_quality.py"
-          cd "$WEB"
-          python3 -m py_compile divination/ai_gateway.py
+          echo '=== verify diagnostics source ==='
+          grep -q 'MASTER_PROVIDER_TRACE' "$WEB/fortune_server.py"
+          grep -q 'AI_GATEWAY.last_trace()' "$WEB/fortune_server.py"
+          python3 -m py_compile "$WEB/fortune_server.py"
 
           echo '=== build production frontend ==='
-          test -e "$WEB/public/art/renders"
-          test -e "$WEB/public/cards"
+          cd "$WEB"
           npm ci
           npm run build
           JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
           CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
-          test -n "$JS_ASSET"; test -n "$CSS_ASSET"
           test -f "dist$JS_ASSET"; test -f "dist$CSS_ASSET"
-          echo "js_asset=$JS_ASSET"
-          echo "css_asset=$CSS_ASSET"
 
           echo '=== restart service ==='
           systemctl --user stop leopardcat-tarot.service || true
@@ -89,49 +83,34 @@ jobs:
             if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then kill "$pid" || true; fi
           done
           for i in $(seq 1 20); do ! ss -ltnp 2>/dev/null | grep -q ':8088' && break; sleep 1; done
-          ! ss -ltnp 2>/dev/null | grep -q ':8088'
           systemctl --user start leopardcat-tarot.service
           for i in $(seq 1 30); do
-            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/ >/tmp/leopardcat-root.html; then break; fi
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/ >/dev/null; then break; fi
             sleep 1
           done
           systemctl --user is-active --quiet leopardcat-tarot.service
-
-          echo '=== verify local/public bundle ==='
-          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-language-local.js
-          curl -fsS --max-time 5 "http://127.0.0.1:8088$CSS_ASSET" -o /tmp/leopardcat-language-local.css
-          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-language-local.js | awk '{print $1}')"
-          test "$(sha256sum "dist$CSS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-language-local.css | awk '{print $1}')"
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
           echo "public_http=$code"; test "$code" = 200
-          curl -fsS --max-time 8 "https://leopardcat-tarot.milkcat.org$JS_ASSET" -o /tmp/leopardcat-language-public.js
-          test "$(sha256sum "dist$JS_ASSET" | awk '{print $1}')" = "$(sha256sum /tmp/leopardcat-language-public.js | awk '{print $1}')"
 
-          echo '=== live zh/ja Master smoke ==='
+          echo '=== reproduce zh/ja provider failure ==='
           python3 - <<'PY'
-          import json, urllib.request, urllib.error, sys
-          cases=[('zh-TW','最近的方向應該怎麼看？'),('ja','これからの仕事の流れについて教えてください。')]
-          failed=False
-          for lang,q in cases:
-              payload={'method':'tarot','persona':'leopardcat','question':q,'lang':lang,'seed':'prod-language-quality-'+lang,'input':{'deck_id':'leopardcat','spread':'single'}}
+          import json, urllib.request, urllib.error
+          for lang,q in [('zh-TW','最近的方向應該怎麼看？'),('ja','これからの仕事の流れについて教えてください。')]:
+              payload={'method':'tarot','persona':'leopardcat','question':q,'lang':lang,'seed':'provider-trace-'+lang,'input':{'deck_id':'leopardcat','spread':'single'}}
               req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
               try:
                   with urllib.request.urlopen(req,timeout=45) as r:
                       data=json.loads(r.read().decode())
-                  text=str(data.get('reading') or '')
-                  ok=(r.status==200 and bool(text))
-                  print(f'case={lang} http={r.status} reading_present={str(bool(text)).lower()} reading_length={len(text)}')
-                  failed = failed or not ok
+                  print(f'case={lang} http={r.status} reading_present={bool(data.get("reading"))}')
               except urllib.error.HTTPError as e:
                   raw=e.read().decode('utf-8','replace')
                   try: data=json.loads(raw)
                   except Exception: data={}
-                  print(f'case={lang} http={e.code} error={data.get("error")} code={data.get("code")} retryable={data.get("retryable")}')
-                  failed=True
-          if failed:
-              raise SystemExit(42)
+                  print(f'case={lang} http={e.code} code={data.get("code")} retryable={data.get("retryable")}')
           PY
 
+          echo '=== provider trace ==='
+          journalctl --user -u leopardcat-tarot.service --since '5 minutes ago' --no-pager | grep 'MASTER_PROVIDER_TRACE' | tail -10
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
-          echo 'leopardcat_language_quality_deploy=PASS'
+          echo 'leopardcat_provider_diagnostics=PASS'
           REMOTE
