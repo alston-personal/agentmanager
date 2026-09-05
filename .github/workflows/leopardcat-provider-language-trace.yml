@@ -25,13 +25,16 @@ jobs:
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
-          import os, shlex, subprocess, sys
-          raw = subprocess.check_output(['systemctl','--user','show','leopardcat-tarot.service','-p','Environment','--value'], text=True)
-          for item in shlex.split(raw):
-              if '=' in item:
-                  k,v=item.split('=',1)
-                  if k in {'GEMINI_API_KEY','GEMINI_MODEL','GROQ_API_KEY','GROQ_MODEL','OPENROUTER_API_KEY','OPENROUTER_MODEL'}:
-                      os.environ[k]=v
+          import os, subprocess, sys
+          pid = subprocess.check_output(['systemctl','--user','show','leopardcat-tarot.service','-p','MainPID','--value'], text=True).strip()
+          raw = open(f'/proc/{pid}/environ','rb').read().split(b'\0')
+          allowed={'GEMINI_API_KEY','GEMINI_MODEL','GROQ_API_KEY','GROQ_MODEL','OPENROUTER_API_KEY','OPENROUTER_MODEL'}
+          for item in raw:
+              if b'=' not in item: continue
+              k,v=item.split(b'=',1)
+              key=k.decode('utf-8','ignore')
+              if key in allowed:
+                  os.environ[key]=v.decode('utf-8','ignore')
           sys.path.insert(0, '/home/ubuntu/leopardcat-tarot/website')
           from divination.ai_gateway import ZeroCostGeminiGateway, ZeroCostGroqGateway, MasterExperienceQualityGate, AIUnavailable, MASTER_EXPERIENCE_CONTRACT
           prompt = MASTER_EXPERIENCE_CONTRACT + '\n\n日本語で、仕事の今後について自然で完結したタロット解釈を答えてください。短い一言ではなく、実用的な助言まで含めてください。'
@@ -39,8 +42,7 @@ jobs:
           providers=[ZeroCostGeminiGateway(os.getenv('GEMINI_API_KEY')), ZeroCostGroqGateway(os.getenv('GROQ_API_KEY'))]
           for p in providers:
               print(f'provider={p.provider_id} configured={p.configured()} model={p.model}')
-              if not p.configured():
-                  continue
+              if not p.configured(): continue
               try:
                   text=p.generate(prompt)
                   print(f'provider={p.provider_id} raw_status=success raw_length={len(text)}')
