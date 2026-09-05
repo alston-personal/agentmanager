@@ -51,22 +51,22 @@ def main():
     # 1. Health & Structure (Bootstrap)
     run_script("bootstrap.py")
 
-    # 2. Core immutable Action Relay generation convergence.  The reconciler is
-    # source/ref/SHA fixed and runs only on the production Core profile; client
-    # nodes never gain service-install authority through maintenance.
-    if str(os.environ.get("AGENT_MODE") or "CLIENT").strip().upper() == "CORE":
-        run_script("reconcile_action_relay_runtime.py")
+    # Action Relay immutable-generation convergence intentionally does not live
+    # in this legacy maintenance pipeline.  The independent
+    # agentos-action-relay-reconcile.timer owns that Core self-heal lane so a
+    # failure in reporting, compaction, or any other maintenance task cannot
+    # prevent executor-generation repair.
 
-    # 3. Reliability Check (Watchdog Service)
+    # 2. Reliability Check (Watchdog Service)
     check_os_watchdog()
     
-    # 4. Task Aggregation (Global Todo Hub)
+    # 3. Task Aggregation (Global Todo Hub)
     run_script("aggregate_tasks.py")
     
-    # 5. Memory Compaction (AI GC)
+    # 4. Memory Compaction (AI GC)
     run_script("compactor.py")
 
-    # 6. Ecosystem Autonomous Reporting
+    # 5. Ecosystem Autonomous Reporting
     logger.info("Running ecosystem-report...")
     result = subprocess.run(["python3", "scripts/run_workflow.py", "ecosystem-report"], cwd=PROJECT_ROOT)
     if result.returncode != 0:
