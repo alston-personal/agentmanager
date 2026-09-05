@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe maintenance failure output and runtime generations
+      - name: Probe relay self-heal and product Employee activation
         shell: bash
         run: |
           set -euo pipefail
@@ -48,21 +48,18 @@ jobs:
           set +a
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
+
           echo "checkout_sha=$(git rev-parse HEAD)"
           if [ -e "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; else echo "action_runtime_sha=missing"; fi
           echo "action_relay_service=$(systemctl --user is-active agentos-action-relay.service 2>/dev/null || true)"
+          echo "maintenance_timer=$(systemctl --user is-active agent-maintenance.timer 2>/dev/null || true)"
           echo "maintenance_service=$(systemctl --user is-active agent-maintenance.service 2>/dev/null || true)"
-          echo "--- installed maintenance unit output paths ---"
-          systemctl --user cat agent-maintenance.service --no-pager 2>/dev/null | grep -E '^(WorkingDirectory|ExecStart|StandardOutput|StandardError)=' || true
-          echo "--- maintenance log candidates sanitized ---"
-          for log in "$ROOT/maintenance.log" "$DATA_ROOT/logs/maintenance.log"; do
-            if [ -f "$log" ]; then
-              echo "maintenance_log=$log"
-              tail -n 120 "$log" | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
-            fi
-          done
-          echo "--- maintenance journal sanitized ---"
-          journalctl --user -u agent-maintenance.service -n 30 --no-pager 2>/dev/null | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
+          echo "relay_reconcile_timer=$(systemctl --user is-active agentos-action-relay-reconcile.timer 2>/dev/null || true)"
+          echo "relay_reconcile_timer_enabled=$(systemctl --user is-enabled agentos-action-relay-reconcile.timer 2>/dev/null || true)"
+          echo "relay_reconcile_service=$(systemctl --user is-active agentos-action-relay-reconcile.service 2>/dev/null || true)"
+          echo "--- timers ---"
+          systemctl --user list-timers agent-maintenance.timer agentos-action-relay-reconcile.timer --all --no-pager 2>/dev/null || true
+
           python3 - "$DATA_ROOT" <<'PY'
           import json, sys
           from pathlib import Path
@@ -71,10 +68,48 @@ jobs:
           if marker.is_file():
               try: d=json.loads(marker.read_text())
               except Exception: d={}
+              print('action_marker_source_ref='+str(d.get('source_ref') or ''))
               print('action_marker_source_commit='+str(d.get('source_commit') or ''))
+              print('action_marker_caps='+','.join(str(x) for x in (d.get('node_capabilities') or [])))
           else:
               print('action_marker_source_commit=missing')
+          nodes=root/'realm/nodes.json'
+          if nodes.is_file():
+              try: d=json.loads(nodes.read_text())
+              except Exception: d={}
+              n=(d.get('nodes') or {}).get('oracle-employee-wake-node') or {}
+              print('wake_node_status='+str(n.get('status') or 'missing'))
+              print('wake_node_caps='+','.join(str(x) for x in (n.get('capabilities') or [])))
+          else:
+              print('wake_node_status=missing')
           for eid in ('zeus-writer','youtube-ai-manager'):
-              print(f'employee_{eid}_exists='+str((root/'employee-runtime/employees'/f'{eid}.json').is_file()).lower())
+              ep=root/'employee-runtime/employees'/f'{eid}.json'
+              print(f'employee_{eid}_exists='+str(ep.is_file()).lower())
+              pp=root/'employee-runtime/realm/employee-presence'/f'{eid}.json'
+              if pp.is_file():
+                  try: p=json.loads(pp.read_text())
+                  except Exception: p={}
+                  print(f'presence_{eid}_node='+str(p.get('node_id') or ''))
+                  print(f'presence_{eid}_generation='+str(p.get('generation') or ''))
+                  print(f'presence_{eid}_expires_at='+str(p.get('expires_at') or ''))
+          for aid in ('zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'):
+              ap=root/'employee-runtime/assignments'/f'{aid}.json'
+              if ap.is_file():
+                  try: a=json.loads(ap.read_text())
+                  except Exception: a={}
+                  print(f'assignment_{aid}_state='+str(a.get('state') or ''))
+                  print(f'assignment_{aid}_thread_head='+str(a.get('thread_head') or ''))
+              else:
+                  print(f'assignment_{aid}_state=missing')
           PY
+
+          for svc in agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
+          done
+          echo "--- relay reconcile journal sanitized ---"
+          journalctl --user -u agentos-action-relay-reconcile.service -n 40 --no-pager 2>/dev/null \
+            | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
+          echo "--- recent maintenance journal sanitized ---"
+          journalctl --user -u agent-maintenance.service -n 20 --no-pager 2>/dev/null \
+            | sed -E 's/(Bearer|token|secret|password)[^ ]*/[REDACTED]/Ig' || true
           REMOTE
