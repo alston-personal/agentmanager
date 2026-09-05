@@ -20,7 +20,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Qualify fixed Groq fallbacks with full Master prompt
+      - name: Trace production Master providers without binding server port
         shell: bash
         run: |
           set -euo pipefail
@@ -28,28 +28,33 @@ jobs:
           set -euo pipefail
           cd /home/ubuntu/leopardcat-tarot/website
           python3 - <<'PY'
-          import os
           from divination import ReadingRequest, build_default_engine
-          from divination.ai_gateway import OpenAICompatibleZeroCostGateway, ZeroCostProviderPool
+          from divination.ai_gateway import ZeroCostGeminiGateway, OpenAICompatibleZeroCostGateway, ZeroCostProviderPool
           def env(name):
               try:
                   for line in open('/home/ubuntu/agentmanager/.env',encoding='utf-8'):
-                      if line.startswith(name+'='): return line.strip().split('=',1)[1]
-              except Exception: pass
+                      if line.startswith(name+'='):
+                          return line.strip().split('=',1)[1]
+              except Exception:
+                  pass
               return None
           engine=build_default_engine('/home/ubuntu/leopardcat-tarot/website')
-          prompt=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-alt')).master_prompt
+          prompt=engine.prepare(ReadingRequest(method='tarot',persona='leopardcat',question='最近的方向應該怎麼看？',input={'deck_id':'leopardcat','spread':'single'},lang='zh-TW',seed='diag-prod')).master_prompt
           print('master_prompt_chars='+str(len(prompt)))
-          for model in ['qwen/qwen3.6-27b','openai/gpt-oss-20b']:
-              gw=OpenAICompatibleZeroCostGateway(provider_id='groq',api_key=env('GROQ_API_KEY'),model=model,base_url='https://api.groq.com/openai/v1',allowed_models={model})
+          providers=[
+              ZeroCostGeminiGateway(env('GEMINI_API_KEY')),
+              OpenAICompatibleZeroCostGateway(provider_id='groq',api_key=env('GROQ_API_KEY'),model='openai/gpt-oss-120b',base_url='https://api.groq.com/openai/v1',allowed_models={'openai/gpt-oss-120b'}),
+              OpenAICompatibleZeroCostGateway(provider_id='groq',api_key=env('GROQ_API_KEY'),model='openai/gpt-oss-20b',base_url='https://api.groq.com/openai/v1',allowed_models={'openai/gpt-oss-20b'}),
+          ]
+          for gw in providers:
               pool=ZeroCostProviderPool([gw])
               try:
                   out=pool.generate(prompt)
-                  print(f'model={model} status=success output_length={len(out or "")}')
-                  print('trace='+str(pool.last_trace()))
-                  break
+                  print(f'provider={gw.provider_id} model={gw.model} status=success output_length={len(out or "")}')
               except Exception as exc:
-                  print(f'model={model} status=error exception={type(exc).__name__} message={str(exc)[:180].replace(chr(10)," ")}')
-                  print('trace='+str(pool.last_trace()))
+                  print(f'provider={gw.provider_id} model={gw.model} status=error exception={type(exc).__name__} message={str(exc)[:160].replace(chr(10)," ")}')
+              print('trace='+str(pool.last_trace()))
           PY
+          echo "service_active=$(systemctl --user is-active leopardcat-tarot.service || true)"
+          echo "head=$(git -C /home/ubuntu/leopardcat-tarot rev-parse HEAD)"
           REMOTE
