@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -143,6 +144,109 @@ def test_rollback_ambiguity_is_unknown_and_not_success(monkeypatch, tmp_path):
     assert result["classification"] == "ROLLBACK_OUTCOME_UNKNOWN"
     assert result["rollback"] == "unknown"
     assert result["status"] == "failed"
+
+
+class _FileOnlyRelayClient:
+    """Exercise dispatcher spool semantics without Oracle's production Unix group."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        for name in ("inbox", "processing", "receipts", "quarantine"):
+            (root / name).mkdir(parents=True, exist_ok=True)
+
+    def submit(self, action, params):
+        existing = sum(len(list((self.root / name).glob("action-test-*.json"))) for name in ("inbox", "processing", "receipts", "quarantine"))
+        capsule_id = f"action-test-{existing + 1}"
+        payload = {"schema": "agentos.action-relay/v1", "capsule_id": capsule_id, "action": action, "params": params}
+        (self.root / "inbox" / f"{capsule_id}.json").write_text(json.dumps(payload), encoding="utf-8")
+        return payload
+
+    def receipt(self, capsule_id):
+        path = self.root / "receipts" / f"{capsule_id}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+def _dispatcher(tmp_path: Path) -> relay.ActionRelayRuntimeConvergeDispatcher:
+    root = tmp_path / "relay"
+    dispatcher = relay.ActionRelayRuntimeConvergeDispatcher(root)
+    dispatcher.client = _FileOnlyRelayClient(root)
+    return dispatcher
+
+
+def test_runtime_converge_duplicate_request_reuses_same_inbox_capsule(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "queued"
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 1
+
+
+def test_runtime_converge_duplicate_request_reuses_processing_capsule(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    processing = dispatcher.root / "processing" / inbox.name
+    inbox.replace(processing)
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "processing"
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_runtime_converge_terminal_receipt_is_reused_not_resubmitted(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    inbox.unlink()
+    receipt = {
+        "schema": "agentos.action-receipt/v1",
+        "capsule_id": first["task_id"],
+        "action": relay.ACTION,
+        **request(),
+        "status": "completed",
+        "classification": "CURRENT_GENERATION_RECONCILED",
+        "credential_exposed": False,
+    }
+    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(json.dumps(receipt), encoding="utf-8")
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "completed"
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_runtime_converge_quarantined_unknown_wins_and_is_never_replayed(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    first = dispatcher.submit(request=request())
+    inbox = dispatcher.root / "inbox" / f'{first["task_id"]}.json'
+    quarantine = dispatcher.root / "quarantine" / inbox.name
+    inbox.replace(quarantine)
+    unknown_receipt = {
+        "schema": "agentos.action-receipt/v1",
+        "capsule_id": first["task_id"],
+        "action": relay.ACTION,
+        "outcome": "unknown",
+        "replayed": False,
+        "ok": False,
+    }
+    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(json.dumps(unknown_receipt), encoding="utf-8")
+    second = dispatcher.submit(request=request())
+    assert second["task_id"] == first["task_id"]
+    assert second["state"] == "unknown"
+    assert second["ok"] is False
+    assert second["deduplicated"] is True
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 0
+
+
+def test_runtime_converge_request_id_collision_fails_closed(tmp_path):
+    dispatcher = _dispatcher(tmp_path)
+    dispatcher.submit(request=request())
+    with pytest.raises(RuntimeError, match="request_id_collision"):
+        dispatcher.submit(request=request(source_commit="b" * 40))
+    assert len(list((dispatcher.root / "inbox").glob("action-*.json"))) == 1
 
 
 class NodeRegistry:
