@@ -13,7 +13,7 @@ on:
       - 'tests/test_social_runtime_bootstrap_contract.py'
       - 'docs/SOCIAL_RUNTIME.md'
       - 'scripts/install_social_runtime_user.sh'
-      - 'scripts/deploy_social_runtime_user.sh'
+      - 'scripts/deploy_social_runtime_system.sh'
       - '.github/workflows/core-social-runtime-guard.yml'
       - '.github/workflows/oracle-social-runtime-rollout.yml'
   pull_request:
@@ -26,7 +26,7 @@ on:
       - 'tests/test_social_runtime_bootstrap_contract.py'
       - 'docs/SOCIAL_RUNTIME.md'
       - 'scripts/install_social_runtime_user.sh'
-      - 'scripts/deploy_social_runtime_user.sh'
+      - 'scripts/deploy_social_runtime_system.sh'
       - '.github/workflows/core-social-runtime-guard.yml'
       - '.github/workflows/oracle-social-runtime-rollout.yml'
 
@@ -48,7 +48,7 @@ jobs:
       - name: Validate rollout shell contracts
         run: |
           bash -n scripts/install_social_runtime_user.sh
-          bash -n scripts/deploy_social_runtime_user.sh
+          bash -n scripts/deploy_social_runtime_system.sh
       - name: Run shared runtime contract suite
         run: >-
           python -m pytest -q
