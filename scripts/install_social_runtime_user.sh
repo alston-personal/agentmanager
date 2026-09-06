@@ -20,6 +20,14 @@ if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   exit 2
 fi
 
+USER_UID="$(id -u)"
+USER_RUNTIME_DIR="/run/user/${USER_UID}"
+USER_BUS="${USER_RUNTIME_DIR}/bus"
+test -d "$USER_RUNTIME_DIR" || { echo "social_runtime_user_bus=RUNTIME_DIR_MISSING" >&2; exit 3; }
+test -S "$USER_BUS" || { echo "social_runtime_user_bus=BUS_MISSING" >&2; exit 3; }
+export XDG_RUNTIME_DIR="$USER_RUNTIME_DIR"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$USER_BUS"
+
 test -f "$SOURCE_ROOT/agentos_node/social/runtime_http.py"
 test -f "$SOURCE_ROOT/agentos_node/social/runtime_storage.py"
 
@@ -57,6 +65,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$RUNTIME_ROOT
 Environment=PYTHONPATH=$RUNTIME_ROOT
+Environment=XDG_RUNTIME_DIR=$USER_RUNTIME_DIR
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=$USER_BUS
 EnvironmentFile=$ENV_FILE
 ExecStart=/usr/bin/python3 -m agentos_node.social.runtime_http --host 127.0.0.1 --port 8771 --credential-path $STATE_ROOT/credentials.json
 Restart=on-failure
@@ -73,17 +83,38 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable --now agentos-social-runtime.service
+systemctl --user restart agentos-social-runtime.service
 
+stable=0
+for _ in $(seq 1 20); do
+  if systemctl --user is-active --quiet agentos-social-runtime.service; then
+    stable=$((stable + 1))
+    if [ "$stable" -ge 3 ]; then
+      break
+    fi
+  else
+    stable=0
+  fi
+  sleep 1
+done
+if [ "$stable" -lt 3 ]; then
+  systemctl --user --no-pager --full status agentos-social-runtime.service || true
+  journalctl --user -u agentos-social-runtime.service -n 80 --no-pager >&2 || true
+  echo "social_runtime_stable_liveness=FAIL" >&2
+  exit 4
+fi
+
+HEALTH_FILE="${STATE_ROOT}/health.json"
 for _ in $(seq 1 40); do
-  if curl -fsS --max-time 2 http://127.0.0.1:8771/healthz >/tmp/agentos-social-runtime-health.json; then
+  if curl -fsS --max-time 2 http://127.0.0.1:8771/healthz >"$HEALTH_FILE"; then
     break
   fi
   sleep 1
 done
-curl -fsS --max-time 3 http://127.0.0.1:8771/healthz >/tmp/agentos-social-runtime-health.json
-python3 - <<'PY'
-import json
-p = json.load(open('/tmp/agentos-social-runtime-health.json', encoding='utf-8'))
+curl -fsS --max-time 3 http://127.0.0.1:8771/healthz >"$HEALTH_FILE"
+python3 - "$HEALTH_FILE" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1], encoding='utf-8'))
 assert p.get('schema') == 'agentos.social-runtime-status/v1', p
 assert p.get('service') == 'agentos-social-runtime', p
 threads = p.get('threads') or {}
@@ -95,6 +126,8 @@ PY
 
 grep -q '^source_ref=core/integration$' "$RUNTIME_ROOT/GENERATION"
 grep -q "^source_commit=$SOURCE_COMMIT$" "$RUNTIME_ROOT/GENERATION"
+echo "social_runtime_user_bus=${EXPECTED_USER}:${USER_BUS}"
+echo "social_runtime_stable_liveness=PASS"
 echo "social_runtime_source_ref=core/integration"
 echo "social_runtime_source_commit=$SOURCE_COMMIT"
 echo "social_runtime_install=PASS"
