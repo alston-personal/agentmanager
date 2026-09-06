@@ -75,8 +75,9 @@ jobs:
           CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
           test -n "$JS_ASSET"; test -f "dist$JS_ASSET"
           test -n "$CSS_ASSET"; test -f "dist$CSS_ASSET"
-          grep -q 'THREADS_TEXT_LIMIT' "dist$JS_ASSET"
-          grep -q 'prepareThreadsShare' "dist$JS_ASSET"
+          # Variable names are minified; verify stable behavior strings instead.
+          grep -q '完整內容已複製' "dist$JS_ASSET"
+          grep -q 'https://www.threads.net/intent/post' "dist$JS_ASSET"
 
           echo '=== restart service ==='
           systemctl --user stop leopardcat-tarot.service || true
@@ -104,6 +105,7 @@ jobs:
               method='POST')
           try:
               with urllib.request.urlopen(req, timeout=70) as r:
+                  status=r.status
                   payload=json.loads(r.read().decode('utf-8'))
           except urllib.error.HTTPError as e:
               raw=e.read().decode('utf-8','replace')
@@ -112,11 +114,11 @@ jobs:
           src=payload.get('source') or {}
           text=str(src.get('text') or '').strip()
           url=str(src.get('url') or '').strip()
-          print('threads_source_http=',r.status)
+          print('threads_source_http=',status)
           print('threads_source_type=',src.get('type'))
           print('threads_source_text_length=',len(text))
           print('threads_source_url=',url)
-          assert r.status == 200
+          assert status == 200
           assert text
           assert re.search(r'https://(?:www\.)?threads\.(?:com|net)/@[^/]+/post/[A-Za-z0-9_-]+', url, re.I), url
           PY
@@ -127,8 +129,8 @@ jobs:
           PUBLIC_JS=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' /tmp/leopardcat-public.html | head -1)
           test -n "$PUBLIC_JS"
           curl -fsS --max-time 15 "https://leopardcat-tarot.milkcat.org$PUBLIC_JS" -o /tmp/leopardcat-public.js
-          grep -q 'THREADS_TEXT_LIMIT' /tmp/leopardcat-public.js
-          grep -q 'prepareThreadsShare' /tmp/leopardcat-public.js
+          grep -q '完整內容已複製' /tmp/leopardcat-public.js
+          grep -q 'https://www.threads.net/intent/post' /tmp/leopardcat-public.js
           echo "public_js=$PUBLIC_JS"
           echo 'leopardcat_threads_share_autosplit_deploy=PASS'
           REMOTE
