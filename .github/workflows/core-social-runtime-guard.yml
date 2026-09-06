@@ -8,6 +8,7 @@ on:
       - core/issue-267-social-runtime-bootstrap
       - core/issue-267-social-gateway
       - core/issue-267-threads-redirect-contract
+      - core/issue-267-browser-handoff
     paths:
       - 'agentos_node/social/**'
       - 'agentos_node/bootstrap_control.py'
@@ -54,7 +55,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest
       - name: Compile shared social runtime and bootstrap control
         run: python -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
-      - name: Validate rollout shell, gateway, and redirect boundary
+      - name: Validate rollout shell, gateway, browser handoff, and redirect boundary
         run: |
           bash -n scripts/install_social_runtime_user.sh
           bash -n scripts/deploy_social_runtime_user.sh
@@ -62,6 +63,7 @@ jobs:
           from pathlib import Path
           callback='https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback'
           route=Path('dashboard/app/api/social/[...path]/route.ts').read_text(encoding='utf-8')
+          runtime=Path('agentos_node/social/runtime_http.py').read_text(encoding='utf-8')
           deploy=Path('scripts/deploy_social_runtime_user.sh').read_text(encoding='utf-8')
           docs=Path('docs/SOCIAL_RUNTIME.md').read_text(encoding='utf-8')
           for required in (
@@ -70,6 +72,7 @@ jobs:
               '/v1/social/publish',
               '/v1/social/reply',
               '/v1/social/disconnect',
+              '/v1/social/oauth/threads/start',
               '/v1/social/oauth/threads/callback',
               '/dashboard/api/social/v1/social/oauth/threads/callback',
               'x-agentos-product-key',
@@ -79,13 +82,20 @@ jobs:
               assert required in route, required
           assert '/internal/v1/social/acceptances' not in route
           assert 'x-agentos-control-token' not in route.lower()
+          assert 'agentos.social-browser-handoff/v1' in runtime
+          assert 'browser_start_url' in runtime
+          assert 'ticket' in runtime
+          assert 'api_key' not in runtime.split('browser_start_url', 1)[1].split('\n', 8)[0]
           assert f"THREADS_REDIRECT_URI='{callback}'" in deploy
           assert "raise SystemExit('social_runtime_threads_redirect=NON_CANONICAL')" in deploy
           assert "print('social_runtime_threads_redirect=CANONICAL')" in deploy
           for leaking in ('print(observed)', 'print(f"{observed}', "print(f'{observed}", '% observed'):
               assert leaking not in deploy, leaking
           assert callback in docs
+          assert 'opaque `browser_start_url`' in docs
+          assert 'product key MUST remain server-side' in docs
           print('social_gateway_static_boundary=PASS')
+          print('social_browser_handoff_boundary=PASS')
           print('social_threads_redirect_contract=PASS')
           PY
       - name: Exercise redirect migration fail-closed semantics
