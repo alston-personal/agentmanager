@@ -8,8 +8,7 @@
     "artifact_three_way_match": true,
     "listener": {
       "pid": null,
-      "present": true,
-      "ss": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8088      0.0.0.0:*"
+      "present": true
     },
     "local_asset_sha256": "137b4f6db09eef113c6c61f73a422f19fbb5fbb68aa4485f101276758e82a863",
     "localhost_asset_http": 200,
@@ -26,17 +25,16 @@
     "runtime_git": {
       "branch": "main",
       "dirty_paths": [
-        "ebsite/dist/index.html",
+        "website/dist/index.html",
         "website/node_modules/.vite/deps/_metadata.json",
         "website/node_modules/.vite/deps/package.json",
         "website/stats.json",
         ".claude/"
       ],
       "head": "62ba1adc70ae53a9fdbae2a6721d5dc5001256f5",
-      "remote_origin": "https://x-access-token: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@github.com/alston-personal/leopardcat-tarot.git",
+      "remote_origin": "https://github.com/alston-personal/leopardcat-tarot.git",
       "root": "/home/ubuntu/leopardcat-tarot",
       "unexpected_dirty_paths": [
-        "ebsite/dist/index.html",
         ".claude/"
       ]
     },
