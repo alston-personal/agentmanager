@@ -80,9 +80,10 @@ jobs:
           assert '/internal/v1/social/acceptances' not in route
           assert 'x-agentos-control-token' not in route.lower()
           assert f"THREADS_REDIRECT_URI='{callback}'" in deploy
-          assert 'social_runtime_threads_redirect=NON_CANONICAL' in deploy
-          assert 'social_runtime_threads_redirect=CANONICAL' in deploy
-          assert 'observed' not in deploy.split("social_runtime_threads_redirect=NON_CANONICAL", 1)[1][:200]
+          assert "raise SystemExit('social_runtime_threads_redirect=NON_CANONICAL')" in deploy
+          assert "print('social_runtime_threads_redirect=CANONICAL')" in deploy
+          for leaking in ('print(observed)', 'print(f"{observed}', "print(f'{observed}", '% observed'):
+              assert leaking not in deploy, leaking
           assert callback in docs
           print('social_gateway_static_boundary=PASS')
           print('social_threads_redirect_contract=PASS')
@@ -90,8 +91,6 @@ jobs:
       - name: Exercise redirect migration fail-closed semantics
         run: |
           python3 - <<'PY'
-          from pathlib import Path
-          import os, tempfile
           canonical='https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback'
 
           def migrate(text: str):
