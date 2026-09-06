@@ -13,7 +13,7 @@ The production defaults are fixed under `/home/ubuntu/.config/agentos`:
 - runtime env: `social-runtime.env`
 - product secret files: `social-products/<product_id>.env`
 
-All writes are atomic and mode `0600`. Secret values are never printed by the tool.
+All writes are atomic and mode `0600`. Secret values are never printed by the tool. The dedicated `Social Runtime Local Config Guard` workflow runs the unit and static secret-exposure checks for this boundary.
 
 ## Control-plane token
 
