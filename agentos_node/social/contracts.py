@@ -41,7 +41,7 @@ class SocialRequest:
     account_binding_id: str | None = None
     target_account_id: str | None = None
     primary_text: str | None = None
-    text_attachment: str | None = None
+    text_attachment: dict[str, str] | None = None
     object_id: str | None = None
     reply_to_id: str | None = None
     return_to: str | None = None
@@ -62,8 +62,13 @@ class SocialRequest:
         if self.operation in {"publish", "reply"}:
             if not self.account_binding_id or not self.target_account_id:
                 raise ValueError("explicit_target_account_required")
-            if not (self.primary_text or self.text_attachment):
-                raise ValueError("publish_content_required")
+            if not str(self.primary_text or "").strip():
+                raise ValueError("primary_text_required")
+            if self.text_attachment is not None:
+                if not isinstance(self.text_attachment, dict) or not str(self.text_attachment.get("plaintext") or "").strip():
+                    raise ValueError("text_attachment_plaintext_required")
+                if set(self.text_attachment) - {"plaintext", "link_attachment_url"}:
+                    raise ValueError("unsupported_text_attachment_field")
         if self.operation == "reply" and not self.reply_to_id:
             raise ValueError("reply_target_required")
         if self.return_to:
@@ -98,31 +103,12 @@ class SocialReceipt:
         return payload
 
 
-def receipt_for(
-    request: SocialRequest,
-    *,
-    started_at: str,
-    ok: bool,
-    capability: str,
-    result: dict[str, Any] | None = None,
-    error_code: str | None = None,
-    platform_object_id: str | None = None,
-    permalink: str | None = None,
-) -> SocialReceipt:
+def receipt_for(request: SocialRequest, *, started_at: str, ok: bool, capability: str, result: dict[str, Any] | None = None, error_code: str | None = None, platform_object_id: str | None = None, permalink: str | None = None) -> SocialReceipt:
     receipt = SocialReceipt(
-        product_id=request.product_id,
-        platform=request.platform,
-        operation=request.operation,
-        ok=ok,
-        started_at=started_at,
-        completed_at=utc_now(),
-        capability=capability,
-        account_binding_id=request.account_binding_id,
-        target_account_id=request.target_account_id,
-        platform_object_id=platform_object_id,
-        permalink=permalink,
-        result=result or {},
-        error_code=error_code,
+        product_id=request.product_id, platform=request.platform, operation=request.operation,
+        ok=ok, started_at=started_at, completed_at=utc_now(), capability=capability,
+        account_binding_id=request.account_binding_id, target_account_id=request.target_account_id,
+        platform_object_id=platform_object_id, permalink=permalink, result=result or {}, error_code=error_code,
     )
     receipt.to_dict()
     return receipt
