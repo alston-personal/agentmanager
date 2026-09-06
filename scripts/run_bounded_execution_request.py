@@ -35,6 +35,13 @@ def fail(msg):
     raise RuntimeError(msg)
 
 
+def sanitize_remote(remote):
+    remote = str(remote or "")
+    if "://" in remote:
+        remote = re.sub(r"(https?://)[^/@]+@", r"\1", remote)
+    return remote
+
+
 def load_request(path):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     required = {
@@ -69,7 +76,7 @@ def inspect_listener(port):
     if proc.returncode != 0 or "LISTEN" not in text:
         fail(f"no listener on port {port}: {text.strip()[:500]}")
     m = re.search(r"pid=(\d+)", text)
-    return {"present": True, "pid": int(m.group(1)) if m else None, "ss": text.strip()[:1000]}
+    return {"present": True, "pid": int(m.group(1)) if m else None}
 
 
 def git_state(repo_root):
@@ -80,17 +87,19 @@ def git_state(repo_root):
         return p.stdout.strip()
     head = git("rev-parse", "HEAD")
     branch = git("branch", "--show-current")
-    remote = git("remote", "get-url", "origin")
+    remote = sanitize_remote(git("remote", "get-url", "origin"))
     porcelain = git("status", "--porcelain")
     dirty_paths = []
     for line in porcelain.splitlines():
-        path = line[3:] if len(line) > 3 else ""
+        path = (line[3:] if len(line) > 3 else "").strip()
         dirty_paths.append(path)
     def allowed_dirty(path):
         return (
             path == "website/dist/index.html"
             or path == "website/stats.json"
             or path.startswith("website/node_modules/.vite/")
+            or path == ".claude/"
+            or path.startswith(".claude/")
         )
     unexpected = [p for p in dirty_paths if not allowed_dirty(p)]
     return {
@@ -160,7 +169,7 @@ def main():
         local_asset = local_asset_path.read_bytes()
         localhost_asset, localhost_status = fetch_bytes(f"http://127.0.0.1:{port}{asset_path}")
         public_asset, public_status = fetch_bytes(f"{public_origin}{asset_path}")
-        public_root, public_root_status = fetch_bytes(f"{public_origin}/")
+        _, public_root_status = fetch_bytes(f"{public_origin}/")
 
         local_digest = sha256(local_asset)
         localhost_digest = sha256(localhost_asset)
