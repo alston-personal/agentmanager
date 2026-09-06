@@ -34,7 +34,7 @@ jobs:
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
           OLD=dd8390ae5d6d7fc7f140540fd09d6a845024e582
-          TARGET=4c57564fc4544016115237fd6dd36d7ed866735a
+          TARGET=62ba1adc70ae53a9fdbae2a6721d5dc5001256f5
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
