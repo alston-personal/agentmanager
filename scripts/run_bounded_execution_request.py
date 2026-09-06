@@ -66,27 +66,36 @@ def load_request(path):
 def inspect_listener(port):
     proc = run_fixed(["ss", "-ltnp", f"sport = :{port}"])
     text = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != 0 or "LISTEN" not in text:
+        fail(f"no listener on port {port}: {text.strip()[:500]}")
     m = re.search(r"pid=(\d+)", text)
-    if proc.returncode != 0 or not m:
-        fail(f"unable to resolve listener on port {port}: {text.strip()[:500]}")
+    if not m:
+        return {"present": True, "pid": None, "cwd": None, "cmdline": None, "ss": text.strip()[:1000]}
     pid = int(m.group(1))
-    cwd = os.readlink(f"/proc/{pid}/cwd")
-    cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace").strip()
-    return pid, cwd, cmdline
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace").strip()
+    except OSError:
+        cwd, cmdline = None, None
+    return {"present": True, "pid": pid, "cwd": cwd, "cmdline": cmdline, "ss": text.strip()[:1000]}
 
 
 def inspect_git(cwd):
+    if not cwd:
+        return None
     def git(*args):
         p = run_fixed(["git", "-C", cwd, *args])
         if p.returncode != 0:
-            fail(f"git {' '.join(args)} failed: {(p.stderr or p.stdout).strip()[:500]}")
+            return None
         return p.stdout.strip()
     head = git("rev-parse", "HEAD")
     branch = git("rev-parse", "--abbrev-ref", "HEAD")
     root = git("rev-parse", "--show-toplevel")
     remote = git("config", "--get", "remote.origin.url")
-    dirty = bool(git("status", "--porcelain"))
-    return {"head": head, "branch": branch, "root": root, "remote_origin": remote, "dirty": dirty}
+    status = git("status", "--porcelain")
+    if not all(v is not None for v in (head, branch, root, remote, status)):
+        return None
+    return {"head": head, "branch": branch, "root": root, "remote_origin": remote, "dirty": bool(status)}
 
 
 def fetch_bytes(url):
@@ -105,8 +114,6 @@ def main():
         return 2
     request_path = sys.argv[1]
     out_path = Path(sys.argv[2] if len(sys.argv) == 3 else ".agentos/evidence/execution-receipt.json")
-    started = now()
-    request = None
     receipt = {
         "schema": "agentos.execution-receipt/v1",
         "request_id": None,
@@ -117,8 +124,9 @@ def main():
         "source_sha": None,
         "capability": None,
         "result_status": "failed",
+        "evidence_level": None,
         "executor_identity": os.environ.get("RUNNER_NAME") or os.uname().nodename,
-        "started_at": started,
+        "started_at": now(),
         "completed_at": None,
         "evidence": {},
         "error": None,
@@ -127,11 +135,10 @@ def main():
         request = load_request(request_path)
         for k in ("request_id", "project_id", "repository", "environment", "source_ref", "source_sha", "capability"):
             receipt[k] = request[k]
+
         port = request["parameters"]["listen_port"]
-        pid, cwd, cmdline = inspect_listener(port)
-        git_state = inspect_git(cwd)
-        expected_repo_tokens = ("alston-personal/leopardcat-tarot", "leopardcat-tarot.git")
-        repo_matches = any(t in git_state["remote_origin"] for t in expected_repo_tokens)
+        listener = inspect_listener(port)
+        git_state = inspect_git(listener["cwd"])
 
         served_url = f"http://127.0.0.1:{port}{request['parameters']['served_script_path']}"
         served = fetch_bytes(served_url)
@@ -139,28 +146,39 @@ def main():
         source = fetch_bytes(source_url)
         served_digest = sha256(served)
         source_digest = sha256(source)
+        exact_artifact = served_digest == source_digest
         marker_runtime = b"platform === 'MacIntel' && touchPoints > 1" in served
         marker_restore = b"restoredSpread === 'single' && restoredCards.length <= 1" in served
 
-        exact_head = git_state["head"] == request["source_sha"]
-        exact_artifact = served_digest == source_digest
-        accepted = repo_matches and exact_head and not git_state["dirty"] and exact_artifact and marker_runtime and marker_restore
-        receipt["result_status"] = "success" if accepted else "mismatch"
+        repo_matches = None
+        exact_head = None
+        clean = None
+        if git_state:
+            expected_repo_tokens = ("alston-personal/leopardcat-tarot", "leopardcat-tarot.git")
+            repo_matches = any(t in git_state["remote_origin"] for t in expected_repo_tokens)
+            exact_head = git_state["head"] == request["source_sha"]
+            clean = not git_state["dirty"]
+
+        artifact_accepted = exact_artifact and marker_runtime and marker_restore
+        process_accepted = git_state is not None and repo_matches and exact_head and clean
+        receipt["result_status"] = "success" if artifact_accepted else "mismatch"
+        receipt["evidence_level"] = "runtime_process+deployed_artifact" if process_accepted and artifact_accepted else "deployed_artifact"
         receipt["artifact_digest"] = served_digest
         receipt["evidence"] = {
             "listen_port": port,
-            "pid": pid,
-            "process_cwd": cwd,
-            "process_cmdline": cmdline,
+            "listener": listener,
             "runtime_git": git_state,
             "repository_matches": repo_matches,
             "requested_source_sha_matches_runtime_head": exact_head,
+            "runtime_git_clean": clean,
             "served_url": served_url,
             "served_main_js_sha256": served_digest,
+            "requested_source_url": source_url,
             "requested_source_main_js_sha256": source_digest,
             "served_artifact_matches_requested_source": exact_artifact,
             "served_v2_runtime_marker": marker_runtime,
             "served_v2_restore_marker": marker_restore,
+            "process_identity_observable": git_state is not None,
         }
     except Exception as exc:
         receipt["error"] = f"{type(exc).__name__}: {exc}"
