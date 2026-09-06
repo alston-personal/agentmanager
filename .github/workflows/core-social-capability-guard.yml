@@ -18,6 +18,7 @@ on:
       - 'tests/test_social_capability_contract.py'
       - 'tests/test_social_threads_capability.py'
       - 'docs/SOCIAL_CAPABILITY.md'
+      - '.github/workflows/core-social-capability-guard.yml'
 
 permissions:
   contents: read
@@ -30,6 +31,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check pytest
       - name: Compile social capability
         run: python -m compileall -q agentos_node/social
       - name: Run focused contract suite
