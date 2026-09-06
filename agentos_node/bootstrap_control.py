@@ -14,7 +14,12 @@ SCHEMA = "agentos.bootstrap-request/v1"
 RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
-ALLOWED_ACTIONS = {ACTION_REPAIR_TRANSPORT, ACTION_DEPLOY_REALM_GATEWAY}
+ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
+ALLOWED_ACTIONS = {
+    ACTION_REPAIR_TRANSPORT,
+    ACTION_DEPLOY_REALM_GATEWAY,
+    ACTION_DEPLOY_SOCIAL_RUNTIME,
+}
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -70,8 +75,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     source_commit = str(params.get("source_commit") or "").strip() or None
     if source_commit is not None and not COMMIT_RE.fullmatch(source_commit):
         raise ValueError("source_commit must be an exact lowercase 40-hex commit SHA")
-    if action == ACTION_DEPLOY_REALM_GATEWAY and source_commit is None:
-        raise ValueError("realm gateway deploy requires exact source_commit")
+    if action in {ACTION_DEPLOY_REALM_GATEWAY, ACTION_DEPLOY_SOCIAL_RUNTIME} and source_commit is None:
+        raise ValueError(f"{action} requires exact source_commit")
     created = _parse_time(str(payload.get("created_at") or ""))
     age = (datetime.now(timezone.utc) - created).total_seconds()
     if age < -60 or age > MAX_REQUEST_AGE_SECONDS:
@@ -147,6 +152,8 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
         return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra=env_extra)
     if action == ACTION_DEPLOY_REALM_GATEWAY:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300, source_commit=source_commit)
+    if action == ACTION_DEPLOY_SOCIAL_RUNTIME:
+        return _run_canonical_script("scripts/deploy_social_runtime_user.sh", timeout=180, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
