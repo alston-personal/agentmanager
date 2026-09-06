@@ -16,6 +16,7 @@ from typing import Any
 
 from .contracts import SocialRequest
 from .oauth import sanitized_oauth_return
+from .provider_callbacks import ThreadsLifecycleCallbacks
 from .runtime_storage import FileCredentialVault, OneShotAcceptanceStore
 from .threads import ThreadsCapability, ThreadsProviderConfig, ThreadsProviderTransport
 
@@ -23,6 +24,7 @@ MAX_BODY = 64 * 1024
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8771
 DEFAULT_CREDENTIAL_PATH = Path("/home/ubuntu/agent-data/runtime/social/credentials.json")
+DEFAULT_PUBLIC_BASE = "https://studio.milkcat.org/dashboard/api/social"
 SESSION_COOKIE = "agentos_social_session"
 
 
@@ -102,12 +104,14 @@ class SocialRuntime:
         acceptances: OneShotAcceptanceStore | None = None,
         browser_contexts: BrowserContextStore | None = None,
         control_token: str = "",
+        threads_lifecycle: ThreadsLifecycleCallbacks | None = None,
     ) -> None:
         self.products = products
         self.threads = threads
         self.acceptances = acceptances or OneShotAcceptanceStore()
         self.browser_contexts = browser_contexts or BrowserContextStore()
         self.control_token = control_token
+        self.threads_lifecycle = threads_lifecycle
 
     @classmethod
     def from_env(cls, credential_path: str | Path = DEFAULT_CREDENTIAL_PATH) -> "SocialRuntime":
@@ -121,10 +125,18 @@ class SocialRuntime:
                 redirect_uri=os.environ.get("AGENTOS_THREADS_REDIRECT_URI", ""),
             )
 
+        transport = ThreadsProviderTransport(config_loader)
+        threads = ThreadsCapability(vault, transport)
+        lifecycle = ThreadsLifecycleCallbacks(
+            vault=vault,
+            transport=transport,
+            public_base=os.environ.get("AGENTOS_SOCIAL_PUBLIC_BASE", DEFAULT_PUBLIC_BASE),
+        )
         return cls(
             products=products,
-            threads=ThreadsCapability(vault, ThreadsProviderTransport(config_loader)),
+            threads=threads,
             control_token=os.environ.get("AGENTOS_SOCIAL_CONTROL_TOKEN", ""),
+            threads_lifecycle=lifecycle,
         )
 
     def configured_status(self) -> dict[str, Any]:
@@ -167,6 +179,16 @@ class SocialRuntime:
             "account": result.get("account"),
         }
 
+    def provider_deauthorize(self, signed_request: str) -> dict[str, Any]:
+        if self.threads_lifecycle is None:
+            raise RuntimeError("threads_lifecycle_callbacks_unavailable")
+        return self.threads_lifecycle.deauthorize(signed_request)
+
+    def provider_data_deletion(self, signed_request: str) -> dict[str, Any]:
+        if self.threads_lifecycle is None:
+            raise RuntimeError("threads_lifecycle_callbacks_unavailable")
+        return self.threads_lifecycle.data_deletion(signed_request)
+
     def issue_acceptance(self, request: SocialRequest, supplied_control_token: str) -> dict[str, str]:
         if not self.control_token or not hmac.compare_digest(self.control_token, str(supplied_control_token or "")):
             raise PermissionError("social_runtime_control_auth_failed")
@@ -202,17 +224,33 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _body(self) -> dict[str, Any]:
+    def _raw_body(self) -> bytes:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
             raise ValueError("invalid_content_length") from exc
         if length <= 0 or length > MAX_BODY:
             raise ValueError("request_body_size_invalid")
-        value = json.loads(self.rfile.read(length).decode("utf-8"))
+        return self.rfile.read(length)
+
+    def _body(self) -> dict[str, Any]:
+        value = json.loads(self._raw_body().decode("utf-8"))
         if not isinstance(value, dict):
             raise ValueError("json_object_required")
         return value
+
+    def _signed_request(self) -> str:
+        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        raw = self._raw_body().decode("utf-8")
+        if content_type == "application/json":
+            value = json.loads(raw)
+            signed = value.get("signed_request") if isinstance(value, dict) else ""
+        else:
+            signed = (urllib.parse.parse_qs(raw, keep_blank_values=True).get("signed_request") or [""])[0]
+        signed = str(signed or "")
+        if not signed:
+            raise ValueError("threads_signed_request_required")
+        return signed
 
     def _request(self, body: dict[str, Any]) -> SocialRequest:
         allowed = {
@@ -236,6 +274,13 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == "/healthz":
             self._json(HTTPStatus.OK, self.runtime.configured_status())
+            return
+        if parsed.path == "/v1/social/webhooks/threads/data-deletion/status":
+            code = str((urllib.parse.parse_qs(parsed.query).get("code") or [""])[0])
+            if not code:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "confirmation_code_required"})
+                return
+            self._json(HTTPStatus.OK, {"status": "completed", "confirmation_code": code})
             return
         if parsed.path == "/v1/social/oauth/threads/callback":
             query = urllib.parse.parse_qs(parsed.query)
@@ -267,24 +312,32 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         try:
+            parsed = urllib.parse.urlsplit(self.path)
+            if parsed.path == "/v1/social/webhooks/threads/deauthorize":
+                self._json(HTTPStatus.OK, self.runtime.provider_deauthorize(self._signed_request()))
+                return
+            if parsed.path == "/v1/social/webhooks/threads/data-deletion":
+                self._json(HTTPStatus.OK, self.runtime.provider_data_deletion(self._signed_request()))
+                return
+
             body = self._body()
             request = self._request(body)
-            if self.path == "/v1/social/status":
+            if parsed.path == "/v1/social/status":
                 self._product_auth(request)
                 self._json(HTTPStatus.OK, self.runtime.status(request))
                 return
-            if self.path == "/v1/social/connect":
+            if parsed.path == "/v1/social/connect":
                 self._product_auth(request)
                 value = self.runtime.connect(request)
                 browser_session_id = str(value.pop("browser_session_id"))
                 self._json(HTTPStatus.OK, value, session_cookie=browser_session_id)
                 return
-            if self.path in {"/v1/social/publish", "/v1/social/reply", "/v1/social/disconnect"}:
+            if parsed.path in {"/v1/social/publish", "/v1/social/reply", "/v1/social/disconnect"}:
                 self._product_auth(request)
                 acceptance_id = self.headers.get("X-AgentOS-Acceptance-ID", "")
                 self._json(HTTPStatus.OK, self.runtime.execute_write(request, acceptance_id))
                 return
-            if self.path == "/internal/v1/social/acceptances":
+            if parsed.path == "/internal/v1/social/acceptances":
                 value = self.runtime.issue_acceptance(request, self.headers.get("X-AgentOS-Control-Token", ""))
                 self._json(HTTPStatus.CREATED, value)
                 return
@@ -297,7 +350,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": str(exc)})
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Avoid writing OAuth codes, write payloads, or product content to generic logs.
+        # Avoid writing OAuth codes, signed requests, write payloads, or product content to generic logs.
         return
 
 
