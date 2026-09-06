@@ -91,7 +91,7 @@ def git_state(repo_root):
     porcelain = git("status", "--porcelain")
     dirty_paths = []
     for line in porcelain.splitlines():
-        path = (line[3:] if len(line) > 3 else "").strip()
+        path = (line[2:] if len(line) > 2 else "").strip()
         dirty_paths.append(path)
     def allowed_dirty(path):
         return (
