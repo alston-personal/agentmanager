@@ -8,8 +8,7 @@
   "capability": "leopardcat.production.parity.inspect",
   "environment": "production",
   "parameters": {
-    "listen_port": 8088,
-    "served_script_path": "/main.js"
+    "listen_port": 8088
   },
   "expected_result": "agentos.execution-receipt/v1"
 }
