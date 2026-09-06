@@ -1,7 +1,7 @@
 {
-  "artifact_digest": "47d8fb310a596e4d160bf1e81b46cd60cab6e61c1448f9d92cf8fcf47ae62269",
+  "artifact_digest": "0c2628c35d918203cb5fd42bf76cd2f1df6595fc1e01013a14f88cadaa75f989",
   "capability": "leopardcat.production.parity.inspect",
-  "completed_at": "2026-09-06T06:53:33.342930+00:00",
+  "completed_at": "2026-09-06T07:16:53.035552+00:00",
   "environment": "production",
   "error": null,
   "evidence": {
@@ -10,11 +10,11 @@
       "pid": null,
       "present": true
     },
-    "local_asset_sha256": "47d8fb310a596e4d160bf1e81b46cd60cab6e61c1448f9d92cf8fcf47ae62269",
+    "local_asset_sha256": "0c2628c35d918203cb5fd42bf76cd2f1df6595fc1e01013a14f88cadaa75f989",
     "localhost_asset_http": 200,
-    "localhost_asset_sha256": "47d8fb310a596e4d160bf1e81b46cd60cab6e61c1448f9d92cf8fcf47ae62269",
+    "localhost_asset_sha256": "0c2628c35d918203cb5fd42bf76cd2f1df6595fc1e01013a14f88cadaa75f989",
     "public_asset_http": 200,
-    "public_asset_sha256": "47d8fb310a596e4d160bf1e81b46cd60cab6e61c1448f9d92cf8fcf47ae62269",
+    "public_asset_sha256": "0c2628c35d918203cb5fd42bf76cd2f1df6595fc1e01013a14f88cadaa75f989",
     "public_bundle_v2_runtime_markers": true,
     "public_origin": "https://leopardcat-tarot.milkcat.org",
     "public_root_http": 200,
@@ -31,23 +31,23 @@
         "website/stats.json",
         ".claude/"
       ],
-      "head": "ff898f3845a3e74262e71fd2fd11262080e941e6",
+      "head": "d31da10fa5747901b9ba9413a858c3ac624251c2",
       "remote_origin": "https://github.com/alston-personal/leopardcat-tarot.git",
       "root": "/home/ubuntu/leopardcat-tarot",
       "unexpected_dirty_paths": []
     },
     "source_v2_restore_marker": true,
     "source_v2_runtime_marker": true,
-    "vite_asset_path": "/assets/index-3oSOmQ6D.js"
+    "vite_asset_path": "/assets/index-DoxU-5YQ.js"
   },
   "evidence_level": "runtime_repo+deployed_artifact",
   "executor_identity": "instance-20260129-0852",
   "project_id": "leopardcat-tarot",
   "repository": "alston-personal/leopardcat-tarot",
-  "request_id": "leopardcat-production-parity-ff898f3845a3e74262e71fd2fd11262080e941e6",
+  "request_id": "leopardcat-production-parity-d31da10fa5747901b9ba9413a858c3ac624251c2",
   "result_status": "success",
   "schema": "agentos.execution-receipt/v1",
   "source_ref": "main",
-  "source_sha": "ff898f3845a3e74262e71fd2fd11262080e941e6",
-  "started_at": "2026-09-06T06:53:32.193859+00:00"
+  "source_sha": "d31da10fa5747901b9ba9413a858c3ac624251c2",
+  "started_at": "2026-09-06T07:16:51.770402+00:00"
 }
