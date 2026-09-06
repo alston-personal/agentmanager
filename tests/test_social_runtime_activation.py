@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from agentos_node.social.contracts import SocialRequest
 from agentos_node.social.credentials import AccountBinding, EphemeralCredentialVault
-from agentos_node.social.runtime_http import BrowserContextStore, ProductRegistration, ProductRegistry, SocialRuntime
+from agentos_node.social.runtime_http import (
+    BrowserContextStore,
+    BrowserHandoffStore,
+    ProductRegistration,
+    ProductRegistry,
+    SocialRuntime,
+)
 from agentos_node.social.runtime_storage import FileCredentialVault, OneShotAcceptanceStore
 from agentos_node.social.threads import ThreadsCapability, ThreadsProviderConfig, ThreadsProviderTransport
 
@@ -51,7 +58,7 @@ def registry() -> ProductRegistry:
     })
 
 
-def runtime(configured: bool = True):
+def runtime(configured: bool = True, *, browser_handoffs: BrowserHandoffStore | None = None):
     vault = EphemeralCredentialVault()
     transport = FakeThreadsTransport(configured=configured)
     threads = ThreadsCapability(vault, transport)
@@ -60,8 +67,24 @@ def runtime(configured: bool = True):
         threads=threads,
         acceptances=OneShotAcceptanceStore(),
         browser_contexts=BrowserContextStore(),
+        browser_handoffs=browser_handoffs,
         control_token="control-key",
+        public_base="https://studio.milkcat.org/dashboard/api/social",
     ), vault, transport
+
+
+def connect_request():
+    return SocialRequest(
+        product_id="leopardcat-tarot",
+        platform="threads",
+        operation="connect",
+        return_to="/reading/1",
+    )
+
+
+def handoff_ticket(value: dict[str, object]) -> str:
+    parsed = urlsplit(str(value["browser_start_url"]))
+    return parse_qs(parsed.query)["ticket"][0]
 
 
 def publish_request(**overrides):
@@ -97,17 +120,44 @@ def test_product_registry_requires_exact_product_key():
         reg.authenticate("vendor-reputation-service", "product-key")
 
 
+def test_product_connect_returns_only_opaque_browser_handoff():
+    rt, _vault, _transport = runtime()
+    started = rt.connect(connect_request())
+    assert started["schema"] == "agentos.social-browser-handoff/v1"
+    assert started["expires_in"] == 300
+    assert started["browser_start_url"].startswith(
+        "https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/start?ticket="
+    )
+    text = repr(started).lower()
+    assert "threads.example" not in text
+    assert "product-key" not in text
+    assert "secret" not in text
+    assert "token" not in text
+    assert "state=" not in text
+
+
+def test_browser_handoff_is_single_use_before_provider_oauth_state_exists():
+    rt, _vault, _transport = runtime()
+    ticket = handoff_ticket(rt.connect(connect_request()))
+    authorization_url, browser_session_id = rt.begin_browser_connect(ticket)
+    assert authorization_url.startswith("https://threads.example/oauth?state=")
+    assert browser_session_id
+    with pytest.raises(PermissionError, match="handoff_invalid_or_expired"):
+        rt.begin_browser_connect(ticket)
+
+
+def test_browser_handoff_expires_fail_closed():
+    rt, _vault, _transport = runtime(browser_handoffs=BrowserHandoffStore(ttl_seconds=0))
+    ticket = handoff_ticket(rt.connect(connect_request()))
+    with pytest.raises(PermissionError, match="handoff_invalid_or_expired"):
+        rt.begin_browser_connect(ticket)
+
+
 def test_oauth_callback_is_single_use_and_browser_session_bound():
     rt, vault, _transport = runtime()
-    request = SocialRequest(
-        product_id="leopardcat-tarot",
-        platform="threads",
-        operation="connect",
-        return_to="/reading/1",
-    )
-    started = rt.connect(request)
-    browser_session_id = started["browser_session_id"]
-    state = started["authorization_url"].split("state=", 1)[1]
+    ticket = handoff_ticket(rt.connect(connect_request()))
+    authorization_url, browser_session_id = rt.begin_browser_connect(ticket)
+    state = authorization_url.split("state=", 1)[1]
 
     with pytest.raises(PermissionError, match="browser_session_mismatch"):
         rt.complete_connect(state=state, code="provider-code", browser_session_id="other-browser")
@@ -118,18 +168,13 @@ def test_oauth_callback_is_single_use_and_browser_session_bound():
 
 def test_realistic_oauth_completion_returns_binding_not_token():
     rt, vault, _transport = runtime()
-    request = SocialRequest(
-        product_id="leopardcat-tarot",
-        platform="threads",
-        operation="connect",
-        return_to="/reading/1",
-    )
-    started = rt.connect(request)
-    state = started["authorization_url"].split("state=", 1)[1]
+    ticket = handoff_ticket(rt.connect(connect_request()))
+    authorization_url, browser_session_id = rt.begin_browser_connect(ticket)
+    state = authorization_url.split("state=", 1)[1]
     location, result = rt.complete_connect(
         state=state,
         code="provider-code",
-        browser_session_id=started["browser_session_id"],
+        browser_session_id=browser_session_id,
     )
     assert location.startswith("https://tarot.example/reading/1")
     assert result["binding_id"] == "leopardcat-tarot:threads:42"
