@@ -1,0 +1,45 @@
+name: Social Runtime Local Config Guard
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'scripts/social_runtime_local_config.py'
+      - 'tests/test_social_runtime_local_config.py'
+      - 'docs/SOCIAL_RUNTIME_LOCAL_PROVISIONING.md'
+      - '.github/workflows/social-runtime-local-config-guard.yml'
+  push:
+    branches:
+      - 'core/267-local-secret-provisioning'
+      - 'core/integration'
+    paths:
+      - 'scripts/social_runtime_local_config.py'
+      - 'tests/test_social_runtime_local_config.py'
+      - 'docs/SOCIAL_RUNTIME_LOCAL_PROVISIONING.md'
+      - '.github/workflows/social-runtime-local-config-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run local provisioning unit tests
+        run: python3 -m unittest -v tests.test_social_runtime_local_config
+      - name: Verify committed files contain no generated runtime secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path('scripts/social_runtime_local_config.py').read_text(encoding='utf-8')
+          docs = Path('docs/SOCIAL_RUNTIME_LOCAL_PROVISIONING.md').read_text(encoding='utf-8')
+          assert 'AGENTOS_SOCIAL_PRODUCT_KEY=' not in docs
+          assert 'AGENTOS_SOCIAL_CONTROL_TOKEN=' not in docs
+          assert 'print(api_key)' not in script
+          assert 'print(token)' not in script
+          print('social_runtime_local_config_secret_guard=PASS')
+          PY
