@@ -17,7 +17,7 @@ def publish_request(**overrides):
         account_binding_id="leopardcat-tarot:threads:42",
         target_account_id="42",
         primary_text="short share intent",
-        text_attachment="full interpretation",
+        text_attachment={"plaintext": "full interpretation"},
         write_intent_id="intent-1",
     )
     data.update(overrides)
@@ -58,7 +58,6 @@ def test_oauth_state_is_single_use_and_product_scoped():
     issued = store.issue(product_id="leopardcat-tarot", browser_session_id="s1", platform="threads", return_to="/reading/1")
     with pytest.raises(PermissionError, match="scope_mismatch"):
         store.consume(state=issued.state, product_id="vendor-reputation-service", browser_session_id="s1", platform="threads")
-    # Scope failure consumes the state instead of leaving a replayable credential flow.
     with pytest.raises(PermissionError, match="invalid_or_expired"):
         store.consume(state=issued.state, product_id="leopardcat-tarot", browser_session_id="s1", platform="threads")
 
