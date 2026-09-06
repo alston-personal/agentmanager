@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import secrets
+import time
 import urllib.parse
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -26,6 +27,7 @@ DEFAULT_PORT = 8771
 DEFAULT_CREDENTIAL_PATH = Path("/home/ubuntu/agent-data/runtime/social/credentials.json")
 DEFAULT_PUBLIC_BASE = "https://studio.milkcat.org/dashboard/api/social"
 SESSION_COOKIE = "agentos_social_session"
+BROWSER_HANDOFF_TTL_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,43 @@ class BrowserContextStore:
         return product_id, expected_session
 
 
+@dataclass(frozen=True)
+class BrowserHandoff:
+    product_id: str
+    platform: str
+    return_to: str
+    expires_at: float
+
+
+class BrowserHandoffStore:
+    """Opaque one-time bridge from authenticated product backend to the user's browser."""
+
+    def __init__(self, ttl_seconds: int = BROWSER_HANDOFF_TTL_SECONDS) -> None:
+        self.ttl_seconds = ttl_seconds
+        self._items: dict[str, BrowserHandoff] = {}
+        self._lock = RLock()
+
+    def issue(self, *, product_id: str, platform: str, return_to: str) -> str:
+        now = time.time()
+        ticket = secrets.token_urlsafe(32)
+        with self._lock:
+            self._items = {key: item for key, item in self._items.items() if item.expires_at > now}
+            self._items[ticket] = BrowserHandoff(
+                product_id=product_id,
+                platform=platform,
+                return_to=return_to,
+                expires_at=now + self.ttl_seconds,
+            )
+        return ticket
+
+    def consume(self, ticket: str) -> BrowserHandoff:
+        with self._lock:
+            item = self._items.pop(str(ticket or ""), None)
+        if item is None or item.expires_at <= time.time():
+            raise PermissionError("social_browser_handoff_invalid_or_expired")
+        return item
+
+
 class SocialRuntime:
     def __init__(
         self,
@@ -103,20 +142,25 @@ class SocialRuntime:
         threads: ThreadsCapability,
         acceptances: OneShotAcceptanceStore | None = None,
         browser_contexts: BrowserContextStore | None = None,
+        browser_handoffs: BrowserHandoffStore | None = None,
         control_token: str = "",
         threads_lifecycle: ThreadsLifecycleCallbacks | None = None,
+        public_base: str = DEFAULT_PUBLIC_BASE,
     ) -> None:
         self.products = products
         self.threads = threads
         self.acceptances = acceptances or OneShotAcceptanceStore()
         self.browser_contexts = browser_contexts or BrowserContextStore()
+        self.browser_handoffs = browser_handoffs or BrowserHandoffStore()
         self.control_token = control_token
         self.threads_lifecycle = threads_lifecycle
+        self.public_base = str(public_base or DEFAULT_PUBLIC_BASE).rstrip("/")
 
     @classmethod
     def from_env(cls, credential_path: str | Path = DEFAULT_CREDENTIAL_PATH) -> "SocialRuntime":
         products = ProductRegistry.from_env()
         vault = FileCredentialVault(credential_path)
+        public_base = os.environ.get("AGENTOS_SOCIAL_PUBLIC_BASE", DEFAULT_PUBLIC_BASE)
 
         def config_loader() -> ThreadsProviderConfig:
             return ThreadsProviderConfig(
@@ -130,13 +174,14 @@ class SocialRuntime:
         lifecycle = ThreadsLifecycleCallbacks(
             vault=vault,
             transport=transport,
-            public_base=os.environ.get("AGENTOS_SOCIAL_PUBLIC_BASE", DEFAULT_PUBLIC_BASE),
+            public_base=public_base,
         )
         return cls(
             products=products,
             threads=threads,
             control_token=os.environ.get("AGENTOS_SOCIAL_CONTROL_TOKEN", ""),
             threads_lifecycle=lifecycle,
+            public_base=public_base,
         )
 
     def configured_status(self) -> dict[str, Any]:
@@ -151,12 +196,41 @@ class SocialRuntime:
         return self.threads.status(request)
 
     def connect(self, request: SocialRequest) -> dict[str, Any]:
+        """Create only a product-safe browser handoff; provider OAuth state stays runtime-side."""
         self.products.registration(request.product_id)
+        if request.operation != "connect" or request.platform != "threads":
+            raise ValueError("threads_connect_operation_required")
+        ticket = self.browser_handoffs.issue(
+            product_id=request.product_id,
+            platform=request.platform,
+            return_to=str(request.return_to or "/"),
+        )
+        query = urllib.parse.urlencode({"ticket": ticket})
+        return {
+            "schema": "agentos.social-browser-handoff/v1",
+            "browser_start_url": f"{self.public_base}/v1/social/oauth/threads/start?{query}",
+            "expires_in": self.browser_handoffs.ttl_seconds,
+        }
+
+    def begin_browser_connect(self, ticket: str) -> tuple[str, str]:
+        handoff = self.browser_handoffs.consume(ticket)
+        if handoff.platform != "threads":
+            raise PermissionError("social_browser_handoff_platform_mismatch")
+        self.products.registration(handoff.product_id)
         browser_session_id = secrets.token_urlsafe(24)
+        request = SocialRequest(
+            product_id=handoff.product_id,
+            platform="threads",
+            operation="connect",
+            return_to=handoff.return_to,
+        ).validate()
         value = self.threads.begin_connect(request, browser_session_id=browser_session_id)
-        state = value.pop("state")
-        self.browser_contexts.bind(state, request.product_id, browser_session_id)
-        return {**value, "browser_session_id": browser_session_id}
+        state = str(value.pop("state"))
+        authorization_url = str(value.get("authorization_url") or "")
+        if not authorization_url:
+            raise RuntimeError("social_oauth_authorization_url_missing")
+        self.browser_contexts.bind(state, handoff.product_id, browser_session_id)
+        return authorization_url, browser_session_id
 
     def complete_connect(self, *, state: str, code: str, browser_session_id: str) -> tuple[str, dict[str, Any]]:
         product_id, expected_session = self.browser_contexts.consume(state, browser_session_id)
@@ -224,6 +298,17 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _redirect(self, location: str, *, session_cookie: str | None = None) -> None:
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        if session_cookie:
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}={session_cookie}; Path=/v1/social/oauth/threads/callback; HttpOnly; Secure; SameSite=Lax",
+            )
+        self.end_headers()
+
     def _raw_body(self) -> bytes:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -282,6 +367,18 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
                 return
             self._json(HTTPStatus.OK, {"status": "completed", "confirmation_code": code})
             return
+        if parsed.path == "/v1/social/oauth/threads/start":
+            ticket = str((urllib.parse.parse_qs(parsed.query).get("ticket") or [""])[0])
+            if not ticket:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "social_browser_handoff_required"})
+                return
+            try:
+                location, browser_session_id = self.runtime.begin_browser_connect(ticket)
+            except (ValueError, PermissionError, RuntimeError) as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                return
+            self._redirect(location, session_cookie=browser_session_id)
+            return
         if parsed.path == "/v1/social/oauth/threads/callback":
             query = urllib.parse.parse_qs(parsed.query)
             state = str((query.get("state") or [""])[0])
@@ -328,9 +425,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/v1/social/connect":
                 self._product_auth(request)
-                value = self.runtime.connect(request)
-                browser_session_id = str(value.pop("browser_session_id"))
-                self._json(HTTPStatus.OK, value, session_cookie=browser_session_id)
+                self._json(HTTPStatus.OK, self.runtime.connect(request))
                 return
             if parsed.path in {"/v1/social/publish", "/v1/social/reply", "/v1/social/disconnect"}:
                 self._product_auth(request)
