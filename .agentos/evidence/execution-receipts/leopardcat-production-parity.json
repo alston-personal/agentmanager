@@ -1,17 +1,57 @@
 {
-  "capability": null,
-  "completed_at": "2026-09-06T06:48:54.470495+00:00",
-  "environment": null,
-  "error": "RuntimeError: parameters outside typed capability contract",
-  "evidence": {},
-  "evidence_level": null,
+  "artifact_digest": "137b4f6db09eef113c6c61f73a422f19fbb5fbb68aa4485f101276758e82a863",
+  "capability": "leopardcat.production.parity.inspect",
+  "completed_at": "2026-09-06T06:49:30.455096+00:00",
+  "environment": "production",
+  "error": null,
+  "evidence": {
+    "artifact_three_way_match": true,
+    "listener": {
+      "pid": null,
+      "present": true,
+      "ss": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8088      0.0.0.0:*"
+    },
+    "local_asset_sha256": "137b4f6db09eef113c6c61f73a422f19fbb5fbb68aa4485f101276758e82a863",
+    "localhost_asset_http": 200,
+    "localhost_asset_sha256": "137b4f6db09eef113c6c61f73a422f19fbb5fbb68aa4485f101276758e82a863",
+    "public_asset_http": 200,
+    "public_asset_sha256": "137b4f6db09eef113c6c61f73a422f19fbb5fbb68aa4485f101276758e82a863",
+    "public_bundle_v2_runtime_markers": false,
+    "public_origin": "https://leopardcat-tarot.milkcat.org",
+    "public_root_http": 200,
+    "repository_matches": true,
+    "requested_source_sha_matches_runtime_head": false,
+    "runtime_branch_is_main": true,
+    "runtime_dirty_state_allowed": false,
+    "runtime_git": {
+      "branch": "main",
+      "dirty_paths": [
+        "ebsite/dist/index.html",
+        "website/node_modules/.vite/deps/_metadata.json",
+        "website/node_modules/.vite/deps/package.json",
+        "website/stats.json",
+        ".claude/"
+      ],
+      "head": "62ba1adc70ae53a9fdbae2a6721d5dc5001256f5",
+      "remote_origin": "https://x-access-token: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@github.com/alston-personal/leopardcat-tarot.git",
+      "root": "/home/ubuntu/leopardcat-tarot",
+      "unexpected_dirty_paths": [
+        "ebsite/dist/index.html",
+        ".claude/"
+      ]
+    },
+    "source_v2_restore_marker": false,
+    "source_v2_runtime_marker": false,
+    "vite_asset_path": "/assets/index-Zmf7eAyd.js"
+  },
+  "evidence_level": "runtime_repo+deployed_artifact",
   "executor_identity": "instance-20260129-0852",
-  "project_id": null,
-  "repository": null,
-  "request_id": null,
-  "result_status": "failed",
+  "project_id": "leopardcat-tarot",
+  "repository": "alston-personal/leopardcat-tarot",
+  "request_id": "leopardcat-production-parity-ff898f3845a3e74262e71fd2fd11262080e941e6",
+  "result_status": "mismatch",
   "schema": "agentos.execution-receipt/v1",
-  "source_ref": null,
-  "source_sha": null,
-  "started_at": "2026-09-06T06:48:54.470330+00:00"
+  "source_ref": "main",
+  "source_sha": "ff898f3845a3e74262e71fd2fd11262080e941e6",
+  "started_at": "2026-09-06T06:49:28.723661+00:00"
 }
