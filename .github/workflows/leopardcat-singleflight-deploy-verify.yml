@@ -1,0 +1,82 @@
+name: LeopardCat Singleflight Production Verify
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-singleflight-deploy-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify deployed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          TARGET=dd8390ae5d6d7fc7f140540fd09d6a845024e582
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          systemctl --user is-active --quiet leopardcat-tarot.service
+          curl -fsS --max-time 5 http://127.0.0.1:8088/ >/dev/null
+
+          PUBLIC_HTML=$(mktemp)
+          PUBLIC_JS_FILE=$(mktemp)
+          curl -fsS --max-time 10 'https://leopardcat-tarot.milkcat.org/?deploycheck=singleflight2' -o "$PUBLIC_HTML"
+          grep -q 'standalone-refresh' "$PUBLIC_HTML"
+          PUBLIC_JS=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' "$PUBLIC_HTML" | head -1)
+          PUBLIC_CSS=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' "$PUBLIC_HTML" | head -1)
+          test -n "$PUBLIC_JS"; test -n "$PUBLIC_CSS"
+          curl -fsS --max-time 10 "https://leopardcat-tarot.milkcat.org$PUBLIC_JS" -o "$PUBLIC_JS_FILE"
+          grep -q 'leopardcat.reload-for:' "$PUBLIC_JS_FILE"
+          grep -q '_lc_update_probe' "$PUBLIC_JS_FILE"
+          echo "public_js=$PUBLIC_JS"
+          echo "public_css=$PUBLIC_CSS"
+
+          python3 - <<'PY'
+          import json, threading, time, urllib.request, urllib.error, uuid
+          rid='singleflight-'+uuid.uuid4().hex[:20]
+          payload={
+            'method':'tarot','persona':'leopardcat','question':'部署防重複驗證：只建立一個牌局。','lang':'zh-TW',
+            'clientRequestId':rid,'seed':'singleflight-live-check-2',
+            'input':{'deck_id':'leopardcat','spread':'single'}
+          }
+          body=json.dumps(payload,ensure_ascii=False).encode()
+          results=[]
+          def call():
+              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=body,headers={'Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=60) as r:
+                      results.append(r.status); r.read()
+              except urllib.error.HTTPError as e:
+                  results.append(e.code); e.read()
+              except Exception as e:
+                  results.append(type(e).__name__)
+          t1=threading.Thread(target=call); t2=threading.Thread(target=call)
+          t1.start(); time.sleep(.15); t2.start(); t1.join(); t2.join()
+          print('singleflight_statuses='+','.join(map(str,results)))
+          assert len(results)==2, results
+          assert 409 in results, results
+          PY
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"; test "$code" = 200
+          echo "head=$(git -C "$ROOT" rev-parse HEAD)"
+          echo 'leopardcat_singleflight_home_update_deploy=PASS'
+          REMOTE
