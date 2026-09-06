@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import hmac
 import json
 import os
@@ -9,6 +8,7 @@ import secrets
 import urllib.parse
 from dataclasses import dataclass
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import RLock
@@ -82,12 +82,15 @@ class BrowserContextStore:
         with self._lock:
             self._items[state] = (product_id, browser_session_id)
 
-    def consume(self, state: str) -> tuple[str, str]:
+    def consume(self, state: str, browser_session_id: str) -> tuple[str, str]:
         with self._lock:
             value = self._items.pop(state, None)
         if value is None:
             raise PermissionError("social_oauth_browser_context_invalid_or_consumed")
-        return value
+        product_id, expected_session = value
+        if not hmac.compare_digest(expected_session, str(browser_session_id or "")):
+            raise PermissionError("social_oauth_browser_session_mismatch")
+        return product_id, expected_session
 
 
 class SocialRuntime:
@@ -143,12 +146,12 @@ class SocialRuntime:
         self.browser_contexts.bind(state, request.product_id, browser_session_id)
         return {**value, "browser_session_id": browser_session_id}
 
-    def complete_connect(self, *, state: str, code: str) -> tuple[str, dict[str, Any]]:
-        product_id, browser_session_id = self.browser_contexts.consume(state)
+    def complete_connect(self, *, state: str, code: str, browser_session_id: str) -> tuple[str, dict[str, Any]]:
+        product_id, expected_session = self.browser_contexts.consume(state, browser_session_id)
         registration = self.products.registration(product_id)
         result = self.threads.complete_connect(
             product_id=product_id,
-            browser_session_id=browser_session_id,
+            browser_session_id=expected_session,
             state=state,
             code=code,
         )
@@ -174,7 +177,7 @@ class SocialRuntime:
     def execute_write(self, request: SocialRequest, acceptance_id: str) -> dict[str, Any]:
         self.products.registration(request.product_id)
         acceptance = self.acceptances.consume(acceptance_id, request)
-        if request.operation == "publish" or request.operation == "reply":
+        if request.operation in {"publish", "reply"}:
             return self.threads.publish(request, acceptance=acceptance)
         if request.operation == "disconnect":
             return self.threads.disconnect(request, acceptance=acceptance)
@@ -185,11 +188,16 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
     runtime: SocialRuntime
     server_version = "AgentOSSocialRuntime/0.1"
 
-    def _json(self, status: int, payload: dict[str, Any]) -> None:
+    def _json(self, status: int, payload: dict[str, Any], *, session_cookie: str | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        if session_cookie:
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}={session_cookie}; Path=/v1/social/oauth/threads/callback; HttpOnly; Secure; SameSite=Lax",
+            )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -218,6 +226,12 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
     def _product_auth(self, request: SocialRequest) -> None:
         self.runtime.products.authenticate(request.product_id, self.headers.get("X-AgentOS-Product-Key", ""))
 
+    def _browser_session_cookie(self) -> str:
+        cookie = SimpleCookie()
+        cookie.load(self.headers.get("Cookie", ""))
+        morsel = cookie.get(SESSION_COOKIE)
+        return morsel.value if morsel else ""
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == "/healthz":
@@ -227,17 +241,26 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             state = str((query.get("state") or [""])[0])
             code = str((query.get("code") or [""])[0])
-            if not state or not code:
-                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "oauth_callback_fields_required"})
+            browser_session_id = self._browser_session_cookie()
+            if not state or not code or not browser_session_id:
+                self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "oauth_callback_context_required"})
                 return
             try:
-                location, _result = self.runtime.complete_connect(state=state, code=code)
+                location, _result = self.runtime.complete_connect(
+                    state=state,
+                    code=code,
+                    browser_session_id=browser_session_id,
+                )
             except (ValueError, PermissionError, RuntimeError) as exc:
                 self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
                 return
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", location)
             self.send_header("Cache-Control", "no-store")
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}=; Path=/v1/social/oauth/threads/callback; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+            )
             self.end_headers()
             return
         self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"})
@@ -253,9 +276,8 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
             if self.path == "/v1/social/connect":
                 self._product_auth(request)
                 value = self.runtime.connect(request)
-                # browser_session_id is runtime-private callback context; never return it.
-                value.pop("browser_session_id", None)
-                self._json(HTTPStatus.OK, value)
+                browser_session_id = str(value.pop("browser_session_id"))
+                self._json(HTTPStatus.OK, value, session_cookie=browser_session_id)
                 return
             if self.path in {"/v1/social/publish", "/v1/social/reply", "/v1/social/disconnect"}:
                 self._product_auth(request)
