@@ -7,7 +7,7 @@ on:
     paths:
       - '.github/workflows/oracle-social-runtime-rollout.yml'
       - 'agentos_node/bootstrap_control.py'
-      - 'scripts/deploy_social_runtime_user.sh'
+      - 'scripts/deploy_social_runtime_system.sh'
       - 'agentos_node/social/**'
 
 permissions:
@@ -28,7 +28,9 @@ jobs:
           test "$(id -un)" = 'agentos-node'
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
           python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
-          bash -n scripts/deploy_social_runtime_user.sh
+          bash -n scripts/deploy_social_runtime_system.sh
+          grep -q '^User=agentos-node$' <(sed -n '/^\[Service\]/,/^\[Install\]/p' scripts/deploy_social_runtime_system.sh)
+          ! grep -q 'systemctl --user' scripts/deploy_social_runtime_system.sh
           echo "social_runtime_rollout_source_ref=core/integration"
           echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
 
@@ -90,17 +92,24 @@ jobs:
           assert receipt.get('ok') is True, receipt
           text = '\n'.join(str(s.get('stdout', '')) + '\n' + str(s.get('stderr', '')) for s in receipt.get('steps', []))
           assert 'social_runtime_deploy=PASS' in text, text[-12000:]
-          assert 'social_runtime_service_identity=ubuntu' in text, text[-12000:]
-          assert 'social_runtime_root_privilege=NONE' in text, text[-12000:]
+          assert 'social_runtime_service_scope=system' in text, text[-12000:]
+          assert 'social_runtime_service_identity=agentos-node' in text, text[-12000:]
+          assert 'social_runtime_privileged_effect=FIXED_ACTION_ONLY' in text, text[-12000:]
+          assert 'social_runtime_sudoers_mutation=NONE' in text, text[-12000:]
           assert f'social_runtime_source_commit={expected}' in text, text[-12000:]
           print('social_runtime_bootstrap_receipt=PASS')
           print('social_runtime_bootstrap_executor=ubuntu')
+          print('social_runtime_service_identity=agentos-node')
           PY
 
       - name: Verify bounded local endpoint independently
         shell: bash
         run: |
           set -euo pipefail
+          systemctl is-active --quiet agentos-social-runtime.service
+          test "$(systemctl show -p User --value agentos-social-runtime.service)" = 'agentos-node'
+          test -f /etc/systemd/system/agentos-social-runtime.service
+          grep -q '^User=agentos-node$' /etc/systemd/system/agentos-social-runtime.service
           curl -fsS --max-time 3 http://127.0.0.1:8771/healthz > "$RUNNER_TEMP/social-runtime-health.json"
           python3 - "$RUNNER_TEMP/social-runtime-health.json" <<'PY'
           import json, sys
