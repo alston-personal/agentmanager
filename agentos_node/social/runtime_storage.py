@@ -99,6 +99,33 @@ class FileCredentialVault(CredentialVault):
             value["bindings"].pop(binding_id, None)
             self._save(value)
 
+    def disconnect_provider_account(self, *, platform: str, provider_account_id: str) -> int:
+        """Delete every local binding/token for an authenticated provider account.
+
+        Provider lifecycle callbacks do not carry product credentials, so removal
+        must be keyed by the provider identity proven by the provider signature.
+        Only matching bindings are deleted; token values are never returned.
+        """
+        platform = str(platform or "").strip()
+        provider_account_id = str(provider_account_id or "").strip()
+        if not platform or not provider_account_id:
+            raise ValueError("provider_account_scope_required")
+        with self._lock:
+            value = self._load()
+            bindings = value["bindings"]
+            matching = [
+                binding_id
+                for binding_id, item in bindings.items()
+                if isinstance(item, dict)
+                and str(item.get("platform") or "") == platform
+                and str(item.get("provider_account_id") or "") == provider_account_id
+            ]
+            for binding_id in matching:
+                bindings.pop(binding_id, None)
+            if matching:
+                self._save(value)
+            return len(matching)
+
 
 @dataclass(frozen=True)
 class OneShotAcceptance:
