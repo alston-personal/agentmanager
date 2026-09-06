@@ -6,7 +6,8 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-social-runtime-rollout.yml'
-      - 'scripts/install_social_runtime_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/deploy_social_runtime_user.sh'
       - 'agentos_node/social/**'
 
 permissions:
@@ -26,27 +27,80 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/core/integration'
           test "$(id -un)" = 'agentos-node'
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
-          python3 -m compileall -q agentos_node/social
-          bash -n scripts/install_social_runtime_user.sh
+          python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
+          bash -n scripts/deploy_social_runtime_user.sh
           echo "social_runtime_rollout_source_ref=core/integration"
           echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
 
-      - name: Install exact-generation shared runtime
+      - name: Publish bounded bootstrap hook and request deploy
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/install_social_runtime_user.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="social-runtime-rollout-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
 
-      - name: Verify bounded unconfigured endpoint
+          test -w "$LIVE/agentos_node" || test -w "$LIVE/agentos_node/bootstrap_control.py"
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path = Path(sys.argv[1]); request_id = sys.argv[2]; sha = sys.argv[3]
+          payload = {
+              "schema": "agentos.bootstrap-request/v1",
+              "request_id": request_id,
+              "action": "agentos.social_runtime.deploy",
+              "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "params": {"source_commit": sha},
+              "authority": {"source": "github-actions", "target_user": "ubuntu", "arbitrary_shell": False},
+          }
+          tmp = path.with_suffix(path.suffix + ".tmp")
+          tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          os.chmod(tmp, 0o600); tmp.replace(path); os.chmod(path, 0o600)
+          PY
+
+          for i in $(seq 1 360); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo 'social_runtime_bootstrap_receipt=TIMEOUT'; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json, sys
+          receipt = json.load(open(sys.argv[1], encoding='utf-8')); expected = sys.argv[2]
+          assert receipt.get('schema') == 'agentos.bootstrap-receipt/v1', receipt
+          assert receipt.get('action') == 'agentos.social_runtime.deploy', receipt
+          assert receipt.get('executor_user') == 'ubuntu', receipt
+          assert receipt.get('executor_uid') == 1001, receipt
+          assert receipt.get('source_commit') == expected, receipt
+          assert receipt.get('ok') is True, receipt
+          text = '\n'.join(str(s.get('stdout', '')) + '\n' + str(s.get('stderr', '')) for s in receipt.get('steps', []))
+          assert 'social_runtime_deploy=PASS' in text, text[-12000:]
+          assert 'social_runtime_service_identity=ubuntu' in text, text[-12000:]
+          assert 'social_runtime_root_privilege=NONE' in text, text[-12000:]
+          assert f'social_runtime_source_commit={expected}' in text, text[-12000:]
+          print('social_runtime_bootstrap_receipt=PASS')
+          print('social_runtime_bootstrap_executor=ubuntu')
+          PY
+
+      - name: Verify bounded local endpoint independently
         shell: bash
         run: |
           set -euo pipefail
-          RUNTIME="$HOME/.local/share/agentos/social-runtime"
-          ENV_FILE="$HOME/.config/agentos/social-runtime.env"
-          test "$(stat -c '%a' "$ENV_FILE")" = 600
-          grep -q '^source_ref=core/integration$' "$RUNTIME/GENERATION"
-          grep -q "^source_commit=$GITHUB_SHA$" "$RUNTIME/GENERATION"
-          systemctl --user is-active --quiet agentos-social-runtime.service
           curl -fsS --max-time 3 http://127.0.0.1:8771/healthz > "$RUNNER_TEMP/social-runtime-health.json"
           python3 - "$RUNNER_TEMP/social-runtime-health.json" <<'PY'
           import json, sys

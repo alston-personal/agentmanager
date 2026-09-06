@@ -5,11 +5,15 @@ on:
     branches:
       - core/issue-267-social-runtime
       - core/issue-267-social-runtime-rollout
+      - core/issue-267-social-runtime-bootstrap
     paths:
       - 'agentos_node/social/**'
+      - 'agentos_node/bootstrap_control.py'
       - 'tests/test_social_runtime_activation.py'
+      - 'tests/test_social_runtime_bootstrap_contract.py'
       - 'docs/SOCIAL_RUNTIME.md'
       - 'scripts/install_social_runtime_user.sh'
+      - 'scripts/deploy_social_runtime_user.sh'
       - '.github/workflows/core-social-runtime-guard.yml'
       - '.github/workflows/oracle-social-runtime-rollout.yml'
   pull_request:
@@ -17,9 +21,12 @@ on:
       - core/integration
     paths:
       - 'agentos_node/social/**'
+      - 'agentos_node/bootstrap_control.py'
       - 'tests/test_social_runtime_activation.py'
+      - 'tests/test_social_runtime_bootstrap_contract.py'
       - 'docs/SOCIAL_RUNTIME.md'
       - 'scripts/install_social_runtime_user.sh'
+      - 'scripts/deploy_social_runtime_user.sh'
       - '.github/workflows/core-social-runtime-guard.yml'
       - '.github/workflows/oracle-social-runtime-rollout.yml'
 
@@ -36,9 +43,16 @@ jobs:
           python-version: '3.12'
       - name: Install focused test dependency
         run: python -m pip install --disable-pip-version-check pytest
-      - name: Compile shared social runtime
-        run: python -m compileall -q agentos_node/social
-      - name: Validate rollout shell contract
-        run: bash -n scripts/install_social_runtime_user.sh
+      - name: Compile shared social runtime and bootstrap control
+        run: python -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
+      - name: Validate rollout shell contracts
+        run: |
+          bash -n scripts/install_social_runtime_user.sh
+          bash -n scripts/deploy_social_runtime_user.sh
       - name: Run shared runtime contract suite
-        run: python -m pytest -q tests/test_social_runtime_activation.py tests/test_social_capability_contract.py tests/test_social_threads_capability.py
+        run: >-
+          python -m pytest -q
+          tests/test_social_runtime_activation.py
+          tests/test_social_runtime_bootstrap_contract.py
+          tests/test_social_capability_contract.py
+          tests/test_social_threads_capability.py
