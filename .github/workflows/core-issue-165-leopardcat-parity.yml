@@ -1,0 +1,57 @@
+name: Core 165 Bounded LeopardCat Parity
+
+on:
+  push:
+    branches:
+      - core/issue-165-execution-v1
+    paths-ignore:
+      - '.agentos/evidence/execution-receipts/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: core-165-leopardcat-parity
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/issue-165-execution-v1
+          fetch-depth: 1
+
+      - name: Execute bounded typed request
+        id: inspect
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/run_bounded_execution_request.py \
+            governance/execution_requests/leopardcat-production-parity.json \
+            .agentos/evidence/execution-receipts/leopardcat-production-parity.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist sanitized receipt on evidence branch
+        if: always()
+        shell: bash
+        run: |
+          test -f .agentos/evidence/execution-receipts/leopardcat-production-parity.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .agentos/evidence/execution-receipts/leopardcat-production-parity.json
+          if git diff --cached --quiet; then
+            echo 'receipt unchanged'
+          else
+            git commit -m 'evidence(core): persist LeopardCat production parity receipt'
+            git push origin HEAD:core/issue-165-execution-v1
+          fi
+
+      - name: Enforce parity result
+        if: always()
+        shell: bash
+        run: |
+          test "${{ steps.inspect.outputs.exit_code }}" = "0"
