@@ -7,6 +7,7 @@ on:
       - core/issue-267-social-runtime-rollout
       - core/issue-267-social-runtime-bootstrap
       - core/issue-267-social-gateway
+      - core/issue-267-threads-redirect-contract
     paths:
       - 'agentos_node/social/**'
       - 'agentos_node/bootstrap_control.py'
@@ -53,14 +54,16 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest
       - name: Compile shared social runtime and bootstrap control
         run: python -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
-      - name: Validate rollout shell and gateway boundary
+      - name: Validate rollout shell, gateway, and redirect boundary
         run: |
           bash -n scripts/install_social_runtime_user.sh
           bash -n scripts/deploy_social_runtime_user.sh
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('dashboard/app/api/social/[...path]/route.ts')
-          s=p.read_text(encoding='utf-8')
+          callback='https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback'
+          route=Path('dashboard/app/api/social/[...path]/route.ts').read_text(encoding='utf-8')
+          deploy=Path('scripts/deploy_social_runtime_user.sh').read_text(encoding='utf-8')
+          docs=Path('docs/SOCIAL_RUNTIME.md').read_text(encoding='utf-8')
           for required in (
               'http://127.0.0.1:8771',
               '/v1/social/connect',
@@ -73,10 +76,45 @@ jobs:
               'x-agentos-acceptance-id',
               'x-agentos-social-gateway',
           ):
-              assert required in s, required
-          assert '/internal/v1/social/acceptances' not in s
-          assert 'x-agentos-control-token' not in s.lower()
+              assert required in route, required
+          assert '/internal/v1/social/acceptances' not in route
+          assert 'x-agentos-control-token' not in route.lower()
+          assert f"THREADS_REDIRECT_URI='{callback}'" in deploy
+          assert 'social_runtime_threads_redirect=NON_CANONICAL' in deploy
+          assert 'social_runtime_threads_redirect=CANONICAL' in deploy
+          assert 'observed' not in deploy.split("social_runtime_threads_redirect=NON_CANONICAL", 1)[1][:200]
+          assert callback in docs
           print('social_gateway_static_boundary=PASS')
+          print('social_threads_redirect_contract=PASS')
+          PY
+      - name: Exercise redirect migration fail-closed semantics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, tempfile
+          canonical='https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback'
+
+          def migrate(text: str):
+              lines=text.splitlines()
+              prefix='AGENTOS_THREADS_REDIRECT_URI='
+              indexes=[i for i,line in enumerate(lines) if line.startswith(prefix)]
+              if len(indexes)>1: return 'DUPLICATE', text
+              if not indexes:
+                  lines.append(prefix+canonical); return 'CANONICAL', '\n'.join(lines)+'\n'
+              idx=indexes[0]; observed=lines[idx][len(prefix):].strip()
+              if observed and observed != canonical: return 'NON_CANONICAL', text
+              lines[idx]=prefix+canonical; return 'CANONICAL', '\n'.join(lines)+'\n'
+
+          verdict, out=migrate('AGENTOS_THREADS_REDIRECT_URI=\nAGENTOS_THREADS_APP_SECRET=SECRET\n')
+          assert verdict=='CANONICAL' and canonical in out and 'SECRET' in out
+          verdict, out=migrate(f'AGENTOS_THREADS_REDIRECT_URI={canonical}\n')
+          assert verdict=='CANONICAL'
+          original='AGENTOS_THREADS_REDIRECT_URI=https://other.invalid/callback\nAGENTOS_THREADS_APP_SECRET=SECRET\n'
+          verdict, out=migrate(original)
+          assert verdict=='NON_CANONICAL' and out==original
+          verdict, _=migrate('AGENTOS_THREADS_REDIRECT_URI=\nAGENTOS_THREADS_REDIRECT_URI=\n')
+          assert verdict=='DUPLICATE'
+          print('social_threads_redirect_migration=PASS')
           PY
       - name: Run shared runtime contract suite
         run: >-
