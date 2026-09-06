@@ -153,7 +153,7 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
     if action == ACTION_DEPLOY_REALM_GATEWAY:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300, source_commit=source_commit)
     if action == ACTION_DEPLOY_SOCIAL_RUNTIME:
-        return _run_canonical_script("scripts/deploy_social_runtime_user.sh", timeout=180, source_commit=source_commit)
+        return _run_canonical_script("scripts/deploy_social_runtime_system.sh", timeout=180, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
