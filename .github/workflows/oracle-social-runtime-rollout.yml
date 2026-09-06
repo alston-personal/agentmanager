@@ -1,0 +1,73 @@
+name: Oracle Social Runtime Rollout
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-social-runtime-rollout.yml'
+      - 'scripts/install_social_runtime_user.sh'
+      - 'agentos_node/social/**'
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight canonical generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          python3 -m compileall -q agentos_node/social
+          bash -n scripts/install_social_runtime_user.sh
+          echo "social_runtime_rollout_source_ref=core/integration"
+          echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
+
+      - name: Install exact-generation shared runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_social_runtime_user.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+
+      - name: Verify bounded unconfigured endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="$HOME/.local/share/agentos/social-runtime"
+          ENV_FILE="$HOME/.config/agentos/social-runtime.env"
+          test "$(stat -c '%a' "$ENV_FILE")" = 600
+          grep -q '^source_ref=core/integration$' "$RUNTIME/GENERATION"
+          grep -q "^source_commit=$GITHUB_SHA$" "$RUNTIME/GENERATION"
+          systemctl --user is-active --quiet agentos-social-runtime.service
+          curl -fsS --max-time 3 http://127.0.0.1:8771/healthz > "$RUNNER_TEMP/social-runtime-health.json"
+          python3 - "$RUNNER_TEMP/social-runtime-health.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert p.get('schema') == 'agentos.social-runtime-status/v1', p
+          assert p.get('service') == 'agentos-social-runtime', p
+          threads = p.get('threads')
+          assert isinstance(threads, dict) and set(threads) == {'configured'}, p
+          assert isinstance(threads['configured'], bool), p
+          text = json.dumps(p, sort_keys=True).lower()
+          for forbidden in ('app_secret', 'access_token', 'refresh_token', 'authorization_code'):
+              assert forbidden not in text, text
+          print('oracle_social_runtime_endpoint=PASS')
+          print('oracle_social_runtime_configured=' + str(threads['configured']).lower())
+          PY
+
+      - name: Upload sanitized endpoint evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-social-runtime-${{ github.run_id }}
+          path: ${{ runner.temp }}/social-runtime-health.json
+          if-no-files-found: warn
+          retention-days: 14
