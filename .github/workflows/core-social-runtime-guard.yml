@@ -4,11 +4,14 @@ on:
   push:
     branches:
       - core/issue-267-social-runtime
+      - core/issue-267-social-runtime-rollout
     paths:
       - 'agentos_node/social/**'
       - 'tests/test_social_runtime_activation.py'
       - 'docs/SOCIAL_RUNTIME.md'
+      - 'scripts/install_social_runtime_user.sh'
       - '.github/workflows/core-social-runtime-guard.yml'
+      - '.github/workflows/oracle-social-runtime-rollout.yml'
   pull_request:
     branches:
       - core/integration
@@ -16,7 +19,9 @@ on:
       - 'agentos_node/social/**'
       - 'tests/test_social_runtime_activation.py'
       - 'docs/SOCIAL_RUNTIME.md'
+      - 'scripts/install_social_runtime_user.sh'
       - '.github/workflows/core-social-runtime-guard.yml'
+      - '.github/workflows/oracle-social-runtime-rollout.yml'
 
 permissions:
   contents: read
@@ -33,5 +38,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest
       - name: Compile shared social runtime
         run: python -m compileall -q agentos_node/social
+      - name: Validate rollout shell contract
+        run: bash -n scripts/install_social_runtime_user.sh
       - name: Run shared runtime contract suite
         run: python -m pytest -q tests/test_social_runtime_activation.py tests/test_social_capability_contract.py tests/test_social_threads_capability.py
