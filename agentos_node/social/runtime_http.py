@@ -28,6 +28,7 @@ DEFAULT_CREDENTIAL_PATH = Path("/home/ubuntu/agent-data/runtime/social/credentia
 DEFAULT_PUBLIC_BASE = "https://studio.milkcat.org/dashboard/api/social"
 SESSION_COOKIE = "agentos_social_session"
 BROWSER_HANDOFF_TTL_SECONDS = 300
+CONNECTION_RESULT_TTL_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -75,26 +76,32 @@ class ProductRegistry:
         return item
 
 
+@dataclass(frozen=True)
+class BrowserContext:
+    product_id: str
+    browser_session_id: str
+    connection_id: str
+
+
 class BrowserContextStore:
     """Short-lived in-process callback context. Restart fails closed."""
 
     def __init__(self) -> None:
-        self._items: dict[str, tuple[str, str]] = {}
+        self._items: dict[str, BrowserContext] = {}
         self._lock = RLock()
 
-    def bind(self, state: str, product_id: str, browser_session_id: str) -> None:
+    def bind(self, state: str, product_id: str, browser_session_id: str, connection_id: str) -> None:
         with self._lock:
-            self._items[state] = (product_id, browser_session_id)
+            self._items[state] = BrowserContext(product_id, browser_session_id, connection_id)
 
-    def consume(self, state: str, browser_session_id: str) -> tuple[str, str]:
+    def consume(self, state: str, browser_session_id: str) -> BrowserContext:
         with self._lock:
             value = self._items.pop(state, None)
         if value is None:
             raise PermissionError("social_oauth_browser_context_invalid_or_consumed")
-        product_id, expected_session = value
-        if not hmac.compare_digest(expected_session, str(browser_session_id or "")):
+        if not hmac.compare_digest(value.browser_session_id, str(browser_session_id or "")):
             raise PermissionError("social_oauth_browser_session_mismatch")
-        return product_id, expected_session
+        return value
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,7 @@ class BrowserHandoff:
     product_id: str
     platform: str
     return_to: str
+    connection_id: str
     expires_at: float
 
 
@@ -113,7 +121,7 @@ class BrowserHandoffStore:
         self._items: dict[str, BrowserHandoff] = {}
         self._lock = RLock()
 
-    def issue(self, *, product_id: str, platform: str, return_to: str) -> str:
+    def issue(self, *, product_id: str, platform: str, return_to: str, connection_id: str) -> str:
         now = time.time()
         ticket = secrets.token_urlsafe(32)
         with self._lock:
@@ -122,6 +130,7 @@ class BrowserHandoffStore:
                 product_id=product_id,
                 platform=platform,
                 return_to=return_to,
+                connection_id=connection_id,
                 expires_at=now + self.ttl_seconds,
             )
         return ticket
@@ -134,6 +143,57 @@ class BrowserHandoffStore:
         return item
 
 
+@dataclass(frozen=True)
+class ConnectionResult:
+    product_id: str
+    platform: str
+    binding_id: str
+    account: dict[str, Any]
+    expires_at: float
+
+
+class ConnectionResultStore:
+    """Secret-free single-consume OAuth completion result for the authenticated product backend."""
+
+    def __init__(self, ttl_seconds: int = CONNECTION_RESULT_TTL_SECONDS) -> None:
+        self.ttl_seconds = ttl_seconds
+        self._items: dict[str, ConnectionResult] = {}
+        self._lock = RLock()
+
+    def new_connection_id(self) -> str:
+        return secrets.token_urlsafe(24)
+
+    def complete(self, connection_id: str, *, product_id: str, platform: str, binding_id: str, account: dict[str, Any]) -> None:
+        if not connection_id or not binding_id:
+            raise ValueError("social_connection_result_scope_required")
+        safe_account = {
+            "provider_account_id": str(account.get("provider_account_id") or ""),
+            "username": (str(account.get("username")) if account.get("username") is not None else None),
+        }
+        with self._lock:
+            self._items[connection_id] = ConnectionResult(
+                product_id=product_id,
+                platform=platform,
+                binding_id=binding_id,
+                account=safe_account,
+                expires_at=time.time() + self.ttl_seconds,
+            )
+
+    def consume(self, connection_id: str, *, product_id: str, platform: str) -> dict[str, Any]:
+        with self._lock:
+            item = self._items.pop(str(connection_id or ""), None)
+        if item is None or item.expires_at <= time.time():
+            raise PermissionError("social_connection_result_invalid_or_expired")
+        if (item.product_id, item.platform) != (product_id, platform):
+            raise PermissionError("social_connection_result_scope_mismatch")
+        return {
+            "schema": "agentos.social-connection-result/v1",
+            "connected": True,
+            "binding_id": item.binding_id,
+            "account": item.account,
+        }
+
+
 class SocialRuntime:
     def __init__(
         self,
@@ -143,6 +203,7 @@ class SocialRuntime:
         acceptances: OneShotAcceptanceStore | None = None,
         browser_contexts: BrowserContextStore | None = None,
         browser_handoffs: BrowserHandoffStore | None = None,
+        connection_results: ConnectionResultStore | None = None,
         control_token: str = "",
         threads_lifecycle: ThreadsLifecycleCallbacks | None = None,
         public_base: str = DEFAULT_PUBLIC_BASE,
@@ -152,6 +213,7 @@ class SocialRuntime:
         self.acceptances = acceptances or OneShotAcceptanceStore()
         self.browser_contexts = browser_contexts or BrowserContextStore()
         self.browser_handoffs = browser_handoffs or BrowserHandoffStore()
+        self.connection_results = connection_results or ConnectionResultStore()
         self.control_token = control_token
         self.threads_lifecycle = threads_lifecycle
         self.public_base = str(public_base or DEFAULT_PUBLIC_BASE).rstrip("/")
@@ -193,6 +255,12 @@ class SocialRuntime:
 
     def status(self, request: SocialRequest) -> dict[str, Any]:
         self.products.registration(request.product_id)
+        if request.operation == "status" and request.object_id:
+            return self.connection_results.consume(
+                request.object_id,
+                product_id=request.product_id,
+                platform=request.platform,
+            )
         return self.threads.status(request)
 
     def connect(self, request: SocialRequest) -> dict[str, Any]:
@@ -200,15 +268,18 @@ class SocialRuntime:
         self.products.registration(request.product_id)
         if request.operation != "connect" or request.platform != "threads":
             raise ValueError("threads_connect_operation_required")
+        connection_id = self.connection_results.new_connection_id()
         ticket = self.browser_handoffs.issue(
             product_id=request.product_id,
             platform=request.platform,
             return_to=str(request.return_to or "/"),
+            connection_id=connection_id,
         )
         query = urllib.parse.urlencode({"ticket": ticket})
         return {
             "schema": "agentos.social-browser-handoff/v1",
             "browser_start_url": f"{self.public_base}/v1/social/oauth/threads/start?{query}",
+            "connection_id": connection_id,
             "expires_in": self.browser_handoffs.ttl_seconds,
         }
 
@@ -229,28 +300,35 @@ class SocialRuntime:
         authorization_url = str(value.get("authorization_url") or "")
         if not authorization_url:
             raise RuntimeError("social_oauth_authorization_url_missing")
-        self.browser_contexts.bind(state, handoff.product_id, browser_session_id)
+        self.browser_contexts.bind(state, handoff.product_id, browser_session_id, handoff.connection_id)
         return authorization_url, browser_session_id
 
     def complete_connect(self, *, state: str, code: str, browser_session_id: str) -> tuple[str, dict[str, Any]]:
-        product_id, expected_session = self.browser_contexts.consume(state, browser_session_id)
-        registration = self.products.registration(product_id)
+        context = self.browser_contexts.consume(state, browser_session_id)
+        registration = self.products.registration(context.product_id)
         result = self.threads.complete_connect(
-            product_id=product_id,
-            browser_session_id=expected_session,
+            product_id=context.product_id,
+            browser_session_id=context.browser_session_id,
             state=state,
             code=code,
+        )
+        binding_id = str(result.get("binding_id") or "")
+        account = result.get("account") if isinstance(result.get("account"), dict) else {}
+        self.connection_results.complete(
+            context.connection_id,
+            product_id=context.product_id,
+            platform="threads",
+            binding_id=binding_id,
+            account=account,
         )
         relative = sanitized_oauth_return(
             str(result.get("return_to") or "/"),
             connected=True,
-            binding_id=str(result.get("binding_id") or ""),
         )
         return registration.return_base + relative, {
             "schema": "agentos.social-oauth-complete/v1",
             "connected": True,
-            "binding_id": result.get("binding_id"),
-            "account": result.get("account"),
+            "connection_id": context.connection_id,
         }
 
     def provider_deauthorize(self, signed_request: str) -> dict[str, Any]:
@@ -445,7 +523,6 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": str(exc)})
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Avoid writing OAuth codes, signed requests, write payloads, or product content to generic logs.
         return
 
 
