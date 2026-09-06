@@ -1,0 +1,85 @@
+name: Oracle Social Provider Evidence
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-social-provider-evidence.yml'
+      - 'agentos_node/social/**'
+      - 'dashboard/app/api/social/**'
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Verify shared Threads provider is configured through public boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLIC='https://studio.milkcat.org/dashboard/api/social'
+          TMP="${RUNNER_TEMP}/agentos-social-provider-evidence"
+          mkdir -p "$TMP"
+
+          curl -fsS --max-time 8 "$PUBLIC/healthz" > "$TMP/health.json"
+          python3 - "$TMP/health.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert p.get('schema') == 'agentos.social-runtime-status/v1', p
+          assert p.get('service') == 'agentos-social-runtime', p
+          threads = p.get('threads')
+          assert threads == {'configured': True}, p
+          text = json.dumps(p, sort_keys=True).lower()
+          for forbidden in ('app_id', 'app_secret', 'access_token', 'refresh_token', 'authorization_code', 'product_key'):
+              assert forbidden not in text, text
+          print('oracle_social_provider_configured=PASS')
+          print('oracle_social_provider_secret_exposure=NONE')
+          PY
+
+          code=$(curl -sS -o "$TMP/internal-block.json" -w '%{http_code}' --max-time 8 \
+            -X POST "$PUBLIC/internal/v1/social/acceptances" \
+            -H 'content-type: application/json' --data '{}')
+          test "$code" = 404
+          grep -q 'Social gateway route not allowlisted' "$TMP/internal-block.json"
+          echo 'oracle_social_internal_control_public=BLOCKED'
+
+          code=$(curl -sS -o "$TMP/forged-deauthorize.json" -w '%{http_code}' --max-time 8 \
+            -X POST "$PUBLIC/v1/social/webhooks/threads/deauthorize" \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data-urlencode 'signed_request=forged.invalid')
+          test "$code" != 200
+          python3 - "$TMP/forged-deauthorize.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          text = json.dumps(p, sort_keys=True).lower()
+          for forbidden in ('app_secret', 'access_token', 'refresh_token', 'authorization_code'):
+              assert forbidden not in text, text
+          print('oracle_social_forged_provider_callback=REJECTED')
+          PY
+
+          curl -fsS --max-time 8 \
+            "$PUBLIC/v1/social/webhooks/threads/data-deletion/status?code=evidence-only" \
+            > "$TMP/deletion-status.json"
+          python3 - "$TMP/deletion-status.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert p == {'status': 'completed', 'confirmation_code': 'evidence-only'}, p
+          print('oracle_social_deletion_status_public=PASS')
+          PY
+
+      - name: Upload sanitized provider evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-social-provider-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/agentos-social-provider-evidence/health.json
+            ${{ runner.temp }}/agentos-social-provider-evidence/internal-block.json
+            ${{ runner.temp }}/agentos-social-provider-evidence/forged-deauthorize.json
+            ${{ runner.temp }}/agentos-social-provider-evidence/deletion-status.json
+          if-no-files-found: warn
+          retention-days: 14
