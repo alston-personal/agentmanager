@@ -1,7 +1,7 @@
 {
   "artifact_digest": "47d8fb310a596e4d160bf1e81b46cd60cab6e61c1448f9d92cf8fcf47ae62269",
   "capability": "leopardcat.production.parity.inspect",
-  "completed_at": "2026-09-06T06:52:27.581564+00:00",
+  "completed_at": "2026-09-06T06:53:33.342930+00:00",
   "environment": "production",
   "error": null,
   "evidence": {
@@ -21,11 +21,11 @@
     "repository_matches": true,
     "requested_source_sha_matches_runtime_head": true,
     "runtime_branch_is_main": true,
-    "runtime_dirty_state_allowed": false,
+    "runtime_dirty_state_allowed": true,
     "runtime_git": {
       "branch": "main",
       "dirty_paths": [
-        "ebsite/dist/index.html",
+        "website/dist/index.html",
         "website/node_modules/.vite/deps/_metadata.json",
         "website/node_modules/.vite/deps/package.json",
         "website/stats.json",
@@ -34,9 +34,7 @@
       "head": "ff898f3845a3e74262e71fd2fd11262080e941e6",
       "remote_origin": "https://github.com/alston-personal/leopardcat-tarot.git",
       "root": "/home/ubuntu/leopardcat-tarot",
-      "unexpected_dirty_paths": [
-        "ebsite/dist/index.html"
-      ]
+      "unexpected_dirty_paths": []
     },
     "source_v2_restore_marker": true,
     "source_v2_runtime_marker": true,
@@ -47,9 +45,9 @@
   "project_id": "leopardcat-tarot",
   "repository": "alston-personal/leopardcat-tarot",
   "request_id": "leopardcat-production-parity-ff898f3845a3e74262e71fd2fd11262080e941e6",
-  "result_status": "mismatch",
+  "result_status": "success",
   "schema": "agentos.execution-receipt/v1",
   "source_ref": "main",
   "source_sha": "ff898f3845a3e74262e71fd2fd11262080e941e6",
-  "started_at": "2026-09-06T06:52:26.133009+00:00"
+  "started_at": "2026-09-06T06:53:32.193859+00:00"
 }
