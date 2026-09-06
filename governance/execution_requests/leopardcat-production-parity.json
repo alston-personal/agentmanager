@@ -1,0 +1,15 @@
+{
+  "schema": "agentos.execution-request/v1",
+  "request_id": "leopardcat-production-parity-ff898f3845a3e74262e71fd2fd11262080e941e6",
+  "project_id": "leopardcat-tarot",
+  "repository": "alston-personal/leopardcat-tarot",
+  "source_ref": "main",
+  "source_sha": "ff898f3845a3e74262e71fd2fd11262080e941e6",
+  "capability": "leopardcat.production.parity.inspect",
+  "environment": "production",
+  "parameters": {
+    "listen_port": 8088,
+    "served_script_path": "/main.js"
+  },
+  "expected_result": "agentos.execution-receipt/v1"
+}
