@@ -1,0 +1,134 @@
+name: LeopardCat Governed Threads Share Autosplit Deploy
+on:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-threads-share-autosplit-deploy.yml'
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy and verify Threads source/share flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          OLD=a2a7626fe2e1677b896e640a606cd875cace68ca
+          TARGET=656627c6046c3d164411b3c681a2fa92dd277b3b
+
+          echo '=== preflight ==='
+          test -d "$ROOT/.git"
+          test "$(git -C "$ROOT" branch --show-current)" = main
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo "head_before=$HEAD"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+          mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
+          for f in "${DIRTY[@]:-}"; do
+            test -z "$f" && continue
+            case "$f" in
+              website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;;
+              *) echo "unexpected_dirty=$f"; exit 20 ;;
+            esac
+          done
+          rm -rf "$WEB/node_modules/.vite"
+          BACKUP=/tmp/leopardcat-stats-threads-share-${GITHUB_RUN_ID:-manual}.json
+          cp "$WEB/stats.json" "$BACKUP"
+          git -C "$ROOT" checkout -- website/dist/index.html
+
+          echo '=== sync source ==='
+          git -C "$ROOT" fetch origin main
+          git -C "$ROOT" merge --ff-only origin/main
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
+          cp "$BACKUP" "$WEB/stats.json"
+
+          echo '=== verify source markers ==='
+          grep -q 'THREADS_TEXT_LIMIT = 500' "$WEB/main.js"
+          grep -q 'prepareThreadsShare' "$WEB/main.js"
+          grep -q 'THREADS_SHARE_PATH_RE' "$WEB/fortune_server.py"
+          grep -q 'canonicalize_threads_source_url' "$WEB/fortune_server.py"
+          grep -q 'getQuestionLanguageTag(q)' "$WEB/main.js"
+          python3 -m py_compile "$WEB/fortune_server.py"
+          node --check "$WEB/main.js"
+
+          echo '=== build production frontend ==='
+          cd "$WEB"
+          npm ci >/dev/null
+          npm run build >/dev/null
+          JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
+          CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
+          test -n "$JS_ASSET"; test -f "dist$JS_ASSET"
+          test -n "$CSS_ASSET"; test -f "dist$CSS_ASSET"
+          grep -q 'THREADS_TEXT_LIMIT' "dist$JS_ASSET"
+          grep -q 'prepareThreadsShare' "dist$JS_ASSET"
+
+          echo '=== restart service ==='
+          systemctl --user stop leopardcat-tarot.service || true
+          for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
+            cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+            cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then kill "$pid" || true; fi
+          done
+          for i in $(seq 1 20); do ! ss -ltnp 2>/dev/null | grep -q ':8088' && break; sleep 1; done
+          systemctl --user start leopardcat-tarot.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/ >/dev/null; then break; fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet leopardcat-tarot.service
+
+          echo '=== live Threads /share source resolve ==='
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, re
+          source_url='https://www.threads.com/share/BAUpBkti0_/'
+          req=urllib.request.Request(
+              'http://127.0.0.1:8088/api/v1/sources/threads',
+              data=json.dumps({'url':source_url}).encode(),
+              headers={'Content-Type':'application/json'},
+              method='POST')
+          try:
+              with urllib.request.urlopen(req, timeout=70) as r:
+                  payload=json.loads(r.read().decode('utf-8'))
+          except urllib.error.HTTPError as e:
+              raw=e.read().decode('utf-8','replace')
+              print('threads_source_http=',e.code,'body=',raw[:500])
+              raise
+          src=payload.get('source') or {}
+          text=str(src.get('text') or '').strip()
+          url=str(src.get('url') or '').strip()
+          print('threads_source_http=',r.status)
+          print('threads_source_type=',src.get('type'))
+          print('threads_source_text_length=',len(text))
+          print('threads_source_url=',url)
+          assert r.status == 200
+          assert text
+          assert re.search(r'https://(?:www\.)?threads\.(?:com|net)/@[^/]+/post/[A-Za-z0-9_-]+', url, re.I), url
+          PY
+
+          echo '=== public verify ==='
+          code=$(curl -sS -o /tmp/leopardcat-public.html -w '%{http_code}' --max-time 10 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"; test "$code" = 200
+          PUBLIC_JS=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' /tmp/leopardcat-public.html | head -1)
+          test -n "$PUBLIC_JS"
+          curl -fsS --max-time 15 "https://leopardcat-tarot.milkcat.org$PUBLIC_JS" -o /tmp/leopardcat-public.js
+          grep -q 'THREADS_TEXT_LIMIT' /tmp/leopardcat-public.js
+          grep -q 'prepareThreadsShare' /tmp/leopardcat-public.js
+          echo "public_js=$PUBLIC_JS"
+          echo 'leopardcat_threads_share_autosplit_deploy=PASS'
+          REMOTE
