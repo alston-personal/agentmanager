@@ -1,0 +1,37 @@
+name: Core Social Runtime Guard
+
+on:
+  push:
+    branches:
+      - core/issue-267-social-runtime
+    paths:
+      - 'agentos_node/social/**'
+      - 'tests/test_social_runtime_activation.py'
+      - 'docs/SOCIAL_RUNTIME.md'
+      - '.github/workflows/core-social-runtime-guard.yml'
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/social/**'
+      - 'tests/test_social_runtime_activation.py'
+      - 'docs/SOCIAL_RUNTIME.md'
+      - '.github/workflows/core-social-runtime-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install focused test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile shared social runtime
+        run: python -m compileall -q agentos_node/social
+      - name: Run shared runtime contract suite
+        run: python -m pytest -q tests/test_social_runtime_activation.py tests/test_social_capability_contract.py tests/test_social_threads_capability.py
