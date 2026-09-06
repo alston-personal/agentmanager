@@ -3,15 +3,20 @@ import { NextRequest } from "next/server";
 const UPSTREAM = "http://127.0.0.1:8771";
 const PUBLIC_CALLBACK_PATH = "/dashboard/api/social/v1/social/oauth/threads/callback";
 const INTERNAL_CALLBACK_PATH = "/v1/social/oauth/threads/callback";
+const THREADS_DEAUTHORIZE_PATH = "/v1/social/webhooks/threads/deauthorize";
+const THREADS_DATA_DELETION_PATH = "/v1/social/webhooks/threads/data-deletion";
+const THREADS_DATA_DELETION_STATUS_PATH = "/v1/social/webhooks/threads/data-deletion/status";
 
 const ALLOWED: Record<string, Set<string>> = {
-  GET: new Set(["/healthz", INTERNAL_CALLBACK_PATH]),
+  GET: new Set(["/healthz", INTERNAL_CALLBACK_PATH, THREADS_DATA_DELETION_STATUS_PATH]),
   POST: new Set([
     "/v1/social/status",
     "/v1/social/connect",
     "/v1/social/publish",
     "/v1/social/reply",
     "/v1/social/disconnect",
+    THREADS_DEAUTHORIZE_PATH,
+    THREADS_DATA_DELETION_PATH,
   ]),
 };
 
