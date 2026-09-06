@@ -1,0 +1,120 @@
+name: LeopardCat Governed Threads OAuth Deploy
+
+on:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/leopardcat-production-deploy-threads-oauth.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Deploy exact accepted LeopardCat source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/leopardcat-tarot
+          WEB="$ROOT/website"
+          OLD=d31da10fa5747901b9ba9413a858c3ac624251c2
+          TARGET=5088eaa94e9604643fc431c64bfb94a3020ad3a8
+          PUBLIC=https://leopardcat-tarot.milkcat.org
+
+          test -d "$ROOT/.git"
+          test "$(git -C "$ROOT" branch --show-current)" = main
+          HEAD=$(git -C "$ROOT" rev-parse HEAD)
+          echo "head_before=$HEAD"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+
+          mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
+          for f in "${DIRTY[@]:-}"; do
+            test -z "$f" && continue
+            case "$f" in
+              website/dist/index.html|website/stats.json|website/node_modules/.vite/*|.claude|.claude/*) ;;
+              *) echo "unexpected_dirty=$f"; exit 20 ;;
+            esac
+          done
+
+          BACKUP=/tmp/leopardcat-stats-${GITHUB_RUN_ID:-manual}.json
+          cp "$WEB/stats.json" "$BACKUP"
+          git -C "$ROOT" checkout -- website/dist/index.html 2>/dev/null || true
+          rm -rf "$WEB/node_modules/.vite"
+          git -C "$ROOT" remote set-url origin https://github.com/alston-personal/leopardcat-tarot.git
+          git -C "$ROOT" fetch origin main
+          if [ "$(git -C "$ROOT" rev-parse HEAD)" != "$TARGET" ]; then
+            git -C "$ROOT" merge --ff-only "$TARGET"
+          fi
+          test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
+          cp "$BACKUP" "$WEB/stats.json"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
+
+          grep -Fq "ThreadsPublishingService(load_env_value)" "$WEB/fortune_server.py"
+          grep -Fq "/api/v1/threads/oauth/status" "$WEB/fortune_server.py"
+          grep -Fq "/api/v1/threads/publish" "$WEB/fortune_server.py"
+          grep -Fq "text_attachment: plan.textAttachment" "$WEB/main.js"
+          if grep -Fq 'navigator.clipboard.writeText(plan.text)' "$WEB/main.js"; then
+            echo 'forbidden_threads_manual_paste=present'; exit 21
+          fi
+
+          cd "$WEB"
+          npm ci
+          npm run build
+          JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
+          test -n "$JS_ASSET" && test -f "dist$JS_ASSET"
+
+          systemctl --user stop leopardcat-tarot.service || true
+          for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
+            cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+            cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then kill "$pid" || true; fi
+          done
+          for i in $(seq 1 20); do
+            if ! ss -ltnp 2>/dev/null | grep -q ':8088'; then break; fi
+            sleep 1
+          done
+          if ss -ltnp 2>/dev/null | grep -q ':8088'; then exit 22; fi
+          systemctl --user start leopardcat-tarot.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet leopardcat-tarot.service && curl -fsS --max-time 2 http://127.0.0.1:8088/api/v1/threads/oauth/status >/tmp/threads-oauth-status.json; then break; fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet leopardcat-tarot.service
+
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/threads-oauth-status.json'))
+          print('threads_oauth_configured=' + str(bool(data.get('configured'))).lower())
+          print('threads_oauth_connected=' + str(bool(data.get('connected'))).lower())
+          assert 'account' in data
+          assert 'access_token' not in json.dumps(data)
+          PY
+
+          curl -fsS --max-time 5 "http://127.0.0.1:8088$JS_ASSET" -o /tmp/leopardcat-local.js
+          curl -fsS --max-time 8 "$PUBLIC$JS_ASSET" -o /tmp/leopardcat-public.js
+          LOCAL_BUILD=$(sha256sum "dist$JS_ASSET" | awk '{print $1}')
+          LOCAL_SERVED=$(sha256sum /tmp/leopardcat-local.js | awk '{print $1}')
+          PUBLIC_SERVED=$(sha256sum /tmp/leopardcat-public.js | awk '{print $1}')
+          echo "asset=$JS_ASSET"
+          echo "local_build_sha256=$LOCAL_BUILD"
+          echo "localhost_sha256=$LOCAL_SERVED"
+          echo "public_sha256=$PUBLIC_SERVED"
+          test "$LOCAL_BUILD" = "$LOCAL_SERVED"
+          test "$LOCAL_BUILD" = "$PUBLIC_SERVED"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "$PUBLIC/")" = 200
+          echo 'leopardcat_threads_oauth_deploy=PASS'
+          REMOTE
