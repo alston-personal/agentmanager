@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,8 @@ from agentos_node import bootstrap_control as bc
 
 
 SHA = "a" * 40
+ROOT = Path(__file__).resolve().parents[1]
+SYSTEM_DEPLOY = ROOT / "scripts" / "deploy_social_runtime_system.sh"
 
 
 def _payload(*, params: dict | None = None, authority: dict | None = None) -> dict:
@@ -47,7 +50,7 @@ def test_social_runtime_action_requires_exact_source_commit(tmp_path, monkeypatc
 
 def test_social_runtime_action_rejects_caller_selected_execution_fields(tmp_path, monkeypatch):
     path = _owned_request(tmp_path, monkeypatch)
-    for forbidden in ("script", "path", "argv", "env", "user", "command"):
+    for forbidden in ("script", "path", "argv", "env", "user", "unit", "command"):
         with pytest.raises(ValueError, match="unsupported bootstrap params"):
             bc._validate_request(path, _payload(params={"source_commit": SHA, forbidden: "x"}))
 
@@ -76,4 +79,33 @@ def test_social_runtime_execute_uses_only_fixed_canonical_script(monkeypatch):
     monkeypatch.setattr(bc, "_run_canonical_script", fake)
     result = bc._execute(bc.ACTION_DEPLOY_SOCIAL_RUNTIME, SHA)
     assert result == {"ok": True, "source_commit": SHA}
-    assert calls == [("scripts/deploy_social_runtime_user.sh", 180, SHA, None)]
+    assert calls == [("scripts/deploy_social_runtime_system.sh", 180, SHA, None)]
+
+
+def test_system_deploy_is_fixed_to_agentos_node_and_system_scope():
+    text = SYSTEM_DEPLOY.read_text(encoding="utf-8")
+    assert 'SERVICE_USER="agentos-node"' in text
+    assert 'SERVICE_NAME="agentos-social-runtime.service"' in text
+    assert 'UNIT_FILE="/etc/systemd/system/$SERVICE_NAME"' in text
+    assert "User=agentos-node" in text
+    assert "WantedBy=multi-user.target" in text
+    assert "systemctl --user" not in text
+    assert "loginctl enable-linger" not in text
+    assert "sudoers" in text
+    assert "social_runtime_sudoers_mutation=NONE" in text
+
+
+def test_system_deploy_fences_runtime_generation_to_core_integration():
+    text = SYSTEM_DEPLOY.read_text(encoding="utf-8")
+    assert 'CANONICAL_REF="core/integration"' in text
+    assert 'git -C "$REPO" fetch --no-tags origin "$CANONICAL_REF"' in text
+    assert 'if [ "$CANONICAL_HEAD" != "$SOURCE_COMMIT" ]' in text
+    assert "social_runtime_deploy=NON_CANONICAL_SOURCE" in text
+
+
+def test_system_deploy_does_not_embed_provider_credential_values():
+    text = SYSTEM_DEPLOY.read_text(encoding="utf-8")
+    assert "AGENTOS_THREADS_APP_ID=\n" in text
+    assert "AGENTOS_THREADS_APP_SECRET=\n" in text
+    assert "AGENTOS_SOCIAL_CONTROL_TOKEN=\n" in text
+    assert "AGENTOS_SOCIAL_PRODUCTS_JSON={}\n" in text
