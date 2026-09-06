@@ -1,4 +1,4 @@
-name: LeopardCat Governed Ritual Setup v2 Deploy
+name: LeopardCat Governed Compact Spread Deploy
 on:
   push:
     branches: [chore/leopardcat-runtime-inspect]
@@ -20,7 +20,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy and verify ritual setup v2
+      - name: Deploy and verify compact spread selector
         shell: bash
         run: |
           set -euo pipefail
@@ -29,10 +29,9 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=656627c6046c3d164411b3c681a2fa92dd277b3b
-          TARGET=8adbd2d08c5bdbd1e9a94659dcfd9f4e6e9de4b6
+          OLD=8adbd2d08c5bdbd1e9a94659dcfd9f4e6e9de4b6
+          TARGET=c27b9d3592052b378a4566f87109822b69a260e4
 
-          echo '=== preflight ==='
           test -d "$ROOT/.git"
           test "$(git -C "$ROOT" branch --show-current)" = main
           HEAD=$(git -C "$ROOT" rev-parse HEAD)
@@ -47,26 +46,26 @@ jobs:
             esac
           done
           rm -rf "$WEB/node_modules/.vite"
-          BACKUP=/tmp/leopardcat-stats-ritual-v2-${GITHUB_RUN_ID:-manual}.json
+          BACKUP=/tmp/leopardcat-stats-compact-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
           git -C "$ROOT" checkout -- website/dist/index.html
 
-          echo '=== sync source ==='
           git -C "$ROOT" fetch origin main
           git -C "$ROOT" merge --ff-only origin/main
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
           cp "$BACKUP" "$WEB/stats.json"
 
-          echo '=== verify v2 source ==='
-          grep -q 'Ritual Reading Setup v2' "$WEB/style.css"
-          grep -q "content: '占卜設定'" "$WEB/style.css"
-          grep -q "content: '聚焦一個核心訊息'" "$WEB/style.css"
-          grep -q "content: '親手洗牌，憑直覺選牌'" "$WEB/style.css"
-          grep -q '#reading-config-card + #btn-primary-draw' "$WEB/style.css"
-          test -f "$WEB/tests/test_reading_setup_v2.py"
+          echo '=== verify compact source ==='
+          grep -q 'id="spread-select"' "$WEB/index.html"
+          grep -q '<option value="auto" selected>自動</option>' "$WEB/index.html"
+          grep -q '<option value="single"' "$WEB/index.html"
+          grep -q '<option value="three_card"' "$WEB/index.html"
+          grep -q 'id="draw-mode-details"' "$WEB/index.html"
+          grep -q "window.activeSpread = 'auto'" "$WEB/main.js"
+          grep -q 'resolvedSpreadForQuestion(q)' "$WEB/main.js"
+          grep -q 'Compact scalable spread selector v3' "$WEB/style.css"
 
-          echo '=== build production frontend ==='
           cd "$WEB"
           npm ci >/dev/null
           npm run build >/dev/null
@@ -74,11 +73,8 @@ jobs:
           CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
           test -n "$JS_ASSET"; test -f "dist$JS_ASSET"
           test -n "$CSS_ASSET"; test -f "dist$CSS_ASSET"
-          grep -q '占卜設定' "dist$CSS_ASSET"
-          grep -q '聚焦一個核心訊息' "dist$CSS_ASSET"
-          grep -q '親手洗牌，憑直覺選牌' "dist$CSS_ASSET"
+          grep -q 'compact-spread-picker' "dist$CSS_ASSET"
 
-          echo '=== restart service ==='
           systemctl --user stop leopardcat-tarot.service || true
           for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
             cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
@@ -93,15 +89,16 @@ jobs:
           done
           systemctl --user is-active --quiet leopardcat-tarot.service
 
-          echo '=== public verify ==='
-          code=$(curl -sS -o /tmp/leopardcat-ritual-v2.html -w '%{http_code}' --max-time 10 https://leopardcat-tarot.milkcat.org/)
+          code=$(curl -sS -o /tmp/leopardcat-compact.html -w '%{http_code}' --max-time 10 https://leopardcat-tarot.milkcat.org/)
           echo "public_http=$code"; test "$code" = 200
-          PUBLIC_CSS=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' /tmp/leopardcat-ritual-v2.html | head -1)
-          test -n "$PUBLIC_CSS"
-          curl -fsS --max-time 15 "https://leopardcat-tarot.milkcat.org$PUBLIC_CSS" -o /tmp/leopardcat-ritual-v2.css
-          grep -q '占卜設定' /tmp/leopardcat-ritual-v2.css
-          grep -q '聚焦一個核心訊息' /tmp/leopardcat-ritual-v2.css
-          grep -q '親手洗牌，憑直覺選牌' /tmp/leopardcat-ritual-v2.css
+          grep -q 'id="spread-select"' /tmp/leopardcat-compact.html
+          grep -q '<option value="auto" selected>自動</option>' /tmp/leopardcat-compact.html
+          grep -q 'id="draw-mode-details"' /tmp/leopardcat-compact.html
+          PUBLIC_CSS=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' /tmp/leopardcat-compact.html | head -1)
+          PUBLIC_JS=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' /tmp/leopardcat-compact.html | head -1)
           echo "public_css=$PUBLIC_CSS"
-          echo 'leopardcat_ritual_setup_v2_deploy=PASS'
+          echo "public_js=$PUBLIC_JS"
+          curl -fsS --max-time 15 "https://leopardcat-tarot.milkcat.org$PUBLIC_CSS" -o /tmp/leopardcat-compact.css
+          grep -q 'compact-spread-picker' /tmp/leopardcat-compact.css
+          echo 'leopardcat_compact_spread_deploy=PASS'
           REMOTE
