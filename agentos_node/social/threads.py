@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -35,7 +34,7 @@ class ThreadsProviderConfig:
 
 
 class ThreadsProviderTransport:
-    """Official Threads provider transport. Secrets remain inside the shared runtime."""
+    """Official Threads transport; provider credentials remain inside shared runtime."""
 
     def __init__(self, config_loader: Callable[[], ThreadsProviderConfig], timeout: float = 15.0) -> None:
         self._config_loader = config_loader
@@ -49,13 +48,7 @@ class ThreadsProviderTransport:
 
     def authorization_url(self, state: str) -> str:
         config = self.config()
-        query = urllib.parse.urlencode({
-            "client_id": config.app_id,
-            "redirect_uri": config.redirect_uri,
-            "scope": ",".join(THREADS_SCOPES),
-            "response_type": "code",
-            "state": state,
-        })
+        query = urllib.parse.urlencode({"client_id": config.app_id, "redirect_uri": config.redirect_uri, "scope": ",".join(THREADS_SCOPES), "response_type": "code", "state": state})
         return f"{config.authorize_host.rstrip('/')}/oauth/authorize?{query}"
 
     def _request_json(self, url: str, *, method: str = "GET", token: str | None = None, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -78,19 +71,20 @@ class ThreadsProviderTransport:
 
     def exchange_code(self, code: str) -> str:
         config = self.config()
-        payload = self._request_json(
-            f"{config.graph_host.rstrip('/')}/oauth/access_token",
-            method="POST",
-            body={"client_id": config.app_id, "client_secret": config.app_secret, "code": code, "grant_type": "authorization_code", "redirect_uri": config.redirect_uri},
-        )
-        token = str(payload.get("access_token") or "")
-        if not token:
+        short = self._request_json(f"{config.graph_host.rstrip('/')}/oauth/access_token", method="POST", body={"client_id": config.app_id, "client_secret": config.app_secret, "code": code, "grant_type": "authorization_code", "redirect_uri": config.redirect_uri})
+        short_token = str(short.get("access_token") or "")
+        if not short_token:
             raise ThreadsProviderError("threads_token_missing")
-        return token
+        exchange = f"{config.graph_host.rstrip('/')}/access_token?" + urllib.parse.urlencode({"grant_type": "th_exchange_token", "client_secret": config.app_secret, "access_token": short_token})
+        try:
+            long_lived = self._request_json(exchange)
+            return str(long_lived.get("access_token") or short_token)
+        except ThreadsProviderError:
+            return short_token
 
     def api(self, path: str, *, token: str, method: str = "GET", params: dict[str, Any] | None = None) -> dict[str, Any]:
         config = self.config()
-        url = f"{config.graph_host.rstrip('/')}/v1.0/{path.lstrip('/')}"
+        url = f"{config.graph_host.rstrip('/')}/{path.lstrip('/')}"
         params = dict(params or {})
         if method == "GET" and params:
             url += "?" + urllib.parse.urlencode(params)
@@ -98,11 +92,10 @@ class ThreadsProviderTransport:
         return self._request_json(url, method=method, token=token, body=params)
 
     def identity(self, token: str) -> dict[str, Any]:
-        return self.api("me", token=token, params={"fields": "id,username"})
+        return self.api("me", token=token, params={"fields": "id,username,name"})
 
     def revoke(self, token: str) -> None:
-        # Provider revocation endpoints/policies can change; runtime may supply a transport override.
-        # Local disconnect is always performed even when remote revocation is unavailable.
+        # Local disconnect is mandatory. Remote revocation may be supplied when provider policy allows it.
         return None
 
 
@@ -113,23 +106,22 @@ class ThreadsCapability:
         self.oauth_states = oauth_states or OAuthStateStore()
         self.write_gate = write_gate or SocialWriteGate()
 
-    def status(self, request: SocialRequest) -> dict[str, Any]:
-        request.validate()
-        binding = self.vault.get_binding(request.account_binding_id) if request.account_binding_id else None
-        return {"schema": "agentos.social-status/v1", "product_id": request.product_id, "platform": "threads", "configured": self.transport.config().configured if self._configured() else False, "connected": binding is not None, "account": ({"binding_id": binding.binding_id, "provider_account_id": binding.provider_account_id, "username": binding.username} if binding else None)}
-
     def _configured(self) -> bool:
         try:
             return self.transport.config().configured
         except ThreadsProviderError:
             return False
 
+    def status(self, request: SocialRequest) -> dict[str, Any]:
+        request.validate()
+        binding = self.vault.get_binding(request.account_binding_id) if request.account_binding_id else None
+        return {"schema": "agentos.social-status/v1", "product_id": request.product_id, "platform": "threads", "configured": self._configured(), "connected": binding is not None, "account": ({"binding_id": binding.binding_id, "provider_account_id": binding.provider_account_id, "username": binding.username} if binding else None)}
+
     def begin_connect(self, request: SocialRequest, *, browser_session_id: str) -> dict[str, str]:
         request.validate()
         if request.operation != "connect":
             raise ValueError("connect_operation_required")
         state = self.oauth_states.issue(product_id=request.product_id, browser_session_id=browser_session_id, platform="threads", return_to=request.return_to or "/")
-        # This transient response is intentionally not a SocialReceipt. It contains no app secret/token/code.
         return {"schema": "agentos.social-oauth-redirect/v1", "authorization_url": self.transport.authorization_url(state.state), "state": state.state}
 
     def complete_connect(self, *, product_id: str, browser_session_id: str, state: str, code: str) -> dict[str, Any]:
@@ -165,27 +157,29 @@ class ThreadsCapability:
         binding = self.vault.get_binding(request.account_binding_id or "")
         if binding is None or binding.product_id != request.product_id or binding.provider_account_id != request.target_account_id:
             return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="account_binding_mismatch").to_dict()
-        primary = str(request.primary_text or "")
-        attachment = str(request.text_attachment or "")
-        if len(primary) > THREADS_TEXT_LIMIT or len(attachment) > THREADS_ATTACHMENT_LIMIT:
-            return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_content_limit_exceeded").to_dict()
-        token = self.vault.get_access_token(binding.binding_id)
-        params: dict[str, Any] = {"media_type": "TEXT", "text": primary}
+        primary = str(request.primary_text or "").strip()
+        if not primary or len(primary) > THREADS_TEXT_LIMIT:
+            return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_primary_text_invalid").to_dict()
+        params: dict[str, Any] = {"media_type": "TEXT", "text": primary, "auto_publish_text": "true"}
+        attachment = request.text_attachment
         if attachment:
-            params["text_attachment"] = attachment
-            params["auto_publish_text"] = "true"
+            plaintext = str(attachment.get("plaintext") or "").strip()
+            if not plaintext or len(plaintext) > THREADS_ATTACHMENT_LIMIT:
+                return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_text_attachment_invalid").to_dict()
+            sanitized: dict[str, str] = {"plaintext": plaintext}
+            link = str(attachment.get("link_attachment_url") or "").strip()
+            if link:
+                parsed = urllib.parse.urlsplit(link)
+                if parsed.scheme not in {"http", "https"}:
+                    return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_text_attachment_link_invalid").to_dict()
+                sanitized["link_attachment_url"] = link
+            params["text_attachment"] = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
         if request.operation == "reply":
             params["reply_to_id"] = request.reply_to_id
+        token = self.vault.get_access_token(binding.binding_id)
         try:
-            created = self.transport.api(f"{binding.provider_account_id}/threads", token=token, method="POST", params=params)
-            creation_id = str(created.get("id") or "")
-            if not creation_id:
-                raise ThreadsProviderError("threads_creation_id_missing")
-            if attachment:
-                thread_id = creation_id
-            else:
-                published = self.transport.api(f"{binding.provider_account_id}/threads_publish", token=token, method="POST", params={"creation_id": creation_id})
-                thread_id = str(published.get("id") or "")
+            published = self.transport.api("me/threads", token=token, method="POST", params=params)
+            thread_id = str(published.get("id") or "")
             if not thread_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
             return receipt_for(request, started_at=started, ok=True, capability=f"social.threads.{request.operation}", platform_object_id=thread_id).to_dict()
