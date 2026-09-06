@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sys
 from typing import Any
 
 from .contracts import SocialRequest, receipt_for, utc_now
@@ -43,10 +45,37 @@ class SocialProvider:
 
         if self.threads is None:
             return receipt_for(request, started_at=started, ok=False, capability=capability, error_code="threads_runtime_not_configured").to_dict()
-        if request.operation == "status":
-            return self.threads.status(request)
-        if request.operation in {"publish", "reply"}:
-            return self.threads.publish(request, acceptance=acceptance)
-        if request.operation == "disconnect":
-            return self.threads.disconnect(request, acceptance=acceptance)
+        try:
+            if request.operation == "status":
+                return self.threads.status(request)
+            if request.operation in {"publish", "reply"}:
+                return self.threads.publish(request, acceptance=acceptance)
+            if request.operation == "disconnect":
+                return self.threads.disconnect(request, acceptance=acceptance)
+        except PermissionError as exc:
+            return receipt_for(request, started_at=started, ok=False, capability=capability, error_code=str(exc)).to_dict()
         return receipt_for(request, started_at=started, ok=False, capability=capability, error_code="operation_requires_provider_route").to_dict()
+
+
+def main(argv=None) -> int:
+    """Secret-free CLI/provider adapter. CLI intentionally has no write-acceptance input."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    provider = SocialProvider()
+    if argv == ["capabilities"]:
+        print(json.dumps(provider.capabilities(), sort_keys=True, ensure_ascii=False))
+        return 0
+    if argv != ["invoke"]:
+        print(json.dumps({"ok": False, "error": "usage: provider.py capabilities|invoke"}, sort_keys=True))
+        return 2
+    try:
+        payload = json.load(sys.stdin)
+        receipt = provider.invoke(payload)
+        print(json.dumps(receipt, sort_keys=True, ensure_ascii=False))
+        return 0 if receipt.get("ok") else 1
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": type(exc).__name__}, sort_keys=True))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
