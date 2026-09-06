@@ -15,14 +15,21 @@ The service itself accepts only fixed JSON contracts and never arbitrary provide
 - `GET /healthz`: reports service and provider configured/unconfigured booleans only.
 - `POST /v1/social/status`
 - `POST /v1/social/connect`
+- `GET /v1/social/oauth/threads/start?ticket=<opaque-one-time-ticket>`
 - `GET /v1/social/oauth/threads/callback`
 - `POST /v1/social/disconnect`
 - `POST /v1/social/publish`
 - `POST /v1/social/reply`
 
-Product calls require an exact registered `product_id` plus `X-AgentOS-Product-Key`. Registration is runtime configuration, not repository data.
+Product server calls require an exact registered `product_id` plus `X-AgentOS-Product-Key`. Registration is runtime configuration, not repository data. The product key MUST remain server-side; it is never placed in browser JavaScript, a redirect URL, an OAuth state, a receipt, or a cookie.
 
-`connect` creates a runtime-owned OAuth state and an HttpOnly/Secure/SameSite=Lax browser-session cookie. The public gateway rewrites only that callback cookie path from the runtime-local callback path to the fixed public callback path. The provider callback must match both the single-use OAuth state and the original browser-session cookie. On success the browser is redirected only to the pre-registered product return base plus the previously validated relative `return_to` route. The return contains only connection/binding information; provider authorization code/token material stays server-side.
+`connect` is intentionally split across a backend leg and a browser leg. The authenticated product backend receives only a short-lived opaque `browser_start_url`; it does not receive the provider authorization URL, provider OAuth state, browser callback session, app credential, or token. The user's browser navigates to that one-time start URL on the shared gateway. Only there does the runtime consume the ticket, create the provider OAuth state, create the browser callback session, set an HttpOnly/Secure/SameSite=Lax callback cookie on the shared gateway origin, and redirect to Threads authorization.
+
+This split prevents the cross-origin failure mode where a product backend receives `Set-Cookie` from the shared runtime but the end user's browser never stores it. It also avoids the unsafe alternative of exposing `X-AgentOS-Product-Key` to browser code.
+
+The public gateway rewrites only the callback cookie path from the runtime-local callback path to the fixed public callback path. The provider callback must match both the single-use OAuth state and the original browser-session cookie. On success the browser is redirected only to the pre-registered product return base plus the previously validated relative `return_to` route. The return contains only connection/binding information; provider authorization code/token material stays server-side.
+
+The browser handoff ticket is process-local, random, single-use, and short-lived (five minutes by default). Runtime restart or ticket replay fails closed. It contains no credential material and is useless after redemption.
 
 ### Runtime control API
 
@@ -76,18 +83,19 @@ The runtime persists account binding metadata and access tokens in its private r
 python -m agentos_node.social.runtime_http --host 127.0.0.1 --port 8771
 ```
 
-The Oracle persistent runtime and public gateway have live rollout evidence. The service remains valid while Threads is unconfigured; `/healthz` reports `threads.configured=false` and OAuth connect fails closed. This permits the Core-owned runtime, public route, and canonical callback URI to be deployed before the shared Meta App ID/Secret are provisioned.
+The Oracle persistent runtime and public gateway have live rollout evidence. The configured-provider verification through the public gateway has passed with `threads.configured=true` while keeping the actual App ID/Secret values out of Core, GitHub logs, workflow inputs, artifacts, and receipts. This is configuration evidence only; it is not yet real-user OAuth or publish acceptance.
 
 ## LeopardCat proving sequence
 
 1. Deploy this shared runtime from `core/integration`.
 2. Keep the fixed shared Threads callback registered as `https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback`.
 3. Register `leopardcat-tarot` as a runtime consumer without creating a product-local Meta App.
-4. Install shared Meta App ID/Secret in the host-local runtime secret boundary when available.
-5. Verify public `/healthz` changes to `threads.configured=true` without exposing provider values.
+4. Verify public `/healthz` reports `threads.configured=true` without exposing provider values.
+5. Have LeopardCat's backend call `POST /v1/social/connect` with its server-side product credential and redirect the user only to the returned opaque `browser_start_url`.
 6. Complete a real Threads OAuth callback and capture only sanitized account binding evidence.
 7. Issue one exact write acceptance from the AgentOS control plane for a user-click-generated `write_intent_id`.
 8. Publish `primary_text` plus optional typed `text_attachment` through the runtime and retain only the secret-free receipt/permalink/object id.
-9. Then integrate LeopardCat #65 against the accepted endpoint; its existing production fallback remains valid until that live proof exists.
+9. Integrate LeopardCat #65 against the accepted endpoint; its anonymous `<=500` production fallback remains valid until the live proof succeeds.
+10. Perform real iPhone acceptance before closing the product issue.
 
-A live provider receipt is required before #267 can be closed. Unit/hosted CI proves the boundary and fail-closed behavior, not Meta availability or credentials.
+A live provider receipt is required before #267 can be closed. Unit/hosted CI and configured-provider checks prove the boundary and fail-closed behavior, not real user OAuth, account binding, Threads publication, or real-device UX.
