@@ -1,17 +1,17 @@
 {
-  "capability": "leopardcat.production.parity.inspect",
-  "completed_at": "2026-09-06T06:47:30.487098+00:00",
-  "environment": "production",
-  "error": "HTTPError: HTTP Error 404: File not found",
+  "capability": null,
+  "completed_at": "2026-09-06T06:48:54.470495+00:00",
+  "environment": null,
+  "error": "RuntimeError: parameters outside typed capability contract",
   "evidence": {},
   "evidence_level": null,
   "executor_identity": "instance-20260129-0852",
-  "project_id": "leopardcat-tarot",
-  "repository": "alston-personal/leopardcat-tarot",
-  "request_id": "leopardcat-production-parity-ff898f3845a3e74262e71fd2fd11262080e941e6",
+  "project_id": null,
+  "repository": null,
+  "request_id": null,
   "result_status": "failed",
   "schema": "agentos.execution-receipt/v1",
-  "source_ref": "main",
-  "source_sha": "ff898f3845a3e74262e71fd2fd11262080e941e6",
-  "started_at": "2026-09-06T06:47:30.472334+00:00"
+  "source_ref": null,
+  "source_sha": null,
+  "started_at": "2026-09-06T06:48:54.470330+00:00"
 }
