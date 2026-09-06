@@ -11,6 +11,7 @@ from agentos_node.social.credentials import AccountBinding, EphemeralCredentialV
 from agentos_node.social.runtime_http import (
     BrowserContextStore,
     BrowserHandoffStore,
+    ConnectionResultStore,
     ProductRegistration,
     ProductRegistry,
     SocialRuntime,
@@ -58,7 +59,12 @@ def registry() -> ProductRegistry:
     })
 
 
-def runtime(configured: bool = True, *, browser_handoffs: BrowserHandoffStore | None = None):
+def runtime(
+    configured: bool = True,
+    *,
+    browser_handoffs: BrowserHandoffStore | None = None,
+    connection_results: ConnectionResultStore | None = None,
+):
     vault = EphemeralCredentialVault()
     transport = FakeThreadsTransport(configured=configured)
     threads = ThreadsCapability(vault, transport)
@@ -68,6 +74,7 @@ def runtime(configured: bool = True, *, browser_handoffs: BrowserHandoffStore | 
         acceptances=OneShotAcceptanceStore(),
         browser_contexts=BrowserContextStore(),
         browser_handoffs=browser_handoffs,
+        connection_results=connection_results,
         control_token="control-key",
         public_base="https://studio.milkcat.org/dashboard/api/social",
     ), vault, transport
@@ -79,6 +86,15 @@ def connect_request():
         platform="threads",
         operation="connect",
         return_to="/reading/1",
+    )
+
+
+def status_request(connection_id: str):
+    return SocialRequest(
+        product_id="leopardcat-tarot",
+        platform="threads",
+        operation="status",
+        object_id=connection_id,
     )
 
 
@@ -120,11 +136,12 @@ def test_product_registry_requires_exact_product_key():
         reg.authenticate("vendor-reputation-service", "product-key")
 
 
-def test_product_connect_returns_only_opaque_browser_handoff():
+def test_product_connect_returns_opaque_handoff_and_connection_id_only():
     rt, _vault, _transport = runtime()
     started = rt.connect(connect_request())
     assert started["schema"] == "agentos.social-browser-handoff/v1"
     assert started["expires_in"] == 300
+    assert started["connection_id"]
     assert started["browser_start_url"].startswith(
         "https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/start?ticket="
     )
@@ -155,7 +172,8 @@ def test_browser_handoff_expires_fail_closed():
 
 def test_oauth_callback_is_single_use_and_browser_session_bound():
     rt, vault, _transport = runtime()
-    ticket = handoff_ticket(rt.connect(connect_request()))
+    started = rt.connect(connect_request())
+    ticket = handoff_ticket(started)
     authorization_url, browser_session_id = rt.begin_browser_connect(ticket)
     state = authorization_url.split("state=", 1)[1]
 
@@ -164,23 +182,65 @@ def test_oauth_callback_is_single_use_and_browser_session_bound():
     with pytest.raises(PermissionError, match="invalid_or_consumed"):
         rt.complete_connect(state=state, code="provider-code", browser_session_id=browser_session_id)
     assert vault.get_binding("leopardcat-tarot:threads:42") is None
+    with pytest.raises(PermissionError, match="connection_result_invalid_or_expired"):
+        rt.status(status_request(started["connection_id"]))
 
 
-def test_realistic_oauth_completion_returns_binding_not_token():
+def test_oauth_completion_redirect_has_no_binding_and_product_redeems_result_once():
     rt, vault, _transport = runtime()
-    ticket = handoff_ticket(rt.connect(connect_request()))
-    authorization_url, browser_session_id = rt.begin_browser_connect(ticket)
+    started = rt.connect(connect_request())
+    authorization_url, browser_session_id = rt.begin_browser_connect(handoff_ticket(started))
     state = authorization_url.split("state=", 1)[1]
-    location, result = rt.complete_connect(
+    location, callback_result = rt.complete_connect(
         state=state,
         code="provider-code",
         browser_session_id=browser_session_id,
     )
-    assert location.startswith("https://tarot.example/reading/1")
-    assert result["binding_id"] == "leopardcat-tarot:threads:42"
-    assert result["account"]["provider_account_id"] == "42"
-    assert "token" not in repr(result).lower()
-    assert vault.get_access_token(result["binding_id"]) == "provider-token"
+    assert location.startswith("https://tarot.example/reading/1?social=connected")
+    assert "binding=" not in location
+    assert callback_result == {
+        "schema": "agentos.social-oauth-complete/v1",
+        "connected": True,
+        "connection_id": started["connection_id"],
+    }
+    assert "token" not in repr(callback_result).lower()
+
+    redeemed = rt.status(status_request(started["connection_id"]))
+    assert redeemed["schema"] == "agentos.social-connection-result/v1"
+    assert redeemed["binding_id"] == "leopardcat-tarot:threads:42"
+    assert redeemed["account"] == {"provider_account_id": "42", "username": "cat"}
+    assert "token" not in repr(redeemed).lower()
+    assert vault.get_access_token(redeemed["binding_id"]) == "provider-token"
+    with pytest.raises(PermissionError, match="connection_result_invalid_or_expired"):
+        rt.status(status_request(started["connection_id"]))
+
+
+def test_connection_result_product_scope_mismatch_consumes_fail_closed():
+    store = ConnectionResultStore()
+    store.complete(
+        "connection-1",
+        product_id="leopardcat-tarot",
+        platform="threads",
+        binding_id="leopardcat-tarot:threads:42",
+        account={"provider_account_id": "42", "username": "cat"},
+    )
+    with pytest.raises(PermissionError, match="connection_result_scope_mismatch"):
+        store.consume("connection-1", product_id="other-product", platform="threads")
+    with pytest.raises(PermissionError, match="connection_result_invalid_or_expired"):
+        store.consume("connection-1", product_id="leopardcat-tarot", platform="threads")
+
+
+def test_connection_result_expires_fail_closed():
+    store = ConnectionResultStore(ttl_seconds=0)
+    store.complete(
+        "connection-1",
+        product_id="leopardcat-tarot",
+        platform="threads",
+        binding_id="leopardcat-tarot:threads:42",
+        account={"provider_account_id": "42", "username": "cat"},
+    )
+    with pytest.raises(PermissionError, match="connection_result_invalid_or_expired"):
+        store.consume("connection-1", product_id="leopardcat-tarot", platform="threads")
 
 
 def test_publish_requires_control_issued_exact_one_shot_acceptance():
