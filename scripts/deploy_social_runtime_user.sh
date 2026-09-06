@@ -19,6 +19,7 @@ ROUTE_REL='dashboard/app/api/social/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC_HEALTH='https://studio.milkcat.org/dashboard/api/social/healthz'
 PUBLIC_INTERNAL='https://studio.milkcat.org/dashboard/api/social/internal/v1/social/acceptances'
+THREADS_REDIRECT_URI='https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/callback'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/social/healthz'
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
@@ -69,16 +70,57 @@ chmod -R go-rwx "$RUNTIME_ROOT" "$STATE_ROOT" || true
 
 if [ ! -e "$ENV_FILE" ]; then
   umask 077
-  cat > "$ENV_FILE" <<'EOF'
+  cat > "$ENV_FILE" <<EOF
 # Runtime-owned shared configuration. Provider values are never committed.
 AGENTOS_SOCIAL_PRODUCTS_JSON={}
 AGENTOS_SOCIAL_CONTROL_TOKEN=
 AGENTOS_THREADS_APP_ID=
 AGENTOS_THREADS_APP_SECRET=
-AGENTOS_THREADS_REDIRECT_URI=
+AGENTOS_THREADS_REDIRECT_URI=$THREADS_REDIRECT_URI
 EOF
 fi
 chmod 0600 "$ENV_FILE"
+
+# The redirect URI is part of the shared Core contract, not a product secret.
+# Existing operator configuration is preserved: only an empty value is hydrated.
+# A different non-empty value fails closed without printing that value.
+python3 - "$ENV_FILE" "$THREADS_REDIRECT_URI" <<'PY'
+from pathlib import Path
+import os, sys, tempfile
+path = Path(sys.argv[1])
+canonical = sys.argv[2]
+lines = path.read_text(encoding='utf-8').splitlines()
+prefix = 'AGENTOS_THREADS_REDIRECT_URI='
+indexes = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+if len(indexes) > 1:
+    raise SystemExit('social_runtime_threads_redirect=DUPLICATE_KEY')
+if not indexes:
+    lines.append(prefix + canonical)
+    changed = True
+else:
+    idx = indexes[0]
+    observed = lines[idx][len(prefix):].strip()
+    if observed and observed != canonical:
+        raise SystemExit('social_runtime_threads_redirect=NON_CANONICAL')
+    changed = observed != canonical
+    lines[idx] = prefix + canonical
+if changed:
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + '.', dir=str(path.parent), text=True)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            handle.write('\n'.join(lines) + '\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+os.chmod(path, 0o600)
+print('social_runtime_threads_redirect=CANONICAL')
+PY
 
 cat > "$UNIT_FILE" <<EOF
 [Unit]
