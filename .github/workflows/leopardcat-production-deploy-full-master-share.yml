@@ -1,4 +1,4 @@
-name: LeopardCat Governed Provider Diagnostics Deploy
+name: LeopardCat Governed Singleflight Home Update Deploy
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -24,7 +24,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Deploy diagnostics and capture provider trace
+      - name: Deploy singleflight and standalone refresh
         shell: bash
         run: |
           set -euo pipefail
@@ -33,8 +33,8 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=083f19c614253741c12fa7ffdaca6aff8ed3ac23
-          TARGET=a64639f28fff110266390fc5c410e15bb522ecb4
+          OLD=c27b9d3592052b378a4566f87109822b69a260e4
+          TARGET=dd8390ae5d6d7fc7f140540fd09d6a845024e582
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
@@ -51,21 +51,27 @@ jobs:
             esac
           done
           rm -rf "$WEB/node_modules/.vite"
-          BACKUP=/tmp/leopardcat-stats-provider-diagnostics-${GITHUB_RUN_ID:-manual}.json
+          BACKUP=/tmp/leopardcat-stats-singleflight-${GITHUB_RUN_ID:-manual}.json
           cp "$WEB/stats.json" "$BACKUP"
           git -C "$ROOT" checkout -- website/dist/index.html
 
           echo '=== sync source ==='
           git -C "$ROOT" fetch origin main
-          git -C "$ROOT" merge --ff-only origin/main
+          test "$(git -C "$ROOT" rev-parse origin/main)" = "$TARGET"
+          if [ "$HEAD" = "$OLD" ]; then git -C "$ROOT" merge --ff-only origin/main; fi
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
-          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
           cp "$BACKUP" "$WEB/stats.json"
+          echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
 
-          echo '=== verify diagnostics source ==='
-          grep -q 'MASTER_PROVIDER_TRACE' "$WEB/fortune_server.py"
-          grep -q 'AI_GATEWAY.last_trace()' "$WEB/fortune_server.py"
+          echo '=== verify source invariants ==='
+          grep -q 'window.readingRequestState' "$WEB/main.js"
+          grep -q 'clientRequestId' "$WEB/main.js"
+          grep -q 'checkForAppUpdate' "$WEB/main.js"
+          grep -q 'standalone-refresh' "$WEB/index.html"
+          grep -q 'begin_reading_request' "$WEB/fortune_server.py"
+          grep -q "'reading_in_progress'" "$WEB/fortune_server.py"
           python3 -m py_compile "$WEB/fortune_server.py"
+          node --check "$WEB/main.js"
 
           echo '=== build production frontend ==='
           cd "$WEB"
@@ -73,6 +79,7 @@ jobs:
           npm run build
           JS_ASSET=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' dist/index.html | head -1)
           CSS_ASSET=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' dist/index.html | head -1)
+          test -n "$JS_ASSET"; test -n "$CSS_ASSET"
           test -f "dist$JS_ASSET"; test -f "dist$CSS_ASSET"
 
           echo '=== restart service ==='
@@ -89,28 +96,50 @@ jobs:
             sleep 1
           done
           systemctl --user is-active --quiet leopardcat-tarot.service
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
-          echo "public_http=$code"; test "$code" = 200
 
-          echo '=== reproduce zh/ja provider failure ==='
+          echo '=== public standalone update verification ==='
+          PUBLIC_HTML=$(mktemp)
+          curl -fsS --max-time 10 'https://leopardcat-tarot.milkcat.org/?deploycheck=singleflight' -o "$PUBLIC_HTML"
+          grep -q 'standalone-refresh' "$PUBLIC_HTML"
+          PUBLIC_JS=$(sed -nE 's#.*src="(/assets/index-[^"]+\.js)".*#\1#p' "$PUBLIC_HTML" | head -1)
+          PUBLIC_CSS=$(sed -nE 's#.*href="(/assets/index-[^"]+\.css)".*#\1#p' "$PUBLIC_HTML" | head -1)
+          test -n "$PUBLIC_JS"; test -n "$PUBLIC_CSS"
+          curl -fsS --max-time 10 "https://leopardcat-tarot.milkcat.org$PUBLIC_JS" | grep -q 'leopardcat.reload-for:'
+          echo "public_js=$PUBLIC_JS"
+          echo "public_css=$PUBLIC_CSS"
+
+          echo '=== live duplicate-request guard ==='
           python3 - <<'PY'
-          import json, urllib.request, urllib.error
-          for lang,q in [('zh-TW','最近的方向應該怎麼看？'),('ja','これからの仕事の流れについて教えてください。')]:
-              payload={'method':'tarot','persona':'leopardcat','question':q,'lang':lang,'seed':'provider-trace-'+lang,'input':{'deck_id':'leopardcat','spread':'single'}}
-              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=json.dumps(payload,ensure_ascii=False).encode(),headers={'Content-Type':'application/json'})
+          import json, threading, time, urllib.request, urllib.error, uuid
+          rid='singleflight-'+uuid.uuid4().hex[:20]
+          payload={
+              'method':'tarot','persona':'leopardcat','question':'部署防重複驗證：只建立一個牌局。','lang':'zh-TW',
+              'clientRequestId':rid,
+              'seed':'singleflight-live-check',
+              'input':{'deck_id':'leopardcat','spread':'single'}
+          }
+          body=json.dumps(payload,ensure_ascii=False).encode()
+          results=[]
+          def call():
+              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/readings',data=body,headers={'Content-Type':'application/json'})
               try:
-                  with urllib.request.urlopen(req,timeout=45) as r:
-                      data=json.loads(r.read().decode())
-                  print(f'case={lang} http={r.status} reading_present={bool(data.get("reading"))}')
+                  with urllib.request.urlopen(req,timeout=60) as r:
+                      results.append(r.status); r.read()
               except urllib.error.HTTPError as e:
-                  raw=e.read().decode('utf-8','replace')
-                  try: data=json.loads(raw)
-                  except Exception: data={}
-                  print(f'case={lang} http={e.code} code={data.get("code")} retryable={data.get("retryable")}')
+                  results.append(e.code); e.read()
+              except Exception as e:
+                  results.append(type(e).__name__)
+          t1=threading.Thread(target=call); t2=threading.Thread(target=call)
+          t1.start(); time.sleep(0.15); t2.start(); t1.join(); t2.join()
+          print('singleflight_statuses='+','.join(map(str,results)))
+          if 409 not in results:
+              raise SystemExit('duplicate guard did not reject concurrent duplicate')
+          if len(results) != 2:
+              raise SystemExit('unexpected result count')
           PY
 
-          echo '=== provider trace ==='
-          journalctl --user -u leopardcat-tarot.service --since '5 minutes ago' --no-pager | grep 'MASTER_PROVIDER_TRACE' | tail -10
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://leopardcat-tarot.milkcat.org/)
+          echo "public_http=$code"; test "$code" = 200
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
-          echo 'leopardcat_provider_diagnostics=PASS'
+          echo 'leopardcat_singleflight_home_update_deploy=PASS'
           REMOTE
