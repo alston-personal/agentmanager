@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from agentos_node.social.contracts import SocialRequest
 from agentos_node.social.credentials import AccountBinding, EphemeralCredentialVault
 from agentos_node.social.governance import RuntimeWriteAcceptance
@@ -55,35 +57,28 @@ def test_leopardcat_teacher_text_attachment_uses_same_generic_request_contract()
     transport = FakeTransport()
     capability = ThreadsCapability(vault, transport)
     request = SocialRequest(
-        product_id="leopardcat-tarot",
-        platform="threads",
-        operation="publish",
-        account_binding_id="leopardcat-tarot:threads:42",
-        target_account_id="42",
+        product_id="leopardcat-tarot", platform="threads", operation="publish",
+        account_binding_id="leopardcat-tarot:threads:42", target_account_id="42",
         primary_text="<=500-char intent",
-        text_attachment="full Master interpretation",
+        text_attachment={"plaintext": "full Master interpretation", "link_attachment_url": "https://example.test/share/1"},
         write_intent_id="user-confirmation-1",
     )
     acceptance = RuntimeWriteAcceptance("runtime-accept-1", "leopardcat-tarot", "threads", frozenset({"publish"}), frozenset({request.account_binding_id}))
     receipt = capability.publish(request, acceptance=acceptance)
     assert receipt["ok"] is True
     assert "SERVER-ONLY-TOKEN" not in str(receipt)
-    assert transport.calls[0][2]["text_attachment"] == "full Master interpretation"
+    attachment = json.loads(transport.calls[0][2]["text_attachment"])
+    assert attachment["plaintext"] == "full Master interpretation"
     assert transport.calls[0][2]["auto_publish_text"] == "true"
+    assert transport.calls[0][0] == "me/threads"
 
 
 def test_leopardcat_and_vendor_use_same_generic_provider_for_read_contract():
     def resolver(url):
         return {"type": "threads", "author": "@cat", "username": "cat", "text": "source", "url": normalize_url(url)}
-
     provider = SocialProvider(public_threads_resolver=resolver)
     for product_id in ("leopardcat-tarot", "vendor-reputation-service"):
-        receipt = provider.invoke({
-            "product_id": product_id,
-            "platform": "threads",
-            "operation": "public_post.read",
-            "object_id": "https://threads.com/@cat/post/ABC",
-        })
+        receipt = provider.invoke({"product_id": product_id, "platform": "threads", "operation": "public_post.read", "object_id": "https://threads.com/@cat/post/ABC"})
         assert receipt["ok"] is True
         assert receipt["product_id"] == product_id
         assert receipt["capability"] == "social.threads.public_post.read"
