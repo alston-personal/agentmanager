@@ -9,6 +9,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/deploy_social_runtime_user.sh'
       - 'agentos_node/social/**'
+      - 'dashboard/app/api/social/**'
 
 permissions:
   contents: read
@@ -16,7 +17,7 @@ permissions:
 jobs:
   rollout:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +30,7 @@ jobs:
           printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
           python3 -m compileall -q agentos_node/social agentos_node/bootstrap_control.py
           bash -n scripts/deploy_social_runtime_user.sh
+          test -f 'dashboard/app/api/social/[...path]/route.ts'
           echo "social_runtime_rollout_source_ref=core/integration"
           echo "social_runtime_rollout_source_commit=$GITHUB_SHA"
 
@@ -73,12 +75,10 @@ jobs:
           }
           tmp = path.with_suffix(path.suffix + ".tmp")
           tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-          # Owner remains agentos-node. The ubuntu bootstrap worker needs read access,
-          # while bootstrap validation rejects group/world writable request files.
           os.chmod(tmp, 0o644); tmp.replace(path); os.chmod(path, 0o644)
           PY
 
-          for i in $(seq 1 360); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          for i in $(seq 1 540); do [ -f "$RECEIPT" ] && break; sleep 1; done
           test -f "$RECEIPT" || { echo 'social_runtime_bootstrap_receipt=TIMEOUT'; exit 3; }
 
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
@@ -91,39 +91,64 @@ jobs:
           assert receipt.get('source_commit') == expected, receipt
           assert receipt.get('ok') is True, receipt
           text = '\n'.join(str(s.get('stdout', '')) + '\n' + str(s.get('stderr', '')) for s in receipt.get('steps', []))
-          assert 'social_runtime_deploy=PASS' in text, text[-12000:]
-          assert 'social_runtime_service_identity=ubuntu' in text, text[-12000:]
-          assert 'social_runtime_root_privilege=NONE' in text, text[-12000:]
-          assert f'social_runtime_source_commit={expected}' in text, text[-12000:]
+          for marker in (
+              'social_runtime_deploy=PASS',
+              'social_runtime_service_identity=ubuntu',
+              'social_runtime_root_privilege=NONE',
+              'social_gateway_route_guard=PASS',
+              'social_gateway_dashboard_build=PASS',
+              'social_gateway_local=PASS',
+              'social_gateway_internal_control_public=BLOCKED',
+              'social_gateway_public=PASS',
+              'social_gateway_nginx_mutation=NONE',
+          ):
+              assert marker in text, (marker, text[-16000:])
+          assert f'social_runtime_source_commit={expected}' in text, text[-16000:]
           print('social_runtime_bootstrap_receipt=PASS')
           print('social_runtime_bootstrap_executor=ubuntu')
+          print('social_gateway_bootstrap_public=PASS')
           PY
 
-      - name: Verify bounded local endpoint independently
+      - name: Verify local and public endpoints independently
         shell: bash
         run: |
           set -euo pipefail
           curl -fsS --max-time 3 http://127.0.0.1:8771/healthz > "$RUNNER_TEMP/social-runtime-health.json"
-          python3 - "$RUNNER_TEMP/social-runtime-health.json" <<'PY'
+          curl -fsS --max-time 8 https://studio.milkcat.org/dashboard/api/social/healthz > "$RUNNER_TEMP/social-gateway-public-health.json"
+          python3 - "$RUNNER_TEMP/social-runtime-health.json" "$RUNNER_TEMP/social-gateway-public-health.json" <<'PY'
           import json, sys
-          p = json.load(open(sys.argv[1], encoding='utf-8'))
-          assert p.get('schema') == 'agentos.social-runtime-status/v1', p
-          assert p.get('service') == 'agentos-social-runtime', p
-          threads = p.get('threads')
-          assert isinstance(threads, dict) and set(threads) == {'configured'}, p
-          assert isinstance(threads['configured'], bool), p
-          text = json.dumps(p, sort_keys=True).lower()
-          for forbidden in ('app_secret', 'access_token', 'refresh_token', 'authorization_code'):
-              assert forbidden not in text, text
+          local = json.load(open(sys.argv[1], encoding='utf-8'))
+          public = json.load(open(sys.argv[2], encoding='utf-8'))
+          for p in (local, public):
+              assert p.get('schema') == 'agentos.social-runtime-status/v1', p
+              assert p.get('service') == 'agentos-social-runtime', p
+              threads = p.get('threads')
+              assert isinstance(threads, dict) and set(threads) == {'configured'}, p
+              assert isinstance(threads['configured'], bool), p
+              text = json.dumps(p, sort_keys=True).lower()
+              for forbidden in ('app_secret', 'access_token', 'refresh_token', 'authorization_code'):
+                  assert forbidden not in text, text
+          assert local == public, (local, public)
           print('oracle_social_runtime_endpoint=PASS')
-          print('oracle_social_runtime_configured=' + str(threads['configured']).lower())
+          print('oracle_social_gateway_public=PASS')
+          print('oracle_social_runtime_configured=' + str(local['threads']['configured']).lower())
           PY
+
+          code=$(curl -sS -o "$RUNNER_TEMP/social-gateway-internal-block.json" -w '%{http_code}' --max-time 8 \
+            -X POST https://studio.milkcat.org/dashboard/api/social/internal/v1/social/acceptances \
+            -H 'content-type: application/json' --data '{}')
+          test "$code" = 404
+          grep -q 'Social gateway route not allowlisted' "$RUNNER_TEMP/social-gateway-internal-block.json"
+          echo 'oracle_social_gateway_internal_control=BLOCKED'
 
       - name: Upload sanitized endpoint evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: oracle-social-runtime-${{ github.run_id }}
-          path: ${{ runner.temp }}/social-runtime-health.json
+          path: |
+            ${{ runner.temp }}/social-runtime-health.json
+            ${{ runner.temp }}/social-gateway-public-health.json
+            ${{ runner.temp }}/social-gateway-internal-block.json
           if-no-files-found: warn
           retention-days: 14
