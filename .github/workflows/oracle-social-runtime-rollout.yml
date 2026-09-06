@@ -73,7 +73,9 @@ jobs:
           }
           tmp = path.with_suffix(path.suffix + ".tmp")
           tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-          os.chmod(tmp, 0o600); tmp.replace(path); os.chmod(path, 0o600)
+          # Owner remains agentos-node. The ubuntu bootstrap worker needs read access,
+          # while bootstrap validation rejects group/world writable request files.
+          os.chmod(tmp, 0o644); tmp.replace(path); os.chmod(path, 0o644)
           PY
 
           for i in $(seq 1 360); do [ -f "$RECEIPT" ] && break; sleep 1; done
