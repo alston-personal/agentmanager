@@ -5,6 +5,11 @@
       "repository": "alston-personal/leopardcat-tarot",
       "request_path": ".agentos/execution-requests/production-parity.json",
       "allowed_source_refs": ["main"]
+    },
+    "vendor-reputation-service": {
+      "repository": "alston-personal/vendor-reputation-service",
+      "request_path": ".agentos/execution-requests/production-runtime.json",
+      "allowed_source_refs": ["main"]
     }
   },
   "capabilities": {
@@ -19,6 +24,26 @@
       "runtime": {
         "repo_root": "/home/ubuntu/leopardcat-tarot",
         "public_origin": "https://leopardcat-tarot.milkcat.org"
+      }
+    },
+    "vendor.production.runtime.inspect": {
+      "project_id": "vendor-reputation-service",
+      "environment": "production",
+      "adapter": "repository_service_inspect",
+      "parameters": {
+        "listen_port": 18765
+      },
+      "replay_policy": "idempotent",
+      "runtime": {
+        "repo_root": "/home/ubuntu/vendor-reputation-service",
+        "health_path": "/healthz",
+        "branch_policy": "detached_or_source_ref",
+        "expected_health": {
+          "ok": true,
+          "service": "vendor-reputation-service"
+        },
+        "allowed_dirty_exact": [],
+        "allowed_dirty_prefixes": [".claude/"]
       }
     }
   }
