@@ -4,6 +4,7 @@
     "leopardcat-tarot": {
       "repository": "alston-personal/leopardcat-tarot",
       "request_path": ".agentos/execution-requests/production-parity.json",
+      "reconcile_request_path": ".agentos/execution-requests/production-reconcile.json",
       "allowed_source_refs": ["main"],
       "request_source": {
         "repo_root": "/home/ubuntu/leopardcat-tarot",
@@ -34,6 +35,32 @@
       "runtime": {
         "repo_root": "/home/ubuntu/leopardcat-tarot",
         "public_origin": "https://leopardcat-tarot.milkcat.org"
+      }
+    },
+    "leopardcat.production.frontend.reconcile": {
+      "project_id": "leopardcat-tarot",
+      "environment": "production",
+      "adapter": "leopardcat_frontend_reconcile",
+      "parameters": {
+        "listen_port": 8088
+      },
+      "replay_policy": "convergent-idempotent",
+      "runtime": {
+        "repo_root": "/home/ubuntu/leopardcat-tarot",
+        "public_origin": "https://leopardcat-tarot.milkcat.org",
+        "execution_user": "ubuntu",
+        "build_root": "website",
+        "dist_path": "website/dist",
+        "preserve_paths": ["website/stats.json"],
+        "allowed_dirty_exact": ["website/dist/index.html", "website/stats.json"],
+        "allowed_dirty_prefixes": ["website/node_modules/.vite/", ".claude/"],
+        "allowed_changed_exact": [
+          ".agentos/execution-requests/production-parity.json",
+          ".agentos/execution-requests/production-reconcile.json",
+          "website/share_snapshot.js",
+          "website/vite.config.js"
+        ],
+        "allowed_changed_prefixes": ["docs/", "website/tests/", "tests/"]
       }
     },
     "vendor.production.runtime.inspect": {
