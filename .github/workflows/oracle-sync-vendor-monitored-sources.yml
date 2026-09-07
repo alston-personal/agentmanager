@@ -1,0 +1,90 @@
+name: Oracle Vendor Monitored Source Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '47 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-sync-vendor-monitored-sources.yml'
+      - 'scripts/run_vendor_monitored_source_sync.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 25
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SERVICE_SHA: 60417e17d5d21efb2d63eba18f948c0d1e13130c
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Stage monitored source sync runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'umask 077; cat > /tmp/run_vendor_monitored_source_sync.sh' \
+            < scripts/run_vendor_monitored_source_sync.sh
+      - name: Sync monitored Threads sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          OUT=.agentos/evidence/vendor-monitored-source-sync.json
+          SSHERR=.agentos/evidence/vendor-monitored-source-sync-ssh.err
+          set +e
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash /tmp/run_vendor_monitored_source_sync.sh "$SERVICE_SHA" \
+            > "$OUT" 2> "$SSHERR"
+          RC=$?
+          set -e
+          if [ ! -s "$OUT" ]; then
+            python3 - "$RC" "$SSHERR" > "$OUT" <<'PY'
+          import json,pathlib,sys
+          p=pathlib.Path(sys.argv[2])
+          tail=' '.join((p.read_text(errors='replace') if p.exists() else '').split())[-800:]
+          print(json.dumps({
+            'schema':'milkcat.vendor-monitored-source-sync/v1','ok':False,
+            'failed_stage':'ssh','worker_exit_code':int(sys.argv[1]),
+            'sources':0,'discovered':0,'inserted':0,'updated':0,'unchanged':0,'errors':1,
+            'sanitized_error_tail':tail,
+            'raw_text_emitted':False,'login_bypass_used':False,'anti_bot_bypass_used':False,
+            'reviews_published':False,'core_modified':False
+          },ensure_ascii=False))
+          PY
+          fi
+          rm -f "$SSHERR"
+          python3 -m json.tool "$OUT" >/dev/null
+          cat "$OUT"
+          exit "$RC"
+      - name: Summarize monitored source sync
+        if: always()
+        shell: bash
+        run: |
+          OUT=.agentos/evidence/vendor-monitored-source-sync.json
+          test -s "$OUT" || exit 0
+          python3 - "$OUT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          print('## Vendor Monitored Source Sync')
+          for key in ['ok','sources','discovered','inserted','updated','unchanged','errors','raw_text_emitted','reviews_published','core_modified']:
+              print(f'- {key}: `{x.get(key)}`')
+          PY
+      - name: Upload sanitized sync evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-monitored-source-sync-${{ github.run_id }}
+          path: .agentos/evidence/vendor-monitored-source-sync.json
+          if-no-files-found: error
+          retention-days: 30
