@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Fetch a product-owned execution request through its Oracle-local repository.
 
-This solves the private-repository boundary without copying a cross-repository GitHub
-credential into Core workflows. Core accepts only a project id; repository root,
-source ref, and request path come from the execution authority registry. The fetch
-updates Git metadata only and never checks out or mutates the production working tree.
+The workflow supplies only a project id. Repository root, release ref, request path,
+and optional runtime user are registry-owned. A runtime-user transition is allowed only
+for the fixed git fetch/show operations below; no request-controlled argv is accepted.
 """
 import json
 import subprocess
@@ -18,17 +17,16 @@ def fail(message):
     raise RuntimeError(message)
 
 
-def run_git(repo_root, *args):
-    return subprocess.run(
-        ["git", "-c", f"safe.directory={repo_root}", "-C", repo_root, *args],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+def run_git(repo_root, execution_user, *args):
+    git_argv = ["git", "-c", f"safe.directory={repo_root}", "-C", repo_root, *args]
+    argv = git_argv if not execution_user else ["sudo", "-n", "-u", execution_user, "--", *git_argv]
+    return subprocess.run(argv, text=True, capture_output=True, check=False)
 
 
 def classify_git_failure(proc):
     text = f"{proc.stderr or ''}\n{proc.stdout or ''}".lower()
+    if "a password is required" in text or "not allowed to execute" in text or "sudoers" in text:
+        return "runtime-user-transition-denied"
     if "dubious ownership" in text or "safe.directory" in text:
         return "safe-directory"
     if "permission denied" in text:
@@ -51,19 +49,22 @@ def fetch_product_request(project_id, registry):
     source = project.get("request_source") or {}
     repo_root = source.get("repo_root")
     source_ref = source.get("source_ref")
+    execution_user = source.get("execution_user")
     request_path = project.get("request_path")
     if not all(isinstance(value, str) and value for value in (repo_root, source_ref, request_path)):
         fail("project request source is incomplete")
+    if execution_user is not None and execution_user not in ("ubuntu",):
+        fail("request source execution user is not allowlisted")
     if source_ref not in project.get("allowed_source_refs", []):
         fail("request source ref is outside release-lane authority")
     if request_path.startswith("/") or ".." in Path(request_path).parts:
         fail("request path is outside repository authority")
 
-    fetch = run_git(repo_root, "fetch", "--depth=1", "origin", source_ref)
+    fetch = run_git(repo_root, execution_user, "fetch", "--depth=1", "origin", source_ref)
     if fetch.returncode:
         # Never echo raw git output; it can contain a credential-bearing remote.
         fail(f"product repository fetch failed [{classify_git_failure(fetch)}]")
-    show = run_git(repo_root, "show", f"FETCH_HEAD:{request_path}")
+    show = run_git(repo_root, execution_user, "show", f"FETCH_HEAD:{request_path}")
     if show.returncode:
         fail(f"product request is missing at the governed path [{classify_git_failure(show)}]")
     try:
