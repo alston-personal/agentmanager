@@ -1,0 +1,41 @@
+name: Retarget LeopardCat deploy carrier
+
+on:
+  push:
+    branches: [chore/leopardcat-runtime-inspect]
+    paths:
+      - '.github/workflows/retarget-leopardcat-deploy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  retarget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/leopardcat-runtime-inspect
+          fetch-depth: 0
+      - name: Retarget exact deployment SHA
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/leopardcat-production-deploy-threads-oauth.yml')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('OLD=d31da10fa5747901b9ba9413a858c3ac624251c2','OLD=5088eaa94e9604643fc431c64bfb94a3020ad3a8')
+          s=s.replace('TARGET=5088eaa94e9604643fc431c64bfb94a3020ad3a8','TARGET=faf0ae71e171f65502a466f6b671667417f8b9ec')
+          old='test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"'
+          new='test "$HEAD" = "$OLD" -o "$HEAD" = "00065fadd0f5a80a43d1fd0e2848e4ebb23b1010" -o "$HEAD" = "$TARGET"'
+          if old not in s:
+              raise SystemExit('expected_head_guard_not_found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit retargeted carrier
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/leopardcat-production-deploy-threads-oauth.yml
+          git commit -m 'chore(leopardcat): deploy master spread planner faf0ae7'
+          git push origin HEAD:chore/leopardcat-runtime-inspect
