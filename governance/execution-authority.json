@@ -1,0 +1,25 @@
+{
+  "schema": "agentos.execution-authority/v1",
+  "projects": {
+    "leopardcat-tarot": {
+      "repository": "alston-personal/leopardcat-tarot",
+      "request_path": ".agentos/execution-requests/production-parity.json",
+      "allowed_source_refs": ["main"]
+    }
+  },
+  "capabilities": {
+    "leopardcat.production.parity.inspect": {
+      "project_id": "leopardcat-tarot",
+      "environment": "production",
+      "adapter": "leopardcat_production_parity_inspect",
+      "parameters": {
+        "listen_port": 8088
+      },
+      "replay_policy": "idempotent",
+      "runtime": {
+        "repo_root": "/home/ubuntu/leopardcat-tarot",
+        "public_origin": "https://leopardcat-tarot.milkcat.org"
+      }
+    }
+  }
+}
