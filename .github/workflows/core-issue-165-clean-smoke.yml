@@ -29,17 +29,17 @@ jobs:
           python3 tests/test_governed_execution_request.py
           python3 -m py_compile scripts/run_governed_execution_request.py
 
-  product-owned-smoke:
+  leopardcat-owned-smoke:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch canonical product-owned request
+      - name: Fetch canonical LeopardCat request
         run: |
           set -euo pipefail
           curl -fsSL --max-time 15 \
             https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/main/.agentos/execution-requests/production-parity.json \
             -o /tmp/leopardcat-production-parity.json
-      - name: Execute bounded product request
+      - name: Execute bounded LeopardCat request
         id: execute
         run: |
           set +e
@@ -50,7 +50,7 @@ jobs:
           cat /tmp/leopardcat-production-parity-receipt.json
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
-      - name: Persist sanitized receipt artifact
+      - name: Persist sanitized LeopardCat receipt artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -58,6 +58,39 @@ jobs:
           path: /tmp/leopardcat-production-parity-receipt.json
           if-no-files-found: error
           retention-days: 30
-      - name: Enforce execution result
+      - name: Enforce LeopardCat execution result
+        if: always()
+        run: test "${{ steps.execute.outputs.exit_code }}" = "0"
+
+  vendor-owned-smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch canonical Vendor request
+        run: |
+          set -euo pipefail
+          curl -fsSL --max-time 15 \
+            https://raw.githubusercontent.com/alston-personal/vendor-reputation-service/main/.agentos/execution-requests/production-runtime.json \
+            -o /tmp/vendor-production-runtime.json
+      - name: Execute bounded Vendor request
+        id: execute
+        run: |
+          set +e
+          python3 scripts/run_governed_execution_request.py \
+            /tmp/vendor-production-runtime.json \
+            /tmp/vendor-production-runtime-receipt.json
+          code=$?
+          cat /tmp/vendor-production-runtime-receipt.json
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist sanitized Vendor receipt artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-production-runtime-receipt
+          path: /tmp/vendor-production-runtime-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce Vendor execution result
         if: always()
         run: test "${{ steps.execute.outputs.exit_code }}" = "0"
