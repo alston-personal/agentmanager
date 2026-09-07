@@ -78,7 +78,11 @@ def resolve_authority(request, registry):
     return project, capability
 
 
-def git_state(repo_root):
+def _path_allowed(path, exact, prefixes):
+    return path in exact or any(path.startswith(prefix) for prefix in prefixes)
+
+
+def git_state(repo_root, allowed_dirty_exact=(), allowed_dirty_prefixes=()):
     def git(*args):
         proc = run_fixed(["git", "-C", repo_root, *args])
         if proc.returncode:
@@ -89,23 +93,33 @@ def git_state(repo_root):
     for line in git("status", "--porcelain").splitlines():
         paths.append((line[2:] if len(line) > 2 else "").strip())
 
-    def allowed_dirty(path):
-        return (
-            path == "website/dist/index.html"
-            or path == "website/stats.json"
-            or path.startswith("website/node_modules/.vite/")
-            or path == ".claude/"
-            or path.startswith(".claude/")
-        )
-
+    exact = tuple(allowed_dirty_exact or ())
+    prefixes = tuple(allowed_dirty_prefixes or ())
     return {
         "root": repo_root,
         "head": git("rev-parse", "HEAD"),
         "branch": git("branch", "--show-current"),
         "remote_origin": sanitize_remote(git("remote", "get-url", "origin")),
         "dirty_paths": paths,
-        "unexpected_dirty_paths": [p for p in paths if not allowed_dirty(p)],
+        "unexpected_dirty_paths": [p for p in paths if not _path_allowed(p, exact, prefixes)],
     }
+
+
+def listener_state(port):
+    listener_proc = run_fixed(["ss", "-ltnp", f"sport = :{port}"])
+    listener_text = (listener_proc.stdout or "") + (listener_proc.stderr or "")
+    if listener_proc.returncode or "LISTEN" not in listener_text:
+        fail(f"no listener on port {port}")
+    pid_match = re.search(r"pid=(\d+)", listener_text)
+    return {"present": True, "pid": int(pid_match.group(1)) if pid_match else None}
+
+
+def branch_matches_policy(branch, source_ref, policy):
+    if policy == "source_ref":
+        return branch == source_ref
+    if policy == "detached_or_source_ref":
+        return branch in ("", source_ref)
+    fail(f"unsupported runtime branch policy: {policy}")
 
 
 def fetch_bytes(url):
@@ -124,14 +138,12 @@ def inspect_leopardcat_parity(request, capability):
     port = request["parameters"]["listen_port"]
     public_origin = runtime["public_origin"]
 
-    listener_proc = run_fixed(["ss", "-ltnp", f"sport = :{port}"])
-    listener_text = (listener_proc.stdout or "") + (listener_proc.stderr or "")
-    if listener_proc.returncode or "LISTEN" not in listener_text:
-        fail(f"no listener on port {port}")
-    pid_match = re.search(r"pid=(\d+)", listener_text)
-    listener = {"present": True, "pid": int(pid_match.group(1)) if pid_match else None}
-
-    state = git_state(repo_root)
+    listener = listener_state(port)
+    state = git_state(
+        repo_root,
+        allowed_dirty_exact=("website/dist/index.html", "website/stats.json", ".claude/"),
+        allowed_dirty_prefixes=("website/node_modules/.vite/", ".claude/"),
+    )
     index_path = Path(repo_root) / "website" / "dist" / "index.html"
     if not index_path.is_file():
         fail("production dist/index.html is missing")
@@ -177,11 +189,65 @@ def inspect_leopardcat_parity(request, capability):
         public_http == 200,
         root_http == 200,
     ])
-    return evidence, digests[2], accepted
+    return evidence, digests[2], accepted, "runtime_repo+deployed_artifact"
+
+
+def inspect_repository_service(request, capability):
+    runtime = capability["runtime"]
+    repo_root = runtime["repo_root"]
+    port = request["parameters"]["listen_port"]
+    health_path = runtime.get("health_path", "/healthz")
+    if not isinstance(health_path, str) or not health_path.startswith("/") or "://" in health_path:
+        fail("invalid registry-owned health path")
+
+    listener = listener_state(port)
+    state = git_state(
+        repo_root,
+        allowed_dirty_exact=runtime.get("allowed_dirty_exact", ()),
+        allowed_dirty_prefixes=runtime.get("allowed_dirty_prefixes", ()),
+    )
+    health_body, health_http = fetch_bytes(f"http://127.0.0.1:{port}{health_path}")
+    health_digest = sha256(health_body)
+    try:
+        health_payload = json.loads(health_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        health_payload = None
+
+    expected_health = runtime.get("expected_health", {})
+    health_matches_expected = isinstance(health_payload, dict) and all(
+        health_payload.get(key) == value for key, value in expected_health.items()
+    )
+    expected_remote = f"https://github.com/{request['repository']}.git"
+    branch_policy = runtime.get("branch_policy", "source_ref")
+    runtime_branch_matches = branch_matches_policy(state["branch"], request["source_ref"], branch_policy)
+
+    evidence = {
+        "listener": listener,
+        "runtime_git": state,
+        "repository_matches": state["remote_origin"] == expected_remote,
+        "requested_source_sha_matches_runtime_head": state["head"] == request["source_sha"],
+        "runtime_branch_policy": branch_policy,
+        "runtime_branch_matches_policy": runtime_branch_matches,
+        "runtime_dirty_state_allowed": not state["unexpected_dirty_paths"],
+        "health_path": health_path,
+        "health_http": health_http,
+        "health_response_sha256": health_digest,
+        "health_matches_expected": health_matches_expected,
+    }
+    accepted = all([
+        evidence["repository_matches"],
+        evidence["requested_source_sha_matches_runtime_head"],
+        evidence["runtime_branch_matches_policy"],
+        evidence["runtime_dirty_state_allowed"],
+        health_http == 200,
+        evidence["health_matches_expected"],
+    ])
+    return evidence, None, accepted, "runtime_repo+service_endpoint"
 
 
 ADAPTERS = {
     "leopardcat_production_parity_inspect": inspect_leopardcat_parity,
+    "repository_service_inspect": inspect_repository_service,
 }
 
 
@@ -218,10 +284,10 @@ def main():
         adapter = ADAPTERS.get(capability.get("adapter"))
         if not adapter:
             fail("capability adapter is not installed")
-        evidence, digest, accepted = adapter(request, capability)
+        evidence, digest, accepted, evidence_level = adapter(request, capability)
         receipt["evidence"] = evidence
         receipt["artifact_digest"] = digest
-        receipt["evidence_level"] = "runtime_repo+deployed_artifact"
+        receipt["evidence_level"] = evidence_level
         receipt["result_status"] = "success" if accepted else "mismatch"
     except Exception as exc:
         receipt["error"] = f"{type(exc).__name__}: {exc}"
