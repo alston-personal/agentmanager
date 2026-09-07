@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,7 +84,30 @@ def resolve_active_continuation(
             f"selector={selector['index_id']}/{selector['ir_id']} "
             f"canonical={index_id}/{ir_id}"
         )
+    latest = read_active_continuation(data_root)
+    if any(latest[key] != selector[key] for key in ("project_id", "index_id", "ir_id")):
+        raise ValueError("active continuation selector changed during resolution")
     return {"selector": selector, "resolution": resolved}
+
+
+def active_continuation_identity(active: dict[str, Any]) -> dict[str, Any]:
+    """Public-safe identity proof, never a working-state or hydration payload."""
+    selector = active["selector"]
+    identity = {}
+    for key in ("project_id", "index_id", "ir_id"):
+        value = selector.get(key)
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value):
+            raise ValueError("continuation identity is not exportable")
+        identity[key] = value
+    return {
+        "schema": "agentos.continuation-identity/v1",
+        "source": "ONE_ACTIVE_CONTINUATION",
+        **identity,
+        "observed_at": _now(),
+        "canonical_ir_included": False,
+        "hydration_complete": False,
+        "credential_exposed": False,
+    }
 
 
 def activate_continuation(

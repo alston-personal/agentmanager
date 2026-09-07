@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -21,6 +22,7 @@ DEFAULT_ISSUE_NUMBER = 50
 DEFAULT_ALLOWED_LOGIN = 'alstonhuang'
 DEFAULT_ONE_URL = 'http://127.0.0.1:8780'
 MAX_COMMAND_LIFETIME_SECONDS = 600
+CONTINUATION_INSPECT_ACTION = 'agentos.continuation.inspect'
 FORBIDDEN_ACTION_PREFIXES = (
     'shell.', 'filesystem.', 'fs.', 'keyboard.', 'mouse.',
     'gui.input', 'desktop.input',
@@ -120,6 +122,8 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
     """Return bounded evidence; drop paths, usernames, titles and raw payloads."""
     if not isinstance(receipt, dict):
         return None
+    if action == CONTINUATION_INSPECT_ACTION:
+        return _continuation_identity(receipt)
     projected: dict[str, Any] = {}
     for key in COMMON_RECEIPT_FIELDS:
         if key in receipt:
@@ -161,6 +165,35 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
             if safe is not None or receipt.get(key) is None:
                 projected[key] = safe
     return projected
+
+
+def _continuation_identity(value: Any) -> dict[str, Any]:
+    """Independent public-mailbox fence; reject malformed proof, drop all extras."""
+    if not isinstance(value, dict) or value.get('schema') != 'agentos.continuation-identity/v1':
+        raise OneControllerError('one_continuation_protocol_error')
+    if (value.get('source') != 'ONE_ACTIVE_CONTINUATION'
+            or any(value.get(key) is not False for key in ('canonical_ir_included', 'hydration_complete', 'credential_exposed'))):
+        raise OneControllerError('one_continuation_protocol_error')
+    result = {}
+    for key in ('project_id', 'index_id', 'ir_id'):
+        item = value.get(key)
+        if not isinstance(item, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', item):
+            raise OneControllerError('one_continuation_protocol_error')
+        result[key] = item
+    observed = value.get('observed_at')
+    if not isinstance(observed, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', observed):
+        raise OneControllerError('one_continuation_protocol_error')
+    try:
+        age = (_utc_now() - _parse_utc(observed)).total_seconds()
+    except ValueError as exc:
+        raise OneControllerError('one_continuation_protocol_error') from exc
+    if not -60 <= age <= 60:
+        raise OneControllerError('one_continuation_stale')
+    return {
+        'schema': 'agentos.continuation-identity/v1', 'source': 'ONE_ACTIVE_CONTINUATION',
+        **result, 'observed_at': observed, 'canonical_ir_included': False,
+        'hydration_complete': False, 'credential_exposed': False,
+    }
 
 
 @dataclass(frozen=True)
@@ -311,6 +344,15 @@ class OneControllerClient:
             raise OneControllerError('one_dispatch_protocol_error')
         return payload
 
+    def inspect_continuation(self) -> dict[str, Any]:
+        # Fixed authenticated read; never request the private full-IR endpoint.
+        status, payload = self._request('GET', '/v1/controller/continuation/active/identity')
+        if status != 200:
+            raise OneControllerError(f'one_continuation_http_{status}')
+        if not isinstance(payload, dict) or payload.get('ok') is not True:
+            raise OneControllerError('one_continuation_protocol_error')
+        return _continuation_identity(payload.get('identity'))
+
     def receipt(self, task_id: str) -> dict[str, Any] | None:
         status, payload = self._request('GET', f'/v1/controller/receipts/{task_id}')
         if status == 404:
@@ -363,6 +405,13 @@ class ControlInboxBridge:
             raise ValueError('missing_command_identity')
         if action not in self.config.allowed_actions or _is_forbidden_action(action):
             raise ValueError('unauthorized_action')
+        if action == CONTINUATION_INSPECT_ACTION:
+            if node_id != 'oracle-core-node':
+                raise ValueError('unsupported_continuation_node')
+            if not isinstance(payload.get('args', {}), dict) or payload.get('args', {}) != {}:
+                raise ValueError('unsupported_continuation_args')
+            if set(payload) - {'schema', 'command_id', 'node_id', 'action', 'args', 'issued_at', 'expires_at'}:
+                raise ValueError('unsupported_continuation_fields')
         if issued_at > now + timedelta(seconds=60):
             raise ValueError('issued_at_in_future')
         if expires_at <= now:
@@ -480,17 +529,21 @@ class ControlInboxBridge:
             self._save_state(state)
 
             try:
-                dispatch = self.one.dispatch(command['node_id'], command)
-                task_id = str(dispatch.get('task_id') or _task_id(command_id))
-                deadline = time.monotonic() + self.config.receipt_wait_seconds
-                receipt = None
-                while time.monotonic() < deadline:
-                    receipt = self.one.receipt(task_id)
-                    if receipt is not None:
-                        break
-                    time.sleep(1)
-                status = 'completed' if receipt is not None else 'queued'
-                result = self._result(command, status=status, task_id=task_id, receipt=receipt)
+                if command['action'] == CONTINUATION_INSPECT_ACTION:
+                    receipt = self.one.inspect_continuation()
+                    result = self._result(command, status='completed', receipt=receipt)
+                else:
+                    dispatch = self.one.dispatch(command['node_id'], command)
+                    task_id = str(dispatch.get('task_id') or _task_id(command_id))
+                    deadline = time.monotonic() + self.config.receipt_wait_seconds
+                    receipt = None
+                    while time.monotonic() < deadline:
+                        receipt = self.one.receipt(task_id)
+                        if receipt is not None:
+                            break
+                        time.sleep(1)
+                    status = 'completed' if receipt is not None else 'queued'
+                    result = self._result(command, status=status, task_id=task_id, receipt=receipt)
             except OneControllerError as exc:
                 result = self._result(command, status='error', error=str(exc))
             except Exception:

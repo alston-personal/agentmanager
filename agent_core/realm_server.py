@@ -19,6 +19,7 @@ from agent_core.node_bootstrap import bootstrap_snapshot, record_join_regression
 from agent_core.node_registry import NodeRegistry
 from agent_core.realm_fabric import RealmFabricStore
 from agent_core.resolve_facade import resolve_continuation
+from agent_core.active_continuation import resolve_active_continuation, active_continuation_identity
 from agent_core.runtime_converge_capability import installed_core_capabilities
 
 
@@ -155,6 +156,35 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == '/v1/controller/realm':
                 self._authorize_controller()
                 self._send(200, {'ok': True, 'realm': self.controller.realm()})
+                return
+            if parsed.path in ('/v1/controller/continuation/active', '/v1/controller/continuation/active/identity'):
+                self._authorize_controller()
+                # The caller cannot choose a workspace, path or another selector.
+                if parsed.query:
+                    self._send(400, {'ok': False, 'error': 'unsupported_continuation_query'})
+                    return
+                try:
+                    active = resolve_active_continuation()
+                    identity = active_continuation_identity(active)
+                    if parsed.path.endswith('/identity'):
+                        self._send(200, {'ok': True, 'identity': identity})
+                    else:
+                        # Reuse the existing credential-isolated executor projection.
+                        from agentos_node.one_mcp import _project_resolve
+                        resolution = _project_resolve(active['resolution'])
+                        original_ir = active['resolution'].get('continuation', {}).get('canonical_ir')
+                        if not isinstance(original_ir, dict) or resolution['continuation']['canonical_ir'] != original_ir:
+                            raise ValueError('canonical IR cannot be projected losslessly')
+                        self._send(200, {
+                            'ok': True, 'schema': 'agentos.one-active-resolve/v1',
+                            'source': 'ONE_ACTIVE_CONTINUATION',
+                            'selector': {key: identity[key] for key in ('project_id', 'index_id', 'ir_id')},
+                            'resolution': resolution,
+                            'credential_exposed': False,
+                        })
+                except Exception:
+                    # No paths, private IR or resolver exception text on failure.
+                    self._send(409, {'ok': False, 'error': 'ONE_IR_HEAD_UNRESOLVED'})
                 return
             if parsed.path == '/v1/controller/nodes':
                 self._authorize_controller()
