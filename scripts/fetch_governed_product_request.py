@@ -51,8 +51,8 @@ def fetch_product_request(project_id, registry):
         fail("product request is missing at the governed path")
     try:
         request = json.loads(show.stdout)
-    except json.JSONDecodeError as exc:
-        fail("product request is not valid JSON") from exc
+    except json.JSONDecodeError:
+        fail("product request is not valid JSON")
 
     resolved_project, _ = resolve_authority(request, registry)
     if request.get("project_id") != project_id:
