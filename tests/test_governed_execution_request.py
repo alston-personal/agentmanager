@@ -95,3 +95,10 @@ def test_registry_contains_no_generic_shell_adapter():
     assert '"shell"' not in text
     assert '"argv"' not in text
     assert '"executable"' not in text
+
+
+if __name__ == "__main__":
+    tests = [value for name, value in sorted(globals().items()) if name.startswith("test_") and callable(value)]
+    for test in tests:
+        test()
+    print(f"governed_execution_contract_tests=PASS count={len(tests)}")
