@@ -33,11 +33,11 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch product-owned request candidate
+      - name: Fetch canonical product-owned request
         run: |
           set -euo pipefail
           curl -fsSL --max-time 15 \
-            https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/ops/agentos-execution-request-v1/.agentos/execution-requests/production-parity.json \
+            https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/main/.agentos/execution-requests/production-parity.json \
             -o /tmp/leopardcat-production-parity.json
       - name: Execute bounded product request
         run: |
