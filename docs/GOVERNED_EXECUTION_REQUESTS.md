@@ -4,11 +4,19 @@ Core #165 introduces a narrow boundary between product-owned intent and Core-own
 
 ## Authority flow
 
-`product manifest -> Project Identity/release-lane registry -> capability adapter -> Oracle execution -> sanitized receipt`
+`product manifest -> governed product-source fetch -> Project Identity/release-lane registry -> capability adapter -> Oracle execution -> sanitized receipt`
 
 The product manifest is data, not executable content. `agentos.execution-request/v1` carries the project, canonical repository, exact 40-character source SHA, source ref, environment, capability, typed parameters, replay policy, and expected receipt contract.
 
-Core is authoritative for the project/repository mapping, allowed release lane, capability-to-project mapping, exact parameter values, runtime path, health/public endpoint, and installed adapter. A request cannot create a new capability or change those values.
+Core is authoritative for the project/repository mapping, allowed release lane, product request path/source, capability-to-project mapping, exact parameter values, runtime path, health/public endpoint, and installed adapter. A request cannot create a new capability or change those values.
+
+## Product request acquisition
+
+Public GitHub URLs are not the authority boundary because private product repositories cannot be read with an unrelated repository-scoped `GITHUB_TOKEN`. The clean path therefore fetches request data through the product's already-enrolled Oracle-local repository.
+
+`fetch_governed_product_request.py` accepts only a `project_id`. The registry fixes the product repo root, release ref, and request path. The fetch performs `git fetch` plus `git show` against that fixed local repo; it does not checkout or mutate the production working tree. The fetched JSON must still pass the same Project Identity, release-lane, capability and typed-parameter checks before execution. Git fetch stderr/stdout is deliberately not echoed on failure so a credential-bearing remote cannot leak through CI logs.
+
+This gives public and private products the same request path without copying cross-repository GitHub credentials into Core workflows.
 
 ## Security invariants
 
@@ -18,12 +26,12 @@ Core is authoritative for the project/repository mapping, allowed release lane, 
 - HTTP(S) remote userinfo is stripped before it can enter receipts.
 - Provider/Oracle credentials remain at the privileged execution boundary and are never returned in receipts.
 - Read-only inspection is explicitly idempotent. Mutating adapters must define stronger replay/idempotency semantics before they can be registered.
-- Product-specific source/build/deploy logic remains in the product repository. Core contains only the generic dispatcher, authority registry, and bounded capability adapters.
+- Product-specific source/build/deploy logic remains in the product repository. Core contains only the generic dispatcher, authority registry, governed request fetcher, and bounded capability adapters.
 - Runtime branch policy is registry-owned. A product request cannot relax `source_ref` matching or opt into detached-HEAD acceptance.
 
 ## Receipt persistence
 
-The clean smoke keeps repository permissions read-only and persists sanitized execution receipts as GitHub Actions artifacts for 30 days. This preserves independent evidence without granting the Oracle job contents-write authority or committing runtime evidence back into Core history.
+The clean smoke keeps Core repository permissions read-only and persists sanitized execution receipts as GitHub Actions artifacts for 30 days. This preserves independent evidence without granting the Oracle job contents-write authority or committing runtime evidence back into Core history.
 
 A receipt records the request/project/repository/source/capability/environment identity, executor identity, exact runtime HEAD, sanitized remote, dirty-state result, endpoint/artifact evidence, and final status. It must never contain provider tokens, Oracle credentials, authorization codes, credential-bearing URLs, arbitrary command material, or secret values.
 
