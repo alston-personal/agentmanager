@@ -40,6 +40,7 @@ jobs:
             https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/main/.agentos/execution-requests/production-parity.json \
             -o /tmp/leopardcat-production-parity.json
       - name: Execute bounded product request
+        id: execute
         run: |
           set +e
           python3 scripts/run_governed_execution_request.py \
@@ -47,4 +48,16 @@ jobs:
             /tmp/leopardcat-production-parity-receipt.json
           code=$?
           cat /tmp/leopardcat-production-parity-receipt.json
-          exit "$code"
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist sanitized receipt artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leopardcat-production-parity-receipt
+          path: /tmp/leopardcat-production-parity-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce execution result
+        if: always()
+        run: test "${{ steps.execute.outputs.exit_code }}" = "0"
