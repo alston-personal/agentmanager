@@ -1,0 +1,74 @@
+name: Core 288 LeopardCat Governed Reconcile
+
+on:
+  push:
+    branches:
+      - core/issue-288-leopardcat-reconcile
+    paths:
+      - 'governance/execution-authority.json'
+      - 'scripts/reconcile_leopardcat_frontend.py'
+      - 'scripts/reconcile_leopardcat_frontend_enrolled.py'
+      - '.github/workflows/core-issue-288-leopardcat-reconcile.yml'
+  pull_request:
+    paths:
+      - 'governance/execution-authority.json'
+      - 'scripts/reconcile_leopardcat_frontend.py'
+      - 'scripts/reconcile_leopardcat_frontend_enrolled.py'
+      - '.github/workflows/core-issue-288-leopardcat-reconcile.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-288-leopardcat-reconcile
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded reconcile source
+        run: |
+          python3 -m py_compile scripts/run_governed_execution_request.py scripts/reconcile_leopardcat_frontend.py scripts/reconcile_leopardcat_frontend_enrolled.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('governance/execution-authority.json').read_text())
+          p=r['projects']['leopardcat-tarot']
+          c=r['capabilities']['leopardcat.production.frontend.reconcile']
+          assert c['replay_policy']=='convergent-idempotent'
+          assert c['parameters']=={'listen_port':8088}
+          assert 'execution_user' not in p['request_source']
+          assert 'execution_user' not in c['runtime']
+          assert p['reconcile_request_path']=='.agentos/execution-requests/production-reconcile.json'
+          print('core288_contract=PASS')
+          PY
+
+  reconcile:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Execute governed exact-SHA frontend reconcile
+        id: reconcile
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/reconcile_leopardcat_frontend_enrolled.py \
+            governance/execution-authority.json \
+            /tmp/leopardcat-production-reconcile-receipt.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Persist sanitized reconcile receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leopardcat-production-reconcile-receipt
+          path: /tmp/leopardcat-production-reconcile-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce reconcile result
+        if: always()
+        run: test "${{ steps.reconcile.outputs.exit_code }}" = "0"
