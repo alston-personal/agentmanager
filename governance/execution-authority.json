@@ -7,7 +7,8 @@
       "allowed_source_refs": ["main"],
       "request_source": {
         "repo_root": "/home/ubuntu/leopardcat-tarot",
-        "source_ref": "main"
+        "source_ref": "main",
+        "execution_user": "ubuntu"
       }
     },
     "vendor-reputation-service": {
@@ -16,7 +17,8 @@
       "allowed_source_refs": ["main"],
       "request_source": {
         "repo_root": "/home/ubuntu/vendor-reputation-service",
-        "source_ref": "main"
+        "source_ref": "main",
+        "execution_user": "ubuntu"
       }
     }
   },
