@@ -8,8 +8,7 @@
       "allowed_source_refs": ["main"],
       "request_source": {
         "repo_root": "/home/ubuntu/leopardcat-tarot",
-        "source_ref": "main",
-        "execution_user": "ubuntu"
+        "source_ref": "main"
       }
     },
     "vendor-reputation-service": {
@@ -48,7 +47,6 @@
       "runtime": {
         "repo_root": "/home/ubuntu/leopardcat-tarot",
         "public_origin": "https://leopardcat-tarot.milkcat.org",
-        "execution_user": "ubuntu",
         "build_root": "website",
         "dist_path": "website/dist",
         "preserve_paths": ["website/stats.json"],
