@@ -8,6 +8,7 @@ on:
     paths:
       - 'governance/execution-authority.json'
       - 'scripts/run_governed_execution_request.py'
+      - 'scripts/fetch_governed_product_request.py'
       - 'tests/test_governed_execution_request.py'
       - 'docs/GOVERNED_EXECUTION_REQUESTS.md'
       - '.github/workflows/core-issue-165-clean-smoke.yml'
@@ -27,18 +28,17 @@ jobs:
       - name: Validate bounded contract
         run: |
           python3 tests/test_governed_execution_request.py
-          python3 -m py_compile scripts/run_governed_execution_request.py
+          python3 -m py_compile scripts/run_governed_execution_request.py scripts/fetch_governed_product_request.py
 
   leopardcat-owned-smoke:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch canonical LeopardCat request
+      - name: Fetch canonical LeopardCat request through governed product source
         run: |
-          set -euo pipefail
-          curl -fsSL --max-time 15 \
-            https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/main/.agentos/execution-requests/production-parity.json \
-            -o /tmp/leopardcat-production-parity.json
+          python3 scripts/fetch_governed_product_request.py \
+            leopardcat-tarot \
+            /tmp/leopardcat-production-parity.json
       - name: Execute bounded LeopardCat request
         id: execute
         run: |
@@ -66,12 +66,11 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch canonical Vendor request
+      - name: Fetch canonical Vendor request through governed product source
         run: |
-          set -euo pipefail
-          curl -fsSL --max-time 15 \
-            https://raw.githubusercontent.com/alston-personal/vendor-reputation-service/main/.agentos/execution-requests/production-runtime.json \
-            -o /tmp/vendor-production-runtime.json
+          python3 scripts/fetch_governed_product_request.py \
+            vendor-reputation-service \
+            /tmp/vendor-production-runtime.json
       - name: Execute bounded Vendor request
         id: execute
         run: |
