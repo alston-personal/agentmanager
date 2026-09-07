@@ -20,11 +20,28 @@ def fail(message):
 
 def run_git(repo_root, *args):
     return subprocess.run(
-        ["git", "-C", repo_root, *args],
+        ["git", "-c", f"safe.directory={repo_root}", "-C", repo_root, *args],
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def classify_git_failure(proc):
+    text = f"{proc.stderr or ''}\n{proc.stdout or ''}".lower()
+    if "dubious ownership" in text or "safe.directory" in text:
+        return "safe-directory"
+    if "permission denied" in text:
+        return "filesystem-or-transport-permission"
+    if "authentication failed" in text or "could not read username" in text or "terminal prompts disabled" in text:
+        return "remote-authentication"
+    if "repository not found" in text:
+        return "remote-repository-unavailable"
+    if "not a git repository" in text:
+        return "local-repository-unavailable"
+    if "could not resolve host" in text or "failed to connect" in text:
+        return "network-unavailable"
+    return "unclassified"
 
 
 def fetch_product_request(project_id, registry):
@@ -44,11 +61,11 @@ def fetch_product_request(project_id, registry):
 
     fetch = run_git(repo_root, "fetch", "--depth=1", "origin", source_ref)
     if fetch.returncode:
-        # Do not echo git stderr/stdout: a misconfigured remote may contain credentials.
-        fail("product repository fetch failed")
+        # Never echo raw git output; it can contain a credential-bearing remote.
+        fail(f"product repository fetch failed [{classify_git_failure(fetch)}]")
     show = run_git(repo_root, "show", f"FETCH_HEAD:{request_path}")
     if show.returncode:
-        fail("product request is missing at the governed path")
+        fail(f"product request is missing at the governed path [{classify_git_failure(show)}]")
     try:
         request = json.loads(show.stdout)
     except json.JSONDecodeError:
