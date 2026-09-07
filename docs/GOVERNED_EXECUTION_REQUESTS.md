@@ -20,6 +20,12 @@ Core is authoritative for the project/repository mapping, allowed release lane, 
 - Read-only parity inspection is explicitly idempotent. Mutating adapters must define stronger replay/idempotency semantics before they can be registered.
 - Product-specific source/build/deploy logic remains in the product repository. Core contains only the generic dispatcher, authority registry, and bounded capability adapters.
 
+## Receipt persistence
+
+The clean smoke keeps repository permissions read-only and persists the sanitized execution receipt as a GitHub Actions artifact for 30 days. This preserves independent evidence without granting the Oracle job contents-write authority or committing runtime evidence back into Core history.
+
+A receipt records the request/project/repository/source/capability/environment identity, executor identity, exact runtime HEAD, sanitized remote, dirty-state result, HTTP results, artifact digests, and final status. It must never contain provider tokens, Oracle credentials, authorization codes, credential-bearing URLs, arbitrary command material, or secret values.
+
 ## First consumer
 
 Leopard Cat Tarot owns `.agentos/execution-requests/production-parity.json`. Core resolves that request against `governance/execution-authority.json` and invokes only `leopardcat_production_parity_inspect` on the Oracle runner.
