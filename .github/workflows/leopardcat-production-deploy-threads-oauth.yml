@@ -31,15 +31,15 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=d31da10fa5747901b9ba9413a858c3ac624251c2
-          TARGET=5088eaa94e9604643fc431c64bfb94a3020ad3a8
+          OLD=5088eaa94e9604643fc431c64bfb94a3020ad3a8
+          TARGET=faf0ae71e171f65502a466f6b671667417f8b9ec
           PUBLIC=https://leopardcat-tarot.milkcat.org
 
           test -d "$ROOT/.git"
           test "$(git -C "$ROOT" branch --show-current)" = main
           HEAD=$(git -C "$ROOT" rev-parse HEAD)
           echo "head_before=$HEAD"
-          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+          test "$HEAD" = "$OLD" -o "$HEAD" = "00065fadd0f5a80a43d1fd0e2848e4ebb23b1010" -o "$HEAD" = "$TARGET"
 
           mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
           for f in "${DIRTY[@]:-}"; do
