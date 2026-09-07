@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from agent_core.capability_attestation import (
+    derive_visual_loop_attestation,
+    effective_capability_attestation,
+    validate_capability_attestation,
+)
 from agent_core.runtime_ota import RuntimeOTAPolicyStore
 
 
@@ -23,6 +28,14 @@ def _parse_utc(value: str | None) -> datetime | None:
         return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
     except ValueError:
         return None
+
+
+def _attestation_storage_key(attestation: dict[str, Any]) -> str:
+    return '::'.join((
+        str(attestation.get('capability_id') or ''),
+        str(attestation.get('provider_id') or ''),
+        str(attestation.get('executor_id') or ''),
+    ))
 
 
 class NodeRegistry:
@@ -129,7 +142,9 @@ class NodeRegistry:
             'hostname': manifest.get('hostname'),
             'platform': manifest.get('platform'),
             'platform_release': manifest.get('platform_release'),
+            # `capabilities` remains the v0.1 advertised manifest projection for compatibility.
             'capabilities': sorted(set(manifest.get('capabilities') or [])),
+            'capability_attestations': dict(existing.get('capability_attestations') or {}),
             'tool_presence': dict(manifest.get('tool_presence') or {}),
             'surface_inventory': dict(inventory),
             'runtime': dict(runtime) if isinstance(runtime, dict) else dict(existing.get('runtime') or {}),
@@ -180,6 +195,24 @@ class NodeRegistry:
 
         return self._mutate(mutate)
 
+    def record_capability_attestation(self, attestation: dict[str, Any]) -> dict[str, Any]:
+        snapshot = validate_capability_attestation(attestation)
+        node_id = str(snapshot['node_id'])
+        snapshot['recorded_at'] = _utc_now()
+        storage_key = _attestation_storage_key(snapshot)
+
+        def mutate(data: dict[str, Any]) -> dict[str, Any]:
+            if node_id not in data['nodes']:
+                raise KeyError(node_id)
+            entry = data['nodes'][node_id]
+            current = dict(entry.get('capability_attestations') or {})
+            current[storage_key] = snapshot
+            entry['capability_attestations'] = current
+            data['nodes'][node_id] = entry
+            return snapshot
+
+        return self._mutate(mutate)
+
     def record_benchmark(self, node_id: str, report: dict[str, Any]) -> dict[str, Any]:
         if report.get('schema') != 'agentos.one-uplift-report/v0.1':
             raise ValueError('invalid ONE uplift report')
@@ -211,7 +244,40 @@ class NodeRegistry:
             result['status_reason'] = 'heartbeat_stale'
         else:
             result['status'] = reported
+
+        result['advertised_capabilities'] = list(result.get('capabilities') or [])
+        stored_attestations = list((node.get('capability_attestations') or {}).values())
+        effective_attestations = [effective_capability_attestation(item) for item in stored_attestations]
+
+        if result.get('status') != 'online':
+            for attestation in effective_attestations:
+                if attestation.get('verification_state') == 'verified':
+                    attestation['verification_state'] = 'unknown'
+                    attestation['verification_reason'] = 'node_not_online'
+
+        visual_loop = derive_visual_loop_attestation(effective_attestations)
+        if result.get('status') != 'online' and visual_loop.get('verification_state') == 'verified':
+            visual_loop['verification_state'] = 'unknown'
+            visual_loop['verification_reason'] = 'node_not_online'
+
+        result['capability_attestations'] = effective_attestations
+        result['derived_capability_attestations'] = [visual_loop]
+        verified = {
+            str(item.get('capability_id'))
+            for item in effective_attestations
+            if item.get('verification_state') == 'verified'
+        }
+        if visual_loop.get('verification_state') == 'verified':
+            verified.add(str(visual_loop['capability_id']))
+        result['verified_capabilities'] = sorted(verified)
         return RuntimeOTAPolicyStore.annotate_node(result, self.ota_policy.load())
+
+    def has_verified_capability(self, node_id: str, capability_id: str) -> bool:
+        for node in self.node_map()['nodes']:
+            if node.get('node_id') != node_id:
+                continue
+            return node.get('status') == 'online' and capability_id in node.get('verified_capabilities', [])
+        return False
 
     def node_map(self) -> dict[str, Any]:
         data = self.load()
@@ -219,6 +285,12 @@ class NodeRegistry:
         nodes = [self._effective_node(node) for node in data['nodes'].values()]
         nodes.sort(key=lambda n: (n.get('role') != 'core', n.get('node_id', '')))
         realm_caps = sorted({cap for node in nodes for cap in node.get('capabilities', []) if node.get('status') != 'offline'})
+        realm_verified_caps = sorted({
+            cap
+            for node in nodes
+            if node.get('status') == 'online'
+            for cap in node.get('verified_capabilities', [])
+        })
         tools = sorted({tool for node in nodes for tool in node.get('tool_presence', {}) if node.get('status') != 'offline'})
         surface_providers = sorted({
             str(surface.get('provider'))
@@ -233,7 +305,10 @@ class NodeRegistry:
             'node_count': len(nodes),
             'online_node_count': sum(1 for node in nodes if node.get('status') == 'online'),
             'nodes': nodes,
+            # Keep the v0.1 field stable and make its advertised semantics explicit in parallel.
             'realm_capabilities': realm_caps,
+            'realm_advertised_capabilities': realm_caps,
+            'realm_verified_capabilities': realm_verified_caps,
             'realm_tool_presence': tools,
             'realm_surface_providers': surface_providers,
             'runtime_ota': policy,
