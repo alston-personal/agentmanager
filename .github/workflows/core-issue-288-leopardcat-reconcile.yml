@@ -7,11 +7,13 @@ on:
     paths:
       - 'governance/execution-authority.json'
       - 'scripts/reconcile_leopardcat_frontend.py'
+      - 'scripts/reconcile_leopardcat_frontend_enrolled.py'
       - '.github/workflows/core-issue-288-leopardcat-reconcile.yml'
   pull_request:
     paths:
       - 'governance/execution-authority.json'
       - 'scripts/reconcile_leopardcat_frontend.py'
+      - 'scripts/reconcile_leopardcat_frontend_enrolled.py'
       - '.github/workflows/core-issue-288-leopardcat-reconcile.yml'
 
 permissions:
@@ -28,16 +30,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate bounded reconcile source
         run: |
-          python3 -m py_compile scripts/run_governed_execution_request.py scripts/reconcile_leopardcat_frontend.py
+          python3 -m py_compile scripts/run_governed_execution_request.py scripts/reconcile_leopardcat_frontend.py scripts/reconcile_leopardcat_frontend_enrolled.py
           python3 - <<'PY'
           import json
           from pathlib import Path
           r=json.loads(Path('governance/execution-authority.json').read_text())
+          p=r['projects']['leopardcat-tarot']
           c=r['capabilities']['leopardcat.production.frontend.reconcile']
           assert c['replay_policy']=='convergent-idempotent'
           assert c['parameters']=={'listen_port':8088}
-          assert c['runtime']['execution_user']=='ubuntu'
-          assert r['projects']['leopardcat-tarot']['reconcile_request_path']=='.agentos/execution-requests/production-reconcile.json'
+          assert 'execution_user' not in p['request_source']
+          assert 'execution_user' not in c['runtime']
+          assert p['reconcile_request_path']=='.agentos/execution-requests/production-reconcile.json'
           print('core288_contract=PASS')
           PY
 
@@ -51,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python3 scripts/reconcile_leopardcat_frontend.py \
+          python3 scripts/reconcile_leopardcat_frontend_enrolled.py \
             governance/execution-authority.json \
             /tmp/leopardcat-production-reconcile-receipt.json
           code=$?
