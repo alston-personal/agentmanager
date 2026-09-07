@@ -1,0 +1,50 @@
+name: Core 165 Clean Governed Execution Smoke
+
+on:
+  push:
+    branches:
+      - core/issue-165-clean-execution-v1
+  pull_request:
+    paths:
+      - 'governance/execution-authority.json'
+      - 'scripts/run_governed_execution_request.py'
+      - 'tests/test_governed_execution_request.py'
+      - 'docs/GOVERNED_EXECUTION_REQUESTS.md'
+      - '.github/workflows/core-issue-165-clean-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-165-clean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded contract
+        run: |
+          python3 -m pytest -q tests/test_governed_execution_request.py
+          python3 -m py_compile scripts/run_governed_execution_request.py
+
+  product-owned-smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch product-owned request candidate
+        run: |
+          set -euo pipefail
+          curl -fsSL --max-time 15 \
+            https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/ops/agentos-execution-request-v1/.agentos/execution-requests/production-parity.json \
+            -o /tmp/leopardcat-production-parity.json
+      - name: Execute bounded product request
+        run: |
+          set +e
+          python3 scripts/run_governed_execution_request.py \
+            /tmp/leopardcat-production-parity.json \
+            /tmp/leopardcat-production-parity-receipt.json
+          code=$?
+          cat /tmp/leopardcat-production-parity-receipt.json
+          exit "$code"
