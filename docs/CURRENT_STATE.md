@@ -6,6 +6,9 @@
 
 This document is intentionally evidence-bound. A source merge proves implementation, not live operation. A live receipt proves only the exact generation, route, capability, executor, and effect that the receipt attests.
 
+Status terms: **Implemented** requires source; **Verified** requires the stated
+acceptance evidence; **Research** remains an unproven broader claim.
+
 ## Product goal
 
 AgentOS should let a user change conversation, model, executor, extension, Node, or machine without reconstructing the project from conversation history. Durable project state, accepted experience, authority, execution state, and evidence live outside model-local context. Models and IDE extensions are replaceable execution surfaces.
@@ -37,6 +40,7 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Bounded executor jobs through ONE | Implemented slices | declarative fixed job types route through ONE → bounded Action Relay → sanitized durable receipt; no generic remote shell |
 | Canonical continuation IR | Implemented + verified concrete cross-extension slices | `agentos.ir/v1`, parent-fenced publication, active continuation selector; Gemini/Codex continuity has concrete accepted evidence, but arbitrary portability remains unproven |
 | Active continuation selector | Implemented | pointer stores project/index/IR identity only; it is not another state store and must fail closed on stale references |
+| ChatGPT active continuation read (#179) | Source candidate; live acceptance pending | Private controller-authenticated active resolve plus identity-only Control Inbox inspection; selector changes fail closed. Public identity receipts explicitly do not hydrate IR. Governed deployment, host allowlist and private ChatGPT adapter acceptance remain required. See `docs/CHATGPT_ONE_TRANSPORT.md`. |
 | Experience subsystem v0 prose design | Deprecated | PR #119 direction is superseded; do not merge wholesale |
 | Semantic Experience IR v1 | Active candidate under #117 | current focused design is `agentos.experience/v1` carrying `agentos.experience-ir/v1`, typed semantic nodes, stable digests, extraction validation, ONE-owned Experience Set, semantic hydration receipts; PR #229 remains unmerged as of this snapshot |
 | Master Experience Floor | Strong live evidence, issue still open | observed governed A/B reached baseline 6/7 → prehydrated 7/7; ceiling-aware criterion is the current candidate logic, but #117 remains open and canonical Experience IR integration/ablation evidence is not yet fully accepted |

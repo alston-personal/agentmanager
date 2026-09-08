@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from agent_core.control_inbox_bridge import (
+    CONTINUATION_INSPECT_ACTION,
     BridgeConfig,
     ControlInboxBridge,
     OneControllerClient,
@@ -340,3 +341,82 @@ def test_action_not_in_local_allowlist_is_rejected(tmp_path: Path):
     assert one.dispatched == []
     assert github.results[0]['status'] == 'rejected'
     assert github.results[0]['error'] == 'unauthorized_action'
+
+
+def _identity():
+    return {
+        'schema': 'agentos.continuation-identity/v1', 'source': 'ONE_ACTIVE_CONTINUATION',
+        'project_id': 'agentos-core', 'index_id': 'idx-1', 'ir_id': 'ir-1',
+        'observed_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'canonical_ir_included': False, 'hydration_complete': False, 'credential_exposed': False,
+    }
+
+
+class IdentityOne(FakeOne):
+    def __init__(self):
+        super().__init__()
+        self.reads = 0
+
+    def inspect_continuation(self):
+        self.reads += 1
+        return {**_identity(), 'canonical_ir': {'goal': 'PRIVATE'}, 'token': 'PRIVATE'}
+
+
+def test_identity_read_never_dispatches_and_deduplicates_across_restart(tmp_path):
+    command = _command(action=CONTINUATION_INSPECT_ACTION)
+    command['node_id'] = 'oracle-core-node'
+    github = FakeGitHub([_comment(201, command)])
+    one = IdentityOne()
+    config = _config(tmp_path, actions={CONTINUATION_INSPECT_ACTION})
+    assert ControlInboxBridge(config, github=github, one=one).process_once() == 1
+    assert ControlInboxBridge(config, github=github, one=one).process_once() == 0
+    assert one.reads == 1
+    assert one.dispatched == []
+    assert github.results[0]['receipt']['hydration_complete'] is False
+    assert 'PRIVATE' not in json.dumps(github.results)
+    assert 'PRIVATE' not in config.state_path.read_text()
+
+
+@pytest.mark.parametrize('change', [
+    {'args': {'url': 'https://other.invalid'}}, {'args': {'project': 'other'}},
+    {'args': []}, {'args': None}, {'node_id': 'node-a'}, {'path': '/private'},
+    {'args': {'action': 'shell.exec'}},
+])
+def test_identity_read_rejects_caller_routing_and_payload(tmp_path, change):
+    command = {**_command(action=CONTINUATION_INSPECT_ACTION), 'node_id': 'oracle-core-node', **change}
+    github = FakeGitHub([_comment(202, command)])
+    one = IdentityOne()
+    ControlInboxBridge(_config(tmp_path, actions={CONTINUATION_INSPECT_ACTION}), github=github, one=one).process_once()
+    assert github.results[0]['status'] == 'rejected'
+    assert one.reads == 0 and one.dispatched == []
+
+
+@pytest.mark.parametrize('change', [
+    {'schema': 'wrong'}, {'source': 'LOCAL_HISTORY'}, {'credential_exposed': True},
+    {'canonical_ir_included': True}, {'hydration_complete': True},
+    {'ir_id': '/home/private'}, {'index_id': 'x' * 129}, {'project_id': None},
+    {'observed_at': '2020-01-01T00:00:00Z'}, {'observed_at': '2026-99-99T00:00:00Z'},
+])
+def test_identity_client_rejects_malformed_or_stale_evidence(change):
+    client = StubOneControllerClient(200, {'ok': True, 'identity': {**_identity(), **change}})
+    with pytest.raises(OneControllerError):
+        client.inspect_continuation()
+
+
+def test_identity_client_uses_only_fixed_metadata_endpoint():
+    client = StubOneControllerClient(200, {'ok': True, 'identity': _identity(), 'resolution': 'PRIVATE'})
+    calls = []
+    def request(method, path, payload=None):
+        calls.append((method, path, payload))
+        return client.status, client.payload
+    client._request = request
+    result = client.inspect_continuation()
+    assert calls == [('GET', '/v1/controller/continuation/active/identity', None)]
+    assert 'PRIVATE' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('status', [401, 404, 409, 500])
+def test_identity_read_errors_do_not_leak_or_fall_back(status):
+    client = StubOneControllerClient(status, {'debug': 'PRIVATE'})
+    with pytest.raises(OneControllerError, match=f'^one_continuation_http_{status}$'):
+        client.inspect_continuation()

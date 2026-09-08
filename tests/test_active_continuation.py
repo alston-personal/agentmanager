@@ -117,6 +117,15 @@ class ActiveContinuationTests(unittest.TestCase):
             self.assertEqual(result["selector"]["project_id"], "agentos-core")
             self.assertIs(result["resolution"], resolved)
 
+    def test_selector_change_during_resolution_fails_closed(self):
+        first = {"project_id": "agentos-core", "index_id": "idx-1", "ir_id": "ir-1"}
+        second = {**first, "ir_id": "ir-2"}
+        with mock.patch.object(active_continuation, "read_active_continuation", side_effect=[first, second]), mock.patch.object(
+            active_continuation, "resolve_continuation", return_value=self._resolved()
+        ):
+            with self.assertRaisesRegex(ValueError, "changed during resolution"):
+                active_continuation.resolve_active_continuation()
+
 
 if __name__ == "__main__":
     unittest.main()

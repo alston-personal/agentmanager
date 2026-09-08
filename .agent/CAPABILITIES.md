@@ -52,6 +52,14 @@ AgentOS now treats reusable work as a capability, not a project-specific side ef
 | **Video Indexing Hub** | `video-indexing` | 🧠 Proposed | Central visual indexing, transcript grounding, and scene-map artifact producer for all video-aware projects. |
 
 ### Governance Capability
+
+ONE active continuation read candidate (#179): existing provider
+`agent_core.active_continuation` via the authenticated Realm controller API.
+`agentos.continuation.inspect` is an optional identity-only Control Inbox read,
+not a hydration or execution capability. Source tests do not establish live
+availability; acceptance and private/public boundaries are documented in
+`docs/CHATGPT_ONE_TRANSPORT.md`.
+
 | Capability | Provider | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | **Spec Stewardship** | `scripts/spec_steward.py` | ✅ 現行 | Scans specs, project declarations, and STATUS files to surface drift, stale specs, and missing ownership. |

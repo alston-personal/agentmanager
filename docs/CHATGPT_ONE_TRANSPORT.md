@@ -62,6 +62,50 @@ The policy requires deterministic routing for the same typed intent and availabi
 
 ## Acceptance boundary
 
+### Active continuation read candidate (#179)
+
+Owner: AgentOS Core / ONE continuation and transport boundaries. This candidate
+closes the missing read route; it is not a live ChatGPT hydration acceptance.
+
+- `GET /v1/controller/continuation/active`: controller-authenticated private
+  executor projection of the existing ONE active selector and resolved Canonical
+  IR. It reuses the existing executor-safe projection and refuses a response if
+  that projection would truncate or redact the Canonical IR. It never selects
+  work from a workspace or caller-supplied project/path.
+- `GET /v1/controller/continuation/active/identity`: same authentication and
+  generation validation, returning only bounded project/index/IR identifiers,
+  observation time, and explicit `canonical_ir_included=false`,
+  `hydration_complete=false`, `credential_exposed=false` flags.
+- Both reject query overrides. Missing, stale, malformed or changing active
+  state fails closed with `ONE_IR_HEAD_UNRESOLVED`; no raw error detail is returned.
+- The public bootstrap command `agentos.continuation.inspect` uses only the
+  identity endpoint. Its envelope retains `agentos.control-command/v0.1`, short
+  expiry, trusted author and command deduplication. The current Oracle bootstrap
+  scope requires `node_id=oracle-core-node` and empty `args`. No URL, path,
+  project override or arbitrary action is accepted. The bridge independently
+  validates the identity response, including observation freshness, and drops
+  all extra response fields before storing or posting it.
+
+The command remains disabled unless explicitly added to the host-local
+`AGENTOS_CONTROL_ALLOWED_ACTIONS` during governed installation. Code presence
+does not change the live allowlist. No Node task, shell or Actions job is used.
+
+The private endpoint must be consumed by a trusted private adapter that retains
+the controller credential outside model context. Never publish its response in
+Issue #50, an artifact, a repository or client configuration. The identity-only
+receipt is an observation, not Canonical IR and not execution authority. Old
+receipts cannot establish the current active generation. Full continuation still
+requires a fresh private read; no working state may be reconstructed from the
+identity receipt or chat history.
+
+Closure: accept the source through `core/integration`, deploy the exact accepted
+generation through governed runtime authority, enable only the bounded inspect
+action, and prove a fresh public identity read plus a private adapter read bind
+the same generation. Exercise stale/changed-head refusal on a disposable
+acceptance fixture. Until the private adapter is available in ChatGPT, report
+hydration as unresolved even if the public inspect command succeeds. Neither
+deployment nor capability availability grants protected-main publication.
+
 The static resolver/tests prove the no-fallback authority rule, but they do not alone prove ChatGPT Web transport transparency.
 
 Core #179 remains incomplete until a fresh ChatGPT conversation demonstrates a Realm/Node control-plane request resolving through Control Inbox/ONE with no Actions workflow invocation. A later AgentOS MCP/App may replace Control Inbox after equivalent acceptance evidence exists.

@@ -6,6 +6,10 @@ on:
       - core/integration
     paths:
       - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/active_continuation.py'
+      - 'agent_core/realm_server.py'
+      - 'tests/test_active_continuation.py'
+      - 'tests/test_realm_resolve_endpoint.py'
       - 'tests/test_control_inbox_bridge.py'
       - '.agent/scripts/agentos-control-inbox-bridge.service'
       - 'config/control-inbox.env.example'
@@ -17,6 +21,10 @@ on:
       - core/integration
     paths:
       - 'agent_core/control_inbox_bridge.py'
+      - 'agent_core/active_continuation.py'
+      - 'agent_core/realm_server.py'
+      - 'tests/test_active_continuation.py'
+      - 'tests/test_realm_resolve_endpoint.py'
       - 'tests/test_control_inbox_bridge.py'
       - '.agent/scripts/agentos-control-inbox-bridge.service'
       - 'config/control-inbox.env.example'
@@ -40,7 +48,7 @@ jobs:
       - name: Install test dependency
         run: python -m pip install --disable-pip-version-check pytest
       - name: Run Control Inbox bridge regressions
-        run: python -m pytest tests/test_control_inbox_bridge.py -q
+        run: python -m pytest tests/test_control_inbox_bridge.py tests/test_active_continuation.py tests/test_realm_resolve_endpoint.py -q
       - name: Verify service is secret-free and bounded
         shell: bash
         run: |
