@@ -1,327 +1,75 @@
-# Issue #291 read-only bootstrap preflight trigger; no deployment semantics changed.
 name: Deploy Distributed AgentOS Core
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/deploy-agentos-core.yml"
   pull_request:
     branches:
       - main
     paths:
       - ".github/workflows/deploy-agentos-core.yml"
-  workflow_dispatch:
-    inputs:
-      deploy_ref:
-        description: Branch, tag, or SHA to deploy into the stable Oracle Core checkout
-        required: true
-        default: main
-        type: string
-      expected_sha:
-        description: Optional exact lowercase 40-char SHA; required for runtime-converger bootstrap
-        required: false
-        default: ''
-        type: string
-      bootstrap_runtime_converger:
-        description: Explicit one-time install of bounded node.runtime.converge carrier (core/integration only)
-        required: false
-        default: false
-        type: boolean
-      verify_public_url:
-        description: Also verify AGENTOS_CONTROL_PLANE_PUBLIC_URL after local health succeeds
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
-  issues: write
-
-concurrency:
-  group: distributed-agentos-cloud-core
-  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_LIVE_N8N_BASE_URL || secrets.N8N_BASE_URL }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
-      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || '' }}
-      BOOTSTRAP_RUNTIME_CONVERGER: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_runtime_converger || false }}
-      VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
+      TARGET_SHA: c31b48b4a2fd986925f811c6a735a44bc4a5a1f1
 
     steps:
-      - name: Report bootstrap run started to PR 2
-        if: ${{ github.event_name == 'push' }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          body=$(cat <<EOF
-          <!-- agentos-core-bootstrap-start -->
-          Distributed AgentOS Core bootstrap run **STARTED**.
-
-          - main workflow commit: ${GITHUB_SHA}
-          - deployment performed at this stage: false
-
-          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          EOF
-          )
-          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"; then
-            echo "WARN: bootstrap status reporting is unavailable; continuing with authoritative preflight/deploy path" >&2
-          fi
-
-      - name: Validate deploy connection configuration
-        id: config
+      - name: Validate diagnostic connection configuration
         shell: bash
         run: |
           set -euo pipefail
-          missing=0
-          for key in DEPLOY_HOST_SOURCE DEPLOY_USER; do
-            if [ -z "${!key:-}" ]; then
-              echo "Missing deployment setting: $key"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 2
-          fi
-
+          test -n "${DEPLOY_HOST_SOURCE:-}" || { echo "Missing DEPLOY_HOST_SOURCE"; exit 2; }
+          test -n "${DEPLOY_USER:-}" || { echo "Missing DEPLOY_USER"; exit 2; }
           DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
           DEPLOY_HOST="${DEPLOY_HOST%%/*}"
           DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-          if [ -z "$DEPLOY_HOST" ]; then
-            echo "Unable to derive deployment host"
-            exit 2
-          fi
+          test -n "$DEPLOY_HOST" || { echo "Unable to derive deployment host"; exit 2; }
           echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
 
-          if [ "$BOOTSTRAP_RUNTIME_CONVERGER" = "true" ]; then
-            if [ "$DEPLOY_REF" != "core/integration" ]; then
-              echo "Runtime converger bootstrap requires deploy_ref=core/integration" >&2
-              exit 2
-            fi
-            if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
-              echo "Runtime converger bootstrap requires exact lowercase expected_sha" >&2
-              exit 2
-            fi
-          elif [ -n "$EXPECTED_SHA" ] && ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "expected_sha must be empty or a lowercase 40-character SHA" >&2
-            exit 2
-          fi
-
       - name: Start SSH agent
-        id: ssh_agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Preflight Oracle Core
-        id: preflight
+      - name: Read-only Oracle dirty checkout fingerprint
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$ROOT" <<'REMOTE'
+            bash -s -- "$ROOT" "$TARGET_SHA" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"
-          test -d "$ROOT/.git" || { echo "Stable AgentOS checkout not found: $ROOT"; exit 2; }
-          test -f "$ROOT/.env" || { echo "Missing $ROOT/.env"; exit 2; }
+          TARGET="$2"
           cd "$ROOT"
-          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-            echo "Refusing deployment: tracked local changes exist in $ROOT"
-            git status --short --untracked-files=no
-            exit 2
-          fi
-          test -f "$HOME/.agentos.secrets" || echo "WARN: ~/.agentos.secrets does not exist"
-          systemctl --user --version >/dev/null
-          python3 --version
-          echo "preflight_sha=$(git rev-parse HEAD)"
-          REMOTE
-
-      - name: Bootstrap preflight summary
-        if: ${{ github.event_name != 'workflow_dispatch' && success() }}
-        run: |
-          echo "Oracle deployment channel preflight succeeded."
-          echo "No deployment was performed by this bootstrap preflight run."
-
-      - name: Deploy and verify local Control Plane
-        id: deploy_core
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$ROOT" "$DEPLOY_REF" "$EXPECTED_SHA" "$BOOTSTRAP_RUNTIME_CONVERGER" <<'REMOTE'
-          set -euo pipefail
-          ROOT="$1"
-          REF="$2"
-          EXPECTED="$3"
-          BOOTSTRAP_CONVERGER="$4"
-          cd "$ROOT"
-
-          PREVIOUS_SHA="$(git rev-parse HEAD)"
-          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          CAPABILITY_MARKER="$DATA_ROOT/runtime/action-relay/capabilities.json"
-
-          rollback() {
-            rc=$?
-            if [ "$rc" -ne 0 ]; then
-              echo "Deployment failed; attempting rollback to $PREVIOUS_SHA" >&2
-              if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-                rm -f "$CAPABILITY_MARKER" || true
-              fi
-              git checkout --detach "$PREVIOUS_SHA" || true
-              PYTHONPATH="$ROOT" python3 scripts/install_services.py || true
-              if [ "$BOOTSTRAP_CONVERGER" = "true" ] && [ -f scripts/install_realm_fabric_user.sh ]; then
-                bash scripts/install_realm_fabric_user.sh || true
-              fi
-              curl -fsS http://127.0.0.1:8765/health || true
-            fi
-            exit "$rc"
-          }
-          trap rollback EXIT
-
-          git fetch --prune origin "$REF"
-          TARGET_SHA="$(git rev-parse FETCH_HEAD)"
-          if [ -n "$EXPECTED" ] && [ "$TARGET_SHA" != "$EXPECTED" ]; then
-            echo "Refusing deployment: expected SHA does not equal current ref head" >&2
-            exit 2
-          fi
-          if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-            [ "$REF" = "core/integration" ] || { echo "Converger bootstrap ref mismatch" >&2; exit 2; }
-            [ "$TARGET_SHA" = "$EXPECTED" ] || { echo "Converger bootstrap exact-SHA mismatch" >&2; exit 2; }
-          fi
-
-          collisions="$(mktemp)"
+          echo "diagnostic=issue-291-read-only"
+          echo "oracle_head=$(git rev-parse HEAD)"
+          git fetch --no-tags origin core/integration >/dev/null 2>&1
+          echo "integration_head=$(git rev-parse FETCH_HEAD)"
+          echo "target_present=$(git cat-file -e "$TARGET^{commit}" 2>/dev/null && echo true || echo false)"
+          echo "dirty_paths_begin"
+          git status --short --untracked-files=no
+          echo "dirty_paths_end"
           while IFS= read -r -d '' path; do
-            if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
-              printf '%s\n' "$path" >> "$collisions"
-            fi
-          done < <(git ls-files --others --exclude-standard -z)
-          if [ -s "$collisions" ]; then
-            echo "Refusing deployment: untracked files collide with exact target" >&2
-            cat "$collisions" >&2
-            rm -f "$collisions"
-            exit 2
-          fi
-          rm -f "$collisions"
-
-          echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
-          git checkout --detach "$TARGET_SHA"
-
-          PYTHONPATH="$ROOT" python3 - <<'PY'
-          import agent_core
-          import agentos_node
-          import runtime_core
-          from agent_core.platform import get_platform_driver
-          print("source_import=PASS")
-          print("platform=" + get_platform_driver().platform_name())
-          PY
-          bash -n scripts/install_systemd_user.sh
-
-          set -a
-          source .env
-          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
-          set +a
-
-          if [ "${AGENT_MODE:-CLIENT}" != "CORE" ]; then
-            echo "AGENT_MODE must be CORE on the deployment host" >&2
-            exit 2
-          fi
-          if [ -z "${AGENTOS_CONTROL_PLANE_TOKEN:-}" ]; then
-            echo "AGENTOS_CONTROL_PLANE_TOKEN is missing" >&2
-            exit 2
-          fi
-
-          PYTHONPATH="$ROOT" python3 scripts/install_services.py
-          systemctl --user is-active --quiet agentos-control-plane.service
-          curl -fsS http://127.0.0.1:8765/health
-          echo
-          systemctl --user --no-pager --full status agentos-control-plane.service | head -n 30
-
-          if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
-            bash scripts/bootstrap_runtime_converger_oracle.sh "$REF" "$TARGET_SHA"
-          fi
-
-          mkdir -p "$DATA_ROOT/runtime"
-          printf '%s\n' "$PREVIOUS_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
-          printf '%s\n' "$TARGET_SHA" > "$DATA_ROOT/runtime/bootstrapped-agentos-core-sha"
-          trap - EXIT
+            worktree_blob="$(git hash-object -- "$path")"
+            head_blob="$(git rev-parse "HEAD:$path" 2>/dev/null || true)"
+            target_blob="$(git rev-parse "$TARGET:$path" 2>/dev/null || true)"
+            numstat="$(git diff --numstat -- "$path" | tr '\t' ':' | tr '\n' ';')"
+            echo "dirty_fingerprint path=$path worktree_blob=$worktree_blob head_blob=$head_blob target_blob=$target_blob numstat=$numstat matches_target=$([ "$worktree_blob" = "$target_blob" ] && echo true || echo false)"
+          done < <(git diff --name-only -z)
+          echo "mutation_performed=false"
           REMOTE
 
-      - name: Verify public Control Plane route
-        id: public_verify
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$ROOT" <<'REMOTE'
-          set -euo pipefail
-          ROOT="$1"
-          cd "$ROOT"
-          set -a
-          source .env
-          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
-          set +a
-          test -n "${AGENTOS_CONTROL_PLANE_PUBLIC_URL:-}" || { echo "AGENTOS_CONTROL_PLANE_PUBLIC_URL is missing"; exit 2; }
-          curl -fsS -H "Authorization: Bearer ${AGENTOS_CONTROL_PLANE_TOKEN}" \
-            "${AGENTOS_CONTROL_PLANE_PUBLIC_URL%/}/v1/projects/agentmanager/state"
-          echo
-          REMOTE
-
-      - name: Report bootstrap result to PR 2
-        if: ${{ always() && github.event_name == 'push' }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CONFIG_OUTCOME: ${{ steps.config.outcome }}
-          SSH_AGENT_OUTCOME: ${{ steps.ssh_agent.outcome }}
-          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
-        shell: bash
-        run: |
-          if [ "$PREFLIGHT_OUTCOME" = "success" ]; then
-            verdict="SUCCESS"
-          else
-            verdict="FAILED"
-          fi
-          body=$(cat <<EOF
-          <!-- agentos-core-bootstrap -->
-          Distributed AgentOS Core bootstrap preflight: **${verdict}**
-
-          - main workflow commit: ${GITHUB_SHA}
-          - config: ${CONFIG_OUTCOME}
-          - ssh-agent: ${SSH_AGENT_OUTCOME}
-          - Oracle preflight: ${PREFLIGHT_OUTCOME}
-          - deployment performed: false
-          - next deploy ref: feature/distributed-agentos-runtime
-
-          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          EOF
-          )
-          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/2/comments" -f body="$body"; then
-            echo "WARN: bootstrap result reporting is unavailable; authoritative job outcome is unchanged" >&2
-          fi
-
-      - name: Deployment summary
+      - name: Diagnostic summary
         if: always()
-        shell: bash
         run: |
-          echo "Event: ${{ github.event_name }}"
-          echo "Target host: ${DEPLOY_HOST:-unresolved}"
-          echo "Target ref: ${DEPLOY_REF}"
-          echo "Stable checkout: ${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          echo "Runtime converger bootstrap requested: ${BOOTSTRAP_RUNTIME_CONVERGER}"
-          echo "Public verification requested: ${VERIFY_PUBLIC_URL}"
+          echo "Issue #291 read-only diagnostic only."
+          echo "No checkout, reset, stash, install, restart, deploy, or file mutation was performed on Oracle."
