@@ -13,6 +13,8 @@ from agentos_node import runtime_converge_action_relay as relay
 
 SHA = "a" * 40
 PREVIOUS = "b" * 40
+TARGET_BLOB = "1" * 40
+HEAD_BLOB = "2" * 40
 
 
 def request(**overrides):
@@ -61,7 +63,7 @@ def test_fixed_runtime_install_converges_product_employee_profile_after_realm(mo
 
 
 def test_current_generation_still_reconciles_fixed_runtime(monkeypatch, tmp_path):
-    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True))
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True, False))
     installs = []
     monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: installs.append(repo) or True)
     result = relay.converge_runtime(request(), repo=tmp_path)
@@ -74,7 +76,7 @@ def test_current_generation_still_reconciles_fixed_runtime(monkeypatch, tmp_path
 
 
 def test_current_generation_reconcile_failure_is_not_reported_healthy(monkeypatch, tmp_path):
-    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True))
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (SHA, True, False))
     monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: False)
     result = relay.converge_runtime(request(), repo=tmp_path)
     assert result["classification"] == "CURRENT_GENERATION_RECONCILE_FAILED"
@@ -84,20 +86,139 @@ def test_current_generation_reconcile_failure_is_not_reported_healthy(monkeypatc
     assert result["rollback"] == "not_needed"
 
 
-def test_preflight_refuses_dirty_checkout(monkeypatch, tmp_path):
+def test_preflight_refuses_unknown_dirty_checkout_after_exact_target_is_resolved(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    calls = []
+
+    def fake_git_value(repo, *args):
+        calls.append(("value", args))
+        if args[:3] == ("remote", "get-url", "origin"):
+            return "https://github.com/alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return SHA
+        raise AssertionError(args)
+
+    def fake_git(repo, *args, timeout=120):
+        calls.append(("git", args))
+        assert args == ("fetch", "--no-tags", "origin", "core/integration")
+        return Proc(returncode=0, stdout="")
+
+    monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    monkeypatch.setattr(relay, "_git", fake_git)
+    monkeypatch.setattr(relay, "_tracked_status", lambda repo: " M agent_core/realm_server.py\0")
+    monkeypatch.setattr(relay, "_target_equivalent_dirty", lambda repo, target, status: False)
+    result = relay.converge_runtime(request(), repo=tmp_path)
+    assert result["status"] == "failed"
+    assert result["classification"] == "tracked_checkout_dirty"
+    assert result["credential_exposed"] is False
+    assert ("value", ("rev-parse", "FETCH_HEAD")) in calls
+
+
+def test_preflight_accepts_only_proven_target_equivalent_dirty(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
 
     def fake_git_value(repo, *args):
         if args[:3] == ("remote", "get-url", "origin"):
-            return "https://github.com/alston-personal/agentmanager.git"
-        if args[:2] == ("status", "--porcelain"):
-            return " M agent_core/realm_server.py"
+            return "git@github.com:alston-personal/agentmanager.git"
+        if args == ("rev-parse", "HEAD"):
+            return PREVIOUS
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return SHA
         raise AssertionError(args)
 
     monkeypatch.setattr(relay, "_git_value", fake_git_value)
+    monkeypatch.setattr(relay, "_git", lambda *a, **k: Proc(returncode=0, stdout=""))
+    status = " M agentos_node/bootstrap_control.py\0"
+    monkeypatch.setattr(relay, "_tracked_status", lambda repo: status)
+    seen = []
+    monkeypatch.setattr(
+        relay,
+        "_target_equivalent_dirty",
+        lambda repo, target, observed: seen.append((target, observed)) or True,
+    )
+    assert relay._preflight(tmp_path, request()) == (PREVIOUS, False, True)
+    assert seen == [(SHA, status)]
+
+
+def test_target_equivalent_dirty_requires_plain_unstaged_content_and_equal_target_blob(monkeypatch, tmp_path):
+    rel = "agentos_node/bootstrap_control.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("target content\n", encoding="utf-8")
+
+    def fake_git(repo, *args, timeout=120):
+        if args == ("diff", "--summary", "--", rel):
+            return Proc(returncode=0, stdout="")
+        if args == ("hash-object", "--", rel):
+            return Proc(returncode=0, stdout=TARGET_BLOB + "\n")
+        if args == ("rev-parse", f"{SHA}:{rel}"):
+            return Proc(returncode=0, stdout=TARGET_BLOB + "\n")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git", fake_git)
+    assert relay._target_equivalent_dirty(tmp_path, SHA, f" M {rel}\0") is True
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "M  agentos_node/bootstrap_control.py\0",
+        " D agentos_node/bootstrap_control.py\0",
+        "D  agentos_node/bootstrap_control.py\0",
+        "R  agentos_node/bootstrap_control.py\0",
+        "UU agentos_node/bootstrap_control.py\0",
+    ],
+)
+def test_target_equivalent_dirty_rejects_staged_delete_rename_and_conflict(monkeypatch, tmp_path, status):
+    monkeypatch.setattr(relay, "_git", lambda *a, **k: (_ for _ in ()).throw(AssertionError("git must not run")))
+    assert relay._target_equivalent_dirty(tmp_path, SHA, status) is False
+
+
+def test_target_equivalent_dirty_rejects_mode_change(monkeypatch, tmp_path):
+    rel = "agentos_node/bootstrap_control.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("target content\n", encoding="utf-8")
+    monkeypatch.setattr(
+        relay,
+        "_git",
+        lambda repo, *args, timeout=120: Proc(returncode=0, stdout=" mode change 100644 => 100755 x\n"),
+    )
+    assert relay._target_equivalent_dirty(tmp_path, SHA, f" M {rel}\0") is False
+
+
+def test_target_equivalent_dirty_rejects_different_blob(monkeypatch, tmp_path):
+    rel = "agentos_node/bootstrap_control.py"
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True)
+    path.write_text("different content\n", encoding="utf-8")
+
+    def fake_git(repo, *args, timeout=120):
+        if args == ("diff", "--summary", "--", rel):
+            return Proc(returncode=0, stdout="")
+        if args == ("hash-object", "--", rel):
+            return Proc(returncode=0, stdout=HEAD_BLOB + "\n")
+        if args == ("rev-parse", f"{SHA}:{rel}"):
+            return Proc(returncode=0, stdout=TARGET_BLOB + "\n")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(relay, "_git", fake_git)
+    assert relay._target_equivalent_dirty(tmp_path, SHA, f" M {rel}\0") is False
+
+
+def test_target_equivalent_dirty_converges_with_explicit_classification(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, True))
+    checkouts = []
+    monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: checkouts.append(sha) or True)
+    monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: True)
     result = relay.converge_runtime(request(), repo=tmp_path)
-    assert result["status"] == "failed"
-    assert result["classification"] == "tracked_checkout_dirty"
+    assert checkouts == [SHA]
+    assert result["classification"] == "CONVERGED_FROM_TARGET_EQUIVALENT_DIRTY"
+    assert result["status"] == "completed"
+    assert result["health"] == "passed"
+    assert result["resulting_commit"] == SHA
     assert result["credential_exposed"] is False
 
 
@@ -107,8 +228,6 @@ def test_preflight_refuses_requested_sha_that_is_not_exact_ref_head(monkeypatch,
     def fake_git_value(repo, *args):
         if args[:3] == ("remote", "get-url", "origin"):
             return "git@github.com:alston-personal/agentmanager.git"
-        if args[:2] == ("status", "--porcelain"):
-            return ""
         if args == ("rev-parse", "HEAD"):
             return PREVIOUS
         if args == ("rev-parse", "FETCH_HEAD"):
@@ -123,7 +242,7 @@ def test_preflight_refuses_requested_sha_that_is_not_exact_ref_head(monkeypatch,
 
 def test_health_failure_rolls_back_exact_previous_generation(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False))
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, False))
     checkouts = []
     monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: checkouts.append(sha) or True)
     outcomes = iter([False, True])
@@ -137,7 +256,7 @@ def test_health_failure_rolls_back_exact_previous_generation(monkeypatch, tmp_pa
 
 def test_rollback_ambiguity_is_unknown_and_not_success(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False))
+    monkeypatch.setattr(relay, "_preflight", lambda repo, req: (PREVIOUS, False, False))
     monkeypatch.setattr(relay, "_checkout_exact", lambda repo, sha: True)
     monkeypatch.setattr(relay, "_install_fixed_runtime", lambda repo: False)
     result = relay.converge_runtime(request(), repo=tmp_path)
@@ -155,10 +274,20 @@ class _FileOnlyRelayClient:
             (root / name).mkdir(parents=True, exist_ok=True)
 
     def submit(self, action, params):
-        existing = sum(len(list((self.root / name).glob("action-test-*.json"))) for name in ("inbox", "processing", "receipts", "quarantine"))
+        existing = sum(
+            len(list((self.root / name).glob("action-test-*.json")))
+            for name in ("inbox", "processing", "receipts", "quarantine")
+        )
         capsule_id = f"action-test-{existing + 1}"
-        payload = {"schema": "agentos.action-relay/v1", "capsule_id": capsule_id, "action": action, "params": params}
-        (self.root / "inbox" / f"{capsule_id}.json").write_text(json.dumps(payload), encoding="utf-8")
+        payload = {
+            "schema": "agentos.action-relay/v1",
+            "capsule_id": capsule_id,
+            "action": action,
+            "params": params,
+        }
+        (self.root / "inbox" / f"{capsule_id}.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
         return payload
 
     def receipt(self, capsule_id):
@@ -210,7 +339,9 @@ def test_runtime_converge_terminal_receipt_is_reused_not_resubmitted(tmp_path):
         "classification": "CURRENT_GENERATION_RECONCILED",
         "credential_exposed": False,
     }
-    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(json.dumps(receipt), encoding="utf-8")
+    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
     second = dispatcher.submit(request=request())
     assert second["task_id"] == first["task_id"]
     assert second["state"] == "completed"
@@ -232,7 +363,9 @@ def test_runtime_converge_quarantined_unknown_wins_and_is_never_replayed(tmp_pat
         "replayed": False,
         "ok": False,
     }
-    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(json.dumps(unknown_receipt), encoding="utf-8")
+    (dispatcher.root / "receipts" / f'{first["task_id"]}.json').write_text(
+        json.dumps(unknown_receipt), encoding="utf-8"
+    )
     second = dispatcher.submit(request=request())
     assert second["task_id"] == first["task_id"]
     assert second["state"] == "unknown"
@@ -251,7 +384,15 @@ def test_runtime_converge_request_id_collision_fails_closed(tmp_path):
 
 class NodeRegistry:
     def node_map(self):
-        return {"nodes": [{"node_id": "oracle-core-node", "status": "online", "capabilities": ["node.runtime.converge"]}]}
+        return {
+            "nodes": [
+                {
+                    "node_id": "oracle-core-node",
+                    "status": "online",
+                    "capabilities": ["node.runtime.converge"],
+                }
+            ]
+        }
 
 
 class Fabric:
@@ -267,23 +408,37 @@ class RuntimeDispatcher:
 
     def submit(self, *, request):
         self.seen = request
-        return {"ok": True, "action": "node.runtime.converge", "task_id": "action-123", "state": "queued"}
+        return {
+            "ok": True,
+            "action": "node.runtime.converge",
+            "task_id": "action-123",
+            "state": "queued",
+        }
 
 
 def test_controller_routes_typed_converge_to_fixed_relay_not_node_queue():
     dispatcher = RuntimeDispatcher()
     controller = ControllerService(Fabric(), runtime_converge_dispatcher=dispatcher)
-    result = controller.dispatch({
-        "node_id": "oracle-core-node",
-        "task_id": "ctl_runtime_1",
-        "action": "node.runtime.converge",
-        "repository": ALLOWED_REPOSITORY,
-        "source_ref": "core/integration",
-        "source_commit": SHA,
-    })
+    result = controller.dispatch(
+        {
+            "node_id": "oracle-core-node",
+            "task_id": "ctl_runtime_1",
+            "action": "node.runtime.converge",
+            "repository": ALLOWED_REPOSITORY,
+            "source_ref": "core/integration",
+            "source_commit": SHA,
+        }
+    )
     assert result["task_id"] == "action-123"
     assert dispatcher.seen["request_id"] == "ctl_runtime_1"
-    assert set(dispatcher.seen) == {"schema", "request_id", "node_id", "repository", "source_ref", "source_commit"}
+    assert set(dispatcher.seen) == {
+        "schema",
+        "request_id",
+        "node_id",
+        "repository",
+        "source_ref",
+        "source_commit",
+    }
 
 
 @pytest.mark.parametrize("field", ["shell", "argv", "command", "module", "token", "environment"])

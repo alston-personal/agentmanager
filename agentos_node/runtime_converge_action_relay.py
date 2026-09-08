@@ -1,7 +1,7 @@
 """Bounded Oracle Core runtime convergence through the existing Action Relay.
 
-The external capability is ``node.runtime.converge``.  The relay action below is
-an implementation detail owned by the trusted ubuntu worker.  Callers provide
+The external capability is ``node.runtime.converge``. The relay action below is
+an implementation detail owned by the trusted ubuntu worker. Callers provide
 only the canonical typed request; executable names, argv, paths, environment,
 service names and installer sequence are fixed here.
 """
@@ -15,7 +15,7 @@ import subprocess
 import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Mapping
 
 from agent_core.runtime_converge_contract import validate_runtime_converge_request
@@ -85,7 +85,11 @@ def _git_value(repo: Path, *args: str) -> str:
 
 def _health() -> bool:
     for unit in ("agentos-realm-fabric.service", "agentos-core-supervisor.service"):
-        result = _run(["systemctl", "--user", "is-active", "--quiet", unit], cwd=DEFAULT_REPO, timeout=20)
+        result = _run(
+            ["systemctl", "--user", "is-active", "--quiet", unit],
+            cwd=DEFAULT_REPO,
+            timeout=20,
+        )
         if result.returncode != 0:
             return False
     try:
@@ -117,15 +121,61 @@ def _checkout_exact(repo: Path, commit: str) -> bool:
     return result.returncode == 0 and _git_value(repo, "rev-parse", "HEAD") == commit
 
 
-def _preflight(repo: Path, request: Mapping[str, Any]) -> tuple[str, bool]:
+def _tracked_status(repo: Path) -> str:
+    result = _git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+    if result.returncode != 0:
+        raise RuntimeError("git_preflight_failed")
+    return result.stdout
+
+
+def _safe_repo_relative_path(raw: str) -> str | None:
+    path = PurePosixPath(raw)
+    if not raw or path.is_absolute() or ".." in path.parts:
+        return None
+    return path.as_posix()
+
+
+def _target_equivalent_dirty(repo: Path, source_commit: str, status: str) -> bool:
+    """Prove a narrow partial rollout is already byte-identical to target.
+
+    Only ordinary *unstaged content modifications* are eligible. Staged changes,
+    deletes, renames, conflicts, type/mode changes and any path whose worktree
+    blob differs from the exact fetched target fail closed.
+    """
+    entries = [entry for entry in status.split("\0") if entry]
+    if not entries:
+        return False
+
+    for entry in entries:
+        if len(entry) < 4 or entry[:2] != " M" or entry[2] != " ":
+            return False
+        rel = _safe_repo_relative_path(entry[3:])
+        if rel is None:
+            return False
+        path = repo / rel
+        if path.is_symlink() or not path.is_file():
+            return False
+
+        summary = _git(repo, "diff", "--summary", "--", rel)
+        if summary.returncode != 0 or summary.stdout.strip():
+            return False
+
+        worktree_blob = _git(repo, "hash-object", "--", rel)
+        target_blob = _git(repo, "rev-parse", f"{source_commit}:{rel}")
+        if worktree_blob.returncode != 0 or target_blob.returncode != 0:
+            return False
+        if worktree_blob.stdout.strip() != target_blob.stdout.strip():
+            return False
+
+    return True
+
+
+def _preflight(repo: Path, request: Mapping[str, Any]) -> tuple[str, bool, bool]:
     if not repo.is_dir() or not (repo / ".git").exists():
         raise RuntimeError("repo_unavailable")
     origin = _git_value(repo, "remote", "get-url", "origin")
     if not ALLOWED_ORIGIN_RE.fullmatch(origin):
         raise RuntimeError("repository_origin_not_allowed")
-    dirty = _git_value(repo, "status", "--porcelain", "--untracked-files=no")
-    if dirty:
-        raise RuntimeError("tracked_checkout_dirty")
 
     previous = _git_value(repo, "rev-parse", "HEAD")
     source_ref = str(request["source_ref"])
@@ -136,11 +186,28 @@ def _preflight(repo: Path, request: Mapping[str, Any]) -> tuple[str, bool]:
     observed_head = _git_value(repo, "rev-parse", "FETCH_HEAD")
     if observed_head != source_commit:
         raise RuntimeError("exact_source_head_mismatch")
-    return previous, previous == source_commit
+
+    dirty = _tracked_status(repo)
+    target_equivalent_dirty = False
+    if dirty:
+        target_equivalent_dirty = _target_equivalent_dirty(repo, source_commit, dirty)
+        if not target_equivalent_dirty:
+            raise RuntimeError("tracked_checkout_dirty")
+
+    # A target-equivalent dirty checkout still needs the exact checkout step so
+    # the index/HEAD/worktree become a clean, attestable generation.
+    idempotent = previous == source_commit and not target_equivalent_dirty
+    return previous, idempotent, target_equivalent_dirty
 
 
-def _safe_failure(request: Mapping[str, Any], classification: str, *, previous: str | None = None,
-                  rollback: str = "not_attempted", resulting: str | None = None) -> dict[str, Any]:
+def _safe_failure(
+    request: Mapping[str, Any],
+    classification: str,
+    *,
+    previous: str | None = None,
+    rollback: str = "not_attempted",
+    resulting: str | None = None,
+) -> dict[str, Any]:
     return {
         "request_id": request["request_id"],
         "node_id": request["node_id"],
@@ -162,7 +229,7 @@ def _safe_failure(request: Mapping[str, Any], classification: str, *, previous: 
 def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -> dict[str, Any]:
     """Converge exact source and reconcile its fixed operating profile.
 
-    Source equality is not operating-profile equality.  Even when HEAD already
+    Source equality is not operating-profile equality. Even when HEAD already
     equals the requested generation, the source-owned installer sequence is
     replayed idempotently so stopped services or missing host-local profile state
     cannot survive a successful convergence receipt.
@@ -170,7 +237,7 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
     canonical = validate_runtime_converge_request(request).as_payload()
     previous: str | None = None
     try:
-        previous, idempotent = _preflight(repo, canonical)
+        previous, idempotent, target_equivalent_dirty = _preflight(repo, canonical)
     except RuntimeError as exc:
         return _safe_failure(canonical, str(exc))
 
@@ -187,7 +254,11 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
             "health": "passed" if reconciled else "failed",
             "rollback": "not_needed",
             "status": "completed" if reconciled else "failed",
-            "classification": "CURRENT_GENERATION_RECONCILED" if reconciled else "CURRENT_GENERATION_RECONCILE_FAILED",
+            "classification": (
+                "CURRENT_GENERATION_RECONCILED"
+                if reconciled
+                else "CURRENT_GENERATION_RECONCILE_FAILED"
+            ),
             "idempotent": True,
             "credential_exposed": False,
             "observed_at": _utc_now(),
@@ -208,7 +279,11 @@ def converge_runtime(request: Mapping[str, Any], *, repo: Path = DEFAULT_REPO) -
             "health": "passed",
             "rollback": "not_needed",
             "status": "completed",
-            "classification": "CONVERGED",
+            "classification": (
+                "CONVERGED_FROM_TARGET_EQUIVALENT_DIRTY"
+                if target_equivalent_dirty
+                else "CONVERGED"
+            ),
             "idempotent": False,
             "credential_exposed": False,
             "observed_at": _utc_now(),
@@ -305,18 +380,18 @@ def _request_submit_lock(root: Path) -> Iterator[None]:
         os.close(fd)
 
 
-def _existing_runtime_converge(root: Path, canonical: Mapping[str, Any]) -> tuple[str, str] | None:
-    """Resolve one durable request-id execution without replaying ambiguity.
+def _existing_runtime_converge(
+    root: Path, canonical: Mapping[str, Any]
+) -> tuple[str, str] | None:
+    """Resolve one durable request-id execution without replaying ambiguity."""
+    buckets = {
+        name: root / name
+        for name in ("inbox", "processing", "receipts", "quarantine")
+    }
 
-    Priority is intentionally conservative: a quarantined capsule with an
-    ``outcome=unknown`` receipt wins over any duplicate success left by older
-    buggy submitters.  A request whose execution outcome became unknown may not
-    be replayed merely because another duplicate happened to finish later.
-    """
-    buckets = {name: root / name for name in ("inbox", "processing", "receipts", "quarantine")}
-
-    # First bind quarantined raw capsules to their terminal unknown receipts.
-    for capsule_path in sorted(buckets["quarantine"].glob("action-*.json")) if buckets["quarantine"].exists() else []:
+    # A quarantined unknown always wins. Never replay ambiguous side effects.
+    quarantine = buckets["quarantine"]
+    for capsule_path in sorted(quarantine.glob("action-*.json")) if quarantine.exists() else []:
         capsule = _read_object(capsule_path)
         if not capsule:
             continue
@@ -329,8 +404,8 @@ def _existing_runtime_converge(root: Path, canonical: Mapping[str, Any]) -> tupl
         if receipt and receipt.get("outcome") == "unknown":
             return capsule_id, "unknown"
 
-    # A terminal receipt is authoritative for a clean request-id history.
-    for receipt_path in sorted(buckets["receipts"].glob("action-*.json")) if buckets["receipts"].exists() else []:
+    receipts = buckets["receipts"]
+    for receipt_path in sorted(receipts.glob("action-*.json")) if receipts.exists() else []:
         receipt = _read_object(receipt_path)
         if not receipt:
             continue
@@ -389,15 +464,25 @@ class ActionRelayRuntimeConvergeDispatcher:
             return None
         if receipt.get("action") != ACTION:
             raise RuntimeError("runtime_converge_receipt_action_mismatch")
-        projected = {key: receipt.get(key) for key in SAFE_RESULT_FIELDS if key in receipt}
-        projected.update({
-            "schema": "agentos.runtime-converge-receipt/v1",
-            "ok": projected.get("status") == "completed",
-            "action": "node.runtime.converge",
-            "task_id": str(task_id),
-        })
+        projected = {
+            key: receipt.get(key) for key in SAFE_RESULT_FIELDS if key in receipt
+        }
+        projected.update(
+            {
+                "schema": "agentos.runtime-converge-receipt/v1",
+                "ok": projected.get("status") == "completed",
+                "action": "node.runtime.converge",
+                "task_id": str(task_id),
+            }
+        )
         if receipt.get("outcome") == "unknown":
-            projected.update({"ok": False, "status": "unknown", "classification": "EXECUTION_OUTCOME_UNKNOWN"})
+            projected.update(
+                {
+                    "ok": False,
+                    "status": "unknown",
+                    "classification": "EXECUTION_OUTCOME_UNKNOWN",
+                }
+            )
         return projected
 
 
