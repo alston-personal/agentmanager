@@ -1,3 +1,4 @@
+# Issue #291 read-only bootstrap preflight trigger; no deployment semantics changed.
 name: Deploy Distributed AgentOS Core
 
 on:
