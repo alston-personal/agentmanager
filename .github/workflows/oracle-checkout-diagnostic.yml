@@ -16,10 +16,20 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
     steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          log-public-key: false
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Run reviewed fixed read-only diagnostic without checkout
+        env:
+          SSH_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+          SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
         shell: bash
         run: |
-          python3 -I - <<'AGENTOS_DIAGNOSTIC_PY'
+          set -euo pipefail
+          test -n "$SSH_USER"
+          [[ "$SSH_USER" != -* ]]
+          timeout 90 ssh -T -o BatchMode=yes -o ConnectTimeout=10 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new -p "${SSH_PORT:-22}" "$SSH_USER@127.0.0.1" 'python3 -I -' <<'AGENTOS_DIAGNOSTIC_PY'
           """Fixed read-only #291 bootstrap diagnostic; emits no file bodies or git stderr."""
           from __future__ import annotations
           
