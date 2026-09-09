@@ -54,6 +54,31 @@ def test_concatenated_valid_snapshots_keep_last_and_backup_original(tmp_path: Pa
     assert backup.read_bytes() == original
 
 
+def test_nul_padded_single_snapshot_is_safe_to_trim(tmp_path: Path) -> None:
+    module = _load_module()
+    path = tmp_path / "fabric.json"
+    snapshot = _snapshot("realm-alston", "one")
+    original = (json.dumps(snapshot) + "\n\x00\x00\x00\n").encode()
+    path.write_bytes(original)
+    digest = hashlib.sha256(original).hexdigest()
+    result = module.repair(path)
+    assert "realm_fabric_store=REPAIRED" in result
+    assert "nul_padding=true" in result
+    assert json.loads(path.read_text(encoding="utf-8")) == snapshot
+    assert (tmp_path / f"fabric.json.corrupt-{digest}.bak").read_bytes() == original
+
+
+def test_nul_separator_between_valid_snapshots_keeps_last(tmp_path: Path) -> None:
+    module = _load_module()
+    path = tmp_path / "fabric.json"
+    first = _snapshot("realm-alston", "old")
+    last = _snapshot("realm-alston", "new")
+    path.write_bytes((json.dumps(first) + "\x00\n" + json.dumps(last)).encode())
+    result = module.repair(path)
+    assert "nul_padding=true" in result
+    assert json.loads(path.read_text(encoding="utf-8")) == last
+
+
 def test_partial_or_garbage_corruption_is_rejected(tmp_path: Path) -> None:
     module = _load_module()
     path = tmp_path / "fabric.json"
