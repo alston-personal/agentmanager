@@ -20,6 +20,7 @@ jobs:
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
       TARGET_SHA: 28be69cb671fcf8cedd5abc8864dda88c4b03dd6
+      PREFIX_SHA: 16fe1100378068a06264c6d6415560fdcd049595a094e537bef132fe3e45abc2
     steps:
       - name: Resolve host
         shell: bash
@@ -34,43 +35,63 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Stage exact repair generation and rehash fabric
+      - name: Repair exact corrupted Realm fabric snapshot
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" "$PREFIX_SHA" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"
           TARGET="$2"
+          PREFIX_SHA="$3"
           cd "$ROOT"
-          git fetch --no-tags origin core/integration >/dev/null 2>&1
-          [ "$(git rev-parse FETCH_HEAD)" = "$TARGET" ] || { echo "target_ref_mismatch"; exit 20; }
-          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "tracked_checkout_not_clean"; exit 21; }
-          git checkout --detach --force "$TARGET" >/dev/null
-          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "checkout_head_mismatch"; exit 22; }
-          echo "repair_generation_checkout=PASS"
-          echo "checkout_sha=$(git rev-parse HEAD)"
+          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "repair_refused_wrong_checkout"; exit 20; }
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "repair_refused_dirty_checkout"; exit 21; }
           set -a
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm/fabric.json'" <<'PY'
-          import hashlib,json,sys
-          from pathlib import Path
-          p=Path(sys.argv[1])
-          raw=p.read_bytes()
-          text=raw.decode('utf-8')
-          decoder=json.JSONDecoder()
-          first,end=decoder.raw_decode(text,0)
-          prefix=text[:end].encode('utf-8')
-          tail=text[end:]
-          print('fabric_file_sha256='+hashlib.sha256(raw).hexdigest())
-          print('fabric_prefix_sha256='+hashlib.sha256(prefix).hexdigest())
-          print('fabric_prefix_schema='+str(first.get('schema') if isinstance(first,dict) else None))
-          print('fabric_prefix_realm='+str(first.get('realm_id') if isinstance(first,dict) else None))
-          print('fabric_tail_chars='+str(len(tail)))
-          print('fabric_tail_nonwhitespace='+str(bool(tail.strip())).lower())
-          PY
+          FABRIC="$DATA_ROOT/realm/fabric.json"
+          BACKUP_DIR="$DATA_ROOT/runtime/backups/realm-fabric"
+
+          readarray -t META < <(/usr/bin/sg agentos -c "python3 - '$FABRIC' '$PREFIX_SHA'" <<'PY'
+import hashlib,json,sys
+from pathlib import Path
+p=Path(sys.argv[1]); expected=sys.argv[2]
+raw=p.read_bytes(); text=raw.decode('utf-8')
+try:
+    json.loads(text)
+except json.JSONDecodeError:
+    pass
+else:
+    raise SystemExit('repair_refused_store_already_valid')
+first,end=json.JSONDecoder().raw_decode(text,0)
+prefix=text[:end].encode('utf-8'); tail=text[end:]
+if not isinstance(first,dict) or first.get('schema')!='agentos.realm-fabric/v0.1': raise SystemExit('repair_refused_bad_prefix_schema')
+if first.get('realm_id')!='realm-alston': raise SystemExit('repair_refused_bad_realm')
+if hashlib.sha256(prefix).hexdigest()!=expected: raise SystemExit('repair_refused_prefix_changed')
+if len(tail)!=1909 or not tail.strip(): raise SystemExit('repair_refused_tail_changed')
+print(hashlib.sha256(raw).hexdigest())
+print(len(raw))
+PY
+          )
+          FILE_SHA="${META[0]}"
+          FILE_SIZE="${META[1]}"
+          echo "repair_preflight=PASS"
+          echo "repair_original_size=$FILE_SIZE"
+
+          /usr/bin/sg agentos -c "cd '$ROOT' && PYTHONPATH='$ROOT' python3 scripts/repair_realm_fabric_truncated_tail.py --fabric '$FABRIC' --expected-file-sha256 '$FILE_SHA' --expected-prefix-sha256 '$PREFIX_SHA' --backup-dir '$BACKUP_DIR'"
+
+          /usr/bin/sg agentos -c "python3 - '$FABRIC'" <<'PY'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8'))
+assert d.get('schema')=='agentos.realm-fabric/v0.1'
+assert d.get('realm_id')=='realm-alston'
+print('fabric_repaired_single_json=PASS')
+print('fabric_node_count='+str(len(d.get('nodes') or {})))
+print('fabric_receipt_count='+str(len(d.get('receipts') or {})))
+PY
           REMOTE
