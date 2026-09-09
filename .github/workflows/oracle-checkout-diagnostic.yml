@@ -133,9 +133,19 @@ jobs:
                   if len(sys.argv) != 1:
                       raise ValueError('no caller parameters')
                   result = inspect()
-              except Exception:
+              except Exception as exc:
+                  error_code = 'unexpected_error'
+                  if isinstance(exc, subprocess.CalledProcessError):
+                      stderr = exc.stderr or b''
+                      error_code = ('git_ownership_mismatch' if b'dubious ownership' in stderr
+                                    else 'git_read_failed')
+                  elif isinstance(exc, subprocess.TimeoutExpired):
+                      error_code = 'git_read_timeout'
+                  elif isinstance(exc, ValueError) and str(exc) in (
+                          'repository identity mismatch', 'invalid head', 'no caller parameters'):
+                      error_code = str(exc).replace(' ', '_')
                   print(json.dumps({'schema': 'agentos.checkout-diagnostic/v1',
-                                    'classification': 'diagnostic_unavailable',
+                                    'classification': 'diagnostic_unavailable', 'error_code': error_code,
                                     'mutation_performed': False, 'credential_exposed': False}))
                   return 1
               print(json.dumps(result, sort_keys=True))
