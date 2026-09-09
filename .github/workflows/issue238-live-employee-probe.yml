@@ -19,6 +19,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+      TARGET_SHA: 53793ac89e7a9bd555fe3601dda1e5dda8f7436f
     steps:
       - name: Resolve host
         shell: bash
@@ -33,82 +34,28 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe Worker Host identity boundary
+      - name: Probe exact checkout drift
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"
+          TARGET="$2"
           cd "$ROOT"
-          set -a
-          source .env
-          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
-          set +a
-          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
+          git fetch --no-tags origin core/integration >/dev/null 2>&1
           echo "checkout_sha=$(git rev-parse HEAD)"
-          if [ -e "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; fi
-          for svc in agentos-action-relay.service agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
-            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
-          done
-          WPID="$(systemctl --user show agentos-employee-worker-host.service -p MainPID --value 2>/dev/null || true)"
-          echo "worker_pid_present=$([ -n "$WPID" ] && [ "$WPID" != 0 ] && echo true || echo false)"
-          if [ -n "$WPID" ] && [ "$WPID" != 0 ] && [ -r "/proc/$WPID/status" ]; then
-            echo "worker_effective_groups=$(awk '/^Groups:/{for(i=2;i<=NF;i++)printf "%s%s",$i,(i<NF?",":"");print ""}' "/proc/$WPID/status")"
-          fi
-          AGENTOS_GID="$(getent group agentos | cut -d: -f3 || true)"
-          echo "agentos_gid=${AGENTOS_GID:-missing}"
-          for p in "$DATA_ROOT/employee-runtime" "$DATA_ROOT/employee-wakes" "$DATA_ROOT/employee-worker-host" "$DATA_ROOT/employee-worker-state"; do
-            if [ -e "$p" ]; then stat -c 'path_mode=%n|%U|%G|%a' "$p"; fi
-          done
-          if [ -d "$DATA_ROOT/employee-wakes" ]; then
-            if /usr/bin/python3 - "$DATA_ROOT/employee-wakes" <<'PY'
-from pathlib import Path
-import sys
-p=Path(sys.argv[1])
-try:
-    xs=list(p.glob('*/*.json'))
-    print(f'worker_shell_wake_readable=true count={len(xs)}')
-except Exception as exc:
-    print('worker_shell_wake_readable=false error='+type(exc).__name__)
-    raise SystemExit(1)
-PY
-            then :; else true; fi
-          fi
-
-          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT'" <<'PY'
-          import json, sys
-          from pathlib import Path
-          root=Path(sys.argv[1])
-          targets={'zeus-writer','youtube-ai-manager','zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'}
-          safe={'schema','status','state','employee_id','assignment_id','wake_id','wake_attempt_id','presence_generation','expected_lease_generation','lease_generation','lease_id','node_id','runner_kind','adapter_id','thread_head','transport','dispatch_performed','task_id','updated_at','created_at','expires_at','credential_exposed','session_identity_exposed','outcome','replayed','error_code','completed_at','started_at'}
-          child_safe={'schema','status','work_performed','employee_id','assignment_id','wake_id','presence_generation','lease_generation','thread_head','error_code','executor_provider','executor_model','credential_exposed','session_identity_exposed','verified_marker_emitted'}
-          for aid in ('zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'):
-              p=root/'employee-runtime/assignments'/f'{aid}.json'
-              if p.is_file():
-                  d=json.loads(p.read_text())
-                  print('assignment='+json.dumps({k:d.get(k) for k in safe if k in d},sort_keys=True))
-              lp=root/'employee-runtime/lifecycle/leases'/f'{aid}.json'
-              if lp.is_file():
-                  d=json.loads(lp.read_text())
-                  print('lease='+json.dumps({k:d.get(k) for k in safe if k in d},sort_keys=True))
-          surface=root/'employee-worker-host/dispatches'
-          if surface.exists():
-              for p in sorted(surface.rglob('*.json'),key=lambda x:x.stat().st_mtime,reverse=True)[:20]:
-                  try:d=json.loads(p.read_text())
-                  except Exception:continue
-                  if not isinstance(d,dict):continue
-                  if not any(t in json.dumps(d,sort_keys=True) for t in targets):continue
-                  out={k:d.get(k) for k in safe if k in d}
-                  child=d.get('child_result')
-                  if isinstance(child,dict): out['child_result']={k:child.get(k) for k in child_safe if k in child}
-                  print('worker_dispatch='+json.dumps({'path':str(p.relative_to(root)),'fields':out},sort_keys=True))
-          PY
-
-          echo "--- worker/wake recent journal ---"
-          journalctl --user -u agentos-employee-worker-host.service -u agentos-employee-wake-node.service -n 100 --no-pager 2>/dev/null \
-            | sed -E 's/(token|secret|password|authorization|credential)[=:][^ ]+/_redacted_/Ig' \
-            | tail -100 || true
+          echo "target_sha=$TARGET"
+          echo "fetch_head=$(git rev-parse FETCH_HEAD)"
+          echo "tracked_status_begin"
+          git status --porcelain --untracked-files=no
+          echo "tracked_status_end"
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            wt="$(git hash-object -- "$path" 2>/dev/null || echo missing)"
+            head="$(git rev-parse "HEAD:$path" 2>/dev/null || echo missing)"
+            target="$(git rev-parse "$TARGET:$path" 2>/dev/null || echo missing)"
+            echo "drift_path=$path wt=$wt head=$head target=$target wt_equals_target=$([ "$wt" = "$target" ] && echo true || echo false)"
+          done < <(git diff --name-only)
           REMOTE
