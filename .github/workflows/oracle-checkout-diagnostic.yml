@@ -1,11 +1,7 @@
 name: Oracle Checkout Read-only Diagnostic
 
 on:
-  push:
-    branches:
-      - 'core/issue-291-diagnostic-authorized-20260909'
-    paths:
-      - '.github/workflows/oracle-checkout-diagnostic.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
