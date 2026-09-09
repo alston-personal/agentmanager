@@ -1,0 +1,11 @@
+{
+  "provenance": {
+    "workflow_run_url": "https://github.com/alston-personal/agentmanager/actions/runs/34320081009",
+    "workflow_job_id": 102364551827,
+    "authorization": "User approved one-time bounded read-only Actions evidence in canonical Core conversation; no recovery authorization.",
+    "limitations": [
+      "Earlier dirty changes were not observed; their cause and disposition remain unknown.",
+      "Clean checkout does not attest to runtime service health or continuation hydration."
+    ]
+  }
+}

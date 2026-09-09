@@ -1,6 +1,6 @@
 # Oracle checkout diagnostic (#291)
 
-Owner: AgentOS Core. Status: source candidate, no Oracle execution or recovery acceptance.
+Owner: AgentOS Core. Status: bounded read-only live evidence obtained; recovery acceptance remains open.
 
 The governed convergence request for `b65dc309d6a020b27f591d938a0589206003a0ea`
 failed with `tracked_checkout_dirty`:
@@ -33,19 +33,54 @@ Issue #291 requires explicit authorization for this one-time GitHub Actions
 bootstrap/evidence path. Preparing, testing or merging this source does not grant
 execution permission. ONE failures must not trigger the workflow automatically.
 
-After authorization, the operator must use an exact reviewed commit ref for
-`Oracle Checkout Read-only Diagnostic`. It has only `workflow_dispatch`, no caller
-inputs and no push/PR trigger. It runs the reviewed script over SSH stdin using
-existing deployment secrets and isolated Python; it does not import Oracle code.
-The sanitized JSON artifact is retained for seven days. Credentials stay in the
-SSH agent and are not part of the report.
+The 2026-09-09 canonical Core conversation explicitly authorized this diagnostic.
+An isolated execution branch activated a push trigger; it is not an integration
+candidate or a steady-state control channel. The hosted SSH attempt stopped
+before connection because host configuration was absent. Direct runner execution
+then correctly hit Git ownership protection. The successful attempt used the
+existing Oracle runner labels and existing deployment identity over localhost SSH,
+without disabling Git ownership checks, checking out source, or invoking recovery.
 
-Dispatch availability is separate from authorization: GitHub must recognize the
-workflow on its default branch, and the caller must have a supported dispatch
-surface. This draft does not authorize protected-main publication or assert that
-the current connector can dispatch workflows. If those prerequisites are absent,
-leave this candidate unexecuted and report the blocker.
+The canonical manual workflow embeds the exact tested standalone script; a test
+prevents divergence. It uses no caller inputs and no push/PR trigger. It returns
+bounded JSON in workflow logs, not repository file bodies. Existing SSH credentials
+stay inside the agent. Temporary runner/SSH agent bookkeeping is not runtime
+checkout mutation. No protected-main publication is authorized.
+
+## Observed evidence
+
+Successful run: https://github.com/alston-personal/agentmanager/actions/runs/34320081009
+
+At `2026-09-09T06:39:50Z`, the checkout HEAD was
+`28be69cb671fcf8cedd5abc8864dda88c4b03dd6`; tracked dirty paths were empty and
+HEAD/status were stable during the read. The sanitized receipt is stored in
+`.agentos/evidence/runtime-converge/checkout-diagnostic-20260909.json`.
+
+The earlier dirty condition had already changed before this successful read.
+This evidence does not establish the cause, ownership or disposition of the earlier
+changes. No recovery was performed by this diagnostic. A clean checkout alone does
+not establish runtime health, installer correctness or #287 continuation acceptance.
 
 Review the resulting evidence before proposing any preservation/recovery action.
 Then use governed ONE convergence and its idempotency check; accept #287 only
 after its separate live continuation-read checks. CI does not establish live health.
+
+## Governed follow-up
+
+At `2026-09-09T08:42:46Z`, a fresh ONE `node.runtime.converge` request for the
+same `28be69cb` generation returned `CURRENT_GENERATION_RECONCILE_FAILED`,
+`ok=false`, `health=failed`, `idempotent=true`, `rollback=not_needed`.
+Receipt: https://github.com/alston-personal/agentmanager/issues/50#issuecomment-5598994002
+
+The sanitized result is stored in
+`.agentos/evidence/runtime-converge/clean-checkout-reconcile-20260909.json`.
+This is not a successful idempotence or health acceptance. A second identical
+attempt is not useful until the reconciliation failure is resolved.
+
+PR #298 documents a separate malformed Realm Fabric state blocker and supplies
+atomic updates plus explicit hash-bound tail repair. It explicitly does not repair
+the live file merely by merging source. That is a relevant unresolved dependency,
+not proof that it caused this exact failure: the convergence receipt currently
+collapses installer/service/health failures into one classification. Recovery of
+Realm data is outside this checkout-only diagnostic authorization and was not run.
+#291 and #287 live acceptance remain open.

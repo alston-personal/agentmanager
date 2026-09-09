@@ -51,3 +51,25 @@ def test_symlink_content_not_read(tmp_path, monkeypatch):
 def test_public_paths_are_bounded():
     for path in ('../secret', '/secret', 'x\nsecret', 'x' * 257):
         assert not diagnostic.safe_path(path)
+
+
+def test_failure_receipt_is_bounded(monkeypatch, capsys):
+    def fail():
+        raise subprocess.CalledProcessError(128, ['git'], stderr=b'dubious ownership PRIVATE')
+    monkeypatch.setattr(diagnostic, 'inspect', fail)
+    monkeypatch.setattr(diagnostic.sys, 'argv', ['-'])
+    assert diagnostic.main() == 1
+    output = capsys.readouterr().out
+    assert json.loads(output)['error_code'] == 'git_ownership_mismatch'
+    assert 'PRIVATE' not in output
+
+
+def test_manual_workflow_embeds_exact_reviewed_script():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / '.github/workflows/oracle-checkout-diagnostic.yml').read_text()
+    payload = workflow.split("<<'AGENTOS_DIAGNOSTIC_PY'\n", 1)[1].rsplit('          AGENTOS_DIAGNOSTIC_PY', 1)[0]
+    decoded = '\n'.join(line[10:] for line in payload.splitlines()) + '\n'
+    assert decoded == (root / 'scripts/oracle_checkout_diagnostic.py').read_text()
+    assert '  workflow_dispatch:' in workflow
+    assert '  push:' not in workflow
+    assert 'actions/checkout' not in workflow
