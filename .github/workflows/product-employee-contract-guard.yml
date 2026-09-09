@@ -15,6 +15,7 @@ on:
       - '.agent/scripts/agentos-employee-wake-node.service'
       - '.agent/scripts/agentos-employee-worker-host.service'
       - 'agent_core/node_registry.py'
+      - 'agent_core/realm_fabric.py'
       - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
@@ -22,11 +23,13 @@ on:
       - 'agentos_node/product_employee_worker_cli.py'
       - 'scripts/bootstrap_product_employees.py'
       - 'scripts/activate_product_employees_oracle.sh'
+      - 'scripts/repair_realm_fabric_truncated_tail.py'
       - 'tests/test_product_employee_contracts.py'
       - 'tests/test_product_employee_worker_plan.py'
       - 'tests/test_product_employee_worker.py'
       - 'tests/test_product_employee_activation.py'
       - 'tests/test_node_registry_recovery.py'
+      - 'tests/test_realm_fabric_atomic_repair.py'
       - 'docs/PRODUCT_EMPLOYEE_ACCEPTANCE.md'
       - '.github/workflows/product-employee-contract-guard.yml'
   workflow_dispatch:
@@ -46,7 +49,7 @@ jobs:
           python-version: '3.12'
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check pytest pyyaml
-      - name: Verify product Employee contracts, bounded runner host, activation boundary, and NodeRegistry recovery
+      - name: Verify product Employee contracts and durable Realm state boundaries
         run: >-
           python -m pytest -q
           tests/test_product_employee_contracts.py
@@ -54,3 +57,4 @@ jobs:
           tests/test_product_employee_worker.py
           tests/test_product_employee_activation.py
           tests/test_node_registry_recovery.py
+          tests/test_realm_fabric_atomic_repair.py
