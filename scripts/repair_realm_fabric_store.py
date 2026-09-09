@@ -21,20 +21,22 @@ def _validate_snapshot(value: Any) -> dict[str, Any]:
     return value
 
 
-def _decode_all(text: str) -> list[dict[str, Any]]:
+def _decode_all(text: str) -> tuple[list[dict[str, Any]], bool]:
     decoder = json.JSONDecoder()
     idx = 0
     values: list[dict[str, Any]] = []
+    used_nul_padding = False
     length = len(text)
     while idx < length:
-        while idx < length and text[idx].isspace():
+        while idx < length and (text[idx].isspace() or text[idx] == "\x00"):
+            used_nul_padding = used_nul_padding or text[idx] == "\x00"
             idx += 1
         if idx >= length:
             break
         value, end = decoder.raw_decode(text, idx)
         values.append(_validate_snapshot(value))
         idx = end
-    return values
+    return values, used_nul_padding
 
 
 def repair(path: Path) -> str:
@@ -46,9 +48,11 @@ def repair(path: Path) -> str:
     try:
         single = json.loads(text)
     except json.JSONDecodeError:
-        snapshots = _decode_all(text)
-        if len(snapshots) < 2:
-            raise ValueError("Realm fabric corruption is not a safe concatenated-snapshot case")
+        snapshots, used_nul_padding = _decode_all(text)
+        if not snapshots:
+            raise ValueError("Realm fabric corruption contains no valid snapshot")
+        if len(snapshots) < 2 and not used_nul_padding:
+            raise ValueError("Realm fabric corruption is not a safe concatenated/padded snapshot case")
         realm_ids = {snapshot.get("realm_id") for snapshot in snapshots}
         if len(realm_ids) != 1:
             raise ValueError("concatenated Realm snapshots disagree on realm_id")
@@ -88,7 +92,7 @@ def repair(path: Path) -> str:
     _validate_snapshot(repaired)
     if repaired.get("realm_id") not in realm_ids:
         raise ValueError("Realm fabric repair verification failed")
-    return f"realm_fabric_store=REPAIRED source_sha256={digest} snapshots={len(snapshots)} backup={backup}"
+    return f"realm_fabric_store=REPAIRED source_sha256={digest} snapshots={len(snapshots)} nul_padding={str(used_nul_padding).lower()} backup={backup}"
 
 
 def main() -> int:
