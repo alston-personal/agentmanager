@@ -13,6 +13,8 @@ on:
       - 'governance/employee-worker-adapters.json'
       - 'governance/employee-worker-adapters-v2.json'
       - '.agent/scripts/agentos-employee-wake-node.service'
+      - '.agent/scripts/agentos-employee-worker-host.service'
+      - 'agent_core/node_registry.py'
       - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
@@ -24,6 +26,7 @@ on:
       - 'tests/test_product_employee_worker_plan.py'
       - 'tests/test_product_employee_worker.py'
       - 'tests/test_product_employee_activation.py'
+      - 'tests/test_node_registry_recovery.py'
       - 'docs/PRODUCT_EMPLOYEE_ACCEPTANCE.md'
       - '.github/workflows/product-employee-contract-guard.yml'
   workflow_dispatch:
@@ -43,10 +46,11 @@ jobs:
           python-version: '3.12'
       - name: Install test dependencies
         run: python -m pip install --disable-pip-version-check pytest pyyaml
-      - name: Verify product Employee contracts, bounded runner host, and activation boundary
+      - name: Verify product Employee contracts, bounded runner host, activation boundary, and NodeRegistry recovery
         run: >-
           python -m pytest -q
           tests/test_product_employee_contracts.py
           tests/test_product_employee_worker_plan.py
           tests/test_product_employee_worker.py
           tests/test_product_employee_activation.py
+          tests/test_node_registry_recovery.py
