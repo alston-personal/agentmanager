@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe Realm data root and process
+      - name: Inspect Realm fabric structure only
         shell: bash
         run: |
           set -euo pipefail
@@ -45,19 +45,63 @@ jobs:
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
-          printf 'shell_AGENToS_DATA_ROOT=%s\n' "${AGENTOS_DATA_ROOT:-unset}"
-          printf 'shell_AGENT_DATA_ROOT=%s\n' "${AGENT_DATA_ROOT:-unset}"
-          printf 'shell_AGENT_DATA_DIR=%s\n' "${AGENT_DATA_DIR:-unset}"
-          PID="$(systemctl --user show agentos-realm-fabric.service -p MainPID --value 2>/dev/null || true)"
-          echo "realm_pid=${PID:-0}"
-          echo "realm_state=$(systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState --value 2>/dev/null | tr '\n' ',' || true)"
-          echo "realm_restarts=$(systemctl --user show agentos-realm-fabric.service -p NRestarts --value 2>/dev/null || true)"
-          if [ -n "$PID" ] && [ "$PID" != 0 ] && [ -r "/proc/$PID/environ" ]; then
-            tr '\0' '\n' < "/proc/$PID/environ" | grep -E '^(AGENTOS_DATA_ROOT|AGENT_DATA_ROOT|AGENT_DATA_DIR|PYTHONPATH)=' | sort || true
-          fi
-          echo "listener_8780=$(ss -ltn 2>/dev/null | awk '$4 ~ /:8780$/ {print $4}' | head -1 || true)"
-          echo "health=$(curl -sS --max-time 2 http://127.0.0.1:8780/v1/health 2>&1 | tail -1)"
-          echo "--- realm log tail ---"
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          tail -60 "$DATA_ROOT/logs/realm-fabric.log" 2>/dev/null || true
+          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm/fabric.json'" <<'PY'
+          import json, sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          text=p.read_text(encoding='utf-8')
+          try:
+              data=json.loads(text)
+              print('fabric_normal_json=true')
+              print('fabric_segment_count=1')
+              print('fabric_schema='+str(data.get('schema') if isinstance(data,dict) else type(data).__name__))
+              print('fabric_realm='+str(data.get('realm_id') if isinstance(data,dict) else None))
+              print('fabric_full_consumed=true')
+              raise SystemExit(0)
+          except json.JSONDecodeError:
+              print('fabric_normal_json=false')
+          decoder=json.JSONDecoder()
+          i=0
+          n=len(text)
+          segments=[]
+          full=True
+          error='none'
+          while True:
+              while i<n and text[i].isspace(): i+=1
+              if i>=n: break
+              try:
+                  value,end=decoder.raw_decode(text,i)
+              except Exception as exc:
+                  full=False
+                  error=type(exc).__name__
+                  break
+              if not isinstance(value,dict):
+                  full=False
+                  error='non_object_segment'
+                  break
+              segments.append({
+                  'schema': value.get('schema'),
+                  'realm_id': value.get('realm_id'),
+                  'node_count': len(value.get('nodes') or {}) if isinstance(value.get('nodes'),dict) else -1,
+                  'task_node_count': len(value.get('tasks') or {}) if isinstance(value.get('tasks'),dict) else -1,
+                  'receipt_count': len(value.get('receipts') or {}) if isinstance(value.get('receipts'),dict) else -1,
+              })
+              i=end
+          while i<n and text[i].isspace(): i+=1
+          if i!=n: full=False
+          print('fabric_segment_count='+str(len(segments)))
+          print('fabric_full_consumed='+str(full).lower())
+          print('fabric_parse_tail_error='+error)
+          for idx,s in enumerate(segments):
+              print('fabric_segment_%d_schema=%s' % (idx,s['schema']))
+              print('fabric_segment_%d_realm=%s' % (idx,s['realm_id']))
+              print('fabric_segment_%d_node_count=%s' % (idx,s['node_count']))
+              print('fabric_segment_%d_task_node_count=%s' % (idx,s['task_node_count']))
+              print('fabric_segment_%d_receipt_count=%s' % (idx,s['receipt_count']))
+          realms={str(s['realm_id']) for s in segments}
+          schemas={str(s['schema']) for s in segments}
+          print('fabric_same_realm='+str(len(realms)==1).lower())
+          print('fabric_all_expected_schema='+str(schemas=={'agentos.realm-fabric/v0.1'}).lower())
+          PY
           REMOTE
