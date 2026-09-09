@@ -1,0 +1,124 @@
+"""Fixed read-only #291 bootstrap diagnostic; emits no file bodies or git stderr."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import stat
+import sys
+from datetime import datetime, timezone
+
+ROOT = Path('/home/ubuntu/agentmanager')
+TARGET = 'b65dc309d6a020b27f591d938a0589206003a0ea'
+MAX_PATHS = 128
+MAX_FILE_BYTES = 2 * 1024 * 1024
+
+
+def git(root: Path, *args: str) -> str:
+    env = {'PATH': '/usr/bin:/bin', 'GIT_OPTIONAL_LOCKS': '0', 'GIT_NO_LAZY_FETCH': '1'}
+    result = subprocess.run(
+        ['git', '-c', 'core.fsmonitor=false', '-C', str(root), *args],
+        env=env, capture_output=True, timeout=10, check=True,
+    )
+    return result.stdout.decode('utf-8', errors='strict')
+
+
+def safe_path(value: str) -> bool:
+    return (0 < len(value) <= 256 and not PurePosixPath(value).is_absolute()
+            and '..' not in PurePosixPath(value).parts
+            and all(ord(ch) >= 32 and ord(ch) != 127 for ch in value))
+
+
+def read_regular(path: Path) -> bytes | None:
+    # Open every component relative to its already-open parent; reject symlink races.
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.absolute().parts[1:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        with os.fdopen(file_fd, 'rb') as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            return handle.read(MAX_FILE_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def inspect(root: Path = ROOT) -> dict:
+    origin = git(root, 'remote', 'get-url', 'origin').strip()
+    if origin not in ('https://github.com/alston-personal/agentmanager.git',
+                      'https://github.com/alston-personal/agentmanager',
+                      'git@github.com:alston-personal/agentmanager.git'):
+        raise ValueError('repository identity mismatch')
+    head = git(root, 'rev-parse', 'HEAD').strip()
+    if not re.fullmatch('[0-9a-f]{40}', head):
+        raise ValueError('invalid head')
+    before = git(root, 'status', '--porcelain=v1', '-z', '--untracked-files=no')
+    parts = iter(before.split('\0'))
+    paths, omitted = [], 0
+    for entry in parts:
+        if not entry:
+            continue
+        status, rel = entry[:2], entry[3:]
+        # Git -z rename/copy records include a second path; never treat it as status.
+        if 'R' in status or 'C' in status:
+            next(parts, None)
+        if len(paths) >= MAX_PATHS or not safe_path(rel):
+            omitted += 1
+            continue
+        item = {'path': rel, 'status': status,
+                'classification': 'unknown-user-or-runtime-change',
+                'automatic_recovery_safe': False}
+        path = root / rel
+        data = read_regular(path)
+        if data is not None:
+            if len(data) <= MAX_FILE_BYTES:
+                item['sha256'] = hashlib.sha256(data).hexdigest()
+                blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+                try:
+                    target_blob = git(root, 'rev-parse', f'{TARGET}:{rel}').strip()
+                    item['equals_target_blob'] = blob == target_blob
+                except (subprocess.SubprocessError, UnicodeError):
+                    item['equals_target_blob'] = None
+            else:
+                item['hash_omitted'] = 'file_size_limit'
+        else:
+            item['hash_omitted'] = 'not_regular_or_symlink'
+        paths.append(item)
+    after = git(root, 'status', '--porcelain=v1', '-z', '--untracked-files=no')
+    stable = before == after and head == git(root, 'rev-parse', 'HEAD').strip()
+    return {
+        'schema': 'agentos.checkout-diagnostic/v1', 'repository': 'alston-personal/agentmanager',
+        'head_sha': head, 'comparison_target_sha': TARGET,
+        'observed_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'dirty_tracked': bool(before), 'paths': paths, 'omitted_path_count': omitted,
+        'status_stable_during_read': stable,
+        'classification': 'diagnostic_only' if stable else 'checkout_changed_during_read',
+        'automatic_recovery_safe': False, 'mutation_performed': False,
+        'credential_exposed': False,
+    }
+
+
+def main() -> int:
+    try:
+        if len(sys.argv) != 1:
+            raise ValueError('no caller parameters')
+        result = inspect()
+    except Exception:
+        print(json.dumps({'schema': 'agentos.checkout-diagnostic/v1',
+                          'classification': 'diagnostic_unavailable',
+                          'mutation_performed': False, 'credential_exposed': False}))
+        return 1
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

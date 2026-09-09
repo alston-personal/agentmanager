@@ -17,6 +17,9 @@ on:
       - 'scripts/bootstrap_runtime_converger_oracle.sh'
       - 'scripts/reconcile_action_relay_runtime.py'
       - 'scripts/maintenance.py'
+      - 'scripts/oracle_checkout_diagnostic.py'
+      - 'tests/test_oracle_checkout_diagnostic.py'
+      - '.github/workflows/oracle-checkout-diagnostic.yml'
       - '.github/workflows/deploy-agentos-core.yml'
       - 'tests/test_runtime_converge_contract.py'
       - 'tests/test_runtime_converge_action_relay.py'
@@ -49,3 +52,4 @@ jobs:
           tests/test_runtime_converge_capability.py
           tests/test_runtime_converge_bootstrap_contract.py
           tests/test_action_relay_generation_reconcile.py
+          tests/test_oracle_checkout_diagnostic.py

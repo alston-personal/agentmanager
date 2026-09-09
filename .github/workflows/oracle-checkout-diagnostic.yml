@@ -1,0 +1,48 @@
+name: Oracle Checkout Read-only Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-checkout-readonly-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read fixed Oracle checkout without changing it
+        env:
+          HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+          SSH_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+          SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST_SOURCE" && test -n "$SSH_USER"
+          diagnostic_host="${HOST_SOURCE#*://}"
+          diagnostic_host="${diagnostic_host%%/*}"
+          diagnostic_host="${diagnostic_host%%:*}"
+          test -n "$diagnostic_host"
+          [[ "$diagnostic_host" != -* && "$SSH_USER" != -* ]]
+          timeout 90 ssh -T -o BatchMode=yes -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=accept-new -p "${SSH_PORT:-22}" \
+            "$SSH_USER@$diagnostic_host" 'python3 -I -' \
+            < scripts/oracle_checkout_diagnostic.py > checkout-diagnostic.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: oracle-checkout-diagnostic
+          path: checkout-diagnostic.json
+          if-no-files-found: warn
+          retention-days: 7
