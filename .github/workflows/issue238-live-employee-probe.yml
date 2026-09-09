@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe relay duplicate submissions and Employee lifecycle
+      - name: Probe bounded Worker Host failure evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -59,51 +59,43 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1])
           targets={'zeus-writer','youtube-ai-manager','zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'}
-          safe={'schema','status','state','employee_id','assignment_id','wake_id','wake_attempt_id','presence_generation','expected_lease_generation','lease_generation','lease_id','node_id','runner_kind','adapter_id','thread_head','transport','dispatch_performed','task_id','updated_at','created_at','expires_at','credential_exposed','session_identity_exposed','outcome','replayed'}
+          safe={'schema','status','state','employee_id','assignment_id','wake_id','wake_attempt_id','presence_generation','expected_lease_generation','lease_generation','lease_id','node_id','runner_kind','adapter_id','thread_head','transport','dispatch_performed','task_id','updated_at','created_at','expires_at','credential_exposed','session_identity_exposed','outcome','replayed','error_code','completed_at','started_at'}
+          child_safe={'schema','status','work_performed','employee_id','assignment_id','wake_id','presence_generation','lease_generation','thread_head','error_code','executor_provider','executor_model','credential_exposed','session_identity_exposed','verified_marker_emitted'}
 
           for aid in ('zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'):
               p=root/'employee-runtime/assignments'/f'{aid}.json'
               if p.is_file():
                   d=json.loads(p.read_text())
                   print('assignment='+json.dumps({k:d.get(k) for k in safe if k in d},sort_keys=True))
+              lp=root/'employee-runtime/lifecycle/leases'/f'{aid}.json'
+              if lp.is_file():
+                  d=json.loads(lp.read_text())
+                  print('lease='+json.dumps({k:d.get(k) for k in safe if k in d},sort_keys=True))
 
-          for surface in (root/'employee-runtime/supervisor',root/'employee-wakes',root/'employee-worker-host',root/'employee-worker-state'):
+          surface=root/'employee-worker-host/dispatches'
+          if surface.exists():
+              for p in sorted(surface.rglob('*.json'),key=lambda x:x.stat().st_mtime,reverse=True)[:20]:
+                  try:d=json.loads(p.read_text())
+                  except Exception:continue
+                  if not isinstance(d,dict):continue
+                  if not any(t in json.dumps(d,sort_keys=True) for t in targets):continue
+                  out={k:d.get(k) for k in safe if k in d}
+                  child=d.get('child_result')
+                  if isinstance(child,dict): out['child_result']={k:child.get(k) for k in child_safe if k in child}
+                  print('worker_dispatch='+json.dumps({'path':str(p.relative_to(root)),'fields':out},sort_keys=True))
+
+          for surface in (root/'employee-runtime/supervisor',root/'employee-wakes',root/'employee-worker-state'):
               if not surface.exists(): continue
-              for p in sorted(surface.rglob('*.json'),key=lambda x:x.stat().st_mtime,reverse=True)[:40]:
+              for p in sorted(surface.rglob('*.json'),key=lambda x:x.stat().st_mtime,reverse=True)[:20]:
                   try:d=json.loads(p.read_text())
                   except Exception:continue
                   if not isinstance(d,dict):continue
                   if not any(t in json.dumps(d,sort_keys=True) for t in targets):continue
                   print('lifecycle='+json.dumps({'path':str(p.relative_to(root)),'fields':{k:d.get(k) for k in safe if k in d}},sort_keys=True))
-
-          relay=root/'runtime/action-relay'
-          print('--- action relay spool safe projection ---')
-          for bucket in ('inbox','processing','receipts','quarantine'):
-              d=relay/bucket
-              files=sorted(d.glob('action-*.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:30] if d.exists() else []
-              print(f'spool_{bucket}_count={len(files)}')
-              for p in files:
-                  try:x=json.loads(p.read_text())
-                  except Exception:continue
-                  action=x.get('action')
-                  params=x.get('params') if isinstance(x.get('params'),dict) else {}
-                  req=params.get('request') if isinstance(params.get('request'),dict) else {}
-                  if action!='agentos.runtime.converge' and x.get('action')!='agentos.runtime.converge':
-                      continue
-                  print('relay_record='+json.dumps({
-                      'bucket':bucket,
-                      'capsule_id':x.get('capsule_id') or p.stem,
-                      'action':action,
-                      'request_id':x.get('request_id') or req.get('request_id'),
-                      'source_commit':x.get('source_commit') or req.get('source_commit'),
-                      'status':x.get('status'),
-                      'classification':x.get('classification'),
-                      'outcome':x.get('outcome'),
-                      'replayed':x.get('replayed'),
-                  },sort_keys=True))
           PY
 
-          echo "--- recent service transitions ---"
-          journalctl --user -u agentos-core-supervisor.service -u agentos-employee-worker-host.service -n 60 --no-pager 2>/dev/null \
-            | grep -E 'Starting|Started|Stopping|Stopped|Failed' || true
+          echo "--- worker/wake recent journal ---"
+          journalctl --user -u agentos-employee-worker-host.service -u agentos-employee-wake-node.service -n 100 --no-pager 2>/dev/null \
+            | sed -E 's/(token|secret|password|authorization|credential)[=:][^ ]+/_redacted_/Ig' \
+            | tail -100 || true
           REMOTE
