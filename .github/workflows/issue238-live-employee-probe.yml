@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Realm fabric structure only
+      - name: Inspect Realm fabric recovery candidates
         shell: bash
         run: |
           set -euo pipefail
@@ -46,62 +46,48 @@ jobs:
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm/fabric.json'" <<'PY'
-          import json, sys
+          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm'" <<'PY'
+          import hashlib,json,sys
           from pathlib import Path
-          p=Path(sys.argv[1])
-          text=p.read_text(encoding='utf-8')
-          try:
-              data=json.loads(text)
-              print('fabric_normal_json=true')
-              print('fabric_segment_count=1')
-              print('fabric_schema='+str(data.get('schema') if isinstance(data,dict) else type(data).__name__))
-              print('fabric_realm='+str(data.get('realm_id') if isinstance(data,dict) else None))
-              print('fabric_full_consumed=true')
-              raise SystemExit(0)
-          except json.JSONDecodeError:
-              print('fabric_normal_json=false')
+          root=Path(sys.argv[1])
+          fabric=root/'fabric.json'
+          text=fabric.read_text(encoding='utf-8')
           decoder=json.JSONDecoder()
-          i=0
-          n=len(text)
-          segments=[]
-          full=True
-          error='none'
-          while True:
-              while i<n and text[i].isspace(): i+=1
-              if i>=n: break
+          first,end=decoder.raw_decode(text,0)
+          tail=text[end:]
+          print('fabric_size='+str(len(text.encode('utf-8'))))
+          print('first_snapshot_size_chars='+str(end))
+          print('tail_size_chars='+str(len(tail)))
+          print('tail_nonwhitespace='+str(bool(tail.strip())).lower())
+          stripped=tail.lstrip()
+          print('tail_starts_object='+str(stripped.startswith('{')).lower())
+          print('tail_starts_expected_schema_literal='+str('"schema": "agentos.realm-fabric/v0.1"' in stripped[:500] or '"schema":"agentos.realm-fabric/v0.1"' in stripped[:500]).lower())
+          print('first_schema='+str(first.get('schema') if isinstance(first,dict) else None))
+          print('first_realm='+str(first.get('realm_id') if isinstance(first,dict) else None))
+          print('first_node_count='+str(len(first.get('nodes') or {}) if isinstance(first,dict) else -1))
+          print('first_receipt_count='+str(len(first.get('receipts') or {}) if isinstance(first,dict) else -1))
+          print('first_sha256='+hashlib.sha256(text[:end].encode('utf-8')).hexdigest())
+          print('tail_sha256='+hashlib.sha256(tail.encode('utf-8')).hexdigest())
+          candidates=[]
+          for p in sorted(root.glob('fabric.json*')):
+              if p.name=='fabric.json': continue
               try:
-                  value,end=decoder.raw_decode(text,i)
-              except Exception as exc:
-                  full=False
-                  error=type(exc).__name__
-                  break
-              if not isinstance(value,dict):
-                  full=False
-                  error='non_object_segment'
-                  break
-              segments.append({
-                  'schema': value.get('schema'),
-                  'realm_id': value.get('realm_id'),
-                  'node_count': len(value.get('nodes') or {}) if isinstance(value.get('nodes'),dict) else -1,
-                  'task_node_count': len(value.get('tasks') or {}) if isinstance(value.get('tasks'),dict) else -1,
-                  'receipt_count': len(value.get('receipts') or {}) if isinstance(value.get('receipts'),dict) else -1,
-              })
-              i=end
-          while i<n and text[i].isspace(): i+=1
-          if i!=n: full=False
-          print('fabric_segment_count='+str(len(segments)))
-          print('fabric_full_consumed='+str(full).lower())
-          print('fabric_parse_tail_error='+error)
-          for idx,s in enumerate(segments):
-              print('fabric_segment_%d_schema=%s' % (idx,s['schema']))
-              print('fabric_segment_%d_realm=%s' % (idx,s['realm_id']))
-              print('fabric_segment_%d_node_count=%s' % (idx,s['node_count']))
-              print('fabric_segment_%d_task_node_count=%s' % (idx,s['task_node_count']))
-              print('fabric_segment_%d_receipt_count=%s' % (idx,s['receipt_count']))
-          realms={str(s['realm_id']) for s in segments}
-          schemas={str(s['schema']) for s in segments}
-          print('fabric_same_realm='+str(len(realms)==1).lower())
-          print('fabric_all_expected_schema='+str(schemas=={'agentos.realm-fabric/v0.1'}).lower())
+                  raw=p.read_text(encoding='utf-8')
+              except Exception:
+                  continue
+              try:
+                  d=json.loads(raw)
+                  valid=isinstance(d,dict) and d.get('schema')=='agentos.realm-fabric/v0.1'
+              except Exception:
+                  d=None; valid=False
+              candidates.append((p.name,len(raw.encode('utf-8')),valid,str(d.get('realm_id')) if valid else None,len(d.get('receipts') or {}) if valid else -1,hashlib.sha256(raw.encode('utf-8')).hexdigest()))
+          print('candidate_count='+str(len(candidates)))
+          for idx,(name,size,valid,realm,receipts,digest) in enumerate(candidates):
+              print(f'candidate_{idx}_name={name}')
+              print(f'candidate_{idx}_size={size}')
+              print(f'candidate_{idx}_valid_json={str(valid).lower()}')
+              print(f'candidate_{idx}_realm={realm}')
+              print(f'candidate_{idx}_receipt_count={receipts}')
+              print(f'candidate_{idx}_sha256={digest}')
           PY
           REMOTE
