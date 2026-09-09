@@ -125,7 +125,7 @@ EOF
 
 # Historical Realm Fabric repair is deliberately narrow and fail-closed. The
 # helper comes from the same immutable SOURCE_COMMIT. Valid stores are a no-op;
-# only multiple fully valid, schema-consistent snapshots may be collapsed.
+# only fully valid schema-consistent snapshots with bounded NUL/whitespace padding may be collapsed.
 python3 "$TMPDIR/repair_realm_fabric_store.py" --path "$DATA_ROOT/realm/fabric.json"
 
 (
