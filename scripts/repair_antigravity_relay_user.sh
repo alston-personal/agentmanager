@@ -45,10 +45,6 @@ mkdir -p "$RUNTIME/agentos_node" "$REALM_RUNTIME" "$UNIT_DIR"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-# Runtime repair must not depend on the mutable checkout being clean or fast-forwardable.
-# Fetch one explicitly allowlisted ref, then materialize only trusted runtime inputs from
-# FETCH_HEAD. When an exact commit is supplied by the bounded bootstrap contract, fail
-# closed unless that allowlisted ref resolves to the same immutable generation.
 git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
 SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
 if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
@@ -63,15 +59,12 @@ show_source agentos_node/__init__.py > "$TMPDIR/__init__.py"
 show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
 show_source agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 show_source scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
+show_source scripts/repair_realm_fabric_store.py > "$TMPDIR/repair_realm_fabric_store.py"
 
 install -m 0664 "$TMPDIR/__init__.py" "$RUNTIME/agentos_node/__init__.py"
 install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
 install -m 0664 "$TMPDIR/antigravity_relay_worker.py" "$RUNTIME/agentos_node/antigravity_relay_worker.py"
 
-# Realm Server is no longer a tiny hand-curated subset: it imports the runtime
-# controller, legacy compatibility controller, resolve facade and their Core
-# dependencies. Materialize the complete agent_core package from the SAME exact
-# commit so Python dependency closure cannot silently drift behind realm_server.
 rm -rf "$REALM_RUNTIME/agent_core"
 git -C "$REPO" archive "$SOURCE_COMMIT" agent_core | tar -x -C "$REALM_RUNTIME"
 test -f "$REALM_RUNTIME/agent_core/realm_server.py"
@@ -107,12 +100,6 @@ for d in "$SPOOL" "$SPOOL/inbox" "$SPOOL/processing" "$SPOOL/receipts"; do
   chmod 2770 "$d"
 done
 
-# The ubuntu user manager was started before the agentos supplementary-group
-# grant, so its children may not inherit agentos even though /etc/group is
-# correct. Pin the boundary explicitly with `sg agentos` on every relay start.
-# NoNewPrivileges must not be enabled here because it blocks this authorized
-# setgid transition; authority remains bounded by account membership + capsule schema.
-# Provider selection and runtime provenance are explicit; capsules cannot choose either.
 cat > "$UNIT" <<EOF
 [Unit]
 Description=AgentOS Antigravity Relay (ubuntu identity, agentos boundary)
@@ -136,9 +123,11 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
-# Install ONE Realm Fabric as a separate localhost-only Core service. Core code
-# comes from REALM_RUNTIME; bounded Node-side executor dispatch is loaded lazily
-# from the Action Relay worktree, which is pinned to the same SOURCE_COMMIT below.
+# Historical Realm Fabric repair is deliberately narrow and fail-closed. The
+# helper comes from the same immutable SOURCE_COMMIT. Valid stores are a no-op;
+# only multiple fully valid, schema-consistent snapshots may be collapsed.
+python3 "$TMPDIR/repair_realm_fabric_store.py" --path "$DATA_ROOT/realm/fabric.json"
+
 (
   cd "$REALM_RUNTIME"
   PYTHONPATH="$REALM_RUNTIME:$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" /usr/bin/python3 -m agent_core.realm_cli init --realm-id realm-alston >/dev/null
@@ -154,10 +143,6 @@ WorkingDirectory=$REALM_RUNTIME
 Environment=PYTHONPATH=$REALM_RUNTIME:$ACTION_RUNTIME
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
 UMask=0007
-# ONE dispatches only bounded semantic executor jobs, but that still requires
-# access to the shared Action Relay spool. The long-lived ubuntu user manager
-# predates the agentos supplementary-group grant, so establish the already-
-# authorized group boundary explicitly without sudo or broader filesystem mode.
 ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'
 Restart=always
 RestartSec=3
@@ -167,8 +152,6 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
-# Do NOT restart Antigravity from inside an Antigravity request. Reload the unit only;
-# the independent Action Relay performs that restart after repair side effects exist.
 systemctl --user daemon-reload
 systemctl --user restart agentos-realm-fabric.service
 systemctl --user enable agentos-realm-fabric.service >/dev/null
@@ -182,18 +165,12 @@ print('antigravity_provider=' + worker.provider)
 PY
 )
 
-# The Action Relay must consume the exact same governed generation selected by
-# this repair. It must not independently fall back to mutable origin/main.
 AGENTOS_REPO="$REPO" \
 AGENTOS_ACTION_RUNTIME_ROOT="$ACTION_RUNTIME" \
 AGENTOS_ACTION_SOURCE_REF="$SOURCE_REF" \
 AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT" \
 bash "$TMPDIR/install_action_relay_user.sh"
 
-# #117 Experience hydration is an executor-local, read-only cognitive input. Keep
-# its code and Codex MCP configuration on the SAME immutable Action Runtime used
-# by the bounded executor provider. Existing accepted Experience is never silently
-# replaced: the seed helper refuses a digest mismatch and therefore fails closed.
 for required in \
   agent_core/experience.py \
   agent_core/experience_store.py \
@@ -234,8 +211,6 @@ done
 REALM_HEALTH=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health)
 echo "realm_fabric_health=$REALM_HEALTH"
 
-# Route existence is checked without credentials: current handlers must answer
-# 401 (not 404), proving the selected generation is live without exposing tokens.
 BOOTSTRAP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 'http://127.0.0.1:8780/v1/bootstrap?node_id=vopc5750')
 BENCHMARK_CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:8780/v1/benchmark)
 test "$BOOTSTRAP_CODE" = 401
@@ -258,13 +233,3 @@ echo "codex_experience_mcp_exact_runtime=PASS"
 echo "realm_fabric_install=PASS"
 echo "realm_fabric_runtime_closure=PASS"
 echo "realm_fabric_group_context=agentos"
-echo "realm_fabric_device_flow=PASS"
-echo "realm_fabric_bootstrap_route=PASS"
-echo "realm_fabric_benchmark_route=PASS"
-echo "realm_fabric_port=8780"
-echo "runtime=$RUNTIME"
-echo "realm_runtime=$REALM_RUNTIME"
-echo "action_runtime=$ACTION_RUNTIME"
-echo "spool=$SPOOL"
-echo "unit=$UNIT"
-echo "realm_unit=$REALM_UNIT"
