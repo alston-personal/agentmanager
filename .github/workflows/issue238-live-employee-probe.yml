@@ -33,45 +33,31 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect live installer after-state
+      - name: Probe Realm data root and process
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
-          ROOT="$1"
-          cd "$ROOT"
+          cd "$1"
           set -a
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
+          printf 'shell_AGENToS_DATA_ROOT=%s\n' "${AGENTOS_DATA_ROOT:-unset}"
+          printf 'shell_AGENT_DATA_ROOT=%s\n' "${AGENT_DATA_ROOT:-unset}"
+          printf 'shell_AGENT_DATA_DIR=%s\n' "${AGENT_DATA_DIR:-unset}"
+          PID="$(systemctl --user show agentos-realm-fabric.service -p MainPID --value 2>/dev/null || true)"
+          echo "realm_pid=${PID:-0}"
+          echo "realm_state=$(systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState --value 2>/dev/null | tr '\n' ',' || true)"
+          echo "realm_restarts=$(systemctl --user show agentos-realm-fabric.service -p NRestarts --value 2>/dev/null || true)"
+          if [ -n "$PID" ] && [ "$PID" != 0 ] && [ -r "/proc/$PID/environ" ]; then
+            tr '\0' '\n' < "/proc/$PID/environ" | grep -E '^(AGENTOS_DATA_ROOT|AGENT_DATA_ROOT|AGENT_DATA_DIR|PYTHONPATH)=' | sort || true
+          fi
+          echo "listener_8780=$(ss -ltn 2>/dev/null | awk '$4 ~ /:8780$/ {print $4}' | head -1 || true)"
+          echo "health=$(curl -sS --max-time 2 http://127.0.0.1:8780/v1/health 2>&1 | tail -1)"
+          echo "--- realm log tail ---"
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
-          echo "checkout_sha=$(git rev-parse HEAD)"
-          echo "checkout_clean=$([ -z "$(git status --porcelain --untracked-files=no)" ] && echo true || echo false)"
-          if [ -e "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; fi
-          for svc in agentos-action-relay.service agentos-realm-fabric.service agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
-            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
-          done
-          echo "wake_restarts=$(systemctl --user show agentos-employee-wake-node.service -p NRestarts --value 2>/dev/null || true)"
-          echo "worker_execstart=$(systemctl --user show agentos-employee-worker-host.service -p ExecStart --value 2>/dev/null | sed -E 's/;.*$//' || true)"
-          echo "realm_health=$(curl -fsS http://127.0.0.1:8780/v1/health 2>/dev/null | tr -d '\n' || echo unavailable)"
-          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm/nodes.json'" <<'PY'
-          import json,sys
-          from pathlib import Path
-          p=Path(sys.argv[1])
-          try:
-              text=p.read_text(encoding='utf-8')
-              data=json.loads(text)
-              print('node_registry_single_json=true')
-              print('node_registry_realm='+str(data.get('realm_id')))
-              print('node_registry_node_count='+str(len(data.get('nodes') or {})))
-          except Exception as exc:
-              print('node_registry_single_json=false error='+type(exc).__name__)
-          PY
-          echo "--- wake journal ---"
-          journalctl --user -u agentos-employee-wake-node.service -n 35 --no-pager 2>/dev/null | tail -35 || true
-          echo "--- worker journal ---"
-          journalctl --user -u agentos-employee-worker-host.service -n 35 --no-pager 2>/dev/null | tail -35 || true
+          tail -60 "$DATA_ROOT/logs/realm-fabric.log" 2>/dev/null || true
           REMOTE
