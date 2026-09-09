@@ -12,8 +12,8 @@ is accepted through the executor-job request.
 from __future__ import annotations
 
 # Live acceptance trigger only: behavior intentionally unchanged. Touching this
-# watched provider path asks the canonical exact-generation rollout to certify
-# the new core/integration generation through ONE and #117 regression.
+# watched provider path asks exact-generation rollout to emit the two-phase,
+# sanitized Realm tail hashes before #117 regression continues.
 
 import importlib.util
 import json
