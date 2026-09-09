@@ -34,7 +34,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Probe exact checkout drift
+      - name: Apply exact target-equivalent checkout
         shell: bash
         run: |
           set -euo pipefail
@@ -45,17 +45,30 @@ jobs:
           TARGET="$2"
           cd "$ROOT"
           git fetch --no-tags origin core/integration >/dev/null 2>&1
-          echo "checkout_sha=$(git rev-parse HEAD)"
-          echo "target_sha=$TARGET"
-          echo "fetch_head=$(git rev-parse FETCH_HEAD)"
-          echo "tracked_status_begin"
-          git status --porcelain --untracked-files=no
-          echo "tracked_status_end"
-          while IFS= read -r path; do
-            [ -n "$path" ] || continue
-            wt="$(git hash-object -- "$path" 2>/dev/null || echo missing)"
-            head="$(git rev-parse "HEAD:$path" 2>/dev/null || echo missing)"
-            target="$(git rev-parse "$TARGET:$path" 2>/dev/null || echo missing)"
-            echo "drift_path=$path wt=$wt head=$head target=$target wt_equals_target=$([ "$wt" = "$target" ] && echo true || echo false)"
-          done < <(git diff --name-only)
+          [ "$(git rev-parse FETCH_HEAD)" = "$TARGET" ] || { echo "target_ref_mismatch"; exit 20; }
+
+          status="$(git status --porcelain=v1 --untracked-files=no)"
+          [ -n "$status" ] || { echo "checkout_already_clean=true"; git checkout --detach --force "$TARGET" >/dev/null; exit 0; }
+
+          count=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            count=$((count+1))
+            [ "${line:0:3}" = " M " ] || { echo "unsafe_status=$line"; exit 21; }
+            path="${line:3}"
+            case "$path" in /*|*..*) echo "unsafe_path"; exit 22;; esac
+            [ -f "$path" ] && [ ! -L "$path" ] || { echo "unsafe_file_type=$path"; exit 23; }
+            [ -z "$(git diff --summary -- "$path")" ] || { echo "unsafe_mode_change=$path"; exit 24; }
+            wt="$(git hash-object -- "$path")"
+            target="$(git rev-parse "$TARGET:$path")"
+            [ "$wt" = "$target" ] || { echo "worktree_not_target_equivalent=$path"; exit 25; }
+            echo "target_equivalent_path=$path"
+          done <<< "$status"
+          [ "$count" -gt 0 ] || { echo "no_eligible_dirty_paths"; exit 26; }
+
+          git checkout --detach --force "$TARGET" >/dev/null
+          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "checkout_head_mismatch"; exit 27; }
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "checkout_not_clean"; exit 28; }
+          echo "target_equivalent_checkout=PASS"
+          echo "resulting_sha=$(git rev-parse HEAD)"
           REMOTE
