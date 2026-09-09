@@ -19,7 +19,6 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      TARGET_SHA: 53793ac89e7a9bd555fe3601dda1e5dda8f7436f
     steps:
       - name: Resolve host
         shell: bash
@@ -34,41 +33,45 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Apply exact target-equivalent checkout
+      - name: Inspect live installer after-state
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"
-          TARGET="$2"
           cd "$ROOT"
-          git fetch --no-tags origin core/integration >/dev/null 2>&1
-          [ "$(git rev-parse FETCH_HEAD)" = "$TARGET" ] || { echo "target_ref_mismatch"; exit 20; }
-
-          status="$(git status --porcelain=v1 --untracked-files=no)"
-          [ -n "$status" ] || { echo "checkout_already_clean=true"; git checkout --detach --force "$TARGET" >/dev/null; exit 0; }
-
-          count=0
-          while IFS= read -r line; do
-            [ -n "$line" ] || continue
-            count=$((count+1))
-            [ "${line:0:3}" = " M " ] || { echo "unsafe_status=$line"; exit 21; }
-            path="${line:3}"
-            case "$path" in /*|*..*) echo "unsafe_path"; exit 22;; esac
-            [ -f "$path" ] && [ ! -L "$path" ] || { echo "unsafe_file_type=$path"; exit 23; }
-            [ -z "$(git diff --summary -- "$path")" ] || { echo "unsafe_mode_change=$path"; exit 24; }
-            wt="$(git hash-object -- "$path")"
-            target="$(git rev-parse "$TARGET:$path")"
-            [ "$wt" = "$target" ] || { echo "worktree_not_target_equivalent=$path"; exit 25; }
-            echo "target_equivalent_path=$path"
-          done <<< "$status"
-          [ "$count" -gt 0 ] || { echo "no_eligible_dirty_paths"; exit 26; }
-
-          git checkout --detach --force "$TARGET" >/dev/null
-          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "checkout_head_mismatch"; exit 27; }
-          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "checkout_not_clean"; exit 28; }
-          echo "target_equivalent_checkout=PASS"
-          echo "resulting_sha=$(git rev-parse HEAD)"
+          set -a
+          source .env
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
+          echo "checkout_sha=$(git rev-parse HEAD)"
+          echo "checkout_clean=$([ -z "$(git status --porcelain --untracked-files=no)" ] && echo true || echo false)"
+          if [ -e "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; fi
+          for svc in agentos-action-relay.service agentos-realm-fabric.service agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
+          done
+          echo "wake_restarts=$(systemctl --user show agentos-employee-wake-node.service -p NRestarts --value 2>/dev/null || true)"
+          echo "worker_execstart=$(systemctl --user show agentos-employee-worker-host.service -p ExecStart --value 2>/dev/null | sed -E 's/;.*$//' || true)"
+          echo "realm_health=$(curl -fsS http://127.0.0.1:8780/v1/health 2>/dev/null | tr -d '\n' || echo unavailable)"
+          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm/nodes.json'" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          try:
+              text=p.read_text(encoding='utf-8')
+              data=json.loads(text)
+              print('node_registry_single_json=true')
+              print('node_registry_realm='+str(data.get('realm_id')))
+              print('node_registry_node_count='+str(len(data.get('nodes') or {})))
+          except Exception as exc:
+              print('node_registry_single_json=false error='+type(exc).__name__)
+          PY
+          echo "--- wake journal ---"
+          journalctl --user -u agentos-employee-wake-node.service -n 35 --no-pager 2>/dev/null | tail -35 || true
+          echo "--- worker journal ---"
+          journalctl --user -u agentos-employee-worker-host.service -n 35 --no-pager 2>/dev/null | tail -35 || true
           REMOTE
