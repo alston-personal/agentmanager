@@ -42,10 +42,55 @@ class NodeRegistry:
             raise ValueError(f'invalid node registry: {self.path}')
         return data
 
+    def _recover_concatenated_snapshots(self, text: str) -> dict[str, Any]:
+        """Recover only a sequence of complete canonical registry snapshots.
+
+        Older runtime generations could leave multiple complete JSON snapshots
+        concatenated in the registry file.  That state is mechanically
+        recoverable, unlike arbitrary/truncated JSON.  Every segment must decode
+        fully as a valid NodeRegistry snapshot, all snapshots must belong to the
+        same Realm, and there must be at least two snapshots.  Text order is the
+        publication order, so the final complete snapshot is the current view.
+
+        The next mutating operation runs under the existing flock and publishes
+        the recovered state through the normal temp-file + os.replace path,
+        thereby canonicalising the file back to one JSON document.
+        """
+        decoder = json.JSONDecoder()
+        snapshots: list[dict[str, Any]] = []
+        index = 0
+        length = len(text)
+        while True:
+            while index < length and text[index].isspace():
+                index += 1
+            if index >= length:
+                break
+            value, end = decoder.raw_decode(text, index)
+            if not isinstance(value, dict):
+                raise ValueError('node_registry_recovery_segment_not_object')
+            snapshots.append(self._validate(value))
+            index = end
+
+        if len(snapshots) < 2:
+            raise ValueError('node_registry_recovery_not_concatenated')
+        realm_ids = {snapshot.get('realm_id') for snapshot in snapshots}
+        if len(realm_ids) != 1:
+            raise ValueError('node_registry_recovery_realm_mismatch')
+        return snapshots[-1]
+
     def _load_unlocked(self) -> dict[str, Any]:
         if not self.path.exists():
             return self._empty()
-        return self._validate(json.loads(self.path.read_text(encoding='utf-8')))
+        text = self.path.read_text(encoding='utf-8')
+        try:
+            return self._validate(json.loads(text))
+        except json.JSONDecodeError as original:
+            try:
+                return self._recover_concatenated_snapshots(text)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                # Arbitrary corruption remains fail-closed.  Never guess through
+                # truncated data, garbage, or snapshots from different Realms.
+                raise original
 
     def load(self) -> dict[str, Any]:
         # Readers need no lock because writers publish only through os.replace().
