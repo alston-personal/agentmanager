@@ -91,6 +91,10 @@ def repair(path: Path) -> str:
     try:
         single = json.loads(text)
     except json.JSONDecodeError:
+        # Two-phase hash-bound recovery: emit only structural hashes/evidence in
+        # the failing generation. A later generation may explicitly authorize
+        # the canonical #298 repair against those exact observed hashes.
+        print(json.dumps(probe_truncated_tail(path), sort_keys=True))
         snapshots, used_nul_padding = _decode_all(text)
         if not snapshots:
             raise ValueError("Realm fabric corruption contains no valid snapshot")
