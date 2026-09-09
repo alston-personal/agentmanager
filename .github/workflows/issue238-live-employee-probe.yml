@@ -19,6 +19,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+      TARGET_SHA: 28be69cb671fcf8cedd5abc8864dda88c4b03dd6
     steps:
       - name: Resolve host
         shell: bash
@@ -33,61 +34,43 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Realm fabric recovery candidates
+      - name: Stage exact repair generation and rehash fabric
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" <<'REMOTE'
           set -euo pipefail
-          cd "$1"
+          ROOT="$1"
+          TARGET="$2"
+          cd "$ROOT"
+          git fetch --no-tags origin core/integration >/dev/null 2>&1
+          [ "$(git rev-parse FETCH_HEAD)" = "$TARGET" ] || { echo "target_ref_mismatch"; exit 20; }
+          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "tracked_checkout_not_clean"; exit 21; }
+          git checkout --detach --force "$TARGET" >/dev/null
+          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "checkout_head_mismatch"; exit 22; }
+          echo "repair_generation_checkout=PASS"
+          echo "checkout_sha=$(git rev-parse HEAD)"
           set -a
           source .env
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm'" <<'PY'
+          /usr/bin/sg agentos -c "python3 - '$DATA_ROOT/realm/fabric.json'" <<'PY'
           import hashlib,json,sys
           from pathlib import Path
-          root=Path(sys.argv[1])
-          fabric=root/'fabric.json'
-          text=fabric.read_text(encoding='utf-8')
+          p=Path(sys.argv[1])
+          raw=p.read_bytes()
+          text=raw.decode('utf-8')
           decoder=json.JSONDecoder()
           first,end=decoder.raw_decode(text,0)
+          prefix=text[:end].encode('utf-8')
           tail=text[end:]
-          print('fabric_size='+str(len(text.encode('utf-8'))))
-          print('first_snapshot_size_chars='+str(end))
-          print('tail_size_chars='+str(len(tail)))
-          print('tail_nonwhitespace='+str(bool(tail.strip())).lower())
-          stripped=tail.lstrip()
-          print('tail_starts_object='+str(stripped.startswith('{')).lower())
-          print('tail_starts_expected_schema_literal='+str('"schema": "agentos.realm-fabric/v0.1"' in stripped[:500] or '"schema":"agentos.realm-fabric/v0.1"' in stripped[:500]).lower())
-          print('first_schema='+str(first.get('schema') if isinstance(first,dict) else None))
-          print('first_realm='+str(first.get('realm_id') if isinstance(first,dict) else None))
-          print('first_node_count='+str(len(first.get('nodes') or {}) if isinstance(first,dict) else -1))
-          print('first_receipt_count='+str(len(first.get('receipts') or {}) if isinstance(first,dict) else -1))
-          print('first_sha256='+hashlib.sha256(text[:end].encode('utf-8')).hexdigest())
-          print('tail_sha256='+hashlib.sha256(tail.encode('utf-8')).hexdigest())
-          candidates=[]
-          for p in sorted(root.glob('fabric.json*')):
-              if p.name=='fabric.json': continue
-              try:
-                  raw=p.read_text(encoding='utf-8')
-              except Exception:
-                  continue
-              try:
-                  d=json.loads(raw)
-                  valid=isinstance(d,dict) and d.get('schema')=='agentos.realm-fabric/v0.1'
-              except Exception:
-                  d=None; valid=False
-              candidates.append((p.name,len(raw.encode('utf-8')),valid,str(d.get('realm_id')) if valid else None,len(d.get('receipts') or {}) if valid else -1,hashlib.sha256(raw.encode('utf-8')).hexdigest()))
-          print('candidate_count='+str(len(candidates)))
-          for idx,(name,size,valid,realm,receipts,digest) in enumerate(candidates):
-              print(f'candidate_{idx}_name={name}')
-              print(f'candidate_{idx}_size={size}')
-              print(f'candidate_{idx}_valid_json={str(valid).lower()}')
-              print(f'candidate_{idx}_realm={realm}')
-              print(f'candidate_{idx}_receipt_count={receipts}')
-              print(f'candidate_{idx}_sha256={digest}')
+          print('fabric_file_sha256='+hashlib.sha256(raw).hexdigest())
+          print('fabric_prefix_sha256='+hashlib.sha256(prefix).hexdigest())
+          print('fabric_prefix_schema='+str(first.get('schema') if isinstance(first,dict) else None))
+          print('fabric_prefix_realm='+str(first.get('realm_id') if isinstance(first,dict) else None))
+          print('fabric_tail_chars='+str(len(tail)))
+          print('fabric_tail_nonwhitespace='+str(bool(tail.strip())).lower())
           PY
           REMOTE
