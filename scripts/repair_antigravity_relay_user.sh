@@ -20,6 +20,8 @@ UNIT="$UNIT_DIR/agentos-antigravity-relay.service"
 REALM_UNIT="$UNIT_DIR/agentos-realm-fabric.service"
 MANIFEST="$RUNTIME/runtime-provenance.json"
 CODEX_CONFIG="/home/ubuntu/.codex/config.toml"
+REALM_FABRIC_EXPECTED_FILE_SHA256="6e328861419b18c4194de44f66e72344f22a32a39bdc204d92410d7c6523e216"
+REALM_FABRIC_EXPECTED_PREFIX_SHA256="16fe1100378068a06264c6d6415560fdcd049595a094e537bef132fe3e45abc2"
 
 case "$SOURCE_REF" in
   main|core/integration|feature/realm-node-fabric-readiness) ;;
@@ -60,6 +62,7 @@ show_source agentos_node/antigravity_relay.py > "$TMPDIR/antigravity_relay.py"
 show_source agentos_node/antigravity_relay_worker.py > "$TMPDIR/antigravity_relay_worker.py"
 show_source scripts/install_action_relay_user.sh > "$TMPDIR/install_action_relay_user.sh"
 show_source scripts/repair_realm_fabric_store.py > "$TMPDIR/repair_realm_fabric_store.py"
+show_source scripts/repair_realm_fabric_truncated_tail.py > "$TMPDIR/repair_realm_fabric_truncated_tail.py"
 
 install -m 0664 "$TMPDIR/__init__.py" "$RUNTIME/agentos_node/__init__.py"
 install -m 0664 "$TMPDIR/antigravity_relay.py" "$RUNTIME/agentos_node/antigravity_relay.py"
@@ -123,9 +126,29 @@ PrivateTmp=true
 WantedBy=default.target
 EOF
 
-# Historical Realm Fabric repair is deliberately narrow and fail-closed. The
-# helper comes from the same immutable SOURCE_COMMIT. Valid stores are a no-op;
-# only fully valid schema-consistent snapshots with bounded NUL/whitespace padding may be collapsed.
+# One-time #298 historical repair, authorized by the exact hashes emitted by
+# exact-generation rollout #22. Any changed byte fails closed before mutation.
+if ! python3 - "$DATA_ROOT/realm/fabric.json" <<'PY'
+import json, sys
+from pathlib import Path
+p=Path(sys.argv[1])
+try:
+    json.loads(p.read_text(encoding='utf-8'))
+except json.JSONDecodeError:
+    raise SystemExit(1)
+raise SystemExit(0)
+PY
+then
+  python3 "$TMPDIR/repair_realm_fabric_truncated_tail.py" \
+    --fabric "$DATA_ROOT/realm/fabric.json" \
+    --expected-file-sha256 "$REALM_FABRIC_EXPECTED_FILE_SHA256" \
+    --expected-prefix-sha256 "$REALM_FABRIC_EXPECTED_PREFIX_SHA256" \
+    --backup-dir "$DATA_ROOT/realm/repair-backups"
+  echo "realm_fabric_hash_bound_tail_repair=PASS"
+fi
+
+# Ordinary recovery remains strict. After the hash-bound historical repair this
+# must observe a valid store and perform no further mutation.
 python3 "$TMPDIR/repair_realm_fabric_store.py" --path "$DATA_ROOT/realm/fabric.json"
 
 (
