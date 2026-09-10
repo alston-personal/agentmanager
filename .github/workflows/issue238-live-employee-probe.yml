@@ -19,6 +19,9 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
+      TARGET_SHA: 28be69cb671fcf8cedd5abc8864dda88c4b03dd6
+      PREFIX_SHA: 16fe1100378068a06264c6d6415560fdcd049595a094e537bef132fe3e45abc2
+      EXPECTED_DRIFT_BLOB: 7da7eb6856669f8c6f01026a9491cb4c6274b5aa
     steps:
       - name: Resolve host
         shell: bash
@@ -33,23 +36,54 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect workspace template drift only
+      - name: Preserve tracked drift and repair Realm fabric
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" "$PREFIX_SHA" "$EXPECTED_DRIFT_BLOB" <<'REMOTE'
           set -euo pipefail
-          cd "$1"
-          PATH_TO_CHECK="agentos.code-workspace.template"
-          echo "checkout_sha=$(git rev-parse HEAD)"
-          echo "status=$(git status --porcelain=v1 --untracked-files=no -- "$PATH_TO_CHECK")"
-          stat -c 'mtime=%y size=%s mode=%a' "$PATH_TO_CHECK" 2>/dev/null || true
-          echo "diff_begin"
-          git diff --no-ext-diff --unified=20 -- "$PATH_TO_CHECK" | sed -n '1,220p'
-          echo "diff_end"
-          echo "recent_commits_touching_file_begin"
-          git log -5 --date=iso-strict --pretty='format:%H %ad %s' -- "$PATH_TO_CHECK"
+          ROOT="$1"
+          TARGET="$2"
+          PREFIX_SHA="$3"
+          EXPECTED_DRIFT_BLOB="$4"
+          cd "$ROOT"
+          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "repair_refused_wrong_checkout"; exit 20; }
+          STATUS="$(git status --porcelain=v1 --untracked-files=no)"
+          [ "$STATUS" = " M agentos.code-workspace.template" ] || { echo "repair_refused_unexpected_tracked_status"; printf '%s\n' "$STATUS"; exit 21; }
+          ACTUAL_BLOB="$(git hash-object -- agentos.code-workspace.template)"
+          [ "$ACTUAL_BLOB" = "$EXPECTED_DRIFT_BLOB" ] || { echo "repair_refused_workspace_drift_changed"; exit 22; }
+
+          set -a
+          source .env
+          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
+          set +a
+          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
+          DRIFT_BACKUP_DIR="$DATA_ROOT/runtime/backups/checkout-drift"
+          FABRIC="$DATA_ROOT/realm/fabric.json"
+          FABRIC_BACKUP_DIR="$DATA_ROOT/runtime/backups/realm-fabric"
+          mkdir -p "$DRIFT_BACKUP_DIR"
+          cp --preserve=mode,timestamps agentos.code-workspace.template "$DRIFT_BACKUP_DIR/agentos.code-workspace.template.$EXPECTED_DRIFT_BLOB"
+          git diff --binary -- agentos.code-workspace.template > "$DRIFT_BACKUP_DIR/agentos.code-workspace.template.$EXPECTED_DRIFT_BLOB.patch"
+          [ "$(git hash-object -- "$DRIFT_BACKUP_DIR/agentos.code-workspace.template.$EXPECTED_DRIFT_BLOB")" = "$EXPECTED_DRIFT_BLOB" ] || { echo "workspace_backup_verification_failed"; exit 23; }
+          echo "workspace_drift_backup=PASS"
+          git checkout -- agentos.code-workspace.template
+          [ -z "$(git status --porcelain=v1 --untracked-files=no)" ] || { echo "checkout_cleanup_failed"; exit 24; }
+          echo "checkout_clean=PASS"
+
+          META="$(/usr/bin/sg agentos -c "python3 -c 'import hashlib,json,sys; from pathlib import Path; p=Path(sys.argv[1]); expected=sys.argv[2]; raw=p.read_bytes(); text=raw.decode(\"utf-8\"); dec=json.JSONDecoder(); first,end=dec.raw_decode(text,0); prefix=text[:end].encode(\"utf-8\"); tail=text[end:]; assert isinstance(first,dict) and first.get(\"schema\")==\"agentos.realm-fabric/v0.1\"; assert first.get(\"realm_id\")==\"realm-alston\"; assert hashlib.sha256(prefix).hexdigest()==expected; assert len(tail)==1909 and tail.strip(); print(hashlib.sha256(raw).hexdigest()); print(len(raw))' '$FABRIC' '$PREFIX_SHA'")"
+          FILE_SHA="$(printf '%s\n' "$META" | sed -n '1p')"
+          FILE_SIZE="$(printf '%s\n' "$META" | sed -n '2p')"
+          test -n "$FILE_SHA" && test -n "$FILE_SIZE"
+          echo "realm_repair_preflight=PASS"
+          echo "realm_repair_original_size=$FILE_SIZE"
+
+          systemctl --user stop agentos-employee-wake-node.service 2>/dev/null || true
+          systemctl --user stop agentos-realm-fabric.service
+          /usr/bin/sg agentos -c "cd '$ROOT' && PYTHONPATH='$ROOT' python3 scripts/repair_realm_fabric_truncated_tail.py --fabric '$FABRIC' --expected-file-sha256 '$FILE_SHA' --expected-prefix-sha256 '$PREFIX_SHA' --backup-dir '$FABRIC_BACKUP_DIR'"
+          /usr/bin/sg agentos -c "python3 -c 'import json,sys; from pathlib import Path; d=json.loads(Path(sys.argv[1]).read_text(encoding=\"utf-8\")); assert d.get(\"schema\")==\"agentos.realm-fabric/v0.1\"; assert d.get(\"realm_id\")==\"realm-alston\"; print(\"fabric_repaired_single_json=PASS\"); print(\"fabric_node_count=\"+str(len(d.get(\"nodes\") or {}))); print(\"fabric_receipt_count=\"+str(len(d.get(\"receipts\") or {})))' '$FABRIC'"
+          bash scripts/install_realm_fabric_user.sh
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
           echo
-          echo "recent_commits_touching_file_end"
+          echo "realm_health_after_repair=PASS"
           REMOTE
