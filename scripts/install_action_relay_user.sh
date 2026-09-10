@@ -174,6 +174,7 @@ fi
 # caller-controlled shell, argv, path, or credential surface is introduced.
 PUBLISHER="$RUNTIME_ROOT/scripts/publish_action_relay_capability.py"
 test -f "$PUBLISHER" || { echo "ERROR: capability publisher missing from exact runtime" >&2; exit 4; }
+grep -Fq 'capability_marker_payload' "$PUBLISHER" || { echo "ERROR: capability publisher is not bound to canonical capability_marker_payload" >&2; exit 4; }
 /usr/bin/sg agentos -c "PYTHONPATH='$RUNTIME_ROOT' /usr/bin/python3 '$PUBLISHER' --marker '$CAPABILITY_MARKER' --source-ref '$SOURCE_REF' --source-commit '$SOURCE_COMMIT'"
 
 echo "action_relay_install=PASS"
