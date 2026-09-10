@@ -53,6 +53,19 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Evidence-first acceptance | Canonical | `.agentos/evidence/`, sanitized receipts, exact source/runtime identity; static CI cannot manufacture live VERIFIED markers |
 | Protected publication authority | Canonical | `core/issue-* -> core/integration`; publication to protected `main` is separate explicit authority and is never implied by `continue`, CI green, mergeability, capability availability, or worker completion |
 
+## Action Relay publication follow-up (2026-09-10)
+
+The #117 rollout at `8705e0ef` reported Realm Fabric valid, but failed creating
+an atomic capability-marker temporary file in the shared Action Relay directory.
+Evidence: https://github.com/alston-personal/agentmanager/actions/runs/34332816868
+
+The service already runs through `sg agentos`; the installer previously published
+its marker under the caller's inherited groups. The candidate fix uses that same
+fixed group boundary for publication, preserving atomic replace and the liveness
+gate. It does not change directory ownership or permissions. This source fix has
+not yet been accepted on Oracle; the inherited-group explanation is an inference
+from the permission error and the differing execution contexts.
+
 ## Current Node Map semantics
 
 The canonical map is generated from ONE-side `NodeRegistry`; it is not a manually maintained list. `agentos.node-map/v0.1` includes:

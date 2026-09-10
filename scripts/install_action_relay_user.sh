@@ -174,7 +174,13 @@ fi
 # deterministic `capabilities.tmp` files may be foreign-owned; they are ignored
 # rather than chmod/unlinked so this installer never takes ownership of evidence
 # it did not create.
-PYTHONPATH="$RUNTIME_ROOT" python3 - "$CAPABILITY_MARKER" "$SOURCE_REF" "$SOURCE_COMMIT" <<'PY'
+# SSH sessions can retain a group list from before enrollment. Use the same
+# fixed agentos group context as the running service, including for mkstemp.
+# Pass values through the environment, never interpolate them into shell code.
+AGENTOS_MARKER_PATH="$CAPABILITY_MARKER" \
+AGENTOS_MARKER_SOURCE_REF="$SOURCE_REF" \
+AGENTOS_MARKER_SOURCE_COMMIT="$SOURCE_COMMIT" \
+PYTHONPATH="$RUNTIME_ROOT" sg agentos -c 'exec python3 - "$AGENTOS_MARKER_PATH" "$AGENTOS_MARKER_SOURCE_REF" "$AGENTOS_MARKER_SOURCE_COMMIT"' <<'PY'
 import json
 import os
 import sys
@@ -203,7 +209,6 @@ try:
 finally:
     tmp.unlink(missing_ok=True)
 PY
-chgrp agentos "$CAPABILITY_MARKER"
 
 echo "action_relay_install=PASS"
 echo "action_relay_executor_job_extension=PASS"
