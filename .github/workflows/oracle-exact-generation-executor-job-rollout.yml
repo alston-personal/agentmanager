@@ -16,6 +16,7 @@ on:
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/install_action_relay_user.sh'
       - 'scripts/publish_action_relay_capability.py'
+      - 'scripts/seed_one_experience.py'
       - 'scripts/oracle_codex_experience_regression.py'
       - 'scripts/oracle_codex_experience_regression_entry_v2.py'
       - 'agent_core/executor_job_contract.py'
