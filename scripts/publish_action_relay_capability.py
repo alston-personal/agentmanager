@@ -6,7 +6,17 @@ import grp
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+
+# This helper is intentionally executable by absolute file path from the governed
+# bootstrap boundary. Anchor imports at the immutable runtime root so
+# `scripts/agentos_node.py` cannot shadow the real `agentos_node` package through
+# Python's script-directory sys.path[0].
+SCRIPT_DIR = Path(__file__).resolve().parent
+RUNTIME_ROOT = SCRIPT_DIR.parent
+sys.path = [entry for entry in sys.path if Path(entry or ".").resolve() != SCRIPT_DIR]
+sys.path.insert(0, str(RUNTIME_ROOT))
 
 from agentos_node.runtime_converge_action_relay import capability_marker_payload
 
