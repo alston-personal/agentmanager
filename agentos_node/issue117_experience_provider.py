@@ -5,15 +5,11 @@ not copy or reimplement that benchmark. It registers only when the *same
 immutable runtime generation* already contains #117's regression entrypoint.
 
 The provider executes a fixed read-only regression entry with fixed arguments,
-uses a private temporary evidence file, and returns only bounded scalar evidence.
-No caller-controlled command, argv, executable path, output path, or environment
-is accepted through the executor-job request.
+uses a private temporary evidence file, and returns only bounded evidence. No
+caller-controlled command, argv, executable path, output path, environment,
+prompt, stdout/stderr, session state, or Experience body can cross the receipt.
 """
 from __future__ import annotations
-
-# Live acceptance trigger only: behavior intentionally unchanged. Touching this
-# watched provider path asks exact-generation rollout to emit the two-phase,
-# sanitized Realm tail hashes before #117 regression continues.
 
 import importlib.util
 import json
@@ -24,6 +20,10 @@ import tempfile
 from typing import Any, Mapping
 
 from agent_core.executor_job_contract import validate_executor_job
+from agent_core.experience_attribution_contract import (
+    DIMENSIONS,
+    canonicalize_attribution_evidence,
+)
 from agentos_node.executor_job_adapter import DEFAULT_PROVIDERS, ExecutorJobProviderRegistry
 
 
@@ -72,6 +72,76 @@ def _score(payload: Mapping[str, Any], lane: str) -> float | None:
     return None
 
 
+def _lane_evidence(payload: Mapping[str, Any], lane: str) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    branch = payload.get(lane)
+    if not isinstance(branch, Mapping):
+        raise ValueError(f"missing {lane} regression branch")
+    score = branch.get("score")
+    if not isinstance(score, Mapping):
+        raise ValueError(f"missing {lane} score")
+    parsed = score.get("parsed")
+    passes = score.get("dimensions")
+    if not isinstance(parsed, Mapping) or not isinstance(passes, Mapping):
+        raise ValueError(f"missing {lane} dimension evidence")
+    if set(passes) != set(DIMENSIONS):
+        raise ValueError(f"unexpected {lane} dimension set")
+    return parsed, passes
+
+
+def _hydration_manifest(regression: Any) -> dict[str, Any]:
+    path = regression.receipt_path()
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("hydration receipt unavailable")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "agentos.experience-hydration-receipt/v1":
+        raise ValueError("hydration receipt schema mismatch")
+    if payload.get("source") != "ONE_EXPERIENCE" or payload.get("project_id") != "agentos-core":
+        raise ValueError("hydration receipt identity mismatch")
+    if payload.get("executor_class") != EXECUTOR_CLASS or payload.get("credential_exposed") is not False:
+        raise ValueError("hydration receipt executor/credential boundary mismatch")
+    return {
+        "projection_digest": payload.get("projection_digest"),
+        "experience_ids": payload.get("experience_ids"),
+    }
+
+
+def _attribution_evidence(payload: Mapping[str, Any], regression: Any) -> str:
+    baseline_values, baseline_passes = _lane_evidence(payload, "baseline")
+    hydrated_values, hydrated_passes = _lane_evidence(payload, "hydrated")
+    dimensions: dict[str, dict[str, Any]] = {}
+    improved: list[str] = []
+    regressed: list[str] = []
+    for key in DIMENSIONS:
+        baseline_pass = baseline_passes.get(key)
+        hydrated_pass = hydrated_passes.get(key)
+        if not isinstance(baseline_pass, bool) or not isinstance(hydrated_pass, bool):
+            raise ValueError("dimension pass result must be boolean")
+        if baseline_pass and hydrated_pass:
+            delta = "unchanged-correct"
+        elif baseline_pass and not hydrated_pass:
+            delta = "regressed"
+            regressed.append(key)
+        elif not baseline_pass and hydrated_pass:
+            delta = "improved"
+            improved.append(key)
+        else:
+            delta = "unchanged-wrong"
+        dimensions[key] = {
+            "baseline_value": baseline_values.get(key),
+            "baseline_pass": baseline_pass,
+            "hydrated_value": hydrated_values.get(key),
+            "hydrated_pass": hydrated_pass,
+            "delta": delta,
+        }
+    return canonicalize_attribution_evidence({
+        "schema": "agentos.experience-attribution-evidence/v1",
+        "dimensions": dimensions,
+        "improved_dimensions": improved,
+        "regressed_dimensions": regressed,
+        "hydration": _hydration_manifest(regression),
+    })
+
+
 def _bounded_failure(
     classification: str,
     *,
@@ -115,9 +185,6 @@ def run_issue117_experience_regression(
             authorized=False,
         )
 
-    # Reuse #117's own Codex discovery function rather than creating another
-    # executor-discovery truth inside #194. Any path remains trusted-process
-    # local and is never returned through the executor-job receipt.
     try:
         regression = _load_regression_module(base)
         regression.find_codex()
@@ -193,6 +260,14 @@ def run_issue117_experience_regression(
     if not isinstance(classification, str) or not classification:
         classification = "EXPERIENCE_REGRESSION_PASS" if verdict == "PASS" else "EXPERIENCE_REGRESSION_FAILED"
 
+    try:
+        attribution_evidence_json = _attribution_evidence(payload, regression)
+    except Exception:
+        return _bounded_failure(
+            "EXPERIENCE_ATTRIBUTION_EVIDENCE_INVALID",
+            executor_available=True,
+        )
+
     if (proc.returncode == 0) != (verdict == "PASS"):
         classification = "EXPERIENCE_REGRESSION_EXIT_MISMATCH"
     credential_boundary_ok = payload.get("credential_exposed") is False
@@ -205,13 +280,12 @@ def run_issue117_experience_regression(
         "hydrated_score": _score(payload, "hydrated"),
         "uplift": payload.get("uplift") if isinstance(payload.get("uplift"), (int, float)) else None,
         "hydration_receipt_ok": checks.get("hydration_receipt_ok") is True,
+        "attribution_evidence_json": attribution_evidence_json,
         "classification": classification,
         "executor_available": True,
         "routable": True,
         "authorized": True,
         "successful": successful,
-        # The generic adapter converts an explicit violation into a fixed safe
-        # classification and never persists the unsafe provider value.
         "credential_exposed": not credential_boundary_ok,
     }
 
