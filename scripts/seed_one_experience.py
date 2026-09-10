@@ -40,8 +40,9 @@ def main() -> int:
     parser.add_argument("--probe-only", action="store_true")
     args = parser.parse_args()
     seed_path = Path(args.seed).resolve()
+    probe = probe_seed(seed_path)
+    print(json.dumps(probe, ensure_ascii=False, sort_keys=True))
     if args.probe_only:
-        print(json.dumps(probe_seed(seed_path), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     receipt = seed_experience_set(seed_path)
     print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
