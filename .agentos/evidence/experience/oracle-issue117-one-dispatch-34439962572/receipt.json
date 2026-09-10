@@ -1,0 +1,21 @@
+{
+  "authorized": true,
+  "baseline_score": 0.8571428571428571,
+  "capability": "agentos.experience.regression",
+  "classification": "EXPERIENCE_REGRESSION_PASS",
+  "credential_exposed": false,
+  "executor_available": true,
+  "executor_class": "openai-codex-local",
+  "experiment_id": "oracle-issue117-codex-1789017021",
+  "hydrated_score": 1.0,
+  "hydration_receipt_ok": true,
+  "job_id": "action-228042af501a4cbbafa451dc7e05d047",
+  "job_type": "experience.regression",
+  "one_controller_entered": true,
+  "project_id": "agentos-core",
+  "routable": true,
+  "schema": "agentos.executor-job-receipt/v1",
+  "successful": true,
+  "uplift": 0.1428571428571429,
+  "verdict": "PASS"
+}
