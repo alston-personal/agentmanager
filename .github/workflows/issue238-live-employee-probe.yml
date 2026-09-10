@@ -19,8 +19,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      TARGET_SHA: 28be69cb671fcf8cedd5abc8864dda88c4b03dd6
-      PREFIX_SHA: 16fe1100378068a06264c6d6415560fdcd049595a094e537bef132fe3e45abc2
+      CURRENT_INTEGRATION_SHA: 8705e0ef378b998fee73d1ab721a2c993128f7cc
     steps:
       - name: Resolve host
         shell: bash
@@ -35,32 +34,28 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Repair exact corrupted Realm fabric snapshot
+      - name: Inspect tracked drift only
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$TARGET_SHA" "$PREFIX_SHA" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$CURRENT_INTEGRATION_SHA" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"
           TARGET="$2"
-          PREFIX_SHA="$3"
           cd "$ROOT"
-          [ "$(git rev-parse HEAD)" = "$TARGET" ] || { echo "repair_refused_wrong_checkout"; exit 20; }
-          [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "repair_refused_dirty_checkout"; exit 21; }
-          set -a
-          source .env
-          [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
-          set +a
-          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          FABRIC="$DATA_ROOT/realm/fabric.json"
-          BACKUP_DIR="$DATA_ROOT/runtime/backups/realm-fabric"
-          META="$({ /usr/bin/sg agentos -c "python3 -c 'import hashlib,json,sys; from pathlib import Path; p=Path(sys.argv[1]); expected=sys.argv[2]; raw=p.read_bytes(); text=raw.decode(\"utf-8\"); dec=json.JSONDecoder(); first,end=dec.raw_decode(text,0); prefix=text[:end].encode(\"utf-8\"); tail=text[end:]; assert isinstance(first,dict) and first.get(\"schema\")==\"agentos.realm-fabric/v0.1\"; assert first.get(\"realm_id\")==\"realm-alston\"; assert hashlib.sha256(prefix).hexdigest()==expected; assert len(tail)==1909 and tail.strip(); print(hashlib.sha256(raw).hexdigest()); print(len(raw))' '$FABRIC' '$PREFIX_SHA'"; } )"
-          FILE_SHA="$(printf '%s\n' "$META" | sed -n '1p')"
-          FILE_SIZE="$(printf '%s\n' "$META" | sed -n '2p')"
-          test -n "$FILE_SHA" && test -n "$FILE_SIZE"
-          echo "repair_preflight=PASS"
-          echo "repair_original_size=$FILE_SIZE"
-          /usr/bin/sg agentos -c "cd '$ROOT' && PYTHONPATH='$ROOT' python3 scripts/repair_realm_fabric_truncated_tail.py --fabric '$FABRIC' --expected-file-sha256 '$FILE_SHA' --expected-prefix-sha256 '$PREFIX_SHA' --backup-dir '$BACKUP_DIR'"
-          /usr/bin/sg agentos -c "python3 -c 'import json,sys; from pathlib import Path; d=json.loads(Path(sys.argv[1]).read_text(encoding=\"utf-8\")); assert d.get(\"schema\")==\"agentos.realm-fabric/v0.1\"; assert d.get(\"realm_id\")==\"realm-alston\"; print(\"fabric_repaired_single_json=PASS\"); print(\"fabric_node_count=\"+str(len(d.get(\"nodes\") or {}))); print(\"fabric_receipt_count=\"+str(len(d.get(\"receipts\") or {})))' '$FABRIC'"
+          git fetch --no-tags origin core/integration >/dev/null 2>&1
+          echo "checkout_sha=$(git rev-parse HEAD)"
+          echo "current_integration_sha=$TARGET"
+          echo "fetch_head=$(git rev-parse FETCH_HEAD)"
+          echo "tracked_status_begin"
+          git status --porcelain=v1 --untracked-files=no
+          echo "tracked_status_end"
+          git diff --name-only | while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            wt="$(git hash-object -- "$path" 2>/dev/null || echo missing)"
+            head="$(git rev-parse "HEAD:$path" 2>/dev/null || echo missing)"
+            target="$(git rev-parse "$TARGET:$path" 2>/dev/null || echo missing)"
+            echo "drift_path=$path wt=$wt head=$head target=$target wt_equals_head=$([ "$wt" = "$head" ] && echo true || echo false) wt_equals_current_integration=$([ "$wt" = "$target" ] && echo true || echo false)"
+          done
           REMOTE
