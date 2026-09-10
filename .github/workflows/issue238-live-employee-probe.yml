@@ -55,43 +55,12 @@ jobs:
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           FABRIC="$DATA_ROOT/realm/fabric.json"
           BACKUP_DIR="$DATA_ROOT/runtime/backups/realm-fabric"
-
-          readarray -t META < <(/usr/bin/sg agentos -c "python3 - '$FABRIC' '$PREFIX_SHA'" <<'PY'
-import hashlib,json,sys
-from pathlib import Path
-p=Path(sys.argv[1]); expected=sys.argv[2]
-raw=p.read_bytes(); text=raw.decode('utf-8')
-try:
-    json.loads(text)
-except json.JSONDecodeError:
-    pass
-else:
-    raise SystemExit('repair_refused_store_already_valid')
-first,end=json.JSONDecoder().raw_decode(text,0)
-prefix=text[:end].encode('utf-8'); tail=text[end:]
-if not isinstance(first,dict) or first.get('schema')!='agentos.realm-fabric/v0.1': raise SystemExit('repair_refused_bad_prefix_schema')
-if first.get('realm_id')!='realm-alston': raise SystemExit('repair_refused_bad_realm')
-if hashlib.sha256(prefix).hexdigest()!=expected: raise SystemExit('repair_refused_prefix_changed')
-if len(tail)!=1909 or not tail.strip(): raise SystemExit('repair_refused_tail_changed')
-print(hashlib.sha256(raw).hexdigest())
-print(len(raw))
-PY
-          )
-          FILE_SHA="${META[0]}"
-          FILE_SIZE="${META[1]}"
+          META="$({ /usr/bin/sg agentos -c "python3 -c 'import hashlib,json,sys; from pathlib import Path; p=Path(sys.argv[1]); expected=sys.argv[2]; raw=p.read_bytes(); text=raw.decode(\"utf-8\"); dec=json.JSONDecoder(); first,end=dec.raw_decode(text,0); prefix=text[:end].encode(\"utf-8\"); tail=text[end:]; assert isinstance(first,dict) and first.get(\"schema\")==\"agentos.realm-fabric/v0.1\"; assert first.get(\"realm_id\")==\"realm-alston\"; assert hashlib.sha256(prefix).hexdigest()==expected; assert len(tail)==1909 and tail.strip(); print(hashlib.sha256(raw).hexdigest()); print(len(raw))' '$FABRIC' '$PREFIX_SHA'"; } )"
+          FILE_SHA="$(printf '%s\n' "$META" | sed -n '1p')"
+          FILE_SIZE="$(printf '%s\n' "$META" | sed -n '2p')"
+          test -n "$FILE_SHA" && test -n "$FILE_SIZE"
           echo "repair_preflight=PASS"
           echo "repair_original_size=$FILE_SIZE"
-
           /usr/bin/sg agentos -c "cd '$ROOT' && PYTHONPATH='$ROOT' python3 scripts/repair_realm_fabric_truncated_tail.py --fabric '$FABRIC' --expected-file-sha256 '$FILE_SHA' --expected-prefix-sha256 '$PREFIX_SHA' --backup-dir '$BACKUP_DIR'"
-
-          /usr/bin/sg agentos -c "python3 - '$FABRIC'" <<'PY'
-import json,sys
-from pathlib import Path
-p=Path(sys.argv[1]); d=json.loads(p.read_text(encoding='utf-8'))
-assert d.get('schema')=='agentos.realm-fabric/v0.1'
-assert d.get('realm_id')=='realm-alston'
-print('fabric_repaired_single_json=PASS')
-print('fabric_node_count='+str(len(d.get('nodes') or {})))
-print('fabric_receipt_count='+str(len(d.get('receipts') or {})))
-PY
+          /usr/bin/sg agentos -c "python3 -c 'import json,sys; from pathlib import Path; d=json.loads(Path(sys.argv[1]).read_text(encoding=\"utf-8\")); assert d.get(\"schema\")==\"agentos.realm-fabric/v0.1\"; assert d.get(\"realm_id\")==\"realm-alston\"; print(\"fabric_repaired_single_json=PASS\"); print(\"fabric_node_count=\"+str(len(d.get(\"nodes\") or {}))); print(\"fabric_receipt_count=\"+str(len(d.get(\"receipts\") or {})))' '$FABRIC'"
           REMOTE
