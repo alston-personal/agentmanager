@@ -16,8 +16,6 @@ class AntigravityRepairContractTests(unittest.TestCase):
         text = _text(SCRIPT)
         self.assertIn('SOURCE_REF="${AGENTOS_REF:-main}"', text)
         self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
-        # core/integration is the governed integration generation. Development
-        # worker branches remain excluded from the runtime repair allowlist.
         self.assertIn('main|core/integration|feature/realm-node-fabric-readiness', text)
         self.assertNotIn('core/issue-194-bounded-executor-jobs)', text)
         self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
@@ -98,14 +96,19 @@ class AntigravityRepairContractTests(unittest.TestCase):
         ):
             self.assertIn(path, text)
         self.assertIn('cd "$ACTION_RUNTIME"', text)
-        self.assertIn('python3 scripts/seed_one_experience.py --seed experience/agentos-core-oracle.seed.json', text)
+        self.assertIn('python3 scripts/seed_one_experience.py', text)
+        self.assertIn('--seed experience/agentos-core-oracle.seed.json', text)
+        self.assertIn('--expected-current-digest "$ONE_EXPERIENCE_EXPECTED_PREDECESSOR"', text)
+        self.assertIn('ONE_EXPERIENCE_EXPECTED_PREDECESSOR="sha256:', text)
         self.assertIn('python3 scripts/install_codex_experience_mcp_oracle.py', text)
         self.assertIn('grep -Fq "cwd = \\"$ACTION_RUNTIME\\"" "$CODEX_CONFIG"', text)
         self.assertIn('grep -Fq "PYTHONPATH = \\"$ACTION_RUNTIME\\"" "$CODEX_CONFIG"', text)
         self.assertIn('one_experience_seed=PASS', text)
+        self.assertIn('one_experience_digest_convergence=PASS', text)
         self.assertIn('codex_experience_mcp_install=PASS', text)
         self.assertIn('codex_experience_mcp_exact_runtime=PASS', text)
         self.assertNotIn('AGENTOS_EXPERIENCE_MCP_ALLOW_OVERWRITE', text)
+        self.assertNotIn('--force', text)
 
     def test_action_relay_installer_preserves_correct_foreign_owned_shared_boundary(self):
         text = _text(ACTION_INSTALLER)

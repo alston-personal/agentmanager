@@ -11,6 +11,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Iterator
 from contextlib import contextmanager
@@ -18,6 +19,7 @@ from contextlib import contextmanager
 from agent_core.experience import ExperienceQuery, discover_experience, hydrate_experience, validate_experience
 
 SET_SCHEMA = "agentos.experience-set/v0"
+_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _data_root() -> Path:
@@ -79,6 +81,25 @@ def _lock(path: Path) -> Iterator[None]:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _atomic_write_set(target: Path, value: dict[str, Any]) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(_canonical_bytes(value))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o640)
+        os.replace(tmp, target)
+        dir_fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def read_experience_set(project_id: str, *, data_root: Path | None = None) -> dict[str, Any]:
     path = experience_path(project_id, data_root=data_root)
     if path.is_symlink():
@@ -114,23 +135,7 @@ def seed_experience_set(seed_path: Path, *, data_root: Path | None = None) -> di
                 "path": str(target),
                 "credential_exposed": False,
             }
-        fd, tmp_name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=str(target.parent))
-        tmp = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(_canonical_bytes(incoming))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(tmp, 0o640)
-            os.replace(tmp, target)
-            dir_fd = os.open(target.parent, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        finally:
-            if tmp.exists():
-                tmp.unlink()
+        _atomic_write_set(target, incoming)
     return {
         "schema": "agentos.experience-seed-receipt/v1",
         "ok": True,
@@ -138,6 +143,94 @@ def seed_experience_set(seed_path: Path, *, data_root: Path | None = None) -> di
         "project_id": project_id,
         "digest": incoming_digest,
         "path": str(target),
+        "credential_exposed": False,
+    }
+
+
+def converge_experience_set(
+    seed_path: Path,
+    *,
+    expected_current_digest: str,
+    data_root: Path | None = None,
+) -> dict[str, Any]:
+    """Explicitly replace one accepted Experience set behind a digest fence.
+
+    This is intentionally separate from ordinary seeding. A different current
+    set may be replaced only when its validated canonical digest exactly matches
+    the caller-supplied predecessor digest. The previous bytes are backed up
+    before atomic replacement; changed or malformed state fails closed.
+    """
+    expected_current_digest = str(expected_current_digest or "").strip()
+    if not _DIGEST_RE.fullmatch(expected_current_digest):
+        raise ValueError("expected_current_digest must be sha256:<64 lowercase hex>")
+
+    seed_path = Path(seed_path)
+    incoming = validate_set(json.loads(seed_path.read_text(encoding="utf-8")))
+    project_id = incoming["project_id"]
+    incoming_digest = digest_set(incoming)
+    target = experience_path(project_id, data_root=data_root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    with _lock(target):
+        if target.is_symlink():
+            raise ValueError("experience store path must not be a symlink")
+        if not target.is_file():
+            raise FileNotFoundError(target)
+
+        original_bytes = target.read_bytes()
+        current = validate_set(json.loads(original_bytes.decode("utf-8")), project_id=project_id)
+        current_digest = digest_set(current)
+
+        if current_digest == incoming_digest:
+            return {
+                "schema": "agentos.experience-converge-receipt/v1",
+                "ok": True,
+                "replaced": False,
+                "project_id": project_id,
+                "previous_digest": current_digest,
+                "digest": incoming_digest,
+                "backup_path": None,
+                "credential_exposed": False,
+            }
+
+        if current_digest != expected_current_digest:
+            raise ValueError(
+                "ONE Experience predecessor digest changed; refusing explicit convergence"
+            )
+
+        backup = target.with_name(
+            f"accepted.pre-converge-{current_digest.removeprefix('sha256:')}.json"
+        )
+        if backup.is_symlink():
+            raise ValueError("experience backup path must not be a symlink")
+        if backup.exists():
+            if not backup.is_file() or backup.read_bytes() != original_bytes:
+                raise ValueError("experience backup collision")
+        else:
+            fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(original_bytes)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except BaseException:
+                backup.unlink(missing_ok=True)
+                raise
+
+        _atomic_write_set(target, incoming)
+        verified = validate_set(json.loads(target.read_text(encoding="utf-8")), project_id=project_id)
+        verified_digest = digest_set(verified)
+        if verified_digest != incoming_digest:
+            raise RuntimeError("ONE Experience convergence verification failed")
+
+    return {
+        "schema": "agentos.experience-converge-receipt/v1",
+        "ok": True,
+        "replaced": True,
+        "project_id": project_id,
+        "previous_digest": current_digest,
+        "digest": incoming_digest,
+        "backup_path": str(backup),
         "credential_exposed": False,
     }
 
