@@ -169,47 +169,20 @@ fi
 
 # Capability availability is installed-state evidence, not a source-code claim.
 # Publish only after the exact immutable runtime imports both fixed semantic
-# actions and the worker demonstrates stable liveness. Use a unique inode in the
-# same shared directory, fsync it, then atomically replace the marker. Historical
-# deterministic `capabilities.tmp` files may be foreign-owned; they are ignored
-# rather than chmod/unlinked so this installer never takes ownership of evidence
-# it did not create.
-PYTHONPATH="$RUNTIME_ROOT" python3 - "$CAPABILITY_MARKER" "$SOURCE_REF" "$SOURCE_COMMIT" <<'PY'
-import json
-import os
-import sys
-import tempfile
-from pathlib import Path
-
-from agentos_node.runtime_converge_action_relay import capability_marker_payload
-
-path = Path(sys.argv[1])
-payload = capability_marker_payload(source_ref=sys.argv[2], source_commit=sys.argv[3])
-path.parent.mkdir(parents=True, exist_ok=True)
-fd, tmp_name = tempfile.mkstemp(prefix='.capabilities-', suffix='.tmp', dir=str(path.parent), text=True)
-tmp = Path(tmp_name)
-try:
-    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + '\n')
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.chmod(tmp, 0o640)
-    os.replace(tmp, path)
-    dir_fd = os.open(path.parent, os.O_RDONLY)
-    try:
-        os.fsync(dir_fd)
-    finally:
-        os.close(dir_fd)
-finally:
-    tmp.unlink(missing_ok=True)
-PY
-chgrp agentos "$CAPABILITY_MARKER"
+# actions and the worker demonstrates stable liveness. Publication runs in the
+# same fixed `agentos` effective-group boundary as the Action Relay worker; no
+# caller-controlled shell, argv, path, or credential surface is introduced.
+PUBLISHER="$RUNTIME_ROOT/scripts/publish_action_relay_capability.py"
+test -f "$PUBLISHER" || { echo "ERROR: capability publisher missing from exact runtime" >&2; exit 4; }
+grep -Fq 'capability_marker_payload' "$PUBLISHER" || { echo "ERROR: capability publisher is not bound to canonical capability_marker_payload" >&2; exit 4; }
+/usr/bin/sg agentos -c "PYTHONPATH='$RUNTIME_ROOT' /usr/bin/python3 '$PUBLISHER' --marker '$CAPABILITY_MARKER' --source-ref '$SOURCE_REF' --source-commit '$SOURCE_COMMIT'"
 
 echo "action_relay_install=PASS"
 echo "action_relay_executor_job_extension=PASS"
 echo "action_relay_runtime_converge_extension=PASS"
 echo "action_relay_capability_marker=PASS"
 echo "action_relay_capability_atomic_publish=PASS"
+echo "action_relay_capability_group_context=PASS"
 echo "action_relay_group_context=agentos"
 echo "action_relay_user_bus=ubuntu:/run/user/1001/bus"
 echo "action_relay_stable_liveness=PASS"
