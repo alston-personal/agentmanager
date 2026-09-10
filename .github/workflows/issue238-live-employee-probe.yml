@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Remeasure Realm fabric structure only
+      - name: Inspect post-converge state only
         shell: bash
         run: |
           set -euo pipefail
@@ -46,10 +46,25 @@ jobs:
           [ -f "$HOME/.agentos.secrets" ] && source "$HOME/.agentos.secrets"
           set +a
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          FABRIC="$DATA_ROOT/realm/fabric.json"
+          ACTION_RUNTIME="${AGENTOS_ACTION_RUNTIME_ROOT:-$HOME/.local/share/agentos/action-runtime}"
           echo "checkout_sha=$(git rev-parse HEAD)"
           echo "checkout_clean=$([ -z "$(git status --porcelain=v1 --untracked-files=no)" ] && echo true || echo false)"
-          /usr/bin/sg agentos -c "python3 -c 'import hashlib,json,sys; from pathlib import Path; p=Path(sys.argv[1]); raw=p.read_bytes(); text=raw.decode(\"utf-8\"); dec=json.JSONDecoder(); first,end=dec.raw_decode(text,0); prefix=text[:end].encode(\"utf-8\"); tail=text[end:]; print(\"fabric_file_sha256=\"+hashlib.sha256(raw).hexdigest()); print(\"fabric_size=\"+str(len(raw))); print(\"fabric_first_consumes_all=\"+str(not bool(tail.strip())).lower()); print(\"fabric_prefix_sha256=\"+hashlib.sha256(prefix).hexdigest()); print(\"fabric_prefix_schema=\"+str(first.get(\"schema\") if isinstance(first,dict) else None)); print(\"fabric_prefix_realm=\"+str(first.get(\"realm_id\") if isinstance(first,dict) else None)); print(\"fabric_prefix_node_count=\"+str(len(first.get(\"nodes\") or {}) if isinstance(first,dict) else -1)); print(\"fabric_prefix_receipt_count=\"+str(len(first.get(\"receipts\") or {}) if isinstance(first,dict) else -1)); print(\"fabric_tail_chars=\"+str(len(tail))); print(\"fabric_tail_nonwhitespace=\"+str(bool(tail.strip())).lower()); print(\"fabric_tail_starts_object=\"+str(tail.lstrip().startswith(\"{\")).lower())' '$FABRIC'"
+          echo "tracked_status_begin"
+          git status --porcelain=v1 --untracked-files=no
+          echo "tracked_status_end"
+          if [ -d "$ACTION_RUNTIME/.git" ]; then echo "action_runtime_sha=$(git -C "$ACTION_RUNTIME" rev-parse HEAD)"; fi
+          for svc in agentos-action-relay.service agentos-realm-fabric.service agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
+            echo "$svc.restarts=$(systemctl --user show "$svc" -p NRestarts --value 2>/dev/null || true)"
+          done
+          echo "worker_execstart=$(systemctl --user show agentos-employee-worker-host.service -p ExecStart --value 2>/dev/null | sed -E 's/;.*$//' || true)"
           echo "realm_health=$(curl -sS --max-time 2 http://127.0.0.1:8780/v1/health 2>/dev/null | tr -d '\n' || echo unavailable)"
-          echo "wake_state=$(systemctl --user is-active agentos-employee-wake-node.service 2>/dev/null || true)"
+          echo "--- action relay journal ---"
+          journalctl --user -u agentos-action-relay.service --since '2026-09-10 12:57:30' --no-pager 2>/dev/null | tail -80 || true
+          echo "--- realm journal ---"
+          journalctl --user -u agentos-realm-fabric.service --since '2026-09-10 12:57:30' --no-pager 2>/dev/null | tail -80 || true
+          echo "--- worker journal ---"
+          journalctl --user -u agentos-employee-worker-host.service --since '2026-09-10 12:57:30' --no-pager 2>/dev/null | tail -80 || true
+          echo "--- wake journal ---"
+          journalctl --user -u agentos-employee-wake-node.service --since '2026-09-10 12:57:30' --no-pager 2>/dev/null | tail -80 || true
           REMOTE
