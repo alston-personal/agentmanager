@@ -19,7 +19,6 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      CURRENT_INTEGRATION_SHA: 8705e0ef378b998fee73d1ab721a2c993128f7cc
     steps:
       - name: Resolve host
         shell: bash
@@ -34,28 +33,23 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect tracked drift only
+      - name: Inspect workspace template drift only
         shell: bash
         run: |
           set -euo pipefail
           ROOT="${DEPLOY_ROOT:-/home/ubuntu/agentmanager}"
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" "$CURRENT_INTEGRATION_SHA" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
-          ROOT="$1"
-          TARGET="$2"
-          cd "$ROOT"
-          git fetch --no-tags origin core/integration >/dev/null 2>&1
+          cd "$1"
+          PATH_TO_CHECK="agentos.code-workspace.template"
           echo "checkout_sha=$(git rev-parse HEAD)"
-          echo "current_integration_sha=$TARGET"
-          echo "fetch_head=$(git rev-parse FETCH_HEAD)"
-          echo "tracked_status_begin"
-          git status --porcelain=v1 --untracked-files=no
-          echo "tracked_status_end"
-          git diff --name-only | while IFS= read -r path; do
-            [ -n "$path" ] || continue
-            wt="$(git hash-object -- "$path" 2>/dev/null || echo missing)"
-            head="$(git rev-parse "HEAD:$path" 2>/dev/null || echo missing)"
-            target="$(git rev-parse "$TARGET:$path" 2>/dev/null || echo missing)"
-            echo "drift_path=$path wt=$wt head=$head target=$target wt_equals_head=$([ "$wt" = "$head" ] && echo true || echo false) wt_equals_current_integration=$([ "$wt" = "$target" ] && echo true || echo false)"
-          done
+          echo "status=$(git status --porcelain=v1 --untracked-files=no -- "$PATH_TO_CHECK")"
+          stat -c 'mtime=%y size=%s mode=%a' "$PATH_TO_CHECK" 2>/dev/null || true
+          echo "diff_begin"
+          git diff --no-ext-diff --unified=20 -- "$PATH_TO_CHECK" | sed -n '1,220p'
+          echo "diff_end"
+          echo "recent_commits_touching_file_begin"
+          git log -5 --date=iso-strict --pretty='format:%H %ad %s' -- "$PATH_TO_CHECK"
+          echo
+          echo "recent_commits_touching_file_end"
           REMOTE
