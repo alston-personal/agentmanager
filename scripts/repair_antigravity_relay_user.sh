@@ -22,6 +22,7 @@ MANIFEST="$RUNTIME/runtime-provenance.json"
 CODEX_CONFIG="/home/ubuntu/.codex/config.toml"
 REALM_FABRIC_EXPECTED_FILE_SHA256="6e328861419b18c4194de44f66e72344f22a32a39bdc204d92410d7c6523e216"
 REALM_FABRIC_EXPECTED_PREFIX_SHA256="16fe1100378068a06264c6d6415560fdcd049595a094e537bef132fe3e45abc2"
+ONE_EXPERIENCE_EXPECTED_PREDECESSOR="sha256:f0fcb879fef89117084b4730aa0e74d0a78c1a61a02b63a47bbe825f5d70a959"
 
 case "$SOURCE_REF" in
   main|core/integration|feature/realm-node-fabric-readiness) ;;
@@ -211,9 +212,15 @@ PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" python3 -m py_compile 
   "$ACTION_RUNTIME/scripts/install_codex_experience_mcp_oracle.py"
 (
   cd "$ACTION_RUNTIME"
+  # One-time #117 Experience convergence is fenced by the exact live predecessor
+  # digest emitted by exact-generation rollout #28. If the accepted Experience
+  # changed after that probe, converge_experience_set refuses the replacement.
   PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" \
-    python3 scripts/seed_one_experience.py --seed experience/agentos-core-oracle.seed.json >/dev/null
+    python3 scripts/seed_one_experience.py \
+      --seed experience/agentos-core-oracle.seed.json \
+      --expected-current-digest "$ONE_EXPERIENCE_EXPECTED_PREDECESSOR" >/dev/null
   echo "one_experience_seed=PASS"
+  echo "one_experience_digest_convergence=PASS"
   PYTHONPATH="$ACTION_RUNTIME" AGENT_DATA_ROOT="$DATA_ROOT" \
     python3 scripts/install_codex_experience_mcp_oracle.py >/dev/null
   echo "codex_experience_mcp_install=PASS"
@@ -251,6 +258,7 @@ echo "antigravity_restart_pending=YES"
 echo "action_relay_install=PASS"
 echo "action_relay_source_generation_pinned=PASS"
 echo "one_experience_seed=PASS"
+echo "one_experience_digest_convergence=PASS"
 echo "codex_experience_mcp_install=PASS"
 echo "codex_experience_mcp_exact_runtime=PASS"
 echo "realm_fabric_install=PASS"
