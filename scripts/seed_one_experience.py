@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 
 from agent_core.experience_store import (
     digest_set,
@@ -41,9 +42,14 @@ def main() -> int:
     args = parser.parse_args()
     seed_path = Path(args.seed).resolve()
     probe = probe_seed(seed_path)
-    print(json.dumps(probe, ensure_ascii=False, sort_keys=True))
+    encoded_probe = json.dumps(probe, ensure_ascii=False, sort_keys=True)
     if args.probe_only:
+        print(encoded_probe)
         return 0
+    # The governed installer suppresses normal seed stdout. Emit only this
+    # bounded digest/identity probe on stderr so a mismatch receipt preserves
+    # predecessor evidence without exposing Experience contents.
+    print(encoded_probe, file=sys.stderr, flush=True)
     receipt = seed_experience_set(seed_path)
     print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
