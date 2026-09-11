@@ -4,6 +4,8 @@ name: Oracle Exact Generation Executor Job Rollout
 # runs only after the rollout contract itself (or one of its pinned runtime
 # inputs) lands on core/integration. It never writes repository state and never
 # grants shell/argv/env authority to the submitted executor job.
+# Touching this contract intentionally re-runs the live Oracle acceptance after
+# the exact-generation moving-ref race fix; runtime semantics are unchanged.
 on:
   push:
     branches:
