@@ -1,6 +1,6 @@
 # AgentOS Current Architecture & Reality
 
-**Status date:** 2026-09-04  
+**Status date:** 2026-09-11  
 **Canonical development authority:** `core/integration`  
 **Purpose:** one concise reality map for implemented, verified, pending, research, and retired AgentOS Core architecture.
 
@@ -42,8 +42,8 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Active continuation selector | Implemented | pointer stores project/index/IR identity only; it is not another state store and must fail closed on stale references |
 | ChatGPT active continuation read (#179) | Source candidate; live acceptance pending | Private controller-authenticated active resolve plus identity-only Control Inbox inspection; selector changes fail closed. Public identity receipts explicitly do not hydrate IR. Governed deployment, host allowlist and private ChatGPT adapter acceptance remain required. See `docs/CHATGPT_ONE_TRANSPORT.md`. |
 | Experience subsystem v0 prose design | Deprecated | PR #119 direction is superseded; do not merge wholesale |
-| Semantic Experience IR v1 | Active candidate under #117 | current focused design is `agentos.experience/v1` carrying `agentos.experience-ir/v1`, typed semantic nodes, stable digests, extraction validation, ONE-owned Experience Set, semantic hydration receipts; PR #229 remains unmerged as of this snapshot |
-| Master Experience Floor | Strong live evidence, issue still open | observed governed A/B reached baseline 6/7 → prehydrated 7/7; ceiling-aware criterion is the current candidate logic, but #117 remains open and canonical Experience IR integration/ablation evidence is not yet fully accepted |
+| Semantic Experience IR v1 | Candidate beyond the bounded #117 acceptance | `agentos.experience/v1` / `agentos.experience-ir/v1` remains a broader semantic evolution with typed nodes and stable digests; PR #229 remains unmerged, and the bounded #117 verification does not imply wholesale semantic-v1 acceptance |
+| Master Experience Floor | Verified for bounded Oracle Codex #117 benchmark | governed ONE-dispatched A/B is baseline 6/7 → hydrated 7/7; exact hydration manifest and per-dimension deltas are persisted; fixed 3× B-minus-`core.branch-authority.v2` loses the only material improvement 3/3 with attribution confidence `supported`. Scope is this benchmark; general cross-model Cognitive IR remains Research. Evidence: `.agentos/evidence/experience/oracle-issue117-one-dispatch-34565359787/` |
 | General Cognitive IR across arbitrary models | Research | Canonical continuation IR and Experience IR are bounded concrete forms; do not claim portable hidden activations or arbitrary executor equivalence |
 | Agent Employee Runtime | Accepted foundation | durable Employee identity is distinct from executor/session/Node; durable assignments, leases, state/thread heads, scoped memory and receipts are canonical operating state |
 | Persistent Supervisor/Reconciler | Implemented/operating acceptance work | Supervisor is Core controller process, not an Employee; events reveal candidate work but do not grant authority; no daemon-per-role architecture |
@@ -73,7 +73,7 @@ Executor inventory is a child layer, not part of Node liveness. A Gemini, Codex,
 
 The old fixed statement `live generation 6 / f842bee...` is retired. It was valid historical evidence, not a permanent runtime identity.
 
-Canonical source development currently advances on `core/integration`; at this documentation refresh its observed head is `0c47fe2a0c325898814f4bea7c1e009359983477`. That value is a repository snapshot, not a claim that every live process is already on that SHA.
+Canonical source development currently advances on `core/integration`; at this documentation refresh its observed head is `189c227fd67b00c9481a8a6549c058553bd882e6`. That value is a repository snapshot, not a claim that every live process is already on that SHA.
 
 Every live acceptance must instead bind:
 
@@ -100,6 +100,8 @@ credential_exposed=false where applicable
 Experience is reusable learned procedure/heuristic/failure knowledge, not another project-state store. Current #117 direction uses semantic Experience IR with provenance, scope, digest, expected behavior dimensions and extraction/acceptance fences. Human summaries are presentation only and must not define semantic identity.
 
 A hydration receipt identifies the exact accepted Experience items/digests used without copying their bodies into the receipt. New user intent outranks hydrated Experience.
+
+For the bounded Oracle Codex #117 benchmark, the Master Experience Floor is now **Verified** by a live ONE-dispatched 6/7 → 7/7 A/B regression, exact hydration manifest, per-dimension evidence, and three fixed B-minus-`core.branch-authority.v2` counterfactual runs that all lose the material improvement. This verification is intentionally scoped and does not promote General Cognitive IR.
 
 ### General Cognitive IR
 
