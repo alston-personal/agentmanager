@@ -9,10 +9,14 @@ fi
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 REALM_RUNTIME="${AGENTOS_REALM_RUNTIME:-/home/ubuntu/.local/share/agentos/realm-fabric/current}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
-SOURCE_REF="${AGENTOS_REF:-feature/realm-node-fabric-readiness}"
+SOURCE_REF="${AGENTOS_REF:-core/integration}"
+EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 CONTROL_REPOSITORY="${AGENTOS_CONTROL_REPOSITORY:-alston-personal/agentmanager}"
 CONTROL_ISSUE="${AGENTOS_CONTROL_ISSUE:-50}"
 ALLOWED_LOGIN="${AGENTOS_CONTROL_ALLOWED_LOGIN:-alstonhuang}"
+# Source-owned bounded allowlist. The continuation action is controller-local,
+# Oracle-only and identity-only; it is deliberately not a Node capability.
+ALLOWED_ACTIONS="agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 CONFIG_DIR="/home/ubuntu/.config/agentos"
 CONTROLLER_ENV="$CONFIG_DIR/controller.env"
@@ -23,10 +27,14 @@ REALM_DROPIN="$REALM_DROPIN_DIR/controller.conf"
 PROVENANCE="$DATA_ROOT/runtime/control-inbox/provenance.json"
 
 case "$SOURCE_REF" in
-  main|feature/realm-node-fabric-readiness) ;;
-  *) echo "ERROR: AGENTOS_REF is not allowlisted: $SOURCE_REF" >&2; exit 4 ;;
+  core/integration) ;;
+  *) echo "ERROR: AGENTOS_REF is not allowlisted for governed Control Inbox rollout: $SOURCE_REF" >&2; exit 4 ;;
 esac
 
+if [ -z "$EXPECTED_SOURCE_COMMIT" ] || ! printf '%s' "$EXPECTED_SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  echo "ERROR: AGENTOS_SOURCE_COMMIT must be an exact lowercase 40-hex commit SHA" >&2
+  exit 6
+fi
 case "$CONTROL_ISSUE" in
   ''|*[!0-9]*) echo "ERROR: AGENTOS_CONTROL_ISSUE must be numeric" >&2; exit 5 ;;
 esac
@@ -35,8 +43,17 @@ test -d "$REPO/.git" || { echo "ERROR: repo missing: $REPO" >&2; exit 2; }
 mkdir -p "$REALM_RUNTIME/agent_core" "$UNIT_DIR" "$CONFIG_DIR" "$REALM_DROPIN_DIR" "$(dirname "$PROVENANCE")"
 chmod 0700 "$CONFIG_DIR"
 
+# The branch proves governed-lane membership; the exact commit supplies bytes.
+# A concurrent integration merge cannot change this install generation.
 git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+LANE_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
+git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"
 SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+[ "$SOURCE_COMMIT" = "$EXPECTED_SOURCE_COMMIT" ] || { echo "ERROR: exact Control Inbox source fetch mismatch" >&2; exit 7; }
+git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$LANE_HEAD" || {
+  echo "ERROR: exact Control Inbox source commit is not in governed core/integration lane" >&2
+  exit 8
+}
 show_source() {
   git -C "$REPO" show "$SOURCE_COMMIT:$1"
 }
@@ -63,6 +80,7 @@ install -m 0664 "$TMPDIR/controller_api.py" "$REALM_RUNTIME/agent_core/controlle
 install -m 0664 "$TMPDIR/realm_server.py" "$REALM_RUNTIME/agent_core/realm_server.py"
 install -m 0664 "$TMPDIR/realm_cli.py" "$REALM_RUNTIME/agent_core/realm_cli.py"
 install -m 0664 "$TMPDIR/control_inbox_bridge.py" "$REALM_RUNTIME/agent_core/control_inbox_bridge.py"
+PYTHONPATH="$REALM_RUNTIME" python3 -m py_compile "$REALM_RUNTIME/agent_core/control_inbox_bridge.py"
 
 if [ -f "$CONTROLLER_ENV" ]; then
   CONTROLLER_TOKEN=$(sed -n 's/^AGENTOS_CONTROLLER_TOKEN=//p' "$CONTROLLER_ENV" | head -n 1)
@@ -90,7 +108,6 @@ if [ -z "$GITHUB_TOKEN" ]; then
 fi
 if [ -z "$GITHUB_TOKEN" ]; then
   echo "ERROR: no GitHub write credential available for result comments" >&2
-  echo "Provide AGENTOS_GITHUB_TOKEN once, or authenticate gh as ubuntu." >&2
   exit 20
 fi
 
@@ -101,7 +118,9 @@ AGENTOS_CONTROLLER_TOKEN=$CONTROLLER_TOKEN
 AGENTOS_CONTROL_REPOSITORY=$CONTROL_REPOSITORY
 AGENTOS_CONTROL_ISSUE=$CONTROL_ISSUE
 AGENTOS_CONTROL_ALLOWED_LOGIN=$ALLOWED_LOGIN
+AGENTOS_CONTROL_ALLOWED_ACTIONS=$ALLOWED_ACTIONS
 AGENTOS_ONE_URL=http://127.0.0.1:8780
+AGENTOS_CONTROL_STATE=$DATA_ROOT/runtime/control-inbox/state.json
 AGENTOS_CONTROL_POLL_SECONDS=3
 AGENTOS_CONTROL_RECEIPT_WAIT_SECONDS=45
 AGENT_DATA_ROOT=$DATA_ROOT
@@ -158,6 +177,7 @@ payload = {
     'bridge_sha256': bridge_sha,
     'repository': repository,
     'issue_number': int(issue),
+    'continuation_identity_enabled': True,
 }
 Path(path).write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
 PY
@@ -183,13 +203,13 @@ systemctl --user enable agentos-control-inbox.service >/dev/null
 sleep 1
 systemctl --user is-active --quiet agentos-control-inbox.service
 
+grep -Fq 'AGENTOS_CONTROL_ALLOWED_ACTIONS=agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect' "$BRIDGE_ENV"
+
 echo "control_inbox_install=PASS"
+echo "control_inbox_exact_generation=PASS"
+echo "control_inbox_continuation_identity=ENABLED"
 echo "agentos_source_ref=$SOURCE_REF"
 echo "agentos_source_commit=$SOURCE_COMMIT"
 echo "controller_api=PASS"
-echo "controller_api_bind=127.0.0.1:8780"
-echo "control_repository=$CONTROL_REPOSITORY"
-echo "control_issue=$CONTROL_ISSUE"
-echo "control_allowed_login=$ALLOWED_LOGIN"
 echo "control_inbox_service=active"
 echo "control_inbox_provenance=$PROVENANCE"
