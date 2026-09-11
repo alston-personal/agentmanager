@@ -54,6 +54,17 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Evidence-first acceptance | Canonical | `.agentos/evidence/`, sanitized receipts, exact source/runtime identity; static CI cannot manufacture live VERIFIED markers |
 | Protected publication authority | Canonical | `core/issue-* -> core/integration`; publication to protected `main` is separate explicit authority and is never implied by `continue`, CI green, mergeability, capability availability, or worker completion |
 
+## Checkout preservation candidate (#291)
+
+The 2026-09-11 bounded diagnostic identified staged `.secrets.baseline` and
+unstaged `scripts/detect_secrets_scanner.py` changes; neither matches current
+integration. `scripts/oracle_checkout_preserve.py` prepares an exclusive private
+backup of the exact hash-bound files, staged/HEAD versions and index, then emits
+structural comparisons only. It never restores source. The immediately preceding
+canonical Core instruction to continue backup/review authorizes this bounded
+preservation step, not discard or recovery. Live backup acceptance is reported
+only by a verified preservation receipt.
+
 ## Current Node Map semantics
 
 The canonical map is generated from ONE-side `NodeRegistry`; it is not a manually maintained list. `agentos.node-map/v0.1` includes:

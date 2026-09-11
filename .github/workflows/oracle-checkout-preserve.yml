@@ -1,0 +1,242 @@
+name: Oracle Checkout Private Preservation
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: oracle-checkout-preservation
+  cancel-in-progress: false
+jobs:
+  preserve:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          log-public-key: false
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Preserve hash-bound checkout and emit structural review
+        env:
+          SSH_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+          SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_USER"
+          [[ "$SSH_USER" != -* ]]
+          timeout 90 ssh -T -o BatchMode=yes -o ConnectTimeout=10 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new -p "${SSH_PORT:-22}" "$SSH_USER@127.0.0.1" 'python3 -I -' <<'AGENTOS_PRESERVE_PY'
+          """Fixed read-only #291 bootstrap diagnostic; emits no file bodies or git stderr."""
+          from __future__ import annotations
+          
+          import hashlib
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import re
+          import subprocess
+          import stat
+          import sys
+          from datetime import datetime, timezone
+          
+          ROOT = Path('/home/ubuntu/agentmanager')
+          TARGET = 'b65dc309d6a020b27f591d938a0589206003a0ea'
+          MAX_PATHS = 128
+          MAX_FILE_BYTES = 2 * 1024 * 1024
+          
+          
+          def git(root: Path, *args: str) -> str:
+              env = {'PATH': '/usr/bin:/bin', 'GIT_OPTIONAL_LOCKS': '0', 'GIT_NO_LAZY_FETCH': '1'}
+              result = subprocess.run(
+                  ['git', '-c', 'core.fsmonitor=false', '-C', str(root), *args],
+                  env=env, capture_output=True, timeout=10, check=True,
+              )
+              return result.stdout.decode('utf-8', errors='strict')
+          
+          
+          def safe_path(value: str) -> bool:
+              return (0 < len(value) <= 256 and not PurePosixPath(value).is_absolute()
+                      and '..' not in PurePosixPath(value).parts
+                      and all(ord(ch) >= 32 and ord(ch) != 127 for ch in value))
+          
+          
+          def read_regular(path: Path) -> bytes | None:
+              # Open every component relative to its already-open parent; reject symlink races.
+              fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+              try:
+                  for part in path.absolute().parts[1:-1]:
+                      child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                      os.close(fd)
+                      fd = child
+                  file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+                  with os.fdopen(file_fd, 'rb') as handle:
+                      if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                          return None
+                      return handle.read(MAX_FILE_BYTES + 1)
+              except OSError:
+                  return None
+              finally:
+                  os.close(fd)
+          
+          
+          """#291 fixed private preservation and structural review; never restores source."""
+          import ast
+          import difflib
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+          
+          
+          REPO = Path('/home/ubuntu/agentmanager')
+          DEST = Path('/home/ubuntu/agent-data/runtime/checkout-preservation/291-20260911')
+          HEAD = '28be69cb671fcf8cedd5abc8864dda88c4b03dd6'
+          EXPECTED = {
+              '.secrets.baseline': 'e4b1033e400cd3a8b1f7fa5590f72363418590ebce43ca741cece35bdc2f62b2',
+              'scripts/detect_secrets_scanner.py': 'ac149392e673955896dfd44212f9f114ed5e0f6e98fd4602cd8757ba93588c0b',
+          }
+          STATUS = 'M  .secrets.baseline\0 M scripts/detect_secrets_scanner.py\0'
+          
+          
+          def digest(data):
+              return hashlib.sha256(data).hexdigest()
+          
+          
+          def regular(path):
+              data = read_regular(path)
+              if data is None or len(data) > MAX_FILE_BYTES:
+                  raise ValueError('unsafe_or_large_file')
+              return data
+          
+          
+          def private_destination(path):
+              """Create exclusive leaf through no-follow directory descriptors."""
+              fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+              try:
+                  parts = path.absolute().parts[1:]
+                  for index, part in enumerate(parts):
+                      if index == len(parts) - 1:
+                          os.mkdir(part, 0o700, dir_fd=fd)  # Existing backup is never overwritten.
+                          os.fsync(fd)
+                      else:
+                          try:
+                              os.mkdir(part, 0o700, dir_fd=fd)
+                          except FileExistsError:
+                              pass
+                      child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                      os.close(fd)
+                      fd = child
+                  info = os.fstat(fd)
+                  if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                      raise ValueError('unsafe_backup_directory')
+                  return fd
+              except Exception:
+                  os.close(fd)
+                  raise
+          
+          
+          def review(path, before, after):
+              result = {'path': path, 'head_sha256': digest(before), 'worktree_sha256': digest(after)}
+              a, b = before.decode('utf-8'), after.decode('utf-8')
+              changes = difflib.SequenceMatcher(None, a.splitlines(), b.splitlines(), autojunk=False)
+              result['removed_lines'] = sum(j-i for tag, i, j, _, _ in changes.get_opcodes() if tag in ('delete', 'replace'))
+              result['added_lines'] = sum(j-i for tag, _, _, i, j in changes.get_opcodes() if tag in ('insert', 'replace'))
+              try:
+                  if path.endswith('.py'):
+                      old, new = ast.parse(a), ast.parse(b)
+                      result['python_syntax_valid'] = True
+                      result['python_ast_equal'] = ast.dump(old) == ast.dump(new)
+                      result['old_call_count'] = sum(isinstance(n, ast.Call) for n in ast.walk(old))
+                      result['new_call_count'] = sum(isinstance(n, ast.Call) for n in ast.walk(new))
+                  else:
+                      old, new = json.loads(a), json.loads(b)
+                      result['baseline_json_valid'] = True
+                      result['baseline_semantically_equal'] = old == new
+                      for label, value in [('old', old), ('new', new)]:
+                          findings = value.get('results', {})
+                          result[label + '_finding_count'] = sum(len(v) for v in findings.values() if isinstance(v, list))
+                      result['baseline_settings_changed'] = {k:v for k,v in old.items() if k != 'results'} != {k:v for k,v in new.items() if k != 'results'}
+              except (ValueError, SyntaxError, AttributeError, TypeError):
+                  result['structural_review'] = 'unavailable'
+              return result
+          
+          
+          def preserve(repo=REPO, destination=DEST, expected=EXPECTED, head=HEAD, status=STATUS):
+              origin = git(repo, 'remote', 'get-url', 'origin').strip()
+              if origin not in ('https://github.com/alston-personal/agentmanager.git',
+                                'https://github.com/alston-personal/agentmanager',
+                                'git@github.com:alston-personal/agentmanager.git'):
+                  raise ValueError('identity_mismatch')
+              def fence():
+                  if git(repo, 'rev-parse', 'HEAD').strip() != head or git(repo, 'status', '--porcelain=v1', '-z', '--untracked-files=no') != status:
+                      raise ValueError('checkout_changed')
+                  for path, sha in expected.items():
+                      if digest(regular(repo / path)) != sha:
+                          raise ValueError('file_changed')
+              fence()
+              index = regular(repo / '.git/index')
+              entries = {'git-index.bin': index}
+              summaries = []
+              for number, path in enumerate(expected):
+                  work = regular(repo / path)
+                  if digest(work) != expected[path]:
+                      raise ValueError('file_changed')
+                  base = git(repo, 'show', head + ':' + path).encode('utf-8')
+                  staged = git(repo, 'show', ':' + path).encode('utf-8')
+                  if max(len(base), len(staged)) > MAX_FILE_BYTES:
+                      raise ValueError('large_git_blob')
+                  entries.update({f'{number}-worktree.bin': work, f'{number}-head.bin': base, f'{number}-index.bin': staged})
+                  summary = review(path, base, work)
+                  summary['index_sha256'] = digest(staged)
+                  summary['index_equals_worktree'] = staged == work
+                  summaries.append(summary)
+              fence()
+              if regular(repo / '.git/index') != index:
+                  raise ValueError('index_changed')
+              fd = private_destination(destination)
+              try:
+                  for name, data in entries.items():
+                      out = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+                      with os.fdopen(out, 'wb') as handle:
+                          handle.write(data)
+                          handle.flush()
+                          os.fsync(handle.fileno())
+                      check = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+                      with os.fdopen(check, 'rb') as handle:
+                          if handle.read() != data:
+                              raise ValueError('backup_verification_failed')
+                  fence()
+                  if regular(repo / '.git/index') != index:
+                      raise ValueError('index_changed')
+                  manifest = {'schema': 'agentos.checkout-preservation/v1', 'head_sha': head,
+                              'status': status, 'files': {name:digest(data) for name,data in entries.items()},
+                              'review': summaries, 'repository_mutation_performed': False,
+                              'backup_verified': True, 'automatic_recovery_safe': False}
+                  out = os.open('manifest.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=fd)
+                  with os.fdopen(out, 'w') as handle:
+                      json.dump(manifest, handle, sort_keys=True)
+                      handle.flush()
+                      os.fsync(handle.fileno())
+                  os.fsync(fd)
+              finally:
+                  os.close(fd)
+              return {'schema': 'agentos.checkout-preservation/v1', 'head_sha': head,
+                      'backup_id': destination.name, 'backup_verified': True, 'review': summaries,
+                      'repository_mutation_performed': False, 'automatic_recovery_safe': False,
+                      'credential_exposed': False}
+          
+          
+          if __name__ == '__main__':
+              try:
+                  if len(sys.argv) != 1:
+                      raise ValueError('no_arguments')
+                  print(json.dumps(preserve(), sort_keys=True))
+              except Exception:
+                  print(json.dumps({'schema': 'agentos.checkout-preservation/v1',
+                                    'classification': 'preservation_refused_or_incomplete',
+                                    'backup_verified': False, 'repository_mutation_performed': False,
+                                    'automatic_recovery_safe': False, 'credential_exposed': False}))
+                  raise SystemExit(1)
+          AGENTOS_PRESERVE_PY

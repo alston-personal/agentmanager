@@ -18,6 +18,9 @@ on:
       - 'scripts/reconcile_action_relay_runtime.py'
       - 'scripts/maintenance.py'
       - 'scripts/oracle_checkout_diagnostic.py'
+      - 'scripts/oracle_checkout_preserve.py'
+      - 'tests/test_oracle_checkout_preserve.py'
+      - '.github/workflows/oracle-checkout-preserve.yml'
       - 'tests/test_oracle_checkout_diagnostic.py'
       - '.github/workflows/oracle-checkout-diagnostic.yml'
       - '.github/workflows/deploy-agentos-core.yml'
@@ -53,3 +56,4 @@ jobs:
           tests/test_runtime_converge_bootstrap_contract.py
           tests/test_action_relay_generation_reconcile.py
           tests/test_oracle_checkout_diagnostic.py
+          tests/test_oracle_checkout_preserve.py
