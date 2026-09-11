@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Measure delivery candidate starvation
+      - name: Read post-timeout Employee state
         shell: bash
         run: |
           set -euo pipefail
@@ -41,33 +41,45 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
           cd "$1"
-          python3 - <<'PY'
-          import json
+          DATA_ROOT="/home/ubuntu/agent-data"
+          echo "checkout_sha=$(git rev-parse HEAD)"
+          echo "checkout_clean=$([ -z "$(git status --porcelain=v1 --untracked-files=no)" ] && echo true || echo false)"
+          for svc in agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
+            echo "$svc.restarts=$(systemctl --user show "$svc" -p NRestarts --value 2>/dev/null || true)"
+          done
+          python3 - "$DATA_ROOT" <<'PY'
+          import json, sys
           from pathlib import Path
-          root=Path('/home/ubuntu/agent-data/employee-runtime/supervisor')
-          intents=root/'intents'
-          deliveries=root/'deliveries'
-          terminal={'claimed','terminal_observed','superseded'}
+          data=Path(sys.argv[1]); rt=data/'employee-runtime'
+          for aid in ('zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'):
+              p=rt/'assignments'/(aid+'.json')
+              obj=json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}
+              print('assignment='+json.dumps({k:obj.get(k) for k in ('assignment_id','employee_id','state','thread_head','updated_at','result')},ensure_ascii=False,sort_keys=True))
+          droot=rt/'supervisor'/'deliveries'
           rows=[]
-          for p in sorted(intents.glob('reconcile_*.json')):
-              rid=p.stem
-              d=deliveries/(rid+'.json')
-              state=None
-              employee=None
-              assignment=None
-              if d.exists():
-                  obj=json.loads(d.read_text(encoding='utf-8'))
-                  state=obj.get('status')
-                  employee=obj.get('employee_id')
-                  assignment=obj.get('assignment_id')
-              if state in terminal:
-                  continue
-              rows.append((rid,state,employee,assignment))
-          print('nonterminal_count='+str(len(rows)))
-          for i,row in enumerate(rows[:24],1):
-              print('candidate='+json.dumps({'rank':i,'reconcile_id':row[0],'status':row[1],'employee_id':row[2],'assignment_id':row[3]},sort_keys=True))
-          for i,row in enumerate(rows,1):
-              if row[2] in {'zeus-writer','youtube-ai-manager'}:
-                  print('product_rank='+json.dumps({'rank':i,'reconcile_id':row[0],'status':row[1],'employee_id':row[2],'assignment_id':row[3]},sort_keys=True))
+          for p in droot.glob('*.json'):
+              try: obj=json.loads(p.read_text(encoding='utf-8'))
+              except Exception: continue
+              if obj.get('employee_id') in {'zeus-writer','youtube-ai-manager'}:
+                  rows.append((p.stat().st_mtime,obj))
+          for _,obj in sorted(rows,key=lambda x:x[0])[-8:]:
+              print('delivery='+json.dumps({k:obj.get(k) for k in ('reconcile_id','employee_id','assignment_id','wake_id','status','updated_at','presence_generation','task_id','error_code')},sort_keys=True))
+          for employee in ('zeus-writer','youtube-ai-manager'):
+              wdir=data/'employee-wakes'/employee
+              for p in (sorted(wdir.glob('*.json'),key=lambda x:x.stat().st_mtime)[-3:] if wdir.exists() else []):
+                  obj=json.loads(p.read_text(encoding='utf-8'))
+                  print('wake='+json.dumps({k:obj.get(k) for k in ('employee_id','assignment_id','wake_id','presence_generation','expected_lease_generation')},sort_keys=True))
+          hroot=data/'employee-worker-host'/'dispatches'
+          rows=[]
+          for p in hroot.glob('*/*.json'):
+              try: obj=json.loads(p.read_text(encoding='utf-8'))
+              except Exception: continue
+              if obj.get('employee_id') in {'zeus-writer','youtube-ai-manager'}:
+                  rows.append((p.stat().st_mtime,obj))
+          for _,obj in sorted(rows,key=lambda x:x[0])[-10:]:
+              print('dispatch='+json.dumps({k:obj.get(k) for k in ('employee_id','assignment_id','wake_id','presence_generation','expected_lease_generation','status','completed_at','error_code','child_result')},ensure_ascii=False,sort_keys=True))
           PY
+          echo "--- worker journal recent ---"
+          journalctl --user -u agentos-employee-worker-host.service --since '2026-09-11 10:48:00' --no-pager 2>/dev/null | tail -80 || true
           REMOTE
