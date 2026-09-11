@@ -15,10 +15,12 @@ RECEIPT_SCHEMA = "agentos.bootstrap-receipt/v1"
 ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
+ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
+    ACTION_RECONCILE_CONTROL_INBOX,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -75,7 +77,12 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     source_commit = str(params.get("source_commit") or "").strip() or None
     if source_commit is not None and not COMMIT_RE.fullmatch(source_commit):
         raise ValueError("source_commit must be an exact lowercase 40-hex commit SHA")
-    if action in {ACTION_DEPLOY_REALM_GATEWAY, ACTION_DEPLOY_SOCIAL_RUNTIME} and source_commit is None:
+    exact_actions = {
+        ACTION_DEPLOY_REALM_GATEWAY,
+        ACTION_DEPLOY_SOCIAL_RUNTIME,
+        ACTION_RECONCILE_CONTROL_INBOX,
+    }
+    if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
     created = _parse_time(str(payload.get("created_at") or ""))
     age = (datetime.now(timezone.utc) - created).total_seconds()
@@ -145,11 +152,15 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:
-            # Exact-generation transport repairs are an integration-lane rollout.
-            # The request cannot select a branch; Core fixes the only allowed lane
-            # and the repair script independently verifies FETCH_HEAD == source_commit.
             env_extra["AGENTOS_REF"] = "core/integration"
         return _run_canonical_script("scripts/repair_antigravity_relay_user.sh", timeout=180, source_commit=source_commit, env_extra=env_extra)
+    if action == ACTION_RECONCILE_CONTROL_INBOX:
+        return _run_canonical_script(
+            "scripts/install_control_inbox_bridge_user.sh",
+            timeout=180,
+            source_commit=source_commit,
+            env_extra={"AGENTOS_REF": "core/integration"},
+        )
     if action == ACTION_DEPLOY_REALM_GATEWAY:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300, source_commit=source_commit)
     if action == ACTION_DEPLOY_SOCIAL_RUNTIME:
