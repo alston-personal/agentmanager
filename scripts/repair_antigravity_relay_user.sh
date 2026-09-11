@@ -48,11 +48,26 @@ mkdir -p "$RUNTIME/agentos_node" "$REALM_RUNTIME" "$UNIT_DIR"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
-SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
-if [ -n "$EXPECTED_SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
-  echo "ERROR: runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT" >&2
-  exit 7
+# The governed ref proves lane membership; the exact commit determines bytes.
+# Snapshot the ref first, then fetch the requested generation itself. A parallel
+# merge may advance SOURCE_REF after the rollout starts without invalidating a
+# commit that was already accepted into that lane.
+if [ -n "$EXPECTED_SOURCE_COMMIT" ]; then
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+  SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
+  if [ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]; then
+    echo "ERROR: exact runtime source fetch mismatch: observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT" >&2
+    exit 7
+  fi
+  if ! git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"; then
+    echo "ERROR: exact runtime source commit is not in governed ref: ref=$SOURCE_REF ref_head=$SOURCE_REF_HEAD commit=$SOURCE_COMMIT" >&2
+    exit 7
+  fi
+else
+  git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"
+  SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)
 fi
 show_source() {
   git -C "$REPO" show "$SOURCE_COMMIT:$1"

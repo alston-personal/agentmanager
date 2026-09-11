@@ -18,8 +18,12 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         text = _text(REPAIR)
         self.assertIn('EXPECTED_SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"', text)
         self.assertIn('^[0-9a-f]{40}$', text)
+        self.assertIn('git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"', text)
         self.assertIn('[ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]', text)
-        self.assertIn('runtime source generation mismatch', text)
+        self.assertIn('exact runtime source fetch mismatch', text)
+        self.assertIn('git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"', text)
+        self.assertIn('exact runtime source commit is not in governed ref', text)
+        self.assertNotIn('runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT', text)
         self.assertIn('AGENTOS_ACTION_SOURCE_COMMIT="$SOURCE_COMMIT"', text)
 
     def test_bootstrap_exact_repair_owns_integration_lane_selection(self):

@@ -19,8 +19,13 @@ class AntigravityRepairContractTests(unittest.TestCase):
         self.assertIn('main|core/integration|feature/realm-node-fabric-readiness', text)
         self.assertNotIn('core/issue-194-bounded-executor-jobs)', text)
         self.assertIn('git -C "$REPO" fetch --no-tags origin "$SOURCE_REF"', text)
+        self.assertIn('SOURCE_REF_HEAD=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
+        self.assertIn('git -C "$REPO" fetch --no-tags origin "$EXPECTED_SOURCE_COMMIT"', text)
         self.assertIn('SOURCE_COMMIT=$(git -C "$REPO" rev-parse FETCH_HEAD)', text)
         self.assertIn('[ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_COMMIT" ]', text)
+        self.assertIn('git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$SOURCE_REF_HEAD"', text)
+        self.assertIn('exact runtime source commit is not in governed ref', text)
+        self.assertNotIn('runtime source generation mismatch: ref=$SOURCE_REF observed=$SOURCE_COMMIT expected=$EXPECTED_SOURCE_COMMIT', text)
         self.assertNotIn('origin/main:', text)
 
     def test_realm_runtime_materializes_complete_exact_core_package(self):
