@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -84,9 +85,18 @@ class EmployeeWakeReceiptTimeoutTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def _pin_queued_clock(self, presence_generation: int) -> None:
+        path = self.delivery._path(self.intent.wake_id, presence_generation)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        stamp = self.now.isoformat().replace("+00:00", "Z")
+        payload["queued_at"] = stamp
+        payload["updated_at"] = stamp
+        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
     def test_missing_receipt_wait_is_bounded_then_becomes_unknown(self) -> None:
         queued = self.delivery.deliver_intent(self.intent, now=self.now)
         self.assertEqual(queued.status, "queued")
+        self._pin_queued_clock(queued.presence_generation)
 
         early = self.delivery.reconcile(
             self.intent.wake_id,
@@ -107,6 +117,7 @@ class EmployeeWakeReceiptTimeoutTests(unittest.TestCase):
 
     def test_receipt_timeout_never_replays_same_presence_generation(self) -> None:
         queued = self.delivery.deliver_intent(self.intent, now=self.now)
+        self._pin_queued_clock(queued.presence_generation)
         task_id = queued.task_id
         before = list(self.fabric.load()["tasks"]["node-a"])
         self.assertEqual(len(before), 1)
