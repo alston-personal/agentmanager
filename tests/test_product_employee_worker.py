@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import agentos_node.employee_worker_host_runtime as worker_runtime
 from agentos_node.employee_worker_host import WorkerHostCandidate
 from agentos_node.employee_worker_host_runtime import (
     ExactEmployeeWorkerHost,
@@ -99,6 +100,45 @@ def test_exact_shared_host_maps_product_runner_to_fixed_cli(tmp_path: Path) -> N
     assert "--wake-id wake-1" in joined
     assert "--presence-generation 1" in joined
     assert "shell" not in joined
+
+
+def test_product_host_waits_for_s4_awaiting_claim_before_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime_root = tmp_path / "runtime"
+    wake_root = tmp_path / "wake"
+    host_root = tmp_path / "host"
+    worker_root = tmp_path / "worker"
+    for path in (runtime_root, wake_root, host_root, worker_root):
+        path.mkdir()
+
+    host = ExactEmployeeWorkerHost(
+        runtime_root=runtime_root,
+        wake_root=wake_root,
+        host_state_root=host_root,
+        worker_state_root=worker_root,
+        node_id="oracle-core-node",
+    )
+    capsule = _capsule(
+        "zeus-writer",
+        "zeus-writer-continuation-v1",
+        "product.zeus_writer",
+        "writing.project.continue",
+    )
+    employee_wake_root = wake_root / "zeus-writer"
+    employee_wake_root.mkdir()
+    (employee_wake_root / "wake-1.json").write_text(json.dumps(capsule), encoding="utf-8")
+
+    def not_ready(*args, **kwargs):
+        raise PermissionError("product_employee_worker_governed_delivery_missing")
+
+    monkeypatch.setattr(worker_runtime, "require_governed_product_delivery", not_ready)
+    assert host.process_one() is None
+    assert list((host_root / "dispatches").glob("*/*.json")) == []
+
+    monkeypatch.setattr(worker_runtime, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    candidates = host._candidates()  # noqa: SLF001 - prelaunch race boundary test
+    assert len(candidates) == 1
+    assert candidates[0].capsule["wake_id"] == "wake-1"
+    assert list((host_root / "dispatches").glob("*/*.json")) == []
 
 
 def test_shared_host_accepts_only_runner_specific_result_schema(tmp_path: Path) -> None:
