@@ -111,9 +111,11 @@ def test_activation_assets_are_fixed_and_do_not_emit_verified_markers():
 
 def test_worker_host_enters_fixed_shared_agentos_group_without_generic_authority():
     unit = WORKER_UNIT.read_text(encoding="utf-8")
-    assert "ExecStart=/usr/bin/sg agentos -c 'exec /usr/bin/python3 -m agentos_node.employee_worker_host_daemon'" in unit
+    exec_line = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
+    assert exec_line == "ExecStart=/usr/bin/sg agentos -c 'exec /usr/bin/setpriv --no-new-privs /usr/bin/python3 -m agentos_node.employee_worker_host_daemon'"
     assert "PrivateNetwork=true" in unit
-    assert "NoNewPrivileges=true" in unit
+    assert "NoNewPrivileges=false" in unit
+    assert "/usr/bin/setpriv --no-new-privs" in exec_line
     assert "shell.exec" not in unit
     assert "${" not in unit
     assert "youtube" not in unit.casefold()

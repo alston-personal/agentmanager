@@ -18,7 +18,15 @@ class EmployeeWorkerHostAssetTests(unittest.TestCase):
         self.assertNotRegex(text, re.compile(r"^User=", re.MULTILINE))
         self.assertIn("WantedBy=default.target", text)
         self.assertIn("PrivateNetwork=true", text)
-        self.assertIn("NoNewPrivileges=true", text)
+        # The live Oracle user manager predates agentos supplementary membership.
+        # sg must establish the fixed group before NNP is locked; setpriv then
+        # restores NNP before the Python daemon starts.
+        exec_line = next(line for line in text.splitlines() if line.startswith("ExecStart="))
+        self.assertIn("ExecStart=/usr/bin/sg agentos -c '", exec_line)
+        self.assertIn("/usr/bin/setpriv --no-new-privs", exec_line)
+        self.assertLess(exec_line.index("/usr/bin/sg agentos"), exec_line.index("/usr/bin/setpriv --no-new-privs"))
+        self.assertLess(exec_line.index("/usr/bin/setpriv --no-new-privs"), exec_line.index("employee_worker_host_daemon"))
+        self.assertIn("NoNewPrivileges=false", text)
         self.assertIn("ProtectSystem=strict", text)
         self.assertIn("employee_worker_host_daemon", text)
         self.assertNotIn("spec_steward_worker_cli", text)

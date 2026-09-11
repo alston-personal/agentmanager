@@ -72,3 +72,18 @@ def test_youtube_ai_manager_product_employee_contract_is_read_only_first() -> No
     assert "read-only-first" in constraints
     assert "no-external-youtube-api-mutation-authority" in constraints
     assert "status-or-memory-symlinks-are-not-liveness-proof" in constraints
+
+
+def test_worker_host_enters_group_before_locking_no_new_privileges() -> None:
+    unit = (ROOT / ".agent/scripts/agentos-employee-worker-host.service").read_text(encoding="utf-8")
+    exec_line = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
+    assert exec_line.startswith("ExecStart=/usr/bin/sg agentos -c ")
+    assert "/usr/bin/setpriv --no-new-privs" in exec_line
+    assert exec_line.index("/usr/bin/sg agentos") < exec_line.index("/usr/bin/setpriv --no-new-privs")
+    assert exec_line.index("/usr/bin/setpriv --no-new-privs") < exec_line.index("python3 -m agentos_node.employee_worker_host_daemon")
+    # systemd-level NNP would disable sg's setgid helper before it can establish
+    # the fixed group. The daemon itself re-enters NNP through setpriv above.
+    assert "NoNewPrivileges=false" in unit
+    assert "PrivateNetwork=true" in unit
+    assert "ProtectSystem=strict" in unit
+    assert "ProtectHome=read-only" in unit
