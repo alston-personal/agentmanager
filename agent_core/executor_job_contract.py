@@ -11,6 +11,8 @@ from dataclasses import dataclass
 import re
 from typing import Any, Mapping
 
+from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json
+
 
 EXECUTOR_JOB_SCHEMA = "agentos.executor-job/v1"
 EXECUTOR_JOB_SUBMISSION_SCHEMA = "agentos.executor-job-submission/v1"
@@ -208,4 +210,10 @@ def project_executor_job_receipt(
             value = result.get(key)
             if isinstance(value, (str, int, float, bool)) or value is None:
                 summary[key] = value
+        # #117 may additionally project one strictly validated canonical JSON
+        # scalar carrying only fixed benchmark dimensions + hydration manifest.
+        if "attribution_evidence_json" in result:
+            summary["attribution_evidence_json"] = sanitize_attribution_evidence_json(
+                result.get("attribution_evidence_json")
+            )
     return summary
