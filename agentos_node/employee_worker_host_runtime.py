@@ -11,6 +11,7 @@ from agentos_node.employee_worker_host import (
     EmployeeWorkerHost,
     WorkerHostCandidate,
 )
+from agentos_node.product_employee_worker import require_governed_product_delivery
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +22,7 @@ V2_RUNNER_KINDS = {
     "zeus_writer_v1",
     "youtube_ai_manager_scan_v1",
 }
+PRODUCT_RUNNER_KINDS = {"zeus_writer_v1", "youtube_ai_manager_scan_v1"}
 V2_RESULT_SCHEMAS = {
     "spec_steward_o3": "agentos.spec-steward-o3-worker-cli-result/v1",
     "zeus_writer_v1": "agentos.zeus-writer-worker-cli-result/v1",
@@ -117,6 +119,12 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
     The underlying EmployeeWorkerHost still owns the durable dispatch ledger,
     crash/UNKNOWN semantics and allowlisted child environment. This wrapper only
     expands source-controlled runner selection and pins one exact wake per launch.
+
+    Product runners have an additional read-only prelaunch fence: the exact
+    Supervisor/S4 delivery must already be `awaiting_claim` before a child process
+    is started. The child repeats the same check immediately before claim, so this
+    avoids the capsule-vs-S4 race without weakening claim authority or TOCTOU
+    protection.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -127,10 +135,28 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
         self.registry = ProductEmployeeWorkerAdapterRegistry()
         self._pinned_candidate: WorkerHostCandidate | None = None
 
+    def _product_preclaim_ready(self, candidate: WorkerHostCandidate) -> bool:
+        if candidate.adapter.runner_kind not in PRODUCT_RUNNER_KINDS:
+            return True
+        try:
+            require_governed_product_delivery(
+                self.runtime_root,
+                candidate.adapter.runner_kind,
+                candidate.capsule,
+            )
+        except PermissionError as exc:
+            # The normal race is a capsule arriving before the Supervisor has
+            # persisted the matching S4 `awaiting_claim` state. Do not create a
+            # dispatch ledger or launch a child yet; the daemon will poll again.
+            if str(exc) == "product_employee_worker_governed_delivery_missing":
+                return False
+            raise
+        return True
+
     def _candidates(self) -> list[WorkerHostCandidate]:
         if self._pinned_candidate is not None:
             return [self._pinned_candidate]
-        candidates = super()._candidates()
+        candidates = [candidate for candidate in super()._candidates() if self._product_preclaim_ready(candidate)]
         if candidates:
             self._pinned_candidate = candidates[0]
         return candidates
@@ -141,7 +167,7 @@ class ExactEmployeeWorkerHost(EmployeeWorkerHost):
             raise RuntimeError("employee_worker_exact_candidate_missing")
         if adapter.runner_kind == "spec_steward_o3":
             command = EmployeeWorkerHost._child_command(self, adapter)
-        elif adapter.runner_kind in {"zeus_writer_v1", "youtube_ai_manager_scan_v1"}:
+        elif adapter.runner_kind in PRODUCT_RUNNER_KINDS:
             command = [
                 sys.executable,
                 "-m",
