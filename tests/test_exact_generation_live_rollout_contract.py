@@ -67,11 +67,18 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
     def test_rollout_validates_and_preserves_bounded_attribution_evidence(self):
         text = _text(WORKFLOW)
         self.assertIn("'agent_core/experience_attribution_contract.py'", text)
-        self.assertIn('from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json', text)
+        self.assertIn("'scripts/oracle_codex_experience_ablation.py'", text)
+        self.assertIn('parse_attribution_evidence_json', text)
+        self.assertIn('sanitize_attribution_evidence_json', text)
         self.assertIn('attribution_json = receipt.get("attribution_evidence_json")', text)
         self.assertIn('assert attribution_json is not None', text)
-        self.assertIn('safe["attribution_evidence_json"] = sanitize_attribution_evidence_json(attribution_json)', text)
+        self.assertIn('parsed_attr.get("schema") == "agentos.experience-attribution-evidence/v2"', text)
+        self.assertIn('ablation.get("withheld_experience_id") == "core.branch-authority.v2"', text)
+        self.assertIn('ablation.get("target_dimension") == "canonical_development_branch"', text)
+        self.assertIn('ablation.get("repeat_count") == 3', text)
+        self.assertIn('safe["attribution_evidence_json"] = safe_attr', text)
         self.assertIn('executor_job_attribution_evidence=PASS', text)
+        self.assertIn('executor_job_ablation_evidence=PASS', text)
         self.assertNotIn('safe = dict(receipt)', text)
 
     def test_legacy_bootstrap_is_manual_read_only_and_exact_generation_only(self):

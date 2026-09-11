@@ -20,6 +20,7 @@ on:
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/oracle_codex_experience_regression.py'
       - 'scripts/oracle_codex_experience_regression_entry_v2.py'
+      - 'scripts/oracle_codex_experience_ablation.py'
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
       - 'tests/test_executor_job_action_relay.py'
@@ -29,6 +30,7 @@ on:
       - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_experience_attribution_contract.py'
+      - 'tests/test_issue117_experience_ablation.py'
       - 'tests/test_control_inbox_bridge.py'
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
@@ -52,6 +54,7 @@ on:
       - 'scripts/repair_antigravity_relay_user.sh'
       - 'scripts/oracle_codex_experience_regression.py'
       - 'scripts/oracle_codex_experience_regression_entry_v2.py'
+      - 'scripts/oracle_codex_experience_ablation.py'
       - 'tests/test_executor_job_contract.py'
       - 'tests/test_executor_job_adapter.py'
       - 'tests/test_executor_job_action_relay.py'
@@ -61,6 +64,7 @@ on:
       - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_issue117_regression_floor.py'
       - 'tests/test_experience_attribution_contract.py'
+      - 'tests/test_issue117_experience_ablation.py'
       - 'tests/test_control_inbox_bridge.py'
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
@@ -89,6 +93,7 @@ jobs:
             tests/test_issue117_experience_provider.py \
             tests/test_issue117_regression_floor.py \
             tests/test_experience_attribution_contract.py \
+            tests/test_issue117_experience_ablation.py \
             tests/test_control_inbox_bridge.py \
             tests/test_exact_generation_live_rollout_contract.py \
             -q
@@ -147,7 +152,8 @@ jobs:
             agentos_node/issue117_experience_provider.py \
             agentos_node/experience_mcp_stdio.py \
             scripts/oracle_codex_experience_regression.py \
-            scripts/oracle_codex_experience_regression_entry_v2.py
+            scripts/oracle_codex_experience_regression_entry_v2.py \
+            scripts/oracle_codex_experience_ablation.py
       - name: Validate governed runtime installers
         run: |
           bash -n scripts/install_action_relay_user.sh

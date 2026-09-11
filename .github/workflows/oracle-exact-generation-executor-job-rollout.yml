@@ -19,6 +19,7 @@ on:
       - 'scripts/seed_one_experience.py'
       - 'scripts/oracle_codex_experience_regression.py'
       - 'scripts/oracle_codex_experience_regression_entry_v2.py'
+      - 'scripts/oracle_codex_experience_ablation.py'
       - 'agent_core/executor_job_contract.py'
       - 'agent_core/experience_attribution_contract.py'
       - 'agentos_node/executor_job_action_relay.py'
@@ -155,7 +156,10 @@ jobs:
           PYTHONPATH="$RUNTIME" python3 - "$ACTION_ROOT" "$SUBMISSION" "$EVIDENCE" <<'PY'
           import json, sys, time
           from pathlib import Path
-          from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json
+          from agent_core.experience_attribution_contract import (
+              parse_attribution_evidence_json,
+              sanitize_attribution_evidence_json,
+          )
           from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
 
           root = Path(sys.argv[1]); submission_path = Path(sys.argv[2]); evidence = Path(sys.argv[3])
@@ -191,12 +195,21 @@ jobs:
           ) if key in receipt}
           attribution_json = receipt.get("attribution_evidence_json")
           assert attribution_json is not None, "live #117 attribution evidence missing from bounded receipt"
-          safe["attribution_evidence_json"] = sanitize_attribution_evidence_json(attribution_json)
+          safe_attr = sanitize_attribution_evidence_json(attribution_json)
+          parsed_attr = parse_attribution_evidence_json(safe_attr)
+          assert parsed_attr.get("schema") == "agentos.experience-attribution-evidence/v2", parsed_attr
+          ablation = parsed_attr.get("ablation")
+          assert isinstance(ablation, dict), parsed_attr
+          assert ablation.get("withheld_experience_id") == "core.branch-authority.v2", ablation
+          assert ablation.get("target_dimension") == "canonical_development_branch", ablation
+          assert ablation.get("repeat_count") == 3, ablation
+          safe["attribution_evidence_json"] = safe_attr
           safe["one_controller_entered"] = True
           evidence.write_text(json.dumps(safe, sort_keys=True, indent=2) + "\n", encoding="utf-8")
           print("one_controller_dispatch=PASS")
           print("executor_job_transport_receipt=PASS")
           print("executor_job_attribution_evidence=PASS")
+          print("executor_job_ablation_evidence=PASS")
           print("executor_job_id=" + job_id)
           print("executor_job_classification=" + str(receipt.get("classification")))
           print("executor_job_successful=" + str(bool(receipt.get("successful"))).lower())
