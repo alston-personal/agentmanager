@@ -2,166 +2,161 @@
 
 **Status date:** 2026-09-11  
 **Canonical development authority:** `core/integration`  
-**Purpose:** one concise reality map for implemented, verified, pending, research, and retired AgentOS Core architecture.
+**Observed integration head at this refresh:** `5093b59da5d45cdd016d606a7e2cb8abdb4cf22e`  
+**Purpose:** concise evidence-bound map of implemented, verified, pending, research, and deprecated AgentOS Core architecture.
 
-This document is intentionally evidence-bound. A source merge proves implementation, not live operation. A live receipt proves only the exact generation, route, capability, executor, and effect that the receipt attests.
-
-Status terms: **Implemented** requires source; **Verified** requires the stated
-acceptance evidence; **Research** remains an unproven broader claim.
-
-## Product goal
-
-AgentOS should let a user change conversation, model, executor, extension, Node, or machine without reconstructing the project from conversation history. Durable project state, accepted experience, authority, execution state, and evidence live outside model-local context. Models and IDE extensions are replaceable execution surfaces.
+A source merge proves implementation, not live operation. A live receipt proves only the exact source generation, route, capability, executor and effect named by that receipt.
 
 ## Canonical authority hierarchy
 
 1. New explicit user intent and accepted governance constraints.
 2. Canonical Project Identity and repository ownership.
-3. ONE durable state: Canonical IR, active continuation pointer, Employee/assignment state, registries, dependency state.
-4. Accepted Experience IR, scoped and provenance-bound.
+3. ONE durable state: Canonical IR, active continuation pointer, Employee/assignment state, registries and dependency state.
+4. Accepted Experience artifacts, scoped and provenance-bound.
 5. Governed receipts/evidence from actual execution.
-6. Client-local workspace/history/config and legacy pulse/status files.
+6. Client-local workspace/history/config and legacy status/pulse files.
 
 Lower layers may inform higher layers but may not silently overwrite them.
 
-## Reality map
+## Current architecture / reality map
 
-| Capability | Current state | Canonical implementation / evidence boundary |
+| Area | Current state | Evidence / boundary |
 | --- | --- | --- |
-| Persistent control plane and Realm | Implemented and operating slices | `agent_core/control_plane.py`, Realm services/registry, exact live state must be read from runtime/Node receipts rather than a hard-coded historical generation |
-| Node Registry / Node Map | Implemented + tested | `agent_core/node_registry.py`; `agentos.node-registry/v0.1` and read-only `agentos.node-map/v0.1` |
-| Node heartbeat freshness | Implemented | reported `online` becomes effective `offline` when heartbeat is stale; current default stale floor is 30s with a minimum of 15s |
-| Node/runtime provenance and drift | Implemented | Node Map projects runtime convergence/drift/unknown; source equality alone is not operating-profile equality |
-| Bounded Oracle runtime convergence | Implemented + live accepted under #242 | typed `node.runtime.converge`, fixed source-owned installers, exact `core/integration` SHA, no caller shell/argv/path/service authority, rollback + sanitized receipts; #242 completed 2026-09-04 |
-| Action Relay generation reconciliation | Implemented | Core maintenance can reconcile an old immutable Action Relay runtime to current accepted Core generation without caller-supplied execution fields |
-| Node vs executor identity | Canonical invariant; broader extraction/acceptance still tracked by #152 | Node is durable Realm participant; executor/surface/backend/session are distinct identities; `Node online != executor available` |
-| Executor status semantics | Canonical invariant | `advertised != routable != authorized != successful`; do not collapse these into one capability flag |
-| ChatGPT Web → ONE | Bootstrap path implemented | authority-driven routing prefers direct ONE/MCP/App; current ChatGPT bootstrap may use Control Inbox #50; GitHub Actions is not a generic failure fallback |
-| Bounded executor jobs through ONE | Implemented slices | declarative fixed job types route through ONE → bounded Action Relay → sanitized durable receipt; no generic remote shell |
-| Canonical continuation IR | Implemented + verified concrete cross-extension slices | `agentos.ir/v1`, parent-fenced publication, active continuation selector; Gemini/Codex continuity has concrete accepted evidence, but arbitrary portability remains unproven |
-| Active continuation selector | Implemented | pointer stores project/index/IR identity only; it is not another state store and must fail closed on stale references |
-| ChatGPT active continuation read (#179) | Source candidate; live acceptance pending | Private controller-authenticated active resolve plus identity-only Control Inbox inspection; selector changes fail closed. Public identity receipts explicitly do not hydrate IR. Governed deployment, host allowlist and private ChatGPT adapter acceptance remain required. See `docs/CHATGPT_ONE_TRANSPORT.md`. |
-| Experience subsystem v0 prose design | Deprecated | PR #119 direction is superseded; do not merge wholesale |
-| Semantic Experience IR v1 | Candidate beyond the bounded #117 acceptance | `agentos.experience/v1` / `agentos.experience-ir/v1` remains a broader semantic evolution with typed nodes and stable digests; PR #229 remains unmerged, and the bounded #117 verification does not imply wholesale semantic-v1 acceptance |
-| Master Experience Floor | Verified for bounded Oracle Codex #117 benchmark | governed ONE-dispatched A/B is baseline 6/7 → hydrated 7/7; exact hydration manifest and per-dimension deltas are persisted; fixed 3× B-minus-`core.branch-authority.v2` loses the only material improvement 3/3 with attribution confidence `supported`. Scope is this benchmark; general cross-model Cognitive IR remains Research. Evidence: `.agentos/evidence/experience/oracle-issue117-one-dispatch-34565359787/` |
-| General Cognitive IR across arbitrary models | Research | Canonical continuation IR and Experience IR are bounded concrete forms; do not claim portable hidden activations or arbitrary executor equivalence |
-| Agent Employee Runtime | Accepted foundation | durable Employee identity is distinct from executor/session/Node; durable assignments, leases, state/thread heads, scoped memory and receipts are canonical operating state |
-| Persistent Supervisor/Reconciler | Implemented/operating acceptance work | Supervisor is Core controller process, not an Employee; events reveal candidate work but do not grant authority; no daemon-per-role architecture |
-| Product Employees (Zeus Writer / YouTube AI Manager) | Source/runtime profile implemented; live production acceptance remains open under #238 | fixed Employee contracts, wake-only Node profile and shared Worker Host are source-controlled; real persistent writing/scan continuity and liveness markers still require operating evidence |
-| Project/repository identity | Canonical and explicit | `docs/PROJECT_REPO_MAP.md`, `governance/product-migrations.json`; project identity is never inferred solely from a repository name |
-| Parallel Core workers | Accepted | canonical Core thread is authority/control-plane; issue workers execute independently; dependencies block exact steps, not whole projects |
-| Evidence-first acceptance | Canonical | `.agentos/evidence/`, sanitized receipts, exact source/runtime identity; static CI cannot manufacture live VERIFIED markers |
-| Protected publication authority | Canonical | `core/issue-* -> core/integration`; publication to protected `main` is separate explicit authority and is never implied by `continue`, CI green, mergeability, capability availability, or worker completion |
+| Core development authority | Canonical | `core/issue-* -> core/integration`; `main` is separate protected publication history, not active agent workspace |
+| Realm / persistent control plane | Implemented, operating slices | exact live health must come from current runtime/Node receipts rather than a hard-coded generation |
+| Node Registry / Node Map | Implemented | `agentos.node-registry/v0.1`, read-only `agentos.node-map/v0.1`; Node, surface, executor, backend and session identities remain separate |
+| Runtime convergence | Implemented + bounded live acceptance | `node.runtime.converge` uses source-owned installers and exact accepted SHA; no caller-selected executable/argv/shell/path/service/env authority |
+| Exact-generation source selection | Hardened | an authorized exact commit is fetched independently and must be an ancestor of the snapped allowlisted `core/integration` ref; runtime bytes come only from that exact commit. A concurrent merge advancing branch HEAD no longer invalidates an already authorized rollout (#320/#322) |
+| Action Relay capability publication | Hardened | capability marker publication uses the fixed `agentos` group boundary, unique temp + fsync + atomic replace, explicit effective/parent GID checks, anchored runtime imports; marker presence is not execution authority |
+| Canonical continuation IR | Implemented concrete slices | `agentos.ir/v1`, parent-fenced publication and active continuation selector; arbitrary hidden model state portability remains Research |
+| Experience subsystem / Master Experience Floor | **Verified for bounded Oracle Codex #117 benchmark** | #117 closed completed 2026-09-11. ONE-dispatched A/B: baseline 6/7 -> hydrated 7/7; exact hydration manifest + per-dimension evidence; fixed 3-run B-minus-`core.branch-authority.v2` loses the only material improvement 3/3, attribution confidence `supported`; no regressed dimensions. Evidence: `.agentos/evidence/experience/oracle-issue117-one-dispatch-34565359787/` |
+| Semantic Experience IR v1 | Candidate / broader work | bounded #117 verification does not automatically accept every semantic-v1 proposal or prove universal executor equivalence |
+| General Cognitive IR | Research | do not rename successful continuation/Experience slices into portable arbitrary model-internal state |
+| Agent Employee Runtime | Accepted foundation | durable Employee identity, assignments, leases, thread/state heads, role-scoped memory and receipts are organizational state |
+| Persistent Supervisor/Reconciler | Implemented slices; operating acceptance continues | controller events reveal work but do not grant authority; no daemon-per-role architecture |
+| Product Employees (#238) | Source/runtime hardening continues; live product markers still pending | wake receipt wait is bounded; missing receipt becomes `unknown` rather than infinite `queued`; product child launch requires exact governed S4 `awaiting_claim` evidence before dispatch and repeats the check before claim; Worker Host group transition occurs before no-new-privs. `ZEUS_WRITER_PERSISTENT_EMPLOYEE`, `YOUTUBE_AI_MANAGER_PERSISTENT_EMPLOYEE`, and product liveness markers remain unverified while #238 is open |
+| Discussion Index (#290) | Candidate only | append-only ONE discussion provenance/search substrate is proposed in draft PR #293. It is not canonical authority, Canonical IR, Experience, or transcript-vault acceptance until integrated and live-accepted |
+| Project/repository identity | Canonical explicit map | `docs/PROJECT_REPO_MAP.md`, `governance/product-migrations.json`; identity is never inferred from repository-name similarity |
+| Evidence-first acceptance | Canonical | exact source/runtime identity + bounded sanitized terminal receipts; static CI cannot manufacture live VERIFIED markers |
 
-## Current Node Map semantics
+## Node / capability semantics
 
-The canonical map is generated from ONE-side `NodeRegistry`; it is not a manually maintained list. `agentos.node-map/v0.1` includes:
-
-- Realm id, Node count and effective online count;
-- each Node's role (`core` or `client`), hostname/platform, capabilities and tool presence;
-- `surface_inventory` for provider/IDE surfaces without pretending the surface equals a backend model;
-- heartbeat age and stale reason;
-- runtime provenance / converged, drifted, or unknown state;
-- workspace-root policy projection for legal execution placement;
-- Realm-level aggregate capabilities, tools, and surface providers.
-
-Known real identities include Oracle/Core (`oracle-core-node`) and the Windows client `vopc5750`, but documentation must not hard-code them as the complete live Realm. Live membership and capabilities must come from Node Map / receipts.
-
-Executor inventory is a child layer, not part of Node liveness. A Gemini, Codex, Claude-extension, desktop host, local backend, or Employee Worker Host can become unavailable while its host Node remains online.
-
-## Runtime source and deployment identity
-
-The old fixed statement `live generation 6 / f842bee...` is retired. It was valid historical evidence, not a permanent runtime identity.
-
-Canonical source development currently advances on `core/integration`; at this documentation refresh its observed head is `189c227fd67b00c9481a8a6549c058553bd882e6`. That value is a repository snapshot, not a claim that every live process is already on that SHA.
-
-Every live acceptance must instead bind:
+Canonical identity layers are:
 
 ```text
-repository + source_ref + exact source_sha
-runtime/worktree generation
-service/capability profile
-receipt timestamp/id
-health/result
-rollback state when mutation occurred
-credential_exposed=false where applicable
+Realm -> Node -> surface/extension -> executor adapter -> backend/model -> session/thread
 ```
 
-`source SHA matches` is insufficient if required services/capability markers are absent or stale. Current `node.runtime.converge` therefore reconciles the fixed operating profile even when the checkout is already at the requested generation.
+Invariants:
 
-## Memory and IR boundaries
+```text
+Node online != executor available
+advertised != routable != authorized != successful
+surface identity != backend/model identity
+```
+
+The Node Map is generated from ONE-side `NodeRegistry`, not manually maintained. Heartbeat freshness determines effective Node liveness. Executor liveness and terminal success require executor/provider evidence rather than inference from Node or extension presence.
+
+Capability growth does not imply authority growth. Bounded capabilities remain typed and source-owned; no generic shell may be reconstructed by passing executable/module/argv/path/environment fields through a nominally typed action.
+
+## Runtime identity and convergence
+
+The retired fixed statement `live generation 6 / f842bee...` is historical evidence only.
+
+Repository head is also not live-runtime truth. At this refresh `core/integration` is `5093b59da5d45cdd016d606a7e2cb8abdb4cf22e`, but every runtime acceptance must independently bind:
+
+```text
+repository + allowlisted source_ref + exact source_sha
+runtime/worktree generation
+service/capability profile
+receipt id/timestamp
+health/result
+rollback/unknown state when applicable
+credential_exposed=false where contracted
+```
+
+An exact rollout snapshots the allowlisted integration lane, separately fetches the requested immutable commit, proves that commit belongs to the lane by ancestry, and materializes only that commit. This prevents a moving `core/integration` HEAD from becoming an accidental global mutex for already-authorized deployments.
+
+`source SHA matches` is still insufficient if required services, capability markers, permissions or runtime profile are absent/stale. Same-SHA convergence may therefore reconcile the fixed operating profile.
+
+## Memory / IR boundaries
 
 ### Canonical continuation IR
 
-`agentos.ir/v1` represents bounded durable working state: goal, accepted decisions/constraints, task direction, lineage and evidence references. Publication is parent-fenced. Workspace or client-local history cannot choose continuation authority.
+`agentos.ir/v1` is bounded durable working state: goal, accepted decisions/constraints, task direction, lineage and evidence references. Publication is parent-fenced. Workspace selection, chat history and local configuration do not choose continuation authority.
 
-### Experience IR
+### Experience
 
-Experience is reusable learned procedure/heuristic/failure knowledge, not another project-state store. Current #117 direction uses semantic Experience IR with provenance, scope, digest, expected behavior dimensions and extraction/acceptance fences. Human summaries are presentation only and must not define semantic identity.
+Experience is reusable accepted procedure/heuristic/failure knowledge, not another project-state store. Hydration identifies the exact accepted Experience items/digests without copying unrestricted bodies into receipts. New user intent always outranks hydrated Experience.
 
-A hydration receipt identifies the exact accepted Experience items/digests used without copying their bodies into the receipt. New user intent outranks hydrated Experience.
+For #117 the bounded Oracle Codex Master Experience Floor is now Verified: baseline 6/7, hydrated 7/7, only `canonical_development_branch` improves, and withholding `core.branch-authority.v2` loses that improvement in all three fixed counterfactual repeats. This proves scoped value and attribution for that benchmark, not universal cross-model cognition.
 
-For the bounded Oracle Codex #117 benchmark, the Master Experience Floor is now **Verified** by a live ONE-dispatched 6/7 → 7/7 A/B regression, exact hydration manifest, per-dimension evidence, and three fixed B-minus-`core.branch-authority.v2` counterfactual runs that all lose the material improvement. This verification is intentionally scoped and does not promote General Cognitive IR.
+### Employee state
 
-### General Cognitive IR
+Employee identity, assignment, lease, checkpoint/thread head, wake delivery, inbox/receipt and role-scoped memory are durable organizational state. Recent #238 decisions add two important failure semantics:
 
-Still Research. Do not rename successful continuation or Experience slices into a claim that arbitrary model internal state is portable.
+- a missing Employee wake receipt is not allowed to leave delivery `queued` forever; after the source-owned bounded wait it becomes `unknown` / `node_receipt_timeout`, and the same presence is not blindly redispatched;
+- a product child is not launch-eligible until the exact Supervisor/S4 delivery already satisfies the governed `awaiting_claim` contract; the child repeats the same check immediately before claim.
 
-### Employee memory/state
+These preserve at-most-once/TOCTOU safety instead of converting transient uncertainty into authority.
 
-Employee identity, assignment, lease, checkpoint/thread head, inbox/receipt and role-scoped memory are durable organizational state. Legacy `STATUS.md`, Pulse files, symlinked memory, old possession directives, and chat history can be migration evidence only; they are not current authority.
+Legacy `STATUS.md`, Pulse, symlinked memory, old possession directives and chat history are migration evidence only.
 
 ## Project Identity / repository boundary
 
-`agentmanager` owns Core/ONE/Realm/Node runtime, governance, receipts, canonical state and generic cross-repository capability contracts. Product UI, data, release intent, product CI/deployers and product-specific runtime logic belong to canonical product repositories.
+`agentmanager` owns Core/ONE/Realm/Node runtime, governance, receipts, canonical state and generic cross-repository capability contracts. Product UI/data/release intent/product CI/deployers/product-specific runtime behavior belong to their canonical repositories.
 
-Current canonical map and unresolved identities are maintained in `docs/PROJECT_REPO_MAP.md`. Important unresolved boundaries include Character Blueprint and Model2IR repository assignment; historical Model2IR branches in `agentmanager` are migration provenance, not permission for continued product/library development in Core.
+Character Blueprint remains identity-unresolved; `charactergenerator` was inspected and rejected as a provenance match. Model2IR has a real standalone v0.9.1 carrier lineage inside historical `agentmanager` branches, but no canonical standalone repository has yet been assigned; that lineage is migration provenance, not permission for new product/library development in Core.
 
-An online environment is not defined by branch name. Deployment identity is environment + canonical repository + source ref + exact SHA/artifact + receipt.
+An online environment is identified by environment + canonical repository + source ref + exact SHA/artifact + receipt, never branch name alone.
 
 ## Governance invariants
 
-- **Capability does not imply authority.** Presence of a tool/capability/runner does not authorize its use.
-- **Event does not imply authority.** Issue updates, timers, webhooks, messages, receipts and dependency changes trigger reconciliation only.
-- **Transport failure does not widen authority.** ONE failure never silently falls back to GitHub Actions for control-plane intents.
-- **No generic shell by reconstruction.** Bounded actions/jobs cannot accept executable, argv, shell, module, arbitrary path/service/environment or credentials merely for convenience.
-- **Ambiguous external effects remain `unknown`.** Do not blind-retry privileged side effects after timeout/crash.
-- **Capability growth requires governance growth.** Stronger mutation surfaces require tighter schemas, receipts, rollback, observability and non-authority statements.
-- **Core authority != Core serialization.** Independent worker lanes run concurrently; only declared dependency edges block exact steps.
-- **Publication is separate.** `main` remains accepted/publication state and is not an active agent workspace.
+- Capability does not imply authority.
+- Event does not imply authority; events trigger reconciliation only.
+- Transport failure does not widen authority or silently turn GitHub Actions into the steady-state control plane.
+- Ambiguous privileged side effects remain `unknown`; do not blind-retry.
+- Exact-generation deployment is immutable after authorization but still proves lane membership against the allowlisted integration ref.
+- Parallel Core workers may advance `core/integration`; stale worker branches refresh/transplant rather than force-merge.
+- Publication to `main` is separate explicit authority.
+- Receipts are proof records, not intent or canonical state.
 
-## Receipts and evidence
+## Receipts / evidence
 
-Receipts are proof records, not state or intent. They should be typed, bounded, sanitized and exact enough to answer:
+Receipts should be typed, bounded and sanitized enough to answer:
 
-- who/what acted (Node, surface, executor adapter, backend identity when trustworthy);
-- what canonical project/source generation was used;
-- what declared capability/job/action was authorized;
-- whether routing, authorization and executor availability succeeded;
-- terminal result, timeout/unknown classification and rollback outcome;
-- relevant semantic digests rather than secret/raw bodies;
-- credential boundary (`credential_exposed=false` where that contract applies).
+- Node/surface/executor/backend identity where trustworthy;
+- canonical project and exact source generation;
+- declared capability/job/action;
+- routing, availability and authorization outcomes as separate fields;
+- terminal result, timeout/`unknown` and rollback outcome;
+- semantic digests/IDs rather than unrestricted bodies;
+- credential boundary.
 
-A `VERIFIED` marker requires live evidence for the capability it names. Static/source CI may prove contracts and guards, but may not assert live service/product liveness.
+#117 additionally established a bounded attribution evidence pattern: hydration manifest + fixed per-dimension before/after projection + fixed counterfactual ablation, rather than raw provider output. Digest syntax follows the canonical hydration projection representation (raw lowercase 64-hex SHA-256 in that contract); do not invent parallel digest encodings.
+
+A `VERIFIED` marker requires live evidence for the exact capability named. Static/source CI proves contracts/guards only.
 
 ## Deprecated / superseded paths
 
-Treat these as historical or migration-only unless a current canonical document explicitly reactivates them:
+Historical or migration-only unless explicitly reactivated:
 
-- `SHORT_TERM.md` / `LONG_TERM.md`, pulse-only memory, brain dumps and manual `/report` as primary continuation authority;
-- workspace-selected continuation;
-- client-specific config files containing copied Canonical IR bodies;
-- PR #119 prose-centric Experience v0 direction;
-- legacy direct-to-`main` Core proposal branches; extract still-needed deltas onto current `core/issue-*` branches rather than merging wholesale;
-- legacy Bootstrap auto-push / evidence-push path; current bootstrap is explicit and exact-generation, not steady-state control plane;
-- `node.runtime.converge -> shell.exec` / embedded script carrier; current converge is a fixed typed semantic action;
-- hard-coded historical runtime generation numbers as current truth;
-- treating Node OS/platform or Node online status as proof an executor is available;
-- treating Anthropic/Codex/Gemini extension brand as proof of actual backend model identity;
-- product-specific Oracle carriers inside Core after an equivalent governed product-owned path and parity receipt exist.
+- `SHORT_TERM.md`, `LONG_TERM.md`, Pulse/status/brain-dump/manual `/report` as primary continuation authority;
+- workspace-selected continuation or client config containing copied Canonical IR bodies;
+- PR #119 prose-centric Experience v0 as a merge target; #117's accepted bounded implementation/evidence supersedes the old prose-only state;
+- hard-coded runtime generation numbers as current truth;
+- direct-to-`main` Core development and wholesale legacy proposal merges;
+- moving-branch-HEAD equality as exact-generation deployment authority;
+- generic deterministic temp filenames in shared Action Relay state;
+- assuming account group membership means a long-lived process has the required effective group;
+- infinite `queued` Employee wake state when terminal receipt is absent;
+- launching product Employee children before exact governed S4 claim readiness;
+- GitHub Actions as steady-state fallback for ONE transport failure;
+- treating Node/surface/extension presence as executor success or backend identity;
+- product-specific Oracle carriers in Core after an equivalent governed product-owned path and parity receipt exist.
 
 ## Canonical documentation ownership
 
-Primary entry points are `README.md`, `ONBOARDING.md`, `AGENTS.md`, this file, `docs/AGENTOS_NODE.md`, `docs/CORE_BRANCH_MAP.md`, `docs/CORE_WORKER_MODEL.md`, and `docs/PROJECT_REPO_MAP.md`.
+Primary entry points: `README.md`, `ONBOARDING.md`, `AGENTS.md`, this file, `docs/AGENTOS_NODE.md`, `docs/CORE_BRANCH_MAP.md`, `docs/CORE_WORKER_MODEL.md`, and `docs/PROJECT_REPO_MAP.md`.
 
-Architecture-sensitive changes must update the relevant canonical entry point in the same accepted change set. When implementation or live evidence contradicts prose, the prose must be corrected; historical claims belong in evidence/migration documents rather than being preserved as current reality.
+Architecture-sensitive accepted changes must update the relevant canonical entry point. Implementation/live evidence outranks stale prose. Historical claims belong in evidence/migration records, not current reality.
