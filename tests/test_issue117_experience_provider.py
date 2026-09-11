@@ -105,8 +105,8 @@ def test_provider_builds_fixed_attribution_evidence_from_complete_private_inputs
             "project_id": "agentos-core",
             "executor_class": "openai-codex-local",
             "credential_exposed": False,
-            "projection_digest": "sha256:" + "a" * 64,
-            "experience_ids": ["core.branch-authority.v2", "core.node-executor-separation.v1"],
+            "projection_digest": "a" * 64,
+            "experience_ids": ["core.branch-authority.v2", "core.node-executor-boundary.v1"],
         }),
         encoding="utf-8",
     )
@@ -148,7 +148,7 @@ def test_provider_builds_fixed_attribution_evidence_from_complete_private_inputs
     }
     assert evidence["hydration"]["experience_ids"] == [
         "core.branch-authority.v2",
-        "core.node-executor-separation.v1",
+        "core.node-executor-boundary.v1",
     ]
     rendered = json.dumps(evidence, sort_keys=True)
     for forbidden in ("stdout", "stderr", "/home/", "prompt", "session"):
