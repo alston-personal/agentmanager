@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 from agent_core.executor_job_contract import canonical_experience_regression_request
+from agent_core.experience_attribution_contract import DIMENSIONS, parse_attribution_evidence_json
 from agentos_node.executor_job_adapter import ExecutorJobProviderRegistry, execute_registered_executor_job
-from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
+from agentos_node.issue117_experience_provider import (
+    _attribution_evidence,
+    register_issue117_provider_if_available,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,8 +90,68 @@ def test_integrated_issue117_provider_returns_only_bounded_regression_evidence(t
     assert receipt["uplift"] == 0.75
     assert receipt["hydration_receipt_ok"] is True
     assert receipt["credential_exposed"] is False
+    assert "attribution_evidence_json" not in receipt
     rendered = str(receipt)
     for forbidden in ("PRIVATE MODEL OUTPUT", "/home/ubuntu/private", "TOPSECRET", "/private/provider", "secret stderr"):
+        assert forbidden not in rendered
+
+
+def test_provider_builds_fixed_attribution_evidence_from_complete_private_inputs(tmp_path: Path) -> None:
+    receipt_path = tmp_path / "hydration.json"
+    receipt_path.write_text(
+        json.dumps({
+            "schema": "agentos.experience-hydration-receipt/v1",
+            "source": "ONE_EXPERIENCE",
+            "project_id": "agentos-core",
+            "executor_class": "openai-codex-local",
+            "credential_exposed": False,
+            "projection_digest": "sha256:" + "a" * 64,
+            "experience_ids": ["core.branch-authority.v2", "core.node-executor-separation.v1"],
+        }),
+        encoding="utf-8",
+    )
+
+    baseline_values = {
+        "canonical_development_branch": None,
+        "generic_continue_authorizes_main_merge": False,
+        "capability_implies_execution_authority": False,
+        "discovery_before_reimplementation": True,
+        "workspace_is_continuation_authority": False,
+        "node_online_implies_executor_available": False,
+        "executor_owns_realm_credentials": False,
+    }
+    hydrated_values = dict(baseline_values)
+    hydrated_values["canonical_development_branch"] = "core/integration"
+    baseline_passes = {key: True for key in DIMENSIONS}
+    baseline_passes["canonical_development_branch"] = False
+    hydrated_passes = {key: True for key in DIMENSIONS}
+    payload = {
+        "baseline": {"score": {"parsed": baseline_values, "dimensions": baseline_passes}},
+        "hydrated": {"score": {"parsed": hydrated_values, "dimensions": hydrated_passes}},
+    }
+
+    class Regression:
+        @staticmethod
+        def receipt_path() -> Path:
+            return receipt_path
+
+    encoded = _attribution_evidence(payload, Regression)
+    evidence = parse_attribution_evidence_json(encoded)
+    assert evidence["improved_dimensions"] == ["canonical_development_branch"]
+    assert evidence["regressed_dimensions"] == []
+    assert evidence["dimensions"]["canonical_development_branch"] == {
+        "baseline_value": None,
+        "baseline_pass": False,
+        "hydrated_value": "core/integration",
+        "hydrated_pass": True,
+        "delta": "improved",
+    }
+    assert evidence["hydration"]["experience_ids"] == [
+        "core.branch-authority.v2",
+        "core.node-executor-separation.v1",
+    ]
+    rendered = json.dumps(evidence, sort_keys=True)
+    for forbidden in ("stdout", "stderr", "/home/", "prompt", "session"):
         assert forbidden not in rendered
 
 
