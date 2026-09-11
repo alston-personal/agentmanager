@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,12 @@ from agent_core.employee_wake import EmployeeWakeIntent
 
 DELIVERY_SCHEMA = "agentos.employee-wake-delivery-state/v1"
 PRESENCE_ROUTE_SCHEMA = "agentos.employee-wake-route/v1"
+# ONE wake clients poll on a short cadence and Employee presence has a 120-second
+# minimum production TTL. A missing receipt must therefore become UNKNOWN before
+# that route can expire, while still allowing ample time for normal Node polling.
+# This is source-owned rather than host-configurable so operators cannot weaken
+# at-most-once semantics by forcing an immediate retry.
+NODE_RECEIPT_WAIT_SECONDS = 60
 
 
 def _utcnow() -> datetime:
@@ -23,6 +29,10 @@ def _utcnow() -> datetime:
 
 def _iso(value: datetime | None = None) -> str:
     return (value or _utcnow()).astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 def _safe_id(value: str) -> str:
@@ -204,11 +214,32 @@ class EmployeeWakeDelivery:
         state = self.get(wake_id, presence_generation)
         if state is None:
             raise FileNotFoundError(wake_id)
+        current = now or _utcnow()
         receipt = self.controller.fabric.get_receipt(state.task_id)
         if receipt is None:
+            queued_at = state.queued_at or state.updated_at or state.attempted_at
+            try:
+                queued_time = _parse_timestamp(queued_at)
+            except (TypeError, ValueError):
+                state.status = "unknown"
+                state.error_code = "node_receipt_wait_timestamp_invalid"
+                state.completed_at = _iso(current)
+                state.updated_at = _iso(current)
+                _atomic_write(self._path(wake_id, presence_generation), asdict(state))
+                return state
+            if current - queued_time < timedelta(seconds=NODE_RECEIPT_WAIT_SECONDS):
+                return state
+            # The task crossed the durable controller boundary but no trustworthy
+            # receipt arrived inside the bounded wait. Mark UNKNOWN rather than
+            # replaying this exact task/presence. The Supervisor may only deliver
+            # the same wake again after a strictly newer Employee presence exists.
+            state.status = "unknown"
+            state.error_code = "node_receipt_timeout"
+            state.completed_at = _iso(current)
+            state.updated_at = _iso(current)
+            _atomic_write(self._path(wake_id, presence_generation), asdict(state))
             return state
 
-        current = now or _utcnow()
         valid_identity = (
             receipt.get("schema") == "agentos.node-receipt/v0.1"
             and receipt.get("task_id") == state.task_id
