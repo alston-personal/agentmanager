@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect tracked checkout drift only
+      - name: Inspect staged security scanner drift
         shell: bash
         run: |
           set -euo pipefail
@@ -42,16 +42,17 @@ jobs:
           set -euo pipefail
           cd "$1"
           echo "checkout_sha=$(git rev-parse HEAD)"
-          echo "tracked_status_begin"
           git status --porcelain=v1 --untracked-files=no
-          echo "tracked_status_end"
-          echo "dirty_paths_begin"
-          git diff --name-only
-          echo "dirty_paths_end"
-          echo "diff_stat_begin"
-          git diff --stat
-          echo "diff_stat_end"
-          echo "diff_begin"
-          git diff --no-ext-diff --unified=12 | sed -n '1,320p'
-          echo "diff_end"
+          for p in .secrets.baseline scripts/detect_secrets_scanner.py; do
+            if [ -e "$p" ]; then
+              echo "meta:$p:mtime=$(stat -c %y "$p")"
+              echo "meta:$p:sha256=$(sha256sum "$p" | awk '{print $1}')"
+            fi
+          done
+          echo "staged_diff_begin"
+          git diff --cached --no-ext-diff --unified=8 -- .secrets.baseline scripts/detect_secrets_scanner.py | sed -n '1,360p'
+          echo "staged_diff_end"
+          echo "unstaged_diff_begin"
+          git diff --no-ext-diff --unified=8 -- .secrets.baseline scripts/detect_secrets_scanner.py | sed -n '1,360p'
+          echo "unstaged_diff_end"
           REMOTE
