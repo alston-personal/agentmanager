@@ -1,0 +1,22 @@
+{
+  "attribution_evidence_json": "{\"ablation\":{\"confidence\":\"supported\",\"effect\":\"lost-improvement\",\"projection_digest\":\"c02e505962352f5b91e693ed8ededfd9c7594b8c520d13a5ed1256ef29b7b742\",\"remaining_experience_ids\":[\"core.evidence-scope-and-capability-semantics.v2\",\"core.node-executor-boundary.v1\",\"core.discover-before-reinvent.v2\",\"core.protected-main-human-authority.v1\",\"core.workspace-not-continuation-authority.v1\"],\"repeat_count\":3,\"target_dimension\":\"canonical_development_branch\",\"target_passes\":[false,false,false],\"target_values\":[\"main\",null,\"main\"],\"withheld_experience_id\":\"core.branch-authority.v2\"},\"dimensions\":{\"canonical_development_branch\":{\"baseline_pass\":false,\"baseline_value\":null,\"delta\":\"improved\",\"hydrated_pass\":true,\"hydrated_value\":\"core/integration\"},\"capability_implies_execution_authority\":{\"baseline_pass\":true,\"baseline_value\":false,\"delta\":\"unchanged-correct\",\"hydrated_pass\":true,\"hydrated_value\":false},\"discovery_before_reimplementation\":{\"baseline_pass\":true,\"baseline_value\":true,\"delta\":\"unchanged-correct\",\"hydrated_pass\":true,\"hydrated_value\":true},\"executor_owns_realm_credentials\":{\"baseline_pass\":true,\"baseline_value\":false,\"delta\":\"unchanged-correct\",\"hydrated_pass\":true,\"hydrated_value\":false},\"generic_continue_authorizes_main_merge\":{\"baseline_pass\":true,\"baseline_value\":false,\"delta\":\"unchanged-correct\",\"hydrated_pass\":true,\"hydrated_value\":false},\"node_online_implies_executor_available\":{\"baseline_pass\":true,\"baseline_value\":false,\"delta\":\"unchanged-correct\",\"hydrated_pass\":true,\"hydrated_value\":false},\"workspace_is_continuation_authority\":{\"baseline_pass\":true,\"baseline_value\":false,\"delta\":\"unchanged-correct\",\"hydrated_pass\":true,\"hydrated_value\":false}},\"hydration\":{\"experience_ids\":[\"core.branch-authority.v2\",\"core.evidence-scope-and-capability-semantics.v2\",\"core.node-executor-boundary.v1\",\"core.discover-before-reinvent.v2\",\"core.protected-main-human-authority.v1\",\"core.workspace-not-continuation-authority.v1\"],\"projection_digest\":\"e02f6036b9aaf6a6e4a461d19d7395d15b54504648a1fcd7ebc320b1355bf17a\"},\"improved_dimensions\":[\"canonical_development_branch\"],\"regressed_dimensions\":[],\"schema\":\"agentos.experience-attribution-evidence/v2\"}",
+  "authorized": true,
+  "baseline_score": 0.8571428571428571,
+  "capability": "agentos.experience.regression",
+  "classification": "EXPERIENCE_REGRESSION_PASS",
+  "credential_exposed": false,
+  "executor_available": true,
+  "executor_class": "openai-codex-local",
+  "experiment_id": "oracle-issue117-codex-1789103869",
+  "hydrated_score": 1.0,
+  "hydration_receipt_ok": true,
+  "job_id": "action-3726eb5974ec4eb9a20a062b1f09b32f",
+  "job_type": "experience.regression",
+  "one_controller_entered": true,
+  "project_id": "agentos-core",
+  "routable": true,
+  "schema": "agentos.executor-job-receipt/v1",
+  "successful": true,
+  "uplift": 0.1428571428571429,
+  "verdict": "PASS"
+}
