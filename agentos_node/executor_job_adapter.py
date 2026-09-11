@@ -14,6 +14,7 @@ from agent_core.executor_job_contract import (
     project_executor_job_receipt,
     validate_executor_job,
 )
+from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json
 
 
 Provider = Callable[[Mapping[str, Any]], Mapping[str, Any]]
@@ -101,6 +102,13 @@ def _sanitize_provider_result(raw: Mapping[str, Any]) -> dict[str, Any]:
         value = raw.get(key)
         if isinstance(value, (str, int, float, bool)) or value is None:
             safe[key] = value
+    if "attribution_evidence_json" in raw:
+        # Do not allow arbitrary structured provider output. The only nested
+        # #117 evidence crosses as a canonical JSON scalar after strict schema
+        # validation and is validated again by the final receipt projection.
+        safe["attribution_evidence_json"] = sanitize_attribution_evidence_json(
+            raw.get("attribution_evidence_json")
+        )
     return safe
 
 
@@ -162,14 +170,14 @@ def run_registered_executor_job(
             authorized=True,
         )
 
-    result = _sanitize_provider_result(raw)
     try:
+        result = _sanitize_provider_result(raw)
         executor_available = _trusted_provider_state(raw, "executor_available", True)
         routable = _trusted_provider_state(raw, "routable", True)
         authorized = _trusted_provider_state(raw, "authorized", True)
         default_success = result.get("verdict") == "PASS" and raw.get("credential_exposed") is not True
         successful = _trusted_provider_state(raw, "successful", default_success)
-    except ValueError:
+    except (ValueError, TypeError):
         return _semantic_failure(
             "PROVIDER_STATE_INVALID",
             executor_available=True,
