@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Preserve exact drift and restore canonical checkout
+      - name: Read live Employee state
         shell: bash
         run: |
           set -euo pipefail
@@ -41,37 +41,34 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
           cd "$1"
-          EXPECTED_HEAD="28be69cb671fcf8cedd5abc8864dda88c4b03dd6"
-          EXPECTED_BASELINE_SHA="e4b1033e400cd3a8b1f7fa5590f72363418590ebce43ca741cece35bdc2f62b2"
-          EXPECTED_SCANNER_SHA="ac149392e673955896dfd44212f9f114ed5e0f6e98fd4602cd8757ba93588c0b"
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test "$(sha256sum .secrets.baseline | awk '{print $1}')" = "$EXPECTED_BASELINE_SHA"
-          test "$(sha256sum scripts/detect_secrets_scanner.py | awk '{print $1}')" = "$EXPECTED_SCANNER_SHA"
-          STATUS="$(git status --porcelain=v1 --untracked-files=no)"
-          test "$STATUS" = $'M  .secrets.baseline\n M scripts/detect_secrets_scanner.py'
-          DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
-          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-          BACKUP="$DATA_ROOT/runtime/backups/checkout-drift/security-scanner-$STAMP"
-          mkdir -p "$BACKUP/files/scripts"
-          cp -p .secrets.baseline "$BACKUP/files/.secrets.baseline"
-          cp -p scripts/detect_secrets_scanner.py "$BACKUP/files/scripts/detect_secrets_scanner.py"
-          git diff --cached --binary -- .secrets.baseline scripts/detect_secrets_scanner.py > "$BACKUP/staged.patch"
-          git diff --binary -- .secrets.baseline scripts/detect_secrets_scanner.py > "$BACKUP/unstaged.patch"
-          {
-            echo "head=$EXPECTED_HEAD"
-            echo "baseline_sha256=$EXPECTED_BASELINE_SHA"
-            echo "scanner_sha256=$EXPECTED_SCANNER_SHA"
-            echo "status_begin"
-            printf '%s\n' "$STATUS"
-            echo "status_end"
-          } > "$BACKUP/metadata.txt"
-          test -s "$BACKUP/files/.secrets.baseline"
-          test -s "$BACKUP/files/scripts/detect_secrets_scanner.py"
-          test -s "$BACKUP/staged.patch"
-          test -s "$BACKUP/unstaged.patch"
-          git restore --staged -- .secrets.baseline
-          git restore --worktree -- .secrets.baseline scripts/detect_secrets_scanner.py
-          test -z "$(git status --porcelain=v1 --untracked-files=no)"
-          echo "checkout_drift_backup=$BACKUP"
-          echo "checkout_clean=true"
+          DATA_ROOT="/home/ubuntu/agent-data"
+          echo "checkout_sha=$(git rev-parse HEAD)"
+          echo "checkout_clean=$([ -z "$(git status --porcelain=v1 --untracked-files=no)" ] && echo true || echo false)"
+          for svc in agentos-action-relay.service agentos-realm-fabric.service agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+            echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
+            echo "$svc.restarts=$(systemctl --user show "$svc" -p NRestarts --value 2>/dev/null || true)"
+          done
+          echo "worker_execstart=$(systemctl --user show agentos-employee-worker-host.service -p ExecStart --value 2>/dev/null | sed -E 's/;.*$//' || true)"
+          echo "realm_health=$(curl -sS --max-time 2 http://127.0.0.1:8780/v1/health 2>/dev/null | tr -d '\n' || echo unavailable)"
+          python3 - "$DATA_ROOT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          for name in ("zeus-writer-continuation-v1", "youtube-ai-manager-scan-v1"):
+              p = root / "employee-runtime" / "assignments" / (name + ".json")
+              if not p.exists():
+                  print("assignment_missing=" + name)
+                  continue
+              obj = json.loads(p.read_text(encoding="utf-8"))
+              safe = {k: obj.get(k) for k in ("assignment_id","employee_id","state","thread_head","updated_at","result")}
+              print("assignment=" + json.dumps(safe, ensure_ascii=False, sort_keys=True))
+          dispatch_root = root / "employee-worker-host" / "dispatches"
+          files = sorted(dispatch_root.glob("*/*.json"), key=lambda p: p.stat().st_mtime)[-10:]
+          for p in files:
+              obj = json.loads(p.read_text(encoding="utf-8"))
+              safe = {k: obj.get(k) for k in ("employee_id","assignment_id","wake_id","presence_generation","expected_lease_generation","status","completed_at","error_code","child_result")}
+              print("dispatch=" + json.dumps(safe, ensure_ascii=False, sort_keys=True))
+          PY
+          echo "--- worker journal ---"
+          journalctl --user -u agentos-employee-worker-host.service --since '2026-09-11 10:34:30' --no-pager 2>/dev/null | tail -80 || true
           REMOTE
