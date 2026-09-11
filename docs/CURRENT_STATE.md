@@ -33,6 +33,7 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Node heartbeat freshness | Implemented | reported `online` becomes effective `offline` when heartbeat is stale; current default stale floor is 30s with a minimum of 15s |
 | Node/runtime provenance and drift | Implemented | Node Map projects runtime convergence/drift/unknown; source equality alone is not operating-profile equality |
 | Bounded Oracle runtime convergence | Implemented + live accepted under #242 | typed `node.runtime.converge`, fixed source-owned installers, exact `core/integration` SHA, no caller shell/argv/path/service authority, rollback + sanitized receipts; #242 completed 2026-09-04 |
+| Oracle dirty-checkout diagnostic (#291) | Read-only live evidence; recovery acceptance open | Explicitly authorized 2026-09-09 diagnosis found clean tracked checkout at `28be69cb`; earlier dirty cause/disposition remain unknown. No recovery performed; source equality is not runtime health. See `docs/ORACLE_CHECKOUT_DIAGNOSTIC.md`. |
 | Action Relay generation reconciliation | Implemented | Core maintenance can reconcile an old immutable Action Relay runtime to current accepted Core generation without caller-supplied execution fields |
 | Node vs executor identity | Canonical invariant; broader extraction/acceptance still tracked by #152 | Node is durable Realm participant; executor/surface/backend/session are distinct identities; `Node online != executor available` |
 | Executor status semantics | Canonical invariant | `advertised != routable != authorized != successful`; do not collapse these into one capability flag |
@@ -52,6 +53,17 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Parallel Core workers | Accepted | canonical Core thread is authority/control-plane; issue workers execute independently; dependencies block exact steps, not whole projects |
 | Evidence-first acceptance | Canonical | `.agentos/evidence/`, sanitized receipts, exact source/runtime identity; static CI cannot manufacture live VERIFIED markers |
 | Protected publication authority | Canonical | `core/issue-* -> core/integration`; publication to protected `main` is separate explicit authority and is never implied by `continue`, CI green, mergeability, capability availability, or worker completion |
+
+## Checkout preservation candidate (#291)
+
+The 2026-09-11 bounded diagnostic identified staged `.secrets.baseline` and
+unstaged `scripts/detect_secrets_scanner.py` changes; neither matches current
+integration. `scripts/oracle_checkout_preserve.py` prepares an exclusive private
+backup of the exact hash-bound files, staged/HEAD versions and index, then emits
+structural comparisons only. It never restores source. The immediately preceding
+canonical Core instruction to continue backup/review authorizes this bounded
+preservation step, not discard or recovery. Live backup acceptance is reported
+only by a verified preservation receipt.
 
 ## Current Node Map semantics
 

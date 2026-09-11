@@ -1,0 +1,59 @@
+{
+  "automatic_recovery_safe": false,
+  "classification": "diagnostic_only",
+  "comparison_target_sha": "b65dc309d6a020b27f591d938a0589206003a0ea",
+  "credential_exposed": false,
+  "dirty_tracked": true,
+  "head_sha": "28be69cb671fcf8cedd5abc8864dda88c4b03dd6",
+  "mutation_performed": false,
+  "observed_at": "2026-09-11T02:31:30Z",
+  "omitted_path_count": 0,
+  "paths": [
+    {
+      "automatic_recovery_safe": false,
+      "classification": "unknown-user-or-runtime-change",
+      "equals_target_blob": false,
+      "path": ".secrets.baseline",
+      "sha256": "e4b1033e400cd3a8b1f7fa5590f72363418590ebce43ca741cece35bdc2f62b2",
+      "status": "M "
+    },
+    {
+      "automatic_recovery_safe": false,
+      "classification": "unknown-user-or-runtime-change",
+      "equals_target_blob": false,
+      "path": "scripts/detect_secrets_scanner.py",
+      "sha256": "ac149392e673955896dfd44212f9f114ed5e0f6e98fd4602cd8757ba93588c0b",
+      "status": " M"
+    }
+  ],
+  "repository": "alston-personal/agentmanager",
+  "schema": "agentos.checkout-diagnostic/v1",
+  "status_stable_during_read": true,
+  "provenance": {
+    "workflow_run_url": "https://github.com/alston-personal/agentmanager/actions/runs/34554945944",
+    "workflow_job_id": 103125497731,
+    "execution_source_sha": "f370372055dd7c2e4d24cacc8aa2b4e4c199a93a",
+    "reviewed_diagnostic_sha": "90f97c4db63925015efcb39a45c1036259878c3a",
+    "authorization": "Single checkout-only read explicitly approved in canonical Core conversation on 2026-09-11."
+  },
+  "source_comparison": {
+    "source_sha": "0d9f57c0a4bf898d3cf486a139d3825faf0667a0",
+    "files": [
+      {
+        "path": ".secrets.baseline",
+        "sha256": "ca76a63dc0bc8bb0aa22c51e6aee33d0f54ba55f9e2ecc3962521fc425a66a2f"
+      },
+      {
+        "path": "scripts/detect_secrets_scanner.py",
+        "sha256": "704ca83bdf3366f6b9bd656d3b5b4242d648a6f0540d5a8ddf9e8b3d85034e70"
+      }
+    ],
+    "both_differ": true
+  },
+  "interpretation": {
+    "baseline_index_status": "staged modification; index contents not read",
+    "scanner_worktree_status": "unstaged modification",
+    "cause": "unknown; no authorship or disposability established",
+    "recovery_performed": false
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "automatic_recovery_safe": false,
+  "classification": "diagnostic_only",
+  "comparison_target_sha": "b65dc309d6a020b27f591d938a0589206003a0ea",
+  "credential_exposed": false,
+  "dirty_tracked": false,
+  "head_sha": "28be69cb671fcf8cedd5abc8864dda88c4b03dd6",
+  "mutation_performed": false,
+  "observed_at": "2026-09-09T06:39:50Z",
+  "omitted_path_count": 0,
+  "paths": [],
+  "repository": "alston-personal/agentmanager",
+  "schema": "agentos.checkout-diagnostic/v1",
+  "status_stable_during_read": true,
+  "provenance": {
+    "workflow_run_url": "https://github.com/alston-personal/agentmanager/actions/runs/34320081009",
+    "workflow_job_id": 102364551827,
+    "authorization": "User approved one-time bounded read-only Actions evidence in canonical Core conversation; no recovery authorization.",
+    "limitations": [
+      "Earlier dirty changes were not observed; their cause and disposition remain unknown.",
+      "Clean checkout does not attest to runtime service health or continuation hydration."
+    ],
+    "execution_source_sha": "23d3c16979a49fae965c76588eec5e8a0c4f1340"
+  }
+}

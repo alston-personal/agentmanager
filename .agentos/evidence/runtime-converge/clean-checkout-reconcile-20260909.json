@@ -1,0 +1,32 @@
+{
+  "receipt_url": "https://github.com/alston-personal/agentmanager/issues/50#issuecomment-5598994002",
+  "result": {
+    "action": "node.runtime.converge",
+    "command_id": "chatgpt-core-291-clean-converge-20260909T084237315Z",
+    "node_id": "oracle-core-node",
+    "observed_at": "2026-09-09T08:42:46Z",
+    "receipt": {
+      "action": "node.runtime.converge",
+      "classification": "CURRENT_GENERATION_RECONCILE_FAILED",
+      "credential_exposed": false,
+      "health": "failed",
+      "idempotent": true,
+      "node_id": "oracle-core-node",
+      "observed_at": "2026-09-09T08:42:46Z",
+      "ok": false,
+      "previous_commit": "28be69cb671fcf8cedd5abc8864dda88c4b03dd6",
+      "repository": "alston-personal/agentmanager",
+      "request_id": "ctl_b7437174bc4c0324aa559117",
+      "resulting_commit": "28be69cb671fcf8cedd5abc8864dda88c4b03dd6",
+      "rollback": "not_needed",
+      "schema": "agentos.runtime-converge-receipt/v1",
+      "source_commit": "28be69cb671fcf8cedd5abc8864dda88c4b03dd6",
+      "source_ref": "core/integration",
+      "status": "failed",
+      "task_id": "action-74f244f42c98488fafa4dae9d3db8bab"
+    },
+    "schema": "agentos.control-result/v0.1",
+    "status": "completed",
+    "task_id": "action-74f244f42c98488fafa4dae9d3db8bab"
+  }
+}
