@@ -33,7 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect Supervisor delivery ledger
+      - name: Measure delivery candidate starvation
         shell: bash
         run: |
           set -euo pipefail
@@ -41,30 +41,33 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$ROOT" <<'REMOTE'
           set -euo pipefail
           cd "$1"
-          DATA_ROOT="/home/ubuntu/agent-data"
-          python3 - "$DATA_ROOT" <<'PY'
-          import json, sys
+          python3 - <<'PY'
+          import json
           from pathlib import Path
-          root = Path(sys.argv[1]) / "employee-runtime"
-          for employee in ("zeus-writer", "youtube-ai-manager"):
-              p = root / "realm" / "employee-presence" / (employee + ".json")
-              obj = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-              print("presence=" + json.dumps({k: obj.get(k) for k in ("employee_id","node_id","presence_id","generation","heartbeat_at","expires_at")}, sort_keys=True))
-          droot = root / "supervisor" / "deliveries"
+          root=Path('/home/ubuntu/agent-data/employee-runtime/supervisor')
+          intents=root/'intents'
+          deliveries=root/'deliveries'
+          terminal={'claimed','terminal_observed','superseded'}
           rows=[]
-          for p in droot.glob("*.json"):
-              try:
-                  obj=json.loads(p.read_text(encoding="utf-8"))
-              except Exception:
+          for p in sorted(intents.glob('reconcile_*.json')):
+              rid=p.stem
+              d=deliveries/(rid+'.json')
+              state=None
+              employee=None
+              assignment=None
+              if d.exists():
+                  obj=json.loads(d.read_text(encoding='utf-8'))
+                  state=obj.get('status')
+                  employee=obj.get('employee_id')
+                  assignment=obj.get('assignment_id')
+              if state in terminal:
                   continue
-              if obj.get("employee_id") in {"zeus-writer","youtube-ai-manager"}:
-                  rows.append((p.stat().st_mtime,obj))
-          for _,obj in sorted(rows,key=lambda x:x[0])[-12:]:
-              safe={k:obj.get(k) for k in ("reconcile_id","employee_id","assignment_id","wake_id","status","updated_at","dispatch_performed","presence_id","presence_generation","node_id","wake_attempt_id","task_id","error_code")}
-              print("delivery="+json.dumps(safe,sort_keys=True))
-          s = root / "supervisor" / "state.json"
-          if s.exists():
-              obj=json.loads(s.read_text(encoding="utf-8"))
-              print("supervisor_state="+json.dumps({k:obj.get(k) for k in ("cycle_generation","last_cycle_at","next_poll_seconds","plan_digest")},sort_keys=True))
+              rows.append((rid,state,employee,assignment))
+          print('nonterminal_count='+str(len(rows)))
+          for i,row in enumerate(rows[:24],1):
+              print('candidate='+json.dumps({'rank':i,'reconcile_id':row[0],'status':row[1],'employee_id':row[2],'assignment_id':row[3]},sort_keys=True))
+          for i,row in enumerate(rows,1):
+              if row[2] in {'zeus-writer','youtube-ai-manager'}:
+                  print('product_rank='+json.dumps({'rank':i,'reconcile_id':row[0],'status':row[1],'employee_id':row[2],'assignment_id':row[3]},sort_keys=True))
           PY
           REMOTE
