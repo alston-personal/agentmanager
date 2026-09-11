@@ -1,0 +1,90 @@
+{
+  "schema": "agentos.core-workers/v1",
+  "generated_at": "2026-09-11T11:26:00Z",
+  "project_id": "agentos-core",
+  "authority": {
+    "canonical_integration_branch": "core/integration",
+    "publication_branch": "main",
+    "publication_requires_explicit_human_authorization": true,
+    "runtime_identity_rule": "live runtime authority comes from exact deployment/convergence/health receipts; repository or branch head is not live-runtime truth",
+    "worker_status_rule": "GitHub issue state plus preserved acceptance evidence is authoritative for current worker completion; this registry defines lane/dependency topology and must not override newer issue/evidence state"
+  },
+  "accepted_decisions": [
+    {
+      "issue": 137,
+      "lane": "canonical-coordination",
+      "state_source": "github_issue_and_evidence",
+      "meaning": "Core authority/control-plane is separate from parallel issue execution; dependencies block exact steps rather than whole projects"
+    },
+    {
+      "issue": 117,
+      "lane": "experience-regression",
+      "state_source": "github_issue_and_evidence",
+      "snapshot": "completed_2026-09-11",
+      "evidence": ["pull/321", ".agentos/evidence/experience/oracle-issue117-one-dispatch-34565359787/"],
+      "scope": "bounded Oracle Codex Master Experience Floor only",
+      "non_claims": ["general Cognitive IR verification", "universal executor equivalence", "protected-main authority"]
+    },
+    {
+      "issue": 151,
+      "lane": "employee-runtime-foundation",
+      "state_source": "github_issue_and_evidence",
+      "snapshot": "accepted"
+    }
+  ],
+  "active_worker_refs": [
+    {
+      "issue": 238,
+      "lane": "product-employee-operating-acceptance",
+      "status_source": "https://github.com/alston-personal/agentmanager/issues/238",
+      "blocking_scope": ["zeus-writer:persistent-employee-live-acceptance", "youtube-ai-manager:persistent-employee-live-acceptance"],
+      "non_authorities": ["static-CI-as-live-acceptance", "generic-shell", "automatic-external-write-authority", "protected-main merge"]
+    },
+    {
+      "issue": 152,
+      "lane": "node-executor-lifecycle",
+      "status_source": "https://github.com/alston-personal/agentmanager/issues/152",
+      "blocking_scope": [],
+      "non_authorities": ["Node-online-implies-executor-live", "surface-brand-implies-backend-identity", "protected-main merge"]
+    },
+    {
+      "issue": 118,
+      "lane": "repository-boundary-migration",
+      "status_source": "https://github.com/alston-personal/agentmanager/issues/118",
+      "blocking_scope": [],
+      "non_authorities": ["global-product-pause", "destructive-provenance-deletion", "protected-main merge"]
+    },
+    {
+      "issue": 290,
+      "lane": "discussion-index-candidate",
+      "status_source": "https://github.com/alston-personal/agentmanager/issues/290",
+      "candidate_pr": 293,
+      "blocking_scope": [],
+      "non_authorities": ["discussion-as-canonical-IR", "discussion-as-Experience", "self-promotion-to-authority", "protected-main merge"]
+    },
+    {
+      "issue": 291,
+      "lane": "oracle-runtime-checkout-diagnostic-recovery",
+      "status_source": "https://github.com/alston-personal/agentmanager/issues/291",
+      "blocking_scope": ["oracle:runtime-convergence-when-checkout-state-is-ambiguous"],
+      "non_authorities": ["generic-reset", "generic-stash", "blind-dirty-checkout-recovery", "protected-main merge"]
+    }
+  ],
+  "legacy_or_retriage_refs": [
+    {
+      "issue": 160,
+      "reason": "original text says it blocks #117, but #117 is now completed by accepted bounded Codex evidence; #160 must not remain an active #117 dependency and requires independent retriage if any provider-specific work remains"
+    },
+    {
+      "path": "governance/core-workers.json",
+      "reason": "v0 duplicated mutable worker/runtime statuses and became stale (including #117=blocked and historical generation 6); retained only as a deprecated compatibility pointer"
+    }
+  ],
+  "invariants": [
+    "worker completion never grants publication authority",
+    "live runtime identity is receipt-bound, not hard-coded in worker registry",
+    "issue/evidence state outranks stale registry snapshots",
+    "parallel workers may advance core/integration while other workers or exact-generation rollouts are active",
+    "dependency edges are scoped and must be removed or retriaged when their target is accepted/completed"
+  ]
+}

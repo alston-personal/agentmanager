@@ -1,8 +1,8 @@
 # AgentOS Node / Realm Map Contract
 
-**Status:** canonical Core Node documentation, 2026-09-04.
+**Status:** canonical Core Node documentation, 2026-09-11.
 
-`agentos-node` and the ONE-side `NodeRegistry` are the canonical discovery/topology surfaces for AgentOS Nodes. They are not a second manager, a second role registry, an executor registry by implication, or an authority-granting shell bridge.
+`agentos-node` and the ONE-side `NodeRegistry` are the canonical discovery/topology surfaces for AgentOS Nodes. They are not a second role registry, an executor registry by implication, or an authority-granting shell bridge.
 
 ## Identity model
 
@@ -12,7 +12,7 @@ Keep these identities separate:
 - **Node** — durable Realm participant with transport identity and heartbeat.
 - **Surface / extension** — e.g. Antigravity Gemini, OpenAI Codex IDE, Anthropic Claude Code extension.
 - **Executor adapter** — capability provider attached to a Node/surface.
-- **Backend/model** — actual model/provider behind an executor; may be unknown or different from the extension brand.
+- **Backend/model** — actual model/provider behind an executor; may be unknown or differ from extension brand.
 - **Session/thread** — ephemeral execution instance.
 
 Canonical invariants:
@@ -23,109 +23,86 @@ advertised != routable != authorized != successful
 surface identity != backend/model identity
 ```
 
-## ONE-side Node Registry
+## Node Registry / Node Map
 
-`agent_core/node_registry.py` persists `agentos.node-registry/v0.1` and projects the read-only `agentos.node-map/v0.1`.
+`agent_core/node_registry.py` persists `agentos.node-registry/v0.1` and projects read-only `agentos.node-map/v0.1`.
 
-A Node manifest records at least:
+A Node manifest includes Node identity/role, hostname/platform, capabilities, tool presence, surface inventory, runtime provenance, workspace-root policy, timestamps and bounded benchmark projection where present.
 
-- `node_id` and role (`core` / `client`);
-- hostname/platform metadata;
-- declared capabilities;
-- tool presence;
-- `surface_inventory`;
-- runtime provenance/state;
-- safe workspace-root policy projection;
-- manifest/heartbeat timestamps;
-- bounded benchmark projection where present.
+The map is generated from ONE-side state. It is not a hand-maintained inventory. Known deployed identities such as `oracle-core-node` and `vopc5750` are examples, not a complete hard-coded Realm.
 
-Registry writes are atomic and locked. Readers consume fully published files; a heartbeat may carry a fresh manifest so capability/runtime state and liveness advance together.
+Reported `online` becomes effectively `offline` when heartbeat freshness expires. Executor availability is a child layer and requires its own evidence.
 
-## Liveness semantics
-
-The map distinguishes reported status from effective status. A Node reporting `online` is projected `offline` when its heartbeat becomes stale.
-
-The stale threshold is configurable through `AGENTOS_NODE_STALE_SECONDS`, with a minimum of 15 seconds and a current default of 30 seconds.
-
-Therefore old screenshots, manifests or source code cannot establish current Node liveness. Use the current Node Map / heartbeat evidence.
-
-## Node Map projection
-
-`agentos.node-map/v0.1` provides:
-
-- Realm id;
-- Node count and effective online count;
-- sorted Node projections (Core first, then clients);
-- Realm-level aggregate capabilities and tool presence from non-offline Nodes;
-- aggregate surface providers from non-offline Nodes;
-- runtime convergence policy plus counts for `converged`, `drifted`, and `unknown` Nodes.
-
-Known real Node identities include `oracle-core-node` and the Windows client `vopc5750`. These are examples of accepted deployments, not a hard-coded complete Realm inventory.
-
-## Capability semantics
+## Capability / authority semantics
 
 A capability is a declared/routable contract, not permission by itself. The controller must separately resolve authority.
 
-Recent canonical changes include the bounded Oracle runtime convergence path:
+Current bounded Oracle runtime convergence semantics:
 
-- `node.runtime.converge` is a typed semantic action;
-- canonical source is restricted to `alston-personal/agentmanager` / `core/integration` / exact SHA;
-- callers cannot supply executable, module, argv, shell, command, arbitrary path, service or environment;
-- required installers/services are fixed in source;
-- same-source convergence still reconciles the fixed operating profile;
-- health and rollback are part of acceptance;
-- sanitized terminal receipts preserve exact requested/previous/resulting source identity;
-- GitHub Actions remains bootstrap/CI/deployment authority only and is not the steady-state control-plane fallback.
+- `node.runtime.converge` is typed, not a generic shell carrier;
+- source repository/ref are allowlisted to AgentOS Core integration authority;
+- caller supplies an exact accepted commit, not executable/module/argv/shell/service/path/environment authority;
+- the governed ref is snapped for lane-membership proof;
+- the requested exact commit is fetched independently and must be an ancestor of that snapped allowlisted ref;
+- runtime bytes/installers are materialized only from the exact requested commit;
+- a later concurrent merge advancing `core/integration` does not invalidate the already-authorized immutable rollout;
+- health/profile/rollback remain part of acceptance.
 
-Capability markers must represent installed/usable prerequisites, not mere source-code presence. #242 closed the earlier gap where `oracle-core-node` could be online yet not advertise the accepted runtime convergence capability.
+This replaces the earlier moving-head equality assumption exposed by #117 live rollouts and fixed by #320/#322.
+
+## Action Relay capability publication
+
+Capability publication into the shared Action Relay boundary is itself governed runtime state, not a casual file copy.
+
+Current accepted source rules include:
+
+- publish through the fixed `agentos` group execution boundary;
+- verify effective publisher GID and parent spool GID;
+- create a unique same-directory temporary inode;
+- write/fsync, atomic replace, and fsync the parent directory;
+- do not seize ownership/delete historical foreign-owned temp evidence merely to make rollout pass;
+- anchor Python imports to the immutable runtime root so `scripts/agentos_node.py` cannot shadow the real `agentos_node` package;
+- capability marker presence proves publication/prerequisites only, not job authorization or terminal success.
+
+The Worker Host uses the same principle: required group transition must occur before `no_new_privs` is locked, rather than assuming supplementary group state survives indefinitely in a long-lived service manager.
 
 ## Executor / surface visibility
 
-`surface_inventory` is descriptive topology. It must not be used to claim an executor is live solely because a surface is installed.
+`surface_inventory` describes topology only. Do not infer an executor is usable because an IDE extension is installed.
 
-Executor observability should expose, where actually known:
+Where known, executor observability should expose:
 
 - executor/surface identity;
-- backend identity and provenance or `unknown`;
+- backend identity/provenance or `unknown`;
 - availability/freshness;
 - declared capabilities;
-- routability and authorization as separate fields;
-- last sanitized successful/terminal evidence;
+- routability and authorization separately;
+- last sanitized terminal evidence;
 - credential boundary.
 
-The visual Realm map tracked by #184 consumes this canonical topology rather than creating a second topology database. #152 owns remaining first-class Node↔executor inventory/liveness extraction.
+The visual Realm map consumes this canonical topology instead of creating a second topology database. #152 continues first-class Node↔executor lifecycle extraction.
 
-## Runtime entrypoint / local discovery
+## Employee runtime relationship
 
-On the Oracle self-hosted Node identity, the historical installed CLI entrypoint is:
+Product/role Employees are not Nodes and are not equivalent to executors. Durable Employee identity/assignment/lease lives in ONE organizational state; Nodes/executors provide governed execution surfaces.
+
+Recent #238 safety decisions:
+
+- an Employee wake delivery may not remain `queued` forever when the Node receipt is absent; after the source-owned bounded wait it becomes `unknown` with `node_receipt_timeout`, without blind redispatch of the same presence;
+- a product worker child is launch-eligible only after the exact Supervisor/S4 delivery satisfies the governed `awaiting_claim` contract;
+- the child repeats that same check immediately before claim to preserve TOCTOU safety.
+
+These are state-machine rules, not new execution authority.
+
+## Runtime entrypoint / discovery
+
+On the Oracle self-hosted Node identity the historical installed CLI entrypoint is:
 
 ```text
 /home/agentos-node/.local/bin/agentos-node
 ```
 
-The runtime logic is sourced from AgentOS Core while mutable Realm/Node/project state is external under Agent Data. Exact live runtime worktree/generation must be obtained from runtime inspection/receipts rather than inferred from this path.
-
-## Harvest and responsibility resolution
-
-`agentos-node harvest` advertises node-supported query/observation surfaces such as governance/resource discovery. Harvest describes what can be discovered or routed; it does not authorize execution.
-
-Before implementing reusable or cross-project capability:
-
-```text
-1. harvest / inspect canonical capabilities
-2. resolve responsibility/provider
-3. query registered resources/world state
-4. targeted verification only when stale/missing
-5. reuse/extend the active owner
-6. if unresolved, register through governed discovery
-7. resolve effect authority
-8. execute through the authorized transport/capability
-9. persist a sanitized receipt/evidence
-```
-
-This is the operational meaning of:
-
-> Discover before invent. Resolve before implement. Verify before trust.
+Mutable Realm/Node/project state remains external under Agent Data. Exact live runtime generation/profile must come from runtime inspection and receipts, never inferred from an install path or repository head.
 
 ## Canonical authority boundaries
 
@@ -134,24 +111,24 @@ This is the operational meaning of:
 | Role semantics | `.agent/roles/registry.yaml` |
 | Responsibility/provider resolution | Governance Directory |
 | World/environment state | Resource Registry |
-| Project identity / repo ownership | `docs/PROJECT_REPO_MAP.md` + project registry |
+| Project identity/repo ownership | `docs/PROJECT_REPO_MAP.md` + project registry |
 | Durable continuation | ONE Canonical IR + active continuation selector |
 | Reusable learned experience | accepted ONE Experience artifacts |
+| Employee identity/assignment/lease | ONE Employee Runtime state |
 | Node membership/liveness/capabilities | ONE Node Registry / Node Map |
 | Executor liveness | explicit executor/provider evidence, not Node status |
 | Execution authorization | governance/effect-derived authority + controller routing |
 | Runtime generation acceptance | exact source/runtime receipt + health/profile evidence |
 
-`agentos-node` must not silently take ownership from these authorities.
-
 ## Evidence rule
 
-A Node or executor claim should be considered live/verified only when the evidence proves the exact layer claimed. Examples:
+Evidence must prove the exact layer claimed:
 
 - heartbeat proves Node freshness, not executor success;
 - capability advertisement proves declaration/prerequisites, not authority;
 - ONE submission proves routing/acceptance, not workload success;
-- executor terminal receipt proves the declared job result, not protected publication authority;
-- runtime source SHA proves source identity, not automatically service/profile convergence.
+- executor terminal receipt proves that declared job result, not publication authority;
+- exact source SHA proves source identity, not automatically service/profile convergence;
+- an Employee wake receipt proves delivery/terminal state, not permission to retry an ambiguous external effect.
 
-This layered evidence rule prevents topology and capability growth from becoming implicit privilege growth.
+This layered rule prevents topology and capability growth from silently becoming privilege growth.

@@ -1,111 +1,96 @@
 # AgentOS Core Worker Model
 
-Status: accepted canonical control-plane model from Issue #137; machine state is continuously reconciled in `governance/core-workers.json`.
+Status: accepted canonical control-plane model from Issue #137. Current topology is published in `governance/core-workers.v1.json`; legacy `governance/core-workers.json` is a deprecated compatibility pointer.
 
 ## Purpose
 
-The canonical AgentOS Core thread is the architecture and authority control plane. It is not a global single-threaded executor for every Core issue or every product dependency.
+The canonical AgentOS Core thread is architecture and authority control plane. It is not a global single-threaded executor for every Core issue or product dependency.
 
-Core-owned work may execute in independent worker threads, agents, or nodes. A product project blocks only the exact step whose declared dependency is unsatisfied. Unrelated project work remains runnable.
+Core-owned work may execute in independent worker threads, agents or Nodes. A product/project blocks only the exact step whose declared dependency is unsatisfied. Unrelated work remains runnable.
 
 ## Authority split
 
-The canonical Core authority owns:
-- architecture and invariants;
-- project/repository identity rules;
-- issue triage and dependency graph;
-- acceptance criteria and evidence requirements;
-- integration decisions;
-- deployment/publication authority.
+Canonical Core owns architecture/invariants, Project Identity rules, triage/dependency semantics, acceptance criteria, integration decisions and deployment/publication authority.
 
-A Core worker owns only its declared issue execution scope. A worker may branch, implement, test, collect evidence, and report `acceptance_ready`. It does not gain protected-main merge authority, deployment-generation authority, or authority over unrelated issues.
+A worker owns only its declared execution scope. It may branch, implement, test, collect evidence and report acceptance readiness. It does not gain protected-main publication, deployment-generation or unrelated-issue authority.
 
-When a worker discovers a privileged boundary, new cross-Core protocol, or architecture/invariant change, it reports that decision point back to canonical Core. Canonical Core may accept a bounded decision, reject it, or split it into a new dependency worker rather than allowing scope creep inside the reporting issue.
+Privileged boundary or cross-Core architecture findings return to canonical Core for explicit decision/splitting rather than silently widening the reporting worker.
 
-## Worker state contract
+## Worker registry v1
 
-Canonical machine-readable worker state is recorded in `governance/core-workers.json` with schema `agentos.core-workers/v0`.
+The original `agentos.core-workers/v0` duplicated mutable issue/runtime status. It became contradictory: it still reported #117 `blocked` and hard-coded historical generation 6 after #117 had completed and runtime identity had moved to exact receipt-bound generations.
 
-Allowed worker states:
-- `queued`
-- `running`
-- `blocked`
-- `acceptance_ready`
-- `accepted`
-- `failed`
+`agentos.core-workers/v1` therefore separates **topology** from **mutable status authority**:
 
-Each worker records issue id, branch where known, dependencies, evidence refs, blocking scope, and explicit non-authorities.
+- registry owns lane identity, scoped dependencies, blocking scope and explicit non-authorities;
+- GitHub Issue state plus preserved acceptance evidence owns current worker completion;
+- exact deployment/convergence/health receipts own live runtime identity;
+- registry snapshots may summarize but never override newer issue/evidence state.
 
-The prose issue body is historical intent; the machine graph is the current dependency projection. The graph must be reconciled when evidence resolves a dependency. A closed/completed issue is not automatically `accepted` without evidence, but once canonical acceptance evidence exists it must not remain as a stale blocker.
+This avoids creating a second stale issue tracker inside the repository.
 
 ## Dependency semantics
 
-Dependencies are directed edges, not project-wide pauses.
+Dependencies are directed, scoped edges, not project-wide pauses.
 
-Example:
+A dependency is satisfiable only when the required capability/evidence reaches the declared acceptance condition. Green CI, mergeability, generic `continue`, branch presence or source merge alone are insufficient for a live acceptance dependency.
 
-`vendor-reputation:semantic-classification -> agentos-core#72`
+Once accepted/completed evidence resolves a dependency, stale edges must be removed or explicitly retriaged. Historical provenance may remain without remaining an active blocker.
 
-Only `semantic-classification` waits for #72. Collection, UI, tests, documentation, or unrelated Vendor work continue unless they declare their own dependency.
+Example of the rule in practice: #117 is completed as of 2026-09-11 with bounded Oracle Codex Experience evidence. Older topology that says #160 blocks #117 is therefore stale. #160 may still contain independently useful provider-boundary work, but it requires separate triage and cannot remain an active #117 dependency merely because its original issue body says so.
 
-A dependency is satisfiable only when its Core worker reaches `accepted` with the required evidence. `acceptance_ready`, CI green, PR mergeability, or a generic `continue` is not sufficient.
+## Parallel integration and exact rollouts
 
-Resolved infrastructure dependencies and unretired product carriers are separate states. A product carrier may remain open for migration/parity after the shared Core capability it once depended on has been accepted.
+Workers may merge independently to `core/integration`. A concurrent accepted merge advancing integration is normal and must not invalidate an already-authorized exact-generation rollout.
 
-## Architecture-return pattern
+Runtime authorization therefore uses:
 
-A worker architecture report does not authorize that worker to widen privileged contracts itself.
+1. snapshot the allowlisted governed integration ref;
+2. fetch the requested immutable exact commit independently;
+3. prove that exact commit is a member/ancestor of the snapped governed lane;
+4. materialize/install only the exact commit;
+5. verify fixed profile/health and persist a bounded receipt.
 
-Current accepted examples:
-
-- #117 discovered the ubuntu-owned Codex identity/executable boundary. Canonical Core split the privileged provider work into #160 and chose an isolated fixed-provider Codex relay/service/root rather than generic executable selection.
-- #117 also distinguished passive Experience hydration from a fully ONE-aware executor. Canonical Core kept passive hydration inside #117 acceptance and split the higher bidirectional handshake into #161, which does not block #117.
-- #72 received bounded authority for sanitized Claude liveness diagnostics only; this did not grant generic shell/argv, credential access, permission broadening, or timeout-policy changes.
-
-This pattern keeps execution parallel while preserving one architecture authority plane.
+Stale workers refresh/transplant rather than force-merge over newer integration.
 
 ## Branch and environment semantics
 
 Core development:
 
-`core/issue-* -> core/integration -> explicit promotion PR -> protected main`
+`core/issue-* -> core/integration -> explicit publication authority -> protected main`
 
-Product development should follow the same authority principle without requiring every repository to have an identical branch topology:
+Product development follows the same authority principle without requiring identical branch topology:
 
-- feature/fix branches are mutable development candidates;
-- an optional `develop`/integration branch may back POC or staging;
+- feature/fix branches are mutable candidates;
+- optional develop/integration may back POC/staging;
 - `main` is accepted/promotion state, not an agent workspace;
-- production deploys must resolve to an exact accepted SHA/tag/artifact;
-- POC/staging may resolve to an exact candidate SHA from a feature/develop lane;
-- no environment is authoritative merely because it tracks a branch name.
+- production resolves to exact accepted SHA/tag/artifact;
+- POC/staging may resolve to exact candidate SHA/artifact;
+- branch name alone never defines online authority.
 
-Every deployment receipt should identify project id, repository, environment, source ref, exact source SHA, artifact digest where applicable, and deployment timestamp/generation.
+Deployment receipts should identify project, repository, environment, source ref, exact SHA/artifact digest, timestamp/generation and terminal health/result.
 
-## Current worker-lane interpretation
+## Current interpretation
 
-Do not copy a static dependency list from this document into a worker. Read `governance/core-workers.json`.
+Do not copy a static queue from this document. Read issue/evidence state and the v1 topology registry.
 
-As of the 2026-08-31 reconciliation:
+Important current decisions at this refresh:
 
-- #117 ONE Experience regression is a separate worker and is blocked only on #72 (Claude liveness) and #160 (governed Codex relay). #130 is resolved; #161 is not a #117 blocker.
-- #72 Antigravity/Claude executor liveness is a running shared executor-runtime worker with no Core dependency.
-- #130 Oracle self-hosted runner recovery is accepted and no longer appears in dependency edges.
-- #105 governed GUI certification remains a running independent worker pending its live certification evidence.
-- #96 LayoutLib authority has its generic policy accepted in `core/integration`; only live exact-candidate POC receipt/public acceptance remains.
-- #66 governed Studio static release is accepted; ArcanaForge's remaining source/artifact provenance is a product migration gate, not a #66 Core dependency.
-- #118 repository-boundary cleanup remains a running architecture/migration worker and must not globally block product feature work.
-- #137 worker/dependency control-plane is accepted.
-- #147 legacy proposal delta extraction remains an independent architecture-extraction worker.
-- #160 isolated fixed-provider Codex relay is a separate privileged-executor worker and blocks only #117's real Codex regression step.
-- #161 ONE-aware executor handshake is a separate architecture worker and does not block passive Experience hydration.
+- #117 Experience worker: completed with scoped Master Experience Floor evidence; no longer blocked.
+- #238 product Employee acceptance: still open; recent source decisions bound missing wake receipts to `unknown`, gate product child launch on exact S4 `awaiting_claim`, and preserve privilege ordering in Worker Host startup. Live product VERIFIED markers remain separate.
+- #152 Node↔executor lifecycle separation remains active architecture work.
+- #290 Discussion Index remains candidate/draft, not canonical authority.
+- #291 runtime checkout diagnosis/recovery remains bounded and fail-closed; unknown dirty state never authorizes generic reset/stash/recovery.
+- #118 repository-boundary migration remains independent from product feature development.
 
 ## Invariants
 
 1. Core ownership does not imply execution serialization.
 2. Worker completion does not imply publication authority.
-3. Product projects block only dependency-scoped steps.
-4. `main` is accepted/promotion state; active development does not write directly to it.
-5. Online/staging/production state is identified by environment + exact source/artifact identity, never by branch name alone.
-6. Machine-readable worker/dependency state is canonical enough for discovery, but acceptance still requires preserved evidence.
-7. Architecture findings return to canonical Core; reporting workers do not silently acquire cross-Core or privileged authority.
-8. Resolved dependencies are removed from active edges; historical provenance remains as evidence, not as a permanent blocker.
+3. Products/projects block only dependency-scoped steps.
+4. `main` is publication/accepted state, not active agent workspace.
+5. Online state is environment + exact source/artifact + receipt, not branch name.
+6. GitHub issue/evidence state outranks stale registry snapshots.
+7. Live runtime identity is receipt-bound, not hard-coded in worker state.
+8. Architecture findings return to canonical Core; worker scope does not silently expand.
+9. Resolved dependencies are removed/retriaged rather than preserved forever as blockers.
