@@ -18,6 +18,7 @@ EXPECTED = {
     'scripts/detect_secrets_scanner.py': 'ac149392e673955896dfd44212f9f114ed5e0f6e98fd4602cd8757ba93588c0b',
 }
 STATUS = 'M  .secrets.baseline\0 M scripts/detect_secrets_scanner.py\0'
+PHASE = 'preflight'
 
 
 def digest(data):
@@ -84,6 +85,8 @@ def review(path, before, after):
 
 
 def preserve(repo=REPO, destination=DEST, expected=EXPECTED, head=HEAD, status=STATUS):
+    global PHASE
+    PHASE = 'preflight'
     origin = git(repo, 'remote', 'get-url', 'origin').strip()
     if origin not in ('https://github.com/alston-personal/agentmanager.git',
                       'https://github.com/alston-personal/agentmanager',
@@ -96,6 +99,7 @@ def preserve(repo=REPO, destination=DEST, expected=EXPECTED, head=HEAD, status=S
             if digest(regular(repo / path)) != sha:
                 raise ValueError('file_changed')
     fence()
+    PHASE = 'collect_versions'
     index = regular(repo / '.git/index')
     entries = {'git-index.bin': index}
     summaries = []
@@ -115,8 +119,10 @@ def preserve(repo=REPO, destination=DEST, expected=EXPECTED, head=HEAD, status=S
     fence()
     if regular(repo / '.git/index') != index:
         raise ValueError('index_changed')
+    PHASE = 'create_backup'
     fd = private_destination(destination)
     try:
+        PHASE = 'write_verify_backup'
         for name, data in entries.items():
             out = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
             with os.fdopen(out, 'wb') as handle:
@@ -153,9 +159,11 @@ if __name__ == '__main__':
         if len(sys.argv) != 1:
             raise ValueError('no_arguments')
         print(json.dumps(preserve(), sort_keys=True))
-    except Exception:
+    except Exception as exc:
+        allowed = {'identity_mismatch', 'checkout_changed', 'file_changed', 'index_changed', 'unsafe_or_large_file', 'large_git_blob', 'unsafe_backup_directory', 'backup_verification_failed', 'no_arguments'}
+        reason = str(exc) if isinstance(exc, ValueError) and str(exc) in allowed else ('permission_denied' if isinstance(exc, PermissionError) else 'backup_already_exists' if isinstance(exc, FileExistsError) else 'operation_failed')
         print(json.dumps({'schema': 'agentos.checkout-preservation/v1',
-                          'classification': 'preservation_refused_or_incomplete',
+                          'classification': 'preservation_refused_or_incomplete', 'phase': PHASE, 'reason': reason,
                           'backup_verified': False, 'repository_mutation_performed': False,
                           'automatic_recovery_safe': False, 'credential_exposed': False}))
         raise SystemExit(1)
