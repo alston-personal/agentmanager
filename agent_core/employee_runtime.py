@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent_core.work_intent import WorkIntentRef, parse_work_intent_ref
+
 
 VALID_ASSIGNMENT_STATES = {"pending", "active", "blocked", "handoff", "completed", "cancelled"}
 
@@ -69,6 +71,7 @@ class Assignment:
     thread_head: str = ""
     constraints: list[str] = field(default_factory=list)
     result: dict[str, Any] | None = None
+    work_intent_ref: dict[str, Any] | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -158,6 +161,7 @@ class EmployeeRuntime:
         parent_assignment_id: str | None = None,
         thread_head: str = "",
         constraints: list[str] | None = None,
+        work_intent_ref: dict[str, Any] | WorkIntentRef | None = None,
     ) -> Assignment:
         assignment_id = _safe_id(assignment_id)
         employee_id = _safe_id(employee_id)
@@ -166,6 +170,7 @@ class EmployeeRuntime:
         if path.exists():
             raise FileExistsError(f"assignment already exists: {assignment_id}")
         now = _now()
+        parsed_ref = parse_work_intent_ref(work_intent_ref)
         assignment = Assignment(
             assignment_id=assignment_id,
             goal=goal,
@@ -173,6 +178,7 @@ class EmployeeRuntime:
             parent_assignment_id=parent_assignment_id,
             thread_head=thread_head,
             constraints=list(constraints or []),
+            work_intent_ref=parsed_ref.as_dict() if parsed_ref else None,
             created_at=now,
             updated_at=now,
         )
@@ -184,6 +190,8 @@ class EmployeeRuntime:
         data = _read_json(self.assignments_dir / f"{assignment_id}.json", {})
         if not data:
             raise FileNotFoundError(assignment_id)
+        if data.get("work_intent_ref") is not None:
+            data["work_intent_ref"] = parse_work_intent_ref(data["work_intent_ref"]).as_dict()
         return Assignment(**data)
 
     def update_assignment(
@@ -203,6 +211,26 @@ class EmployeeRuntime:
             assignment.thread_head = thread_head
         if result is not None:
             assignment.result = result
+        assignment.updated_at = _now()
+        _atomic_json_write(self.assignments_dir / f"{assignment.assignment_id}.json", asdict(assignment))
+        return assignment
+
+    def set_work_intent_ref(
+        self,
+        assignment_id: str,
+        work_intent_ref: dict[str, Any] | WorkIntentRef | None,
+    ) -> Assignment:
+        """Bind product-owned work state without carrying execution authority.
+
+        A ref may change only while the assignment is not terminal.  The wake
+        planner incorporates the ref identity into the wake id, so a changed ref
+        invalidates any previously planned-but-unclaimed wake.
+        """
+        assignment = self.get_assignment(assignment_id)
+        if assignment.state in {"blocked", "handoff", "completed", "cancelled"}:
+            raise RuntimeError("terminal_assignment_work_intent_immutable")
+        parsed_ref = parse_work_intent_ref(work_intent_ref)
+        assignment.work_intent_ref = parsed_ref.as_dict() if parsed_ref else None
         assignment.updated_at = _now()
         _atomic_json_write(self.assignments_dir / f"{assignment.assignment_id}.json", asdict(assignment))
         return assignment
