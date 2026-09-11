@@ -27,7 +27,10 @@ DELTAS = {
     "unchanged-wrong",
     "regressed",
 }
-_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+# HydrationProjection.digest is canonically the raw lowercase SHA-256 hex digest
+# of the projection payload. Attribution evidence must preserve that established
+# representation rather than inventing a second prefixed digest syntax.
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _EXPERIENCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
