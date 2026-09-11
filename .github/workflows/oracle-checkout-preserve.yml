@@ -1,7 +1,11 @@
 name: Oracle Checkout Private Preservation
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - 'core/issue-291-preservation-authorized-20260911'
+    paths:
+      - '.github/workflows/oracle-checkout-preserve.yml'
 permissions:
   contents: read
 concurrency:
