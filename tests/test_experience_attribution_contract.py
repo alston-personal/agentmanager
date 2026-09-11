@@ -35,7 +35,7 @@ def evidence() -> dict:
         "improved_dimensions": [improved],
         "regressed_dimensions": [],
         "hydration": {
-            "projection_digest": "sha256:" + "a" * 64,
+            "projection_digest": "a" * 64,
             "experience_ids": ["core.branch-authority.v2"],
         },
     }
@@ -45,7 +45,15 @@ def test_round_trip_canonicalizes_fixed_schema():
     encoded = canonicalize_attribution_evidence(evidence())
     decoded = parse_attribution_evidence_json(encoded)
     assert decoded["improved_dimensions"] == [DIMENSIONS[0]]
+    assert decoded["hydration"]["projection_digest"] == "a" * 64
     assert decoded["hydration"]["experience_ids"] == ["core.branch-authority.v2"]
+
+
+def test_prefixed_digest_is_rejected_to_prevent_second_digest_syntax():
+    value = evidence()
+    value["hydration"]["projection_digest"] = "sha256:" + "a" * 64
+    with pytest.raises(ValueError, match="projection digest"):
+        canonicalize_attribution_evidence(value)
 
 
 def test_arbitrary_dimension_is_rejected():
