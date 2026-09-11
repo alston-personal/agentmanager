@@ -6,6 +6,7 @@ on:
       - core/integration
     paths:
       - 'agent_core/executor_job_contract.py'
+      - 'agent_core/experience_attribution_contract.py'
       - 'agent_core/controller_service.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
@@ -27,6 +28,7 @@ on:
       - 'tests/test_executor_job_runtime_installer.py'
       - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_issue117_regression_floor.py'
+      - 'tests/test_experience_attribution_contract.py'
       - 'tests/test_control_inbox_bridge.py'
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
@@ -36,6 +38,7 @@ on:
       - core/issue-194-bounded-executor-jobs
     paths:
       - 'agent_core/executor_job_contract.py'
+      - 'agent_core/experience_attribution_contract.py'
       - 'agent_core/controller_service.py'
       - 'agent_core/controller_api.py'
       - 'agent_core/control_inbox_bridge.py'
@@ -57,6 +60,7 @@ on:
       - 'tests/test_executor_job_runtime_installer.py'
       - 'tests/test_issue117_experience_provider.py'
       - 'tests/test_issue117_regression_floor.py'
+      - 'tests/test_experience_attribution_contract.py'
       - 'tests/test_control_inbox_bridge.py'
       - 'tests/test_exact_generation_live_rollout_contract.py'
       - '.github/workflows/bounded-executor-job-guard.yml'
@@ -84,6 +88,7 @@ jobs:
             tests/test_executor_job_runtime_installer.py \
             tests/test_issue117_experience_provider.py \
             tests/test_issue117_regression_floor.py \
+            tests/test_experience_attribution_contract.py \
             tests/test_control_inbox_bridge.py \
             tests/test_exact_generation_live_rollout_contract.py \
             -q
@@ -131,6 +136,7 @@ jobs:
         run: |
           python -m py_compile \
             agent_core/executor_job_contract.py \
+            agent_core/experience_attribution_contract.py \
             agent_core/controller_service.py \
             agent_core/controller_api.py \
             agent_core/control_inbox_bridge.py \
