@@ -260,27 +260,29 @@ def run_issue117_experience_regression(
     if not isinstance(classification, str) or not classification:
         classification = "EXPERIENCE_REGRESSION_PASS" if verdict == "PASS" else "EXPERIENCE_REGRESSION_FAILED"
 
+    # Attribution is additional #117 promotion evidence, not a prerequisite for
+    # the legacy aggregate provider contract. Older fixtures/runtimes may lack
+    # parsed dimensions or an independent hydration receipt; in that case keep
+    # the aggregate receipt intact and simply omit the structured field. Live
+    # promotion acceptance separately requires observing this field.
+    attribution_evidence_json: str | None = None
     try:
         attribution_evidence_json = _attribution_evidence(payload, regression)
-    except Exception:
-        return _bounded_failure(
-            "EXPERIENCE_ATTRIBUTION_EVIDENCE_INVALID",
-            executor_available=True,
-        )
+    except (AttributeError, FileNotFoundError, ValueError, TypeError, json.JSONDecodeError):
+        attribution_evidence_json = None
 
     if (proc.returncode == 0) != (verdict == "PASS"):
         classification = "EXPERIENCE_REGRESSION_EXIT_MISMATCH"
     credential_boundary_ok = payload.get("credential_exposed") is False
     successful = bool(proc.returncode == 0 and verdict == "PASS" and credential_boundary_ok)
 
-    return {
+    result = {
         "experiment_id": payload.get("experiment_id"),
         "verdict": verdict,
         "baseline_score": _score(payload, "baseline"),
         "hydrated_score": _score(payload, "hydrated"),
         "uplift": payload.get("uplift") if isinstance(payload.get("uplift"), (int, float)) else None,
         "hydration_receipt_ok": checks.get("hydration_receipt_ok") is True,
-        "attribution_evidence_json": attribution_evidence_json,
         "classification": classification,
         "executor_available": True,
         "routable": True,
@@ -288,6 +290,9 @@ def run_issue117_experience_regression(
         "successful": successful,
         "credential_exposed": not credential_boundary_ok,
     }
+    if attribution_evidence_json is not None:
+        result["attribution_evidence_json"] = attribution_evidence_json
+    return result
 
 
 def register_issue117_provider_if_available(
