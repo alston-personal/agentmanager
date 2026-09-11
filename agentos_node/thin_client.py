@@ -14,6 +14,7 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
+from agentos_node.antigravity_lifecycle import inspect_antigravity_lifecycle
 from agentos_node.employee_wake_inbox import deliver_employee_wake
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
@@ -182,7 +183,10 @@ class ThinClient:
                     expected_node_id=self.identity.node_id,
                 )
             elif action == 'agent.surface.inspect':
-                result = {'surface_inventory': self.surface_inventory()}
+                result = {
+                    'surface_inventory': self.surface_inventory(),
+                    'antigravity_lifecycle': inspect_antigravity_lifecycle(),
+                }
             elif action == 'agent.session.discover':
                 result = {'session_index': self._session_bridge(task).discover()}
             elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
