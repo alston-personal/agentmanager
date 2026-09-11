@@ -64,6 +64,16 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertIn('actions/upload-artifact@v4', text)
         self.assertNotIn("assert receipt['successful'] is True", text)
 
+    def test_rollout_validates_and_preserves_bounded_attribution_evidence(self):
+        text = _text(WORKFLOW)
+        self.assertIn("'agent_core/experience_attribution_contract.py'", text)
+        self.assertIn('from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json', text)
+        self.assertIn('attribution_json = receipt.get("attribution_evidence_json")', text)
+        self.assertIn('assert attribution_json is not None', text)
+        self.assertIn('safe["attribution_evidence_json"] = sanitize_attribution_evidence_json(attribution_json)', text)
+        self.assertIn('executor_job_attribution_evidence=PASS', text)
+        self.assertNotIn('safe = dict(receipt)', text)
+
     def test_legacy_bootstrap_is_manual_read_only_and_exact_generation_only(self):
         text = _text(LEGACY_BOOTSTRAP_WORKFLOW)
         compact = text.replace(' ', '')
