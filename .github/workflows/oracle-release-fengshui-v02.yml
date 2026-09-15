@@ -101,6 +101,25 @@ jobs:
           print(json.dumps(summary))
           PY
           done
+      - name: Compare bounded Yungching upstream request profiles on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+            -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          url='https://buy.yungching.com.tw/house/4308114'
+          for profile in service browser; do
+            if [ "$profile" = service ]; then
+              ua='Mozilla/5.0 (compatible; FengshuiLayout/0.1)'
+            else
+              ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
+            fi
+            curl -sS --max-time 25 -A "$ua" -H 'Accept: text/html' -o /dev/null \
+              -w "{\"profile\":\"$profile\",\"http\":\"%{http_code}\",\"connect\":%{time_connect},\"ttfb\":%{time_starttransfer},\"total\":%{time_total}}\n" "$url" || true
+          done
+          REMOTE
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
