@@ -1,0 +1,113 @@
+name: One-time approved Fengshui release carrier
+
+on:
+  push:
+    branches: [ops/fengshui-release-carrier-20260915]
+    paths: [.github/workflows/oracle-release-fengshui-v02.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: approved-fengshui-v02-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      PRODUCT_SHA: 8d2c0062aa4c3a28645b32745cd0124188299583
+      DEPLOYER_SHA: f0da198dc8b8299522642fd166bb1968b19567aa
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start existing deployment SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Build pinned Studio Web source and install only Fengshui
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          [[ "${DEPLOY_SSH_PORT:-22}" =~ ^[0-9]+$ ]]
+          [[ "$PRODUCT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$DEPLOYER_SHA" =~ ^[a-f0-9]{40}$ ]]
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+            -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" \
+            bash -s -- "$PRODUCT_SHA" "$DEPLOYER_SHA" "$GITHUB_RUN_ID" <<'REMOTE' | tee fengshui-release.log
+          set -euo pipefail
+          PRODUCT_SHA="$1"; DEPLOYER_SHA="$2"; RUN_ID="$3"
+          TMP=$(mktemp -d /tmp/fengshui-release-XXXXXXXXXX)
+          cleanup(){ rm -rf "$TMP"; }
+          trap cleanup EXIT
+          SRC="$TMP/studio-web"
+          OPS="$TMP/deployer"
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone alston-personal/studio-web "$SRC" -- --no-checkout
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$PRODUCT_SHA" "$DEPLOYER_SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$PRODUCT_SHA"
+          /usr/bin/git -C "$SRC" worktree add --detach "$OPS" "$DEPLOYER_SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$PRODUCT_SHA"
+          test "$(/usr/bin/git -C "$OPS" rev-parse HEAD)" = "$DEPLOYER_SHA"
+          cd "$SRC/tools/fengshui-layout-overlay"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
+          npm run build
+          node scripts/verify-build.mjs
+          cd "$TMP"
+          python3 "$OPS/tools/fengshui-layout-overlay/ops/release_bundle.py" "$SRC" "$TMP/bundle"
+          sudo -n python3 "$OPS/tools/fengshui-layout-overlay/ops/deploy_oracle.py" \
+            --source "$TMP/bundle" --deployment-sha "$DEPLOYER_SHA"
+          REMOTE
+      - name: Public page and source acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --max-time 30 \
+            https://studio.milkcat.org/fengshui/api/healthz -o fengshui-health.json
+          curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --max-time 30 \
+            https://studio.milkcat.org/fengshui/ -o fengshui-page.html
+          python3 - <<'PY'
+          import json, pathlib
+          health=json.loads(pathlib.Path('fengshui-health.json').read_text())
+          page=pathlib.Path('fengshui-page.html').read_text()
+          assert health.get('service') == 'fengshui-layout-overlay'
+          assert health.get('status') == 'ok'
+          assert '宅向' in page and 'Milkcat Studio Portal' not in page
+          print(json.dumps({'public_health':'passed','public_page':'passed'}))
+          PY
+          for provider_url in \
+            'sinyi=https://www.sinyi.com.tw/buy/house/2997DC' \
+            'yungching=https://buy.yungching.com.tw/house/4308114'; do
+            provider=${provider_url%%=*}
+            url=${provider_url#*=}
+            code=$(curl -sS --max-time 35 -w '%{http_code}' --get --data-urlencode "url=$url" \
+              https://studio.milkcat.org/fengshui/api/import -o "$provider-response.json" || true)
+            PROVIDER="$provider" HTTP_CODE="$code" python3 - <<'PY'
+          import json, os, pathlib
+          p=pathlib.Path(os.environ['PROVIDER']+'-response.json')
+          try: d=json.loads(p.read_text())
+          except Exception: d={}
+          summary={'provider':os.environ['PROVIDER'],'http':os.environ['HTTP_CODE'],
+                   'ok':os.environ['HTTP_CODE']=='200' and 'error' not in d,
+                   'code':d.get('code'),'phase':d.get('phase'),'transport':d.get('transport'),
+                   'photo_count':len(d.get('photos',[])),'floorplan_count':len(d.get('floorplans',[]))}
+          pathlib.Path(os.environ['PROVIDER']+'-probe.json').write_text(json.dumps(summary,indent=2))
+          p.unlink(missing_ok=True)
+          print(json.dumps(summary))
+          PY
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fengshui-release-receipt-${{ github.run_id }}
+          path: |
+            fengshui-release.log
+            fengshui-health.json
+            sinyi-probe.json
+            yungching-probe.json
+          retention-days: 30
