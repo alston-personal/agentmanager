@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 15
     env:
       PRODUCT_SHA: 8d2c0062aa4c3a28645b32745cd0124188299583
-      DEPLOYER_SHA: cee2a63eaec2de47f62ba0addcb73f16523a3870
+      DEPLOYER_SHA: 0d685a0906e639e46a531fb3ab84174793878334
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
