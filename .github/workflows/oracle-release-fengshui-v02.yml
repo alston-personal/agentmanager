@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: approved-fengshui-v02-release
+  group: approved-fengshui-v03-release
   cancel-in-progress: false
 
 jobs:
@@ -17,8 +17,8 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 15
     env:
-      PRODUCT_SHA: 8d2c0062aa4c3a28645b32745cd0124188299583
-      DEPLOYER_SHA: 0d685a0906e639e46a531fb3ab84174793878334
+      PRODUCT_SHA: b8c97ac96440203b120747e796e1ec78b581038a
+      DEPLOYER_SHA: 250d2a533965c2aa52f9ce53b93555dbeeb3736a
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
