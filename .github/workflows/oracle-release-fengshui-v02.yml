@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 15
     env:
       PRODUCT_SHA: 8d2c0062aa4c3a28645b32745cd0124188299583
-      DEPLOYER_SHA: f0da198dc8b8299522642fd166bb1968b19567aa
+      DEPLOYER_SHA: cee2a63eaec2de47f62ba0addcb73f16523a3870
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
@@ -60,7 +60,7 @@ jobs:
           node scripts/verify-build.mjs
           cd "$TMP"
           python3 "$OPS/tools/fengshui-layout-overlay/ops/release_bundle.py" "$SRC" "$TMP/bundle"
-          sudo -n python3 "$OPS/tools/fengshui-layout-overlay/ops/deploy_oracle.py" \
+          sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$OPS/tools/fengshui-layout-overlay/ops/deploy_oracle.py" \
             --source "$TMP/bundle" --deployment-sha "$DEPLOYER_SHA"
           REMOTE
       - name: Public page and source acceptance
