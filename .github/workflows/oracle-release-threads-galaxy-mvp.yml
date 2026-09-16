@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 82a42da7bd26a598791b6773866248af07de6c6e
+      SOURCE_SHA: e1128a46f8685a61bd0b6ce395a75442f0d41419
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -76,9 +76,10 @@ jobs:
 
           test -f dist/threads-galaxy/index.html
           grep -Fq 'Threads Relationship Galaxy' dist/threads-galaxy/index.html
-          grep -Fq '你的 Threads 關係宇宙' dist/threads-galaxy/index.html
-          grep -Fq 'MVP · DEMO DATA' dist/threads-galaxy/index.html
-          echo 'threads_galaxy_build_acceptance=PASS'
+          grep -Fq '看看你的 Threads 世界長什麼樣子' dist/threads-galaxy/index.html
+          grep -Fq '匯入 Relationship JSON' dist/threads-galaxy/index.html
+          grep -Fq '用 Threads 登入（待接 OAuth）' dist/threads-galaxy/index.html
+          echo 'threads_galaxy_multiuser_build_acceptance=PASS'
 
           mkdir -p "$BACKUP"
           if [ -d "$LIVE/threads-galaxy" ]; then
@@ -95,13 +96,13 @@ jobs:
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/threads-galaxy/ -o "$TMP/threads-galaxy-live"
           grep -Fq 'Threads Relationship Galaxy' "$TMP/threads-galaxy-live"
-          grep -Fq '你的 Threads 關係宇宙' "$TMP/threads-galaxy-live"
-          grep -Fq 'MVP · DEMO DATA' "$TMP/threads-galaxy-live"
+          grep -Fq '看看你的 Threads 世界長什麼樣子' "$TMP/threads-galaxy-live"
+          grep -Fq '匯入 Relationship JSON' "$TMP/threads-galaxy-live"
           echo 'local_nginx_threads_galaxy_acceptance=PASS'
 
           trap - ERR
           printf '%s\n' \
-            "schema=studio-web.threads-galaxy-release/v1" \
+            "schema=studio-web.threads-galaxy-release/v2" \
             "source_repository=$REPO" \
             "source_sha=$SOURCE_SHA" \
             "scope=/threads-galaxy/" \
@@ -117,6 +118,6 @@ jobs:
           BASE=https://studio.milkcat.org
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/threads-galaxy/?_=$GITHUB_RUN_ID" -o /tmp/threads-galaxy-public
           grep -Fq 'Threads Relationship Galaxy' /tmp/threads-galaxy-public
-          grep -Fq '你的 Threads 關係宇宙' /tmp/threads-galaxy-public
-          grep -Fq 'MVP · DEMO DATA' /tmp/threads-galaxy-public
-          echo 'public_threads_galaxy_mvp=PASS'
+          grep -Fq '看看你的 Threads 世界長什麼樣子' /tmp/threads-galaxy-public
+          grep -Fq '匯入 Relationship JSON' /tmp/threads-galaxy-public
+          echo 'public_threads_galaxy_multiuser_mvp=PASS'
