@@ -1,0 +1,122 @@
+# Narrow production release for the Studio Web Threads Relationship Galaxy MVP.
+name: Oracle Release Threads Galaxy MVP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-threads-galaxy-mvp.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: threads-galaxy-production-mvp
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      SOURCE_REPOSITORY: alston-personal/studio-web
+      SOURCE_SHA: 82a42da7bd26a598791b6773866248af07de6c6e
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Build pinned Studio Web and publish Threads Galaxy only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/threads-galaxy-release-XXXXXX)
+          SRC="$TMP/studio-web"
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/threads-galaxy/${SOURCE_SHA:0:12}-${RUN_ID}
+          NEW_ROUTE="$LIVE/.threads-galaxy-${RUN_ID}"
+          DEPLOYED=0
+
+          cleanup() { rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true; }
+          rollback() {
+            set +e
+            if [ "$DEPLOYED" = 1 ]; then
+              rm -rf "$LIVE/threads-galaxy"
+              if [ -d "$BACKUP/threads-galaxy.previous" ]; then
+                cp -a "$BACKUP/threads-galaxy.previous" "$LIVE/threads-galaxy"
+              fi
+            fi
+            cleanup
+          }
+          trap 'rollback' ERR
+          trap 'cleanup' EXIT
+
+          test -d "$LIVE"
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone "$REPO" "$SRC" -- --no-checkout
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SOURCE_SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SOURCE_SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
+
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts
+          npm run build
+
+          test -f dist/threads-galaxy/index.html
+          grep -Fq 'Threads Relationship Galaxy' dist/threads-galaxy/index.html
+          grep -Fq '你的 Threads 關係宇宙' dist/threads-galaxy/index.html
+          grep -Fq 'MVP · DEMO DATA' dist/threads-galaxy/index.html
+          echo 'threads_galaxy_build_acceptance=PASS'
+
+          mkdir -p "$BACKUP"
+          if [ -d "$LIVE/threads-galaxy" ]; then
+            cp -a "$LIVE/threads-galaxy" "$BACKUP/threads-galaxy.previous"
+          fi
+
+          cp -a dist/threads-galaxy "$NEW_ROUTE"
+          find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
+          find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/threads-galaxy"
+          mv "$NEW_ROUTE" "$LIVE/threads-galaxy"
+          DEPLOYED=1
+
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/threads-galaxy/ -o "$TMP/threads-galaxy-live"
+          grep -Fq 'Threads Relationship Galaxy' "$TMP/threads-galaxy-live"
+          grep -Fq '你的 Threads 關係宇宙' "$TMP/threads-galaxy-live"
+          grep -Fq 'MVP · DEMO DATA' "$TMP/threads-galaxy-live"
+          echo 'local_nginx_threads_galaxy_acceptance=PASS'
+
+          trap - ERR
+          printf '%s\n' \
+            "schema=studio-web.threads-galaxy-release/v1" \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            "scope=/threads-galaxy/" \
+            "backup=$BACKUP" \
+            "ok=true" > "$BACKUP/receipt.txt"
+          echo "threads_galaxy_deploy=PASS backup=$BACKUP"
+          REMOTE
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/threads-galaxy/?_=$GITHUB_RUN_ID" -o /tmp/threads-galaxy-public
+          grep -Fq 'Threads Relationship Galaxy' /tmp/threads-galaxy-public
+          grep -Fq '你的 Threads 關係宇宙' /tmp/threads-galaxy-public
+          grep -Fq 'MVP · DEMO DATA' /tmp/threads-galaxy-public
+          echo 'public_threads_galaxy_mvp=PASS'
