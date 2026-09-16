@@ -17,8 +17,8 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 15
     env:
-      PRODUCT_SHA: b8c97ac96440203b120747e796e1ec78b581038a
-      DEPLOYER_SHA: 250d2a533965c2aa52f9ce53b93555dbeeb3736a
+      PRODUCT_SHA: bf9ac92a2fbb879374d711828f2273beb3857fa1
+      DEPLOYER_SHA: bf9ac92a2fbb879374d711828f2273beb3857fa1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
@@ -27,7 +27,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Build pinned Studio Web source and install only Fengshui
+      - name: Build pinned standalone Fengshui and install only its mount
         shell: bash
         run: |
           set -euo pipefail
@@ -43,25 +43,25 @@ jobs:
           TMP=$(mktemp -d /tmp/fengshui-release-XXXXXXXXXX)
           cleanup(){ rm -rf "$TMP"; }
           trap cleanup EXIT
-          SRC="$TMP/studio-web"
-          OPS="$TMP/deployer"
+          SRC="$TMP/fengshui-layout-overlay"
           /usr/bin/gh auth status >/dev/null
-          /usr/bin/gh repo clone alston-personal/studio-web "$SRC" -- --no-checkout
+          /usr/bin/gh repo clone alston-personal/fengshui-layout-overlay "$SRC" -- --no-checkout
           /usr/bin/git -C "$SRC" fetch --depth=1 origin "$PRODUCT_SHA" "$DEPLOYER_SHA"
           /usr/bin/git -C "$SRC" checkout --detach "$PRODUCT_SHA"
-          /usr/bin/git -C "$SRC" worktree add --detach "$OPS" "$DEPLOYER_SHA"
           test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$PRODUCT_SHA"
-          test "$(/usr/bin/git -C "$OPS" rev-parse HEAD)" = "$DEPLOYER_SHA"
-          cd "$SRC/tools/fengshui-layout-overlay"
+          test "$PRODUCT_SHA" = "$DEPLOYER_SHA"
+          cd "$SRC"
           npm ci --ignore-scripts --no-audit --no-fund
+          python3 -c "import cv2; print('opencv-runtime-ready')"
+          python3 -m unittest discover -s ops/tests
           npm test
           npx tsc --noEmit
           npm run build
           node scripts/verify-build.mjs
           cd "$TMP"
-          python3 "$OPS/tools/fengshui-layout-overlay/ops/release_bundle.py" "$SRC" "$TMP/bundle"
-          sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$OPS/tools/fengshui-layout-overlay/ops/deploy_oracle.py" \
-            --source "$TMP/bundle" --deployment-sha "$DEPLOYER_SHA"
+          python3 "$SRC/ops/release_bundle.py" "$SRC" "$TMP/bundle" "$PRODUCT_SHA"
+          sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$SRC/ops/deploy_oracle.py" \
+            --source "$TMP/bundle" --deployment-sha "$DEPLOYER_SHA" --source-sha "$PRODUCT_SHA"
           REMOTE
       - name: Public page and source acceptance
         shell: bash
@@ -101,25 +101,6 @@ jobs:
           print(json.dumps(summary))
           PY
           done
-      - name: Compare bounded Yungching upstream request profiles on Oracle
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
-            -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
-          set -euo pipefail
-          url='https://buy.yungching.com.tw/house/4308114'
-          for profile in service browser; do
-            if [ "$profile" = service ]; then
-              ua='Mozilla/5.0 (compatible; FengshuiLayout/0.1)'
-            else
-              ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
-            fi
-            curl -sS --max-time 25 -A "$ua" -H 'Accept: text/html' -o /dev/null \
-              -w "{\"profile\":\"$profile\",\"http\":\"%{http_code}\",\"connect\":%{time_connect},\"ttfb\":%{time_starttransfer},\"total\":%{time_total}}\n" "$url" || true
-          done
-          REMOTE
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
