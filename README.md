@@ -38,6 +38,7 @@ The repository currently contains working, tested slices of that architecture:
 - **Cross-node / Realm fabric work** — node manifests, enrollment/control surfaces, and remote command artifacts.
 - **Platform abstraction** — Linux, Windows, and macOS runtime/service drivers.
 - **Evidence-first operation** — `.agentos/evidence/` records acceptance and live-control-plane results rather than relying only on prose claims.
+- **Reusable Studio static-route release carrier** — a canonical `workflow_call` owns pinned-source build, narrow route replacement, rollback, local/public acceptance, and receipts; Milkcat World is the first real consumer. The capability is currently `extracted-first-consumer`, not yet broadly proven (`.github/workflows/reusable-studio-static-route-release.yml`, `.agent/governance/studio_release_capabilities.yaml`, `docs/asset-registry/studio-static-route-release.yaml`).
 
 See **[Current Architecture & Reality](docs/CURRENT_STATE.md)** for the maintained implementation map and current research boundary.
 
