@@ -80,6 +80,7 @@ jobs:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
       - name: Build pinned Studio Web and publish one static route
+        id: publish
         shell: bash
         run: |
           set -euo pipefail
@@ -165,7 +166,6 @@ jobs:
           validate_html "$TMP/route-live"
           echo "local_nginx_studio_static_route_acceptance=PASS route=$ROUTE"
 
-          trap - ERR
           printf '%s\n' \
             "schema=$RECEIPT_SCHEMA" \
             "source_repository=$REPO" \
@@ -173,6 +173,7 @@ jobs:
             "scope=/$ROUTE/" \
             "backup=$BACKUP" \
             "ok=true" > "$BACKUP/receipt.txt"
+          trap - ERR
           echo "studio_static_route_deploy=PASS route=$ROUTE backup=$BACKUP"
           REMOTE
 
@@ -188,3 +189,38 @@ jobs:
             grep -Fq -- "$anchor" "$OUT"
           done <<< "$ACCEPTANCE_ANCHORS"
           echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
+
+      - name: Roll back route after public acceptance failure
+        if: ${{ failure() && steps.publish.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; SOURCE_SHA="$2"; ROUTE="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/$BACKUP_KEY/${SOURCE_SHA:0:12}-${RUN_ID}
+
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ROUTE" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          [[ "$BACKUP_KEY" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          test -d "$BACKUP"
+
+          rm -rf "$LIVE/$ROUTE"
+          if [ -d "$BACKUP/$ROUTE.previous" ]; then
+            cp -a "$BACKUP/$ROUTE.previous" "$LIVE/$ROUTE"
+          fi
+
+          printf '%s\n' \
+            "schema=$RECEIPT_SCHEMA" \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            "scope=/$ROUTE/" \
+            "backup=$BACKUP" \
+            "ok=false" \
+            "rolled_back=true" \
+            "failure_stage=public_acceptance" > "$BACKUP/receipt.txt"
+          echo "public_failure_rollback=PASS route=$ROUTE backup=$BACKUP"
+          REMOTE
