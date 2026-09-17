@@ -89,9 +89,9 @@ jobs:
 
           test -f "$WORLD_DIR/index.html"
           grep -Fq 'Milkcat World' "$WORLD_DIR/index.html"
-          grep -Fq '走進我們正在累積的世界' "$WORLD_DIR/index.html"
-          grep -Fq 'LayoutLib showcase' "$WORLD_DIR/index.html"
-          grep -Fq 'world-zone-data' "$WORLD_DIR/index.html"
+          grep -Fq '走進 Milkcat' "$WORLD_DIR/index.html"
+          grep -Fq 'id="milkcat-world"' "$WORLD_DIR/index.html"
+          grep -Fq 'LAYOUTLIB · CANONICAL SPATIAL LIBRARY' "$WORLD_DIR/index.html"
           grep -Fq 'three@0.186.0' "$WORLD_DIR/index.html"
           echo 'milkcat_world_build_acceptance=PASS'
 
@@ -110,14 +110,15 @@ jobs:
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/world/ -o "$TMP/world-live"
           grep -Fq 'Milkcat World' "$TMP/world-live"
-          grep -Fq '走進我們正在累積的世界' "$TMP/world-live"
-          grep -Fq 'LayoutLib showcase' "$TMP/world-live"
-          grep -Fq 'world-zone-data' "$TMP/world-live"
+          grep -Fq '走進 Milkcat' "$TMP/world-live"
+          grep -Fq 'id="milkcat-world"' "$TMP/world-live"
+          grep -Fq 'LAYOUTLIB · CANONICAL SPATIAL LIBRARY' "$TMP/world-live"
+          grep -Fq 'three@0.186.0' "$TMP/world-live"
           echo 'local_nginx_milkcat_world_acceptance=PASS'
 
           trap - ERR
           printf '%s\n' \
-            "schema=studio-web.milkcat-world-release/v2" \
+            "schema=studio-web.milkcat-world-release/v3" \
             "source_repository=$REPO" \
             "source_sha=$SOURCE_SHA" \
             "scope=/world/" \
@@ -133,7 +134,8 @@ jobs:
           BASE=https://studio.milkcat.org
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/world/?_=$GITHUB_RUN_ID" -o /tmp/milkcat-world-public
           grep -Fq 'Milkcat World' /tmp/milkcat-world-public
-          grep -Fq '走進我們正在累積的世界' /tmp/milkcat-world-public
-          grep -Fq 'LayoutLib showcase' /tmp/milkcat-world-public
-          grep -Fq 'world-zone-data' /tmp/milkcat-world-public
+          grep -Fq '走進 Milkcat' /tmp/milkcat-world-public
+          grep -Fq 'id="milkcat-world"' /tmp/milkcat-world-public
+          grep -Fq 'LAYOUTLIB · CANONICAL SPATIAL LIBRARY' /tmp/milkcat-world-public
+          grep -Fq 'three@0.186.0' /tmp/milkcat-world-public
           echo 'public_milkcat_world_mvp=PASS'
