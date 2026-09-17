@@ -23,6 +23,16 @@ on:
         description: Newline-delimited literal strings required in built/local/public HTML
         required: true
         type: string
+      credit_account:
+        description: Optional funded Milkcat Platform credit account; empty disables metering
+        required: false
+        type: string
+        default: ''
+      credit_cost:
+        description: Integer credits reserved/committed when credit_account is enabled
+        required: false
+        type: number
+        default: 0
     secrets:
       AGENTOS_DEPLOY_USER:
         required: false
@@ -51,6 +61,9 @@ jobs:
       BACKUP_KEY: ${{ inputs.backup_key }}
       RECEIPT_SCHEMA: ${{ inputs.receipt_schema }}
       ACCEPTANCE_ANCHORS: ${{ inputs.acceptance_anchors }}
+      CREDIT_ACCOUNT: ${{ inputs.credit_account }}
+      CREDIT_COST: ${{ inputs.credit_cost }}
+      PLATFORM_EXECUTION_ID: studio-static-route-${{ inputs.route }}-${{ github.run_id }}
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -72,7 +85,25 @@ jobs:
               *$'\n'*|*$'\r'*) echo 'invalid acceptance anchor' >&2; exit 1 ;;
             esac
           done <<< "$ACCEPTANCE_ANCHORS"
+          if [ -n "$CREDIT_ACCOUNT" ]; then
+            [[ "$CREDIT_COST" =~ ^[1-9][0-9]*$ ]]
+          else
+            test "$CREDIT_COST" = "0"
+          fi
           echo "studio_static_route_contract=PASS route=$ROUTE source_sha=$SOURCE_SHA"
+
+      - name: Prepare governed platform execution
+        if: ${{ inputs.credit_account != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/milkcat_platform_execution.py prepare \
+            --execution-id "$PLATFORM_EXECUTION_ID" \
+            --account-id "$CREDIT_ACCOUNT" \
+            --credit-cost "$CREDIT_COST" \
+            --capability studio.static-route.release \
+            --sync-studio-capabilities
+          echo "milkcat_platform_execution=PREPARED id=$PLATFORM_EXECUTION_ID account=$CREDIT_ACCOUNT cost=$CREDIT_COST"
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -224,3 +255,26 @@ jobs:
             "failure_stage=public_acceptance" > "$BACKUP/receipt.txt"
           echo "public_failure_rollback=PASS route=$ROUTE backup=$BACKUP"
           REMOTE
+
+      - name: Settle governed platform execution
+        if: ${{ always() && inputs.credit_account != '' }}
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          RECEIPT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}/platform/executions/${PLATFORM_EXECUTION_ID}.json"
+          if [ ! -f "$RECEIPT" ]; then
+            echo "milkcat_platform_execution=NO_RESERVATION id=$PLATFORM_EXECUTION_ID"
+            exit 0
+          fi
+          if [ "$JOB_STATUS" = "success" ]; then
+            python3 scripts/milkcat_platform_execution.py settle \
+              --execution-id "$PLATFORM_EXECUTION_ID" \
+              --success
+          else
+            python3 scripts/milkcat_platform_execution.py settle \
+              --execution-id "$PLATFORM_EXECUTION_ID" \
+              --failure
+          fi
+          echo "milkcat_platform_execution=SETTLED id=$PLATFORM_EXECUTION_ID job_status=$JOB_STATUS"
