@@ -36,6 +36,7 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 - Evidence and tool results do not silently rewrite user intent.
 - Claims in documentation must be backed by implementation paths; verified claims also need tests/evidence.
 - **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
+- **Production runtime truth is node-authoritative.** For runtime parity/health claims, consume the runtime node's `agentos.execution-receipt/v1`. A ChatGPT/container sandbox DNS or HTTP probe must never override or substitute for Oracle/runtime-node evidence. DNS failure, local-service failure, source mismatch, and public HTTP failure must remain distinguishable in the receipt.
 
 ## Protected Branch Authority Rule
 
@@ -86,6 +87,7 @@ CI enforces the same rule. Treat a documentation-drift failure as an architectur
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
 python3 -m unittest tests.test_protected_branch_authority -v
+python3 -m unittest tests.test_production_parity_receipt -v
 python3 scripts/documentation_reality_guard.py
 ```
 
