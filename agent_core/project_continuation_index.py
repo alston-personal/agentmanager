@@ -110,6 +110,9 @@ def validate_publish_params(params: dict[str, Any]) -> tuple[str, dict[str, Any]
     canonical_ir = continuation.get("canonical_ir") if isinstance(continuation.get("canonical_ir"), dict) else continuation
     if canonical_ir.get("schema_version") != IR_SCHEMA:
         raise ValueError("continuation must contain agentos.ir/v1 canonical_ir")
+    canonical_project = str(canonical_ir.get("project_id") or "").strip()
+    if canonical_project != project_id:
+        raise ValueError("canonical_ir.project_id must match project_id")
     head_index = str(execution_head.get("index_id") or "").strip()
     continuation_index = _index_id_from_continuation(continuation)
     if not head_index or head_index != continuation_index:
