@@ -35,10 +35,14 @@ The repository currently contains working, tested slices of that architecture:
 - **Session lifecycle / handoff records** — session-close state is persisted through a host-neutral context-provider interface (`agent_core/session_lifecycle.py`, `runtime_core/`).
 - **Governance and responsibility resolution** — canonical role/capability ownership and resource discovery through `agentos-node` (`docs/AGENTOS_NODE.md`).
 - **Resource registry / world-state lookup** — query registered resources first and verify only when stale or missing.
+- **Reuse Before Build gate (v0.1 candidate)** — host-neutral deterministic `reuse / compose / build / deny` resolution in `runtime_core/capability_resolution.py`, bound to the existing Governance Directory by `agent_core/capability_gate.py`. A reusable governed provider blocks a new build unless an explicit override reason is supplied.
+- **Credits ledger (v0.1 candidate)** — off-chain integer credits with append-only SQLite entries, idempotent `grant / reserve / commit / release / refund`, and derived balance/reservation projections (`agent_core/credit_ledger.py`).
 - **Cross-node / Realm fabric work** — node manifests, enrollment/control surfaces, and remote command artifacts.
 - **Platform abstraction** — Linux, Windows, and macOS runtime/service drivers.
 - **Evidence-first operation** — `.agentos/evidence/` records acceptance and live-control-plane results rather than relying only on prose claims.
 - **Reusable Studio static-route release carrier** — a canonical `workflow_call` owns pinned-source build, narrow route replacement, rollback, local/public acceptance, and receipts; Milkcat World is the first real consumer. The capability is currently `extracted-first-consumer`, not yet broadly proven (`.github/workflows/reusable-studio-static-route-release.yml`, `.agent/governance/studio_release_capabilities.yaml`, `docs/asset-registry/studio-static-route-release.yaml`).
+
+The Reuse Before Build and Credits entries above are intentionally marked **v0.1 candidate** until branch CI and integration acceptance prove them in a real Milkcat execution path. They do not yet claim production billing, fiat value, transferability, or on-chain settlement.
 
 See **[Current Architecture & Reality](docs/CURRENT_STATE.md)** for the maintained implementation map and current research boundary.
 
@@ -95,6 +99,12 @@ Run the narrow continuity regression without requiring a full deployment:
 ```bash
 python3 scripts/continuation_state.py --self-test
 python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
+```
+
+The Reuse Before Build / Credits candidate slice uses the repository's pytest suite:
+
+```bash
+pytest -q tests/test_capability_resolution.py tests/test_capability_gate.py tests/test_credit_ledger.py
 ```
 
 For a Core node, platform/service installation and live infrastructure require the separate data layer and environment-specific configuration. See `docs/RESTORE_NEW_MACHINE.md`, `docs/PLATFORM_DRIVERS.md`, and `docs/AGENTOS_NODE.md`.
