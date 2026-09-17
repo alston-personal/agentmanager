@@ -32,9 +32,13 @@ The model-independent **Cognitive IR / zero-cost arbitrary model switching** lay
 
 - Preserve Logic/Data separation: mutable user/project state must not be accidentally committed into the logic repository.
 - Discover/resolve existing capability ownership before creating parallel infrastructure.
+- Hydrate current continuation IR, canonical project state, and authoritative runtime/resource registries before broad repository or environment discovery.
+- Treat non-trivial discovery as reusable knowledge: if a stable fact took meaningful effort to locate or verify, promote it to the appropriate canonical project/data-layer representation instead of leaving it only in chat/session context.
+- Do not repeat equivalent discovery unless scope, depth, freshness, evidence strength, conflict, or newer user intent materially justifies it. See `docs/governance/decisions/GOV-2026-09-17-001-discovery-cost-reuse-floor.md`.
 - Newer user intent must never be rolled back by stale snapshots, replay, or tool results.
 - Evidence and tool results do not silently rewrite user intent.
 - Claims in documentation must be backed by implementation paths; verified claims also need tests/evidence.
+- Secrets and bearer credentials must never be persisted into Canonical IR or project/runtime facts; sanitize credential-bearing repository remotes before persistence.
 - **Capability does not imply authority.** A tool being available or a PR being mergeable does not authorize a protected-branch mutation.
 
 ## Protected Branch Authority Rule
