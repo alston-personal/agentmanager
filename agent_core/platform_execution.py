@@ -19,7 +19,7 @@ from typing import Any, Iterable
 from runtime_core.capability_resolution import ResolutionMode
 
 from . import config
-from .capability_gate import resolve_before_build
+from .capability_gate import canonical_capability, resolve_before_build
 from .credit_ledger import CreditLedger
 from .governance_directory import REGISTRY_PATH
 
@@ -69,7 +69,10 @@ class PlatformExecutionStore:
         path = self._receipt_path(str(receipt["executionId"]))
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.write_text(
+            json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         tmp.replace(path)
         return receipt
 
@@ -93,6 +96,7 @@ class PlatformExecutionStore:
     ) -> dict[str, Any]:
         execution_id = _required(execution_id, "execution_id")
         account_id = _required(account_id, "account_id")
+        required = [canonical_capability(item) for item in required_capabilities]
 
         path = self._receipt_path(execution_id)
         if path.exists():
@@ -100,9 +104,7 @@ class PlatformExecutionStore:
             expected = {
                 "accountId": account_id,
                 "creditCost": credit_cost,
-                "requiredCapabilities": sorted(
-                    str(item) for item in required_capabilities
-                ),
+                "requiredCapabilities": sorted(set(required)),
             }
             actual = {
                 "accountId": existing.get("credits", {}).get("accountId"),
@@ -112,11 +114,13 @@ class PlatformExecutionStore:
                 ),
             }
             if expected != actual:
-                raise ValueError("execution_id already exists with different platform parameters")
+                raise ValueError(
+                    "execution_id already exists with different platform parameters"
+                )
             return existing
 
         resolution = resolve_before_build(
-            list(required_capabilities),
+            required,
             path=self.governance_path,
             allow_build_when_missing=allow_build_when_missing,
             force_build=force_build,
@@ -178,7 +182,9 @@ class PlatformExecutionStore:
                 )
             return receipt
         if receipt.get("status") != "prepared":
-            raise ValueError(f"unsupported platform execution state: {receipt.get('status')}")
+            raise ValueError(
+                f"unsupported platform execution state: {receipt.get('status')}"
+            )
 
         reservation_id = receipt["credits"]["reservationEntryId"]
         reserved = int(receipt["credits"]["reservedAmount"])
@@ -187,7 +193,9 @@ class PlatformExecutionStore:
             if isinstance(resolved_cost, bool) or not isinstance(resolved_cost, int):
                 raise ValueError("actual_cost must be an integer")
             if resolved_cost < 0 or resolved_cost > reserved:
-                raise ValueError("actual_cost must be between zero and reserved credits")
+                raise ValueError(
+                    "actual_cost must be between zero and reserved credits"
+                )
 
             committed = 0
             released = 0
