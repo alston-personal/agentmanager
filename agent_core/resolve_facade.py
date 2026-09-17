@@ -6,7 +6,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent_core.discovery_reuse import (
+    DiscoveryRequirement,
+    KnownFact,
+    assess_requirement,
+    build_discovery_receipt,
+    sanitize_for_persistence,
+)
 from agent_core.governance_directory import REGISTRY_PATH, list_entities
+from agent_core.project_knowledge import known_facts as load_known_project_facts
 
 
 INACTIVE_PROJECT_STATES = {"retired", "superseded", "stale"}
@@ -34,7 +42,7 @@ def _project_aliases(entity: dict[str, Any]) -> list[str]:
     raw = metadata.get("aliases") or []
     if isinstance(raw, str):
         raw = [raw]
-    aliases = []
+    aliases: list[str] = []
     for item in raw:
         value = str(item or "").strip()
         if value and value not in aliases:
@@ -72,11 +80,11 @@ def _project_authority(entity: dict[str, Any]) -> dict[str, Any]:
     complete = all(required.values())
 
     return {
-        "source": source,
-        "runtime": dict(runtime),
-        "deployment": dict(deployment),
-        "surfaces": list(surfaces),
-        "state": dict(state),
+        "source": sanitize_for_persistence(source),
+        "runtime": sanitize_for_persistence(dict(runtime)),
+        "deployment": sanitize_for_persistence(dict(deployment)),
+        "surfaces": sanitize_for_persistence(list(surfaces)),
+        "state": sanitize_for_persistence(dict(state)),
         "integrity": {
             "required": required,
             "complete": complete,
@@ -95,22 +103,24 @@ def _resolution_receipt(query: str, project: dict[str, Any]) -> dict[str, Any]:
         "source": 1.0 if integrity.get("required", {}).get("canonical_repo") else 0.0,
         "runtime": 1.0 if integrity.get("required", {}).get("canonical_node") else 0.0,
     }
-    return {
-        "schema": "agentos.project-resolution/v1",
-        "query": query,
-        "resolved": {
-            "project_id": project.get("id"),
-            "aliases": project.get("aliases") or [],
-            "repo": source.get("repo"),
-            "branch": source.get("branch"),
-            "canonical_path": source.get("canonical_path"),
-            "node": source.get("node"),
-            "checkpoint": state.get("checkpoint") or state.get("document") or state.get("continuity"),
-        },
-        "confidence": confidence,
-        "integrity": integrity,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    return sanitize_for_persistence(
+        {
+            "schema": "agentos.project-resolution/v1",
+            "query": query,
+            "resolved": {
+                "project_id": project.get("id"),
+                "aliases": project.get("aliases") or [],
+                "repo": source.get("repo"),
+                "branch": source.get("branch"),
+                "canonical_path": source.get("canonical_path"),
+                "node": source.get("node"),
+                "checkpoint": state.get("checkpoint") or state.get("document") or state.get("continuity"),
+            },
+            "confidence": confidence,
+            "integrity": integrity,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 def resolve_project_identity(
@@ -119,18 +129,7 @@ def resolve_project_identity(
     governance_path: str | Path | None = None,
     data_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Resolve a project without guessing from application data or source code.
-
-    Canonical project entities in Governance Directory are preferred. Exact
-    project IDs may fall back to an existing AGENT_DATA_ROOT/projects directory
-    so already-registered projects remain addressable while the Governance
-    Directory is being populated. Aliases are *never* inferred from folder
-    names, product identity registries, Git repositories, or free text.
-
-    Resolution and mutation authority are intentionally separate. A project may
-    be identifiable while still lacking canonical source/path/state authority;
-    callers must honor ``integrity.mutation_allowed`` before project mutation.
-    """
+    """Resolve a project without guessing from application data or source code."""
     needle = _normalize(query)
     if not needle:
         raise ValueError("project query is required")
@@ -178,9 +177,6 @@ def resolve_project_identity(
         project["resolution_receipt"] = _resolution_receipt(query, project)
         return project
 
-    # Conservative migration fallback: exact canonical folder ID only. This is
-    # not alias discovery and does not inspect STATUS.md or app-owned registries.
-    # Folder existence is never sufficient source authority for mutation.
     root = _data_root(data_root)
     projects_dir = root / "projects"
     exact_dir = projects_dir / str(query).strip()
@@ -224,7 +220,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"expected JSON object: {path}")
-    return data
+    return sanitize_for_persistence(data)
 
 
 def _continuation_projection(raw: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -239,19 +235,96 @@ def _continuation_projection(raw: dict[str, Any] | None) -> dict[str, Any] | Non
             "recommended_action": raw.get("recommended_action"),
             "canonical_ir": None,
         }
-    return {
-        "protocol": raw.get("protocol"),
-        "recommended_action": raw.get("recommended_action"),
-        "canonical_ir": canonical_ir,
-        "ir_id": canonical_ir.get("ir_id"),
-        "parent_ir_id": canonical_ir.get("parent_ir_id"),
-        "goal": canonical_ir.get("goal"),
-        "constraints": canonical_ir.get("constraints") or [],
-        "decisions": canonical_ir.get("decisions") or [],
-        "pending_tasks": canonical_ir.get("pending_tasks") or [],
-        "continuation": canonical_ir.get("continuation") or {},
-        "capability": canonical_ir.get("capability"),
+    return sanitize_for_persistence(
+        {
+            "protocol": raw.get("protocol"),
+            "recommended_action": raw.get("recommended_action"),
+            "canonical_ir": canonical_ir,
+            "ir_id": canonical_ir.get("ir_id"),
+            "parent_ir_id": canonical_ir.get("parent_ir_id"),
+            "goal": canonical_ir.get("goal"),
+            "constraints": canonical_ir.get("constraints") or [],
+            "decisions": canonical_ir.get("decisions") or [],
+            "pending_tasks": canonical_ir.get("pending_tasks") or [],
+            "continuation": canonical_ir.get("continuation") or {},
+            "capability": canonical_ir.get("capability"),
+        }
+    )
+
+
+def _canonical_known_facts(
+    project: dict[str, Any],
+    execution_head: dict[str, Any] | None,
+    project_facts: dict[str, KnownFact],
+) -> dict[str, KnownFact]:
+    project_id = str(project["id"])
+    scope = f"project://{project_id}"
+    source = project.get("source") or {}
+    facts = dict(project_facts)
+
+    canonical = {
+        "project.repo": (source.get("repo"), "structural", "verified"),
+        "project.branch": (source.get("branch"), "structural", "verified"),
+        "project.canonical_path": (source.get("canonical_path"), "structural", "verified"),
+        "project.node": (source.get("node"), "structural", "verified"),
     }
+    for fact_key, (value, depth, evidence) in canonical.items():
+        if value not in (None, ""):
+            facts[fact_key] = KnownFact(
+                fact_key=fact_key,
+                value=value,
+                scope=scope,
+                depth=depth,
+                evidence_strength=evidence,
+                freshness="static",
+                source="canonical-project-registry",
+            )
+
+    if execution_head:
+        for fact_key, field in (
+            ("execution.branch", "branch"),
+            ("execution.local_head", "local_head"),
+            ("execution.node", "node"),
+        ):
+            value = execution_head.get(field)
+            if value not in (None, ""):
+                facts[fact_key] = KnownFact(
+                    fact_key=fact_key,
+                    value=value,
+                    scope=scope,
+                    depth="runtime",
+                    evidence_strength="observed",
+                    freshness="fresh",
+                    source="project/execution-head.json",
+                )
+    return facts
+
+
+def _default_discovery_requirements(project_id: str) -> list[DiscoveryRequirement]:
+    scope = f"project://{project_id}"
+    return [
+        DiscoveryRequirement("project.repo", scope, depth="structural", evidence_strength="verified"),
+        DiscoveryRequirement("project.branch", scope, depth="structural", evidence_strength="verified"),
+        DiscoveryRequirement("project.canonical_path", scope, depth="structural", evidence_strength="verified"),
+        DiscoveryRequirement("project.node", scope, depth="structural", evidence_strength="verified"),
+    ]
+
+
+def _parse_requirements(project_id: str, raw: list[dict[str, Any]] | None) -> list[DiscoveryRequirement]:
+    if raw is None:
+        return _default_discovery_requirements(project_id)
+    result: list[DiscoveryRequirement] = []
+    for item in raw:
+        result.append(
+            DiscoveryRequirement(
+                fact_key=str(item.get("fact_key") or ""),
+                scope=str(item.get("scope") or f"project://{project_id}"),
+                depth=str(item.get("depth") or "summary"),
+                evidence_strength=str(item.get("evidence_strength") or "documented"),
+                require_fresh=bool(item.get("require_fresh", True)),
+            )
+        )
+    return result
 
 
 def resolve_continuation(
@@ -260,14 +333,11 @@ def resolve_continuation(
     governance_path: str | Path | None = None,
     data_root: str | Path | None = None,
     node_context: dict[str, Any] | None = None,
+    discovery_requirements: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Compose a read-only canonical continuation envelope for ONE clients."""
+    """Compose a canonical continuation envelope and hydrate reusable knowledge first."""
     root = _data_root(data_root)
-    project = resolve_project_identity(
-        project_query,
-        governance_path=governance_path,
-        data_root=root,
-    )
+    project = resolve_project_identity(project_query, governance_path=governance_path, data_root=root)
     project_dir = root / "projects" / project["id"]
 
     execution_head = _read_json(project_dir / "execution-head.json")
@@ -279,30 +349,51 @@ def resolve_continuation(
     active_goal = continuation.get("goal") if continuation else None
     recommended_action = continuation.get("recommended_action") if continuation else None
 
-    return {
-        "schema": "agentos.resolve/v1",
-        "intent": "continue",
-        "project": project,
-        "project_resolution": project.get("resolution_receipt"),
-        "mutation_allowed": bool(project.get("integrity", {}).get("mutation_allowed")),
-        "active_goal": active_goal,
-        "execution_head": execution_head,
-        "continuation": continuation,
-        "node_context": node_context,
-        "next_action": recommended_action,
-        "availability": {
-            "project_identity": True,
-            "project_integrity": bool(project.get("integrity", {}).get("complete")),
-            "continuation": continuation is not None,
-            "execution_head": execution_head is not None,
-            "node_context": node_context is not None,
-            "last_receipt": False,
-        },
-        "provenance": {
-            "project_identity": project["identity_source"],
-            "project_resolution": "governance-directory" if project.get("governance_entity_id") else "project-data-exact-id-fallback",
-            "continuation": "project/continuity/latest.json" if continuation is not None else None,
-            "execution_head": "project/execution-head.json" if execution_head is not None else None,
-            "last_receipt": "not-yet-project-indexed",
-        },
+    project_facts = load_known_project_facts(project["id"], data_root=root)
+    known = _canonical_known_facts(project, execution_head, project_facts)
+    requirements = _parse_requirements(project["id"], discovery_requirements)
+    assessments = [assess_requirement(requirement, known.get(requirement.fact_key)) for requirement in requirements]
+    discovery_receipt = build_discovery_receipt(assessments, project_id=project["id"])
+
+    hydrated_facts = {
+        key: sanitize_for_persistence(fact.__dict__)
+        for key, fact in known.items()
     }
+
+    return sanitize_for_persistence(
+        {
+            "schema": "agentos.resolve/v1",
+            "intent": "continue",
+            "project": project,
+            "project_resolution": project.get("resolution_receipt"),
+            "mutation_allowed": bool(project.get("integrity", {}).get("mutation_allowed")),
+            "active_goal": active_goal,
+            "execution_head": execution_head,
+            "continuation": continuation,
+            "node_context": node_context,
+            "next_action": recommended_action,
+            "knowledge": {
+                "hydrated": True,
+                "order": ["continuation_ir", "canonical_project_state", "project_knowledge", "execution_head"],
+                "facts": hydrated_facts,
+            },
+            "discovery": discovery_receipt,
+            "availability": {
+                "project_identity": True,
+                "project_integrity": bool(project.get("integrity", {}).get("complete")),
+                "continuation": continuation is not None,
+                "execution_head": execution_head is not None,
+                "node_context": node_context is not None,
+                "project_knowledge": bool(project_facts),
+                "last_receipt": False,
+            },
+            "provenance": {
+                "project_identity": project["identity_source"],
+                "project_resolution": "governance-directory" if project.get("governance_entity_id") else "project-data-exact-id-fallback",
+                "continuation": "project/continuity/latest.json" if continuation is not None else None,
+                "execution_head": "project/execution-head.json" if execution_head is not None else None,
+                "project_knowledge": "project/knowledge/reusable-facts.json" if project_facts else None,
+                "last_receipt": "not-yet-project-indexed",
+            },
+        }
+    )
