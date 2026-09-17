@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REUSABLE = ROOT / ".github/workflows/reusable-studio-static-route-release.yml"
 CONSUMER = ROOT / ".github/workflows/oracle-release-milkcat-world-mvp.yml"
 GOVERNANCE = ROOT / ".agent/governance/studio_release_capabilities.yaml"
+ASSET = ROOT / "docs/asset-registry/studio-static-route-release.yaml"
 
 
 class StudioStaticRouteReleaseContractTest(unittest.TestCase):
@@ -33,6 +34,14 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
         self.assertIn("studio_static_route_release:", text)
         self.assertIn("status: extracted-first-consumer", text)
         self.assertIn("verified_run: 35192062500", text)
+
+    def test_asset_registry_points_to_canonical_source_and_evidence(self):
+        text = ASSET.read_text(encoding="utf-8")
+        self.assertIn("asset_id: studio-static-route-release", text)
+        self.assertIn("canonical_source: .github/workflows/reusable-studio-static-route-release.yml", text)
+        self.assertIn("first_consumer: milkcat-world", text)
+        self.assertIn("release_run: 35192062500", text)
+        self.assertIn("broadly_proven_requires: second-production-consumer", text)
 
 
 if __name__ == "__main__":
