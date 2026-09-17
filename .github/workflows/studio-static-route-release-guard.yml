@@ -9,6 +9,8 @@ on:
       - '.github/workflows/studio-static-route-release-guard.yml'
       - '.agent/governance/studio_release_capabilities.yaml'
       - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
+      - 'docs/asset-registry/README.md'
+      - 'docs/asset-registry/studio-static-route-release.yaml'
       - 'tests/test_studio_static_route_release_contract.py'
   push:
     branches: [main]
@@ -18,6 +20,8 @@ on:
       - '.github/workflows/studio-static-route-release-guard.yml'
       - '.agent/governance/studio_release_capabilities.yaml'
       - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
+      - 'docs/asset-registry/README.md'
+      - 'docs/asset-registry/studio-static-route-release.yaml'
       - 'tests/test_studio_static_route_release_contract.py'
 
 permissions:
@@ -41,11 +45,13 @@ jobs:
           C=.github/workflows/oracle-release-milkcat-world-mvp.yml
           D=docs/STUDIO_STATIC_ROUTE_RELEASE.md
           G=.agent/governance/studio_release_capabilities.yaml
+          A=docs/asset-registry/studio-static-route-release.yaml
 
           test -f "$R"
           test -f "$C"
           test -f "$D"
           test -f "$G"
+          test -f "$A"
           grep -Fq 'workflow_call:' "$R"
           grep -Fq 'route:' "$R"
           grep -Fq 'acceptance_anchors:' "$R"
@@ -57,6 +63,7 @@ jobs:
           grep -Fq 'route: world' "$C"
           grep -Fq 'source_sha: b675270c7ad08bcd9172496d7436787a32c299a1' "$C"
           grep -Fq 'status: extracted-first-consumer' "$G"
+          grep -Fq 'asset_id: studio-static-route-release' "$A"
 
           if grep -Fq 'npm run build' "$C"; then
             echo 'Milkcat World consumer regressed to duplicated deployment logic' >&2
