@@ -1,15 +1,13 @@
 name: Oracle Install LayoutLib Capability Gateway
 
+# Installing/restarting a product-specific persistent service is an explicit
+# runtime authority event. Generic AgentOS capability implementation pushes
+# must not implicitly mutate the LayoutLib runtime.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-install-layoutlib-capability-gateway.yml'
-      - 'agentos_node/capability_http.py'
-      - 'agentos_node/capability_store.py'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: layoutlib-capability-gateway-install
@@ -107,19 +105,11 @@ jobs:
             ps -eo user,group,pid,etime,args | grep '[a]gentos_node.capability_http' || true
             echo 'local_capability_gateway=PASS'
           } | tee "$OUT"
-      - name: Commit install evidence
+      - name: Upload install evidence
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp .agentos/evidence/layoutlib-capability-gateway-install.txt /tmp/layoutlib-capability-gateway-install.txt 2>/dev/null || true
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          cp /tmp/layoutlib-capability-gateway-install.txt .agentos/evidence/layoutlib-capability-gateway-install.txt 2>/dev/null || true
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/layoutlib-capability-gateway-install.txt 2>/dev/null || true
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(layoutlib): capability gateway user service install'
-          git push origin HEAD:main
+        uses: actions/upload-artifact@v4
+        with:
+          name: layoutlib-capability-gateway-install-evidence
+          path: .agentos/evidence/layoutlib-capability-gateway-install.txt
+          if-no-files-found: ignore
+          retention-days: 30
