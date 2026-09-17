@@ -1,0 +1,29 @@
+name: Production Parity Receipt Guard
+
+on:
+  pull_request:
+    paths:
+      - 'agentos_node/production_parity.py'
+      - 'agentos_node/cli.py'
+      - 'tests/test_production_parity_receipt.py'
+      - 'AGENTS.md'
+      - '.github/workflows/production-parity-receipt-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Production parity receipt tests
+        run: python -m unittest tests.test_production_parity_receipt -v
+      - name: Parse touched Python
+        run: python -m py_compile agentos_node/production_parity.py agentos_node/cli.py
+      - name: Documentation reality guard
+        run: python scripts/documentation_reality_guard.py
