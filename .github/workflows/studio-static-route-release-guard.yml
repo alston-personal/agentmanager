@@ -58,12 +58,18 @@ jobs:
           grep -Fq 'rollback()' "$R"
           grep -Fq 'local_nginx_studio_static_route_acceptance=PASS' "$R"
           grep -Fq 'public_studio_static_route_acceptance=PASS' "$R"
+          grep -Fq 'Roll back route after public acceptance failure' "$R"
+          grep -Fq "steps.publish.outcome == 'success'" "$R"
+          grep -Fq 'public_failure_rollback=PASS' "$R"
+          grep -Fq 'failure_stage=public_acceptance' "$R"
 
           grep -Fq 'uses: ./.github/workflows/reusable-studio-static-route-release.yml' "$C"
           grep -Fq 'route: world' "$C"
           grep -Fq 'source_sha: b675270c7ad08bcd9172496d7436787a32c299a1' "$C"
           grep -Fq 'status: extracted-first-consumer' "$G"
           grep -Fq 'asset_id: studio-static-route-release' "$A"
+          grep -Fq 'evidence_scope: pre-extraction-world-carrier' "$A"
+          grep -Fq 'shared_carrier_live_verification: pending' "$A"
 
           if grep -Fq 'npm run build' "$C"; then
             echo 'Milkcat World consumer regressed to duplicated deployment logic' >&2
