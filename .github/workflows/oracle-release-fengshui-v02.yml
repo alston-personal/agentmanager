@@ -26,21 +26,21 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy source patch to deploy user
+      - name: Copy tuning patch to deploy user
         shell: bash
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          scp -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -P "${DEPLOY_SSH_PORT:-22}" ops/fengshui_patch_mobile_indoor.py "$DEPLOY_USER@127.0.0.1:/tmp/fengshui_patch_${GITHUB_RUN_ID}.py"
-      - name: Patch, verify, push and deploy
+          scp -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -P "${DEPLOY_SSH_PORT:-22}" ops/fengshui_tune_indoor_controls.py "$DEPLOY_USER@127.0.0.1:/tmp/fengshui_tune_${GITHUB_RUN_ID}.py"
+      - name: Tune, verify, push and deploy
         shell: bash
         run: |
           set -euo pipefail
           ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE' | tee fengshui-release.log
           set -euo pipefail
           RUN_ID="$1"
-          PATCH="/tmp/fengshui_patch_${RUN_ID}.py"
-          TMP=$(mktemp -d /tmp/fengshui-indoor-XXXXXXXXXX)
+          PATCH="/tmp/fengshui_tune_${RUN_ID}.py"
+          TMP=$(mktemp -d /tmp/fengshui-tune-XXXXXXXXXX)
           cleanup(){ rm -rf "$TMP" "$PATCH"; }
           trap cleanup EXIT
           SRC="$TMP/fengshui-layout-overlay"
@@ -50,7 +50,6 @@ jobs:
           /usr/bin/git checkout main
           /usr/bin/git pull --ff-only origin main
           python3 "$PATCH"
-          rm -f .github/workflows/apply-mobile-indoor.yml
           /usr/bin/git diff --check
           npm ci --ignore-scripts --no-audit --no-fund
           python3 -c "import cv2; print('opencv-runtime-ready')"
@@ -63,7 +62,7 @@ jobs:
           /usr/bin/git config user.email "register@milkcat.org"
           /usr/bin/git add -A
           if ! /usr/bin/git diff --cached --quiet; then
-            /usr/bin/git commit -m "feat(mobile): immersive indoor dual joystick navigation"
+            /usr/bin/git commit -m "fix(mobile): tune indoor joystick and HUD"
             /usr/bin/git push origin HEAD:main
           fi
           SOURCE_SHA=$(/usr/bin/git rev-parse HEAD)
