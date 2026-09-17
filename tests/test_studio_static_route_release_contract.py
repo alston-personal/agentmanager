@@ -40,14 +40,20 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
         self.assertIn("status: production-verified-before-extraction", text)
         self.assertIn("verified_run: 35192062500", text)
 
-    def test_asset_registry_points_to_canonical_source_and_scoped_evidence(self):
+    def test_asset_registry_points_to_canonical_source_and_live_evidence(self):
         text = ASSET.read_text(encoding="utf-8")
         self.assertIn("asset_id: studio-static-route-release", text)
         self.assertIn("canonical_source: .github/workflows/reusable-studio-static-route-release.yml", text)
         self.assertIn("first_consumer: milkcat-world", text)
-        self.assertIn("evidence_scope: pre-extraction-world-carrier", text)
+        self.assertIn("evidence_scope: shared-carrier-live", text)
         self.assertIn("predecessor_release_run: 35192062500", text)
-        self.assertIn("shared_carrier_live_verification: pending", text)
+        self.assertIn("shared_carrier_live_verification: passed", text)
+        self.assertIn("shared_carrier_release_run: 35199712046", text)
+        self.assertIn("shared_carrier_main_commit: 369585b7d4a6f3885e0d0c79aeca57b8957fd164", text)
+        self.assertIn("shared_carrier_contract_acceptance: passed", text)
+        self.assertIn("shared_carrier_build_publish_acceptance: passed", text)
+        self.assertIn("shared_carrier_public_acceptance: passed", text)
+        self.assertIn("public_failure_rollback_path: present-and-not-triggered", text)
         self.assertIn("broadly_proven_requires: second-production-consumer", text)
 
 
