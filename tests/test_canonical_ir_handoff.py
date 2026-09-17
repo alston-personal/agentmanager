@@ -15,6 +15,7 @@ CURRENT = {
     "continuation": {
         "canonical_ir": {
             "schema_version": "agentos.ir/v1",
+            "project_id": "agentos-core",
             "index_id": "idx-core-152",
             "ir_id": "ir-core-152",
             "parent_ir_id": None,
@@ -67,6 +68,7 @@ class CanonicalIrHandoffTests(unittest.TestCase):
         self.assertEqual(receipt["child"]["ir_id"], "ir-core-152-e3")
         params = publish.call_args.args[0]
         ir = params["continuation"]["canonical_ir"]
+        self.assertEqual(ir["project_id"], "agentos-core")
         self.assertEqual(ir["parent_ir_id"], "ir-core-152")
         self.assertIn("Preserve credential isolation", ir["constraints"])
         self.assertIn("Use ONE_PREINVOCATION_IR", ir["decisions"])
