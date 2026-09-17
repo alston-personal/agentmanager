@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from agent_core.discovery_reuse import (
     DiscoveryRequirement,
@@ -9,13 +12,14 @@ from agent_core.discovery_reuse import (
     build_discovery_receipt,
     sanitize_for_persistence,
 )
+from agent_core.project_knowledge import known_facts, promote_reusable_facts
 
 
 class TestDiscoveryReuse(unittest.TestCase):
     def req(self, **overrides):
         base = {
             "fact_key": "project.repo",
-            "scope": "project:leopardcat-tarot",
+            "scope": "project://leopardcat-tarot",
             "depth": "structural",
             "evidence_strength": "verified",
         }
@@ -26,7 +30,7 @@ class TestDiscoveryReuse(unittest.TestCase):
         base = {
             "fact_key": "project.repo",
             "value": "alston-personal/leopardcat-tarot",
-            "scope": "project:leopardcat-tarot",
+            "scope": "project://leopardcat-tarot",
             "depth": "structural",
             "evidence_strength": "verified",
             "freshness": "fresh",
@@ -49,16 +53,13 @@ class TestDiscoveryReuse(unittest.TestCase):
         self.assertEqual(result["rediscovery_reasons"], ["stale"])
 
     def test_greater_depth_is_explicit(self):
-        result = assess_requirement(
-            self.req(depth="runtime"),
-            self.known(depth="structural"),
-        )
+        result = assess_requirement(self.req(depth="runtime"), self.known(depth="structural"))
         self.assertEqual(result["rediscovery_reasons"], ["deeper"])
 
     def test_expanded_scope_is_explicit(self):
         result = assess_requirement(
-            self.req(scope="environment:staging"),
-            self.known(scope="environment:production"),
+            self.req(scope="environment://staging"),
+            self.known(scope="environment://production"),
         )
         self.assertEqual(result["rediscovery_reasons"], ["expanded_scope"])
 
@@ -97,6 +98,48 @@ class TestDiscoveryReuse(unittest.TestCase):
         self.assertEqual(receipt["rediscovered"], ["runtime.service"])
         self.assertEqual(receipt["rediscovery_reasons"], ["stale"])
         self.assertTrue(receipt["performed"])
+
+    def test_newly_verified_stable_fact_is_promoted_to_project_data_layer(self):
+        with tempfile.TemporaryDirectory() as td:
+            result = promote_reusable_facts(
+                "leopardcat-tarot",
+                [
+                    {
+                        "fact_key": "runtime.service",
+                        "value": "leopardcat-tarot.service",
+                        "scope": "project://leopardcat-tarot",
+                        "depth": "runtime",
+                        "evidence_strength": "verified",
+                        "source": "runtime/systemd",
+                    }
+                ],
+                data_root=td,
+            )
+            self.assertEqual(result["promoted"][0]["destination"], "project_knowledge")
+            facts = known_facts("leopardcat-tarot", data_root=td)
+            self.assertEqual(facts["runtime.service"].value, "leopardcat-tarot.service")
+            self.assertEqual(facts["runtime.service"].depth, "runtime")
+
+    def test_promoted_remote_never_persists_credentials(self):
+        with tempfile.TemporaryDirectory() as td:
+            result = promote_reusable_facts(
+                "leopardcat-tarot",
+                [
+                    {
+                        "fact_key": "project.remote",
+                        "value": "https://user:secret@git.example.test/team/tarot.git",
+                        "scope": "project://leopardcat-tarot",
+                        "evidence_strength": "verified",
+                    }
+                ],
+                data_root=td,
+            )
+            raw = json.loads(Path(result["path"]).read_text(encoding="utf-8"))
+            self.assertEqual(
+                raw["facts"]["project.remote"]["value"],
+                "https://git.example.test/team/tarot.git",
+            )
+            self.assertNotIn("secret", Path(result["path"]).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
