@@ -16,6 +16,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/install_control_inbox_bridge_user.sh'
       - 'scripts/install_chatgpt_continuation_projection_user.sh'
+      - 'scripts/repair_active_canonical_ir_project_id.py'
       - 'scripts/repair_control_inbox_github_auth_user.sh'
   workflow_dispatch:
 
@@ -104,8 +105,14 @@ jobs:
           assert "control_inbox_install=PASS" in text, text[-12000:]
           assert "control_inbox_exact_generation=PASS" in text, text[-12000:]
           assert "control_inbox_continuation_identity=ENABLED" in text, text[-12000:]
+          assert "active_canonical_ir_project_id_repair=PASS" in text, text[-12000:]
+          assert "chatgpt_continuation_projection_install=PASS" in text, text[-12000:]
+          assert "chatgpt_continuation_projection_exact_generation=PASS" in text, text[-12000:]
           assert f"agentos_source_commit={expected}" in text, text[-12000:]
           assert "control_inbox_service=active" in text, text[-12000:]
+          assert "chatgpt_continuation_projection_timer=active" in text, text[-12000:]
           print("control_inbox_exact_generation_rollout=PASS")
           print("control_inbox_continuation_identity=ENABLED")
+          print("active_canonical_ir_project_id_repair=PASS")
+          print("chatgpt_continuation_projection_rollout=PASS")
           PY
