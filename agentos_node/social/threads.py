@@ -11,9 +11,13 @@ from .credentials import AccountBinding, CredentialVault
 from .governance import RuntimeWriteAcceptance, SocialWriteGate
 from .oauth import OAuthStateStore
 
-THREADS_SCOPES = ("threads_basic", "threads_content_publish")
+THREADS_SCOPES = ("threads_basic", "threads_content_publish", "threads_read_replies")
 THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
+THREADS_READ_PAGE_LIMIT = 3
+THREADS_READ_ITEM_LIMIT = 150
+THREAD_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies"
+REPLY_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies,is_reply,is_reply_owned_by_me,root_post,replied_to"
 
 
 class ThreadsProviderError(RuntimeError):
@@ -91,8 +95,26 @@ class ThreadsProviderTransport:
             return self._request_json(url, token=token)
         return self._request_json(url, method=method, token=token, body=params)
 
+    def paged(self, path: str, *, token: str, params: dict[str, Any], max_pages: int = THREADS_READ_PAGE_LIMIT) -> list[dict[str, Any]]:
+        payload = self.api(path, token=token, params=params)
+        rows: list[dict[str, Any]] = []
+        pages = 0
+        while True:
+            pages += 1
+            data = payload.get("data")
+            if isinstance(data, list):
+                rows.extend(item for item in data if isinstance(item, dict))
+            if pages >= max_pages or len(rows) >= THREADS_READ_ITEM_LIMIT:
+                break
+            paging = payload.get("paging") if isinstance(payload.get("paging"), dict) else {}
+            next_url = str(paging.get("next") or "")
+            if not next_url:
+                break
+            payload = self._request_json(next_url, token=token)
+        return rows[:THREADS_READ_ITEM_LIMIT]
+
     def identity(self, token: str) -> dict[str, Any]:
-        return self.api("me", token=token, params={"fields": "id,username,name"})
+        return self.api("me", token=token, params={"fields": "id,username,name,threads_profile_picture_url"})
 
     def revoke(self, token: str) -> None:
         # Local disconnect is mandatory. Remote revocation may be supplied when provider policy allows it.
@@ -112,9 +134,74 @@ class ThreadsCapability:
         except ThreadsProviderError:
             return False
 
+    def _read_binding(self, request: SocialRequest) -> tuple[AccountBinding | None, str | None]:
+        if not request.account_binding_id:
+            return None, "account_binding_required"
+        binding = self.vault.get_binding(request.account_binding_id)
+        if binding is None or binding.product_id != request.product_id or binding.platform != "threads":
+            return None, "account_binding_mismatch"
+        return binding, None
+
+    @staticmethod
+    def _safe_media(item: dict[str, Any]) -> dict[str, Any]:
+        def ref(name: str) -> dict[str, str] | None:
+            raw = item.get(name)
+            if isinstance(raw, dict) and raw.get("id"):
+                return {"id": str(raw["id"])}
+            return None
+        return {
+            "id": str(item.get("id") or ""),
+            "text": str(item.get("text") or "")[:12000],
+            "timestamp": item.get("timestamp"),
+            "username": item.get("username"),
+            "permalink": item.get("permalink"),
+            "is_quote_post": bool(item.get("is_quote_post", False)),
+            "has_replies": bool(item.get("has_replies", False)),
+            "is_reply": bool(item.get("is_reply", False)),
+            "is_reply_owned_by_me": bool(item.get("is_reply_owned_by_me", False)),
+            "root_post": ref("root_post"),
+            "replied_to": ref("replied_to"),
+        }
+
+    def read(self, request: SocialRequest) -> dict[str, Any]:
+        request.validate()
+        started = utc_now()
+        binding, error = self._read_binding(request)
+        if error or binding is None:
+            return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code=error or "account_binding_required").to_dict()
+        try:
+            token = self.vault.get_access_token(binding.binding_id)
+            if request.operation == "identity.read":
+                identity = self.transport.identity(token)
+                safe = {
+                    "provider_account_id": str(identity.get("id") or binding.provider_account_id),
+                    "username": identity.get("username") or binding.username,
+                    "name": identity.get("name"),
+                    "profile_picture_url": identity.get("threads_profile_picture_url"),
+                }
+                return receipt_for(request, started_at=started, ok=True, capability="social.threads.identity.read", result={"identity": safe}).to_dict()
+            if request.operation == "post.read":
+                rows = self.transport.paged("me/threads", token=token, params={"fields": THREAD_FIELDS, "limit": 50})
+                return receipt_for(request, started_at=started, ok=True, capability="social.threads.post.read", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= THREADS_READ_ITEM_LIMIT}).to_dict()
+            if request.operation == "replies.read":
+                object_id = str(request.object_id or "").strip()
+                if not object_id:
+                    return receipt_for(request, started_at=started, ok=False, capability="social.threads.replies.read", error_code="thread_object_id_required").to_dict()
+                rows = self.transport.paged(f"{object_id}/conversation", token=token, params={"fields": REPLY_FIELDS, "reverse": "false", "limit": 100})
+                return receipt_for(request, started_at=started, ok=True, capability="social.threads.replies.read", platform_object_id=object_id, result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= THREADS_READ_ITEM_LIMIT}).to_dict()
+            raise ValueError("unsupported_threads_read_operation")
+        except ThreadsProviderError as exc:
+            return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code=str(exc)).to_dict()
+
     def status(self, request: SocialRequest) -> dict[str, Any]:
         request.validate()
+        if request.operation in {"identity.read", "post.read", "replies.read"}:
+            return self.read(request)
+        if request.operation != "status":
+            raise ValueError("status_or_read_operation_required")
         binding = self.vault.get_binding(request.account_binding_id) if request.account_binding_id else None
+        if binding is not None and (binding.product_id != request.product_id or binding.platform != "threads"):
+            binding = None
         return {"schema": "agentos.social-status/v1", "product_id": request.product_id, "platform": "threads", "configured": self._configured(), "connected": binding is not None, "account": ({"binding_id": binding.binding_id, "provider_account_id": binding.provider_account_id, "username": binding.username} if binding else None)}
 
     def begin_connect(self, request: SocialRequest, *, browser_session_id: str) -> dict[str, str]:
