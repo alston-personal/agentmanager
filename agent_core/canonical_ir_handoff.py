@@ -174,6 +174,7 @@ def advance_canonical_ir(
             "recommended_action": next_action,
             "canonical_ir": {
                 "schema_version": IR_SCHEMA,
+                "project_id": project_id,
                 "index_id": new_index,
                 "ir_id": new_ir,
                 "parent_ir_id": expected_ir,
