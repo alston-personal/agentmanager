@@ -40,6 +40,36 @@ jobs:
             bash -s -- "$PRODUCT_SHA" "$DEPLOYER_SHA" "$GITHUB_RUN_ID" <<'REMOTE' | tee fengshui-release.log
           set -euo pipefail
           PRODUCT_SHA="$1"; DEPLOYER_SHA="$2"; RUN_ID="$3"
+
+          # Recover only a stale Fengshui listener left outside the managed systemd unit.
+          # Never kill an unknown process or a listener owned by the active managed unit.
+          if ! sudo -n systemctl is-active --quiet milkcat-fengshui.service; then
+            LISTENER=$(sudo -n ss -Hlnpt 'sport = :8868' || true)
+            if [ -n "$LISTENER" ]; then
+              PID=$(printf '%s\n' "$LISTENER" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1)
+              test -n "$PID"
+              CMD=$(sudo -n sh -c "tr '\\0' ' ' </proc/$PID/cmdline")
+              printf 'stale_listener pid=%s cmd=%s\n' "$PID" "$CMD"
+              case "$CMD" in
+                *'/opt/milkcat/fengshui/releases/'*'/server/index.mjs'*)
+                  sudo -n kill "$PID"
+                  for _ in $(seq 1 20); do
+                    if ! sudo -n ss -Hlnpt 'sport = :8868' | grep -q .; then break; fi
+                    sleep 0.25
+                  done
+                  ;;
+                *)
+                  echo 'port_8868_owned_by_unmanaged_process' >&2
+                  exit 1
+                  ;;
+              esac
+              if sudo -n ss -Hlnpt 'sport = :8868' | grep -q .; then
+                echo 'stale_fengshui_listener_did_not_exit' >&2
+                exit 1
+              fi
+            fi
+          fi
+
           TMP=$(mktemp -d /tmp/fengshui-release-XXXXXXXXXX)
           cleanup(){ rm -rf "$TMP"; }
           trap cleanup EXIT
