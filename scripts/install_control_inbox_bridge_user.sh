@@ -213,3 +213,16 @@ echo "agentos_source_commit=$SOURCE_COMMIT"
 echo "controller_api=PASS"
 echo "control_inbox_service=active"
 echo "control_inbox_provenance=$PROVENANCE"
+
+# Install the private projection sidecar from the same immutable generation.
+# The public Control Inbox remains identity-only; full Canonical IR never enters
+# Issue #50 or the bridge state file.
+PROJECTION_INSTALLER="$TMPDIR/install_chatgpt_continuation_projection_user.sh"
+show_source "scripts/install_chatgpt_continuation_projection_user.sh" > "$PROJECTION_INSTALLER"
+chmod 0700 "$PROJECTION_INSTALLER"
+AGENTOS_REPO="$REPO" \
+AGENTOS_REALM_RUNTIME="$REALM_RUNTIME" \
+AGENT_DATA_ROOT="$DATA_ROOT" \
+AGENTOS_REF="$SOURCE_REF" \
+AGENTOS_SOURCE_COMMIT="$SOURCE_COMMIT" \
+/bin/bash "$PROJECTION_INSTALLER"
