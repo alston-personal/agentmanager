@@ -1,0 +1,126 @@
+# Narrow production release for the canonical Studio Web Milkcat World MVP.
+name: Oracle Release Milkcat World MVP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milkcat-world-production-mvp
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      SOURCE_REPOSITORY: alston-personal/studio-web
+      SOURCE_SHA: b675270c7ad08bcd9172496d7436787a32c299a1
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Build pinned canonical Studio Web and publish world only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/milkcat-world-release-XXXXXX)
+          SRC="$TMP/studio-web"
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/milkcat-world/${SOURCE_SHA:0:12}-${RUN_ID}
+          NEW_ROUTE="$LIVE/.world-${RUN_ID}"
+          DEPLOYED=0
+
+          cleanup() { rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true; }
+          rollback() {
+            set +e
+            if [ "$DEPLOYED" = 1 ]; then
+              rm -rf "$LIVE/world"
+              if [ -d "$BACKUP/world.previous" ]; then
+                cp -a "$BACKUP/world.previous" "$LIVE/world"
+              fi
+            fi
+            cleanup
+          }
+          trap 'rollback' ERR
+          trap 'cleanup' EXIT
+
+          test -d "$LIVE"
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone "$REPO" "$SRC" -- --no-checkout
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SOURCE_SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SOURCE_SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
+
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts
+          npm run build
+
+          test -f dist/world/index.html
+          grep -Fq 'Milkcat World' dist/world/index.html
+          grep -Fq '走進我們正在累積的世界' dist/world/index.html
+          grep -Fq 'LayoutLib showcase' dist/world/index.html
+          grep -Fq 'world-zone-data' dist/world/index.html
+          grep -Fq 'three@0.186.0' dist/world/index.html
+          echo 'milkcat_world_build_acceptance=PASS'
+
+          mkdir -p "$BACKUP"
+          if [ -d "$LIVE/world" ]; then
+            cp -a "$LIVE/world" "$BACKUP/world.previous"
+          fi
+
+          cp -a dist/world "$NEW_ROUTE"
+          find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
+          find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/world"
+          mv "$NEW_ROUTE" "$LIVE/world"
+          DEPLOYED=1
+
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/world/ -o "$TMP/world-live"
+          grep -Fq 'Milkcat World' "$TMP/world-live"
+          grep -Fq '走進我們正在累積的世界' "$TMP/world-live"
+          grep -Fq 'LayoutLib showcase' "$TMP/world-live"
+          grep -Fq 'world-zone-data' "$TMP/world-live"
+          echo 'local_nginx_milkcat_world_acceptance=PASS'
+
+          trap - ERR
+          printf '%s\n' \
+            "schema=studio-web.milkcat-world-release/v1" \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            "scope=/world/" \
+            "backup=$BACKUP" \
+            "ok=true" > "$BACKUP/receipt.txt"
+          echo "milkcat_world_deploy=PASS backup=$BACKUP"
+          REMOTE
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/world/?_=$GITHUB_RUN_ID" -o /tmp/milkcat-world-public
+          grep -Fq 'Milkcat World' /tmp/milkcat-world-public
+          grep -Fq '走進我們正在累積的世界' /tmp/milkcat-world-public
+          grep -Fq 'LayoutLib showcase' /tmp/milkcat-world-public
+          grep -Fq 'world-zone-data' /tmp/milkcat-world-public
+          echo 'public_milkcat_world_mvp=PASS'
