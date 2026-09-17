@@ -1,0 +1,190 @@
+name: Reusable Studio Static Route Release
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Pinned canonical alston-personal/studio-web commit SHA
+        required: true
+        type: string
+      route:
+        description: Single static route directory under dist, without slashes
+        required: true
+        type: string
+      backup_key:
+        description: Release backup namespace under agent-data/releases/studio-web
+        required: true
+        type: string
+      receipt_schema:
+        description: Receipt schema identifier
+        required: true
+        type: string
+      acceptance_anchors:
+        description: Newline-delimited literal strings required in built/local/public HTML
+        required: true
+        type: string
+    secrets:
+      AGENTOS_DEPLOY_USER:
+        required: false
+      AGENTOS_DEPLOY_SSH_PORT:
+        required: false
+      AGENTOS_DEPLOY_SSH_KEY:
+        required: false
+      N8N_DEPLOY_USER:
+        required: false
+      N8N_DEPLOY_SSH_PORT:
+        required: false
+      N8N_DEPLOY_SSH_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      SOURCE_REPOSITORY: alston-personal/studio-web
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      ROUTE: ${{ inputs.route }}
+      BACKUP_KEY: ${{ inputs.backup_key }}
+      RECEIPT_SCHEMA: ${{ inputs.receipt_schema }}
+      ACCEPTANCE_ANCHORS: ${{ inputs.acceptance_anchors }}
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate release contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ROUTE" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          [[ "$BACKUP_KEY" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          [[ "$RECEIPT_SCHEMA" =~ ^[A-Za-z0-9._/-]+$ ]]
+          test -n "$ACCEPTANCE_ANCHORS"
+          while IFS= read -r anchor || [ -n "$anchor" ]; do
+            [ -z "$anchor" ] && continue
+            case "$anchor" in
+              *$'\n'*|*$'\r'*) echo 'invalid acceptance anchor' >&2; exit 1 ;;
+            esac
+          done <<< "$ACCEPTANCE_ANCHORS"
+          echo "studio_static_route_contract=PASS route=$ROUTE source_sha=$SOURCE_SHA"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Build pinned Studio Web and publish one static route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ANCHORS_B64=$(printf '%s' "$ACCEPTANCE_ANCHORS" | base64 -w0)
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" "$ANCHORS_B64" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; SOURCE_SHA="$2"; ROUTE="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"; ANCHORS_B64="$7"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/studio-static-route-release-XXXXXX)
+          SRC="$TMP/studio-web"
+          ROUTE_DIR="$SRC/dist/$ROUTE"
+          ANCHOR_FILE="$TMP/acceptance-anchors.txt"
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/$BACKUP_KEY/${SOURCE_SHA:0:12}-${RUN_ID}
+          NEW_ROUTE="$LIVE/.${ROUTE}-${RUN_ID}"
+          DEPLOYED=0
+
+          printf '%s' "$ANCHORS_B64" | base64 -d > "$ANCHOR_FILE"
+
+          validate_html() {
+            target="$1"
+            while IFS= read -r anchor || [ -n "$anchor" ]; do
+              [ -z "$anchor" ] && continue
+              grep -Fq -- "$anchor" "$target"
+            done < "$ANCHOR_FILE"
+          }
+          cleanup() {
+            rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true
+          }
+          rollback() {
+            if [ "$DEPLOYED" = 1 ]; then
+              rm -rf "$LIVE/$ROUTE" || true
+              if [ -d "$BACKUP/$ROUTE.previous" ]; then
+                cp -a "$BACKUP/$ROUTE.previous" "$LIVE/$ROUTE" || true
+              fi
+            fi
+          }
+          on_error() {
+            rc=$?
+            trap - ERR
+            rollback || true
+            cleanup || true
+            exit "$rc"
+          }
+          trap 'on_error' ERR
+          trap 'cleanup' EXIT
+
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ROUTE" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          [[ "$BACKUP_KEY" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          test -d "$LIVE"
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone "$REPO" "$SRC" -- --no-checkout
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SOURCE_SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SOURCE_SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
+
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts
+          npm run build
+
+          echo "studio_static_route_build_pwd=$(pwd)"
+          echo "studio_static_route_expected_dir=$ROUTE_DIR"
+          test -f "$ROUTE_DIR/index.html"
+          validate_html "$ROUTE_DIR/index.html"
+          echo "studio_static_route_build_acceptance=PASS route=$ROUTE"
+
+          mkdir -p "$BACKUP"
+          if [ -d "$LIVE/$ROUTE" ]; then
+            cp -a "$LIVE/$ROUTE" "$BACKUP/$ROUTE.previous"
+          fi
+
+          cp -a "$ROUTE_DIR" "$NEW_ROUTE"
+          find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
+          find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/$ROUTE"
+          mv "$NEW_ROUTE" "$LIVE/$ROUTE"
+          DEPLOYED=1
+
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            "https://studio.milkcat.org/$ROUTE/" -o "$TMP/route-live"
+          validate_html "$TMP/route-live"
+          echo "local_nginx_studio_static_route_acceptance=PASS route=$ROUTE"
+
+          trap - ERR
+          printf '%s\n' \
+            "schema=$RECEIPT_SCHEMA" \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            "scope=/$ROUTE/" \
+            "backup=$BACKUP" \
+            "ok=true" > "$BACKUP/receipt.txt"
+          echo "studio_static_route_deploy=PASS route=$ROUTE backup=$BACKUP"
+          REMOTE
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          OUT=/tmp/studio-static-route-public-${GITHUB_RUN_ID}
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/$ROUTE/?_=$GITHUB_RUN_ID" -o "$OUT"
+          while IFS= read -r anchor || [ -n "$anchor" ]; do
+            [ -z "$anchor" ] && continue
+            grep -Fq -- "$anchor" "$OUT"
+          done <<< "$ACCEPTANCE_ANCHORS"
+          echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
