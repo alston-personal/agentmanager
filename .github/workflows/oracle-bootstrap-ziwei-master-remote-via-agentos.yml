@@ -1,0 +1,42 @@
+name: Oracle Bootstrap ZiWei Master Remote via AgentOS
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/oracle-bootstrap-ziwei-master-remote-via-agentos.yml'
+      - 'scripts/bootstrap_ziwei_master_remote_via_agentos.py'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask ubuntu AgentOS executor to establish ZiWei Master remote repository boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=/home/ubuntu/.local/share/agentos/runtime-vnext \
+            python3 scripts/bootstrap_ziwei_master_remote_via_agentos.py
+      - name: Commit AgentOS bootstrap evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          E=.agentos/evidence/ziwei-master-remote-agentos.txt
+          test -f "$E" || exit 0
+          cp "$E" /tmp/ziwei-master-remote-agentos.txt
+          git fetch origin core/provision-ziwei-master
+          git reset --hard origin/core/provision-ziwei-master
+          mkdir -p .agentos/evidence
+          cp /tmp/ziwei-master-remote-agentos.txt "$E"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$E"
+          git diff --cached --quiet && exit 0
+          git commit -m 'evidence(ziwei-master): AgentOS remote bootstrap'
+          git push origin HEAD:core/provision-ziwei-master
