@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 10
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: b6c3d75ba6af8847c32a0a10f8b9afae60aff9ce
+      SOURCE_SHA: ddd136feb827bb86d91a796414e5a96e4e83d960
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -32,7 +32,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Build pinned Studio Web and publish ArcanaForge v0.2 only
+      - name: Build pinned Studio Web and publish ArcanaForge v0.2 scope
         shell: bash
         run: |
           set -euo pipefail
@@ -45,14 +45,18 @@ jobs:
           TMP=$(mktemp -d /tmp/arcanaforge-v02-release-XXXXXX)
           SRC="$TMP/studio-web"
           NEW="$LIVE/poc/.arcanaforge-${RUN_ID}"
+          INDEX_TMP="$LIVE/poc/.index-arcanaforge-${RUN_ID}.html"
           BACKUP=/home/ubuntu/agent-data/releases/studio-web/arcanaforge-v02/${SOURCE_SHA:0:12}-${RUN_ID}
           DEPLOYED=0
-          cleanup(){ rm -rf "$TMP" "$NEW" 2>/dev/null || true; }
+          cleanup(){ rm -rf "$TMP" "$NEW" 2>/dev/null || true; rm -f "$INDEX_TMP" 2>/dev/null || true; }
           rollback(){
             set +e
             if [ "$DEPLOYED" = 1 ]; then
               rm -rf "$LIVE/poc/arcanaforge"
-              if [ -d "$BACKUP/previous" ]; then cp -a "$BACKUP/previous" "$LIVE/poc/arcanaforge"; fi
+              if [ -d "$BACKUP/arcanaforge.previous" ]; then cp -a "$BACKUP/arcanaforge.previous" "$LIVE/poc/arcanaforge"; fi
+              if [ -f "$BACKUP/poc-index.previous" ]; then
+                install -m 0644 "$BACKUP/poc-index.previous" "$LIVE/poc/index.html"
+              fi
             fi
             cleanup
           }
@@ -64,11 +68,14 @@ jobs:
           /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SOURCE_SHA"
           /usr/bin/git -C "$SRC" checkout --detach "$SOURCE_SHA"
           test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
+
           cd "$SRC"
           npm install --no-package-lock --ignore-scripts
           npm run build
           PAGE=dist/poc/arcanaforge/index.html
+          INDEX=dist/poc/index.html
           test -f "$PAGE"
+          test -f "$INDEX"
           grep -Fq '<title>ArcanaForge Workbench v0.2</title>' "$PAGE"
           grep -Fq 'data-workbench-version="0.2.0"' "$PAGE"
           grep -Fq 'data-public-adapter="arcanaforge-browser-proof/v0.2"' "$PAGE"
@@ -76,24 +83,42 @@ jobs:
           grep -Fq 'Variants / review history' "$PAGE"
           grep -Fq 'Advanced Inspector · 5 production layers' "$PAGE"
           grep -Fq 'Gemini · server only' "$PAGE"
+          grep -Fq 'Workbench v0.2' "$INDEX"
+          grep -Fq 'href="/poc/arcanaforge/"' "$INDEX"
           echo 'arcanaforge_v02_build_contract=PASS'
+
           mkdir -p "$BACKUP"
-          if [ -d "$LIVE/poc/arcanaforge" ]; then cp -a "$LIVE/poc/arcanaforge" "$BACKUP/previous"; fi
+          if [ -d "$LIVE/poc/arcanaforge" ]; then cp -a "$LIVE/poc/arcanaforge" "$BACKUP/arcanaforge.previous"; fi
+          if [ -f "$LIVE/poc/index.html" ]; then cp -a "$LIVE/poc/index.html" "$BACKUP/poc-index.previous"; fi
           cp -a dist/poc/arcanaforge "$NEW"
           find "$NEW" -type d -exec chmod 0755 {} +
           find "$NEW" -type f -exec chmod 0644 {} +
+          install -m 0644 "$INDEX" "$INDEX_TMP"
           rm -rf "$LIVE/poc/arcanaforge"
           mv "$NEW" "$LIVE/poc/arcanaforge"
+          mv "$INDEX_TMP" "$LIVE/poc/index.html"
           DEPLOYED=1
+
           curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1 https://studio.milkcat.org/poc/arcanaforge/ -o "$TMP/live"
           grep -Fq '<title>ArcanaForge Workbench v0.2</title>' "$TMP/live"
           grep -Fq 'data-workbench-version="0.2.0"' "$TMP/live"
           grep -Fq 'Advanced Inspector · 5 production layers' "$TMP/live"
           grep -Fq 'Tarot RWS · 78 canonical units' "$TMP/live"
           if grep -Fq 'Milkcat Studio Portal' "$TMP/live"; then echo 'homepage fallback detected' >&2; exit 1; fi
+          curl -kfsS --retry 5 --resolve studio.milkcat.org:443:127.0.0.1 https://studio.milkcat.org/poc/ -o "$TMP/poc-index"
+          grep -Fq 'Studio POC' "$TMP/poc-index"
+          grep -Fq 'Workbench v0.2' "$TMP/poc-index"
+          grep -Fq 'href="/poc/arcanaforge/"' "$TMP/poc-index"
           echo 'local_nginx_arcanaforge_v02=PASS'
+
           trap - ERR
-          printf '%s\n' 'schema=studio-web.arcanaforge-release/v2' "source_repository=$REPO" "source_sha=$SOURCE_SHA" 'scope=/poc/arcanaforge/' "backup=$BACKUP" 'ok=true' > "$BACKUP/receipt.txt"
+          printf '%s\n' \
+            'schema=studio-web.arcanaforge-release/v2' \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            'scope=/poc/index.html,/poc/arcanaforge/' \
+            "backup=$BACKUP" \
+            'ok=true' > "$BACKUP/receipt.txt"
           echo "arcanaforge_v02_deploy=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
           REMOTE
 
@@ -112,4 +137,8 @@ jobs:
           grep -Fq 'Advanced Inspector · 5 production layers' /tmp/arcanaforge-public
           grep -Fq 'Gemini · server only' /tmp/arcanaforge-public
           if grep -Fq 'Milkcat Studio Portal' /tmp/arcanaforge-public; then echo 'homepage fallback detected' >&2; exit 1; fi
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors https://studio.milkcat.org/poc/ -o /tmp/poc-public
+          grep -Fq 'Studio POC' /tmp/poc-public
+          grep -Fq 'Workbench v0.2' /tmp/poc-public
+          grep -Fq 'href="/poc/arcanaforge/"' /tmp/poc-public
           echo 'public_arcanaforge_workbench_v02=PASS'
