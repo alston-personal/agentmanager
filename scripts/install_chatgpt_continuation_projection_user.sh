@@ -106,7 +106,15 @@ systemctl --user daemon-reload
 systemctl --user enable agentos-chatgpt-continuation-projection.timer >/dev/null
 # A synchronous first publication is the installation acceptance fence. If the
 # private carrier cannot be updated, rollout fails rather than claiming hydration.
-systemctl --user start agentos-chatgpt-continuation-projection.service
+if ! systemctl --user start agentos-chatgpt-continuation-projection.service; then
+  echo "chatgpt_continuation_projection_start=FAIL" >&2
+  # The publisher emits only stable, secret-free error classifications. Surface
+  # those journal lines through the bounded bootstrap receipt so rollout failures
+  # are diagnosable without granting arbitrary shell or exposing credentials.
+  journalctl --user -u agentos-chatgpt-continuation-projection.service \
+    --since '2 minutes ago' --no-pager -o cat 2>/dev/null | tail -n 40 >&2 || true
+  exit 21
+fi
 systemctl --user restart agentos-chatgpt-continuation-projection.timer
 systemctl --user is-active --quiet agentos-chatgpt-continuation-projection.timer
 
