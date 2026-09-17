@@ -17,8 +17,8 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 15
     env:
-      PRODUCT_SHA: d3100920cf6c10dd8122bbcfb6b2b164ac7bd636
-      DEPLOYER_SHA: d3100920cf6c10dd8122bbcfb6b2b164ac7bd636
+      PRODUCT_SHA: a4b54b4618026c50186f8fa4afad1bc5730dea07
+      DEPLOYER_SHA: a4b54b4618026c50186f8fa4afad1bc5730dea07
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
