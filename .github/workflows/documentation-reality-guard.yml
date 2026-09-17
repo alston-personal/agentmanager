@@ -36,13 +36,14 @@ jobs:
             python3 scripts/documentation_reality_guard.py --base "$BASE"
           fi
 
-      - name: Test documentation, continuation, and authority contracts
+      - name: Test documentation, continuation, authority, reuse, and credits contracts
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest tests.test_documentation_reality_guard -v
           python3 scripts/continuation_state.py --self-test
           python3 -m unittest tests.test_continuation_state tests.test_control_plane -v
+          python3 -m unittest tests.test_reuse_before_build_credits -v
           python3 -m unittest tests.test_protected_branch_authority -v
           set +e
           python3 scripts/protected_branch_authority.py --branch main --actor-kind agent --via-pull-request >/tmp/authority.json
