@@ -88,17 +88,19 @@ def _validate_active(payload: Any) -> tuple[dict[str, str], dict[str, Any]]:
     if selector["project_id"] != "agentos-core":
         raise ProjectionError("unsupported_project")
 
+    project = resolution.get("project")
     continuation = resolution.get("continuation")
     execution_head = resolution.get("execution_head")
-    if not isinstance(continuation, dict) or not isinstance(execution_head, dict):
+    if not isinstance(project, dict) or not isinstance(continuation, dict) or not isinstance(execution_head, dict):
         raise ProjectionError("one_active_protocol_error")
+    if str(project.get("id") or "") != selector["project_id"]:
+        raise ProjectionError("resolution_project_mismatch")
+
     canonical_ir = continuation.get("canonical_ir")
     if not isinstance(canonical_ir, dict):
         raise ProjectionError("canonical_ir_missing")
     if canonical_ir.get("schema_version") != "agentos.ir/v1":
         raise ProjectionError("canonical_ir_schema_error")
-    if str(canonical_ir.get("project_id") or "") != selector["project_id"]:
-        raise ProjectionError("canonical_ir_project_mismatch")
     if str(canonical_ir.get("ir_id") or "") != selector["ir_id"]:
         raise ProjectionError("canonical_ir_id_mismatch")
     if str(execution_head.get("index_id") or "") != selector["index_id"]:
