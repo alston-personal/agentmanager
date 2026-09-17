@@ -7,14 +7,18 @@ on:
       - '.github/workflows/reusable-studio-static-route-release.yml'
       - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
       - '.github/workflows/studio-static-route-release-guard.yml'
+      - '.agent/governance/studio_release_capabilities.yaml'
       - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
+      - 'tests/test_studio_static_route_release_contract.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/reusable-studio-static-route-release.yml'
       - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
       - '.github/workflows/studio-static-route-release-guard.yml'
+      - '.agent/governance/studio_release_capabilities.yaml'
       - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
+      - 'tests/test_studio_static_route_release_contract.py'
 
 permissions:
   contents: read
@@ -24,6 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run release capability contract tests
+        run: python -m unittest -q tests.test_studio_static_route_release_contract
       - name: Verify reusable carrier contract
         shell: bash
         run: |
@@ -31,10 +40,12 @@ jobs:
           R=.github/workflows/reusable-studio-static-route-release.yml
           C=.github/workflows/oracle-release-milkcat-world-mvp.yml
           D=docs/STUDIO_STATIC_ROUTE_RELEASE.md
+          G=.agent/governance/studio_release_capabilities.yaml
 
           test -f "$R"
           test -f "$C"
           test -f "$D"
+          test -f "$G"
           grep -Fq 'workflow_call:' "$R"
           grep -Fq 'route:' "$R"
           grep -Fq 'acceptance_anchors:' "$R"
@@ -45,6 +56,7 @@ jobs:
           grep -Fq 'uses: ./.github/workflows/reusable-studio-static-route-release.yml' "$C"
           grep -Fq 'route: world' "$C"
           grep -Fq 'source_sha: b675270c7ad08bcd9172496d7436787a32c299a1' "$C"
+          grep -Fq 'status: extracted-first-consumer' "$G"
 
           if grep -Fq 'npm run build' "$C"; then
             echo 'Milkcat World consumer regressed to duplicated deployment logic' >&2
