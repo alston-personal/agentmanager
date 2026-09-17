@@ -39,6 +39,17 @@
 > 3. 若規格因為其他 project 的工作而延後，必須在 spec 或 project status 中留下可追蹤的 blocker，而不是默默擱置。
 > 4. Spec Steward 負責定期比對 spec、project.yaml、STATUS.md 與 capability registry，主動揭露 drift、缺口與 stale items。
 
+## 🧠 0.6 Exploration Cost Amortization Rule (AgentOS Gene)
+> [!IMPORTANT]
+> **已支付過一次的探索成本，不應在相同範圍與相同深度下再次支付。**
+> 1. **Reuse before rediscovery**：任何 repo、runtime、部署、架構、依賴、外部資源或操作流程探索前，先 hydrate `project.yaml`、最新有效 Canonical IR、STATUS、Knowledge Items / Experience 與 capability registry。若既有事實的範圍、深度、時效與證據強度足以支援本次任務，必須直接復用，不得重新考古。
+> 2. **Promote expensive findings**：凡經過非平凡探索才確認、且未來可能再次使用的穩定事實，任務結束前必須升格為持久知識；Project-specific facts 回寫 project state / Canonical IR，跨專案可重用知識升格為 KI / Experience，可執行流程升格為 Skill / Capability。
+> 3. **Record reuse metadata**：持久化事實應盡可能附帶 `scope`、`depth`、`provenance/evidence`、`verified_at`、`freshness/change trigger` 與必要的 confidence，使下一個 Agent 能判斷「可直接復用」或「需要增量驗證」。
+> 4. **Delta exploration only**：只有在以下情況允許重新探索：本次範圍不同、要求更深、既有資料已 stale 或環境可能改變、出現衝突證據、或任務要求更高 assurance。重新探索時必須以既有知識為 baseline，只查未知 delta，不得無差別重跑完整 discovery。
+> 5. **No accidental permanence**：一次性觀察、暫態狀態與未驗證猜測不得誤升格為永久事實；應標示 temporal scope 或等待驗證。
+> 6. **Secret-safe promotion**：任何升格進 IR / KI / STATUS / project state 的內容都必須先移除 token、credential、cookie、secret-bearing URL 與其他敏感值，只保存可重建或可定位的非秘密結構資訊。
+> 7. **Amortization objective**：AgentOS 的探索工作應產生可累積資產。若相同問題第二次仍需要從零搜尋，視為 knowledge promotion / hydration 流程的缺陷，應留下治理或修復項目，而不是把重查當成正常成本。
+
 ## 1. 🚀 AI Agent 啟動與引導指南 (Ultimate Rules)
 
 
