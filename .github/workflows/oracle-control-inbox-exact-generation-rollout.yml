@@ -12,8 +12,10 @@ on:
       - '.github/workflows/oracle-control-inbox-exact-generation-rollout.yml'
       - 'agent_core/control_inbox_bridge.py'
       - 'agent_core/active_continuation.py'
+      - 'agent_core/chatgpt_continuation_projection.py'
       - 'agentos_node/bootstrap_control.py'
       - 'scripts/install_control_inbox_bridge_user.sh'
+      - 'scripts/install_chatgpt_continuation_projection_user.sh'
       - 'scripts/repair_control_inbox_github_auth_user.sh'
   workflow_dispatch:
 
