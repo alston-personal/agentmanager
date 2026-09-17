@@ -60,7 +60,10 @@ def audit_asset(path: str | Path, extract_fn: Callable[[Any], dict[str, Any]], s
         'status':status,
         'reversible_now':bool(first.get('reversibility',{}).get('lossless')),
         'stabilizable':stabilizable,
-        'after_stabilization_contract':'lossless-canonical-roundtrip' if stabilizable else None,
+        'after_stabilization_contract':(
+            'lossless-canonical-roundtrip' if authority == 'embedded-canonical'
+            else 'candidate-json; canonical-embedding-requires-confirmation' if stabilizable else None
+        ),
         'coverage':{
             'humanoid_core_semantic_coverage':round(core_coverage,4),
             'candidate_part_count':part_count,
