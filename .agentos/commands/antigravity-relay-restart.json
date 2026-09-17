@@ -1,5 +1,5 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "agentos.antigravity.restart",
-  "nonce": "relay-permission-refresh-20260827"
+  "nonce": "relay-executor-rediscovery-ziwei-master-20260917"
 }
