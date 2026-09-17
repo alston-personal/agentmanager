@@ -7,13 +7,19 @@ first_consumer: milkcat-world
 consumer_workflow: .github/workflows/oracle-release-milkcat-world-mvp.yml
 production_surface: https://studio.milkcat.org/world/
 verification:
-  evidence_scope: pre-extraction-world-carrier
+  evidence_scope: shared-carrier-live
   source_sha: b675270c7ad08bcd9172496d7436787a32c299a1
   predecessor_release_run: 35192062500
   predecessor_build_acceptance: passed
   predecessor_local_nginx_acceptance: passed
   predecessor_public_acceptance: passed
-  shared_carrier_live_verification: pending
+  shared_carrier_live_verification: passed
+  shared_carrier_release_run: 35199712046
+  shared_carrier_main_commit: 369585b7d4a6f3885e0d0c79aeca57b8957fd164
+  shared_carrier_contract_acceptance: passed
+  shared_carrier_build_publish_acceptance: passed
+  shared_carrier_public_acceptance: passed
+  public_failure_rollback_path: present-and-not-triggered
 reuse_contract:
   input_scope: single-top-level-static-route
   required:
