@@ -1,12 +1,17 @@
-capsule_id=relay-12c09d78f1064b199e2806bd867ccc10
+capsule_id=relay-66045e0de6cc4af08cebe0e7d95c6e79
 {
-  "capsule_id": "relay-12c09d78f1064b199e2806bd867ccc10",
-  "completed_at": "2026-09-17T07:19:25Z",
-  "error": "FileNotFoundError: [Errno 2] No such file or directory: '/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.259-linux-arm64/resources/native-binary/claude'",
+  "capsule_id": "relay-66045e0de6cc4af08cebe0e7d95c6e79",
+  "completed_at": "2026-09-17T07:25:06Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.273-linux-arm64/resources/native-binary/claude",
   "executor_user": "ubuntu",
   "ok": false,
+  "provider": "claude",
+  "returncode": 124,
   "schema": "agentos.antigravity-receipt/v1",
-  "started_at": "2026-09-17T07:19:25Z"
+  "started_at": "2026-09-17T07:22:06Z",
+  "stderr": "\"claude-3-9-sonnet\" isn't described by this version's model catalog; update Claude Code, or map it with behavesAs on a modelPicker row (or modelOverrides, if it is a provider id of a model this version knows). Until then auto-compact keeps this session within 200k tokens (the context window it assumes); if the model accepts more, append [1m] to the model name for 1M; CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 restores the previous wait-for-the-API behavior.\n[claude-code:unrecognized_model] {\"model\":\"claude-3-9-sonnet\",\"query_source\":\"sdk\"}\n\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+  "stdout": "",
+  "timed_out": true
 }
 agentos_receipt_ok=false
 ziwei_master_remote_agentos=NO_GO
