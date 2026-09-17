@@ -8,9 +8,10 @@ from agent_core import chatgpt_continuation_projection as projection
 
 
 def _active():
+    # Canonical agentos.ir/v1 intentionally carries generation/goal state but not
+    # project identity. Project authority lives in resolution.project.id.
     canonical_ir = {
         "schema_version": "agentos.ir/v1",
-        "project_id": "agentos-core",
         "index_id": "idx-1",
         "ir_id": "ir-1",
         "goal": "Continue AgentOS Core",
@@ -35,15 +36,27 @@ def _active():
     }
 
 
-def test_validate_active_requires_exact_generation_and_credential_boundary():
+def test_validate_active_requires_exact_generation_project_authority_and_credential_boundary():
     selector, resolution = projection._validate_active(_active())
     assert selector == {"project_id": "agentos-core", "index_id": "idx-1", "ir_id": "ir-1"}
+    assert resolution["project"]["id"] == "agentos-core"
+    assert "project_id" not in resolution["continuation"]["canonical_ir"]
     assert resolution["continuation"]["canonical_ir"]["goal"] == "Continue AgentOS Core"
 
-    bad = _active()
-    bad["resolution"]["continuation"]["canonical_ir"]["ir_id"] = "ir-other"
+    wrong_project = _active()
+    wrong_project["resolution"]["project"]["id"] = "other-project"
+    with pytest.raises(projection.ProjectionError, match="resolution_project_mismatch"):
+        projection._validate_active(wrong_project)
+
+    bad_ir = _active()
+    bad_ir["resolution"]["continuation"]["canonical_ir"]["ir_id"] = "ir-other"
     with pytest.raises(projection.ProjectionError, match="canonical_ir_id_mismatch"):
-        projection._validate_active(bad)
+        projection._validate_active(bad_ir)
+
+    bad_index = _active()
+    bad_index["resolution"]["continuation"]["canonical_ir"]["index_id"] = "idx-other"
+    with pytest.raises(projection.ProjectionError, match="canonical_ir_index_mismatch"):
+        projection._validate_active(bad_index)
 
     exposed = _active()
     exposed["credential_exposed"] = True
