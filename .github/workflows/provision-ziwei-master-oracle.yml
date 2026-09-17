@@ -1,0 +1,32 @@
+name: Provision ZiWei Master via Oracle gh Identity
+
+on:
+  push:
+    paths:
+      - '.github/workflows/provision-ziwei-master-oracle.yml'
+
+jobs:
+  provision:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Provision canonical private repository with Oracle ubuntu gh identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "executor_user=$(id -un)"
+          test "$(id -un)" = "ubuntu"
+          gh auth status
+          if gh repo view alston-personal/ziwei-master >/tmp/ziwei-repo-view.txt 2>&1; then
+            visibility=$(gh repo view alston-personal/ziwei-master --json visibility -q .visibility)
+            test "$visibility" = "PRIVATE"
+            echo "ziwei_master_repo=EXISTS_PRIVATE"
+          else
+            gh repo create alston-personal/ziwei-master \
+              --private \
+              --description 'Deterministic Zi Wei Dou Shu chart engine, reusable rule library, renderer, and interpretation adapter'
+            gh repo view alston-personal/ziwei-master --json nameWithOwner,visibility,url
+            visibility=$(gh repo view alston-personal/ziwei-master --json visibility -q .visibility)
+            test "$visibility" = "PRIVATE"
+            echo "ziwei_master_repo=CREATED_PRIVATE"
+          fi
