@@ -1,4 +1,4 @@
-name: Fengshui immersive indoor release
+name: Fengshui mobile landscape release
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fengshui-immersive-indoor-release
+  group: fengshui-mobile-landscape-release
   cancel-in-progress: false
 
 jobs:
@@ -26,21 +26,25 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Copy tuning patch to deploy user
+      - name: Copy landscape patch to deploy user
         shell: bash
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          scp -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -P "${DEPLOY_SSH_PORT:-22}" ops/fengshui_tune_indoor_controls.py "$DEPLOY_USER@127.0.0.1:/tmp/fengshui_tune_${GITHUB_RUN_ID}.py"
-      - name: Tune, verify, push and deploy
+          scp -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+            -P "${DEPLOY_SSH_PORT:-22}" ops/fengshui_patch_mobile_landscape.py \
+            "$DEPLOY_USER@127.0.0.1:/tmp/fengshui_landscape_${GITHUB_RUN_ID}.py"
+      - name: Patch, verify, push and deploy
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE' | tee fengshui-release.log
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+            -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" \
+            bash -s -- "$GITHUB_RUN_ID" <<'REMOTE' | tee fengshui-release.log
           set -euo pipefail
           RUN_ID="$1"
-          PATCH="/tmp/fengshui_tune_${RUN_ID}.py"
-          TMP=$(mktemp -d /tmp/fengshui-tune-XXXXXXXXXX)
+          PATCH="/tmp/fengshui_landscape_${RUN_ID}.py"
+          TMP=$(mktemp -d /tmp/fengshui-landscape-XXXXXXXXXX)
           cleanup(){ rm -rf "$TMP" "$PATCH"; }
           trap cleanup EXIT
           SRC="$TMP/fengshui-layout-overlay"
@@ -60,13 +64,14 @@ jobs:
           node scripts/verify-build.mjs
           /usr/bin/git config user.name "Milkcat Release Bot"
           /usr/bin/git config user.email "register@milkcat.org"
-          /usr/bin/git add -A
+          /usr/bin/git add app/workbench.css app/mobile-pwa.css components/floorplan-viewer.css components/indoor-joystick.css
           if ! /usr/bin/git diff --cached --quiet; then
-            /usr/bin/git commit -m "fix(mobile): tune indoor joystick and HUD"
+            /usr/bin/git commit -m "fix(mobile): support landscape layouts across PWA and 3D"
             /usr/bin/git push origin HEAD:main
           fi
           SOURCE_SHA=$(/usr/bin/git rev-parse HEAD)
           echo "source_sha=$SOURCE_SHA"
+
           if ! sudo -n systemctl is-active --quiet milkcat-fengshui.service; then
             LISTENER=$(sudo -n ss -Hlnpt 'sport = :8868' || true)
             if [ -n "$LISTENER" ]; then
@@ -78,16 +83,20 @@ jobs:
               esac
             fi
           fi
+
           cd "$TMP"
           python3 "$SRC/ops/release_bundle.py" "$SRC" "$TMP/bundle" "$SOURCE_SHA"
-          sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$SRC/ops/deploy_oracle.py" --source "$TMP/bundle" --deployment-sha "$SOURCE_SHA" --source-sha "$SOURCE_SHA"
+          sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$SRC/ops/deploy_oracle.py" \
+            --source "$TMP/bundle" --deployment-sha "$SOURCE_SHA" --source-sha "$SOURCE_SHA"
           REMOTE
       - name: Public acceptance
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS --retry 6 --retry-delay 2 --retry-all-errors --max-time 30 https://studio.milkcat.org/fengshui/api/healthz -o fengshui-health.json
-          curl -fsS --retry 6 --retry-delay 2 --retry-all-errors --max-time 30 https://studio.milkcat.org/fengshui/ -o fengshui-page.html
+          curl -fsS --retry 6 --retry-delay 2 --retry-all-errors --max-time 30 \
+            https://studio.milkcat.org/fengshui/api/healthz -o fengshui-health.json
+          curl -fsS --retry 6 --retry-delay 2 --retry-all-errors --max-time 30 \
+            https://studio.milkcat.org/fengshui/ -o fengshui-page.html
           python3 - <<'PY'
           import json, pathlib
           h=json.loads(pathlib.Path('fengshui-health.json').read_text())
@@ -99,7 +108,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fengshui-immersive-release-${{ github.run_id }}
+          name: fengshui-landscape-release-${{ github.run_id }}
           path: |
             fengshui-release.log
             fengshui-health.json
