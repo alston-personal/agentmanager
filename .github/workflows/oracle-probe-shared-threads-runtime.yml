@@ -1,0 +1,65 @@
+name: Oracle Probe Shared Threads Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-shared-threads-runtime.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe shared Threads runtime without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== threads reader health ==='
+          if curl -fsS --max-time 5 http://127.0.0.1:18766/healthz >/tmp/threads-health.json; then
+            python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/threads-health.json'))
+          print('threads_reader_health=PASS')
+          print('threads_reader_service=' + str(d.get('service','unknown')))
+          print('threads_reader_version=' + str(d.get('version','unknown')))
+          PY
+          else
+            echo 'threads_reader_health=FAIL'
+          fi
+
+          echo '=== listener ==='
+          if ss -ltn 2>/dev/null | grep -q ':18766 '; then echo 'threads_reader_port_18766=LISTENING'; else echo 'threads_reader_port_18766=NOT_LISTENING'; fi
+
+          echo '=== repository/runtime discovery ==='
+          mapfile -t roots < <(find /home/ubuntu -maxdepth 4 -type f -name compose.yaml -path '*vendor-reputation-service*' -printf '%h\n' 2>/dev/null | sort -u | head -5)
+          if [ "${#roots[@]}" -eq 0 ]; then
+            echo 'vendor_runtime_path=NOT_FOUND'
+          else
+            for root in "${roots[@]}"; do
+              echo "vendor_runtime_path=$root"
+              if [ -f "$root/.env" ]; then
+                echo 'vendor_env_file=PRESENT'
+                if grep -Eq '^SOC_THREADS_TOKEN=.+$' "$root/.env"; then echo 'soc_threads_token_configured=YES'; else echo 'soc_threads_token_configured=NO'; fi
+              else
+                echo 'vendor_env_file=ABSENT'
+              fi
+            done
+          fi
+
+          echo '=== docker state ==='
+          if command -v docker >/dev/null 2>&1; then
+            docker ps --format '{{.Names}} {{.Status}}' | grep -E 'threads-reader|vendor-reputation' || true
+            reader=$(docker ps --format '{{.Names}}' | grep 'threads-reader' | head -1 || true)
+            if [ -n "$reader" ]; then
+              configured=$(docker inspect "$reader" --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="SOC_THREADS_TOKEN" && length($2)>0 {print "YES"; exit}')
+              echo "threads_reader_container_token_configured=${configured:-NO}"
+            fi
+          fi
+
+          echo 'probe_complete=PASS'
