@@ -14,6 +14,13 @@ fi
 
 command -v gh >/dev/null
 
+# GitHub Actions injects GITHUB_TOKEN/GH_TOKEN into the runner environment.
+# Those variables override the ubuntu user's persistent gh authentication and
+# can have narrower scopes than the canonical ubuntu GitHub identity. Remove
+# only these ephemeral overrides; do not read, print, copy, or mutate the
+# ubuntu credential store.
+unset GITHUB_TOKEN GH_TOKEN
+
 gh auth status
 
 if gh repo view "$REPO" >/tmp/ziwei-master-view.txt 2>&1; then
