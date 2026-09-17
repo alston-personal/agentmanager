@@ -45,22 +45,30 @@ jobs:
           LIVE=/home/ubuntu/zeus-writer/website/dist
           TMP=$(mktemp -d /tmp/milkcat-world-release-XXXXXX)
           SRC="$TMP/studio-web"
+          WORLD_DIR="$SRC/dist/world"
           BACKUP=/home/ubuntu/agent-data/releases/studio-web/milkcat-world/${SOURCE_SHA:0:12}-${RUN_ID}
           NEW_ROUTE="$LIVE/.world-${RUN_ID}"
           DEPLOYED=0
 
-          cleanup() { rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true; }
+          cleanup() {
+            rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true
+          }
           rollback() {
-            set +e
             if [ "$DEPLOYED" = 1 ]; then
-              rm -rf "$LIVE/world"
+              rm -rf "$LIVE/world" || true
               if [ -d "$BACKUP/world.previous" ]; then
-                cp -a "$BACKUP/world.previous" "$LIVE/world"
+                cp -a "$BACKUP/world.previous" "$LIVE/world" || true
               fi
             fi
-            cleanup
           }
-          trap 'rollback' ERR
+          on_error() {
+            rc=$?
+            trap - ERR
+            rollback || true
+            cleanup || true
+            exit "$rc"
+          }
+          trap 'on_error' ERR
           trap 'cleanup' EXIT
 
           test -d "$LIVE"
@@ -74,12 +82,17 @@ jobs:
           npm install --no-package-lock --ignore-scripts
           npm run build
 
-          test -f dist/world/index.html
-          grep -Fq 'Milkcat World' dist/world/index.html
-          grep -Fq '走進我們正在累積的世界' dist/world/index.html
-          grep -Fq 'LayoutLib showcase' dist/world/index.html
-          grep -Fq 'world-zone-data' dist/world/index.html
-          grep -Fq 'three@0.186.0' dist/world/index.html
+          echo "milkcat_world_build_pwd=$(pwd)"
+          echo "milkcat_world_expected_dir=$WORLD_DIR"
+          ls -ld "$SRC/dist" "$WORLD_DIR" 2>/dev/null || true
+          find "$SRC/dist" -maxdepth 2 -type f -name index.html -print 2>/dev/null | grep '/world/index.html$' || true
+
+          test -f "$WORLD_DIR/index.html"
+          grep -Fq 'Milkcat World' "$WORLD_DIR/index.html"
+          grep -Fq '走進我們正在累積的世界' "$WORLD_DIR/index.html"
+          grep -Fq 'LayoutLib showcase' "$WORLD_DIR/index.html"
+          grep -Fq 'world-zone-data' "$WORLD_DIR/index.html"
+          grep -Fq 'three@0.186.0' "$WORLD_DIR/index.html"
           echo 'milkcat_world_build_acceptance=PASS'
 
           mkdir -p "$BACKUP"
@@ -87,7 +100,7 @@ jobs:
             cp -a "$LIVE/world" "$BACKUP/world.previous"
           fi
 
-          cp -a dist/world "$NEW_ROUTE"
+          cp -a "$WORLD_DIR" "$NEW_ROUTE"
           find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
           find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
           rm -rf "$LIVE/world"
@@ -104,7 +117,7 @@ jobs:
 
           trap - ERR
           printf '%s\n' \
-            "schema=studio-web.milkcat-world-release/v1" \
+            "schema=studio-web.milkcat-world-release/v2" \
             "source_repository=$REPO" \
             "source_sha=$SOURCE_SHA" \
             "scope=/world/" \
