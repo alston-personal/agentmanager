@@ -3,6 +3,7 @@ import argparse
 import json
 from agentos_node.inspector import NodeInspector
 from agentos_node.resource_registry import ResourceRegistry
+from agentos_node.production_parity import inspect_file
 from agentos_node import __version__
 
 
@@ -46,6 +47,13 @@ def main():
     r_verify = resource_sub.add_parser("verify-site", help="Targeted verification for a registered site")
     r_verify.add_argument("resource_id")
     r_verify.add_argument("--timeout", type=float, default=8.0)
+
+    parity_parser = subparsers.add_parser(
+        "production-parity",
+        help="Inspect production from this runtime node and emit an execution receipt",
+    )
+    parity_parser.add_argument("--request", required=True, help="agentos.execution-request/v1 JSON file")
+    parity_parser.add_argument("--output", help="Write agentos.execution-receipt/v1 JSON to this path")
 
     args = parser.parse_args()
 
@@ -120,6 +128,9 @@ def main():
             except KeyError:
                 print(f"Resource not found: {args.resource_id}", file=sys.stderr)
                 raise SystemExit(2)
+
+    elif args.command == "production-parity":
+        _json(inspect_file(args.request, args.output))
 
 
 if __name__ == "__main__":
