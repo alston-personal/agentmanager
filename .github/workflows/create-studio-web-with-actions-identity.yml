@@ -74,3 +74,4 @@ jobs:
 
           ensure_repo 'studio-web' 'Platform web shell and website-owned integrations for studio.milkcat.org'
           ensure_repo 'layoutlib' 'LayoutLib spatial layout library with the Layout Lab reference demo'
+          ensure_repo 'ziwei-master' 'Deterministic Zi Wei Dou Shu chart engine, reusable rule library, renderer, and interpretation adapter'
