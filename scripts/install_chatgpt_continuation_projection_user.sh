@@ -41,6 +41,17 @@ git -C "$REPO" merge-base --is-ancestor "$SOURCE_COMMIT" "$LANE_HEAD" || {
   exit 8
 }
 
+# Reconcile the one legacy invariant violation discovered by the projection
+# acceptance fence. The repair is bounded to the currently active agentos-core
+# generation, is idempotent, and refuses any conflicting non-empty project_id.
+REPAIR_SCRIPT=$(mktemp /tmp/agentos-active-ir-project-id-repair.XXXXXX.py)
+trap 'rm -f "$REPAIR_SCRIPT"' EXIT
+git -C "$REPO" show "$SOURCE_COMMIT:scripts/repair_active_canonical_ir_project_id.py" > "$REPAIR_SCRIPT"
+chmod 0700 "$REPAIR_SCRIPT"
+AGENT_DATA_ROOT="$DATA_ROOT" python3 "$REPAIR_SCRIPT"
+rm -f "$REPAIR_SCRIPT"
+trap - EXIT
+
 git -C "$REPO" show "$SOURCE_COMMIT:agent_core/chatgpt_continuation_projection.py" > "$REALM_RUNTIME/agent_core/chatgpt_continuation_projection.py"
 chmod 0664 "$REALM_RUNTIME/agent_core/chatgpt_continuation_projection.py"
 PYTHONPATH="$REALM_RUNTIME" python3 -m py_compile "$REALM_RUNTIME/agent_core/chatgpt_continuation_projection.py"
