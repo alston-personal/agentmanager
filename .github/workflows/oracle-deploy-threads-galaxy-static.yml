@@ -1,0 +1,107 @@
+name: Oracle Deploy Threads Galaxy Static
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-deploy-threads-galaxy-static.yml'
+      - 'scripts/deploy_threads_galaxy_static_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight bounded deploy source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          bash -n scripts/deploy_threads_galaxy_static_user.sh
+          grep -Fq 'agentos.threads_galaxy_static.deploy' agentos_node/bootstrap_control.py
+          echo 'threads_galaxy_static_preflight=PASS'
+
+      - name: Publish bounded bootstrap hook and request deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="threads-galaxy-static-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':request_id,
+            'action':'agentos.threads_galaxy_static.deploy',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{'source_commit':sha},
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path.with_suffix(path.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 600); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo 'threads_galaxy_static_receipt=TIMEOUT'; exit 3; }
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.threads_galaxy_static.deploy',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
+          for marker in ('threads_galaxy_static_deploy=PASS','threads_galaxy_static_nginx_mutation=NONE','threads_galaxy_static_vendor_port=NONE'):
+            assert marker in text,(marker,text[-16000:])
+          print('threads_galaxy_static_receipt=PASS')
+          PY
+
+      - name: Independent public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org/threads-galaxy
+          curl -fsS --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$BASE/" > "$RUNNER_TEMP/threads-galaxy-index.html"
+          curl -fsS --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$BASE/app.js" > "$RUNNER_TEMP/threads-galaxy-app.js"
+          curl -fsS --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$BASE/adapters/threads.js" > "$RUNNER_TEMP/threads-galaxy-threads.js"
+          grep -Fq '/dashboard/api/social/v1/social' "$RUNNER_TEMP/threads-galaxy-threads.js"
+          grep -Fq "PRODUCT_ID='galaxy'" "$RUNNER_TEMP/threads-galaxy-threads.js"
+          grep -Fq "social')==='connected'" "$RUNNER_TEMP/threads-galaxy-app.js"
+          ! grep -Fiq 'X-AgentOS-Product-Key' "$RUNNER_TEMP/threads-galaxy-threads.js"
+          ! grep -Fiq 'Threads User Access Token' "$RUNNER_TEMP/threads-galaxy-index.html"
+          echo 'threads_galaxy_public_acceptance=PASS'
