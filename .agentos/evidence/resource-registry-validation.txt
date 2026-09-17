@@ -1,62 +1,6 @@
-timestamp_utc=2026-08-25T06:19:34Z
+timestamp_utc=2026-09-17T08:33:38Z
 hostname=instance-20260129-0852
 === REGISTER ===
-{
-  "id": "site://studio.milkcat.org",
-  "kind": "site",
-  "labels": {},
-  "declared": {
-    "domain": "studio.milkcat.org",
-    "framework": "astro",
-    "repository": "alston-personal/zeus-writer",
-    "branch": "master",
-    "repo_path": "/home/ubuntu/zeus-writer",
-    "source_path": "/home/ubuntu/zeus-writer/website",
-    "dist_path": "/home/ubuntu/zeus-writer/website/dist",
-    "web_server": "nginx",
-    "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
-  },
-  "observed": {
-    "observed_at": "2026-08-25T06:18:29.014938+00:00",
-    "hostname": "instance-20260129-0852",
-    "dns": [
-      "161.33.24.170"
-    ],
-    "http": {
-      "status": 200,
-      "server": "nginx/1.18.0 (Ubuntu)",
-      "content_type": "text/html"
-    },
-    "paths": {
-      "source_path": {
-        "exists": true,
-        "readable": true,
-        "writable": false
-      },
-      "dist_path": {
-        "exists": true,
-        "readable": true,
-        "writable": false
-      },
-      "nginx_config": {
-        "exists": true,
-        "readable": true,
-        "writable": false
-      }
-    }
-  },
-  "verification": {
-    "status": "degraded",
-    "last_verified_at": "2026-08-25T06:18:29.373762+00:00",
-    "ttl_seconds": 86400,
-    "errors": [
-      "git: Command '['git', '-C', '/home/ubuntu/zeus-writer', 'rev-parse', 'HEAD']' returned non-zero exit status 128."
-    ]
-  },
-  "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:19:34.757715+00:00"
-}
-=== TARGETED VERIFY ===
 {
   "id": "site://studio.milkcat.org",
   "kind": "site",
@@ -113,7 +57,66 @@ hostname=instance-20260129-0852
     "errors": []
   },
   "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:19:35.124202+00:00",
+  "updated_at": "2026-09-17T08:33:38.470922+00:00"
+}
+=== TARGETED VERIFY ===
+{
+  "id": "site://studio.milkcat.org",
+  "kind": "site",
+  "labels": {},
+  "declared": {
+    "domain": "studio.milkcat.org",
+    "framework": "astro",
+    "repository": "alston-personal/zeus-writer",
+    "branch": "master",
+    "repo_path": "/home/ubuntu/zeus-writer",
+    "source_path": "/home/ubuntu/zeus-writer/website",
+    "dist_path": "/home/ubuntu/zeus-writer/website/dist",
+    "web_server": "nginx",
+    "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
+  },
+  "observed": {
+    "observed_at": "2026-09-17T08:33:38.573917+00:00",
+    "hostname": "instance-20260129-0852",
+    "dns": [
+      "161.33.24.170"
+    ],
+    "http": {
+      "status": 200,
+      "server": "nginx/1.18.0 (Ubuntu)",
+      "content_type": "text/html"
+    },
+    "paths": {
+      "source_path": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      },
+      "dist_path": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      },
+      "nginx_config": {
+        "exists": true,
+        "readable": true,
+        "writable": false
+      }
+    },
+    "git": {
+      "commit": "4b7e00353d75f59c574527d1ecbf019e85ee95b7",
+      "branch": "master",
+      "origin": "https://github.com/alston-personal/zeus-writer.git"
+    }
+  },
+  "verification": {
+    "status": "verified",
+    "last_verified_at": "2026-09-17T08:33:38.900443+00:00",
+    "ttl_seconds": 86400,
+    "errors": []
+  },
+  "registered_at": "2026-08-25T06:18:28.925786+00:00",
+  "updated_at": "2026-09-17T08:33:38.900459+00:00",
   "freshness": {
     "state": "fresh",
     "age_seconds": 0,
@@ -137,7 +140,7 @@ hostname=instance-20260129-0852
     "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
   },
   "observed": {
-    "observed_at": "2026-08-25T06:19:34.842305+00:00",
+    "observed_at": "2026-09-17T08:33:38.573917+00:00",
     "hostname": "instance-20260129-0852",
     "dns": [
       "161.33.24.170"
@@ -165,19 +168,19 @@ hostname=instance-20260129-0852
       }
     },
     "git": {
-      "commit": "d9387336fe83b1dc0f15f4aac6608793b0483933",
+      "commit": "4b7e00353d75f59c574527d1ecbf019e85ee95b7",
       "branch": "master",
       "origin": "https://github.com/alston-personal/zeus-writer.git"
     }
   },
   "verification": {
     "status": "verified",
-    "last_verified_at": "2026-08-25T06:19:35.124188+00:00",
+    "last_verified_at": "2026-09-17T08:33:38.900443+00:00",
     "ttl_seconds": 86400,
     "errors": []
   },
   "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:19:35.124202+00:00",
+  "updated_at": "2026-09-17T08:33:38.900459+00:00",
   "freshness": {
     "state": "fresh",
     "age_seconds": 0,
@@ -195,10 +198,10 @@ hostname=instance-20260129-0852
   "os_release": "6.8.0-1050-oracle",
   "python_version": "3.10.12",
   "node_version": "0.3.0",
-  "collected_at": "2026-08-25T14:19:35.292603",
+  "collected_at": "2026-09-17T16:33:39.099796",
   "git_info": {
-    "commit": "9e44089e24333e9215b2527126dbb0230ccc6b61",
-    "branch": "main",
+    "commit": "88f3789695f1670e5f505488b5b88d172885dd74",
+    "branch": "feat/oracle-production-parity-receipt",
     "is_git": true
   },
   "secrets_info": {
