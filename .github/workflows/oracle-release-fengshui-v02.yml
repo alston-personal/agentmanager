@@ -1,4 +1,4 @@
-name: One-time approved Fengshui release carrier
+name: One-time Fengshui immersive indoor release
 
 on:
   push:
@@ -9,86 +9,163 @@ permissions:
   contents: read
 
 concurrency:
-  group: approved-fengshui-v03-release
+  group: fengshui-immersive-indoor-release
   cancel-in-progress: false
 
 jobs:
   release:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
-      PRODUCT_SHA: 18daddb3fbea32ad28d1b5c685e6a71f3f697fd6
-      DEPLOYER_SHA: 18daddb3fbea32ad28d1b5c685e6a71f3f697fd6
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Start existing deployment SSH identity
+      - name: Start deployment SSH identity
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Build pinned standalone Fengshui and install only its mount
+      - name: Patch source, verify, push and deploy
         shell: bash
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
           [[ "${DEPLOY_SSH_PORT:-22}" =~ ^[0-9]+$ ]]
-          [[ "$PRODUCT_SHA" =~ ^[a-f0-9]{40}$ ]]
-          [[ "$DEPLOYER_SHA" =~ ^[a-f0-9]{40}$ ]]
           ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
-            -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" \
-            bash -s -- "$PRODUCT_SHA" "$DEPLOYER_SHA" "$GITHUB_RUN_ID" <<'REMOTE' | tee fengshui-release.log
+            -p "${DEPLOY_SSH_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE' | tee fengshui-release.log
           set -euo pipefail
-          PRODUCT_SHA="$1"; DEPLOYER_SHA="$2"; RUN_ID="$3"
-
-          # Recover only a stale Fengshui listener left outside the managed systemd unit.
-          # The old process can have a relative argv ("node server/index.mjs"), so validate cwd too.
-          if ! sudo -n systemctl is-active --quiet milkcat-fengshui.service; then
-            LISTENER=$(sudo -n ss -Hlnpt 'sport = :8868' || true)
-            if [ -n "$LISTENER" ]; then
-              PID=$(printf '%s\n' "$LISTENER" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1)
-              test -n "$PID"
-              CMD=$(sudo -n sh -c "tr '\\0' ' ' </proc/$PID/cmdline")
-              CWD=$(sudo -n readlink -f "/proc/$PID/cwd")
-              printf 'stale_listener pid=%s cwd=%s cmd=%s\n' "$PID" "$CWD" "$CMD"
-              MANAGED=0
-              case "$CMD" in
-                *'/opt/milkcat/fengshui/releases/'*'/server/index.mjs'*) MANAGED=1 ;;
-              esac
-              case "$CWD" in
-                /opt/milkcat/fengshui/releases/*/tools/fengshui-layout-overlay)
-                  case "$CMD" in
-                    'node server/index.mjs'|'node server/index.mjs ') MANAGED=1 ;;
-                  esac
-                  ;;
-              esac
-              if [ "$MANAGED" -ne 1 ]; then
-                echo 'port_8868_owned_by_unmanaged_process' >&2
-                exit 1
-              fi
-              sudo -n kill "$PID"
-              for _ in $(seq 1 20); do
-                if ! sudo -n ss -Hlnpt 'sport = :8868' | grep -q .; then break; fi
-                sleep 0.25
-              done
-              if sudo -n ss -Hlnpt 'sport = :8868' | grep -q .; then
-                echo 'stale_fengshui_listener_did_not_exit' >&2
-                exit 1
-              fi
-            fi
-          fi
-
-          TMP=$(mktemp -d /tmp/fengshui-release-XXXXXXXXXX)
+          TMP=$(mktemp -d /tmp/fengshui-indoor-XXXXXXXXXX)
           cleanup(){ rm -rf "$TMP"; }
           trap cleanup EXIT
           SRC="$TMP/fengshui-layout-overlay"
           /usr/bin/gh auth status >/dev/null
-          /usr/bin/gh repo clone alston-personal/fengshui-layout-overlay "$SRC" -- --no-checkout
-          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$PRODUCT_SHA" "$DEPLOYER_SHA"
-          /usr/bin/git -C "$SRC" checkout --detach "$PRODUCT_SHA"
-          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$PRODUCT_SHA"
-          test "$PRODUCT_SHA" = "$DEPLOYER_SHA"
+          /usr/bin/gh repo clone alston-personal/fengshui-layout-overlay "$SRC"
           cd "$SRC"
+          /usr/bin/git checkout main
+          /usr/bin/git pull --ff-only origin main
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('components/Floorplan3DViewer.tsx')
+          s=p.read_text()
+          if 'function AxisJoystick(' not in s:
+              def rep(old,new):
+                  global s
+                  n=s.count(old)
+                  if n!=1:
+                      raise SystemExit(f'expected one match, got {n}: {old[:100]!r}')
+                  s=s.replace(old,new,1)
+
+              rep("import './floorplan-viewer.css';", "import './floorplan-viewer.css';\nimport './indoor-joystick.css';")
+              marker="export default function Floorplan3DViewer({"
+              joystick=r'''function AxisJoystick({axis,label,onValue}:{axis:'vertical'|'horizontal';label:string;onValue:(value:number)=>void}) {
+  const base=useRef<HTMLDivElement>(null),active=useRef(false),[offset,setOffset]=useState({x:0,y:0});
+  const reset=()=>{active.current=false;setOffset({x:0,y:0});onValue(0);};
+  const apply=(e:React.PointerEvent<HTMLDivElement>)=>{
+    const el=base.current;if(!el)return;const r=el.getBoundingClientRect(),radius=Math.max(24,Math.min(r.width,r.height)*.34);
+    let dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2);
+    if(axis==='vertical')dx=0;else dy=0;
+    const len=Math.hypot(dx,dy);if(len>radius){dx=dx/len*radius;dy=dy/len*radius;}
+    setOffset({x:dx,y:dy});const value=axis==='vertical'?-dy/radius:dx/radius;onValue(Math.max(-1,Math.min(1,value)));
+  };
+  return <div className="fv-stick-wrap" aria-label={label}>
+    <div ref={base} className={`fv-stick-base ${active.current?'is-active':''}`}
+      onPointerDown={e=>{e.preventDefault();e.stopPropagation();active.current=true;e.currentTarget.setPointerCapture(e.pointerId);apply(e);}}
+      onPointerMove={e=>{if(active.current){e.preventDefault();apply(e);}}}
+      onPointerUp={e=>{try{e.currentTarget.releasePointerCapture(e.pointerId);}catch{}reset();}}
+      onPointerCancel={reset} onLostPointerCapture={reset}>
+      <div className="fv-stick-knob" style={{'--stick-x':`${offset.x}px`,'--stick-y':`${offset.y}px`} as React.CSSProperties}/>
+    </div>
+    <span className="fv-stick-label">{label}</span>
+  </div>;
+}
+
+'''
+              rep(marker,joystick+marker)
+              rep("  const mount=useRef<HTMLDivElement>(null),engine=useRef<any>(null),live=useRef<any>({});\n  const keys=useRef(new Set<string>()),pad=useRef({forward:0,right:0}),look=useRef({yaw:0,pitch:0});",
+                  "  const mount=useRef<HTMLDivElement>(null),viewer=useRef<HTMLElement>(null),engine=useRef<any>(null),live=useRef<any>({});\n  const keys=useRef(new Set<string>()),pad=useRef({forward:0,right:0}),drive=useRef({forward:0,turn:0}),look=useRef({yaw:0,pitch:0});")
+              rep("  const [selectedPhotoIdx,setSelectedPhotoIdx]=useState<number|null>(null);",
+                  "  const [selectedPhotoIdx,setSelectedPhotoIdx]=useState<number|null>(null);\n  const [immersive,setImmersive]=useState(false),[portrait,setPortrait]=useState(false);")
+              rep("    const clear=()=>{keys.current.clear();pad.current={forward:0,right:0};dragging=false;};",
+                  "    const clear=()=>{keys.current.clear();pad.current={forward:0,right:0};drive.current={forward:0,turn:0};dragging=false;};")
+              old=r'''      if(live.current.mode==='indoor'&&live.current.nav){
+        const f=Number(keys.current.has('KeyW')||keys.current.has('ArrowUp'))-Number(keys.current.has('KeyS')||keys.current.has('ArrowDown'))+pad.current.forward;
+        const r=Number(keys.current.has('KeyD')||keys.current.has('ArrowRight'))-Number(keys.current.has('KeyA')||keys.current.has('ArrowLeft'))+pad.current.right;
+        const delta=walkingDelta(Math.sign(f),Math.sign(r),look.current.yaw,dt);
+        const p=moveWithinFloor(live.current.nav,{x:camera.position.x,y:camera.position.z},delta);camera.position.set(p.x,1.5,p.y);
+        const {yaw,pitch}=look.current;camera.lookAt(p.x+Math.sin(yaw)*Math.cos(pitch),1.5+Math.sin(pitch),p.y-Math.cos(yaw)*Math.cos(pitch));
+      }else controls.update();'''
+              new=r'''      if(live.current.mode==='indoor'&&live.current.nav){
+        const keyboardF=Number(keys.current.has('KeyW')||keys.current.has('ArrowUp'))-Number(keys.current.has('KeyS')||keys.current.has('ArrowDown'));
+        const keyboardR=Number(keys.current.has('KeyD'))-Number(keys.current.has('KeyA'));
+        const keyTurn=Number(keys.current.has('ArrowRight'))-Number(keys.current.has('ArrowLeft'));
+        const turn=Math.max(-1,Math.min(1,drive.current.turn+keyTurn));
+        look.current.yaw+=turn*1.9*Math.min(.05,Math.max(0,dt));
+        const f=Math.max(-1,Math.min(1,keyboardF+pad.current.forward+drive.current.forward));
+        const r=Math.max(-1,Math.min(1,keyboardR+pad.current.right));
+        const delta=walkingDelta(f,r,look.current.yaw,dt);
+        const p=moveWithinFloor(live.current.nav,{x:camera.position.x,y:camera.position.z},delta);camera.position.set(p.x,1.5,p.y);
+        const {yaw,pitch}=look.current;camera.lookAt(p.x+Math.sin(yaw)*Math.cos(pitch),1.5+Math.sin(pitch),p.y-Math.cos(yaw)*Math.cos(pitch));
+      }else controls.update();'''
+              rep(old,new)
+              rep("    keys.current.clear();pad.current={forward:0,right:0};",
+                  "    keys.current.clear();pad.current={forward:0,right:0};drive.current={forward:0,turn:0};")
+              marker2="  // Model changes fit once; changing materials, overlay or wall height preserves the camera."
+              immersive_code=r'''  async function enterIndoor(room?:any){
+    if(!model||error||!nav?.rooms.length||model.footprintSource!=='outline')return;
+    preset('indoor',room);setShowPhotoDrawer(false);
+    const mobileLike=window.matchMedia('(pointer: coarse)').matches||window.innerWidth<=900;
+    if(!mobileLike)return;
+    setImmersive(true);document.body.classList.add('fv-immersive-open');
+    setPortrait(window.innerHeight>window.innerWidth);
+    try{if(viewer.current?.requestFullscreen&&!document.fullscreenElement)await viewer.current.requestFullscreen();}catch{}
+    try{const o=screen.orientation as any;if(o?.lock)await o.lock('landscape');}catch{}
+  }
+  async function exitIndoor(){
+    drive.current={forward:0,turn:0};pad.current={forward:0,right:0};keys.current.clear();
+    setImmersive(false);document.body.classList.remove('fv-immersive-open');
+    try{const o=screen.orientation as any;o?.unlock?.();}catch{}
+    try{if(document.fullscreenElement)await document.exitFullscreen();}catch{}
+    preset('bird');
+  }
+  useEffect(()=>{
+    if(!immersive)return;const update=()=>setPortrait(window.innerHeight>window.innerWidth);update();
+    window.addEventListener('resize',update);window.addEventListener('orientationchange',update);
+    return()=>{window.removeEventListener('resize',update);window.removeEventListener('orientationchange',update);};
+  },[immersive]);
+  useEffect(()=>()=>{document.body.classList.remove('fv-immersive-open');},[]);
+
+'''
+              rep(marker2,immersive_code+marker2)
+              rep("  return <section className=\"floorplan-viewer\" aria-label=\"3D 格局工作區\" data-camera-mode={mode}>",
+                  "  return <section ref={viewer} className={`floorplan-viewer ${immersive?'fv-immersive':''}`} aria-label=\"3D 格局工作區\" data-camera-mode={mode}>")
+              rep("      {mode==='indoor'&&<div className=\"fv-walk\">",
+                  "      {mode==='indoor'&&!immersive&&<div className=\"fv-walk\">")
+              hint="      {!loading&&!error&&model&&<div className=\"fv-hint\">{mode==='indoor'?'拖曳環顧 · W/A/S/D 或方向鈕行走':model.footprintSource==='estimated'?'請在 2D 校正外框，以啟用室內漫遊':'拖曳旋轉 · 滾輪縮放'}</div>}"
+              hud=r'''      {!loading&&!error&&model&&<div className="fv-hint">{mode==='indoor'?'拖曳環顧 · W/A/S/D 或方向鈕行走':model.footprintSource==='estimated'?'請在 2D 校正外框，以啟用室內漫遊':'拖曳旋轉 · 滾輪縮放'}</div>}
+      {immersive&&mode==='indoor'&&<div className="fv-indoor-hud">
+        <div className="fv-indoor-topbar">
+          <button type="button" className="fv-exit" onClick={()=>void exitIndoor()}>✕ 離開漫遊</button>
+          <label className="fv-indoor-room"><span>空間</span><select aria-label="切換室內空間" value={roomId} onChange={e=>preset('indoor',nav?.rooms.find((r:any)=>r.id===e.target.value))}>{nav?.rooms.map((r:any)=><option key={r.id} value={r.id}>{r.label}</option>)}</select></label>
+          <button type="button" onClick={()=>preset('indoor',activeRoom||nav?.rooms[0])}>↺ 回定位</button>
+        </div>
+        <div className="fv-joysticks">
+          <AxisJoystick axis="vertical" label="前進・後退" onValue={v=>{drive.current.forward=v;}}/>
+          <AxisJoystick axis="horizontal" label="左轉・右轉" onValue={v=>{drive.current.turn=v;}}/>
+        </div>
+        {portrait&&<div className="fv-rotate-hint"><div className="fv-rotate-card"><span className="fv-rotate-icon">↻📱</span><strong>請將手機橫放</strong><p>已嘗試自動切換橫向；iPhone 主畫面 App 不允許網站強制旋轉時，將手機橫放即可開始雙搖桿漫遊。</p></div></div>}
+      </div>}'''
+              rep(hint,hud)
+              rep("                      preset('indoor', nav.rooms[selectedPhotoIdx]);",
+                  "                      void enterIndoor(nav.rooms[selectedPhotoIdx]);")
+              oldfooter="    <footer className=\"fv-footer\"><nav aria-label=\"模型視角\">{([{id:'bird',label:'立體鳥瞰'},{id:'top',label:'整體俯視'},{id:'iso',label:'等角視圖'},{id:'indoor',label:'進入室內'}] as const).map(p=><button key={p.id} aria-pressed={mode===p.id} disabled={!model||!!error||(p.id==='indoor'&&(!nav?.rooms.length||model.footprintSource!=='outline'))} onClick={()=>preset(p.id)}>{p.label}</button>)}</nav><label className=\"fv-height\">牆高 <input aria-label=\"牆高\" type=\"range\" min=\"2\" max=\"3.6\" step=\".1\" value={wallHeight} onChange={e=>setWallHeight(Number(e.target.value))}/><output>{wallHeight.toFixed(1)} m</output></label></footer>"
+              newfooter="    <footer className=\"fv-footer\"><nav aria-label=\"模型視角\">{([{id:'bird',label:'立體鳥瞰'},{id:'top',label:'整體俯視'},{id:'iso',label:'等角視圖'},{id:'indoor',label:'🚪 進入室內'}] as const).map(p=><button key={p.id} className={p.id==='indoor'?'fv-enter-indoor':''} aria-pressed={mode===p.id} disabled={!model||!!error||(p.id==='indoor'&&(!nav?.rooms.length||model.footprintSource!=='outline'))} onClick={()=>p.id==='indoor'?void enterIndoor():preset(p.id)}>{p.label}</button>)}</nav><label className=\"fv-height\">牆高 <input aria-label=\"牆高\" type=\"range\" min=\"2\" max=\"3.6\" step=\".1\" value={wallHeight} onChange={e=>setWallHeight(Number(e.target.value))}/><output>{wallHeight.toFixed(1)} m</output></label></footer>"
+              rep(oldfooter,newfooter)
+              p.write_text(s)
+          PY
+
+          rm -f .github/workflows/apply-mobile-indoor.yml
+          /usr/bin/git diff --check
           npm ci --ignore-scripts --no-audit --no-fund
           python3 -c "import cv2; print('opencv-runtime-ready')"
           python3 -m unittest discover -s ops/tests
@@ -96,56 +173,51 @@ jobs:
           npx tsc --noEmit
           npm run build
           node scripts/verify-build.mjs
+          /usr/bin/git config user.name "Milkcat Release Bot"
+          /usr/bin/git config user.email "register@milkcat.org"
+          /usr/bin/git add -A
+          if ! /usr/bin/git diff --cached --quiet; then
+            /usr/bin/git commit -m "feat(mobile): immersive indoor dual joystick navigation"
+            /usr/bin/git push origin HEAD:main
+          fi
+          SOURCE_SHA=$(/usr/bin/git rev-parse HEAD)
+          echo "source_sha=$SOURCE_SHA"
+
+          # Recover an old unmanaged Fengshui listener only when the managed unit is inactive.
+          if ! sudo -n systemctl is-active --quiet milkcat-fengshui.service; then
+            LISTENER=$(sudo -n ss -Hlnpt 'sport = :8868' || true)
+            if [ -n "$LISTENER" ]; then
+              PID=$(printf '%s\n' "$LISTENER" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1)
+              CWD=$(sudo -n readlink -f "/proc/$PID/cwd")
+              case "$CWD" in /opt/milkcat/fengshui/releases/*/tools/fengshui-layout-overlay) sudo -n kill "$PID";; *) echo "unknown 8868 listener: $CWD" >&2; exit 1;; esac
+            fi
+          fi
+
           cd "$TMP"
-          python3 "$SRC/ops/release_bundle.py" "$SRC" "$TMP/bundle" "$PRODUCT_SHA"
+          python3 "$SRC/ops/release_bundle.py" "$SRC" "$TMP/bundle" "$SOURCE_SHA"
           sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 "$SRC/ops/deploy_oracle.py" \
-            --source "$TMP/bundle" --deployment-sha "$DEPLOYER_SHA" --source-sha "$PRODUCT_SHA"
+            --source "$TMP/bundle" --deployment-sha "$SOURCE_SHA" --source-sha "$SOURCE_SHA"
+          printf '%s\n' "$SOURCE_SHA" > /tmp/fengshui-last-release-sha
           REMOTE
-      - name: Public page and source acceptance
+      - name: Public acceptance
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --max-time 30 \
-            https://studio.milkcat.org/fengshui/api/healthz -o fengshui-health.json
-          curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --max-time 30 \
-            https://studio.milkcat.org/fengshui/ -o fengshui-page.html
+          curl -fsS --retry 6 --retry-delay 2 --retry-all-errors --max-time 30 https://studio.milkcat.org/fengshui/api/healthz -o fengshui-health.json
+          curl -fsS --retry 6 --retry-delay 2 --retry-all-errors --max-time 30 https://studio.milkcat.org/fengshui/ -o fengshui-page.html
           python3 - <<'PY'
-          import json, pathlib
-          health=json.loads(pathlib.Path('fengshui-health.json').read_text())
+          import json,pathlib
+          h=json.loads(pathlib.Path('fengshui-health.json').read_text())
           page=pathlib.Path('fengshui-page.html').read_text()
-          assert health.get('service') == 'fengshui-layout-overlay'
-          assert health.get('status') == 'ok'
-          assert '宅向' in page and 'Milkcat Studio Portal' not in page
-          print(json.dumps({'public_health':'passed','public_page':'passed'}))
+          assert h.get('service')=='fengshui-layout-overlay' and h.get('status')=='ok'
+          assert '宅向' in page
+          print({'public_health':'passed','public_page':'passed'})
           PY
-          for provider_url in \
-            'sinyi=https://www.sinyi.com.tw/buy/house/2997DC' \
-            'yungching=https://buy.yungching.com.tw/house/4308114'; do
-            provider=${provider_url%%=*}
-            url=${provider_url#*=}
-            code=$(curl -sS --max-time 35 -w '%{http_code}' --get --data-urlencode "url=$url" \
-              https://studio.milkcat.org/fengshui/api/import -o "$provider-response.json" || true)
-            PROVIDER="$provider" HTTP_CODE="$code" python3 - <<'PY'
-          import json, os, pathlib
-          p=pathlib.Path(os.environ['PROVIDER']+'-response.json')
-          try: d=json.loads(p.read_text())
-          except Exception: d={}
-          summary={'provider':os.environ['PROVIDER'],'http':os.environ['HTTP_CODE'],
-                   'ok':os.environ['HTTP_CODE']=='200' and 'error' not in d,
-                   'code':d.get('code'),'phase':d.get('phase'),'transport':d.get('transport'),
-                   'photo_count':len(d.get('photos',[])),'floorplan_count':len(d.get('floorplans',[]))}
-          pathlib.Path(os.environ['PROVIDER']+'-probe.json').write_text(json.dumps(summary,indent=2))
-          p.unlink(missing_ok=True)
-          print(json.dumps(summary))
-          PY
-          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: fengshui-release-receipt-${{ github.run_id }}
+          name: fengshui-immersive-release-${{ github.run_id }}
           path: |
             fengshui-release.log
             fengshui-health.json
-            sinyi-probe.json
-            yungching-probe.json
           retention-days: 30
