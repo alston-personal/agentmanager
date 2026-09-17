@@ -24,8 +24,8 @@ unset GITHUB_TOKEN GH_TOKEN
 gh auth status
 
 if gh repo view "$REPO" >/tmp/ziwei-master-view.txt 2>&1; then
-  visibility="$(gh repo view "$REPO" --json visibility -q .visibility)"
-  test "$visibility" = "PRIVATE"
+  is_private="$(gh repo view "$REPO" --json isPrivate -q .isPrivate)"
+  test "$is_private" = "true"
   echo "repo=$REPO"
   echo "classification=ALREADY_EXISTS_PRIVATE"
   echo "idempotent=true"
@@ -34,9 +34,9 @@ fi
 
 gh repo create "$REPO" --private --description "$DESCRIPTION"
 
-visibility="$(gh repo view "$REPO" --json visibility -q .visibility)"
+is_private="$(gh repo view "$REPO" --json isPrivate -q .isPrivate)"
 url="$(gh repo view "$REPO" --json url -q .url)"
-test "$visibility" = "PRIVATE"
+test "$is_private" = "true"
 
 echo "repo=$REPO"
 echo "url=$url"
