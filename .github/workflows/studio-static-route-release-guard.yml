@@ -1,0 +1,58 @@
+name: Studio Static Route Release Guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/reusable-studio-static-route-release.yml'
+      - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
+      - '.github/workflows/studio-static-route-release-guard.yml'
+      - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/reusable-studio-static-route-release.yml'
+      - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
+      - '.github/workflows/studio-static-route-release-guard.yml'
+      - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify reusable carrier contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          R=.github/workflows/reusable-studio-static-route-release.yml
+          C=.github/workflows/oracle-release-milkcat-world-mvp.yml
+          D=docs/STUDIO_STATIC_ROUTE_RELEASE.md
+
+          test -f "$R"
+          test -f "$C"
+          test -f "$D"
+          grep -Fq 'workflow_call:' "$R"
+          grep -Fq 'route:' "$R"
+          grep -Fq 'acceptance_anchors:' "$R"
+          grep -Fq 'rollback()' "$R"
+          grep -Fq 'local_nginx_studio_static_route_acceptance=PASS' "$R"
+          grep -Fq 'public_studio_static_route_acceptance=PASS' "$R"
+
+          grep -Fq 'uses: ./.github/workflows/reusable-studio-static-route-release.yml' "$C"
+          grep -Fq 'route: world' "$C"
+          grep -Fq 'source_sha: b675270c7ad08bcd9172496d7436787a32c299a1' "$C"
+
+          if grep -Fq 'npm run build' "$C"; then
+            echo 'Milkcat World consumer regressed to duplicated deployment logic' >&2
+            exit 1
+          fi
+          if grep -Fq 'ssh -o StrictHostKeyChecking' "$C"; then
+            echo 'Milkcat World consumer regressed to direct SSH deployment logic' >&2
+            exit 1
+          fi
+
+          echo 'studio_static_route_release_guard=PASS'
