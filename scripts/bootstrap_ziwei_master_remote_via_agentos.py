@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import time
 
+# Retry marker: relay executor rediscovered after Antigravity restart on 2026-09-17.
 RUNTIME = '/home/ubuntu/.local/share/agentos/runtime-vnext'
 if RUNTIME in sys.path:
     sys.path.remove(RUNTIME)
