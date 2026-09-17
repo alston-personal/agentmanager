@@ -1,0 +1,26 @@
+asset_id: studio-static-route-release
+kind: release-capability
+status: extracted-first-consumer
+canonical_source: .github/workflows/reusable-studio-static-route-release.yml
+owner: agentos-core
+first_consumer: milkcat-world
+consumer_workflow: .github/workflows/oracle-release-milkcat-world-mvp.yml
+production_surface: https://studio.milkcat.org/world/
+verification:
+  evidence_scope: pre-extraction-world-carrier
+  source_sha: b675270c7ad08bcd9172496d7436787a32c299a1
+  predecessor_release_run: 35192062500
+  predecessor_build_acceptance: passed
+  predecessor_local_nginx_acceptance: passed
+  predecessor_public_acceptance: passed
+  shared_carrier_live_verification: pending
+reuse_contract:
+  input_scope: single-top-level-static-route
+  required:
+    - pinned-source-sha
+    - route
+    - backup-key
+    - receipt-schema
+    - acceptance-anchors
+promotion:
+  broadly_proven_requires: second-production-consumer

@@ -1,0 +1,7 @@
+schema_version: "0.1"
+updated_at: "2026-09-17"
+assets:
+  - asset_id: studio-static-route-release
+    kind: release-capability
+    manifest: docs/asset-registry/studio-static-route-release.yaml
+    status: extracted-first-consumer

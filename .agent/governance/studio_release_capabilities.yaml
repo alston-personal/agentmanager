@@ -1,0 +1,32 @@
+schema_version: "0.1"
+updated_at: "2026-09-17"
+
+capabilities:
+  studio_static_route_release:
+    status: extracted-first-consumer
+    canonical_workflow: .github/workflows/reusable-studio-static-route-release.yml
+    regression_guard: .github/workflows/studio-static-route-release-guard.yml
+    documentation: docs/STUDIO_STATIC_ROUTE_RELEASE.md
+    scope: single-top-level-static-route
+    source_repo: alston-personal/studio-web
+    production_surface: https://studio.milkcat.org
+    invariants:
+      - pinned source SHA required
+      - isolated build required
+      - route-local deployment only
+      - previous live route backed up before replacement
+      - post-deploy failure must roll back
+      - local Nginx acceptance required
+      - public acceptance required
+      - release receipt required
+    consumers:
+      milkcat_world:
+        workflow: .github/workflows/oracle-release-milkcat-world-mvp.yml
+        route: /world/
+        status: production-verified-before-extraction
+        source_sha: b675270c7ad08bcd9172496d7436787a32c299a1
+        verified_run: 35192062500
+    promotion_rule: >-
+      Mark this capability broadly proven after at least one additional production
+      route adopts it without adding product-specific deployment mechanics to the
+      reusable workflow.
