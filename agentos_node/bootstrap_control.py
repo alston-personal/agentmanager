@@ -16,11 +16,13 @@ ACTION_REPAIR_TRANSPORT = "agentos.transport.repair"
 ACTION_DEPLOY_REALM_GATEWAY = "agentos.realm_gateway.deploy"
 ACTION_DEPLOY_SOCIAL_RUNTIME = "agentos.social_runtime.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
+ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
     ACTION_DEPLOY_SOCIAL_RUNTIME,
     ACTION_RECONCILE_CONTROL_INBOX,
+    ACTION_PROVISION_ZIWEI_MASTER_REPO,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -81,6 +83,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_DEPLOY_REALM_GATEWAY,
         ACTION_DEPLOY_SOCIAL_RUNTIME,
         ACTION_RECONCILE_CONTROL_INBOX,
+        ACTION_PROVISION_ZIWEI_MASTER_REPO,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -165,6 +168,8 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
         return _run_canonical_script("scripts/deploy_realm_gateway_user.sh", timeout=300, source_commit=source_commit)
     if action == ACTION_DEPLOY_SOCIAL_RUNTIME:
         return _run_canonical_script("scripts/deploy_social_runtime_user.sh", timeout=180, source_commit=source_commit)
+    if action == ACTION_PROVISION_ZIWEI_MASTER_REPO:
+        return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
