@@ -45,3 +45,21 @@
 - `TELEGRAM_CHANNEL_ID`
 
 `GEMINI_API_KEY` 目前會一併寫入 `.env`，但不是 fail 條件。
+
+## Studio static-route release capability
+
+`reusable-studio-static-route-release.yml` 是 Studio 單一靜態 route 的 canonical reusable release carrier。產品 workflow 應呼叫它，而不是重複 clone / build / backup / rollback / local acceptance / public acceptance 邏輯。
+
+目前第一個 production consumer：
+
+- `oracle-release-milkcat-world-mvp.yml` → `/world/`
+
+防回歸：
+
+- `studio-static-route-release-guard.yml`
+
+設計與安全 contract：
+
+- `docs/STUDIO_STATIC_ROUTE_RELEASE.md`
+
+第一版刻意只允許單一 top-level static route。多 route 或更寬的部署範圍仍保持 explicit，直到有第二個已證明需求再擴充 contract。
