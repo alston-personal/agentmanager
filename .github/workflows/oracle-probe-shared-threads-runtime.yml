@@ -33,11 +33,12 @@ jobs:
             echo 'threads_reader_health=FAIL'
           fi
 
-          echo '=== listener ==='
+          echo '=== listener/process ==='
           if ss -ltn 2>/dev/null | grep -q ':18766 '; then echo 'threads_reader_port_18766=LISTENING'; else echo 'threads_reader_port_18766=NOT_LISTENING'; fi
+          ps -eo pid,user,args | grep -E '[u]vicorn .*threads_reader|[p]ython.*threads_reader' || true
 
           echo '=== repository/runtime discovery ==='
-          mapfile -t roots < <(find /home/ubuntu -maxdepth 4 -type f -name compose.yaml -path '*vendor-reputation-service*' -printf '%h\n' 2>/dev/null | sort -u | head -5)
+          mapfile -t roots < <(find /home /opt /srv -maxdepth 6 -type f -name compose.yaml -path '*vendor-reputation-service*' -printf '%h\n' 2>/dev/null | sort -u | head -10)
           if [ "${#roots[@]}" -eq 0 ]; then
             echo 'vendor_runtime_path=NOT_FOUND'
           else
@@ -49,17 +50,23 @@ jobs:
               else
                 echo 'vendor_env_file=ABSENT'
               fi
+              if [ -d "$root/.git" ]; then
+                echo "vendor_runtime_head=$(git -C "$root" rev-parse HEAD 2>/dev/null || echo unknown)"
+              fi
             done
           fi
 
-          echo '=== docker state ==='
-          if command -v docker >/dev/null 2>&1; then
-            docker ps --format '{{.Names}} {{.Status}}' | grep -E 'threads-reader|vendor-reputation' || true
-            reader=$(docker ps --format '{{.Names}}' | grep 'threads-reader' | head -1 || true)
-            if [ -n "$reader" ]; then
-              configured=$(docker inspect "$reader" --format '{{range .Config.Env}}{{println .}}{{end}}' | awk -F= '$1=="SOC_THREADS_TOKEN" && length($2)>0 {print "YES"; exit}')
-              echo "threads_reader_container_token_configured=${configured:-NO}"
-            fi
-          fi
+          echo '=== nginx discovery ==='
+          mapfile -t proxy_files < <(grep -RslE '18766|threads-reader' /etc/nginx /etc/apache2 2>/dev/null | head -10 || true)
+          if [ "${#proxy_files[@]}" -eq 0 ]; then echo 'threads_reader_proxy_config=NOT_FOUND'; else printf 'threads_reader_proxy_config=%s\n' "${proxy_files[@]}"; fi
+          mapfile -t studio_files < <(grep -Rsl 'studio.milkcat.org' /etc/nginx /etc/apache2 2>/dev/null | head -10 || true)
+          if [ "${#studio_files[@]}" -eq 0 ]; then echo 'studio_site_config=NOT_FOUND'; else printf 'studio_site_config=%s\n' "${studio_files[@]}"; fi
+
+          echo '=== token references (presence only) ==='
+          token_ref=NO
+          for root in "${roots[@]:-}"; do
+            if [ -n "$root" ] && grep -Rqs 'SOC_THREADS_TOKEN' "$root" --exclude='.env' 2>/dev/null; then token_ref=YES; fi
+          done
+          echo "soc_threads_token_reference_in_runtime=$token_ref"
 
           echo 'probe_complete=PASS'
