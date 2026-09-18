@@ -1,4 +1,5 @@
 # redeploy studio-web main after Threads Galaxy UI fix
+# deploy studio-web main after OAuth reconnect control
 name: Oracle Deploy Threads Galaxy Static
 
 on:
