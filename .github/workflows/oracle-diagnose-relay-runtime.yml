@@ -28,18 +28,7 @@ jobs:
             echo '=== PROCESSES ==='
             ps -eo user,pid,lstart,ppid,stat,args | grep -E 'antigravity_relay|action_relay|claude|agentos-action-relay|agentos-antigravity' | grep -v grep || true
             echo '=== RECENT ANTIGRAVITY RECEIPTS ==='
-            python3 - <<'PY'
-            from pathlib import Path
-            import json
-            root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay/receipts')
-            files=sorted(root.glob('relay-*.json'), key=lambda p:p.stat().st_mtime, reverse=True)[:3]
-            for p in files:
-                print('-- '+str(p))
-                try:
-                    print(json.dumps(json.loads(p.read_text(encoding='utf-8')), ensure_ascii=False, indent=2))
-                except Exception as exc:
-                    print('read_error='+repr(exc))
-            PY
+            python3 -c "from pathlib import Path; import json; root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay/receipts'); files=sorted(root.glob('relay-*.json'), key=lambda p:p.stat().st_mtime, reverse=True)[:3]; [print('-- '+str(p)+'\\n'+json.dumps(json.loads(p.read_text(encoding='utf-8')), ensure_ascii=False, indent=2)) for p in files]"
             echo '=== ANTIGRAVITY RECEIPT TMP ==='
             for f in /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/*.tmp; do [ -e "$f" ] || continue; echo "-- $f"; stat "$f" || true; cat "$f" || true; done
             echo '=== RECOVERY CAPSULE ==='
