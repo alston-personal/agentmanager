@@ -88,7 +88,7 @@ jobs:
           assert r.get('source_commit')==expected,r
           assert r.get('ok') is True,r
           text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
-          for marker in ('threads_galaxy_static_deploy=PASS','threads_galaxy_static_nginx_mutation=NONE','threads_galaxy_static_vendor_port=NONE'):
+          for marker in ('threads_galaxy_static_deploy=PASS','mio_pedigree_static_deploy=PASS','threads_galaxy_static_nginx_mutation=NONE','threads_galaxy_static_vendor_port=NONE'):
             assert marker in text,(marker,text[-16000:])
           print('threads_galaxy_static_receipt=PASS')
           PY
@@ -106,4 +106,9 @@ jobs:
           grep -Fq "social')==='connected'" "$RUNNER_TEMP/threads-galaxy-app.js"
           ! grep -Fiq 'X-AgentOS-Product-Key' "$RUNNER_TEMP/threads-galaxy-threads.js"
           ! grep -Fiq 'Threads User Access Token' "$RUNNER_TEMP/threads-galaxy-index.html"
+          MIO=https://studio.milkcat.org/personas/mio/
+          curl -fsS --retry 8 --retry-all-errors --connect-timeout 5 --max-time 20 "$MIO" > "$RUNNER_TEMP/mio-pedigree-index.html"
+          grep -Fq '澪' "$RUNNER_TEMP/mio-pedigree-index.html"
+          grep -Fq '2026.09.18' "$RUNNER_TEMP/mio-pedigree-index.html"
+          echo 'mio_pedigree_public_acceptance=PASS'
           echo 'threads_galaxy_public_acceptance=PASS'
