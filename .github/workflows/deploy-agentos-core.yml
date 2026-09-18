@@ -253,12 +253,27 @@ jobs:
             exit 2
           fi
 
-          PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT"
+          INSTALL_JSON="$(PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT")"
+          printf '%s\n' "$INSTALL_JSON"
+          if ! printf '%s' "$INSTALL_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("mode")=="systemd"'; then
+            echo "AgentOS service installation did not complete in systemd mode" >&2
+            systemctl --user --no-pager --full status milkcat-credits.service || true
+            journalctl --user -u milkcat-credits.service -n 120 --no-pager || true
+            exit 1
+          fi
           systemctl --user is-active --quiet agentos-control-plane.service
           curl -fsS http://127.0.0.1:8765/health
           echo
-          systemctl --user is-active --quiet milkcat-credits.service
-          curl -fsS http://127.0.0.1:8767/healthz | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="milkcat-credits" and d["mode"]=="shadow"; print("milkcat_credits_shadow=PASS")'
+          if ! systemctl --user is-active --quiet milkcat-credits.service; then
+            systemctl --user --no-pager --full status milkcat-credits.service || true
+            journalctl --user -u milkcat-credits.service -n 120 --no-pager || true
+            exit 1
+          fi
+          if ! curl -fsS http://127.0.0.1:8767/healthz | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="milkcat-credits" and d["mode"]=="shadow"; print("milkcat_credits_shadow=PASS")'; then
+            systemctl --user --no-pager --full status milkcat-credits.service || true
+            journalctl --user -u milkcat-credits.service -n 120 --no-pager || true
+            exit 1
+          fi
           systemctl --user --no-pager --full status milkcat-credits.service | head -n 30
 
           if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
