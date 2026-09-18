@@ -51,7 +51,12 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable --now agentos-galaxy-experiment-monitor.timer >/dev/null
-systemctl --user start agentos-galaxy-experiment-monitor.service
+if ! systemctl --user start agentos-galaxy-experiment-monitor.service; then
+  systemctl --user --no-pager --full status agentos-galaxy-experiment-monitor.service >&2 || true
+  journalctl --user -u agentos-galaxy-experiment-monitor.service -n 80 --no-pager >&2 || true
+  echo "galaxy_experiment_monitor_initial_run=FAIL" >&2
+  exit 4
+fi
 systemctl --user is-enabled --quiet agentos-galaxy-experiment-monitor.timer
 systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
 
