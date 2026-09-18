@@ -76,3 +76,13 @@ def test_read_binding_is_product_scoped():
     result = cap.status(request("identity.read", product_id="other"))
     assert result["ok"] is False
     assert result["error_code"] == "account_binding_mismatch"
+
+
+def test_threads_authorization_url_uses_web_host():
+    from agentos_node.social.threads import ThreadsProviderTransport
+    transport = ThreadsProviderTransport(
+        lambda: ThreadsProviderConfig("app", "secret", "https://example.test/callback")
+    )
+    url = transport.authorization_url("state-1")
+    assert url.startswith("https://www.threads.com/oauth/authorize?")
+    assert "state=state-1" in url
