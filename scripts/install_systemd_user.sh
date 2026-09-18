@@ -31,6 +31,29 @@ fi
 
 mkdir -p "$USER_SYSTEMD_DIR" "$DATA_ROOT/logs"
 
+cat > "$USER_SYSTEMD_DIR/milkcat-credits.service" <<EOF
+[Unit]
+Description=Milkcat Credits shadow metering service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$LOGIC_ROOT
+EnvironmentFile=$ENV_FILE
+EnvironmentFile=-%h/.agentos.secrets
+Environment=MILKCAT_CREDITS_MODE=shadow
+ExecStart=$PYTHON_BIN -m agent_core.credit_http --host 127.0.0.1 --port 8767
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+StandardOutput=append:$DATA_ROOT/logs/milkcat_credits.log
+StandardError=append:$DATA_ROOT/logs/milkcat_credits.log
+
+[Install]
+WantedBy=default.target
+EOF
+
 cat > "$USER_SYSTEMD_DIR/os-chronos.service" <<EOF
 [Unit]
 Description=AgentOS Central Chronos Scheduler
@@ -172,10 +195,22 @@ systemctl --user enable os-chronos.service agent-maintenance.timer teams-command
 systemctl --user restart teams-commander.service
 
 if [ "${AGENT_MODE:-CLIENT}" = "CORE" ]; then
-  systemctl --user enable tg-commander.service cat-ink-syncer.service os-lobster.service >/dev/null
+  systemctl --user enable tg-commander.service cat-ink-syncer.service os-lobster.service milkcat-credits.service >/dev/null
   systemctl --user restart tg-commander.service
   systemctl --user restart cat-ink-syncer.service
   systemctl --user restart os-lobster.service
+  systemctl --user restart milkcat-credits.service
+  for attempt in {1..10}; do
+    if curl -fsS --max-time 2 http://127.0.0.1:8767/healthz | grep -q '"service": "milkcat-credits"'; then
+      break
+    fi
+    if [ "$attempt" -eq 10 ]; then
+      echo "milkcat-credits.service failed loopback health verification" >&2
+      systemctl --user --no-pager --full status milkcat-credits.service || true
+      exit 1
+    fi
+    sleep 1
+  done
 else
   echo "AGENT_MODE is not CORE; tg-commander.service, cat-ink-syncer.service, and os-lobster.service installed but not started."
 fi
