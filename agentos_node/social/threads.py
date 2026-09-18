@@ -11,7 +11,7 @@ from .credentials import AccountBinding, CredentialVault
 from .governance import RuntimeWriteAcceptance, SocialWriteGate
 from .oauth import OAuthStateStore
 
-THREADS_SCOPES = ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies")
+THREADS_SCOPES = ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies", "threads_keyword_search")
 THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
 THREADS_READ_PAGE_LIMIT = 3
@@ -204,6 +204,15 @@ class ThreadsCapability:
             if request.operation == "post.read":
                 rows = self.transport.paged("me/threads", token=token, params={"fields": THREAD_FIELDS, "limit": 50})
                 return receipt_for(request, started_at=started, ok=True, capability="social.threads.post.read", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= THREADS_READ_ITEM_LIMIT}).to_dict()
+            if request.operation == "keyword.search":
+                rows = self.transport.paged("keyword_search", token=token, params={
+                    "q": str(request.query or "").strip(),
+                    "search_type": str(request.search_type or "RECENT").upper(),
+                    "search_mode": str(request.search_mode or "KEYWORD").upper(),
+                    "fields": THREAD_FIELDS,
+                    "limit": 50,
+                }, max_pages=1)
+                return receipt_for(request, started_at=started, ok=True, capability="social.threads.keyword.search", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= 50}).to_dict()
             if request.operation == "replies.read":
                 object_id = str(request.object_id or "").strip()
                 if not object_id:
@@ -216,7 +225,7 @@ class ThreadsCapability:
 
     def status(self, request: SocialRequest) -> dict[str, Any]:
         request.validate()
-        if request.operation in {"identity.read", "post.read", "replies.read"}:
+        if request.operation in {"identity.read", "post.read", "replies.read", "keyword.search"}:
             return self.read(request)
         if request.operation != "status":
             raise ValueError("status_or_read_operation_required")
