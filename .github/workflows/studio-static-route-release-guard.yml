@@ -86,7 +86,7 @@ jobs:
 
           grep -Fq 'uses: ./.github/workflows/reusable-studio-static-route-release.yml' "$C"
           grep -Fq 'route: world' "$C"
-          grep -Fq 'source_sha: b675270c7ad08bcd9172496d7436787a32c299a1' "$C"
+          grep -Fq 'source_sha: cfa50f0cb16305d7e0e007764e076ed142e5d83c' "$C"
           grep -Fq 'credit_account:' "$C"
           grep -Fq 'credit_cost:' "$C"
           grep -Fq 'provider_id: service://studio.static-route.release' "$G"
