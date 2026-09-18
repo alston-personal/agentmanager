@@ -31,7 +31,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: cfa50f0cb16305d7e0e007764e076ed142e5d83c
+      source_sha: 34c8b2424f9f9ee11b149f4141033c38e455b97f
       route: world
       backup_key: milkcat-world
       receipt_schema: studio-web.milkcat-world-release/v4
