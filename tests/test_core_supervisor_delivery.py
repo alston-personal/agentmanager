@@ -16,6 +16,7 @@ from agent_core.employee_presence import EmployeePresenceRegistry
 from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.employee_wake_delivery import EmployeeWakeDelivery
 from agent_core.node_registry import NodeRegistry
+from agent_core.work_intent import WORK_INTENT_REF_SCHEMA
 from agent_core.realm_fabric import RealmFabricStore
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy
 
@@ -255,6 +256,30 @@ class CoreSupervisorDeliveryTests(unittest.TestCase):
         tasks = self.fabric.pull_tasks("node-a", self.node_token, limit=10)
         self.assertEqual(len(tasks), 1)
         self.assertEqual(tasks[0]["employee_wake_route"]["presence_generation"], 2)
+
+
+    def test_work_intent_ref_survives_persisted_supervisor_delivery(self):
+        self.runtime.set_work_intent_ref(
+            "audit-001",
+            {
+                "schema": WORK_INTENT_REF_SCHEMA,
+                "product_id": "spec-steward",
+                "state_key": "closure-review",
+                "revision": 4,
+                "digest": "sha256:" + "4" * 64,
+            },
+        )
+        service, _ = self._service()
+        leader = service.claim_leader(lease_seconds=60, now=T0)
+        receipt = service.run_cycle(leader.generation, now=T0 + timedelta(seconds=1))
+        self.assertTrue(receipt.dispatch_performed)
+        tasks = self.fabric.pull_tasks("node-a", self.node_token, limit=10)
+        self.assertEqual(len(tasks), 1)
+        ref = tasks[0]["wake_intent"]["work_intent_ref"]
+        self.assertEqual(ref["product_id"], "spec-steward")
+        self.assertEqual(ref["state_key"], "closure-review")
+        self.assertEqual(ref["revision"], 4)
+        self.assertEqual(ref["digest"], "sha256:" + "4" * 64)
 
 
 if __name__ == "__main__":
