@@ -1,0 +1,44 @@
+{
+  "schema": "agentos.execution-authority/v1",
+  "projects": {
+    "zeus-writer": {
+      "repository": "alston-personal/zeus-writer",
+      "request_path": ".agentos/execution-requests/draft-review.json",
+      "allowed_source_refs": ["master"],
+      "request_source": {
+        "repo_root": "/home/ubuntu/zeus-writer",
+        "source_ref": "master"
+      }
+    }
+  },
+  "capabilities": {
+    "zeus.writer.draft.review": {
+      "project_id": "zeus-writer",
+      "environment": "writing",
+      "adapter": "zeus_draft_review",
+      "parameter_policy": {
+        "chapter": {
+          "type": "string",
+          "pattern": "^Ch[0-9]{2}$"
+        },
+        "work_intent_state_key": {
+          "type": "string",
+          "enum": ["current-work"]
+        },
+        "work_intent_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "work_intent_digest": {
+          "type": "sha256"
+        }
+      },
+      "replay_policy": "idempotent",
+      "runtime": {
+        "repo_root": "/home/ubuntu/zeus-writer",
+        "work_intent_path": ".agentos/work-intents/current.json",
+        "allowed_draft_prefix": "scratch/"
+      }
+    }
+  }
+}

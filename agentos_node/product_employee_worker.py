@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from agent_core.core_supervisor_service import INTENT_RECORD_SCHEMA
 from agent_core.employee_lifecycle import EmployeeLifecycle
 from agent_core.employee_presence import WAKE_CAPABILITY
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.governed_execution import execute_bound_work_intent
 
 EXPECTED_AUTHORITY_POLICY = "core-supervisor-employee-wake-v1"
 EXPECTED_TRANSPORT = "one_direct"
@@ -38,6 +40,17 @@ def _read(path: Path) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         raise ValueError("product_employee_worker_evidence_invalid")
     return payload
+
+
+def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
 
 
 def _same_wake(left: Any, right: Any) -> bool:
@@ -167,11 +180,12 @@ class ProductWorkerState:
 
 
 class GovernedProductEmployeeWorker:
-    """No-network product Employee worker used to prove the governed wake/claim boundary.
+    """Credential-isolated product Employee worker behind the governed wake boundary.
 
-    v1 intentionally performs only a deterministic dry-run checkpoint. Product repository
-    writes, publication, YouTube API reads/writes, credentials, network and arbitrary
-    executable selection remain outside this worker's authority.
+    YouTube v1 remains a deterministic dry-run checkpoint. Zeus may additionally consume
+    a content-addressed product work-intent reference and execute only the fixed
+    read-only review adapter. Product repository writes, publication, credentials,
+    network and arbitrary executable selection remain outside this worker's authority.
     """
 
     def __init__(
@@ -194,6 +208,24 @@ class GovernedProductEmployeeWorker:
             raise ValueError("product_employee_runner_kind_not_allowed")
         if not self.node_id:
             raise ValueError("product_employee_node_id_required")
+
+    def _execute_zeus_review(
+        self,
+        work_ref: dict[str, Any],
+        *,
+        employee_id: str,
+        wake_id: str,
+        presence_generation: int,
+    ) -> dict[str, Any]:
+        receipt = execute_bound_work_intent(work_ref)
+        receipt_path = (
+            self.worker_state_root
+            / "product-receipts"
+            / employee_id
+            / f"{wake_id}.p{presence_generation:06d}.json"
+        )
+        _atomic_write(receipt_path, receipt)
+        return receipt
 
     def _capsules(self) -> list[tuple[Path, dict[str, Any]]]:
         scope = SUPPORTED_PRODUCT_RUNNERS[self.runner_kind]
@@ -257,6 +289,48 @@ class GovernedProductEmployeeWorker:
             )
 
         thread_head = f"product-worker:{self.runner_kind}:dry-run:{wake}:p{generation}:l{lease.generation}"
+        if self.runner_kind == "zeus_writer_v1":
+            wake_intent = capsule.get("wake_intent") or {}
+            work_ref = wake_intent.get("work_intent_ref")
+            if work_ref is not None:
+                receipt = self._execute_zeus_review(
+                    work_ref,
+                    employee_id=employee_id,
+                    wake_id=wake,
+                    presence_generation=generation,
+                )
+                if receipt.get("result_status") != "success":
+                    return ProductWorkerState(
+                        status="unknown",
+                        runner_kind=self.runner_kind,
+                        employee_id=employee_id,
+                        assignment_id=assignment_id,
+                        wake_id=wake,
+                        presence_generation=generation,
+                        lease_generation=lease.generation,
+                        thread_head=lease.thread_head,
+                        error_code=str(receipt.get("error_code") or "zeus_product_review_not_accepted"),
+                    )
+                evidence = receipt.get("evidence") or {}
+                chapter = str(evidence.get("chapter") or "").strip()
+                digest = str(evidence.get("work_intent_digest") or "").removeprefix("sha256:")
+                if not chapter or len(digest) != 64:
+                    return ProductWorkerState(
+                        status="unknown",
+                        runner_kind=self.runner_kind,
+                        employee_id=employee_id,
+                        assignment_id=assignment_id,
+                        wake_id=wake,
+                        presence_generation=generation,
+                        lease_generation=lease.generation,
+                        thread_head=lease.thread_head,
+                        error_code="zeus_product_review_receipt_invalid",
+                    )
+                thread_head = (
+                    f"product-worker:{self.runner_kind}:review-existing-draft:"
+                    f"{chapter}:{digest[:16]}:{wake}:p{generation}:l{lease.generation}"
+                )
+
         lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
         employee = runtime.get_employee(employee_id)
         return ProductWorkerState(
