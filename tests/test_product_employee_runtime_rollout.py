@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from scripts.rollout_product_employee_runtime import build_request, rollout
+from scripts.rollout_product_employee_runtime import build_request, project_tracked_dirty, rollout
 
 
 SHA = "a" * 40
@@ -112,6 +113,68 @@ def test_rollout_fails_closed_on_untrusted_receipt(changes):
     dispatcher = FakeDispatcher(_receipt(**changes))
     with pytest.raises(RuntimeError):
         rollout(_env(), dispatcher=dispatcher, timeout_seconds=1, poll_seconds=0.01)
+
+
+
+def _git(repo: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
+
+
+def test_dirty_projection_exposes_only_path_status_and_equivalence(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "core/integration")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "AgentOS Test")
+    tracked = repo / "scripts" / "safe.py"
+    tracked.parent.mkdir()
+    tracked.write_text("before\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "base")
+    target = _git(repo, "rev-parse", "HEAD")
+    tracked.write_text("local secret-like content must never be emitted\n", encoding="utf-8")
+
+    projected = project_tracked_dirty(target, repo=repo)
+    assert projected["tracked_dirty_count"] == 1
+    assert projected["content_exposed"] is False
+    assert projected["credential_exposed"] is False
+    assert projected["entries"] == [
+        {"status": " M", "path": "scripts/safe.py", "target_equivalent": False}
+    ]
+    serialized = json.dumps(projected, sort_keys=True)
+    assert "local secret-like content" not in serialized
+    assert "before" not in serialized
+
+
+def test_dirty_projection_marks_target_equivalent_partial_rollout(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "core/integration")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "AgentOS Test")
+    tracked = repo / "agent_core" / "example.py"
+    tracked.parent.mkdir()
+    tracked.write_text("old\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "old")
+    tracked.write_text("target\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "target")
+    target = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "HEAD^", "--", "agent_core/example.py")
+    # Convert the index back to HEAD^ while leaving the worktree byte-identical
+    # to the target, matching the production partial-rollout shape.
+    tracked.write_text("target\n", encoding="utf-8")
+    projected = project_tracked_dirty(target, repo=repo)
+    assert projected["tracked_dirty_count"] == 1
+    assert projected["entries"][0]["path"] == "agent_core/example.py"
 
 
 def test_workflow_is_push_only_and_has_no_runtime_inputs():
