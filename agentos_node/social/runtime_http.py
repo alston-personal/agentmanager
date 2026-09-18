@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hmac
+import html
 import json
 import os
 import secrets
@@ -387,6 +388,38 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
             )
         self.end_headers()
 
+    def _oauth_browser_form(self, location: str, *, session_cookie: str) -> None:
+        parsed = urllib.parse.urlsplit(location)
+        if parsed.scheme != "https" or parsed.netloc != "threads.net" or parsed.path != "/oauth/authorize":
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "threads_oauth_authorization_url_invalid"})
+            return
+        params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        hidden = "".join(
+            f'<input type="hidden" name="{html.escape(str(k), quote=True)}" value="{html.escape(str(v), quote=True)}">'
+            for k, v in params
+        )
+        body = (
+            '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>Threads 授權</title></head>'
+            '<body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;max-width:520px;margin:auto">'
+            '<h2>Threads 網頁授權</h2>'
+            '<p>為避免 iPhone 把 OAuth 交給 Threads App，請按下面按鈕在瀏覽器完成授權。</p>'
+            f'<form method="get" action="https://threads.net/oauth/authorize">{hidden}'
+            '<button type="submit" style="font-size:18px;padding:14px 18px;width:100%">繼續 Threads 網頁授權</button>'
+            '</form></body></html>'
+        ).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Set-Cookie",
+            f"{SESSION_COOKIE}={session_cookie}; Path=/v1/social/oauth/threads/callback; HttpOnly; Secure; SameSite=Lax",
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _raw_body(self) -> bytes:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -455,7 +488,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
             except (ValueError, PermissionError, RuntimeError) as exc:
                 self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
                 return
-            self._redirect(location, session_cookie=browser_session_id)
+            self._oauth_browser_form(location, session_cookie=browser_session_id)
             return
         if parsed.path == "/v1/social/oauth/threads/callback":
             query = urllib.parse.parse_qs(parsed.query)
