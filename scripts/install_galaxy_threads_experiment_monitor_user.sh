@@ -15,6 +15,7 @@ LOG="$LOG_DIR/galaxy-experiment-monitor.log"
 
 test -f "$REPO/scripts/monitor_galaxy_threads_experiment_user.py"
 test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
+test -f "$REPO/scripts/publish_sunlake_persona_replies_user.sh"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
 cat > "$SERVICE" <<EOF
@@ -97,6 +98,14 @@ for raw in open(sys.argv[1],encoding='utf-8'):
             }
 print('galaxy_experiment_monitor_reply_catalog='+json.dumps(list(seen.values()),ensure_ascii=False,separators=(',',':')))
 PY
+fi
+
+# One-time, idempotent first persona reply batch. The publisher checks existing
+# owned replies before writing, so monitor reinstall cannot duplicate replies.
+if /bin/bash "$REPO/scripts/publish_sunlake_persona_replies_user.sh"; then
+  echo "sunlake_persona_initial_replies=PASS"
+else
+  echo "sunlake_persona_initial_replies=DEFERRED"
 fi
 
 echo "galaxy_experiment_monitor_install=PASS"
