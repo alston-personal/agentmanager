@@ -6,6 +6,14 @@ on:
       - main
     paths:
       - ".github/workflows/deploy-agentos-core.yml"
+      - "scripts/install_systemd_user.sh"
+      - "scripts/install_services.py"
+      - "agent_core/platform/linux.py"
+      - "agent_core/credit_http.py"
+      - "agent_core/credit_service.py"
+      - "agent_core/credit_ledger.py"
+      - ".agent/governance/credit_pricing.json"
+      - "scripts/os_watchdog.py"
   pull_request:
     branches:
       - main
@@ -51,8 +59,8 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
-      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || '' }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'main' }}
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || (github.event_name == 'push' && github.sha || '') }}
       BOOTSTRAP_RUNTIME_CONVERGER: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_runtime_converger || false }}
       VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
 
@@ -69,7 +77,7 @@ jobs:
           Distributed AgentOS Core bootstrap run **STARTED**.
 
           - main workflow commit: ${GITHUB_SHA}
-          - deployment performed at this stage: false
+          - deployment requested by protected-main push: true
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
@@ -137,9 +145,8 @@ jobs:
           test -f "$ROOT/.env" || { echo "Missing $ROOT/.env"; exit 2; }
           cd "$ROOT"
           if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-            echo "Refusing deployment: tracked local changes exist in $ROOT"
+            echo "INFO: shared checkout has tracked local changes; immutable release worktree keeps them outside deployment:"
             git status --short --untracked-files=no
-            exit 2
           fi
           test -f "$HOME/.agentos.secrets" || echo "WARN: ~/.agentos.secrets does not exist"
           systemctl --user --version >/dev/null
@@ -147,15 +154,15 @@ jobs:
           echo "preflight_sha=$(git rev-parse HEAD)"
           REMOTE
 
-      - name: Bootstrap preflight summary
-        if: ${{ github.event_name != 'workflow_dispatch' && success() }}
+      - name: Pull request preflight summary
+        if: ${{ github.event_name == 'pull_request' && success() }}
         run: |
           echo "Oracle deployment channel preflight succeeded."
-          echo "No deployment was performed by this bootstrap preflight run."
+          echo "Pull requests never deploy."
 
       - name: Deploy and verify local Control Plane
         id: deploy_core
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -169,19 +176,29 @@ jobs:
           BOOTSTRAP_CONVERGER="$4"
           cd "$ROOT"
 
-          PREVIOUS_SHA="$(git rev-parse HEAD)"
+          SHARED_SHA="$(git rev-parse HEAD)"
           DATA_ROOT="${AGENT_DATA_ROOT:-${AGENT_DATA_DIR:-$HOME/agent-data}}"
           CAPABILITY_MARKER="$DATA_ROOT/runtime/action-relay/capabilities.json"
+          RELEASE_ROOT="${AGENTOS_RELEASE_ROOT:-$HOME/.local/share/agentos-core-releases}"
+          CURRENT_LINK="${AGENTOS_RELEASE_CURRENT:-$HOME/.local/share/agentos-core-current}"
+          mkdir -p "$RELEASE_ROOT"
+          PREVIOUS_RELEASE=""
+          if [ -L "$CURRENT_LINK" ]; then
+            PREVIOUS_RELEASE="$(readlink -f "$CURRENT_LINK")"
+          fi
 
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
-              echo "Deployment failed; attempting rollback to $PREVIOUS_SHA" >&2
+              echo "Deployment failed; attempting runtime rollback" >&2
               if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
                 rm -f "$CAPABILITY_MARKER" || true
               fi
-              git checkout --detach "$PREVIOUS_SHA" || true
-              PYTHONPATH="$ROOT" python3 scripts/install_services.py || true
+              if [ -n "$PREVIOUS_RELEASE" ] && [ -d "$PREVIOUS_RELEASE" ]; then
+                [ -e "$PREVIOUS_RELEASE/.env" ] || ln -s "$ROOT/.env" "$PREVIOUS_RELEASE/.env" || true
+                PYTHONPATH="$PREVIOUS_RELEASE" python3 "$PREVIOUS_RELEASE/scripts/install_services.py" --project-root "$PREVIOUS_RELEASE" --data-root "$DATA_ROOT" || true
+                ln -sfn "$PREVIOUS_RELEASE" "$CURRENT_LINK" || true
+              fi
               if [ "$BOOTSTRAP_CONVERGER" = "true" ] && [ -f scripts/install_realm_fabric_user.sh ]; then
                 bash scripts/install_realm_fabric_user.sh || true
               fi
@@ -202,24 +219,17 @@ jobs:
             [ "$TARGET_SHA" = "$EXPECTED" ] || { echo "Converger bootstrap exact-SHA mismatch" >&2; exit 2; }
           fi
 
-          collisions="$(mktemp)"
-          while IFS= read -r -d '' path; do
-            if git cat-file -e "$TARGET_SHA:$path" 2>/dev/null; then
-              printf '%s\n' "$path" >> "$collisions"
-            fi
-          done < <(git ls-files --others --exclude-standard -z)
-          if [ -s "$collisions" ]; then
-            echo "Refusing deployment: untracked files collide with exact target" >&2
-            cat "$collisions" >&2
-            rm -f "$collisions"
-            exit 2
+          RELEASE="$RELEASE_ROOT/$TARGET_SHA"
+          if [ ! -d "$RELEASE/.git" ] && [ ! -f "$RELEASE/.git" ]; then
+            git worktree add --detach "$RELEASE" "$TARGET_SHA"
           fi
-          rm -f "$collisions"
+          test "$(git -C "$RELEASE" rev-parse HEAD)" = "$TARGET_SHA"
+          [ -e "$RELEASE/.env" ] || ln -s "$ROOT/.env" "$RELEASE/.env"
 
-          echo "Deploying $TARGET_SHA from $REF (previous $PREVIOUS_SHA)"
-          git checkout --detach "$TARGET_SHA"
+          echo "Deploying immutable release $TARGET_SHA from $REF"
+          echo "Shared checkout remains at $SHARED_SHA and is not mutated."
 
-          PYTHONPATH="$ROOT" python3 - <<'PY'
+          PYTHONPATH="$RELEASE" python3 - <<'PY'
           import agent_core
           import agentos_node
           import runtime_core
@@ -227,7 +237,7 @@ jobs:
           print("source_import=PASS")
           print("platform=" + get_platform_driver().platform_name())
           PY
-          bash -n scripts/install_systemd_user.sh
+          bash -n "$RELEASE/scripts/install_systemd_user.sh"
 
           set -a
           source .env
@@ -243,19 +253,23 @@ jobs:
             exit 2
           fi
 
-          PYTHONPATH="$ROOT" python3 scripts/install_services.py
+          PYTHONPATH="$RELEASE" python3 "$RELEASE/scripts/install_services.py" --project-root "$RELEASE" --data-root "$DATA_ROOT"
           systemctl --user is-active --quiet agentos-control-plane.service
           curl -fsS http://127.0.0.1:8765/health
           echo
-          systemctl --user --no-pager --full status agentos-control-plane.service | head -n 30
+          systemctl --user is-active --quiet milkcat-credits.service
+          curl -fsS http://127.0.0.1:8767/healthz | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="milkcat-credits" and d["mode"]=="shadow"; print("milkcat_credits_shadow=PASS")'
+          systemctl --user --no-pager --full status milkcat-credits.service | head -n 30
 
           if [ "$BOOTSTRAP_CONVERGER" = "true" ]; then
             bash scripts/bootstrap_runtime_converger_oracle.sh "$REF" "$TARGET_SHA"
           fi
 
           mkdir -p "$DATA_ROOT/runtime"
-          printf '%s\n' "$PREVIOUS_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
+          ln -sfn "$RELEASE" "$CURRENT_LINK"
+          printf '%s\n' "$SHARED_SHA" > "$DATA_ROOT/runtime/previous-agentos-core-sha"
           printf '%s\n' "$TARGET_SHA" > "$DATA_ROOT/runtime/bootstrapped-agentos-core-sha"
+          printf '%s\n' "$RELEASE" > "$DATA_ROOT/runtime/bootstrapped-agentos-core-release"
           trap - EXIT
           REMOTE
 
@@ -304,8 +318,9 @@ jobs:
           - config: ${CONFIG_OUTCOME}
           - ssh-agent: ${SSH_AGENT_OUTCOME}
           - Oracle preflight: ${PREFLIGHT_OUTCOME}
-          - deployment performed: false
-          - next deploy ref: feature/distributed-agentos-runtime
+          - deployment step: ${{ steps.deploy_core.outcome }}
+          - deployed ref: ${DEPLOY_REF}
+          - expected sha: ${EXPECTED_SHA}
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
