@@ -30,7 +30,7 @@ class ThreadsProviderConfig:
     app_secret: str
     redirect_uri: str
     graph_host: str = "https://graph.threads.net"
-    authorize_host: str = "https://threads.net"
+    authorize_host: str = "https://www.threads.com"
 
     @property
     def configured(self) -> bool:
