@@ -8,6 +8,7 @@ service names and installer sequence are fixed here.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,8 @@ from agentos_node.action_relay import ACTIONS, ActionRelayClient
 ACTION = "agentos.runtime.converge"
 DEFAULT_RELAY_ROOT = Path("/home/ubuntu/agent-data/runtime/action-relay")
 DEFAULT_REPO = Path("/home/ubuntu/agentmanager")
+DEFAULT_DRIFT_BACKUP_ROOT = Path("/home/ubuntu/agent-data/runtime/backups/checkout-drift")
+NODE_LOCAL_DRIFT_ALLOWLIST = {"agentos.code-workspace.template"}
 CAPABILITY_MARKER = DEFAULT_RELAY_ROOT / "capabilities.json"
 REQUEST_ID_FIELDS = (
     "schema",
@@ -136,6 +139,101 @@ def _safe_repo_relative_path(raw: str) -> str | None:
     return path.as_posix()
 
 
+
+def _status_entries(status: str) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    for raw in (entry for entry in status.split("\0") if entry):
+        if len(raw) < 4:
+            raise RuntimeError("tracked_checkout_status_invalid")
+        entries.append((raw[:2], raw[3:]))
+    return entries
+
+
+def _path_target_equivalent(repo: Path, source_commit: str, code: str, rel: str) -> bool:
+    if code != " M":
+        return False
+    safe = _safe_repo_relative_path(rel)
+    if safe is None:
+        return False
+    path = repo / safe
+    if path.is_symlink() or not path.is_file():
+        return False
+    summary = _git(repo, "diff", "--summary", "--", safe)
+    if summary.returncode != 0 or summary.stdout.strip():
+        return False
+    worktree_blob = _git(repo, "hash-object", "--", safe)
+    target_blob = _git(repo, "rev-parse", f"{source_commit}:{safe}")
+    return (
+        worktree_blob.returncode == 0
+        and target_blob.returncode == 0
+        and worktree_blob.stdout.strip() == target_blob.stdout.strip()
+    )
+
+
+def _quarantine_allowed_node_local_drift(
+    repo: Path,
+    source_commit: str,
+    status: str,
+    *,
+    backup_root: Path = DEFAULT_DRIFT_BACKUP_ROOT,
+) -> bool:
+    entries = _status_entries(status)
+    non_target = [
+        (code, rel)
+        for code, rel in entries
+        if not _path_target_equivalent(repo, source_commit, code, rel)
+    ]
+    if not non_target:
+        return False
+    for code, rel in non_target:
+        safe = _safe_repo_relative_path(rel)
+        if code != " M" or safe not in NODE_LOCAL_DRIFT_ALLOWLIST:
+            return False
+        path = repo / safe
+        if path.is_symlink() or not path.is_file():
+            return False
+
+    current_head = _git_value(repo, "rev-parse", "HEAD")
+    for code, rel in non_target:
+        safe = _safe_repo_relative_path(rel)
+        assert safe is not None
+        path = repo / safe
+        raw = path.read_bytes()
+        raw_sha = hashlib.sha256(raw).hexdigest()
+        bundle = backup_root / f"runtime-converge-{source_commit[:12]}-{raw_sha[:12]}"
+        files = bundle / "files"
+        files.mkdir(parents=True, exist_ok=False)
+        backup_file = files / safe
+        backup_file.parent.mkdir(parents=True, exist_ok=True)
+        backup_file.write_bytes(raw)
+
+        diff = _git(repo, "diff", "--binary", "--", safe)
+        if diff.returncode != 0:
+            raise RuntimeError("node_local_drift_backup_diff_failed")
+        (bundle / "working-tree.patch").write_text(diff.stdout, encoding="utf-8")
+        metadata = {
+            "schema": "agentos.node-local-drift-backup/v1",
+            "path": safe,
+            "status": code,
+            "worktree_sha256": raw_sha,
+            "current_head": current_head,
+            "target_source_commit": source_commit,
+            "content_exposed": False,
+            "credential_exposed": False,
+        }
+        (bundle / "metadata.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        restored = _git(repo, "checkout", "HEAD", "--", safe)
+        if restored.returncode != 0:
+            raise RuntimeError("node_local_drift_restore_failed")
+        if hashlib.sha256(backup_file.read_bytes()).hexdigest() != raw_sha:
+            raise RuntimeError("node_local_drift_backup_verify_failed")
+    return True
+
+
 def _target_equivalent_dirty(repo: Path, source_commit: str, status: str) -> bool:
     """Prove a narrow partial rollout is already byte-identical to target.
 
@@ -193,7 +291,14 @@ def _preflight(repo: Path, request: Mapping[str, Any]) -> tuple[str, bool, bool]
     if dirty:
         target_equivalent_dirty = _target_equivalent_dirty(repo, source_commit, dirty)
         if not target_equivalent_dirty:
-            raise RuntimeError("tracked_checkout_dirty")
+            quarantined = _quarantine_allowed_node_local_drift(repo, source_commit, dirty)
+            if quarantined:
+                dirty = _tracked_status(repo)
+                target_equivalent_dirty = bool(dirty) and _target_equivalent_dirty(repo, source_commit, dirty)
+                if dirty and not target_equivalent_dirty:
+                    raise RuntimeError("tracked_checkout_dirty_after_node_local_quarantine")
+            else:
+                raise RuntimeError("tracked_checkout_dirty")
 
     # A target-equivalent dirty checkout still needs the exact checkout step so
     # the index/HEAD/worktree become a clean, attestable generation.
