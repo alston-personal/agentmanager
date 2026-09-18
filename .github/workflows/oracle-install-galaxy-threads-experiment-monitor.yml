@@ -1,0 +1,103 @@
+name: Oracle Install Galaxy Threads Experiment Monitor
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-install-galaxy-threads-experiment-monitor.yml'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/install_galaxy_threads_experiment_monitor_user.sh'
+      - 'scripts/monitor_galaxy_threads_experiment_user.py'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight monitor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/core/integration"
+          test "$(id -un)" = "agentos-node"
+          python3 -m py_compile agentos_node/bootstrap_control.py scripts/monitor_galaxy_threads_experiment_user.py
+          bash -n scripts/install_galaxy_threads_experiment_monitor_user.sh
+          echo "galaxy_experiment_monitor_preflight=PASS"
+
+      - name: Install persistent monitor through bootstrap control
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="galaxy-monitor-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          cat scripts/monitor_galaxy_threads_experiment_user.py > "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+import json, os, sys
+from datetime import datetime, timezone
+from pathlib import Path
+path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
+payload={
+  'schema':'agentos.bootstrap-request/v1',
+  'request_id':request_id,
+  'action':'agentos.social_threads_experiment_monitor.install',
+  'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+  'params':{'source_commit':sha},
+  'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+}
+tmp=path.with_suffix(path.suffix+'.tmp')
+tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+PY
+
+          for i in $(seq 1 480); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "galaxy_experiment_monitor_receipt=TIMEOUT"; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+assert r.get('action')=='agentos.social_threads_experiment_monitor.install',r
+assert r.get('executor_user')=='ubuntu',r
+assert r.get('executor_uid')==1001,r
+assert r.get('source_commit')==expected,r
+assert r.get('ok') is True,r
+text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+assert 'galaxy_experiment_monitor_install=PASS' in text,text[-12000:]
+assert 'galaxy_experiment_monitor_interval=30m' in text,text[-12000:]
+print('galaxy_experiment_monitor_receipt=PASS')
+PY
+
+          sudo -iu ubuntu systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
+          test -f /home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json
+          python3 - <<'PY'
+import json
+p=json.load(open("/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json",encoding="utf-8"))
+assert p.get('schema')=='agentos.social-experiment-snapshot/v1',p
+assert p.get('experiment')=='ai-pays-its-subscription',p
+print('galaxy_experiment_monitor_snapshot=PASS')
+print('galaxy_experiment_monitor_reply_count='+str(p.get('reply_count',0)))
+print('galaxy_experiment_monitor_needs_attention='+str(bool(p.get('needs_attention'))).lower())
+PY
