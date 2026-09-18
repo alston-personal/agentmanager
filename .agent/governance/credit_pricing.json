@@ -1,0 +1,12 @@
+{
+  "schema": "milkcat.credit-pricing/v1",
+  "currency": "credit",
+  "actions": {
+    "fengshui.view": 0,
+    "fengshui.shortlist.write": 0,
+    "fengshui.north.detect": 1,
+    "fengshui.analysis.generate": 2,
+    "fengshui.compare.deep": 3,
+    "fengshui.3d.generate": 5
+  }
+}
