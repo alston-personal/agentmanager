@@ -1,0 +1,94 @@
+name: Oracle Publish Sunlake Persona Replies
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-publish-sunlake-persona-replies.yml'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/publish_sunlake_persona_replies_user.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight persona replies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          bash -n scripts/publish_sunlake_persona_replies_user.sh
+          grep -Fq 'agentos.social_threads_sunlake_persona_replies.publish' agentos_node/bootstrap_control.py
+          echo 'persona_threads_reply_preflight=PASS'
+
+      - name: Publish governed reply batch
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="sunlake-replies-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':request_id,
+            'action':'agentos.social_threads_sunlake_persona_replies.publish',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{'source_commit':sha},
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path.with_suffix(path.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 480); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo 'persona_threads_reply_receipt=TIMEOUT'; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.social_threads_sunlake_persona_replies.publish',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
+          assert 'persona_threads_reply=PASS' in text,text[-12000:]
+          for forbidden in ('access_token','app_secret','control_token','product_key'):
+              assert forbidden not in text.lower(), forbidden
+          print('persona_threads_reply_receipt=PASS')
+          for line in text.splitlines():
+              if line.startswith(('persona_threads_reply_publish=','persona_threads_reply_skip=','persona_threads_reply_account=','persona_threads_reply_published=')):
+                  print(line)
+          PY
