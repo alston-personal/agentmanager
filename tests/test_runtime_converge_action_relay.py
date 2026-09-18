@@ -86,6 +86,107 @@ def test_current_generation_reconcile_failure_is_not_reported_healthy(monkeypatc
     assert result["rollback"] == "not_needed"
 
 
+
+def _real_git(repo: Path, *args: str) -> str:
+    proc = relay._git(repo, *args)
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout.strip()
+
+
+def _node_local_drift_repo(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _real_git(repo, "init", "-b", "core/integration")
+    _real_git(repo, "config", "user.email", "test@example.invalid")
+    _real_git(repo, "config", "user.name", "AgentOS Test")
+    (repo / "agentos_node").mkdir()
+    (repo / "dashboard/app/api/social/[...path]").mkdir(parents=True)
+    (repo / "agentos.code-workspace.template").write_text("base workspace\n", encoding="utf-8")
+    (repo / "agentos_node/bootstrap_control.py").write_text("old bootstrap\n", encoding="utf-8")
+    (repo / "dashboard/app/api/social/[...path]/route.ts").write_text("old route\n", encoding="utf-8")
+    _real_git(repo, "add", ".")
+    _real_git(repo, "commit", "-m", "base")
+    previous = _real_git(repo, "rev-parse", "HEAD")
+
+    (repo / "agentos_node/bootstrap_control.py").write_text("target bootstrap\n", encoding="utf-8")
+    (repo / "dashboard/app/api/social/[...path]/route.ts").write_text("target route\n", encoding="utf-8")
+    _real_git(repo, "add", ".")
+    _real_git(repo, "commit", "-m", "target")
+    target = _real_git(repo, "rev-parse", "HEAD")
+
+    _real_git(repo, "checkout", "--detach", previous)
+    (repo / "agentos.code-workspace.template").write_text(
+        "base workspace\nRootNexus=../root-nexus\n",
+        encoding="utf-8",
+    )
+    (repo / "agentos_node/bootstrap_control.py").write_text("target bootstrap\n", encoding="utf-8")
+    (repo / "dashboard/app/api/social/[...path]/route.ts").write_text("target route\n", encoding="utf-8")
+    return repo, previous, target
+
+
+def test_quarantine_known_workspace_drift_preserves_bytes_and_leaves_target_equivalent_partial_rollout(tmp_path):
+    repo, previous, target = _node_local_drift_repo(tmp_path)
+    status = relay._tracked_status(repo)
+    assert " M agentos.code-workspace.template\0" in status
+    assert relay._target_equivalent_dirty(repo, target, status) is False
+
+    backup_root = tmp_path / "backups"
+    changed = relay._quarantine_allowed_node_local_drift(
+        repo,
+        target,
+        status,
+        backup_root=backup_root,
+    )
+    assert changed is True
+    assert (repo / "agentos.code-workspace.template").read_text(encoding="utf-8") == "base workspace\n"
+    remaining = relay._tracked_status(repo)
+    assert "agentos.code-workspace.template" not in remaining
+    assert relay._target_equivalent_dirty(repo, target, remaining) is True
+
+    bundles = list(backup_root.iterdir())
+    assert len(bundles) == 1
+    bundle = bundles[0]
+    raw = (bundle / "files" / "agentos.code-workspace.template").read_text(encoding="utf-8")
+    assert "RootNexus=../root-nexus" in raw
+    metadata = json.loads((bundle / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["path"] == "agentos.code-workspace.template"
+    assert metadata["current_head"] == previous
+    assert metadata["target_source_commit"] == target
+    assert metadata["content_exposed"] is False
+    assert metadata["credential_exposed"] is False
+    assert (bundle / "working-tree.patch").is_file()
+
+    # Reappearing identical node-local drift reuses verified evidence and does not overwrite it.
+    (repo / "agentos.code-workspace.template").write_text(raw, encoding="utf-8")
+    status2 = relay._tracked_status(repo)
+    assert relay._quarantine_allowed_node_local_drift(
+        repo,
+        target,
+        status2,
+        backup_root=backup_root,
+    ) is True
+    assert len(list(backup_root.iterdir())) == 1
+
+
+def test_quarantine_refuses_unknown_non_target_dirty_path(tmp_path):
+    repo, _, target = _node_local_drift_repo(tmp_path)
+    other = repo / "README.md"
+    other.write_text("base\n", encoding="utf-8")
+    _real_git(repo, "add", "README.md")
+    _real_git(repo, "commit", "-m", "local head fixture")
+    other.write_text("real local development\n", encoding="utf-8")
+    status = relay._tracked_status(repo)
+    before = other.read_bytes()
+    assert relay._quarantine_allowed_node_local_drift(
+        repo,
+        target,
+        status,
+        backup_root=tmp_path / "backups",
+    ) is False
+    assert other.read_bytes() == before
+    assert not (tmp_path / "backups").exists()
+
+
 def test_preflight_refuses_unknown_dirty_checkout_after_exact_target_is_resolved(monkeypatch, tmp_path):
     (tmp_path / ".git").mkdir()
     calls = []
