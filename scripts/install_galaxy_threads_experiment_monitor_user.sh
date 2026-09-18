@@ -105,5 +105,5 @@ echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=10m"
 echo "galaxy_experiment_monitor_log=$LOG"
 if [ -f "$LOG" ]; then
-  tail -n 120 "$LOG" | grep -E '^(mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=)' | tail -n 40 || true
+  tail -n 160 "$LOG" | grep -E '^(mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 50 || true
 fi
