@@ -12,10 +12,12 @@ on:
       - 'governance/product-employee-worker-plan.json'
       - 'governance/employee-worker-adapters.json'
       - 'governance/employee-worker-adapters-v2.json'
+      - 'governance/execution-authority.json'
       - '.agent/scripts/agentos-employee-wake-node.service'
       - '.agent/scripts/agentos-employee-worker-host.service'
       - 'agent_core/node_registry.py'
       - 'agent_core/realm_fabric.py'
+      - 'agent_core/governed_execution.py'
       - 'agentos_node/employee_wake_node.py'
       - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
@@ -27,6 +29,7 @@ on:
       - 'tests/test_product_employee_contracts.py'
       - 'tests/test_product_employee_worker_plan.py'
       - 'tests/test_product_employee_worker.py'
+      - 'tests/test_governed_execution.py'
       - 'tests/test_product_employee_activation.py'
       - 'tests/test_node_registry_recovery.py'
       - 'tests/test_realm_fabric_atomic_repair.py'
@@ -55,6 +58,7 @@ jobs:
           tests/test_product_employee_contracts.py
           tests/test_product_employee_worker_plan.py
           tests/test_product_employee_worker.py
+          tests/test_governed_execution.py
           tests/test_product_employee_activation.py
           tests/test_node_registry_recovery.py
           tests/test_realm_fabric_atomic_repair.py
