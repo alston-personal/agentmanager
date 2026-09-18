@@ -257,7 +257,7 @@ async def heal_core_services():
     if AGENT_MODE != "CORE":
         return
 
-    core_services = ["tg-commander.service", "os-lobster.service"]
+    core_services = ["tg-commander.service", "os-lobster.service", "milkcat-credits.service"]
     for svc in core_services:
         entity_id = f"systemd_{svc}"
         if not await check_systemd_user(svc):
