@@ -42,10 +42,10 @@ jobs:
           DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
         run: |
           set -euo pipefail
-          install -m 600 /dev/null /tmp/deploy_key
-          printf '%s\n' "$DEPLOY_KEY" > /tmp/deploy_key
+          test -n "${DEPLOY_USER:-}"
           PORT="${DEPLOY_PORT:-22}"
-          ssh -i /tmp/deploy_key -p "$PORT" -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST"             bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
           set -euo pipefail
           REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
           LIVE=/home/ubuntu/zeus-writer/website/dist
