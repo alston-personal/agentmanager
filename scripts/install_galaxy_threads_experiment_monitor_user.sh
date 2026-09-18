@@ -66,6 +66,28 @@ print('galaxy_experiment_monitor_new_replies='+str(len(p.get('new_replies') or [
 print('galaxy_experiment_monitor_needs_attention='+str(bool(p.get('needs_attention'))).lower())
 PY
 
+HISTORY="$HOME/agent-data/runtime/social/experiments/ai-subscription/history.jsonl"
+if [ -f "$HISTORY" ]; then
+python3 - "$HISTORY" <<'PY'
+import json, sys
+seen={}
+for raw in open(sys.argv[1],encoding='utf-8'):
+    try: row=json.loads(raw)
+    except Exception: continue
+    for item in row.get('new_replies') or []:
+        rid=str(item.get('id') or '')
+        if rid:
+            seen[rid]={
+              'id':rid,
+              'username':item.get('username'),
+              'text':item.get('text'),
+              'timestamp':item.get('timestamp'),
+              'permalink':item.get('permalink'),
+            }
+print('galaxy_experiment_monitor_reply_catalog='+json.dumps(list(seen.values()),ensure_ascii=False,separators=(',',':')))
+PY
+fi
+
 echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=30m"
 echo "galaxy_experiment_monitor_log=$LOG"
