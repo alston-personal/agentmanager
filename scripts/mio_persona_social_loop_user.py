@@ -220,8 +220,15 @@ def main():
     product_key,control,bid,binding=auth()
     now=utc_now()
     persona_state=load_json(PERSONA_ROOT/'persona_state.json',{})
-    energy_config=persona_state.get('energy') or {}
-    stochastic_config=persona_state.get('stochastic_life_events') or {}
+    energy_config=persona_state.get('energy') or {
+      'policy_version':'mio-energy-v1','capacity':100,'current':72,'floor':0,
+      'recovery':{'awake_points_per_hour':3,'rest_points_per_hour':7,'sleep_points_per_hour':12,'cap_at_capacity':True},
+      'action_costs':{'observe_passive':0.2,'read_thread':1,'like_or_light_reaction':1,'short_reply':3,'long_reply':5,'proactive_reply':6,'new_post':8,'deep_analysis':9,'image_creation':12,'video_creation':20,'social_burst_extra':4}
+    }
+    energy_config.setdefault('policy_version','mio-energy-v1')
+    stochastic_config=persona_state.get('stochastic_life_events') or {
+      'enabled':True,'daily_event_probability':0.42,'max_events_per_day':2,'minimum_gap_hours':4
+    }
     life=effective_energy(LIFE_STATE,energy_config,now)
     event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now)
     if event:
