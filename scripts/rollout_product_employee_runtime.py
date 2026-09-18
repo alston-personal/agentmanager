@@ -146,12 +146,13 @@ def rollout(
     env: Mapping[str, str] | None = None,
     *,
     dispatcher: ActionRelayRuntimeConvergeDispatcher | None = None,
+    quarantine_func=quarantine_known_node_local_drift_before_submit,
     timeout_seconds: int = 420,
     poll_seconds: float = 1.0,
 ) -> dict[str, Any]:
     environment = dict(os.environ if env is None else env)
     request = build_request(environment)
-    quarantine_known_node_local_drift_before_submit(request["source_commit"])
+    quarantine_func(request["source_commit"])
     runtime = dispatcher or ActionRelayRuntimeConvergeDispatcher()
     submission = runtime.submit(request=request)
     if submission.get("ok") is not True:
