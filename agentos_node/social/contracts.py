@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 
 WRITE_OPERATIONS = frozenset({"publish", "reply", "disconnect"})
-READ_OPERATIONS = frozenset({"status", "identity.read", "post.read", "replies.read", "public_post.read", "connect"})
+READ_OPERATIONS = frozenset({"status", "identity.read", "post.read", "replies.read", "public_post.read", "keyword.search", "connect"})
 SUPPORTED_OPERATIONS = READ_OPERATIONS | WRITE_OPERATIONS
 FORBIDDEN_RECEIPT_KEYS = frozenset({
     "access_token", "refresh_token", "token", "app_secret", "client_secret",
@@ -46,6 +46,9 @@ class SocialRequest:
     reply_to_id: str | None = None
     return_to: str | None = None
     write_intent_id: str | None = None
+    query: str | None = None
+    search_type: str | None = None
+    search_mode: str | None = None
     schema: str = "agentos.social-request/v1"
 
     def validate(self) -> "SocialRequest":
@@ -71,6 +74,13 @@ class SocialRequest:
                     raise ValueError("unsupported_text_attachment_field")
         if self.operation == "reply" and not self.reply_to_id:
             raise ValueError("reply_target_required")
+        if self.operation == "keyword.search":
+            if not str(self.query or "").strip():
+                raise ValueError("search_query_required")
+            if str(self.search_type or "RECENT").upper() not in {"RECENT", "TOP"}:
+                raise ValueError("unsupported_search_type")
+            if str(self.search_mode or "KEYWORD").upper() not in {"KEYWORD", "TAG"}:
+                raise ValueError("unsupported_search_mode")
         if self.return_to:
             value = self.return_to.strip()
             if not value.startswith("/") or value.startswith("//"):
