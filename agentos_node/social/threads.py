@@ -67,9 +67,30 @@ class ThreadsProviderTransport:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            safe_code = f"http_{int(exc.code)}"
+            provider_code = ""
+            provider_type = ""
+            try:
+                raw = exc.read().decode("utf-8", "replace")
+                body = json.loads(raw)
+                err = body.get("error") if isinstance(body, dict) else None
+                if isinstance(err, dict):
+                    provider_code = str(err.get("code") or "")
+                    provider_type = str(err.get("type") or "")
+            except Exception:
+                pass
+            detail = "_".join(part for part in (safe_code, provider_type, provider_code) if part)
+            raise ThreadsProviderError(f"threads_api_unavailable_{detail}") from exc
         except Exception as exc:
-            raise ThreadsProviderError("threads_api_unavailable") from exc
+            raise ThreadsProviderError("threads_api_unavailable_transport") from exc
         if not isinstance(payload, dict) or payload.get("error"):
+            err = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(err, dict):
+                code = str(err.get("code") or "")
+                etype = str(err.get("type") or "")
+                detail = "_".join(part for part in (etype, code) if part)
+                raise ThreadsProviderError(f"threads_api_rejected_{detail}" if detail else "threads_api_rejected")
             raise ThreadsProviderError("threads_api_rejected")
         return payload
 
