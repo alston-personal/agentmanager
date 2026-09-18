@@ -8,7 +8,11 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
-from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
+from agentos_node.runtime_converge_action_relay import (
+    ActionRelayRuntimeConvergeDispatcher,
+    _quarantine_allowed_node_local_drift,
+    _tracked_status,
+)
 
 
 ALLOWED_REPOSITORY = "alston-personal/agentmanager"
@@ -123,6 +127,21 @@ def project_tracked_dirty(
     }
 
 
+def quarantine_known_node_local_drift_before_submit(
+    source_commit: str,
+    *,
+    repo: Path = STABLE_REPO,
+) -> bool:
+    status = _tracked_status(repo)
+    if not status:
+        return False
+    return _quarantine_allowed_node_local_drift(
+        repo,
+        source_commit,
+        status,
+    )
+
+
 def rollout(
     env: Mapping[str, str] | None = None,
     *,
@@ -132,6 +151,7 @@ def rollout(
 ) -> dict[str, Any]:
     environment = dict(os.environ if env is None else env)
     request = build_request(environment)
+    quarantine_known_node_local_drift_before_submit(request["source_commit"])
     runtime = dispatcher or ActionRelayRuntimeConvergeDispatcher()
     submission = runtime.submit(request=request)
     if submission.get("ok") is not True:
