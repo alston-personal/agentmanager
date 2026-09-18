@@ -202,29 +202,35 @@ def _quarantine_allowed_node_local_drift(
         raw_sha = hashlib.sha256(raw).hexdigest()
         bundle = backup_root / f"runtime-converge-{source_commit[:12]}-{raw_sha[:12]}"
         files = bundle / "files"
-        files.mkdir(parents=True, exist_ok=False)
         backup_file = files / safe
-        backup_file.parent.mkdir(parents=True, exist_ok=True)
-        backup_file.write_bytes(raw)
+        if bundle.exists():
+            if not backup_file.is_file():
+                raise RuntimeError("node_local_drift_backup_incomplete")
+            if hashlib.sha256(backup_file.read_bytes()).hexdigest() != raw_sha:
+                raise RuntimeError("node_local_drift_backup_conflict")
+        else:
+            files.mkdir(parents=True, exist_ok=False)
+            backup_file.parent.mkdir(parents=True, exist_ok=True)
+            backup_file.write_bytes(raw)
 
-        diff = _git(repo, "diff", "--binary", "--", safe)
-        if diff.returncode != 0:
-            raise RuntimeError("node_local_drift_backup_diff_failed")
-        (bundle / "working-tree.patch").write_text(diff.stdout, encoding="utf-8")
-        metadata = {
-            "schema": "agentos.node-local-drift-backup/v1",
-            "path": safe,
-            "status": code,
-            "worktree_sha256": raw_sha,
-            "current_head": current_head,
-            "target_source_commit": source_commit,
-            "content_exposed": False,
-            "credential_exposed": False,
-        }
-        (bundle / "metadata.json").write_text(
-            json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+            diff = _git(repo, "diff", "--binary", "--", safe)
+            if diff.returncode != 0:
+                raise RuntimeError("node_local_drift_backup_diff_failed")
+            (bundle / "working-tree.patch").write_text(diff.stdout, encoding="utf-8")
+            metadata = {
+                "schema": "agentos.node-local-drift-backup/v1",
+                "path": safe,
+                "status": code,
+                "worktree_sha256": raw_sha,
+                "current_head": current_head,
+                "target_source_commit": source_commit,
+                "content_exposed": False,
+                "credential_exposed": False,
+            }
+            (bundle / "metadata.json").write_text(
+                json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
 
         restored = _git(repo, "checkout", "HEAD", "--", safe)
         if restored.returncode != 0:
