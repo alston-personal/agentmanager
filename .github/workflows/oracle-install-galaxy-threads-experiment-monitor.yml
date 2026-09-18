@@ -10,6 +10,7 @@ on:
       - 'scripts/install_galaxy_threads_experiment_monitor_user.sh'
       - 'scripts/monitor_galaxy_threads_experiment_user.py'
       - 'scripts/sync_sunlake_milkcat_persona_user.py'
+      - 'scripts/publish_sunlake_persona_replies_user.sh'
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
           test "$GITHUB_REF" = "refs/heads/core/integration"
           test "$(id -un)" = "agentos-node"
           python3 -m py_compile agentos_node/bootstrap_control.py scripts/monitor_galaxy_threads_experiment_user.py scripts/sync_sunlake_milkcat_persona_user.py
-          bash -n scripts/install_galaxy_threads_experiment_monitor_user.sh
+          bash -n scripts/install_galaxy_threads_experiment_monitor_user.sh scripts/publish_sunlake_persona_replies_user.sh
           echo "galaxy_experiment_monitor_preflight=PASS"
 
       - name: Install persistent monitor through bootstrap control
@@ -46,7 +47,8 @@ jobs:
           cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
           cat scripts/monitor_galaxy_threads_experiment_user.py > "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py"
           cat scripts/sync_sunlake_milkcat_persona_user.py > "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py" || true
+          cat scripts/publish_sunlake_persona_replies_user.sh > "$LIVE/scripts/publish_sunlake_persona_replies_user.sh"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py" "$LIVE/scripts/publish_sunlake_persona_replies_user.sh" || true
           python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py"
 
           for i in $(seq 1 120); do
