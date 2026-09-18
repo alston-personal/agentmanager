@@ -1,0 +1,96 @@
+name: Oracle Publish Galaxy Threads Day 1
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-publish-galaxy-threads-day1.yml'
+      - 'agentos_node/bootstrap_control.py'
+      - 'scripts/publish_galaxy_threads_day1_user.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight governed one-shot publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          bash -n scripts/publish_galaxy_threads_day1_user.sh
+          grep -Fq 'agentos.social_threads_galaxy_day1.publish' agentos_node/bootstrap_control.py
+          echo 'galaxy_day1_preflight=PASS'
+
+      - name: Publish bounded bootstrap hook and request Day 1 post
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="galaxy-day1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':request_id,
+            'action':'agentos.social_threads_galaxy_day1.publish',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{'source_commit':sha},
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path.with_suffix(path.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 480); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo 'galaxy_day1_receipt=TIMEOUT'; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.social_threads_galaxy_day1.publish',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
+          assert ('galaxy_day1_publish=PASS' in text) or ('galaxy_day1_publish=ALREADY_PRESENT' in text), text[-12000:]
+          for forbidden in ('access_token','app_secret','control_token','product_key'):
+              assert forbidden not in text.lower(), forbidden
+          print('galaxy_day1_receipt=PASS')
+          for line in text.splitlines():
+              if line.startswith(('galaxy_day1_username=','galaxy_day1_object_id=','galaxy_day1_permalink=','galaxy_day1_publish=')):
+                  print(line)
+          PY
