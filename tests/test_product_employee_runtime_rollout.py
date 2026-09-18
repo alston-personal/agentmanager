@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.rollout_product_employee_runtime as rollout_module
 from scripts.rollout_product_employee_runtime import build_request, project_tracked_dirty, rollout
 
 
@@ -117,6 +118,54 @@ def test_rollout_fails_closed_on_untrusted_receipt(changes):
         rollout(_env(), dispatcher=dispatcher, quarantine_func=lambda sha: False, timeout_seconds=1, poll_seconds=0.01)
 
 
+
+
+
+def test_quarantine_fetches_and_verifies_exact_target_before_classification(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+    class Proc:
+        def __init__(self, returncode=0, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+    def fake_git(repo, *args):
+        calls.append(args)
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc()
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return Proc(stdout=SHA + "\n")
+        raise AssertionError(args)
+    monkeypatch.setattr(rollout_module, "_git", fake_git)
+    monkeypatch.setattr(rollout_module, "_tracked_status", lambda repo: " M agentos.code-workspace.template\0")
+    seen = []
+    monkeypatch.setattr(
+        rollout_module,
+        "_quarantine_allowed_node_local_drift",
+        lambda repo, source_commit, status: seen.append((source_commit, status)) or True,
+    )
+    assert rollout_module.quarantine_known_node_local_drift_before_submit(SHA, repo=Path("/tmp/stable")) is True
+    assert calls == [
+        ("fetch", "--no-tags", "origin", "core/integration"),
+        ("rev-parse", "FETCH_HEAD"),
+    ]
+    assert seen == [(SHA, " M agentos.code-workspace.template\0")]
+
+
+def test_quarantine_refuses_fetch_head_mismatch(monkeypatch: pytest.MonkeyPatch):
+    class Proc:
+        def __init__(self, returncode=0, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+    def fake_git(repo, *args):
+        if args == ("fetch", "--no-tags", "origin", "core/integration"):
+            return Proc()
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return Proc(stdout="b" * 40 + "\n")
+        raise AssertionError(args)
+    monkeypatch.setattr(rollout_module, "_git", fake_git)
+    with pytest.raises(RuntimeError, match="quarantine_source_mismatch"):
+        rollout_module.quarantine_known_node_local_drift_before_submit(SHA, repo=Path("/tmp/stable"))
 
 
 def test_rollout_quarantine_failure_prevents_relay_submit():
