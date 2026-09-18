@@ -81,6 +81,68 @@ EOF
 fi
 chmod 0600 "$ENV_FILE"
 
+# Ensure the browser-facing Galaxy product is registered without exposing its key.
+# Existing product registrations and keys are preserved; a key is generated only when missing.
+python3 - "$ENV_FILE" <<'PY'
+from pathlib import Path
+import json, os, secrets, tempfile
+
+path = Path(__import__('sys').argv[1])
+lines = path.read_text(encoding='utf-8').splitlines()
+prefix = 'AGENTOS_SOCIAL_PRODUCTS_JSON='
+idxs = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+if len(idxs) > 1:
+    raise SystemExit('social_runtime_products=DUPLICATE_KEY')
+if idxs:
+    idx = idxs[0]
+    raw = lines[idx][len(prefix):].strip() or '{}'
+else:
+    idx = None
+    raw = '{}'
+try:
+    registry = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit('social_runtime_products=INVALID_JSON') from exc
+if not isinstance(registry, dict):
+    raise SystemExit('social_runtime_products=INVALID_SHAPE')
+
+item = registry.get('galaxy')
+changed = False
+if not isinstance(item, dict):
+    item = {}
+    registry['galaxy'] = item
+    changed = True
+if not str(item.get('api_key') or '').strip():
+    item['api_key'] = secrets.token_urlsafe(32)
+    changed = True
+if str(item.get('return_base') or '').rstrip('/') != 'https://studio.milkcat.org':
+    item['return_base'] = 'https://studio.milkcat.org'
+    changed = True
+
+encoded = json.dumps(registry, separators=(',', ':'), sort_keys=True)
+newline = prefix + encoded
+if idx is None:
+    lines.append(newline)
+    changed = True
+elif lines[idx] != newline:
+    lines[idx] = newline
+    changed = True
+
+if changed:
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + '.', dir=str(path.parent), text=True)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as h:
+            h.write('\n'.join(lines) + '\n')
+            h.flush(); os.fsync(h.fileno())
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, path)
+    finally:
+        try: os.unlink(tmp_name)
+        except FileNotFoundError: pass
+os.chmod(path, 0o600)
+print('social_runtime_product_galaxy=REGISTERED')
+PY
+
 # The redirect URI is part of the shared Core contract, not a product secret.
 # Existing operator configuration is preserved: only an empty value is hydrated.
 # A different non-empty value fails closed without printing that value.
