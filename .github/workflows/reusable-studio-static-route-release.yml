@@ -215,7 +215,16 @@ jobs:
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             "https://studio.milkcat.org/$ROUTE/" -o "$TMP/route-live"
           validate_html "$TMP/route-live"
+          if [ -s "$ASSET_REFS" ]; then
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              test -f "$LIVE$ref"
+              curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+                "https://studio.milkcat.org$ref" -o /dev/null
+            done < "$ASSET_REFS"
+          fi
           echo "local_nginx_studio_static_route_acceptance=PASS route=$ROUTE"
+          echo "local_nginx_studio_static_assets_acceptance=PASS route=$ROUTE"
 
           printf '%s\n' \
             "schema=$RECEIPT_SCHEMA" \
