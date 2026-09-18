@@ -454,6 +454,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
         allowed = {
             "schema", "product_id", "platform", "operation", "account_binding_id", "target_account_id",
             "primary_text", "text_attachment", "object_id", "reply_to_id", "return_to", "write_intent_id",
+            "query", "search_type", "search_mode",
         }
         if set(body) - allowed:
             raise ValueError("unsupported_social_request_field")
