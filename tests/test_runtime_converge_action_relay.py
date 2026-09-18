@@ -302,6 +302,66 @@ def _dispatcher(tmp_path: Path) -> relay.ActionRelayRuntimeConvergeDispatcher:
     return dispatcher
 
 
+
+def test_request_submit_lock_accepts_secure_foreign_owner_in_shared_group(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(relay.os, "open", lambda *args, **kwargs: 77)
+    monkeypatch.setattr(
+        relay.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660),
+    )
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getgroups", lambda: [4242])
+    monkeypatch.setattr(relay.os, "fchmod", lambda *args: calls.append(("chmod", args)))
+    monkeypatch.setattr(relay.os, "close", lambda fd: calls.append(("close", fd)))
+    monkeypatch.setattr(relay.fcntl, "flock", lambda fd, op: calls.append(("flock", fd, op)))
+
+    with relay._request_submit_lock(tmp_path):
+        calls.append(("inside",))
+
+    assert not [call for call in calls if call[0] == "chmod"]
+    assert ("inside",) in calls
+    assert ("close", 77) in calls
+
+
+def test_request_submit_lock_rejects_foreign_owner_outside_shared_group(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay.os, "open", lambda *args, **kwargs: 78)
+    monkeypatch.setattr(
+        relay.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100660),
+    )
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getgroups", lambda: [])
+    monkeypatch.setattr(relay.os, "close", lambda fd: None)
+    monkeypatch.setattr(relay.fcntl, "flock", lambda *args: (_ for _ in ()).throw(AssertionError("must not lock")))
+
+    with pytest.raises(PermissionError, match="lock_group_not_authorized"):
+        with relay._request_submit_lock(tmp_path):
+            pass
+
+
+def test_request_submit_lock_rejects_world_accessible_shared_lock(monkeypatch, tmp_path):
+    monkeypatch.setattr(relay.os, "open", lambda *args, **kwargs: 79)
+    monkeypatch.setattr(
+        relay.os,
+        "fstat",
+        lambda fd: SimpleNamespace(st_uid=1001, st_gid=4242, st_mode=0o100666),
+    )
+    monkeypatch.setattr(relay.os, "geteuid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getegid", lambda: 2002)
+    monkeypatch.setattr(relay.os, "getgroups", lambda: [4242])
+    monkeypatch.setattr(relay.os, "close", lambda fd: None)
+    monkeypatch.setattr(relay.fcntl, "flock", lambda *args: (_ for _ in ()).throw(AssertionError("must not lock")))
+
+    with pytest.raises(PermissionError, match="lock_mode_not_shared"):
+        with relay._request_submit_lock(tmp_path):
+            pass
+
+
 def test_runtime_converge_duplicate_request_reuses_same_inbox_capsule(tmp_path):
     dispatcher = _dispatcher(tmp_path)
     first = dispatcher.submit(request=request())
