@@ -188,6 +188,26 @@ jobs:
           cp -a "$ROUTE_DIR" "$NEW_ROUTE"
           find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
           find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
+
+          ASSET_REFS="$TMP/astro-assets.txt"
+          grep -oE '/_astro/[A-Za-z0-9._/-]+' "$ROUTE_DIR/index.html" | sort -u > "$ASSET_REFS" || true
+          if [ -s "$ASSET_REFS" ]; then
+            mkdir -p "$LIVE/_astro"
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              src_asset="$SRC/dist$ref"
+              live_asset="$LIVE$ref"
+              test -f "$src_asset"
+              mkdir -p "$(dirname "$live_asset")"
+              if [ -f "$live_asset" ]; then
+                cmp -s "$src_asset" "$live_asset"
+              else
+                cp -a "$src_asset" "$live_asset"
+                chmod 0644 "$live_asset"
+              fi
+            done < "$ASSET_REFS"
+          fi
+
           rm -rf "$LIVE/$ROUTE"
           mv "$NEW_ROUTE" "$LIVE/$ROUTE"
           DEPLOYED=1
@@ -195,7 +215,16 @@ jobs:
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             "https://studio.milkcat.org/$ROUTE/" -o "$TMP/route-live"
           validate_html "$TMP/route-live"
+          if [ -s "$ASSET_REFS" ]; then
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              test -f "$LIVE$ref"
+              curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+                "https://studio.milkcat.org$ref" -o /dev/null
+            done < "$ASSET_REFS"
+          fi
           echo "local_nginx_studio_static_route_acceptance=PASS route=$ROUTE"
+          echo "local_nginx_studio_static_assets_acceptance=PASS route=$ROUTE"
 
           printf '%s\n' \
             "schema=$RECEIPT_SCHEMA" \
@@ -219,7 +248,17 @@ jobs:
             [ -z "$anchor" ] && continue
             grep -Fq -- "$anchor" "$OUT"
           done <<< "$ACCEPTANCE_ANCHORS"
+
+          ASSET_REFS=/tmp/studio-static-route-public-assets-${GITHUB_RUN_ID}
+          grep -oE '/_astro/[A-Za-z0-9._/-]+' "$OUT" | sort -u > "$ASSET_REFS" || true
+          if [ -s "$ASSET_REFS" ]; then
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE$ref" -o /dev/null
+            done < "$ASSET_REFS"
+          fi
           echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
+          echo "public_studio_static_assets_acceptance=PASS route=$ROUTE"
 
       - name: Roll back route after public acceptance failure
         if: ${{ failure() && steps.publish.outcome == 'success' }}
