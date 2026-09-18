@@ -3,6 +3,17 @@ name: Oracle Release Milkcat World MVP
 
 on:
   workflow_dispatch:
+    inputs:
+      credit_account:
+        description: Optional funded Milkcat Platform credit account; leave blank for unmetered release
+        required: false
+        type: string
+        default: ''
+      credit_cost:
+        description: Integer credits to reserve/commit when metering is enabled
+        required: false
+        type: number
+        default: 0
   push:
     branches: [main]
     paths:
@@ -30,6 +41,8 @@ jobs:
         id="milkcat-world"
         LAYOUTLIB · CANONICAL SPATIAL LIBRARY
         three@0.186.0
+      credit_account: ${{ inputs.credit_account || '' }}
+      credit_cost: ${{ inputs.credit_cost || 0 }}
     secrets:
       AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
       AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}

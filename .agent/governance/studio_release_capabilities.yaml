@@ -3,6 +3,9 @@ updated_at: "2026-09-17"
 
 capabilities:
   studio_static_route_release:
+    provider_id: service://studio.static-route.release
+    capability_uri: capability://studio.static-route.release
+    state: implemented
     status: extracted-first-consumer
     canonical_workflow: .github/workflows/reusable-studio-static-route-release.yml
     regression_guard: .github/workflows/studio-static-route-release-guard.yml

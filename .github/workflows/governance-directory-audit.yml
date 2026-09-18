@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          python3 -m py_compile agent_core/governance_directory.py agent_core/resource_registry.py scripts/agentos_node.py scripts/governance_directory.py scripts/core_services/port_manager.py
+          python3 -m py_compile agent_core/governance_directory.py agent_core/studio_capability_adapter.py agent_core/resource_registry.py scripts/agentos_node.py scripts/governance_directory.py scripts/core_services/port_manager.py
           python3 -m unittest tests.test_governance_directory tests.test_agentos_node -v
 
       - name: Install canonical agentos-node runtime for node identity
@@ -46,10 +46,11 @@ jobs:
           RUNTIME="$HOME/.local/share/agentos-node"
           BIN="$HOME/.local/bin"
           rm -rf "$RUNTIME"
-          mkdir -p "$RUNTIME/agent_core" "$RUNTIME/scripts" "$RUNTIME/.agent/roles" "$BIN"
-          cp agent_core/__init__.py agent_core/governance_directory.py agent_core/resource_registry.py "$RUNTIME/agent_core/"
+          mkdir -p "$RUNTIME/agent_core" "$RUNTIME/scripts" "$RUNTIME/.agent/roles" "$RUNTIME/.agent/governance" "$BIN"
+          cp agent_core/__init__.py agent_core/governance_directory.py agent_core/studio_capability_adapter.py agent_core/resource_registry.py "$RUNTIME/agent_core/"
           cp scripts/agentos_node.py "$RUNTIME/scripts/"
           cp .agent/roles/registry.yaml "$RUNTIME/.agent/roles/registry.yaml"
+          cp .agent/governance/studio_release_capabilities.yaml "$RUNTIME/.agent/governance/studio_release_capabilities.yaml"
           cat > "$BIN/agentos-node" <<EOF
           #!/usr/bin/env bash
           set -euo pipefail
@@ -100,7 +101,7 @@ jobs:
           } 2>&1 | tee "$OUT"
 
       - name: Commit evidence
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
         shell: bash
         run: |
           set -euo pipefail

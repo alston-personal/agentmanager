@@ -8,10 +8,14 @@ on:
       - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
       - '.github/workflows/studio-static-route-release-guard.yml'
       - '.agent/governance/studio_release_capabilities.yaml'
+      - 'agent_core/studio_capability_adapter.py'
+      - 'agent_core/platform_execution.py'
+      - 'scripts/milkcat_platform_execution.py'
       - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
       - 'docs/asset-registry/README.md'
       - 'docs/asset-registry/studio-static-route-release.yaml'
       - 'tests/test_studio_static_route_release_contract.py'
+      - 'tests/test_platform_execution.py'
   push:
     branches: [main]
     paths:
@@ -19,10 +23,14 @@ on:
       - '.github/workflows/oracle-release-milkcat-world-mvp.yml'
       - '.github/workflows/studio-static-route-release-guard.yml'
       - '.agent/governance/studio_release_capabilities.yaml'
+      - 'agent_core/studio_capability_adapter.py'
+      - 'agent_core/platform_execution.py'
+      - 'scripts/milkcat_platform_execution.py'
       - 'docs/STUDIO_STATIC_ROUTE_RELEASE.md'
       - 'docs/asset-registry/README.md'
       - 'docs/asset-registry/studio-static-route-release.yaml'
       - 'tests/test_studio_static_route_release_contract.py'
+      - 'tests/test_platform_execution.py'
 
 permissions:
   contents: read
@@ -35,8 +43,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install declared governance parser dependency
+        run: python -m pip install 'PyYAML>=6.0.0'
       - name: Run release capability contract tests
-        run: python -m unittest -q tests.test_studio_static_route_release_contract
+        run: |
+          python -m unittest -q tests.test_studio_static_route_release_contract
+          python -m unittest -q tests.test_platform_execution
       - name: Verify reusable carrier contract
         shell: bash
         run: |
@@ -63,9 +75,22 @@ jobs:
           grep -Fq 'public_failure_rollback=PASS' "$R"
           grep -Fq 'failure_stage=public_acceptance' "$R"
 
+          grep -Fq 'credit_account:' "$R"
+          grep -Fq 'credit_cost:' "$R"
+          grep -Fq 'Prepare governed platform execution' "$R"
+          grep -Fq 'milkcat_platform_execution.py prepare' "$R"
+          grep -Fq -- '--capability studio.static-route.release' "$R"
+          grep -Fq -- '--sync-studio-capabilities' "$R"
+          grep -Fq 'Settle governed platform execution' "$R"
+          grep -Fq 'milkcat_platform_execution.py settle' "$R"
+
           grep -Fq 'uses: ./.github/workflows/reusable-studio-static-route-release.yml' "$C"
           grep -Fq 'route: world' "$C"
           grep -Fq 'source_sha: b675270c7ad08bcd9172496d7436787a32c299a1' "$C"
+          grep -Fq 'credit_account:' "$C"
+          grep -Fq 'credit_cost:' "$C"
+          grep -Fq 'provider_id: service://studio.static-route.release' "$G"
+          grep -Fq 'capability_uri: capability://studio.static-route.release' "$G"
           grep -Fq 'status: extracted-first-consumer' "$G"
           grep -Fq 'asset_id: studio-static-route-release' "$A"
           grep -Fq 'evidence_scope: shared-carrier-live' "$A"
@@ -79,6 +104,10 @@ jobs:
           fi
           if grep -Fq 'ssh -o StrictHostKeyChecking' "$C"; then
             echo 'Milkcat World consumer regressed to direct SSH deployment logic' >&2
+            exit 1
+          fi
+          if grep -Fq 'milkcat_platform_execution.py' "$C"; then
+            echo 'Milkcat World consumer regressed to product-owned accounting logic' >&2
             exit 1
           fi
 

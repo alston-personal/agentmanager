@@ -26,16 +26,38 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
         ):
             self.assertIn(required, text)
 
+    def test_reusable_workflow_has_opt_in_platform_execution_contract(self):
+        text = REUSABLE.read_text(encoding="utf-8")
+        for required in (
+            "credit_account:",
+            "credit_cost:",
+            "Prepare governed platform execution",
+            "scripts/milkcat_platform_execution.py prepare",
+            "--capability studio.static-route.release",
+            "--sync-studio-capabilities",
+            "Settle governed platform execution",
+            "scripts/milkcat_platform_execution.py settle",
+            "inputs.credit_account != ''",
+        ):
+            self.assertIn(required, text)
+        self.assertIn("default: ''", text)
+        self.assertIn("default: 0", text)
+
     def test_world_is_parameter_only_consumer(self):
         text = CONSUMER.read_text(encoding="utf-8")
         self.assertIn("uses: ./.github/workflows/reusable-studio-static-route-release.yml", text)
         self.assertIn("route: world", text)
+        self.assertIn("credit_account: ${{ inputs.credit_account || '' }}", text)
+        self.assertIn("credit_cost: ${{ inputs.credit_cost || 0 }}", text)
         self.assertNotIn("npm run build", text)
         self.assertNotIn("ssh -o StrictHostKeyChecking", text)
+        self.assertNotIn("milkcat_platform_execution.py", text)
 
     def test_governance_registry_names_canonical_capability(self):
         text = GOVERNANCE.read_text(encoding="utf-8")
         self.assertIn("studio_static_route_release:", text)
+        self.assertIn("provider_id: service://studio.static-route.release", text)
+        self.assertIn("capability_uri: capability://studio.static-route.release", text)
         self.assertIn("status: extracted-first-consumer", text)
         self.assertIn("status: production-verified-before-extraction", text)
         self.assertIn("verified_run: 35192062500", text)

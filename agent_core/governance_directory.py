@@ -202,8 +202,16 @@ def sync_roles_from_canonical_registry(path: Path = REGISTRY_PATH) -> None:
 
 
 def seed_core(path: Path = REGISTRY_PATH) -> None:
-    # Roles are mirrored from the canonical versioned role registry, never hand-copied here.
+    # Canonical registries are mirrored into the query directory; they remain authority.
     sync_roles_from_canonical_registry(path)
+    if yaml is not None:
+        from .studio_capability_adapter import (
+            STUDIO_CAPABILITY_REGISTRY,
+            sync_studio_release_capabilities,
+        )
+
+        if STUDIO_CAPABILITY_REGISTRY.exists():
+            sync_studio_release_capabilities(directory_path=path)
 
     core: Iterable[GovernanceEntity] = [
         GovernanceEntity(
