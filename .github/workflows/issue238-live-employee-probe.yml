@@ -44,7 +44,7 @@ jobs:
           DATA_ROOT="/home/ubuntu/agent-data"
           echo "checkout_sha=$(git rev-parse HEAD)"
           echo "checkout_clean=$([ -z "$(git status --porcelain=v1 --untracked-files=no)" ] && echo true || echo false)"
-          for svc in agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service; do
+          for svc in agentos-core-supervisor.service agentos-employee-wake-node.service agentos-employee-worker-host.service agentos-product-work-intent-reconciler.service agentos-product-work-intent-reconciler.timer; do
             echo "$svc=$(systemctl --user is-active "$svc" 2>/dev/null || true)"
             echo "$svc.restarts=$(systemctl --user show "$svc" -p NRestarts --value 2>/dev/null || true)"
           done
@@ -55,7 +55,7 @@ jobs:
           for aid in ('zeus-writer-continuation-v1','youtube-ai-manager-scan-v1'):
               p=rt/'assignments'/(aid+'.json')
               obj=json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}
-              print('assignment='+json.dumps({k:obj.get(k) for k in ('assignment_id','employee_id','state','thread_head','updated_at','result')},ensure_ascii=False,sort_keys=True))
+              print('assignment='+json.dumps({k:obj.get(k) for k in ('assignment_id','employee_id','state','thread_head','updated_at','result','work_intent_ref')},ensure_ascii=False,sort_keys=True))
           droot=rt/'supervisor'/'deliveries'
           rows=[]
           for p in droot.glob('*.json'):
@@ -70,6 +70,25 @@ jobs:
               for p in (sorted(wdir.glob('*.json'),key=lambda x:x.stat().st_mtime)[-3:] if wdir.exists() else []):
                   obj=json.loads(p.read_text(encoding='utf-8'))
                   print('wake='+json.dumps({k:obj.get(k) for k in ('employee_id','assignment_id','wake_id','presence_generation','expected_lease_generation')},sort_keys=True))
+          receipts=data/'employee-worker-state'/'product-receipts'/'zeus-writer'
+          if receipts.exists():
+              for p in sorted(receipts.glob('*.json'), key=lambda x:x.stat().st_mtime)[-4:]:
+                  try: obj=json.loads(p.read_text(encoding='utf-8'))
+                  except Exception: continue
+                  ev=obj.get('evidence') if isinstance(obj.get('evidence'),dict) else {}
+                  safe={
+                      'schema':obj.get('schema'),
+                      'result_status':obj.get('result_status'),
+                      'error_code':obj.get('error_code'),
+                      'source_sha':obj.get('source_sha'),
+                      'capability':obj.get('capability'),
+                      'chapter':ev.get('chapter'),
+                      'work_intent_digest':ev.get('work_intent_digest'),
+                      'mutation_performed':ev.get('mutation_performed'),
+                      'publish_performed':ev.get('publish_performed'),
+                      'credential_exposed':obj.get('credential_exposed'),
+                  }
+                  print('product_receipt='+json.dumps(safe,sort_keys=True))
           hroot=data/'employee-worker-host'/'dispatches'
           rows=[]
           for p in hroot.glob('*/*.json'):
@@ -80,6 +99,19 @@ jobs:
           for _,obj in sorted(rows,key=lambda x:x[0])[-10:]:
               print('dispatch='+json.dumps({k:obj.get(k) for k in ('employee_id','assignment_id','wake_id','presence_generation','expected_lease_generation','status','completed_at','error_code','child_result')},ensure_ascii=False,sort_keys=True))
           PY
+          PYTHONPATH="$1" python3 - "$1" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          try:
+              from agent_core.governed_execution import resolve_product_work_intent_ref
+              ref=resolve_product_work_intent_ref('zeus-writer',authority_path=root/'governance'/'execution-authority.json')
+              print('work_intent_resolution='+json.dumps({'ok':True,'ref':ref},sort_keys=True))
+          except Exception as exc:
+              print('work_intent_resolution='+json.dumps({'ok':False,'error_code':str(exc)[:160],'error_type':type(exc).__name__},sort_keys=True))
+          PY
+          echo "--- work-intent reconciler journal recent ---"
+          journalctl --user -u agentos-product-work-intent-reconciler.service --since '2026-09-18 12:20:00' --no-pager 2>/dev/null | tail -60 || true
           echo "--- worker journal recent ---"
           journalctl --user -u agentos-employee-worker-host.service --since '2026-09-11 10:48:00' --no-pager 2>/dev/null | tail -80 || true
           REMOTE
