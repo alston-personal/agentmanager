@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
@@ -14,6 +16,7 @@ ALLOWED_REF = "refs/heads/core/integration"
 SOURCE_REF = "core/integration"
 NODE_ID = "oracle-core-node"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+STABLE_REPO = Path("/home/ubuntu/agentmanager")
 
 
 def build_request(env: Mapping[str, str]) -> dict[str, Any]:
@@ -60,6 +63,66 @@ def _safe_receipt(receipt: Mapping[str, Any]) -> dict[str, Any]:
     return {key: receipt.get(key) for key in sorted(allowed) if key in receipt}
 
 
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=20,
+    )
+
+
+def project_tracked_dirty(
+    source_commit: str,
+    *,
+    repo: Path = STABLE_REPO,
+) -> dict[str, Any]:
+    if SHA_RE.fullmatch(source_commit) is None:
+        raise RuntimeError("product_employee_dirty_projection_sha_invalid")
+    status = _git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+    if status.returncode != 0:
+        raise RuntimeError("product_employee_dirty_projection_status_failed")
+    entries = []
+    raw_entries = [value for value in status.stdout.split("\0") if value]
+    for raw in raw_entries[:32]:
+        code = raw[:2] if len(raw) >= 3 else "??"
+        rel = raw[3:] if len(raw) >= 4 else ""
+        path = PurePosixPath(rel)
+        if not rel or path.is_absolute() or ".." in path.parts:
+            safe_path = "<unsafe>"
+            target_equivalent = False
+        else:
+            safe_path = path.as_posix()
+            target_equivalent = False
+            local = repo / safe_path
+            if code == " M" and local.is_file() and not local.is_symlink():
+                worktree = _git(repo, "hash-object", "--", safe_path)
+                target = _git(repo, "rev-parse", f"{source_commit}:{safe_path}")
+                target_equivalent = (
+                    worktree.returncode == 0
+                    and target.returncode == 0
+                    and worktree.stdout.strip() == target.stdout.strip()
+                )
+        entries.append(
+            {
+                "status": code,
+                "path": safe_path,
+                "target_equivalent": target_equivalent,
+            }
+        )
+    return {
+        "schema": "agentos.product-employee-rollout-dirty-projection/v1",
+        "source_commit": source_commit,
+        "tracked_dirty_count": len(raw_entries),
+        "truncated": len(raw_entries) > 32,
+        "entries": entries,
+        "content_exposed": False,
+        "credential_exposed": False,
+    }
+
+
 def rollout(
     env: Mapping[str, str] | None = None,
     *,
@@ -104,9 +167,17 @@ def rollout(
 
 
 def main() -> int:
-    receipt = rollout()
-    print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
-    return 0
+    try:
+        receipt = rollout()
+        print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+        return 0
+    except RuntimeError as exc:
+        text = str(exc)
+        if text == "product_employee_rollout_failed:tracked_checkout_dirty":
+            source_commit = build_request(os.environ)["source_commit"]
+            projection = project_tracked_dirty(source_commit)
+            print(json.dumps(projection, ensure_ascii=False, sort_keys=True), file=__import__("sys").stderr)
+        raise
 
 
 if __name__ == "__main__":
