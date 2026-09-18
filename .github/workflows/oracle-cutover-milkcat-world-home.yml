@@ -1,0 +1,93 @@
+name: Oracle Cutover Milkcat World Home
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-cutover-milkcat-world-home.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milkcat-world-home-cutover
+  cancel-in-progress: true
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_REPOSITORY: alston-personal/studio-web
+      SOURCE_SHA: cfa50f0cb16305d7e0e007764e076ed142e5d83c
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate contract
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "milkcat_world_home_contract=PASS"
+
+      - name: Build pinned Studio Web and atomically replace root index
+        env:
+          DEPLOY_HOST: studio.milkcat.org
+          DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+          DEPLOY_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 600 /dev/null /tmp/deploy_key
+          printf '%s\n' "$DEPLOY_KEY" > /tmp/deploy_key
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -i /tmp/deploy_key -p "$PORT" -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST"             bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; SOURCE_SHA="$2"; RUN_ID="$3"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/milkcat-home-cutover-XXXXXX)
+          SRC="$TMP/studio-web"
+          BACKUP=/home/ubuntu/agent-data/releases/studio-web/milkcat-world-home/${SOURCE_SHA:0:12}-$RUN_ID
+          mkdir -p "$BACKUP"
+          cleanup(){ rm -rf "$TMP"; }
+          trap cleanup EXIT
+
+          git clone -q "https://github.com/$REPO.git" "$SRC"
+          cd "$SRC"
+          git checkout -q --detach "$SOURCE_SHA"
+          npm install --no-package-lock --ignore-scripts >/dev/null
+          npm run build >/dev/null
+
+          test -f "$SRC/dist/index.html"
+          grep -Fq 'Milkcat World' "$SRC/dist/index.html"
+          grep -Fq '/world/' "$SRC/dist/index.html"
+
+          test -d "$LIVE"
+          if [ -f "$LIVE/index.html" ]; then
+            cp -a "$LIVE/index.html" "$BACKUP/index.previous.html"
+          fi
+
+          cp "$SRC/dist/index.html" "$LIVE/.index-$RUN_ID.html"
+          chmod 0644 "$LIVE/.index-$RUN_ID.html"
+          mv -f "$LIVE/.index-$RUN_ID.html" "$LIVE/index.html"
+
+          if ! curl -fsS --retry 4 --retry-delay 2 https://studio.milkcat.org/ | grep -Fq 'Milkcat World'; then
+            if [ -f "$BACKUP/index.previous.html" ]; then
+              cp -a "$BACKUP/index.previous.html" "$LIVE/index.html"
+            fi
+            echo "milkcat_world_home_cutover=ROLLBACK"
+            exit 1
+          fi
+
+          echo "milkcat_world_home_cutover=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
+          REMOTE
+          rm -f /tmp/deploy_key
+
+      - name: Public acceptance
+        run: |
+          set -euo pipefail
+          OUT=$(mktemp)
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "https://studio.milkcat.org/?_=$GITHUB_RUN_ID" -o "$OUT"
+          grep -Fq 'Milkcat World' "$OUT"
+          grep -Fq '/world/' "$OUT"
+          echo "public_milkcat_world_home_acceptance=PASS"
