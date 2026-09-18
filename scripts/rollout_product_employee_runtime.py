@@ -132,6 +132,12 @@ def quarantine_known_node_local_drift_before_submit(
     *,
     repo: Path = STABLE_REPO,
 ) -> bool:
+    fetch = _git(repo, "fetch", "--no-tags", "origin", SOURCE_REF)
+    if fetch.returncode != 0:
+        raise RuntimeError("product_employee_rollout_quarantine_fetch_failed")
+    observed = _git(repo, "rev-parse", "FETCH_HEAD")
+    if observed.returncode != 0 or observed.stdout.strip() != source_commit:
+        raise RuntimeError("product_employee_rollout_quarantine_source_mismatch")
     status = _tracked_status(repo)
     if not status:
         return False
