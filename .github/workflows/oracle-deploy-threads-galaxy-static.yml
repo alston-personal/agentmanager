@@ -1,3 +1,4 @@
+# redeploy studio-web main after Threads Galaxy UI fix
 name: Oracle Deploy Threads Galaxy Static
 
 on:
