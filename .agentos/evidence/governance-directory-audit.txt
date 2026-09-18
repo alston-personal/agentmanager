@@ -1,4 +1,4 @@
-timestamp_utc=2026-08-27T02:19:48Z
+timestamp_utc=2026-09-18T02:54:49Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 agentos_node=/home/agentos-node/.local/bin/agentos-node
@@ -96,7 +96,7 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
     "nginx_config": "/etc/nginx/sites-enabled/studio.milkcat.org"
   },
   "observed": {
-    "observed_at": "2026-08-25T06:19:34.842305+00:00",
+    "observed_at": "2026-09-17T08:51:18.499788+00:00",
     "hostname": "instance-20260129-0852",
     "dns": [
       "161.33.24.170"
@@ -124,27 +124,27 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
       }
     },
     "git": {
-      "commit": "d9387336fe83b1dc0f15f4aac6608793b0483933",
+      "commit": "4b7e00353d75f59c574527d1ecbf019e85ee95b7",
       "branch": "master",
       "origin": "https://github.com/alston-personal/zeus-writer.git"
     }
   },
   "verification": {
     "status": "verified",
-    "last_verified_at": "2026-08-25T06:19:35.124188+00:00",
+    "last_verified_at": "2026-09-17T08:51:18.522166+00:00",
     "ttl_seconds": 86400,
     "errors": []
   },
   "registered_at": "2026-08-25T06:18:28.925786+00:00",
-  "updated_at": "2026-08-25T06:19:35.124202+00:00"
+  "updated_at": "2026-09-17T08:51:18.522182+00:00"
 }
 === DIRECTORY AUDIT ===
 # AgentOS Governance Directory Audit
 
-- Generated: `2026-08-27T02:19:49.215949+00:00`
-- Entities: **14**
+- Generated: `2026-09-18T02:54:49.854070+00:00`
+- Entities: **18**
 - Errors: **0**
-- Warnings: **4**
+- Warnings: **5**
 
 | Severity | Code | Subject | Detail |
 |---|---|---|---|
@@ -152,11 +152,12 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
 | warning | `monitored_service_not_declared` | `os-lobster.service` | watchdog source references it but SERVICES.md does not declare it |
 | warning | `never_verified` | `manager://port` | no last_verified_at |
 | warning | `never_verified` | `service://agentos.watchdog` | no last_verified_at |
+| warning | `never_verified` | `service://studio.static-route.release` | no last_verified_at |
 
 ## Operating Rule
 Before implementing a new cross-project/system capability: resolve it in the Governance Directory. If an active owner exists, reuse or extend that owner. Discovery is allowed only when resolution fails; newly discovered reusable capabilities must be registered.
 
-Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20260827_021949.md
+Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20260918_025449.md
 === ACCEPTANCE ===
-governance_directory=PASS entities=14
+governance_directory=PASS entities=18
 agentos_node_contract=PASS
