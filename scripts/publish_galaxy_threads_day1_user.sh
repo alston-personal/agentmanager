@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$(id -un)" != "ubuntu" ]; then
+  echo "galaxy_day1_publish=WRONG_USER" >&2
+  exit 2
+fi
+
+ENV_FILE="/home/ubuntu/.config/agentos/social-runtime.env"
+CRED_FILE="/home/ubuntu/.local/state/agentos/social/credentials.json"
+MARKER="/home/ubuntu/.local/state/agentos/social/galaxy-day1-publish.json"
+
+test -f "$ENV_FILE"
+test -f "$CRED_FILE"
+
+python3 - "$ENV_FILE" "$CRED_FILE" "$MARKER" <<'PY'
+from __future__ import annotations
+import json, os, sys, urllib.request
+from pathlib import Path
+
+env_file=Path(sys.argv[1]); cred_file=Path(sys.argv[2]); marker=Path(sys.argv[3])
+
+def parse_env(path: Path) -> dict[str,str]:
+    out={}
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        line=raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        k,v=line.split('=',1)
+        v=v.strip()
+        if len(v)>=2 and ((v[0]==v[-1]=='"') or (v[0]==v[-1]=="'")):
+            v=v[1:-1]
+        out[k]=v
+    return out
+
+def post_json(url: str, payload: dict, headers: dict[str,str] | None=None) -> tuple[int,dict]:
+    data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode('utf-8')
+    h={'content-type':'application/json','accept':'application/json'}
+    if headers: h.update(headers)
+    req=urllib.request.Request(url,data=data,headers=h,method='POST')
+    try:
+        with urllib.request.urlopen(req,timeout=20) as r:
+            return r.status,json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        body=e.read().decode('utf-8','replace')
+        try: parsed=json.loads(body)
+        except Exception: parsed={'error':'http_error'}
+        return e.code,parsed
+
+env=parse_env(env_file)
+products=json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}'))
+galaxy=products.get('galaxy') if isinstance(products,dict) else None
+product_key=str((galaxy or {}).get('api_key') or '')
+control_token=str(env.get('AGENTOS_SOCIAL_CONTROL_TOKEN') or '')
+if not product_key or not control_token:
+    raise SystemExit('galaxy_day1_publish=RUNTIME_CONTROL_UNAVAILABLE')
+
+store=json.loads(cred_file.read_text(encoding='utf-8'))
+bindings=[]
+for binding_id,item in (store.get('bindings') or {}).items():
+    if not isinstance(item,dict): continue
+    if item.get('product_id')=='galaxy' and item.get('platform')=='threads':
+        bindings.append((binding_id,item))
+if len(bindings)!=1:
+    safe=[{'binding_id':b,'username':i.get('username'),'provider_account_id':i.get('provider_account_id')} for b,i in bindings]
+    print('galaxy_day1_binding_count='+str(len(bindings)))
+    print('galaxy_day1_bindings='+json.dumps(safe,ensure_ascii=False,separators=(',',':')))
+    raise SystemExit(3)
+
+binding_id,item=bindings[0]
+account_id=str(item.get('provider_account_id') or '')
+username=str(item.get('username') or '')
+if not account_id:
+    raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
+
+text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
+
+這個帳號從 0 開始。選題、產品、定價、文案、發文、回覆、分析，盡量都交給 AI；我只保留付款、帳號授權，以及必要的人類確認。
+
+規則很簡單：讚數不算，追蹤數不算，只有真的收到錢才算。
+
+目標：先賺回一個月的 AI 訂閱費。
+
+今天是 Day 1。帳號剛建立，收入：NT$0。
+
+接下來我會把每一步、做錯什麼、賺到多少都公開記錄。"""
+
+request={
+    'schema':'agentos.social-request/v1',
+    'product_id':'galaxy',
+    'platform':'threads',
+    'operation':'publish',
+    'account_binding_id':binding_id,
+    'target_account_id':account_id,
+    'primary_text':text,
+    'write_intent_id':'galaxy-experiment-day1-20260918-v1',
+}
+
+# Idempotency: if the exact post already exists, do not publish again.
+read_req={
+    'schema':'agentos.social-request/v1',
+    'product_id':'galaxy',
+    'platform':'threads',
+    'operation':'post.read',
+    'account_binding_id':binding_id,
+}
+status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+if status==200 and posts.get('ok') is True:
+    for row in ((posts.get('result') or {}).get('items') or []):
+        if str(row.get('text') or '').strip()==text.strip():
+            result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
+            marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+            os.chmod(marker,0o600)
+            print('galaxy_day1_publish=ALREADY_PRESENT')
+            print('galaxy_day1_username='+username)
+            print('galaxy_day1_object_id='+str(row.get('id') or ''))
+            print('galaxy_day1_permalink='+str(row.get('permalink') or ''))
+            raise SystemExit(0)
+
+status,issued=post_json(
+    'http://127.0.0.1:8771/internal/v1/social/acceptances',
+    request,
+    {'X-AgentOS-Control-Token':control_token},
+)
+if status!=201 or not issued.get('acceptance_id'):
+    print('galaxy_day1_acceptance=FAIL')
+    print('galaxy_day1_acceptance_error='+str(issued.get('error') or status))
+    raise SystemExit(4)
+
+acceptance_id=str(issued['acceptance_id'])
+status,receipt=post_json(
+    'http://127.0.0.1:8771/v1/social/publish',
+    request,
+    {'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':acceptance_id},
+)
+if status!=200 or receipt.get('ok') is not True:
+    print('galaxy_day1_publish=FAIL')
+    print('galaxy_day1_publish_error='+str(receipt.get('error_code') or receipt.get('error') or status))
+    raise SystemExit(5)
+
+obj=str(receipt.get('platform_object_id') or '')
+permalink=''
+status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+if status==200 and posts.get('ok') is True:
+    for row in ((posts.get('result') or {}).get('items') or []):
+        if str(row.get('id') or '')==obj or str(row.get('text') or '').strip()==text.strip():
+            permalink=str(row.get('permalink') or '')
+            if not obj: obj=str(row.get('id') or '')
+            break
+
+result={
+    'schema':'agentos.social-day1-publish/v1',
+    'ok':True,
+    'already_present':False,
+    'username':username,
+    'platform_object_id':obj,
+    'permalink':permalink,
+}
+marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+os.chmod(marker,0o600)
+print('galaxy_day1_publish=PASS')
+print('galaxy_day1_username='+username)
+print('galaxy_day1_object_id='+obj)
+print('galaxy_day1_permalink='+permalink)
+PY
