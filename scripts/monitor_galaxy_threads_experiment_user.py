@@ -7,6 +7,8 @@ from pathlib import Path
 ENV_FILE=Path('/home/ubuntu/.config/agentos/social-runtime.env')
 CRED_FILE=Path('/home/ubuntu/.local/state/agentos/social/credentials.json')
 STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription')
+PUBLIC_EXPORT_DIR=Path('/tmp/agentos-social-public')
+PUBLIC_EXPORT=PUBLIC_EXPORT_DIR/'sunlake-milkcat-replies.json'
 ROOT_POST_ID='18353956147218749'
 BASE='http://127.0.0.1:8771/v1/social'
 
@@ -77,6 +79,42 @@ def main():
     with (STATE_DIR/'history.jsonl').open('a',encoding='utf-8') as h:
         h.write(json.dumps(snapshot,ensure_ascii=False,separators=(',',':'))+'\n')
     os.chmod(STATE_DIR/'history.jsonl',0o600)
+
+    # Publish only sanitized, already-public Threads interaction evidence across
+    # the unix-user boundary. Never expose tokens, product keys, bindings or env.
+    catalog={}
+    history_path=STATE_DIR/'history.jsonl'
+    if history_path.exists():
+        for raw in history_path.read_text(encoding='utf-8').splitlines():
+            try: row=json.loads(raw)
+            except Exception: continue
+            for reply in row.get('new_replies') or []:
+                rid=str(reply.get('id') or '')
+                if rid:
+                    catalog[rid]={
+                        'id':rid,
+                        'username':reply.get('username'),
+                        'text':reply.get('text'),
+                        'timestamp':reply.get('timestamp'),
+                        'permalink':reply.get('permalink'),
+                    }
+    export={
+      'schema':'agentos.social-public-reply-export/v1',
+      'captured_at':snapshot['captured_at'],
+      'experiment':snapshot['experiment'],
+      'account_username':snapshot['account'].get('username'),
+      'root_post_id':ROOT_POST_ID,
+      'root_post_permalink':snapshot['root_post'].get('permalink'),
+      'replies':list(catalog.values()),
+    }
+    PUBLIC_EXPORT_DIR.mkdir(parents=True,exist_ok=True)
+    os.chmod(PUBLIC_EXPORT_DIR,0o755)
+    pub_tmp=PUBLIC_EXPORT.with_suffix('.tmp')
+    pub_tmp.write_text(json.dumps(export,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    os.chmod(pub_tmp,0o644)
+    pub_tmp.replace(PUBLIC_EXPORT)
+    os.chmod(PUBLIC_EXPORT,0o644)
+
     print('galaxy_monitor=PASS')
     print('galaxy_monitor_reply_count='+str(len(reply_items)))
     print('galaxy_monitor_new_replies='+str(len(new)))
