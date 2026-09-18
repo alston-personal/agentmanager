@@ -14,6 +14,7 @@ LOG_DIR="$HOME/agent-data/logs"
 LOG="$LOG_DIR/galaxy-experiment-monitor.log"
 
 test -f "$REPO/scripts/monitor_galaxy_threads_experiment_user.py"
+test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
 cat > "$SERVICE" <<EOF
@@ -26,6 +27,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=$REPO
 ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
+ExecStartPost=/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 
