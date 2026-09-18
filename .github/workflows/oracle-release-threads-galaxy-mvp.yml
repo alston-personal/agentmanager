@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 9b32785f151360b8542d6e96ae28a0ecedb2e75f
+      SOURCE_SHA: 1b7d07d73dcf404b20d5e66acfc5d708b3e9a9d4
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -80,7 +80,7 @@ jobs:
           test -f dist/threads-galaxy/adapters/threads.js
           test -f dist/threads-galaxy/adapters/import.js
           grep -Fq 'Social Relationship Galaxy' dist/threads-galaxy/index.html
-          grep -Fq 'Threads 真實資料' dist/threads-galaxy/index.html
+          grep -Fq '連結我的 Threads' dist/threads-galaxy/index.html
           grep -Fq 'REAL DATA FIRST' dist/threads-galaxy/index.html
           echo 'social_graph_v04_build_acceptance=PASS'
 
@@ -99,7 +99,7 @@ jobs:
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/threads-galaxy/ -o "$TMP/threads-galaxy-live"
           grep -Fq 'Social Relationship Galaxy' "$TMP/threads-galaxy-live"
-          grep -Fq 'Threads 真實資料' "$TMP/threads-galaxy-live"
+          grep -Fq '連結我的 Threads' "$TMP/threads-galaxy-live"
           echo 'local_nginx_social_graph_acceptance=PASS'
 
           trap - ERR
@@ -120,6 +120,6 @@ jobs:
           BASE=https://studio.milkcat.org
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/threads-galaxy/?_=$GITHUB_RUN_ID" -o /tmp/threads-galaxy-public
           grep -Fq 'Social Relationship Galaxy' /tmp/threads-galaxy-public
-          grep -Fq 'Threads 真實資料' /tmp/threads-galaxy-public
+          grep -Fq '連結我的 Threads' /tmp/threads-galaxy-public
           grep -Fq 'REAL DATA FIRST' /tmp/threads-galaxy-public
           echo 'public_social_graph_v04=PASS'
