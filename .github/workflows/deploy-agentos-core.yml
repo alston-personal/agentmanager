@@ -6,6 +6,14 @@ on:
       - main
     paths:
       - ".github/workflows/deploy-agentos-core.yml"
+      - "scripts/install_systemd_user.sh"
+      - "scripts/install_services.py"
+      - "agent_core/platform/linux.py"
+      - "agent_core/credit_http.py"
+      - "agent_core/credit_service.py"
+      - "agent_core/credit_ledger.py"
+      - ".agent/governance/credit_pricing.json"
+      - "scripts/os_watchdog.py"
   pull_request:
     branches:
       - main
@@ -51,8 +59,8 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_ROOT: ${{ vars.AGENTOS_DEPLOY_ROOT }}
-      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'feature/distributed-agentos-runtime' }}
-      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || '' }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || 'main' }}
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha || (github.event_name == 'push' && github.sha || '') }}
       BOOTSTRAP_RUNTIME_CONVERGER: ${{ github.event_name == 'workflow_dispatch' && inputs.bootstrap_runtime_converger || false }}
       VERIFY_PUBLIC_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_public_url || false }}
 
@@ -69,7 +77,7 @@ jobs:
           Distributed AgentOS Core bootstrap run **STARTED**.
 
           - main workflow commit: ${GITHUB_SHA}
-          - deployment performed at this stage: false
+          - deployment requested by protected-main push: true
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
@@ -147,15 +155,15 @@ jobs:
           echo "preflight_sha=$(git rev-parse HEAD)"
           REMOTE
 
-      - name: Bootstrap preflight summary
-        if: ${{ github.event_name != 'workflow_dispatch' && success() }}
+      - name: Pull request preflight summary
+        if: ${{ github.event_name == 'pull_request' && success() }}
         run: |
           echo "Oracle deployment channel preflight succeeded."
-          echo "No deployment was performed by this bootstrap preflight run."
+          echo "Pull requests never deploy."
 
       - name: Deploy and verify local Control Plane
         id: deploy_core
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -304,8 +312,9 @@ jobs:
           - config: ${CONFIG_OUTCOME}
           - ssh-agent: ${SSH_AGENT_OUTCOME}
           - Oracle preflight: ${PREFLIGHT_OUTCOME}
-          - deployment performed: false
-          - next deploy ref: feature/distributed-agentos-runtime
+          - deployment step: ${{ steps.deploy_core.outcome }}
+          - deployed ref: ${DEPLOY_REF}
+          - expected sha: ${EXPECTED_SHA}
 
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
