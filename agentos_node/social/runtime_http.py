@@ -326,6 +326,8 @@ class SocialRuntime:
             str(result.get("return_to") or "/"),
             connected=True,
         )
+        separator = "&" if "?" in relative else "?"
+        relative = relative + separator + "connection=" + urllib.parse.quote(context.connection_id, safe="")
         return registration.return_base + relative, {
             "schema": "agentos.social-oauth-complete/v1",
             "connected": True,
