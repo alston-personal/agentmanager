@@ -51,4 +51,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/sg agentos -c "cd '$GITHUB_WORKSPACE' && exec /usr/bin/python3 scripts/rollout_product_employee_runtime.py"
+          /usr/bin/sg agentos -c "cd '$GITHUB_WORKSPACE' && export PYTHONPATH='$GITHUB_WORKSPACE' && exec /usr/bin/python3 -m scripts.rollout_product_employee_runtime"
