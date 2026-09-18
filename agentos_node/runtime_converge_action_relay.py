@@ -372,6 +372,7 @@ def _request_submit_lock(root: Path) -> Iterator[None]:
     root.mkdir(parents=True, exist_ok=True)
     lock_path = root / ".runtime-converge-submit.lock"
     fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o660)
+    locked = False
     try:
         info = os.fstat(fd)
         mode = stat.S_IMODE(info.st_mode)
@@ -386,9 +387,11 @@ def _request_submit_lock(root: Path) -> Iterator[None]:
             if mode & 0o007 or mode & 0o060 != 0o060:
                 raise PermissionError("runtime_converge_lock_mode_not_shared")
         fcntl.flock(fd, fcntl.LOCK_EX)
+        locked = True
         yield
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        if locked:
+            fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
 
