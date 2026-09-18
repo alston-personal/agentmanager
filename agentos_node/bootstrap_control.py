@@ -19,6 +19,7 @@ ACTION_DEPLOY_THREADS_GALAXY = "agentos.threads_galaxy_static.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
 ACTION_PUBLISH_GALAXY_DAY1 = "agentos.social_threads_galaxy_day1.publish"
+ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -27,6 +28,7 @@ ALLOWED_ACTIONS = {
     ACTION_RECONCILE_CONTROL_INBOX,
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
     ACTION_PUBLISH_GALAXY_DAY1,
+    ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -90,6 +92,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_RECONCILE_CONTROL_INBOX,
         ACTION_PROVISION_ZIWEI_MASTER_REPO,
         ACTION_PUBLISH_GALAXY_DAY1,
+        ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -180,6 +183,8 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
         return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PUBLISH_GALAXY_DAY1:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR:
+        return _run_canonical_script("scripts/install_galaxy_threads_experiment_monitor_user.sh", timeout=120, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
