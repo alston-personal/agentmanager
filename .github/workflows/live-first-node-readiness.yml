@@ -3,9 +3,13 @@ name: Live First Node Readiness
 on:
   push:
     branches:
-      - feature/realm-node-fabric-readiness
+      - core/integration
     paths:
       - '.github/workflows/live-first-node-readiness.yml'
+      - 'agent_core/realm_server.py'
+      - 'agent_core/realm_fabric.py'
+      - 'agent_core/node_registry.py'
+      - 'agentos_node/thin_client.py'
 
 permissions:
   contents: read
@@ -92,4 +96,7 @@ jobs:
           print('vopc_reported_status=' + str(node.get('reported_status') or node.get('status')))
           print('vopc_effective_status=' + str(node.get('effective_status') or node.get('status')))
           print('vopc_last_heartbeat=' + str(node.get('last_heartbeat_at') or node.get('last_heartbeat')))
+          effective=str(node.get('effective_status') or node.get('status') or '')
+          if effective != 'online':
+              raise SystemExit('vopc5750 is not freshly online')
           PY
