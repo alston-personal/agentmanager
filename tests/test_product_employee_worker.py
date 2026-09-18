@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import agentos_node.employee_worker_host_runtime as worker_runtime
+import agentos_node.product_employee_worker as product_worker
 from agentos_node.employee_worker_host import WorkerHostCandidate
 from agentos_node.employee_worker_host_runtime import (
     ExactEmployeeWorkerHost,
@@ -139,6 +140,92 @@ def test_product_host_waits_for_s4_awaiting_claim_before_launch(tmp_path: Path, 
     assert len(candidates) == 1
     assert candidates[0].capsule["wake_id"] == "wake-1"
     assert list((host_root / "dispatches").glob("*/*.json")) == []
+
+
+
+def test_zeus_review_receipt_is_persisted_without_mutation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = [tmp_path / name for name in ("runtime", "wake", "host", "worker")]
+    for path in roots:
+        path.mkdir()
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=roots[0],
+        wake_root=roots[1],
+        worker_state_root=roots[3],
+        node_id="oracle-core-node",
+        runner_kind="zeus_writer_v1",
+    )
+    work_ref = {
+        "schema": "agentos.employee-work-intent-ref/v1",
+        "product_id": "zeus-writer",
+        "state_key": "current-work",
+        "revision": 1,
+        "digest": "sha256:" + "a" * 64,
+    }
+    receipt = {
+        "schema": "agentos.execution-receipt/v1",
+        "result_status": "success",
+        "evidence": {
+            "chapter": "Ch05",
+            "work_intent_digest": work_ref["digest"],
+            "mutation_performed": False,
+            "publish_performed": False,
+            "credential_exposed": False,
+        },
+        "credential_exposed": False,
+    }
+    monkeypatch.setattr(product_worker, "execute_bound_work_intent", lambda ref: receipt if ref == work_ref else None)
+    returned = worker._execute_zeus_review(  # noqa: SLF001
+        work_ref,
+        employee_id="zeus-writer",
+        wake_id="wake-review-1",
+        presence_generation=7,
+    )
+    assert returned == receipt
+    persisted = roots[3] / "product-receipts" / "zeus-writer" / "wake-review-1.p000007.json"
+    assert persisted.is_file()
+    payload = json.loads(persisted.read_text(encoding="utf-8"))
+    assert payload["result_status"] == "success"
+    assert payload["evidence"]["mutation_performed"] is False
+    assert payload["evidence"]["publish_performed"] is False
+
+
+def test_zeus_review_failure_is_not_treated_as_checkpoint_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = [tmp_path / name for name in ("runtime", "wake", "host", "worker")]
+    for path in roots:
+        path.mkdir()
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=roots[0],
+        wake_root=roots[1],
+        worker_state_root=roots[3],
+        node_id="oracle-core-node",
+        runner_kind="zeus_writer_v1",
+    )
+    work_ref = {
+        "schema": "agentos.employee-work-intent-ref/v1",
+        "product_id": "zeus-writer",
+        "state_key": "current-work",
+        "revision": 1,
+        "digest": "sha256:" + "b" * 64,
+    }
+    monkeypatch.setattr(
+        product_worker,
+        "execute_bound_work_intent",
+        lambda ref: {
+            "schema": "agentos.execution-receipt/v1",
+            "result_status": "failed",
+            "error_code": "zeus_review_work_ref_mismatch",
+            "evidence": {},
+            "credential_exposed": False,
+        },
+    )
+    receipt = worker._execute_zeus_review(  # noqa: SLF001
+        work_ref,
+        employee_id="zeus-writer",
+        wake_id="wake-review-2",
+        presence_generation=8,
+    )
+    assert receipt["result_status"] == "failed"
+    assert receipt["error_code"] == "zeus_review_work_ref_mismatch"
 
 
 def test_shared_host_accepts_only_runner_specific_result_schema(tmp_path: Path) -> None:
