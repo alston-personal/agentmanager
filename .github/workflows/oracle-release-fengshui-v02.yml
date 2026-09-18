@@ -1,3 +1,4 @@
+# release trigger: deploy fengshui main with complete Taiwan regions
 name: Fengshui canonical main release
 
 on:
