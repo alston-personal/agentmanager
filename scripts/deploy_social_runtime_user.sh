@@ -89,6 +89,25 @@ import json, os, secrets, tempfile
 
 path = Path(__import__('sys').argv[1])
 lines = path.read_text(encoding='utf-8').splitlines()
+
+# Ensure the internal social control token exists. It is generated once,
+# persisted only in the private runtime env file, and never printed.
+control_prefix = 'AGENTOS_SOCIAL_CONTROL_TOKEN='
+control_idxs = [i for i, line in enumerate(lines) if line.startswith(control_prefix)]
+if len(control_idxs) > 1:
+    raise SystemExit('social_runtime_control_token=DUPLICATE_KEY')
+if control_idxs:
+    ci = control_idxs[0]
+    observed = lines[ci][len(control_prefix):].strip()
+    if not observed:
+        lines[ci] = control_prefix + secrets.token_urlsafe(48)
+        control_changed = True
+    else:
+        control_changed = False
+else:
+    lines.append(control_prefix + secrets.token_urlsafe(48))
+    control_changed = True
+
 prefix = 'AGENTOS_SOCIAL_PRODUCTS_JSON='
 idxs = [i for i, line in enumerate(lines) if line.startswith(prefix)]
 if len(idxs) > 1:
@@ -128,6 +147,8 @@ elif lines[idx] != newline:
     lines[idx] = newline
     changed = True
 
+if control_changed:
+    changed = True
 if changed:
     fd, tmp_name = tempfile.mkstemp(prefix=path.name + '.', dir=str(path.parent), text=True)
     try:
@@ -140,6 +161,7 @@ if changed:
         try: os.unlink(tmp_name)
         except FileNotFoundError: pass
 os.chmod(path, 0o600)
+print('social_runtime_control_token=READY')
 print('social_runtime_product_galaxy=REGISTERED')
 PY
 
