@@ -11,7 +11,7 @@ from .credentials import AccountBinding, CredentialVault
 from .governance import RuntimeWriteAcceptance, SocialWriteGate
 from .oauth import OAuthStateStore
 
-THREADS_SCOPES = ("threads_basic", "threads_content_publish", "threads_read_replies")
+THREADS_SCOPES = ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies")
 THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
 THREADS_READ_PAGE_LIMIT = 3
@@ -247,7 +247,9 @@ class ThreadsCapability:
         primary = str(request.primary_text or "").strip()
         if not primary or len(primary) > THREADS_TEXT_LIMIT:
             return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_primary_text_invalid").to_dict()
-        params: dict[str, Any] = {"media_type": "TEXT", "text": primary, "auto_publish_text": "true"}
+        params: dict[str, Any] = {"media_type": "TEXT", "text": primary}
+        if request.operation != "reply":
+            params["auto_publish_text"] = "true"
         attachment = request.text_attachment
         if attachment:
             plaintext = str(attachment.get("plaintext") or "").strip()
@@ -265,10 +267,22 @@ class ThreadsCapability:
             params["reply_to_id"] = request.reply_to_id
         token = self.vault.get_access_token(binding.binding_id)
         try:
-            published = self.transport.api("me/threads", token=token, method="POST", params=params)
-            thread_id = str(published.get("id") or "")
-            if not thread_id:
+            created = self.transport.api("me/threads", token=token, method="POST", params=params)
+            creation_id = str(created.get("id") or "")
+            if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
+            if request.operation == "reply":
+                published = self.transport.api(
+                    "me/threads_publish",
+                    token=token,
+                    method="POST",
+                    params={"creation_id": creation_id},
+                )
+                thread_id = str(published.get("id") or "")
+                if not thread_id:
+                    raise ThreadsProviderError("threads_publish_id_missing")
+            else:
+                thread_id = creation_id
             return receipt_for(request, started_at=started, ok=True, capability=f"social.threads.{request.operation}", platform_object_id=thread_id).to_dict()
         except ThreadsProviderError as exc:
             return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code=str(exc)).to_dict()
