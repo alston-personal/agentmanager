@@ -259,6 +259,7 @@ jobs:
             echo "AgentOS service installation did not complete in systemd mode" >&2
             systemctl --user --no-pager --full status milkcat-credits.service || true
             journalctl --user -u milkcat-credits.service -n 120 --no-pager || true
+            tail -n 160 "$DATA_ROOT/logs/milkcat_credits.log" 2>/dev/null || true
             exit 1
           fi
           systemctl --user is-active --quiet agentos-control-plane.service
@@ -267,6 +268,7 @@ jobs:
           if ! systemctl --user is-active --quiet milkcat-credits.service; then
             systemctl --user --no-pager --full status milkcat-credits.service || true
             journalctl --user -u milkcat-credits.service -n 120 --no-pager || true
+            tail -n 160 "$DATA_ROOT/logs/milkcat_credits.log" 2>/dev/null || true
             exit 1
           fi
           if ! curl -fsS http://127.0.0.1:8767/healthz | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["service"]=="milkcat-credits" and d["mode"]=="shadow"; print("milkcat_credits_shadow=PASS")'; then
