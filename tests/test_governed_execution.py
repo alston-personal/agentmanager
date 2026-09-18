@@ -11,6 +11,7 @@ from agent_core.governed_execution import (
     RECEIPT_SCHEMA,
     execute_bound_work_intent,
     resolve_authority,
+    resolve_product_work_intent_ref,
 )
 
 
@@ -97,6 +98,20 @@ def _fixture(tmp_path: Path):
     request_path = repo / ".agentos" / "execution-requests" / "draft-review.json"
     request_path.parent.mkdir(parents=True, exist_ok=True)
     request_path.write_text(json.dumps(request, indent=2) + "\n", encoding="utf-8")
+    _git(repo, "add", ".agentos/execution-requests/draft-review.json")
+    _git(repo, "commit", "-m", "product-owned request")
+    request_commit = _git(repo, "rev-parse", "HEAD")
+
+    cache = tmp_path / "zeus-writer-cache.git"
+    clone = subprocess.run(
+        ["git", "clone", "--bare", str(repo), str(cache)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert clone.returncode == 0, clone.stderr
+    _git(cache, "update-ref", "refs/agentos/master", request_commit)
+    _git(cache, "remote", "set-url", "origin", "https://github.com/alston-personal/zeus-writer.git")
 
     registry = {
         "schema": "agentos.execution-authority/v1",
@@ -105,7 +120,11 @@ def _fixture(tmp_path: Path):
                 "repository": "alston-personal/zeus-writer",
                 "request_path": ".agentos/execution-requests/draft-review.json",
                 "allowed_source_refs": ["master"],
-                "request_source": {"repo_root": str(repo), "source_ref": "master"},
+                "request_source": {
+                    "repo_root": str(cache),
+                    "source_ref": "master",
+                    "cache_ref": "refs/agentos/master",
+                },
             }
         },
         "capabilities": {
@@ -121,7 +140,7 @@ def _fixture(tmp_path: Path):
                 },
                 "replay_policy": "idempotent",
                 "runtime": {
-                    "repo_root": str(repo),
+                    "repo_root": str(cache),
                     "work_intent_path": ".agentos/work-intents/current.json",
                     "allowed_draft_prefix": "scratch/",
                 },
@@ -150,6 +169,12 @@ def test_bound_zeus_review_returns_sanitized_exact_source_receipt(tmp_path: Path
     serialized = json.dumps(receipt, sort_keys=True).casefold()
     assert "authorization" not in serialized
     assert "github_pat_" not in serialized
+
+
+
+def test_product_work_intent_ref_is_resolved_from_exact_release_cache(tmp_path: Path) -> None:
+    work_ref, _, _, registry_path = _fixture(tmp_path)
+    assert resolve_product_work_intent_ref("zeus-writer", authority_path=registry_path) == work_ref
 
 
 def test_work_ref_mismatch_fails_closed(tmp_path: Path) -> None:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh AgentOS Product Work Intents
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=60s
+Persistent=true
+Unit=agentos-product-work-intent-reconciler.service
+
+[Install]
+WantedBy=timers.target

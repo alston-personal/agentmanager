@@ -19,6 +19,8 @@ BOOTSTRAP_PATH = ROOT / "scripts" / "bootstrap_product_employees.py"
 ACTIVATE = ROOT / "scripts" / "activate_product_employees_oracle.sh"
 WAKE_UNIT = ROOT / ".agent" / "scripts" / "agentos-employee-wake-node.service"
 WORKER_UNIT = ROOT / ".agent" / "scripts" / "agentos-employee-worker-host.service"
+WORK_INTENT_UNIT = ROOT / ".agent" / "scripts" / "agentos-product-work-intent-reconciler.service"
+WORK_INTENT_TIMER = ROOT / ".agent" / "scripts" / "agentos-product-work-intent-reconciler.timer"
 
 spec = importlib.util.spec_from_file_location("bootstrap_product_employees", BOOTSTRAP_PATH)
 assert spec and spec.loader
@@ -107,6 +109,20 @@ def test_activation_assets_are_fixed_and_do_not_emit_verified_markers():
     assert "youtube" not in unit.casefold()
     assert "zeus" not in unit.casefold()
     assert "employee_wake_node" in unit
+
+
+
+def test_activation_installs_periodic_product_work_intent_reconciler():
+    shell = ACTIVATE.read_text(encoding="utf-8")
+    service = WORK_INTENT_UNIT.read_text(encoding="utf-8")
+    timer = WORK_INTENT_TIMER.read_text(encoding="utf-8")
+    assert "agentos-product-work-intent-reconciler.service" in shell
+    assert "agentos-product-work-intent-reconciler.timer" in shell
+    assert "systemctl --user start agentos-product-work-intent-reconciler.service" in shell
+    assert "systemctl --user restart agentos-product-work-intent-reconciler.timer" in shell
+    assert "product_work_intent_reconciler=active" in shell
+    assert "product_work_intent_reconciler" in service
+    assert "OnUnitActiveSec=60s" in timer
 
 
 def test_worker_host_enters_fixed_shared_agentos_group_without_generic_authority():

@@ -7,6 +7,10 @@ ENV_FILE="$ROOT/.env"
 USER_SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 WAKE_UNIT_SRC="$ROOT/.agent/scripts/agentos-employee-wake-node.service"
 WAKE_UNIT_DST="$USER_SYSTEMD_DIR/agentos-employee-wake-node.service"
+WORK_INTENT_UNIT_SRC="$ROOT/.agent/scripts/agentos-product-work-intent-reconciler.service"
+WORK_INTENT_UNIT_DST="$USER_SYSTEMD_DIR/agentos-product-work-intent-reconciler.service"
+WORK_INTENT_TIMER_SRC="$ROOT/.agent/scripts/agentos-product-work-intent-reconciler.timer"
+WORK_INTENT_TIMER_DST="$USER_SYSTEMD_DIR/agentos-product-work-intent-reconciler.timer"
 WAKE_NODE_ID="oracle-employee-wake-node"
 
 [ -f "$ENV_FILE" ] || { echo "Missing $ENV_FILE" >&2; exit 2; }
@@ -22,6 +26,8 @@ case "$DATA_ROOT" in /*) ;; *) echo "AGENT_DATA_ROOT must be absolute" >&2; exit
 [ -f "$DATA_ROOT/realm/fabric.json" ] || { echo "Missing existing Realm fabric" >&2; exit 2; }
 [ -f "$DATA_ROOT/realm/nodes.json" ] || { echo "Missing existing Node registry" >&2; exit 2; }
 [ -f "$WAKE_UNIT_SRC" ] || { echo "Missing wake node service asset" >&2; exit 2; }
+[ -f "$WORK_INTENT_UNIT_SRC" ] || { echo "Missing product work-intent reconciler service asset" >&2; exit 2; }
+[ -f "$WORK_INTENT_TIMER_SRC" ] || { echo "Missing product work-intent reconciler timer asset" >&2; exit 2; }
 
 RUNTIME_ROOT="$DATA_ROOT/employee-runtime"
 WAKE_ROOT="$DATA_ROOT/employee-wakes"
@@ -69,7 +75,24 @@ text = text.replace("/usr/bin/python3", python_bin)
 Path(dst).write_text(text, encoding="utf-8")
 PY
 
+"$PYTHON_BIN" - "$WORK_INTENT_UNIT_SRC" "$WORK_INTENT_UNIT_DST" "$ROOT" "$DATA_ROOT" "$PYTHON_BIN" <<'PY'
+from pathlib import Path
+import sys
+src, dst, root, data_root, python_bin = sys.argv[1:]
+text = Path(src).read_text(encoding="utf-8")
+text = text.replace("/home/ubuntu/agentmanager", root)
+text = text.replace("/home/ubuntu/agent-data", data_root)
+text = text.replace("/usr/bin/python3", python_bin)
+Path(dst).write_text(text, encoding="utf-8")
+PY
+cp "$WORK_INTENT_TIMER_SRC" "$WORK_INTENT_TIMER_DST"
+
 systemctl --user daemon-reload
+systemctl --user enable agentos-product-work-intent-reconciler.timer >/dev/null
+systemctl --user start agentos-product-work-intent-reconciler.service
+systemctl --user restart agentos-product-work-intent-reconciler.timer
+systemctl --user is-active --quiet agentos-product-work-intent-reconciler.timer
+
 systemctl --user enable agentos-employee-wake-node.service >/dev/null
 systemctl --user restart agentos-employee-wake-node.service
 systemctl --user is-active --quiet agentos-employee-wake-node.service
@@ -102,4 +125,5 @@ echo "wake_node_id=$WAKE_NODE_ID"
 echo "wake_capability=agent.employee.wake.deliver"
 echo "supervisor_delivery=one_direct"
 echo "worker_host=active"
+echo "product_work_intent_reconciler=active"
 echo "verified_marker_emitted=false"

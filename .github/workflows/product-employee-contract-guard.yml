@@ -15,6 +15,8 @@ on:
       - 'governance/execution-authority.json'
       - '.agent/scripts/agentos-employee-wake-node.service'
       - '.agent/scripts/agentos-employee-worker-host.service'
+      - '.agent/scripts/agentos-product-work-intent-reconciler.service'
+      - '.agent/scripts/agentos-product-work-intent-reconciler.timer'
       - 'agent_core/node_registry.py'
       - 'agent_core/realm_fabric.py'
       - 'agent_core/governed_execution.py'
@@ -23,6 +25,7 @@ on:
       - 'agentos_node/employee_worker_host_runtime.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/product_work_intent_reconciler.py'
       - 'scripts/bootstrap_product_employees.py'
       - 'scripts/activate_product_employees_oracle.sh'
       - 'scripts/repair_realm_fabric_truncated_tail.py'
@@ -31,6 +34,7 @@ on:
       - 'tests/test_product_employee_worker.py'
       - 'tests/test_governed_execution.py'
       - 'tests/test_product_employee_activation.py'
+      - 'tests/test_product_work_intent_reconciler.py'
       - 'tests/test_node_registry_recovery.py'
       - 'tests/test_realm_fabric_atomic_repair.py'
       - 'docs/PRODUCT_EMPLOYEE_ACCEPTANCE.md'
@@ -63,6 +67,7 @@ jobs:
           tests/test_product_employee_worker.py
           tests/test_governed_execution.py
           tests/test_product_employee_activation.py
+          tests/test_product_work_intent_reconciler.py
           tests/test_node_registry_recovery.py
           tests/test_realm_fabric_atomic_repair.py
           tests/test_product_employee_runtime_rollout.py
