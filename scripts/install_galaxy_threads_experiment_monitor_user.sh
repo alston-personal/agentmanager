@@ -27,7 +27,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=$REPO
 ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
-ExecStartPost=/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py
+ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py || echo persona_git_sync=DEFERRED'
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 
