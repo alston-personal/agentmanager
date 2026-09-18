@@ -6,7 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentos_node.antigravity_relay import AntigravityRelayClient
-from agentos_node.persona_life import effective_energy, can_spend, spend, maybe_generate_event
+from agentos_node.persona_life import effective_energy, can_spend, spend, maybe_generate_event, life_phase, next_awake_at
 
 ENV_FILE=Path('/home/ubuntu/.config/agentos/social-runtime.env')
 CRED_FILE=Path('/home/ubuntu/.local/state/agentos/social/credentials.json')
@@ -229,8 +229,15 @@ def main():
     stochastic_config=persona_state.get('stochastic_life_events') or {
       'enabled':True,'daily_event_probability':0.42,'max_events_per_day':2,'minimum_gap_hours':4
     }
-    life=effective_energy(LIFE_STATE,energy_config,now)
-    event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now)
+    temporal_config=persona_state.get('temporal_behavior') or {
+      'rest_windows':[
+        {'local_time':'00:30-07:30','state':'sleep'},
+        {'local_time':'12:30-13:30','state':'rest'}
+      ]
+    }
+    life=effective_energy(LIFE_STATE,energy_config,now,temporal=temporal_config)
+    phase=life_phase(now,temporal_config)
+    event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now,temporal=temporal_config)
     if event:
         print('mio_life_event='+str(event.get('template_id'))+':'+str(event.get('event_id')))
     account_username=str(binding.get('username') or latest.get('account',{}).get('username') or '').lstrip('@')
@@ -241,6 +248,12 @@ def main():
         try:due=datetime.fromisoformat(str(item['scheduled_at']).replace('Z','+00:00'))
         except Exception:due=now
         if due>now:continue
+        if phase in ('sleep','rest'):
+            wake=next_awake_at(now,temporal_config)
+            item['scheduled_at']=iso(wake+timedelta(minutes=8))
+            item['result']='deferred_for_'+phase
+            print('mio_social_publish=DEFERRED_'+phase.upper()+':'+item['reply_id'])
+            continue
         root_id=str(item.get('root_post_id') or latest.get('root_post',{}).get('id') or '')
         if not root_id:item['status']='skipped';item['result']='root_missing';continue
         if already_replied(product_key,bid,root_id,item['reply_id']):
@@ -254,7 +267,7 @@ def main():
                 cost=float(costs.get('proactive_reply',6))
             else:
                 cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
-            spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':bool(item.get('outbound_discovery'))})
+            spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':bool(item.get('outbound_discovery'))},temporal=temporal_config)
             print('mio_social_publish=PASS:'+item['reply_id']+':'+result)
         elif item['attempts']>=3:
             item['status']='failed';item['result']=result
@@ -272,7 +285,7 @@ def main():
     if new_external:
         try:
             read_cost=float((energy_config.get('action_costs') or {}).get('read_thread',1))
-            spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)})
+            spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)},temporal=temporal_config)
             result=decide_batch(new_external,account_username)
             by_id={str(d.get('reply_id') or ''):d for d in result.get('decisions') or [] if isinstance(d,dict)}
             for row in new_external:
@@ -281,7 +294,10 @@ def main():
                 if d.get('should_reply') and str(d.get('text') or '').strip():
                     costs=energy_config.get('action_costs') or {}
                     est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
-                    if can_spend(LIFE_STATE,energy_config,est,reserve=5):
+                    if phase in ('sleep','rest'):
+                        record['status']='deferred_for_'+phase
+                        print('mio_social_decision=DEFERRED_'+phase.upper()+':'+rid)
+                    elif can_spend(LIFE_STATE,energy_config,est,reserve=5,temporal=temporal_config):
                         delay=max(8,min(720,int(d.get('delay_minutes') or 30)));scheduled=now+timedelta(minutes=delay)
                         action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0,'estimated_energy_cost':est};items.append(action);record['scheduled_at']=action['scheduled_at']
                         print('mio_social_decision=SCHEDULED:'+rid+':'+str(delay)+'m')
@@ -307,10 +323,10 @@ def main():
     today_outbound=sum(1 for x in outbound_history if str(x.get('local_date') or '')==today_local and x.get('status') in ('scheduled','sent'))
     active_hour=datetime.now(LOCAL_TZ).hour
     proactive_cost=float((energy_config.get('action_costs') or {}).get('proactive_reply',6))
-    if discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15):
+    if discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and phase=='awake' and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15,temporal=temporal_config):
         queries=['AI角色','AI實驗','虛擬角色','人工智慧創作','數位角色']
         query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
-        spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query})
+        spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query},temporal=temporal_config)
         status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
         if status==200 and receipt.get('ok') is True:
             last_discovery_at=iso(now)
@@ -375,8 +391,9 @@ def main():
     print('mio_social_pending='+str(sum(1 for x in kept if x.get('status')=='scheduled')))
     print('mio_social_new_external='+str(len(new_external)))
     print('mio_social_outbound_today='+str(today_outbound))
-    final_life=effective_energy(LIFE_STATE,energy_config,now)
+    final_life=effective_energy(LIFE_STATE,energy_config,now,temporal=temporal_config)
     print('mio_energy='+str(round(float(final_life.get('energy',0)),1))+'/'+str(energy_config.get('capacity',100)))
+    print('mio_life_phase='+str(final_life.get('life_phase') or phase))
 
 if __name__=='__main__':
     main()
