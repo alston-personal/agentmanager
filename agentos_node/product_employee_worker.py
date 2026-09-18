@@ -209,6 +209,24 @@ class GovernedProductEmployeeWorker:
         if not self.node_id:
             raise ValueError("product_employee_node_id_required")
 
+    def _execute_zeus_review(
+        self,
+        work_ref: dict[str, Any],
+        *,
+        employee_id: str,
+        wake_id: str,
+        presence_generation: int,
+    ) -> dict[str, Any]:
+        receipt = execute_bound_work_intent(work_ref)
+        receipt_path = (
+            self.worker_state_root
+            / "product-receipts"
+            / employee_id
+            / f"{wake_id}.p{presence_generation:06d}.json"
+        )
+        _atomic_write(receipt_path, receipt)
+        return receipt
+
     def _capsules(self) -> list[tuple[Path, dict[str, Any]]]:
         scope = SUPPORTED_PRODUCT_RUNNERS[self.runner_kind]
         root = self.wake_root / scope["employee_id"]
@@ -275,14 +293,12 @@ class GovernedProductEmployeeWorker:
             wake_intent = capsule.get("wake_intent") or {}
             work_ref = wake_intent.get("work_intent_ref")
             if work_ref is not None:
-                receipt = execute_bound_work_intent(work_ref)
-                receipt_path = (
-                    self.worker_state_root
-                    / "product-receipts"
-                    / employee_id
-                    / f"{wake}.p{generation:06d}.json"
+                receipt = self._execute_zeus_review(
+                    work_ref,
+                    employee_id=employee_id,
+                    wake_id=wake,
+                    presence_generation=generation,
                 )
-                _atomic_write(receipt_path, receipt)
                 if receipt.get("result_status") != "success":
                     return ProductWorkerState(
                         status="unknown",
