@@ -4,10 +4,17 @@
     "zeus-writer": {
       "repository": "alston-personal/zeus-writer",
       "request_path": ".agentos/execution-requests/draft-review.json",
-      "allowed_source_refs": ["master"],
+      "allowed_source_refs": [
+        "master"
+      ],
       "request_source": {
-        "repo_root": "/home/ubuntu/zeus-writer",
-        "source_ref": "master"
+        "repo_root": "/home/ubuntu/agent-data/product-work-intent-cache/zeus-writer.git",
+        "source_ref": "master",
+        "cache_ref": "refs/agentos/master"
+      },
+      "employee_binding": {
+        "employee_id": "zeus-writer",
+        "assignment_id": "zeus-writer-continuation-v1"
       }
     }
   },
@@ -23,7 +30,9 @@
         },
         "work_intent_state_key": {
           "type": "string",
-          "enum": ["current-work"]
+          "enum": [
+            "current-work"
+          ]
         },
         "work_intent_revision": {
           "type": "integer",
@@ -35,7 +44,7 @@
       },
       "replay_policy": "idempotent",
       "runtime": {
-        "repo_root": "/home/ubuntu/zeus-writer",
+        "repo_root": "/home/ubuntu/agent-data/product-work-intent-cache/zeus-writer.git",
         "work_intent_path": ".agentos/work-intents/current.json",
         "allowed_draft_prefix": "scratch/"
       }
