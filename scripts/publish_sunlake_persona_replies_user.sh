@@ -12,7 +12,7 @@ ROOT_POST_ID="18353956147218749"
 
 python3 - "$ENV_FILE" "$CRED_FILE" "$ROOT_POST_ID" <<'PY'
 from __future__ import annotations
-import json, sys, urllib.request, urllib.error
+import json, sys, urllib.request, urllib.error, time
 
 env_file, cred_file, root_post_id = map(str, sys.argv[1:4])
 
@@ -119,10 +119,11 @@ for idx,(reply_to,text) in enumerate(plans,1):
     })
     if status!=200 or receipt.get('ok') is not True:
         print('persona_threads_reply_publish=FAIL:'+reply_to+':'+str(receipt.get('error_code') or receipt.get('error') or status))
-        raise SystemExit(5)
+        continue
     obj=str(receipt.get('platform_object_id') or '')
     published.append((reply_to,obj))
     print('persona_threads_reply_publish=PASS:'+reply_to+':'+obj)
+    time.sleep(65)
 
 print('persona_threads_reply=PASS')
 print('persona_threads_reply_account='+username)
