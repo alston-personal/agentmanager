@@ -100,14 +100,11 @@ jobs:
             echo 'agentos_node_contract=PASS'
           } 2>&1 | tee "$OUT"
 
-      - name: Commit evidence
-        if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/governance-directory-audit.txt
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(governance): node responsibility resolution on Oracle'
-          git push
+      - name: Upload governance audit evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-directory-audit-${{ github.sha }}
+          path: .agentos/evidence/governance-directory-audit.txt
+          if-no-files-found: error
+          retention-days: 14
