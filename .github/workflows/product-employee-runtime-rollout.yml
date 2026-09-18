@@ -1,0 +1,54 @@
+name: Product Employee Runtime Rollout
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/product-employee-runtime-rollout.yml'
+      - 'agent_core/work_intent.py'
+      - 'agent_core/governed_execution.py'
+      - 'agent_core/employee_runtime.py'
+      - 'agent_core/employee_wake.py'
+      - 'agent_core/core_supervisor_delivery.py'
+      - 'agentos_node/employee_wake_inbox.py'
+      - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'governance/execution-authority.json'
+      - 'governance/employee-worker-adapters-v2.json'
+      - 'scripts/activate_product_employees_oracle.sh'
+      - 'scripts/rollout_product_employee_runtime.py'
+      - '.agent/scripts/agentos-employee-worker-host.service'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-employee-runtime-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact integration generation
+        uses: actions/checkout@v4
+
+      - name: Validate immutable rollout source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'alston-personal/agentmanager'
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/rollout_product_employee_runtime.py
+          echo "product_employee_rollout_source_commit=$GITHUB_SHA"
+
+      - name: Converge exact Product Employee runtime through Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sg agentos -c "cd '$GITHUB_WORKSPACE' && exec /usr/bin/python3 scripts/rollout_product_employee_runtime.py"

@@ -35,6 +35,9 @@ on:
       - 'tests/test_realm_fabric_atomic_repair.py'
       - 'docs/PRODUCT_EMPLOYEE_ACCEPTANCE.md'
       - '.github/workflows/product-employee-contract-guard.yml'
+      - '.github/workflows/product-employee-runtime-rollout.yml'
+      - 'scripts/rollout_product_employee_runtime.py'
+      - 'tests/test_product_employee_runtime_rollout.py'
   workflow_dispatch:
 
 permissions:
@@ -62,3 +65,4 @@ jobs:
           tests/test_product_employee_activation.py
           tests/test_node_registry_recovery.py
           tests/test_realm_fabric_atomic_repair.py
+          tests/test_product_employee_runtime_rollout.py
