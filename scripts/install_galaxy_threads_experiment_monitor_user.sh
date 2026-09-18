@@ -15,7 +15,7 @@ LOG="$LOG_DIR/galaxy-experiment-monitor.log"
 
 test -f "$REPO/scripts/monitor_galaxy_threads_experiment_user.py"
 test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
-test -f "$REPO/scripts/publish_sunlake_persona_replies_user.sh"
+test -f "$REPO/scripts/mio_persona_social_loop_user.py"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
 cat > "$SERVICE" <<EOF
@@ -28,6 +28,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=$REPO
 ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
+ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py || echo mio_social_loop=DEFERRED'
 ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py || echo persona_git_sync=DEFERRED'
 StandardOutput=append:$LOG
 StandardError=append:$LOG
@@ -42,7 +43,7 @@ Description=Monitor Threads AI Subscription Experiment
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=30min
+OnUnitActiveSec=10min
 Persistent=true
 Unit=agentos-galaxy-experiment-monitor.service
 
@@ -100,14 +101,6 @@ print('galaxy_experiment_monitor_reply_catalog='+json.dumps(list(seen.values()),
 PY
 fi
 
-# One-time, idempotent first persona reply batch. The publisher checks existing
-# owned replies before writing, so monitor reinstall cannot duplicate replies.
-if /bin/bash "$REPO/scripts/publish_sunlake_persona_replies_user.sh"; then
-  echo "sunlake_persona_initial_replies=PASS"
-else
-  echo "sunlake_persona_initial_replies=DEFERRED"
-fi
-
 echo "galaxy_experiment_monitor_install=PASS"
-echo "galaxy_experiment_monitor_interval=30m"
+echo "galaxy_experiment_monitor_interval=10m"
 echo "galaxy_experiment_monitor_log=$LOG"
