@@ -37,55 +37,6 @@ jobs:
               time.sleep(1)
           raise SystemExit('action relay receipt timeout')
           PY
-      - name: Provision ZiWei Master through fixed ubuntu bootstrap action
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="ziwei-repo-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-          SOURCE_COMMIT=$(git ls-remote origin refs/heads/core/integration | awk '{print $1}')
-          printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
-          for i in $(seq 1 60); do [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break; sleep 1; done
-          test -d "$REQUESTS"; test -d "$RECEIPTS"
-          python3 - "$REQUEST" "$REQUEST_ID" "$SOURCE_COMMIT" <<'PY'
-          import json, os, sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-          path=Path(sys.argv[1]); rid=sys.argv[2]; sha=sys.argv[3]
-          payload={
-            'schema':'agentos.bootstrap-request/v1',
-            'request_id':rid,
-            'action':'agentos.repository.provision_ziwei_master',
-            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-            'params':{'source_commit':sha},
-            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
-          }
-          tmp=path.with_suffix(path.suffix+'.tmp')
-          tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
-          PY
-          for i in $(seq 1 120); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT" || { echo 'ziwei_repo_receipt=TIMEOUT'; exit 3; }
-          python3 - "$RECEIPT" "$SOURCE_COMMIT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
-          print(json.dumps(r,indent=2,ensure_ascii=False))
-          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
-          assert r.get('action')=='agentos.repository.provision_ziwei_master',r
-          assert r.get('executor_user')=='ubuntu',r
-          assert r.get('executor_uid')==1001,r
-          assert r.get('source_commit')==expected,r
-          assert r.get('ok') is True,r
-          text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
-          assert 'repo=alston-personal/ziwei-master' in text,text[-10000:]
-          assert ('classification=CREATED_PRIVATE' in text or 'classification=ALREADY_EXISTS_PRIVATE' in text),text[-10000:]
-          print('ziwei_repo_provision=PASS')
-          print(text[-4000:])
-          PY
       - name: Publish evidence
         if: always()
         shell: bash
