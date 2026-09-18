@@ -93,11 +93,13 @@ def test_rollout_source_cannot_be_selected_by_caller(changes):
 
 def test_rollout_accepts_only_exact_healthy_sanitized_receipt():
     dispatcher = FakeDispatcher(_receipt())
-    result = rollout(_env(), dispatcher=dispatcher, timeout_seconds=1, poll_seconds=0.01)
+    seen = []
+    result = rollout(_env(), dispatcher=dispatcher, quarantine_func=lambda sha: seen.append(sha) or False, timeout_seconds=1, poll_seconds=0.01)
     assert result["resulting_commit"] == SHA
     assert result["health"] == "passed"
     assert result["credential_exposed"] is False
     assert dispatcher.request["source_commit"] == SHA
+    assert seen == [SHA]
 
 
 @pytest.mark.parametrize(
@@ -112,8 +114,18 @@ def test_rollout_accepts_only_exact_healthy_sanitized_receipt():
 def test_rollout_fails_closed_on_untrusted_receipt(changes):
     dispatcher = FakeDispatcher(_receipt(**changes))
     with pytest.raises(RuntimeError):
-        rollout(_env(), dispatcher=dispatcher, timeout_seconds=1, poll_seconds=0.01)
+        rollout(_env(), dispatcher=dispatcher, quarantine_func=lambda sha: False, timeout_seconds=1, poll_seconds=0.01)
 
+
+
+
+def test_rollout_quarantine_failure_prevents_relay_submit():
+    dispatcher = FakeDispatcher(_receipt())
+    def fail(_sha):
+        raise RuntimeError("node_local_drift_backup_conflict")
+    with pytest.raises(RuntimeError, match="node_local_drift_backup_conflict"):
+        rollout(_env(), dispatcher=dispatcher, quarantine_func=fail, timeout_seconds=1, poll_seconds=0.01)
+    assert dispatcher.request is None
 
 
 def _git(repo: Path, *args: str) -> str:
