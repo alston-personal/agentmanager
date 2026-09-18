@@ -90,7 +90,8 @@ jobs:
           print('galaxy_experiment_monitor_receipt=PASS')
           PY
 
-          sudo -iu ubuntu systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
+          # Timer activation is already proven inside the ubuntu bootstrap receipt.
+          # The self-hosted runner user must not sudo into ubuntu just to re-check it.
           test -f /home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json
           python3 - <<'PY'
           import json
