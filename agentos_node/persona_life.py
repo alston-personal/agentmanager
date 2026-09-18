@@ -1,10 +1,12 @@
 from __future__ import annotations
 import json, math, os, random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
 SCHEMA="agentos.persona-life-runtime/v1"
+DEFAULT_TZ="Asia/Taipei"
 
 def _utc_now()->datetime:
     return datetime.now(timezone.utc)
@@ -25,7 +27,56 @@ def _save(path:Path,payload:dict[str,Any])->None:
     tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     os.chmod(tmp,0o600); tmp.replace(path); os.chmod(path,0o600)
 
-def effective_energy(path:Path, config:dict[str,Any], now:datetime|None=None)->dict[str,Any]:
+def _parse_hhmm(value:str)->tuple[int,int]:
+    h,m=str(value).split(":",1)
+    return int(h),int(m)
+
+def life_phase(now:datetime, temporal:dict[str,Any]|None=None, tz_name:str=DEFAULT_TZ)->str:
+    local=now.astimezone(ZoneInfo(tz_name))
+    minutes=local.hour*60+local.minute
+    for row in (temporal or {}).get("rest_windows") or []:
+        try:
+            start,end=str(row.get("local_time") or "").split("-",1)
+            sh,sm=_parse_hhmm(start); eh,em=_parse_hhmm(end)
+            a=sh*60+sm; b=eh*60+em
+            inside=(a<=minutes<b) if a<b else (minutes>=a or minutes<b)
+            if inside:return str(row.get("state") or "rest")
+        except Exception:continue
+    return "awake"
+
+def next_awake_at(now:datetime, temporal:dict[str,Any]|None=None, tz_name:str=DEFAULT_TZ)->datetime:
+    if life_phase(now,temporal,tz_name) not in {"sleep","rest"}: return now
+    local=now.astimezone(ZoneInfo(tz_name))
+    candidates=[]
+    for row in (temporal or {}).get("rest_windows") or []:
+        try:
+            start,end=str(row.get("local_time") or "").split("-",1)
+            sh,sm=_parse_hhmm(start); eh,em=_parse_hhmm(end)
+            a=sh*60+sm; b=eh*60+em; cur=local.hour*60+local.minute
+            inside=(a<=cur<b) if a<b else (cur>=a or cur<b)
+            if not inside:continue
+            end_local=local.replace(hour=eh,minute=em,second=0,microsecond=0)
+            if a>=b and cur>=a:end_local+=timedelta(days=1)
+            if end_local<=local:end_local+=timedelta(days=1)
+            candidates.append(end_local)
+        except Exception:continue
+    return min(candidates).astimezone(timezone.utc) if candidates else now
+
+def _recovery_integral(last:datetime, now:datetime, recovery:dict[str,Any], temporal:dict[str,Any]|None, tz_name:str)->float:
+    if now<=last:return 0.0
+    cursor=last
+    total=0.0
+    while cursor<now:
+        step=min(now,cursor+timedelta(minutes=10))
+        phase=life_phase(cursor,temporal,tz_name)
+        if phase=="sleep": rate=float(recovery.get("sleep_points_per_hour",12))
+        elif phase=="rest": rate=float(recovery.get("rest_points_per_hour",7))
+        else: rate=float(recovery.get("awake_points_per_hour",3))
+        total += max(0.0,(step-cursor).total_seconds()/3600.0)*rate
+        cursor=step
+    return total
+
+def effective_energy(path:Path, config:dict[str,Any], now:datetime|None=None, temporal:dict[str,Any]|None=None, tz_name:str=DEFAULT_TZ)->dict[str,Any]:
     now=now or _utc_now()
     cap=float(config.get("capacity",100))
     default=float(config.get("current",cap))
@@ -37,21 +88,21 @@ def effective_energy(path:Path, config:dict[str,Any], now:datetime|None=None)->d
         state["energy_policy_version"]=policy_version
     try:last=datetime.fromisoformat(str(state.get("last_energy_update_at") or "").replace("Z","+00:00"))
     except Exception:last=now
-    hours=max(0.0,(now-last).total_seconds()/3600.0)
     recovery=config.get("recovery") or {}
-    rate=float(recovery.get("awake_points_per_hour",3))
-    state["energy"]=max(float(config.get("floor",0)),min(cap,float(state.get("energy",default))+hours*rate))
+    gained=_recovery_integral(last,now,recovery,temporal,tz_name)
+    state["energy"]=max(float(config.get("floor",0)),min(cap,float(state.get("energy",default))+gained))
     state["last_energy_update_at"]=_iso(now)
+    state["life_phase"]=life_phase(now,temporal,tz_name)
     state["schema"]=SCHEMA
     _save(path,state)
     return state
 
-def can_spend(path:Path, config:dict[str,Any], cost:float, reserve:float=0.0)->bool:
-    state=effective_energy(path,config)
+def can_spend(path:Path, config:dict[str,Any], cost:float, reserve:float=0.0, temporal:dict[str,Any]|None=None)->bool:
+    state=effective_energy(path,config,temporal=temporal)
     return float(state.get("energy",0)) >= float(cost)+float(reserve)
 
-def spend(path:Path, config:dict[str,Any], cost:float, *, reason:str, meta:dict[str,Any]|None=None)->dict[str,Any]:
-    state=effective_energy(path,config)
+def spend(path:Path, config:dict[str,Any], cost:float, *, reason:str, meta:dict[str,Any]|None=None, temporal:dict[str,Any]|None=None)->dict[str,Any]:
+    state=effective_energy(path,config,temporal=temporal)
     before=float(state.get("energy",0))
     floor=float(config.get("floor",0))
     after=max(floor,before-max(0.0,float(cost)))
@@ -62,8 +113,8 @@ def spend(path:Path, config:dict[str,Any], cost:float, *, reason:str, meta:dict[
     _save(path,state)
     return state
 
-def apply_delta(path:Path, config:dict[str,Any], delta:float, *, reason:str)->dict[str,Any]:
-    state=effective_energy(path,config)
+def apply_delta(path:Path, config:dict[str,Any], delta:float, *, reason:str, temporal:dict[str,Any]|None=None)->dict[str,Any]:
+    state=effective_energy(path,config,temporal=temporal)
     cap=float(config.get("capacity",100)); floor=float(config.get("floor",0))
     before=float(state.get("energy",0))
     state["energy"]=max(floor,min(cap,before+float(delta)))
@@ -83,9 +134,10 @@ EVENTS=[
  {"id":"serendipity","category":"serendipity","text":"偶然遇到一個讓她很感興趣的東西","effects":{"energy_delta":1,"mood_delta":0.16,"initiative_modifier":1.2},"hours":4}
 ]
 
-def maybe_generate_event(path:Path, config:dict[str,Any], event_log:Path, now:datetime|None=None)->dict[str,Any]|None:
+def maybe_generate_event(path:Path, config:dict[str,Any], event_log:Path, now:datetime|None=None, temporal:dict[str,Any]|None=None)->dict[str,Any]|None:
     now=now or _utc_now()
-    state=effective_energy(path,{},now) if not config else _load(path,{"schema":SCHEMA,"energy":72,"last_energy_update_at":_iso(now),"events_today":[]})
+    if life_phase(now,temporal) in {"sleep","rest"}: return None
+    state=_load(path,{"schema":SCHEMA,"energy":72,"last_energy_update_at":_iso(now),"events_today":[]})
     if not config.get("enabled",True): return None
     last_roll=state.get("last_event_roll_at")
     if last_roll:
