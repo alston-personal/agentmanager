@@ -1,0 +1,35 @@
+name: Credits Contract
+
+on:
+  pull_request:
+    paths:
+      - 'agent_core/credit_ledger.py'
+      - 'agent_core/credit_service.py'
+      - '.agent/governance/credit_pricing.json'
+      - 'tests/test_credit_ledger.py'
+      - 'tests/test_credit_service.py'
+      - '.github/workflows/credits-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agent_core/credit_ledger.py'
+      - 'agent_core/credit_service.py'
+      - '.agent/governance/credit_pricing.json'
+      - 'tests/test_credit_ledger.py'
+      - 'tests/test_credit_service.py'
+      - '.github/workflows/credits-contract.yml'
+
+jobs:
+  credits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Compile credits modules
+        run: python -m py_compile agent_core/credit_ledger.py agent_core/credit_service.py
+      - name: Run credits contract tests
+        run: python -m pytest -q tests/test_credit_ledger.py tests/test_credit_service.py
