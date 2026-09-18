@@ -15,6 +15,7 @@ on:
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/product_employee_worker_cli.py'
       - 'agentos_node/employee_worker_host_runtime.py'
+      - 'agentos_node/runtime_converge_action_relay.py'
       - 'governance/execution-authority.json'
       - 'governance/employee-worker-adapters-v2.json'
       - 'scripts/activate_product_employees_oracle.sh'
