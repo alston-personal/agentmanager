@@ -27,6 +27,10 @@ class FakeTransport:
         assert token == "secret-token"
         if path == "me/threads":
             return [{"id": "p1", "username": "alice", "text": "root", "timestamp": "2026-09-17T00:00:00+0000", "permalink": "https://www.threads.com/@alice/post/p1", "has_replies": True}]
+        if path == "keyword_search":
+            assert params["q"] == "AI"
+            assert params["search_type"] == "RECENT"
+            return [{"id":"x1","username":"bob","text":"AI experiment","timestamp":"2026-09-18T00:00:00+0000","permalink":"https://www.threads.com/@bob/post/x1"}]
         if path == "p1/conversation":
             return [
                 {"id": "r1", "username": "bob", "text": "hello", "timestamp": "2026-09-17T00:10:00+0000", "is_reply": True, "root_post": {"id": "p1"}, "replied_to": {"id": "p1"}},
@@ -48,6 +52,7 @@ def request(operation, object_id=None, product_id="galaxy"):
 def test_oauth_requests_reply_read_permission():
     assert "threads_basic" in THREADS_SCOPES
     assert "threads_read_replies" in THREADS_SCOPES
+    assert "threads_keyword_search" in THREADS_SCOPES
 
 
 def test_identity_read_is_secret_free():
@@ -86,3 +91,13 @@ def test_threads_authorization_url_uses_web_host():
     url = transport.authorization_url("state-1")
     assert url.startswith("https://threads.net/oauth/authorize?")
     assert "state=state-1" in url
+
+
+def test_keyword_search_is_bounded_and_secret_free():
+    cap = ThreadsCapability(FakeVault(), FakeTransport())
+    req = SocialRequest(product_id="galaxy", platform="threads", operation="keyword.search", account_binding_id="galaxy:threads:42", query="AI", search_type="RECENT")
+    result = cap.status(req)
+    assert result["ok"] is True
+    assert result["capability"] == "social.threads.keyword.search"
+    assert result["result"]["items"][0]["id"] == "x1"
+    assert "secret-token" not in repr(result)
