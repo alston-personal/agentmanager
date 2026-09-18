@@ -54,6 +54,10 @@ systemctl --user enable --now agentos-galaxy-experiment-monitor.timer >/dev/null
 if ! systemctl --user start agentos-galaxy-experiment-monitor.service; then
   systemctl --user --no-pager --full status agentos-galaxy-experiment-monitor.service >&2 || true
   journalctl --user -u agentos-galaxy-experiment-monitor.service -n 80 --no-pager >&2 || true
+  if [ -f "$LOG" ]; then
+    echo "--- galaxy monitor log tail ---" >&2
+    tail -n 80 "$LOG" >&2 || true
+  fi
   echo "galaxy_experiment_monitor_initial_run=FAIL" >&2
   exit 4
 fi
