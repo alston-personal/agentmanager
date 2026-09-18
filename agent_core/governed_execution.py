@@ -165,11 +165,31 @@ def load_local_product_request(
     if not isinstance(source, dict):
         _fail("governed_execution_request_source_missing")
     repo_root = str(source.get("repo_root") or "").strip()
+    cache_ref = str(source.get("cache_ref") or "").strip()
     request_path = str(project.get("request_path") or "").strip()
-    if not repo_root or not request_path or request_path.startswith("/") or ".." in Path(request_path).parts:
+    if (
+        not repo_root
+        or not cache_ref
+        or not request_path
+        or request_path.startswith("/")
+        or ".." in Path(request_path).parts
+    ):
         _fail("governed_execution_request_source_invalid")
-    path = Path(repo_root) / request_path
-    request = _load_json(path)
+
+    remote = sanitize_remote(
+        _git_value(repo_root, "remote", "get-url", "origin", error_code="governed_execution_remote_unavailable")
+    ).strip()
+    expected_remote = f"https://github.com/{project['repository']}.git"
+    if remote not in {expected_remote, expected_remote.removesuffix(".git")}:
+        _fail("governed_execution_repository_identity_mismatch")
+
+    raw = _git_show_bytes(repo_root, cache_ref, request_path)
+    try:
+        request = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("governed_execution_product_request_invalid")
+    if not isinstance(request, dict):
+        _fail("governed_execution_product_request_invalid")
     resolved_project, capability = resolve_authority(request, registry)
     if request.get("project_id") != project_id:
         _fail("governed_execution_project_identity_mismatch")
@@ -203,24 +223,16 @@ def _git_show_bytes(repo_root: str | Path, source_sha: str, relative_path: str) 
     return bytes(proc.stdout)
 
 
-def _zeus_draft_review(
+def _validated_zeus_manifest(
     request: Mapping[str, Any],
     capability: Mapping[str, Any],
-    expected_work_ref: Mapping[str, Any],
-) -> tuple[dict[str, Any], bool]:
+    expected_work_ref: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
     runtime = capability.get("runtime") or {}
     repo_root = str(runtime.get("repo_root") or "")
     manifest_path = str(runtime.get("work_intent_path") or "")
-    allowed_prefix = str(runtime.get("allowed_draft_prefix") or "")
-    if not repo_root or not manifest_path or not allowed_prefix:
+    if not repo_root or not manifest_path:
         _fail("zeus_review_runtime_authority_invalid")
-
-    remote = sanitize_remote(
-        _git_value(repo_root, "remote", "get-url", "origin", error_code="zeus_review_remote_unavailable")
-    ).strip()
-    expected_remote = f"https://github.com/{request['repository']}.git"
-    if remote not in {expected_remote, expected_remote.removesuffix(".git")}:
-        _fail("zeus_review_repository_identity_mismatch")
 
     raw_manifest = _git_show_bytes(repo_root, str(request["source_sha"]), manifest_path)
     try:
@@ -234,7 +246,7 @@ def _zeus_draft_review(
     selected = manifest.get("selected_work")
     if not isinstance(ref, dict) or not isinstance(selected, dict):
         _fail("zeus_review_manifest_shape_invalid")
-    if ref != dict(expected_work_ref):
+    if expected_work_ref is not None and ref != dict(expected_work_ref):
         _fail("zeus_review_work_ref_mismatch")
     if ref.get("schema") != WORK_REF_SCHEMA:
         _fail("zeus_review_work_ref_schema_invalid")
@@ -251,13 +263,49 @@ def _zeus_draft_review(
     digest = "sha256:" + hashlib.sha256(_canonical_json(selected)).hexdigest()
     if digest != ref.get("digest"):
         _fail("zeus_review_manifest_digest_mismatch")
-
     if selected.get("action") != "review_existing_draft":
         _fail("zeus_review_action_not_allowed")
     if selected.get("chapter") != params.get("chapter"):
         _fail("zeus_review_chapter_mismatch")
     if selected.get("mutation_allowed") is not False or selected.get("publish_allowed") is not False:
         _fail("zeus_review_mutation_boundary_invalid")
+    return dict(ref), dict(selected), digest
+
+
+def resolve_product_work_intent_ref(
+    project_id: str,
+    *,
+    authority_path: str | Path = DEFAULT_AUTHORITY_PATH,
+) -> dict[str, Any]:
+    request, project, capability = load_local_product_request(project_id, authority_path=authority_path)
+    source = project.get("request_source") or {}
+    repo_root = str(source.get("repo_root") or "")
+    cache_ref = str(source.get("cache_ref") or "")
+    ancestry = _run_git(repo_root, "merge-base", "--is-ancestor", str(request["source_sha"]), cache_ref)
+    if ancestry.returncode != 0:
+        _fail("governed_execution_source_sha_not_in_release_lane")
+    adapter = str(capability.get("adapter") or "")
+    if adapter != "zeus_draft_review":
+        _fail("governed_execution_work_intent_adapter_not_supported")
+    ref, _, _ = _validated_zeus_manifest(request, capability)
+    return ref
+
+
+def _zeus_draft_review(
+    request: Mapping[str, Any],
+    capability: Mapping[str, Any],
+    expected_work_ref: Mapping[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    runtime = capability.get("runtime") or {}
+    repo_root = str(runtime.get("repo_root") or "")
+    allowed_prefix = str(runtime.get("allowed_draft_prefix") or "")
+    if not repo_root or not allowed_prefix:
+        _fail("zeus_review_runtime_authority_invalid")
+    ref, selected, digest = _validated_zeus_manifest(
+        request,
+        capability,
+        expected_work_ref,
+    )
 
     draft_path = str(selected.get("draft_path") or "")
     if (
