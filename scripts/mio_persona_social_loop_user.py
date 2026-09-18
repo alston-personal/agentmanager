@@ -277,8 +277,8 @@ def main():
         queries=['AI角色','AI實驗','虛擬角色','人工智慧創作','數位角色']
         query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
         status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
-        last_discovery_at=iso(now)
         if status==200 and receipt.get('ok') is True:
+            last_discovery_at=iso(now)
             candidates=[]
             for row in (receipt.get('result') or {}).get('items') or []:
                 cid=str(row.get('id') or '')
