@@ -51,11 +51,24 @@ def main():
     headers={'X-AgentOS-Product-Key':key}
     _,ident=post(BASE+'/status',req('identity.read',bid),headers)
     _,posts=post(BASE+'/status',req('post.read',bid),headers)
-    _,replies=post(BASE+'/status',req('replies.read',bid,ROOT_POST_ID),headers)
     identity=(ident.get('result') or {}).get('identity') or {}
     post_items=(posts.get('result') or {}).get('items') or []
-    reply_items=(replies.get('result') or {}).get('items') or []
     root=next((x for x in post_items if str(x.get('id') or '')==ROOT_POST_ID),{})
+    reply_items=[]
+    seen_reply_ids=set()
+    for post_item in post_items[:50]:
+        post_id=str(post_item.get('id') or '')
+        if not post_id or post_item.get('has_replies') is False:
+            continue
+        _,reply_receipt=post(BASE+'/status',req('replies.read',bid,post_id),headers)
+        for item_reply in (reply_receipt.get('result') or {}).get('items') or []:
+            rid=str(item_reply.get('id') or '')
+            if not rid or rid in seen_reply_ids:
+                continue
+            seen_reply_ids.add(rid)
+            item_reply=dict(item_reply)
+            item_reply['_root_post_id']=post_id
+            reply_items.append(item_reply)
     previous={}
     latest=STATE_DIR/'latest.json'
     if latest.exists():
@@ -72,7 +85,7 @@ def main():
       'root_post':{'id':ROOT_POST_ID,'permalink':root.get('permalink'),'text':root.get('text')},
       'reply_count':len(reply_items),
       'reply_ids':reply_ids,
-      'new_replies':[{'id':x.get('id'),'username':x.get('username'),'text':x.get('text'),'timestamp':x.get('timestamp'),'permalink':x.get('permalink')} for x in new],
+      'new_replies':[{'id':x.get('id'),'root_post_id':x.get('_root_post_id'),'replied_to_id':(x.get('replied_to') or {}).get('id'),'is_reply_owned_by_me':bool(x.get('is_reply_owned_by_me')),'username':x.get('username'),'text':x.get('text'),'timestamp':x.get('timestamp'),'permalink':x.get('permalink')} for x in new],
       'needs_attention':bool(new),
     }
     tmp=latest.with_suffix('.tmp'); tmp.write_text(json.dumps(snapshot,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); os.chmod(tmp,0o600); tmp.replace(latest)
@@ -93,6 +106,9 @@ def main():
                 if rid:
                     catalog[rid]={
                         'id':rid,
+                        'root_post_id':reply.get('root_post_id'),
+                        'replied_to_id':reply.get('replied_to_id'),
+                        'is_reply_owned_by_me':bool(reply.get('is_reply_owned_by_me')),
                         'username':reply.get('username'),
                         'text':reply.get('text'),
                         'timestamp':reply.get('timestamp'),
