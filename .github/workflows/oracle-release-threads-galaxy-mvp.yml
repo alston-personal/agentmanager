@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 79f206174cc19b117a62c1f870b98fa7b340ef91
+      SOURCE_SHA: d5b0912d74c9c73eacd6ea0056f3dcc30d38b7ed
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
