@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from agent_core.employee_lifecycle import EmployeeLifecycle
+from agent_core.work_intent import WorkIntentRef, parse_work_intent_ref
 
 
 WAKE_INTENT_SCHEMA = "agentos.employee-wake-intent/v1"
@@ -34,6 +35,7 @@ class EmployeeWakeIntent:
     skill_ids: tuple[str, ...]
     resume_required: bool
     prior_execution_state: str
+    work_intent_ref: WorkIntentRef | None = None
     authority_boundary: str = "selection_only_no_execution"
     executor_selection: str = "unbound"
     transport_selection: str = "unbound"
@@ -44,6 +46,7 @@ class EmployeeWakeIntent:
         value["constraints"] = list(self.constraints)
         value["role_ids"] = list(self.role_ids)
         value["skill_ids"] = list(self.skill_ids)
+        value["work_intent_ref"] = self.work_intent_ref.as_dict() if self.work_intent_ref else None
         return value
 
 
@@ -53,7 +56,9 @@ class EmployeeWakePlanner:
     Selection authority stops at the assignment boundary.  The planner never
     claims a lease and never chooses an executor, Node, transport, or capability.
     Repeated planning before a claim is intentionally idempotent: the same
-    assignment/generation produces the same wake_id.
+    assignment/generation/work-ref produces the same wake_id.  Changing a
+    content-addressed work ref changes the wake identity so stale planned wakes
+    cannot silently consume new product work.
     """
 
     def __init__(self, lifecycle: EmployeeLifecycle) -> None:
@@ -65,9 +70,11 @@ class EmployeeWakePlanner:
         assignment_id: str,
         expected_generation: int,
         mode: str,
+        work_intent_ref: WorkIntentRef | None = None,
     ) -> str:
+        work_identity = work_intent_ref.identity if work_intent_ref else ""
         source = (
-            f"{employee_id}\0{assignment_id}\0{expected_generation}\0{mode}"
+            f"{employee_id}\0{assignment_id}\0{expected_generation}\0{mode}\0{work_identity}"
         ).encode("utf-8")
         return "wake_" + hashlib.sha256(source).hexdigest()[:24]
 
@@ -84,6 +91,7 @@ class EmployeeWakePlanner:
         assignment, resume_required = selected
         employee = self.lifecycle.runtime.get_employee(employee_id)
         lease = self.lifecycle.get_lease(assignment.assignment_id)
+        work_intent_ref = parse_work_intent_ref(assignment.work_intent_ref)
 
         if resume_required:
             # next_assignment() only returns active work as resumable when the
@@ -105,6 +113,7 @@ class EmployeeWakePlanner:
                 assignment.assignment_id,
                 expected_generation,
                 mode,
+                work_intent_ref,
             ),
             employee_id=employee.agent_id,
             assignment_id=assignment.assignment_id,
@@ -117,4 +126,5 @@ class EmployeeWakePlanner:
             skill_ids=tuple(employee.skill_ids),
             resume_required=resume_required,
             prior_execution_state=prior_execution_state,
+            work_intent_ref=work_intent_ref,
         )

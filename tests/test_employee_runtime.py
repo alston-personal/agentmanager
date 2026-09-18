@@ -2,6 +2,7 @@ import tempfile
 import unittest
 
 from agent_core.employee_runtime import EmployeeRuntime
+from agent_core.work_intent import WORK_INTENT_REF_SCHEMA
 
 
 class EmployeeRuntimeTest(unittest.TestCase):
@@ -89,6 +90,45 @@ class EmployeeRuntimeTest(unittest.TestCase):
             runtime.create_assignment("a1", "keeper", "guard")
             with self.assertRaises(ValueError):
                 runtime.update_assignment("a1", state="magically_done")
+
+
+    def test_work_intent_ref_is_content_addressed_and_durable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = EmployeeRuntime(tmp)
+            runtime.create_employee("writer", "Writer")
+            runtime.create_assignment("draft-1", "writer", "review draft")
+            runtime.set_work_intent_ref(
+                "draft-1",
+                {
+                    "schema": WORK_INTENT_REF_SCHEMA,
+                    "product_id": "zeus-writer",
+                    "state_key": "review-existing-draft",
+                    "revision": 3,
+                    "digest": "sha256:" + "a" * 64,
+                },
+            )
+            restarted = EmployeeRuntime(tmp)
+            assignment = restarted.get_assignment("draft-1")
+            self.assertEqual(assignment.work_intent_ref["product_id"], "zeus-writer")
+            self.assertEqual(assignment.work_intent_ref["revision"], 3)
+
+    def test_work_intent_ref_rejects_execution_authority_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = EmployeeRuntime(tmp)
+            runtime.create_employee("writer", "Writer")
+            runtime.create_assignment("draft-1", "writer", "review draft")
+            with self.assertRaisesRegex(ValueError, "invalid_work_intent_ref_fields"):
+                runtime.set_work_intent_ref(
+                    "draft-1",
+                    {
+                        "schema": WORK_INTENT_REF_SCHEMA,
+                        "product_id": "zeus-writer",
+                        "state_key": "review-existing-draft",
+                        "revision": 1,
+                        "digest": "sha256:" + "b" * 64,
+                        "argv": ["python", "publish.py"],
+                    },
+                )
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from agent_core.core_supervisor_service import INTENT_RECORD_SCHEMA, CoreSupervi
 from agent_core.employee_wake import EmployeeWakeIntent, WAKE_INTENT_SCHEMA
 from agent_core.employee_wake_delivery import EmployeeWakeDelivery
 from agent_core.employee_presence import WAKE_CAPABILITY
+from agent_core.work_intent import parse_work_intent_ref
 from agent_core.transport_routing import RouteDecision, resolve_transport
 
 
@@ -84,6 +85,7 @@ def _wake_from_dict(payload: Any) -> EmployeeWakeIntent:
         skill_ids=_string_tuple(payload.get("skill_ids"), field="skill_ids"),
         resume_required=payload.get("resume_required") is True,
         prior_execution_state=str(payload.get("prior_execution_state") or ""),
+        work_intent_ref=parse_work_intent_ref(payload.get("work_intent_ref")),
         authority_boundary=str(payload.get("authority_boundary") or ""),
         executor_selection=str(payload.get("executor_selection") or ""),
         transport_selection=str(payload.get("transport_selection") or ""),

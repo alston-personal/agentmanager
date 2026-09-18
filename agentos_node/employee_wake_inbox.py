@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent_core.work_intent import parse_work_intent_ref
+
 
 WAKE_INTENT_SCHEMA = "agentos.employee-wake-intent/v1"
 WAKE_ROUTE_SCHEMA = "agentos.employee-wake-route/v1"
@@ -24,6 +26,7 @@ ALLOWED_INTENT_KEYS = {
     "skill_ids",
     "resume_required",
     "prior_execution_state",
+    "work_intent_ref",
     "authority_boundary",
     "executor_selection",
     "transport_selection",
@@ -110,6 +113,7 @@ def deliver_employee_wake(task: dict[str, Any], root: Path, *, expected_node_id:
     if set(route) - ROUTE_KEYS:
         raise ValueError("unexpected_employee_wake_route_fields")
     _walk_safe(intent)
+    parse_work_intent_ref(intent.get("work_intent_ref"))
 
     wake_id = _safe_id(intent.get("wake_id"), field="wake_id")
     employee_id = _safe_id(intent.get("employee_id"), field="employee_id")

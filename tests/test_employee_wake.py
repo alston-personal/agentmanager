@@ -9,6 +9,7 @@ from pathlib import Path
 from agent_core.employee_lifecycle import EmployeeLifecycle
 from agent_core.employee_runtime import EmployeeRuntime
 from agent_core.employee_wake import WAKE_INTENT_SCHEMA, EmployeeWakePlanner
+from agent_core.work_intent import WORK_INTENT_REF_SCHEMA
 
 
 T0 = datetime(2026, 9, 2, 5, 0, 0, tzinfo=timezone.utc)
@@ -186,6 +187,41 @@ class EmployeeWakePlannerTests(unittest.TestCase):
         )
         self.assertEqual(intent.assignment_id, "audit-001")
         self.assertEqual(intent.mode, "resume")
+
+
+    def test_work_intent_ref_changes_wake_identity_and_is_serialized(self):
+        first = self.planner.plan_next("spec-steward", now=T0)
+        self.runtime.set_work_intent_ref(
+            "audit-001",
+            {
+                "schema": WORK_INTENT_REF_SCHEMA,
+                "product_id": "spec-steward",
+                "state_key": "closure-review",
+                "revision": 1,
+                "digest": "sha256:" + "1" * 64,
+            },
+        )
+        second = self.planner.plan_next("spec-steward", now=T0 + timedelta(seconds=1))
+        self.assertNotEqual(first.wake_id, second.wake_id)
+        self.assertEqual(second.work_intent_ref.product_id, "spec-steward")
+        self.assertEqual(second.work_intent_ref.state_key, "closure-review")
+        self.assertEqual(second.work_intent_ref.revision, 1)
+        self.assertEqual(second.as_dict()["work_intent_ref"]["digest"], "sha256:" + "1" * 64)
+
+    def test_same_work_intent_ref_keeps_wake_identity_stable(self):
+        self.runtime.set_work_intent_ref(
+            "audit-001",
+            {
+                "schema": WORK_INTENT_REF_SCHEMA,
+                "product_id": "spec-steward",
+                "state_key": "closure-review",
+                "revision": 7,
+                "digest": "sha256:" + "7" * 64,
+            },
+        )
+        first = self.planner.plan_next("spec-steward", now=T0)
+        second = self.planner.plan_next("spec-steward", now=T0 + timedelta(seconds=20))
+        self.assertEqual(first.wake_id, second.wake_id)
 
 
 if __name__ == "__main__":
