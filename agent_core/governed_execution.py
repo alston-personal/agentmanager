@@ -30,6 +30,7 @@ REQUEST_KEYS = {
     "expected_result",
 }
 DEFAULT_AUTHORITY_PATH = Path(__file__).resolve().parent.parent / "governance" / "execution-authority.json"
+GIT_BIN = "/usr/bin/git"
 
 
 def _now() -> str:
@@ -58,7 +59,7 @@ def _canonical_json(value: Mapping[str, Any]) -> bytes:
 
 def _run_git(repo_root: str | Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-c", f"safe.directory={Path(repo_root)}", "-C", str(repo_root), *args],
+        [GIT_BIN, "-c", f"safe.directory={Path(repo_root)}", "-C", str(repo_root), *args],
         text=True,
         capture_output=True,
         check=False,
@@ -206,7 +207,7 @@ def _git_show_bytes(repo_root: str | Path, source_sha: str, relative_path: str) 
         _fail("governed_execution_relative_path_invalid")
     proc = subprocess.run(
         [
-            "git",
+            GIT_BIN,
             "-c",
             f"safe.directory={Path(repo_root)}",
             "-C",
