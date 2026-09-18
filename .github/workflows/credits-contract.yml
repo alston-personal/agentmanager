@@ -5,9 +5,11 @@ on:
     paths:
       - 'agent_core/credit_ledger.py'
       - 'agent_core/credit_service.py'
+      - 'agent_core/credit_http.py'
       - '.agent/governance/credit_pricing.json'
       - 'tests/test_credit_ledger.py'
       - 'tests/test_credit_service.py'
+      - 'tests/test_credit_http.py'
       - '.github/workflows/credits-contract.yml'
   push:
     branches: [main]
@@ -30,6 +32,6 @@ jobs:
       - name: Install test dependency
         run: python -m pip install pytest
       - name: Compile credits modules
-        run: python -m py_compile agent_core/credit_ledger.py agent_core/credit_service.py
+        run: python -m py_compile agent_core/credit_ledger.py agent_core/credit_service.py agent_core/credit_http.py
       - name: Run credits contract tests
-        run: python -m pytest -q tests/test_credit_ledger.py tests/test_credit_service.py
+        run: python -m pytest -q tests/test_credit_ledger.py tests/test_credit_service.py tests/test_credit_http.py
