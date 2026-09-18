@@ -13,6 +13,7 @@ from agent_core.governed_execution import resolve_product_work_intent_ref
 AUTHORITY_SCHEMA = "agentos.execution-authority/v1"
 DEFAULT_AUTHORITY = Path(__file__).resolve().parents[1] / "governance" / "execution-authority.json"
 DEFAULT_CACHE_ROOT = Path("/home/ubuntu/agent-data/product-work-intent-cache")
+GIT_BIN = "/usr/bin/git"
 
 
 def _load_registry(path: Path) -> dict[str, Any]:
@@ -24,7 +25,7 @@ def _load_registry(path: Path) -> dict[str, Any]:
 
 def _run_git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-c", f"safe.directory={repo}", "-C", str(repo), *args],
+        [GIT_BIN, "-c", f"safe.directory={repo}", "-C", str(repo), *args],
         text=True,
         capture_output=True,
         check=False,
@@ -62,7 +63,7 @@ def _ensure_bare_cache(
     expected_remote = f"https://github.com/{repository}.git"
     if not expected_root.exists():
         init = subprocess.run(
-            ["git", "init", "--bare", str(expected_root)],
+            [GIT_BIN, "init", "--bare", str(expected_root)],
             text=True,
             capture_output=True,
             check=False,
