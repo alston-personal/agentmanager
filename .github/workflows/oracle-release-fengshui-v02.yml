@@ -1,4 +1,5 @@
 name: Fengshui dual-stick indoor release
+# release-source: 0d9bcddcbb2118f4486c25c3a03cd6fa137906bd
 
 on:
   push:
