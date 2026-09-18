@@ -38,9 +38,10 @@ def post(url,payload,headers=None):
         except Exception: body={'error':'http_error'}
         return e.code,body
 
-def req(operation,binding_id,object_id=None):
+def req(operation,binding_id,object_id=None,**extra):
     p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':operation,'account_binding_id':binding_id}
     if object_id: p['object_id']=object_id
+    p.update({k:v for k,v in extra.items() if v is not None})
     return p
 
 def load_json(path,default):
@@ -131,6 +132,51 @@ If should_reply=false, text must be null and delay_minutes must be null.
         time.sleep(2)
     raise TimeoutError('persona_decision_timeout')
 
+def decide_outbound(candidates,account_username):
+    local=datetime.now(LOCAL_TZ)
+    context=persona_context()
+    prompt=f"""You are deciding whether 澪 / Mio (@{account_username}), a transparently AI-operated public persona, should join ONE public Threads conversation started by someone else.
+
+Return JSON only, no markdown.
+
+Choose at most one candidate. It is completely valid to choose none.
+Only reply when Mio has a natural, specific reason to add something useful, curious, playful, or relational.
+Do NOT do growth hacking, generic compliments, engagement bait, repetitive self-promotion, or mass outreach.
+Never join political persuasion, elections, tragedies, personal crises, medical/legal/financial advice, sexual content, harassment, or content involving minors.
+Do not disclose internal implementation, hidden product plans, IR, branching, marketplace, research roadmap, AgentOS internals, credentials, or owner-private plans.
+Do not pretend to have memories or experiences she does not have.
+Keep the reply short and natural. Do not explain she is AI unless directly relevant.
+Her current local time and temporal state matter; silence is valid.
+
+Current local time: {local.isoformat()}
+Persona context:
+{json.dumps(context,ensure_ascii=False)}
+
+Candidate public posts:
+{json.dumps(candidates,ensure_ascii=False)}
+
+Required schema:
+{{
+  "candidate_id": "..." | null,
+  "should_reply": true | false,
+  "delay_minutes": 15 | null,
+  "text": "..." | null,
+  "reason_category": "curiosity|shared_interest|useful_contribution|relationship|low_value|boundary|rest|other"
+}}
+"""
+    client=AntigravityRelayClient(RELAY_ROOT)
+    cap=client.submit(
+        project_id='sunlake-milkcat-persona-social',
+        canonical_ir={'goal':'Let Mio selectively participate in public Threads conversations beyond her own posts.','constraints':['one outbound conversation at most','no spam or engagement farming','public-safe only','respect temporal state and memory boundary']},
+        instruction=prompt,workspace='/home/ubuntu/agentmanager')
+    for _ in range(75):
+        receipt=client.receipt(cap['capsule_id'])
+        if receipt:
+            if not receipt.get('ok'): raise RuntimeError('persona_outbound_executor_failed')
+            return extract_json(receipt.get('stdout') or '')
+        time.sleep(2)
+    raise TimeoutError('persona_outbound_decision_timeout')
+
 def auth():
     env=env_map(); products=json.loads(env.get('AGENTOS_SOCIAL_PRODUCTS_JSON','{}') or '{}')
     key=str((products.get('galaxy') or {}).get('api_key') or '')
@@ -161,8 +207,11 @@ def main():
     STATE_DIR.mkdir(parents=True,exist_ok=True); os.chmod(STATE_DIR,0o700)
     latest=load_json(LATEST,{})
     pending_path=STATE_DIR/'pending.json'; decisions_path=STATE_DIR/'decisions.jsonl'
-    state=load_json(pending_path,{'items':[],'processed_reply_ids':[]})
+    state=load_json(pending_path,{'items':[],'processed_reply_ids':[],'seen_outbound_ids':[],'outbound_history':[]})
     processed=set(state.get('processed_reply_ids') or []); items=list(state.get('items') or [])
+    seen_outbound=set(state.get('seen_outbound_ids') or [])
+    outbound_history=list(state.get('outbound_history') or [])
+    last_discovery_at=state.get('last_discovery_at')
     product_key,control,bid,binding=auth()
     account_username=str(binding.get('username') or latest.get('account',{}).get('username') or '').lstrip('@')
     account_id=str(binding.get('provider_account_id') or ''); now=utc_now()
@@ -212,6 +261,65 @@ def main():
         except Exception as exc:
             print('mio_social_decision=DEFERRED:'+type(exc).__name__)
 
+    # Proactive social exploration: bounded, low-volume, and persona-driven.
+    # Discovery is separate from replying to people who contacted Mio.
+    discovery_due=True
+    if last_discovery_at:
+        try:
+            discovery_due=(now-datetime.fromisoformat(str(last_discovery_at).replace('Z','+00:00'))) >= timedelta(hours=3)
+        except Exception:
+            discovery_due=True
+    today_local=datetime.now(LOCAL_TZ).date().isoformat()
+    today_outbound=sum(1 for x in outbound_history if str(x.get('local_date') or '')==today_local and x.get('status') in ('scheduled','sent'))
+    active_hour=datetime.now(LOCAL_TZ).hour
+    if discovery_due and today_outbound < 3 and 8 <= active_hour < 24:
+        queries=['AI角色','AI實驗','虛擬角色','人工智慧創作','數位角色']
+        query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
+        status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
+        last_discovery_at=iso(now)
+        if status==200 and receipt.get('ok') is True:
+            candidates=[]
+            for row in (receipt.get('result') or {}).get('items') or []:
+                cid=str(row.get('id') or '')
+                username=str(row.get('username') or '').lstrip('@')
+                if not cid or cid in seen_outbound or username.lower()==account_username.lower():
+                    continue
+                text=str(row.get('text') or '').strip()
+                if not text:
+                    continue
+                candidates.append({'id':cid,'username':username,'text':text[:1200],'timestamp':row.get('timestamp'),'permalink':row.get('permalink')})
+                if len(candidates)>=8: break
+            for row in candidates:
+                seen_outbound.add(row['id'])
+            if candidates:
+                try:
+                    d=decide_outbound(candidates,account_username)
+                    cid=str(d.get('candidate_id') or '')
+                    chosen=next((x for x in candidates if x['id']==cid),None)
+                    if chosen and d.get('should_reply') and str(d.get('text') or '').strip():
+                        delay=max(8,min(720,int(d.get('delay_minutes') or 30)))
+                        action={
+                          'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001',
+                          'decided_at':iso(now),'reply_id':cid,'root_post_id':cid,
+                          'author_handle':chosen.get('username'),'should_reply':True,
+                          'reason_category':str(d.get('reason_category') or 'other'),
+                          'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
+                          'status':'scheduled','attempts':0,'outbound_discovery':True,
+                          'source_permalink':chosen.get('permalink')
+                        }
+                        items.append(action)
+                        outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
+                        print('mio_social_outbound=SCHEDULED:'+cid+':'+str(delay)+'m')
+                    else:
+                        print('mio_social_outbound=NO_REPLY')
+                except Exception as exc:
+                    print('mio_social_outbound=DEFERRED:'+type(exc).__name__)
+            else:
+                print('mio_social_outbound=NO_CANDIDATES')
+        else:
+            err=str(receipt.get('error_code') or receipt.get('error') or status)
+            print('mio_social_outbound=DISCOVERY_UNAVAILABLE:'+err)
+
     kept=[]
     for x in items:
         if x.get('status') in ('scheduled','failed'):kept.append(x);continue
@@ -220,10 +328,17 @@ def main():
                 completed=datetime.fromisoformat(str(x['completed_at']).replace('Z','+00:00'))
                 if (now-completed).days<7:kept.append(x)
             except Exception:pass
-    save_json(pending_path,{'schema':'agentos.persona-social-queue/v1','updated_at':iso(now),'items':kept,'processed_reply_ids':sorted(processed)[-2000:]})
+    # Reflect send results back into outbound history.
+    status_by_candidate={str(x.get('reply_id') or ''):str(x.get('status') or '') for x in kept if x.get('outbound_discovery')}
+    for row in outbound_history:
+        cid=str(row.get('candidate_id') or '')
+        if cid in status_by_candidate: row['status']=status_by_candidate[cid]
+    outbound_history=outbound_history[-500:]
+    save_json(pending_path,{'schema':'agentos.persona-social-queue/v1','updated_at':iso(now),'items':kept,'processed_reply_ids':sorted(processed)[-2000:],'seen_outbound_ids':sorted(seen_outbound)[-5000:],'outbound_history':outbound_history,'last_discovery_at':last_discovery_at})
     print('mio_social_loop=PASS')
     print('mio_social_pending='+str(sum(1 for x in kept if x.get('status')=='scheduled')))
     print('mio_social_new_external='+str(len(new_external)))
+    print('mio_social_outbound_today='+str(today_outbound))
 
 if __name__=='__main__':
     main()
