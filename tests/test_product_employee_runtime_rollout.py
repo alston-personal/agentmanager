@@ -120,4 +120,6 @@ def test_workflow_is_push_only_and_has_no_runtime_inputs():
     assert "inputs:" not in text
     assert "core/integration" in text
     assert "scripts/rollout_product_employee_runtime.py" in text
+    assert "-m scripts.rollout_product_employee_runtime" in text
+    assert "PYTHONPATH='$GITHUB_WORKSPACE'" in text
     assert "node.runtime.converge" not in text
