@@ -26,6 +26,7 @@ class ProjectContinuationIndexTests(unittest.TestCase):
                 "recommended_action": "Re-run authenticated resolve",
                 "canonical_ir": {
                     "schema_version": "agentos.ir/v1",
+                    "project_id": "agentos-core",
                     "index_id": "idx-1",
                     "ir_id": "ir-1",
                     "parent_ir_id": None,
@@ -63,9 +64,21 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         return params
 
     def test_rejects_noncanonical_project(self):
-        params = dict(self.params)
+        params = json.loads(json.dumps(self.params))
         params["project_id"] = "other"
         with self.assertRaisesRegex(ValueError, "restricted to agentos-core"):
+            validate_publish_params(params)
+
+    def test_rejects_missing_project_identity_in_canonical_ir(self):
+        params = json.loads(json.dumps(self.params))
+        del params["continuation"]["canonical_ir"]["project_id"]
+        with self.assertRaisesRegex(ValueError, "canonical_ir.project_id"):
+            validate_publish_params(params)
+
+    def test_rejects_conflicting_project_identity_in_canonical_ir(self):
+        params = json.loads(json.dumps(self.params))
+        params["continuation"]["canonical_ir"]["project_id"] = "other-project"
+        with self.assertRaisesRegex(ValueError, "canonical_ir.project_id"):
             validate_publish_params(params)
 
     def test_rejects_mismatched_index_generation(self):
@@ -90,6 +103,7 @@ class ProjectContinuationIndexTests(unittest.TestCase):
         cont = json.loads((self.root / "projects" / "agentos-core" / "continuity" / "latest.json").read_text())
         self.assertEqual(head["index_id"], cont["index_id"])
         self.assertEqual(cont["canonical_ir"]["schema_version"], "agentos.ir/v1")
+        self.assertEqual(cont["canonical_ir"]["project_id"], "agentos-core")
         self.assertTrue(receipt["execution_head"]["sha256"].startswith("sha256:"))
         self.assertTrue(receipt["continuation"]["sha256"].startswith("sha256:"))
 

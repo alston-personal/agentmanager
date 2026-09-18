@@ -14,6 +14,7 @@ class SeedAgentosCoreIrHeadTests(unittest.TestCase):
         self.assertEqual(execution_head["index_id"], INDEX_ID)
         self.assertEqual(continuation["index_id"], INDEX_ID)
         self.assertEqual(canonical_ir["schema_version"], "agentos.ir/v1")
+        self.assertEqual(canonical_ir["project_id"], "agentos-core")
         self.assertEqual(canonical_ir["index_id"], INDEX_ID)
         self.assertEqual(canonical_ir["ir_id"], IR_ID)
         self.assertIsNone(canonical_ir["parent_ir_id"])
