@@ -218,6 +218,7 @@ def main():
     outbound_history=list(state.get('outbound_history') or [])
     last_discovery_at=state.get('last_discovery_at')
     product_key,control,bid,binding=auth()
+    now=utc_now()
     persona_state=load_json(PERSONA_ROOT/'persona_state.json',{})
     energy_config=persona_state.get('energy') or {}
     stochastic_config=persona_state.get('stochastic_life_events') or {}
@@ -226,7 +227,7 @@ def main():
     if event:
         print('mio_life_event='+str(event.get('template_id'))+':'+str(event.get('event_id')))
     account_username=str(binding.get('username') or latest.get('account',{}).get('username') or '').lstrip('@')
-    account_id=str(binding.get('provider_account_id') or ''); now=utc_now()
+    account_id=str(binding.get('provider_account_id') or '')
 
     for item in items:
         if item.get('status')!='scheduled':continue
