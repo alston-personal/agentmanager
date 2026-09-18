@@ -6,10 +6,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentos_node.antigravity_relay import AntigravityRelayClient
+from agentos_node.persona_life import effective_energy, can_spend, spend, maybe_generate_event
 
 ENV_FILE=Path('/home/ubuntu/.config/agentos/social-runtime.env')
 CRED_FILE=Path('/home/ubuntu/.local/state/agentos/social/credentials.json')
 STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat')
+LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/life_state.json')
+LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/stochastic_events.jsonl')
 LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
 PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
 RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
@@ -77,7 +80,8 @@ def persona_context():
         for raw in ep.read_text(encoding='utf-8').splitlines()[-30:]:
             try: events.append(json.loads(raw))
             except Exception: pass
-    return {'files':files,'recent_events':events[-12:]}
+    life_state=load_json(LIFE_STATE,{})
+    return {'files':files,'recent_events':events[-12:],'life_state':life_state}
 
 def decide_batch(items,account_username):
     local=datetime.now(LOCAL_TZ)
@@ -214,6 +218,13 @@ def main():
     outbound_history=list(state.get('outbound_history') or [])
     last_discovery_at=state.get('last_discovery_at')
     product_key,control,bid,binding=auth()
+    persona_state=load_json(PERSONA_ROOT/'persona_state.json',{})
+    energy_config=persona_state.get('energy') or {}
+    stochastic_config=persona_state.get('stochastic_life_events') or {}
+    life=effective_energy(LIFE_STATE,energy_config,now)
+    event=maybe_generate_event(LIFE_STATE,stochastic_config,LIFE_EVENTS,now)
+    if event:
+        print('mio_life_event='+str(event.get('template_id'))+':'+str(event.get('event_id')))
     account_username=str(binding.get('username') or latest.get('account',{}).get('username') or '').lstrip('@')
     account_id=str(binding.get('provider_account_id') or ''); now=utc_now()
 
@@ -230,6 +241,12 @@ def main():
         item['attempts']=int(item.get('attempts') or 0)+1;item['last_attempt_at']=iso(now)
         if ok:
             item['status']='sent';item['platform_object_id']=result;item['completed_at']=iso(now)
+            costs=energy_config.get('action_costs') or {}
+            if item.get('outbound_discovery'):
+                cost=float(costs.get('proactive_reply',6))
+            else:
+                cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
+            spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':bool(item.get('outbound_discovery'))})
             print('mio_social_publish=PASS:'+item['reply_id']+':'+result)
         elif item['attempts']>=3:
             item['status']='failed';item['result']=result
@@ -246,15 +263,23 @@ def main():
 
     if new_external:
         try:
+            read_cost=float((energy_config.get('action_costs') or {}).get('read_thread',1))
+            spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)})
             result=decide_batch(new_external,account_username)
             by_id={str(d.get('reply_id') or ''):d for d in result.get('decisions') or [] if isinstance(d,dict)}
             for row in new_external:
                 rid=str(row.get('id'));d=by_id.get(rid) or {'should_reply':False,'reason_category':'other'};processed.add(rid)
                 record={'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001','decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other')}
                 if d.get('should_reply') and str(d.get('text') or '').strip():
-                    delay=max(8,min(720,int(d.get('delay_minutes') or 30)));scheduled=now+timedelta(minutes=delay)
-                    action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0};items.append(action);record['scheduled_at']=action['scheduled_at']
-                    print('mio_social_decision=SCHEDULED:'+rid+':'+str(delay)+'m')
+                    costs=energy_config.get('action_costs') or {}
+                    est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
+                    if can_spend(LIFE_STATE,energy_config,est,reserve=5):
+                        delay=max(8,min(720,int(d.get('delay_minutes') or 30)));scheduled=now+timedelta(minutes=delay)
+                        action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0,'estimated_energy_cost':est};items.append(action);record['scheduled_at']=action['scheduled_at']
+                        print('mio_social_decision=SCHEDULED:'+rid+':'+str(delay)+'m')
+                    else:
+                        record['status']='no_reply';record['reason_category']='low_energy'
+                        print('mio_social_decision=NO_REPLY_LOW_ENERGY:'+rid)
                 else:
                     record['status']='no_reply';print('mio_social_decision=NO_REPLY:'+rid)
                 with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
@@ -273,9 +298,11 @@ def main():
     today_local=datetime.now(LOCAL_TZ).date().isoformat()
     today_outbound=sum(1 for x in outbound_history if str(x.get('local_date') or '')==today_local and x.get('status') in ('scheduled','sent'))
     active_hour=datetime.now(LOCAL_TZ).hour
-    if discovery_due and today_outbound < 3 and 8 <= active_hour < 24:
+    proactive_cost=float((energy_config.get('action_costs') or {}).get('proactive_reply',6))
+    if discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15):
         queries=['AI角色','AI實驗','虛擬角色','人工智慧創作','數位角色']
         query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
+        spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query})
         status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
         if status==200 and receipt.get('ok') is True:
             last_discovery_at=iso(now)
@@ -306,7 +333,7 @@ def main():
                           'reason_category':str(d.get('reason_category') or 'other'),
                           'text':str(d['text']).strip(),'scheduled_at':iso(now+timedelta(minutes=delay)),
                           'status':'scheduled','attempts':0,'outbound_discovery':True,
-                          'source_permalink':chosen.get('permalink')
+                          'source_permalink':chosen.get('permalink'),'estimated_energy_cost':proactive_cost
                         }
                         items.append(action)
                         outbound_history.append({'candidate_id':cid,'local_date':today_local,'status':'scheduled','scheduled_at':action['scheduled_at']})
@@ -340,6 +367,8 @@ def main():
     print('mio_social_pending='+str(sum(1 for x in kept if x.get('status')=='scheduled')))
     print('mio_social_new_external='+str(len(new_external)))
     print('mio_social_outbound_today='+str(today_outbound))
+    final_life=effective_energy(LIFE_STATE,energy_config,now)
+    print('mio_energy='+str(round(float(final_life.get('energy',0)),1))+'/'+str(energy_config.get('capacity',100)))
 
 if __name__=='__main__':
     main()
