@@ -46,14 +46,10 @@ jobs:
           import json
           from pathlib import Path
 
-          path = Path('/home/ubuntu/agent-data/realm/nodes.json')
-          print('registry_path=' + str(path))
-          data = json.loads(path.read_text(encoding='utf-8'))
-          nodes = data.get('nodes') or {}
-          node = nodes.get('vopc5750') if isinstance(nodes, dict) else None
-          if node is None and isinstance(nodes, list):
-              node = next((item for item in nodes if item.get('node_id') == 'vopc5750'), None)
-          print(json.dumps({'vopc5750': node}, indent=2, ensure_ascii=False))
+          from agent_core.node_registry import NodeRegistry
+          node_map=NodeRegistry().node_map()
+          node=next((item for item in node_map.get('nodes',[]) if item.get('node_id')=='vopc5750'),None)
+          print(json.dumps({'node_map_summary':{'online_node_count':node_map.get('online_node_count')},'vopc5750':node}, indent=2, ensure_ascii=False))
           if not node:
               raise SystemExit('vopc5750 missing from registry')
           print('vopc_reported_status=' + str(node.get('reported_status') or node.get('status')))
