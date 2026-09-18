@@ -177,6 +177,15 @@ def test_product_work_intent_ref_is_resolved_from_exact_release_cache(tmp_path: 
     assert resolve_product_work_intent_ref("zeus-writer", authority_path=registry_path) == work_ref
 
 
+
+def test_governed_review_does_not_depend_on_child_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    work_ref, request, _, registry_path = _fixture(tmp_path)
+    monkeypatch.setenv("PATH", "/nonexistent")
+    receipt = execute_bound_work_intent(work_ref, authority_path=registry_path)
+    assert receipt["result_status"] == "success"
+    assert receipt["source_sha"] == request["source_sha"]
+
+
 def test_work_ref_mismatch_fails_closed(tmp_path: Path) -> None:
     work_ref, _, _, registry_path = _fixture(tmp_path)
     wrong = dict(work_ref)
