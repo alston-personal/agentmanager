@@ -196,8 +196,9 @@ def test_oauth_completion_redirect_has_no_binding_and_product_redeems_result_onc
         code="provider-code",
         browser_session_id=browser_session_id,
     )
-    assert location.startswith("https://tarot.example/reading/1?social=connected")
+    assert location.startswith("https://tarot.example/reading/1?social=connected&connection=")
     assert "binding=" not in location
+    assert started["connection_id"] in location
     assert callback_result == {
         "schema": "agentos.social-oauth-complete/v1",
         "connected": True,
