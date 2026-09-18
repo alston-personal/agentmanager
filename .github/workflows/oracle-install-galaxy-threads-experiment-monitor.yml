@@ -94,7 +94,7 @@ jobs:
           assert 'galaxy_experiment_monitor_snapshot=PASS' in text,text[-12000:]
           print('galaxy_experiment_monitor_receipt=PASS')
           for line in text.splitlines():
-              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=')):
+              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=','persona_threads_reply_publish=','persona_threads_reply_skip=','persona_threads_reply_account=','persona_threads_reply_published=','sunlake_persona_initial_replies=')):
                   print(line)
           PY
 
