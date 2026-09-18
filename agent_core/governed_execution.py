@@ -306,6 +306,7 @@ def _zeus_draft_review(
         capability,
         expected_work_ref,
     )
+    params = request["parameters"]
 
     draft_path = str(selected.get("draft_path") or "")
     if (
