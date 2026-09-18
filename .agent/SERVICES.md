@@ -15,6 +15,11 @@ These services are essential for the basic operation of the Agent OS.
   - **Type**: `systemd-user`
   - **Description**: Periodic maintenance and healthcheck scheduler.
 
+- **Name**: `milkcat-credits.service`
+  - **Type**: `systemd-user`
+  - **Description**: Loopback-only Milkcat Credits metering service. Installed and started on CORE nodes in shadow mode before any enforce-mode rollout.
+  - **Health**: `http://127.0.0.1:8767/healthz`
+
 ## 🧩 Plugin Services (Optional)
 These services are only monitored if the corresponding environment variables are set in `.env`.
 
