@@ -1,4 +1,4 @@
-timestamp_utc=2026-09-18T23:12:24Z
+timestamp_utc=2026-09-18T23:15:05Z
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 === PROCESSES ===
 root     2285204 Fri Sep 18 20:32:51 2026    1027 Ss   /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.executor_job_action_relay --root /home/ubuntu/agent-data/runtime/action-relay
@@ -7,6 +7,52 @@ ubuntu   2285209 Fri Sep 18 20:32:51 2026 2285207 S    /usr/bin/python3 -m agent
 root     2577916 Sat Sep 19 07:06:31 2026    1027 Ss   /usr/bin/sg agentos -c /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
 ubuntu   2577917 Sat Sep 19 07:06:31 2026 2577916 S    sh -c /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
 ubuntu   2577918 Sat Sep 19 07:06:31 2026 2577917 S    /usr/bin/python3 -m agentos_node.antigravity_relay_worker --root /home/ubuntu/agent-data/runtime/antigravity-relay
+=== RECENT ANTIGRAVITY RECEIPTS ===
+-- /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-1199d9e08d5041b1a2df57439ed9d42b.json
+{
+  "capsule_id": "relay-1199d9e08d5041b1a2df57439ed9d42b",
+  "completed_at": "2026-09-18T23:10:44Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.275/resources/native-binary/claude",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "provider": "claude",
+  "returncode": 124,
+  "schema": "agentos.antigravity-receipt/v1",
+  "started_at": "2026-09-18T23:07:43Z",
+  "stderr": "\"claude-3-9-sonnet\" isn't described by this version's model catalog; update Claude Code, or map it with behavesAs on a modelPicker row (or modelOverrides, if it is a provider id of a model this version knows). Until then auto-compact keeps this session within 200k tokens (the context window it assumes); if the model accepts more, append [1m] to the model name for 1M; CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 restores the previous wait-for-the-API behavior.\n[claude-code:unrecognized_model] {\"model\":\"claude-3-9-sonnet\",\"query_source\":\"sdk\"}\n\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+  "stdout": "",
+  "timed_out": true
+}
+-- /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-19104b005cfd4cd19ce5477422c601dd.json
+{
+  "capsule_id": "relay-19104b005cfd4cd19ce5477422c601dd",
+  "completed_at": "2026-09-18T23:04:45Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.273-linux-arm64/resources/native-binary/claude",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "provider": "claude",
+  "returncode": 124,
+  "schema": "agentos.antigravity-receipt/v1",
+  "started_at": "2026-09-18T23:01:44Z",
+  "stderr": "\"claude-3-9-sonnet\" isn't described by this version's model catalog; update Claude Code, or map it with behavesAs on a modelPicker row (or modelOverrides, if it is a provider id of a model this version knows). Until then auto-compact keeps this session within 200k tokens (the context window it assumes); if the model accepts more, append [1m] to the model name for 1M; CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 restores the previous wait-for-the-API behavior.\n[claude-code:unrecognized_model] {\"model\":\"claude-3-9-sonnet\",\"query_source\":\"sdk\"}\n\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+  "stdout": "",
+  "timed_out": true
+}
+-- /home/ubuntu/agent-data/runtime/antigravity-relay/receipts/relay-997b664d5b4f47d09e23b59dcd99c3a5.json
+{
+  "capsule_id": "relay-997b664d5b4f47d09e23b59dcd99c3a5",
+  "completed_at": "2026-09-18T16:56:56Z",
+  "executor": "/home/ubuntu/.antigravity-ide-server/extensions/anthropic.claude-code-2.1.273-linux-arm64/resources/native-binary/claude",
+  "executor_user": "ubuntu",
+  "ok": false,
+  "provider": "claude",
+  "returncode": 124,
+  "schema": "agentos.antigravity-receipt/v1",
+  "started_at": "2026-09-18T16:53:56Z",
+  "stderr": "\"claude-3-9-sonnet\" isn't described by this version's model catalog; update Claude Code, or map it with behavesAs on a modelPicker row (or modelOverrides, if it is a provider id of a model this version knows). Until then auto-compact keeps this session within 200k tokens (the context window it assumes); if the model accepts more, append [1m] to the model name for 1M; CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1 restores the previous wait-for-the-API behavior.\n[claude-code:unrecognized_model] {\"model\":\"claude-3-9-sonnet\",\"query_source\":\"sdk\"}\n\nAgentOS executor timeout after 180.0s; process group terminated.\n",
+  "stdout": "",
+  "timed_out": true
+}
 === ANTIGRAVITY RECEIPT TMP ===
 === RECOVERY CAPSULE ===
 === USER UNIT FILES ===
