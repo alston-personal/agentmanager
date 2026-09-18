@@ -53,6 +53,19 @@ systemctl --user start agentos-galaxy-experiment-monitor.service
 systemctl --user is-enabled --quiet agentos-galaxy-experiment-monitor.timer
 systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
 
+SNAPSHOT="$HOME/agent-data/runtime/social/experiments/ai-subscription/latest.json"
+test -f "$SNAPSHOT"
+python3 - "$SNAPSHOT" <<'PY'
+import json, sys
+p=json.load(open(sys.argv[1],encoding='utf-8'))
+assert p.get('schema')=='agentos.social-experiment-snapshot/v1',p
+assert p.get('experiment')=='ai-pays-its-subscription',p
+print('galaxy_experiment_monitor_snapshot=PASS')
+print('galaxy_experiment_monitor_reply_count='+str(p.get('reply_count',0)))
+print('galaxy_experiment_monitor_new_replies='+str(len(p.get('new_replies') or [])))
+print('galaxy_experiment_monitor_needs_attention='+str(bool(p.get('needs_attention'))).lower())
+PY
+
 echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=30m"
 echo "galaxy_experiment_monitor_log=$LOG"
