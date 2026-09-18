@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, os, re, time, urllib.error, urllib.request
+import json, os, re, sys, time, urllib.error, urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentos_node.antigravity_relay import AntigravityRelayClient
 
 ENV_FILE=Path('/home/ubuntu/.config/agentos/social-runtime.env')
