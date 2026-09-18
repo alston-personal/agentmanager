@@ -84,5 +84,5 @@ def test_threads_authorization_url_uses_web_host():
         lambda: ThreadsProviderConfig("app", "secret", "https://example.test/callback")
     )
     url = transport.authorization_url("state-1")
-    assert url.startswith("https://www.threads.com/oauth/authorize?")
+    assert url.startswith("https://threads.net/oauth/authorize?")
     assert "state=state-1" in url
