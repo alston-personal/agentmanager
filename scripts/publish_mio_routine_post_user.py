@@ -4,6 +4,7 @@
 The Oracle-side operator supplies a reviewed, local JSON intent file (0600), with
 post_key and primary_text. No credentials or arbitrary paths are accepted via intent.
 """
+import hashlib
 import json
 import os
 import sys
@@ -43,6 +44,10 @@ def main():
         raise SystemExit("mio_publish=INVALID_POST_KEY")
     if not isinstance(text, str) or not text.strip() or len(text) > 500:
         raise SystemExit("mio_publish=INVALID_TEXT")
+    # A local intent file is only data; its presence never grants publish authority.
+    # Bind the approved text to the exact reviewed content hash.
+    if intent.get("approved_text_sha256") != hashlib.sha256(text.encode("utf-8")).hexdigest():
+        raise SystemExit("mio_publish=CONTENT_APPROVAL_MISSING")
     env = {}
     for raw in ENV.read_text(encoding="utf-8").splitlines():
         if "=" in raw and not raw.lstrip().startswith("#"):
@@ -67,6 +72,8 @@ def main():
     marker = RECEIPTS / (key + ".json")
     if marker.exists():
         receipt = load(marker)
+        if receipt.get("post_text_sha256") != hashlib.sha256(text.encode("utf-8")).hexdigest():
+            raise SystemExit("mio_publish=POST_KEY_CONTENT_COLLISION")
         if receipt.get("ok") and receipt.get("platform_object_id"):
             print("mio_publish=ALREADY_RECORDED")
             print("mio_publish_permalink=" + str(receipt.get("permalink") or ""))
@@ -82,7 +89,8 @@ def main():
     if matches:
         found = matches[0]
         receipt = {"ok": True, "already_present": True, "platform_object_id": found.get("id"),
-                   "permalink": found.get("permalink"), "post_key": key}
+                   "permalink": found.get("permalink"), "post_key": key,
+                   "post_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
     else:
         write = {"schema": "agentos.social-request/v1", "product_id": "galaxy",
             "platform": "threads", "operation": "publish", "account_binding_id": binding_id,
@@ -100,7 +108,8 @@ def main():
         rows = ((verified.get("result") or {}).get("items") or []) if status == 200 and verified.get("ok") else []
         found = next((p for p in rows if str(p.get("id") or "") == obj), {})
         receipt = {"ok": True, "already_present": False, "platform_object_id": obj,
-                   "permalink": found.get("permalink"), "post_key": key}
+                   "permalink": found.get("permalink"), "post_key": key,
+                   "post_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
     tmp = marker.with_suffix(".tmp")
     tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
