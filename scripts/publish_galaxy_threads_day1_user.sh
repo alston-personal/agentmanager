@@ -70,14 +70,14 @@ if len(bindings)!=1:
 binding_id,item=bindings[0]
 account_id=str(item.get('provider_account_id') or '')
 username=str(item.get('username') or '')
-if post_key=='mio-second-post-20260919' and username.lstrip('@').lower()!='sunlake.milkcat':
-    raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
 
 # Reuse the original governed publisher for a pinned, reviewed second post.
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
 post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
+if post_key=='mio-second-post-20260919' and username.lstrip('@').lower()!='sunlake.milkcat':
+    raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
 if post_key=='mio-second-post-20260919':
     marker=marker.with_name('mio-second-post-20260919.json')
 if post_key=='mio-second-post-20260919':
