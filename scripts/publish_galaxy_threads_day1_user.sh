@@ -15,7 +15,7 @@ test -f "$CRED_FILE"
 
 python3 - "$ENV_FILE" "$CRED_FILE" "$MARKER" <<'PY'
 from __future__ import annotations
-import json, os, sys, urllib.request
+import json, os, re, sys, urllib.request
 from pathlib import Path
 
 env_file=Path(sys.argv[1]); cred_file=Path(sys.argv[2]); marker=Path(sys.argv[3])
@@ -70,10 +70,27 @@ if len(bindings)!=1:
 binding_id,item=bindings[0]
 account_id=str(item.get('provider_account_id') or '')
 username=str(item.get('username') or '')
+if post_key=='mio-second-post-20260919' and username.lstrip('@').lower()!='sunlake.milkcat':
+    raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
 
-text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
+# Reuse the original governed publisher for a pinned, reviewed second post.
+# The default remains Day 1 for existing callers; day2 requires explicit opt-in.
+post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
+if post_key=='mio-second-post-20260919':
+    marker=marker.with_name('mio-second-post-20260919.json')
+if post_key=='mio-second-post-20260919':
+    import subprocess
+    source=os.environ.get('AGENTOS_SOURCE_COMMIT','')
+    if not re.fullmatch(r'[0-9a-f]{40}',source):
+        raise SystemExit('mio_day2_publish=SOURCE_COMMIT_MISSING')
+    article=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/second-post-20260919.txt'],capture_output=True,text=True,check=True)
+    text=article.stdout.strip()
+    if not text or len(text)>500:
+        raise SystemExit('mio_day2_publish=INVALID_TEXT')
+elif post_key=='galaxy-experiment-day1-20260918-v1':
+    text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
 
 這個帳號從 0 開始。選題、產品、定價、文案、發文、回覆、分析，盡量都交給 AI；我只保留付款、帳號授權，以及必要的人類確認。
 
@@ -84,6 +101,8 @@ text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費
 今天是 Day 1。帳號剛建立，收入：NT$0。
 
 接下來我會把每一步、做錯什麼、賺到多少都公開記錄。"""
+else:
+    raise SystemExit('social_publish=UNAPPROVED_POST_KEY')
 
 request={
     'schema':'agentos.social-request/v1',
@@ -93,7 +112,7 @@ request={
     'account_binding_id':binding_id,
     'target_account_id':account_id,
     'primary_text':text,
-    'write_intent_id':'galaxy-experiment-day1-20260918-v1',
+    'write_intent_id':post_key,
 }
 
 # Idempotency: if the exact post already exists, do not publish again.
@@ -105,6 +124,8 @@ read_req={
     'account_binding_id':binding_id,
 }
 status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+if status!=200 or posts.get('ok') is not True:
+    raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
         if str(row.get('text') or '').strip()==text.strip():
