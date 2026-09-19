@@ -19,6 +19,7 @@ ACTION_DEPLOY_THREADS_GALAXY = "agentos.threads_galaxy_static.deploy"
 ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
 ACTION_PUBLISH_GALAXY_DAY1 = "agentos.social_threads_galaxy_day1.publish"
+ACTION_PUBLISH_MIO_DAY2 = "agentos.social_threads_mio_day2.publish"
 ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES = "agentos.social_threads_sunlake_persona_replies.publish"
 ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
 ALLOWED_ACTIONS = {
@@ -29,6 +30,7 @@ ALLOWED_ACTIONS = {
     ACTION_RECONCILE_CONTROL_INBOX,
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
     ACTION_PUBLISH_GALAXY_DAY1,
+    ACTION_PUBLISH_MIO_DAY2,
     ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
 }
 MAX_REQUEST_AGE_SECONDS = 900
@@ -184,6 +186,8 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
         return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PUBLISH_GALAXY_DAY1:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_PUBLISH_MIO_DAY2:
+        return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit, env_extra={"AGENTOS_SOCIAL_POST_KEY": "mio-second-post-20260919"})
     if action == ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES:
         return _run_canonical_script("scripts/publish_sunlake_persona_replies_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR:
