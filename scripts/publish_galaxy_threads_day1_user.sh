@@ -70,6 +70,8 @@ if len(bindings)!=1:
 binding_id,item=bindings[0]
 account_id=str(item.get('provider_account_id') or '')
 username=str(item.get('username') or '')
+if post_key=='mio-second-post-20260919' and username.lstrip('@').lower()!='sunlake.milkcat':
+    raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
 
