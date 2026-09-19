@@ -76,6 +76,8 @@ if not account_id:
 # Reuse the original governed publisher for a pinned, reviewed second post.
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
 post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}', post_key):
+    marker=marker.with_name(post_key+'.json')
 if post_key.startswith('mio-post-') and username.lstrip('@').lower()!='sunlake.milkcat':
     raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
 if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
