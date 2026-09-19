@@ -106,6 +106,9 @@ jobs:
           grep -Fq '/dashboard/api/social/v1/social' "$RUNNER_TEMP/threads-galaxy-threads.js"
           grep -Fq "PRODUCT_ID='galaxy'" "$RUNNER_TEMP/threads-galaxy-threads.js"
           grep -Fq "social')==='connected'" "$RUNNER_TEMP/threads-galaxy-app.js"
+          grep -Fq 'accountSwitch' "$RUNNER_TEMP/threads-galaxy-app.js"
+          grep -Fq '新增 / 切換 Threads 帳號' "$RUNNER_TEMP/threads-galaxy-index.html"
+          grep -Fq 'Build 20260919-1' "$RUNNER_TEMP/threads-galaxy-index.html"
           ! grep -Fiq 'X-AgentOS-Product-Key' "$RUNNER_TEMP/threads-galaxy-threads.js"
           ! grep -Fiq 'Threads User Access Token' "$RUNNER_TEMP/threads-galaxy-index.html"
           MIO=https://studio.milkcat.org/personas/mio/
