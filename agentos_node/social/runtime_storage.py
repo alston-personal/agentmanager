@@ -68,6 +68,7 @@ class FileCredentialVault(CredentialVault):
                 platform=str(item.get("platform") or ""),
                 provider_account_id=str(item.get("provider_account_id") or ""),
                 username=(str(item.get("username")) if item.get("username") is not None else None),
+                auth_profile=str(item.get("auth_profile") or "persona"),
             )
 
     def get_access_token(self, binding_id: str) -> str:
@@ -89,6 +90,7 @@ class FileCredentialVault(CredentialVault):
                 "platform": binding.platform,
                 "provider_account_id": binding.provider_account_id,
                 "username": binding.username,
+                "auth_profile": binding.auth_profile,
                 "access_token": token,
             }
             self._save(value)
