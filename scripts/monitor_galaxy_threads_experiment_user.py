@@ -45,7 +45,7 @@ def main():
     key=str((products.get('galaxy') or {}).get('api_key') or '')
     if not key: raise SystemExit('galaxy_monitor=PRODUCT_KEY_UNAVAILABLE')
     store=json.loads(CRED_FILE.read_text(encoding='utf-8'))
-    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items() if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads' and str(item.get('username') or '').lstrip('@').lower()=='sunlake.milkcat']
+    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items() if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads' and str(item.get('username') or '').lstrip('@').lower()=='sunlake.milkcat' and str(item.get('auth_profile') or 'persona')=='persona']
     if len(bindings)!=1: raise SystemExit(f'galaxy_monitor=BINDING_COUNT_{len(bindings)}')
     bid,item=bindings[0]
     headers={'X-AgentOS-Product-Key':key}
