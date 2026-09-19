@@ -11,6 +11,7 @@ class AccountBinding:
     platform: str
     provider_account_id: str
     username: str | None = None
+    auth_profile: str = "persona"
 
 
 class CredentialVault(Protocol):
