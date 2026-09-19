@@ -1,13 +1,8 @@
 name: Oracle Publish Sunlake Persona Replies
 
+# Historic fixed reply batch: manual-only; never replay on deployment or source edits.
 on:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-publish-sunlake-persona-replies.yml'
-      - 'agentos_node/bootstrap_control.py'
-      - 'scripts/publish_sunlake_persona_replies_user.sh'
+  workflow_dispatch:
 
 permissions:
   contents: read
