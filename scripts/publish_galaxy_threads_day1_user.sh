@@ -15,7 +15,7 @@ test -f "$CRED_FILE"
 
 python3 - "$ENV_FILE" "$CRED_FILE" "$MARKER" <<'PY'
 from __future__ import annotations
-import json, os, sys, urllib.request
+import json, os, re, sys, urllib.request
 from pathlib import Path
 
 env_file=Path(sys.argv[1]); cred_file=Path(sys.argv[2]); marker=Path(sys.argv[3])
@@ -77,10 +77,12 @@ if not account_id:
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
 post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
 if post_key=='mio-second-post-20260919':
-    article=Path('/home/ubuntu/agentmanager/personas/mio/second-post-20260919.txt')
-    if not article.is_file():
-        raise SystemExit('mio_day2_publish=APPROVED_TEXT_MISSING')
-    text=article.read_text(encoding='utf-8').strip()
+    import subprocess
+    source=os.environ.get('AGENTOS_SOURCE_COMMIT','')
+    if not re.fullmatch(r'[0-9a-f]{40}',source):
+        raise SystemExit('mio_day2_publish=SOURCE_COMMIT_MISSING')
+    article=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/second-post-20260919.txt'],capture_output=True,text=True,check=True)
+    text=article.stdout.strip()
     if not text or len(text)>500:
         raise SystemExit('mio_day2_publish=INVALID_TEXT')
 elif post_key=='galaxy-experiment-day1-20260918-v1':
