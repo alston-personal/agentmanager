@@ -245,8 +245,8 @@ class ThreadsCapability:
         request.validate()
         if request.operation != "connect":
             raise ValueError("connect_operation_required")
-        state = self.oauth_states.issue(product_id=request.product_id, browser_session_id=browser_session_id, platform="threads", return_to=request.return_to or "/")
         profile = str(request.auth_profile or "persona")
+        state = self.oauth_states.issue(product_id=request.product_id, browser_session_id=browser_session_id, platform="threads", return_to=request.return_to or "/", auth_profile=profile)
         return {"schema": "agentos.social-oauth-redirect/v1", "authorization_url": self.transport.authorization_url(state.state, auth_profile=profile), "state": state.state, "auth_profile": profile}
 
     def complete_connect(self, *, product_id: str, browser_session_id: str, state: str, code: str) -> dict[str, Any]:
