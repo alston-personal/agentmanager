@@ -12,6 +12,7 @@ class OAuthState:
     browser_session_id: str
     platform: str
     return_to: str
+    auth_profile: str
     expires_at: float
 
 
@@ -29,7 +30,7 @@ class OAuthStateStore:
             raise ValueError("unsafe_oauth_return_route")
         return route[:1024]
 
-    def issue(self, *, product_id: str, browser_session_id: str, platform: str, return_to: str = "/") -> OAuthState:
+    def issue(self, *, product_id: str, browser_session_id: str, platform: str, return_to: str = "/", auth_profile: str = "persona") -> OAuthState:
         if not product_id or not browser_session_id:
             raise ValueError("oauth_product_and_session_required")
         now = time.time()
@@ -40,6 +41,7 @@ class OAuthStateStore:
             browser_session_id=browser_session_id,
             platform=platform,
             return_to=self.safe_return_to(return_to),
+            auth_profile=str(auth_profile or "persona"),
             expires_at=now + self.ttl_seconds,
         )
         self._states[state.state] = state
