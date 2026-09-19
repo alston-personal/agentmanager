@@ -4,6 +4,7 @@
 The Oracle-side operator supplies a reviewed, local JSON intent file (0600), with
 post_key and primary_text. No credentials or arbitrary paths are accepted via intent.
 """
+import fcntl
 import hashlib
 import json
 import os
@@ -70,6 +71,10 @@ def main():
     RECEIPTS.mkdir(parents=True, exist_ok=True)
     os.chmod(RECEIPTS, 0o700)
     marker = RECEIPTS / (key + ".json")
+    # An exclusive, process-held lock prevents two scheduled runs from publishing concurrently.
+    lock = RECEIPTS / (key + ".lock")
+    lock_fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
     if marker.exists():
         receipt = load(marker)
         if receipt.get("post_text_sha256") != hashlib.sha256(text.encode("utf-8")).hexdigest():
@@ -104,12 +109,18 @@ def main():
         if status != 200 or result.get("ok") is not True:
             raise SystemExit("mio_publish=PROVIDER_FAILED_VERIFY_BEFORE_RETRY")
         obj = str(result.get("platform_object_id") or "")
+        if not obj:
+            raise SystemExit("mio_publish=AMBIGUOUS_PROVIDER_SUCCESS_VERIFY_MANUALLY")
         status, verified = post("/v1/social/status", read, headers)
         rows = ((verified.get("result") or {}).get("items") or []) if status == 200 and verified.get("ok") else []
         found = next((p for p in rows if str(p.get("id") or "") == obj), {})
+        if not found:
+            raise SystemExit("mio_publish=POST_CREATED_BUT_READBACK_PENDING_VERIFY_MANUALLY")
         receipt = {"ok": True, "already_present": False, "platform_object_id": obj,
                    "permalink": found.get("permalink"), "post_key": key,
                    "post_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+    if not receipt.get("platform_object_id") or not receipt.get("permalink"):
+        raise SystemExit("mio_publish=INCOMPLETE_RECEIPT_VERIFY_MANUALLY")
     tmp = marker.with_suffix(".tmp")
     tmp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
