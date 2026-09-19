@@ -13,6 +13,10 @@ MARKER="/home/ubuntu/.local/state/agentos/social/galaxy-day1-publish.json"
 test -f "$ENV_FILE"
 test -f "$CRED_FILE"
 
+# Serialize all invocations of the shared publisher across Oracle jobs.
+exec 9>/home/ubuntu/.local/state/agentos/social/threads-publish.lock
+flock -x -w 100 9 || { echo "social_publish=LOCK_TIMEOUT" >&2; exit 9; }
+
 python3 - "$ENV_FILE" "$CRED_FILE" "$MARKER" <<'PY'
 from __future__ import annotations
 import json, os, re, sys, urllib.request
