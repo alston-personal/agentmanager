@@ -13,6 +13,10 @@ MARKER="/home/ubuntu/.local/state/agentos/social/galaxy-day1-publish.json"
 test -f "$ENV_FILE"
 test -f "$CRED_FILE"
 
+# Serialize all invocations of the shared publisher across Oracle jobs.
+exec 9>/home/ubuntu/.local/state/agentos/social/threads-publish.lock
+flock -x -w 100 9 || { echo "social_publish=LOCK_TIMEOUT" >&2; exit 9; }
+
 python3 - "$ENV_FILE" "$CRED_FILE" "$MARKER" <<'PY'
 from __future__ import annotations
 import json, os, re, sys, urllib.request
@@ -76,19 +80,19 @@ if not account_id:
 # Reuse the original governed publisher for a pinned, reviewed second post.
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
 post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
-if post_key=='mio-second-post-20260919' and username.lstrip('@').lower()!='sunlake.milkcat':
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}', post_key):
+    marker=marker.with_name(post_key+'.json')
+if post_key.startswith('mio-post-') and username.lstrip('@').lower()!='sunlake.milkcat':
     raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
-if post_key=='mio-second-post-20260919':
-    marker=marker.with_name('mio-second-post-20260919.json')
-if post_key=='mio-second-post-20260919':
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
     import subprocess
     source=os.environ.get('AGENTOS_SOURCE_COMMIT','')
     if not re.fullmatch(r'[0-9a-f]{40}',source):
-        raise SystemExit('mio_day2_publish=SOURCE_COMMIT_MISSING')
-    article=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/second-post-20260919.txt'],capture_output=True,text=True,check=True)
+        raise SystemExit('social_publish=SOURCE_COMMIT_MISSING')
+    article=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/approved/'+post_key+'.txt'],capture_output=True,text=True,check=True)
     text=article.stdout.strip()
     if not text or len(text)>500:
-        raise SystemExit('mio_day2_publish=INVALID_TEXT')
+        raise SystemExit('social_publish=INVALID_TEXT')
 elif post_key=='galaxy-experiment-day1-20260918-v1':
     text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
 

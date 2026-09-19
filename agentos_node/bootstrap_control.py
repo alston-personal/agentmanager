@@ -20,6 +20,7 @@ ACTION_RECONCILE_CONTROL_INBOX = "agentos.control_inbox.reconcile"
 ACTION_PROVISION_ZIWEI_MASTER_REPO = "agentos.repository.provision_ziwei_master"
 ACTION_PUBLISH_GALAXY_DAY1 = "agentos.social_threads_galaxy_day1.publish"
 ACTION_PUBLISH_MIO_DAY2 = "agentos.social_threads_mio_day2.publish"
+ACTION_PUBLISH_MIO_APPROVED = "agentos.social_threads_mio_approved.publish"
 ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES = "agentos.social_threads_sunlake_persona_replies.publish"
 ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
 ALLOWED_ACTIONS = {
@@ -31,6 +32,7 @@ ALLOWED_ACTIONS = {
     ACTION_PROVISION_ZIWEI_MASTER_REPO,
     ACTION_PUBLISH_GALAXY_DAY1,
     ACTION_PUBLISH_MIO_DAY2,
+    ACTION_PUBLISH_MIO_APPROVED,
     ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
     ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
 }
@@ -69,7 +71,7 @@ def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, str | None]:
+def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, str | None, str | None]:
     if path.is_symlink():
         raise ValueError("request must not be a symlink")
     if payload.get("schema") != SCHEMA:
@@ -83,7 +85,10 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     params = payload.get("params") or {}
     if not isinstance(params, dict):
         raise ValueError("params must be an object")
-    unknown = set(params) - {"source_commit"}
+    unknown = set(params) - ({"source_commit", "post_key"} if action == ACTION_PUBLISH_MIO_APPROVED else {"source_commit"})
+    post_key = str(params.get("post_key") or "")
+    if action == ACTION_PUBLISH_MIO_APPROVED and not re.fullmatch(r"mio-post-[a-z0-9-]{1,72}", post_key):
+        raise ValueError("invalid approved Mio post_key")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -117,7 +122,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         raise ValueError("invalid authority envelope")
     if authority.get("arbitrary_shell") is not False:
         raise ValueError("arbitrary shell is forbidden")
-    return request_id, action, source_commit
+    return request_id, action, source_commit, (post_key if action == ACTION_PUBLISH_MIO_APPROVED else None)
 
 
 def _run_canonical_script(
@@ -165,7 +170,7 @@ def _run_canonical_script(
         tmp.unlink(missing_ok=True)
 
 
-def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
+def _execute(action: str, source_commit: str | None, post_key: str | None = None) -> dict[str, Any]:
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:
@@ -188,6 +193,10 @@ def _execute(action: str, source_commit: str | None) -> dict[str, Any]:
         return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PUBLISH_GALAXY_DAY1:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_PUBLISH_MIO_APPROVED:
+        if not post_key:
+            raise ValueError("approved post key missing")
+        return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit, env_extra={"AGENTOS_SOCIAL_POST_KEY": post_key})
     if action == ACTION_PUBLISH_MIO_DAY2:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit, env_extra={"AGENTOS_SOCIAL_POST_KEY": "mio-second-post-20260919"})
     if action == ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES:
@@ -215,12 +224,12 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
     source_commit: str | None = None
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
-        request_id, action, source_commit = _validate_request(source, payload)
+        request_id, action, source_commit, post_key = _validate_request(source, payload)
         receipt_path = receipts / f"{request_id}.json"
         if receipt_path.exists():
             source.unlink(missing_ok=True)
             return json.loads(receipt_path.read_text(encoding="utf-8"))
-        result = _execute(action, source_commit)
+        result = _execute(action, source_commit, post_key)
         receipt: dict[str, Any] = {
             "schema": RECEIPT_SCHEMA,
             "request_id": request_id,
