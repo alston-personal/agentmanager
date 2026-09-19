@@ -111,6 +111,7 @@ class BrowserHandoff:
     platform: str
     return_to: str
     connection_id: str
+    auth_profile: str
     expires_at: float
 
 
@@ -122,7 +123,7 @@ class BrowserHandoffStore:
         self._items: dict[str, BrowserHandoff] = {}
         self._lock = RLock()
 
-    def issue(self, *, product_id: str, platform: str, return_to: str, connection_id: str) -> str:
+    def issue(self, *, product_id: str, platform: str, return_to: str, connection_id: str, auth_profile: str = "persona") -> str:
         now = time.time()
         ticket = secrets.token_urlsafe(32)
         with self._lock:
@@ -132,6 +133,7 @@ class BrowserHandoffStore:
                 platform=platform,
                 return_to=return_to,
                 connection_id=connection_id,
+                auth_profile=str(auth_profile or "persona"),
                 expires_at=now + self.ttl_seconds,
             )
         return ticket
@@ -275,6 +277,7 @@ class SocialRuntime:
             platform=request.platform,
             return_to=str(request.return_to or "/"),
             connection_id=connection_id,
+            auth_profile=str(request.auth_profile or "persona"),
         )
         query = urllib.parse.urlencode({"ticket": ticket})
         return {
@@ -295,6 +298,7 @@ class SocialRuntime:
             platform="threads",
             operation="connect",
             return_to=handoff.return_to,
+            auth_profile=handoff.auth_profile,
         ).validate()
         value = self.threads.begin_connect(request, browser_session_id=browser_session_id)
         state = str(value.pop("state"))
@@ -454,7 +458,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
         allowed = {
             "schema", "product_id", "platform", "operation", "account_binding_id", "target_account_id",
             "primary_text", "text_attachment", "object_id", "reply_to_id", "return_to", "write_intent_id",
-            "query", "search_type", "search_mode",
+            "query", "search_type", "search_mode", "auth_profile",
         }
         if set(body) - allowed:
             raise ValueError("unsupported_social_request_field")
