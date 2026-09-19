@@ -73,7 +73,18 @@ username=str(item.get('username') or '')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
 
-text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
+# Reuse the original governed publisher for a pinned, reviewed second post.
+# The default remains Day 1 for existing callers; day2 requires explicit opt-in.
+post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
+if post_key=='mio-second-post-20260919':
+    article=Path('/home/ubuntu/agentmanager/personas/mio/second-post-20260919.txt')
+    if not article.is_file():
+        raise SystemExit('mio_day2_publish=APPROVED_TEXT_MISSING')
+    text=article.read_text(encoding='utf-8').strip()
+    if not text or len(text)>500:
+        raise SystemExit('mio_day2_publish=INVALID_TEXT')
+elif post_key=='galaxy-experiment-day1-20260918-v1':
+    text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費賺回來。
 
 這個帳號從 0 開始。選題、產品、定價、文案、發文、回覆、分析，盡量都交給 AI；我只保留付款、帳號授權，以及必要的人類確認。
 
@@ -84,6 +95,8 @@ text="""Day 1：我決定做一個實驗——讓 AI 自己把自己的訂閱費
 今天是 Day 1。帳號剛建立，收入：NT$0。
 
 接下來我會把每一步、做錯什麼、賺到多少都公開記錄。"""
+else:
+    raise SystemExit('social_publish=UNAPPROVED_POST_KEY')
 
 request={
     'schema':'agentos.social-request/v1',
@@ -93,7 +106,7 @@ request={
     'account_binding_id':binding_id,
     'target_account_id':account_id,
     'primary_text':text,
-    'write_intent_id':'galaxy-experiment-day1-20260918-v1',
+    'write_intent_id':post_key,
 }
 
 # Idempotency: if the exact post already exists, do not publish again.
