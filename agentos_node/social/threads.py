@@ -11,7 +11,11 @@ from .credentials import AccountBinding, CredentialVault
 from .governance import RuntimeWriteAcceptance, SocialWriteGate
 from .oauth import OAuthStateStore
 
-THREADS_SCOPES = ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies", "threads_keyword_search")
+THREADS_SCOPE_PROFILES = {
+    "viewer": ("threads_basic", "threads_read_replies"),
+    "persona": ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies", "threads_keyword_search"),
+}
+THREADS_SCOPES = THREADS_SCOPE_PROFILES["persona"]
 THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
 THREADS_READ_PAGE_LIMIT = 3
@@ -50,9 +54,12 @@ class ThreadsProviderTransport:
             raise ThreadsProviderError("threads_oauth_not_configured")
         return config
 
-    def authorization_url(self, state: str) -> str:
+    def authorization_url(self, state: str, *, auth_profile: str = "persona") -> str:
         config = self.config()
-        query = urllib.parse.urlencode({"client_id": config.app_id, "redirect_uri": config.redirect_uri, "scope": ",".join(THREADS_SCOPES), "response_type": "code", "state": state})
+        scopes = THREADS_SCOPE_PROFILES.get(auth_profile)
+        if scopes is None:
+            raise ValueError("unsupported_social_auth_profile")
+        query = urllib.parse.urlencode({"client_id": config.app_id, "redirect_uri": config.redirect_uri, "scope": ",".join(scopes), "response_type": "code", "state": state})
         return f"{config.authorize_host.rstrip('/')}/oauth/authorize?{query}"
 
     def _request_json(self, url: str, *, method: str = "GET", token: str | None = None, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -232,14 +239,15 @@ class ThreadsCapability:
         binding = self.vault.get_binding(request.account_binding_id) if request.account_binding_id else None
         if binding is not None and (binding.product_id != request.product_id or binding.platform != "threads"):
             binding = None
-        return {"schema": "agentos.social-status/v1", "product_id": request.product_id, "platform": "threads", "configured": self._configured(), "connected": binding is not None, "account": ({"binding_id": binding.binding_id, "provider_account_id": binding.provider_account_id, "username": binding.username} if binding else None)}
+        return {"schema": "agentos.social-status/v1", "product_id": request.product_id, "platform": "threads", "configured": self._configured(), "connected": binding is not None, "account": ({"binding_id": binding.binding_id, "provider_account_id": binding.provider_account_id, "username": binding.username, "auth_profile": binding.auth_profile} if binding else None)}
 
     def begin_connect(self, request: SocialRequest, *, browser_session_id: str) -> dict[str, str]:
         request.validate()
         if request.operation != "connect":
             raise ValueError("connect_operation_required")
         state = self.oauth_states.issue(product_id=request.product_id, browser_session_id=browser_session_id, platform="threads", return_to=request.return_to or "/")
-        return {"schema": "agentos.social-oauth-redirect/v1", "authorization_url": self.transport.authorization_url(state.state), "state": state.state}
+        profile = str(request.auth_profile or "persona")
+        return {"schema": "agentos.social-oauth-redirect/v1", "authorization_url": self.transport.authorization_url(state.state, auth_profile=profile), "state": state.state, "auth_profile": profile}
 
     def complete_connect(self, *, product_id: str, browser_session_id: str, state: str, code: str) -> dict[str, Any]:
         oauth = self.oauth_states.consume(state=state, product_id=product_id, browser_session_id=browser_session_id, platform="threads")
@@ -248,8 +256,13 @@ class ThreadsCapability:
         account_id = str(identity.get("id") or "")
         if not account_id:
             raise ThreadsProviderError("threads_identity_missing")
-        binding_id = f"{product_id}:threads:{account_id}"
-        self.vault.bind(AccountBinding(binding_id, product_id, "threads", account_id, str(identity.get("username") or "") or None), token)
+        profile = "persona"
+        try:
+            profile = str(getattr(oauth, "auth_profile", None) or "persona")
+        except Exception:
+            profile = "persona"
+        binding_id = f"{product_id}:threads:{profile}:{account_id}"
+        self.vault.bind(AccountBinding(binding_id, product_id, "threads", account_id, str(identity.get("username") or "") or None, profile), token)
         return {"schema": "agentos.social-oauth-complete/v1", "connected": True, "binding_id": binding_id, "account": {"provider_account_id": account_id, "username": identity.get("username")}, "return_to": oauth.return_to}
 
     def disconnect(self, request: SocialRequest, *, acceptance: RuntimeWriteAcceptance | None = None) -> dict[str, Any]:
