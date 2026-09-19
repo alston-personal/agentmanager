@@ -49,6 +49,7 @@ class SocialRequest:
     query: str | None = None
     search_type: str | None = None
     search_mode: str | None = None
+    auth_profile: str | None = None
     schema: str = "agentos.social-request/v1"
 
     def validate(self) -> "SocialRequest":
@@ -81,6 +82,8 @@ class SocialRequest:
                 raise ValueError("unsupported_search_type")
             if str(self.search_mode or "KEYWORD").upper() not in {"KEYWORD", "TAG"}:
                 raise ValueError("unsupported_search_mode")
+        if self.auth_profile is not None and self.auth_profile not in {"viewer", "persona"}:
+            raise ValueError("unsupported_social_auth_profile")
         if self.return_to:
             value = self.return_to.strip()
             if not value.startswith("/") or value.startswith("//"):
