@@ -17,14 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - name: Identify exactly one newly approved post
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t files < <(git diff --name-only --diff-filter=A HEAD^ HEAD -- 'personas/mio/approved/mio-post-*.txt')
+          mapfile -t files < <(git diff --name-only --diff-filter=A "${{ github.event.before }}" "$GITHUB_SHA" -- 'personas/mio/approved/mio-post-*.txt')
           test "${#files[@]}" -eq 1 || { echo 'mio_approved_post=REQUIRE_EXACTLY_ONE_NEW_FILE'; exit 2; }
           post_key="$(basename "${files[0]}" .txt)"
+          test -f "${files[0]}"
+          test "$(wc -m < "${files[0]}")" -le 500
           [[ "$post_key" =~ ^mio-post-[a-z0-9-]{1,72}$ ]]
           printf 'POST_KEY=%s\n' "$post_key" >> "$GITHUB_ENV"
 
