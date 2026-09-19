@@ -27,17 +27,22 @@ jobs:
         run: |
           set -euo pipefail
           test "$(id -un)" = 'agentos-node'
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 -m py_compile agentos_node/bootstrap_control.py scripts/publish_mio_routine_post_user.py
           bash -n scripts/publish_mio_routine_post_user.sh
           [[ "$EXPECTED_POST_KEY" =~ ^mio-[a-zA-Z0-9-]{1,86}$ ]]
           test -f /home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/approved-post.json
           python3 - "$EXPECTED_POST_KEY" <<'PY'
-          import json,sys
+          import hashlib,json,sys
           from pathlib import Path
           path=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/approved-post.json')
           if path.stat().st_mode & 0o077: raise SystemExit('intent_permissions_invalid')
           intent=json.loads(path.read_text(encoding='utf-8'))
           if intent.get('post_key')!=sys.argv[1]: raise SystemExit('intent_post_key_mismatch')
+          text=intent.get('primary_text')
+          if not isinstance(text,str) or not text.strip() or len(text)>500: raise SystemExit('intent_text_invalid')
+          if intent.get('approved_text_sha256')!=hashlib.sha256(text.encode('utf-8')).hexdigest(): raise SystemExit('intent_content_hash_mismatch')
           print('mio_publish_intent_preflight=PASS')
           PY
       - name: Install fixed reviewed publisher and enqueue governed request
