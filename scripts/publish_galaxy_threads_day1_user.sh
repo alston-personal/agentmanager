@@ -77,6 +77,8 @@ if not account_id:
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
 post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
 if post_key=='mio-second-post-20260919':
+    marker=marker.with_name('mio-second-post-20260919.json')
+if post_key=='mio-second-post-20260919':
     import subprocess
     source=os.environ.get('AGENTOS_SOURCE_COMMIT','')
     if not re.fullmatch(r'[0-9a-f]{40}',source):
@@ -120,6 +122,8 @@ read_req={
     'account_binding_id':binding_id,
 }
 status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+if status!=200 or posts.get('ok') is not True:
+    raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
         if str(row.get('text') or '').strip()==text.strip():
