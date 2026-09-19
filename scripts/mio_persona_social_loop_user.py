@@ -187,7 +187,7 @@ def auth():
     key=str((products.get('galaxy') or {}).get('api_key') or '')
     control=str(env.get('AGENTOS_SOCIAL_CONTROL_TOKEN') or '')
     store=load_json(CRED_FILE,{})
-    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items() if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads']
+    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items() if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads' and str(item.get('username') or '').lstrip('@').lower()=='sunlake.milkcat']
     if len(bindings)!=1 or not key or not control: raise RuntimeError('persona_social_auth_unavailable')
     return key,control,*bindings[0]
 
