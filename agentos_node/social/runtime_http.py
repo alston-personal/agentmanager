@@ -586,7 +586,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
                 public_base = self.runtime.public_base.rstrip("/")
                 if not public_base.startswith("https://"):
                     raise ValueError("social_media_https_public_base_required")
-                self._json(HTTPStatus.CREATED, {"image_url": public_base + "/v1/social/media/" + name, "sha256": digest})
+                self._json(HTTPStatus.CREATED, {"image_url": public_base + "/media/" + name, "sha256": digest})
                 return
             body = self._body()
             request = self._request(body)
