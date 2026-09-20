@@ -30,6 +30,11 @@ jobs:
           test "$(id -un)" = 'agentos-node'
           python3 -m py_compile agentos_node/bootstrap_control.py
           bash -n scripts/publish_sunlake_persona_replies_user.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path('scripts/publish_sunlake_persona_replies_user.sh').read_text(encoding='utf-8').split("<<'PY'\n",1)[1].rsplit('\nPY',1)[0]
+          compile(source,'mio_reply_inline.py','exec')
+          PY
           grep -Fq 'agentos.social_threads_sunlake_persona_replies.publish' agentos_node/bootstrap_control.py
           test "$GITHUB_EVENT_NAME" = 'push'
           mapfile -t approved < <(git diff --name-only --diff-filter=A "${{ github.event.before }}" "$GITHUB_SHA" -- 'personas/mio/approved/replies/mio-reply-*.json')
