@@ -1,7 +1,16 @@
 name: Mio IMAGE Contract Guard
 on:
   push:
-    branches: [mio-image-ship-20260920]
+    branches: [core/integration, mio-image-ship-20260920]
+    paths:
+      - 'agentos_node/social/**'
+      - 'scripts/publish_galaxy_threads_day1_user.sh'
+      - '.github/workflows/oracle-publish-mio-approved.yml'
+      - '.github/workflows/mio-image-contract-guard.yml'
+      - 'personas/mio/approved/assets/**'
+      - 'personas/mio/approved/mio-post-*.json'
+      - 'personas/mio/approved/mio-post-*.txt'
+      - 'tests/test_mio_image_contract.py'
   pull_request:
     branches: [core/integration]
     paths:
