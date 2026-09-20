@@ -20,7 +20,7 @@ THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
 THREADS_READ_PAGE_LIMIT = 3
 THREADS_READ_ITEM_LIMIT = 150
-THREAD_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies"
+THREAD_FIELDS = "id,text,media_type,media_url,timestamp,username,permalink,is_quote_post,has_replies"
 REPLY_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies,is_reply,is_reply_owned_by_me,root_post,replied_to"
 
 
