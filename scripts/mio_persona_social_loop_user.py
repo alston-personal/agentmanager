@@ -344,14 +344,17 @@ def main():
         username=str(row.get('username') or '').lstrip('@')
         if not rid or rid in processed or rid in queued or row.get('is_reply_owned_by_me') or username.lower()==account_username.lower():
             continue
+        # Do not re-process legacy snapshots that predate the root-post field,
+        # and never treat a missing timestamp as an invitation to reply to old content.
+        try: event_at=datetime.fromisoformat(str(row.get('timestamp') or '').replace('Z','+00:00'))
+        except (ValueError,TypeError):
+            print('mio_social_decision=SKIP_UNDATED:'+rid)
+            continue
+        if not event_at.tzinfo or now-event_at>timedelta(days=1):
+            continue
         root_id=str(row.get('root_post_id') or '')
         if not root_id:
             print('mio_social_decision=DEFERRED_NO_ROOT:'+rid)
-            continue
-        # Only interact with fresh comments; old events remain in Persona memory.
-        try: event_at=datetime.fromisoformat(str(row.get('timestamp') or '').replace('Z','+00:00'))
-        except (ValueError,TypeError): event_at=now
-        if event_at.tzinfo and now-event_at>timedelta(days=1):
             continue
         replied=already_replied(product_key,bid,root_id,rid)
         if replied is None:
@@ -396,6 +399,8 @@ def main():
                     record['status']='no_reply';print('mio_social_decision=NO_REPLY:'+rid)
                 with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
             os.chmod(decisions_path,0o600)
+        except TimeoutError as exc:
+            print('mio_social_decision=WAITING:'+str(exc)[:80])
         except Exception as exc:
             print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:170])
 
