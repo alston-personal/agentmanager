@@ -100,7 +100,7 @@ jobs:
           assert 'galaxy_experiment_monitor_snapshot=PASS' in text,text[-12000:]
           print('galaxy_experiment_monitor_receipt=PASS')
           for line in text.splitlines():
-              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=','mio_social_loop=','mio_social_decision=','mio_social_publish=','mio_social_pending=','mio_social_new_external=','mio_social_outbound=','mio_social_outbound_today=','mio_life_event=','mio_energy=','mio_life_phase=','mio_relay_','mio_agy_probe=','mio_agy_relay=')):
+              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=','mio_social_loop=','mio_social_decision=','mio_social_publish=','mio_social_pending=','mio_social_new_external=','mio_social_outbound=','mio_social_outbound_today=','mio_life_event=','mio_energy=','mio_life_phase=','mio_relay_','mio_agy_probe=','mio_agy_relay=','mio_latest_comment_')):
                   print(line)
           PY
 
