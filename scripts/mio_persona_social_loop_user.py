@@ -373,7 +373,7 @@ def main():
                 with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
             os.chmod(decisions_path,0o600)
         except Exception as exc:
-            print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:90])
+            print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:170])
 
     # Proactive social exploration: bounded, low-volume, and persona-driven.
     # Discovery is separate from replying to people who contacted Mio.
