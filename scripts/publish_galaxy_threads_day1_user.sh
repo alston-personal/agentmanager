@@ -191,7 +191,7 @@ if status!=200 or posts.get('ok') is not True:
     raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
-        if str(row.get('text') or '').strip()==text.strip() and (not request.get('image_url') or (str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True)):
+        if str(row.get('text') or '').strip()==text.strip() and ((not request.get('image_url') and not request.get('image_urls')) or (request.get('image_url') and str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True) or (request.get('image_urls') and str(row.get('media_type') or '').upper()=='CAROUSEL' and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))):
             result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
             marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
             os.chmod(marker,0o600)
@@ -226,7 +226,7 @@ obj=str(receipt.get('platform_object_id') or '')
 if not obj: raise SystemExit('social_publish=PLATFORM_OBJECT_ID_MISSING')
 permalink=''
 is_verified_image=False
-for attempt in range(10 if request.get('image_url') else 1):
+for attempt in range(10 if (request.get('image_url') or request.get('image_urls')) else 1):
     status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
     if status!=200 or posts.get('ok') is not True:
         raise SystemExit('social_publish=POSTPUBLISH_READ_FAILED')
@@ -234,18 +234,20 @@ for attempt in range(10 if request.get('image_url') else 1):
         if str(row.get('id') or '')!=obj:
             continue
         permalink=str(row.get('permalink') or '')
-        if request.get('image_url'):
-            is_verified_image=(str(row.get('media_type') or '').upper()=='IMAGE'
-                               and row.get('image_visible') is True
-                               and str(row.get('text') or '').strip()==text.strip()
-                               and permalink.startswith('https://'))
+        if request.get('image_url') or request.get('image_urls'):
+            actual_type=str(row.get('media_type') or '').upper()
+            is_verified_image=(str(row.get('text') or '').strip()==text.strip()
+                               and permalink.startswith('https://')
+                               and ((request.get('image_url') and actual_type=='IMAGE' and row.get('image_visible') is True)
+                                    or (request.get('image_urls') and actual_type=='CAROUSEL'
+                                        and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))))
         break
-    if not request.get('image_url') or is_verified_image: break
+    if not (request.get('image_url') or request.get('image_urls')) or is_verified_image: break
     import time
     time.sleep(3)
-if request.get('image_url') and not is_verified_image:
+if (request.get('image_url') or request.get('image_urls')) and not is_verified_image:
     raise SystemExit('social_publish=IMAGE_READBACK_MISSING_OR_NOT_VISIBLE')
-if request.get('image_url'):
+if request.get('image_url') or request.get('image_urls'):
     print('galaxy_day1_image_readback=PASS')
 
 result={
