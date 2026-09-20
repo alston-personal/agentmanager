@@ -149,8 +149,12 @@ If should_reply=false, text must be null and delay_minutes must be null.
                     category='invalid_capsule'
                 else:
                     category='other'
-                # Diagnostic metadata only; never echo executor stdout/stderr or credentials.
-                raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category)
+                error_type=re.match(r'^[A-Za-z]{1,40}(?:Error|Exception):',str(receipt.get('error') or ''))
+                error_type=error_type.group(0)[:-1] if error_type else 'none'
+                errno_match=re.search(r'\\[Errno ([0-9]{1,4})\\]',str(receipt.get('error') or ''))
+                safe_errno=errno_match.group(1) if errno_match else 'none'
+                # Diagnostic metadata only; never echo executor stdout/stderr, paths or credentials.
+                raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+error_type+':errno='+safe_errno)
             return extract_json(receipt.get('stdout') or '')
         time.sleep(2)
     raise TimeoutError('persona_decision_timeout')
