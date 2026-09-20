@@ -102,6 +102,8 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
         image_alt_text=str(media['image_alt_text'])
         if not image_url.startswith('https://') or not image_alt_text.strip():
             raise SystemExit('social_publish=INVALID_IMAGE_METADATA')
+    if os.environ.get('AGENTOS_REQUIRE_IMAGE','0')=='1' and not image_url:
+        raise SystemExit('social_publish=IMAGE_REQUIRED_NO_TEXT_FALLBACK')
     if not text or len(text)>500:
         raise SystemExit('social_publish=INVALID_TEXT')
 elif post_key=='galaxy-experiment-day1-20260918-v1':
@@ -132,7 +134,8 @@ request={
 if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key) and image_url:
     request['image_url']=image_url
     request['image_alt_text']=image_alt_text
-\n# Idempotency: if the exact post already exists, do not publish again.
+
+# Idempotency: if the exact post already exists, do not publish again.
 read_req={
     'schema':'agentos.social-request/v1',
     'product_id':'galaxy',
@@ -181,7 +184,7 @@ permalink=''
 status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
-        if str(row.get('id') or '')==obj or str(row.get('text') or '').strip()==text.strip():
+        if str(row.get('id') or '')==obj:
             permalink=str(row.get('permalink') or '')
             if not obj: obj=str(row.get('id') or '')
             if request.get('image_url') and str(row.get('media_type') or '').upper()!='IMAGE':
