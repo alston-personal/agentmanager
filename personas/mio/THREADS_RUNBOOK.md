@@ -1,10 +1,10 @@
 # Mio Threads operational runbook (2026-09-20, Asia/Taipei)
 
-**Purpose:** Preserve the *working retrieval and execution path* across new chats, agents, and computers. Consult this file **before** saying that Oracle or GitHub Actions is inaccessible. This document records verified past observations; re-check current state at each handoff. It is not a claim that image publishing or autonomous replying is complete.
+**Purpose:** Preserve the *working retrieval and execution path* across new chats, agents, and computers. Consult this file **before** saying that Oracle or GitHub Actions is inaccessible. This document records verified past observations; re-check current state at each handoff. Image publishing has been verified by actual Threads IMAGE readback; autonomous reply delivery and external-post discovery require separate evidence.
 
 ## Identifiers and boundaries
 
-- Persona: 澪 / Mio; Threads account: `@sunlake.milkcat`.
+- Persona: 澪 / Mio; latest verified public post permalink is under `@mio.milkcat`. The legacy stored credential binding / some old receipts still say `@sunlake.milkcat`; check provider account ID and current identity before publishing, and never assume these strings are interchangeable without live verification.
 - Code: `alston-personal/agentmanager`, live branch `core/integration`.
 - Persona memory: `alston-personal/my-agent-data`, `main`, `personas/sunlake-milkcat/events/events.jsonl`.
 - Shared runtime owns API, authorization, media, publishing and receipts. Persona owns content, policies, schedule and event references. Do not put credentials in persona repos or receipts.
