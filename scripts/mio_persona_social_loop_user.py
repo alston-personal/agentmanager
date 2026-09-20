@@ -18,7 +18,7 @@ LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/
 MIO_AGY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
 AGY_SELECTED=os.environ.get('AGENTOS_MIO_RELAY_ROOT','')==str(MIO_AGY_ROOT)
 DECISION_PENDING=STATE_DIR/('agy-decision-pending.json' if AGY_SELECTED else 'decision-pending.json')
-RELAY_PROBE=STATE_DIR/('agy-relay-probe.json' if AGY_SELECTED else 'relay-probe.json')
+RELAY_PROBE=STATE_DIR/('agy-relay-probe-v2.json' if AGY_SELECTED else 'relay-probe.json')
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
 RELAY_ROOT=MIO_AGY_ROOT if AGY_SELECTED else Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
@@ -65,15 +65,31 @@ def save_json(path,payload):
     os.chmod(tmp,0o600); tmp.replace(path); os.chmod(path,0o600)
 
 def extract_json(text):
-    text=(text or '').strip()
-    fence=chr(96)*3
-    if text.startswith(fence):
-        text=text[len(fence):].lstrip()
-        if text.startswith('json'): text=text[4:].lstrip()
-    if text.endswith(fence): text=text[:-len(fence)].rstrip()
-    start=text.find('{'); end=text.rfind('}')
-    if start<0 or end<start: raise ValueError('decision_json_missing')
-    return json.loads(text[start:end+1])
+    """Parse model JSON inside CLI banners, JSONL envelopes or fenced output.
+
+    Reject unrelated CLI metadata and never evaluate arbitrary expressions.
+    """
+    raw=re.sub(r'\x1b\\[[0-9;]*[A-Za-z]','',str(text or ''))
+    decoder=json.JSONDecoder()
+    for index,ch in enumerate(raw):
+        if ch!='{': continue
+        try: obj,_=decoder.raw_decode(raw[index:])
+        except (ValueError,TypeError): continue
+        if not isinstance(obj,dict): continue
+        if 'decisions' in obj and isinstance(obj['decisions'],list):
+            return obj
+        if 'candidate_id' in obj and 'should_reply' in obj:
+            return obj
+        if obj.get('sum')==100:
+            return obj
+        if obj.get('ok') is True:
+            return obj
+        for key in ('content','text','output','response','message'):
+            nested=obj.get(key)
+            if isinstance(nested,str):
+                try: return extract_json(nested)
+                except ValueError: pass
+    raise ValueError('model_json_missing_or_schema_invalid')
 
 def persona_context():
     files={}
@@ -272,7 +288,7 @@ def relay_probe_once():
         cap=client.submit(
             project_id='sunlake-milkcat-persona-social',
             canonical_ir={'goal':'Check that the existing model executor can return one JSON value.','constraints':['no external actions','no credentials','no user data']},
-            instruction='PRIVATE HEALTH CHECK. Return exactly this JSON object, with no other text: {"ok":true}. Do not call tools or take any actions.',
+            instruction='PRIVATE HEALTH CHECK. Compute 47 plus 53. Return a JSON object whose key is sum and whose value is that computed integer. Do not call tools or take actions.',
             workspace='/home/ubuntu/agentmanager')
         save_json(RELAY_PROBE,{'schema':'agentos.mio-relay-probe/v1','capsule_id':cap['capsule_id'],'created_at':iso(utc_now()),'status':'pending'})
         print('mio_social_decision=RELAY_PROBE_QUEUED')
@@ -284,7 +300,7 @@ def relay_probe_once():
     result='failed'
     if receipt.get('ok') is True:
         try:
-            result='pass' if extract_json(receipt.get('stdout') or '').get('ok') is True else 'invalid_result'
+            result='pass' if extract_json(receipt.get('stdout') or '').get('sum')==100 else 'invalid_result'
         except (TypeError,ValueError,AttributeError):
             result='invalid_result'
     save_json(RELAY_PROBE,{'schema':'agentos.mio-relay-probe/v1','capsule_id':cid,'created_at':state.get('created_at'),'observed_at':iso(utc_now()),'status':result})
