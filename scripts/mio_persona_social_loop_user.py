@@ -253,8 +253,17 @@ def publish(item,product_key,control_token,binding_id,account_id):
 def relay_probe_once():
     """One private, side-effect-free relay health check with a durable receipt."""
     state=load_json(RELAY_PROBE,{})
-    if state.get('status')=='pass':
-        return
+    status=str(state.get('status') or '')
+    if status in ('pass','failed','invalid_result'):
+        try:
+            observed=datetime.fromisoformat(str(state.get('observed_at') or '').replace('Z','+00:00'))
+            cooldown=timedelta(hours=24 if status=='pass' else 2)
+            if utc_now()-observed<cooldown:
+                return
+        except (TypeError,ValueError):
+            pass
+        # At most one inexpensive private health probe per cooldown window.
+        state={}
     cid=str(state.get('capsule_id') or '')
     client=AntigravityRelayClient(RELAY_ROOT)
     if not cid:
