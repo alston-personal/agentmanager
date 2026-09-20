@@ -15,11 +15,13 @@ STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat')
 LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/life_state.json')
 LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/stochastic_events.jsonl')
 LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
-DECISION_PENDING=STATE_DIR/'decision-pending.json'
-RELAY_PROBE=STATE_DIR/'relay-probe.json'
+MIO_AGY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
+AGY_SELECTED=os.environ.get('AGENTOS_MIO_RELAY_ROOT','')==str(MIO_AGY_ROOT)
+DECISION_PENDING=STATE_DIR/('agy-decision-pending.json' if AGY_SELECTED else 'decision-pending.json')
+RELAY_PROBE=STATE_DIR/('agy-relay-probe.json' if AGY_SELECTED else 'relay-probe.json')
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
-RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+RELAY_ROOT=MIO_AGY_ROOT if AGY_SELECTED else Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
 BASE='http://127.0.0.1:8771/v1/social'
 LOCAL_TZ=ZoneInfo('Asia/Taipei')
 
