@@ -138,7 +138,7 @@ for idx,(reply_to,text) in enumerate(plans,1):
       'target_account_id':account_id,
       'primary_text':text,
       'reply_to_id':reply_to,
-      'write_intent_id':f'sunlake-persona-reply-20260918-{idx}',
+      'write_intent_id':('mio-approved-reply-'+reply_to+'-v1') if approved_target else f'sunlake-persona-reply-20260918-{idx}',
     }
     status,issued=post('http://127.0.0.1:8771/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
     if status!=201 or not issued.get('acceptance_id'):
@@ -149,7 +149,7 @@ for idx,(reply_to,text) in enumerate(plans,1):
       'X-AgentOS-Acceptance-ID':str(issued['acceptance_id']),
     })
     if status!=200 or receipt.get('ok') is not True:
-        print('persona_threads_reply_publish=FAIL:+reply_to+':'+str(receipt.get('error_code') or receipt.get('error') or status))
+        print('persona_threads_reply_publish=FAIL:'+reply_to+':'+str(receipt.get('error_code') or receipt.get('error') or status))
         continue
     obj=str(receipt.get('platform_object_id') or '')
     if not obj:
