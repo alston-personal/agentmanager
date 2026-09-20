@@ -36,6 +36,26 @@ if systemctl --user is-active --quiet agentos-antigravity-relay.service; then
 else
   echo 'mio_relay_service=INACTIVE'
 fi
+# Inspect only public-free relay queue state, never a capsule's instruction or stdout.
+python3 - <<'PY'
+import json,re
+from pathlib import Path
+pending=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/decision-pending.json')
+root=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
+try: cid=str(json.loads(pending.read_text(encoding='utf-8')).get('capsule_id') or '')
+except (FileNotFoundError,ValueError): cid=''
+if not re.fullmatch(r'relay-[0-9a-f]{32}',cid):
+    state='no_pending'
+elif (root/'receipts'/f'{cid}.json').is_file():
+    state='receipt_ready'
+elif (root/'processing'/f'{cid}.json').is_file():
+    state='processing'
+elif (root/'inbox'/f'{cid}.json').is_file():
+    state='queued'
+else:
+    state='missing'
+print('mio_relay_capsule_state='+state)
+PY
 # Relay restart is a targeted repair, not part of normal monitor reinstallation.
 # Keep the background executor undisturbed during subsequent code deployments.
 
