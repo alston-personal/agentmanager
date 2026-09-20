@@ -572,6 +572,8 @@ def main():
         status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
         if status==200 and receipt.get('ok') is True:
             last_discovery_at=iso(now)
+            # Operational evidence for external discovery; no private data or tokens.
+            print('mio_social_outbound=SEARCH_READ_PASS')
             candidates=[]
             for row in (receipt.get('result') or {}).get('items') or []:
                 cid=str(row.get('id') or '')
