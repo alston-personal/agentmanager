@@ -91,6 +91,17 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
         raise SystemExit('social_publish=SOURCE_COMMIT_MISSING')
     article=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/approved/'+post_key+'.txt'],capture_output=True,text=True,check=True)
     text=article.stdout.strip()
+    metadata=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/approved/'+post_key+'.json'],capture_output=True,text=True)
+    image_url=None
+    image_alt_text=None
+    if metadata.returncode==0:
+        media=json.loads(metadata.stdout)
+        if set(media)!={'image_url','image_alt_text'}:
+            raise SystemExit('social_publish=INVALID_IMAGE_MANIFEST')
+        image_url=str(media['image_url'])
+        image_alt_text=str(media['image_alt_text'])
+        if not image_url.startswith('https://') or not image_alt_text.strip():
+            raise SystemExit('social_publish=INVALID_IMAGE_METADATA')
     if not text or len(text)>500:
         raise SystemExit('social_publish=INVALID_TEXT')
 elif post_key=='galaxy-experiment-day1-20260918-v1':
@@ -118,6 +129,10 @@ request={
     'primary_text':text,
     'write_intent_id':post_key,
 }
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key) and image_url:
+    request['image_url']=image_url
+    request['image_alt_text']=image_alt_text
+request={**request}
 
 # Idempotency: if the exact post already exists, do not publish again.
 read_req={
@@ -132,7 +147,7 @@ if status!=200 or posts.get('ok') is not True:
     raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
-        if str(row.get('text') or '').strip()==text.strip():
+        if str(row.get('text') or '').strip()==text.strip() and (not request.get('image_url') or str(row.get('media_type') or '').upper()=='IMAGE'):
             result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
             marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
             os.chmod(marker,0o600)
@@ -171,6 +186,8 @@ if status==200 and posts.get('ok') is True:
         if str(row.get('id') or '')==obj or str(row.get('text') or '').strip()==text.strip():
             permalink=str(row.get('permalink') or '')
             if not obj: obj=str(row.get('id') or '')
+            if request.get('image_url') and str(row.get('media_type') or '').upper()!='IMAGE':
+                raise SystemExit('social_publish=IMAGE_NOT_VERIFIED')
             break
 
 result={
