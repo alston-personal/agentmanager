@@ -56,7 +56,7 @@ def main():
             rid=str(item.get('id') or '')
             if not rid or rid in existing: continue
             author=str(item.get('username') or '')
-            own=bool(account) and author.lower()==account
+            own=bool(account) and author.lstrip('@').lower()==account.lstrip('@')
             row={
               'schema':'agentos.persona-event/v1',
               'event_id':f'threads-{rid}',
@@ -67,10 +67,12 @@ def main():
               'actor':CHARACTER_ID if own else 'external',
               'author_handle':author or None,
               'object_id':rid,
-              'parent_object_id':payload.get('root_post_id'),
+              'parent_object_id':item.get('replied_to_id') or item.get('root_post_id') or payload.get('root_post_id'),
+              'root_post_id':item.get('root_post_id') or payload.get('root_post_id'),
               'permalink':item.get('permalink'),
               'text':item.get('text'),
               'source':'AgentOS Social public-reply export',
+              'execution_origin':'threads_platform_observed',
             }
             added.append(row); existing.add(rid)
 
