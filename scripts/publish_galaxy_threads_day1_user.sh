@@ -96,12 +96,41 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
     image_alt_text=None
     if metadata.returncode==0:
         media=json.loads(metadata.stdout)
-        if set(media)!={'image_url','image_alt_text'}:
+        if set(media)=={'image_url','image_alt_text'}:
+            image_url=str(media['image_url'])
+            image_alt_text=str(media['image_alt_text'])
+            if not image_url.startswith('https://') or not image_alt_text.strip():
+                raise SystemExit('social_publish=INVALID_IMAGE_METADATA')
+        elif set(media)=={'image_path','image_alt_text'}:
+            # Resolve a Persona-owned file via the shared runtime media gateway.
+            # A missing gateway fails closed: IMAGE requests never become TEXT posts.
+            import hashlib, mimetypes
+            from urllib.parse import urlencode
+            rel=str(media['image_path'])
+            if not re.fullmatch(r'personas/[a-z0-9_-]+/approved/[a-zA-Z0-9_.-]+\\.(?:png|jpg|jpeg)',rel) or '..' in rel:
+                raise SystemExit('social_publish=INVALID_IMAGE_PATH')
+            blob=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':'+rel],capture_output=True,check=True).stdout
+            if len(blob)<32 or len(blob)>8*1024*1024:
+                raise SystemExit('social_publish=INVALID_IMAGE_SIZE')
+            kind=('image/png' if blob.startswith(bytes.fromhex('89504e470d0a1a0a')) else
+                  'image/jpeg' if blob.startswith(bytes.fromhex('ffd8ff')) else None)
+            if not kind:
+                raise SystemExit('social_publish=INVALID_IMAGE_CONTENT')
+            image_alt_text=str(media['image_alt_text'])
+            if not image_alt_text.strip():
+                raise SystemExit('social_publish=INVALID_IMAGE_METADATA')
+            gateway=os.environ.get('AGENTOS_SOCIAL_MEDIA_GATEWAY','').rstrip('/')
+            if not gateway.startswith('https://'):
+                raise SystemExit('social_publish=MEDIA_GATEWAY_UNCONFIGURED')
+            # Gateway accepts bytes authenticated by the existing product key and
+            # returns a temporary public URL; never place the image in GitHub Actions logs.
+            import base64
+            code, hosted=post_json(gateway+'/v1/social/media',{'schema':'agentos.social-media/v1','product_id':'galaxy','filename':rel.rsplit('/',1)[-1],'content_type':kind,'sha256':hashlib.sha256(blob).hexdigest(),'image_base64':base64.b64encode(blob).decode('ascii')},{'X-AgentOS-Product-Key':product_key})
+            image_url=str(hosted.get('image_url') or '')
+            if code!=201 or not image_url.startswith('https://'):
+                raise SystemExit('social_publish=MEDIA_HOST_FAILED')
+        else:
             raise SystemExit('social_publish=INVALID_IMAGE_MANIFEST')
-        image_url=str(media['image_url'])
-        image_alt_text=str(media['image_alt_text'])
-        if not image_url.startswith('https://') or not image_alt_text.strip():
-            raise SystemExit('social_publish=INVALID_IMAGE_METADATA')
     if os.environ.get('AGENTOS_REQUIRE_IMAGE','0')=='1' and not image_url:
         raise SystemExit('social_publish=IMAGE_REQUIRED_NO_TEXT_FALLBACK')
     if not text or len(text)>500:
