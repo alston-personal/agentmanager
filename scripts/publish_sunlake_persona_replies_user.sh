@@ -12,7 +12,7 @@ ROOT_POST_ID="18353956147218749"
 
 python3 - "$ENV_FILE" "$CRED_FILE" "$ROOT_POST_ID" <<'PY'
 from __future__ import annotations
-import json, sys, urllib.request, urllib.error, time
+import json, os, re, subprocess, sys, urllib.request, urllib.error, time
 
 env_file, cred_file, root_post_id = map(str, sys.argv[1:4])
 
@@ -69,8 +69,10 @@ read_req={
   'account_binding_id':binding_id,
   'object_id':root_post_id,
 }
-_,read=post(base+'/status',read_req,{'X-AgentOS-Product-Key':product_key})
-items=((read.get('result') or {}).get('items') or []) if read.get('ok') is True else []
+read_status,read=post(base+'/status',read_req,{'X-AgentOS-Product-Key':product_key})
+if read_status!=200 or read.get('ok') is not True:
+    raise SystemExit('persona_threads_reply=READ_FAILED')
+items=((read.get('result') or {}).get('items') or [])
 
 plans=[
   ('18049810043807231',
@@ -86,6 +88,35 @@ plans=[
   ('18244188640312813',
    '會。比較像先設定「先天」：核心價值、底線、初始性格；但不把最後的人格寫死。之後的互動、關係和事件才慢慢長出後天特質，所以同一個起點也可以養成完全不同的人。')
 ]
+
+# A push of one reviewed reply manifest selects exactly one target. Fetch the
+# immutable manifest from the triggering commit, never the mutable worktree.
+source=os.environ.get('AGENTOS_SOURCE_COMMIT','')
+approved_target=None
+if source:
+    if not re.fullmatch(r'[0-9a-f]{40}',source):
+        raise SystemExit('persona_threads_reply=INVALID_SOURCE')
+    repo='/home/ubuntu/agentmanager'
+    diff=subprocess.run(['git','-C',repo,'diff-tree','--no-commit-id','--name-only','-r','--diff-filter=A',source,'--','personas/mio/approved/replies/'],capture_output=True,text=True,check=True)
+    approved=[p for p in diff.stdout.splitlines() if re.fullmatch(r'personas/mio/approved/replies/mio-reply-[a-z0-9-]{1,72}\\.json',p)]
+    if len(approved)!=1:
+        raise SystemExit('persona_threads_reply=REQUIRE_EXACTLY_ONE_NEW_APPROVED_REPLY')
+    shown=subprocess.run(['git','-C',repo,'show',source+':'+approved[0]],capture_output=True,text=True,check=True)
+    plan=json.loads(shown.stdout)
+    approved_target=str(plan.get('reply_to_id') or '')
+    if str(plan.get('root_post_id') or '')!=root_post_id or not approved_target.isdecimal():
+        raise SystemExit('persona_threads_reply=TARGET_INVALID')
+    if str(plan.get('comment_author') or '').lstrip('@').lower()!='vivian780927':
+        raise SystemExit('persona_threads_reply=AUTHOR_MISMATCH')
+    text=str(plan.get('text') or '').strip()
+    if not text or len(text)>500:
+        raise SystemExit('persona_threads_reply=TEXT_INVALID')
+    target=next((row for row in items if str(row.get('id') or '')==approved_target),None)
+    if target is None or str(target.get('username') or '').lstrip('@').lower()!=str(plan['comment_author']).lstrip('@').lower():
+        raise SystemExit('persona_threads_reply=COMMENT_NOT_FOUND_OR_AUTHOR_MISMATCH')
+    if str(target.get('text') or '').strip()!=str(plan.get('expected_comment_text') or '').strip():
+        raise SystemExit('persona_threads_reply=COMMENT_CHANGED')
+    plans=[(approved_target,text)]
 
 already=set()
 for row in items:
@@ -118,13 +149,28 @@ for idx,(reply_to,text) in enumerate(plans,1):
       'X-AgentOS-Acceptance-ID':str(issued['acceptance_id']),
     })
     if status!=200 or receipt.get('ok') is not True:
-        print('persona_threads_reply_publish=FAIL:'+reply_to+':'+str(receipt.get('error_code') or receipt.get('error') or status))
+        print('persona_threads_reply_publish=FAIL:+reply_to+':'+str(receipt.get('error_code') or receipt.get('error') or status))
         continue
     obj=str(receipt.get('platform_object_id') or '')
+    if not obj:
+        raise SystemExit('persona_threads_reply=NO_OBJECT_ID_AFTER_ACCEPTED_WRITE')
+    # Prefer platform readback, not just a successful HTTP receipt.
+    verified=None
+    for _ in range(5):
+        check_status,check=post(base+'/status',read_req,{'X-AgentOS-Product-Key':product_key})
+        if check_status==200 and check.get('ok') is True:
+            verified=next((r for r in ((check.get('result') or {}).get('items') or []) if str(r.get('id') or '')==obj and str((r.get('replied_to') or {}).get('id') or '')==reply_to and str(r.get('text') or '').strip()==text),None)
+            if verified: break
+        time.sleep(4)
+    if verified is None:
+        raise SystemExit('persona_threads_reply=READBACK_PENDING:'+obj)
     published.append((reply_to,obj))
     print('persona_threads_reply_publish=PASS:'+reply_to+':'+obj)
-    time.sleep(65)
+    print('persona_threads_reply_permalink='+str(verified.get('permalink') or ''))
+    if not approved_target: time.sleep(65)
 
+if approved_target and not (published or approved_target in already):
+    raise SystemExit('persona_threads_reply=TARGET_NOT_PUBLISHED')
 print('persona_threads_reply=PASS')
 print('persona_threads_reply_account='+username)
 print('persona_threads_reply_published='+str(len(published)))
