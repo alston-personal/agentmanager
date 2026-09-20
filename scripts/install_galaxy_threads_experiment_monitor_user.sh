@@ -70,6 +70,39 @@ else:
     probe_state='not_submitted'
 print('mio_relay_probe_state='+probe_state)
 PY
+# Check whether the separately installed, already allowlisted AGY executor can
+# answer a harmless JSON prompt. Bounded, one check per six hours; never print
+# its model output, login state, file locations or any credential.
+python3 - "$REPO" <<'PY'
+import json,os,subprocess,sys,time
+from pathlib import Path
+from agentos_node.antigravity_relay_worker import discover_executor
+repo=Path(sys.argv[1])
+state=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/agy-health.json')
+try: old=json.loads(state.read_text(encoding='utf-8'))
+except (FileNotFoundError,ValueError): old={}
+if time.time()-float(old.get('checked_unix') or 0)<21600:
+    print('mio_agy_probe='+str(old.get('result') or 'unknown'))
+else:
+    result='unavailable'
+    try:
+        _,executor=discover_executor('agy')
+        if executor:
+            prompt='PRIVATE HEALTH CHECK: return exactly {"ok":true} as JSON. No tools, no external actions.'
+            r=subprocess.run([*executor,'run','--task',prompt,'--workspace',str(repo)],cwd=str(repo),capture_output=True,text=True,timeout=25,check=False)
+            if r.returncode:
+                result='nonzero_exit'
+            elif '"ok"' in r.stdout and 'true' in r.stdout.lower():
+                result='pass'
+            else:
+                result='unexpected_output'
+    except subprocess.TimeoutExpired: result='timeout'
+    except OSError: result='spawn_error'
+    state.parent.mkdir(parents=True,exist_ok=True)
+    state.write_text(json.dumps({'checked_unix':time.time(),'result':result})+'\n',encoding='utf-8')
+    os.chmod(state,0o600)
+    print('mio_agy_probe='+result)
+PY
 # Relay restart is a targeted repair, not part of normal monitor reinstallation.
 # Keep the background executor undisturbed during subsequent code deployments.
 
