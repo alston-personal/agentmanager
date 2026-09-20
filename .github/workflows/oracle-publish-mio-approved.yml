@@ -29,6 +29,20 @@ jobs:
           test "$(wc -m < "${files[0]}")" -le 500
           [[ "$post_key" =~ ^mio-post-[a-z0-9-]{1,72}$ ]]
           printf 'POST_KEY=%s\n' "$post_key" >> "$GITHUB_ENV"
+          # Image manifests are explicit image-only publishing intents.
+          if [ -f "personas/mio/approved/$post_key.json" ]; then
+            python3 - "$post_key" <<'PY'
+          import json,sys
+          from pathlib import Path
+          key=sys.argv[1]
+          meta=json.loads(Path(f"personas/mio/approved/{key}.json").read_text(encoding="utf-8"))
+          assert set(meta)=={"image_path","image_alt_text"}, "persona_image_file_manifest_required"
+          image=Path(meta["image_path"])
+          assert str(image).startswith("personas/mio/approved/") and image.is_file(), "persona_image_missing"
+          assert str(meta["image_alt_text"]).strip(), "persona_image_alt_missing"
+          PY
+            printf 'AGENTOS_REQUIRE_IMAGE=1\n' >> "$GITHUB_ENV"
+          fi
 
       - name: Preflight governed one-shot publisher
         shell: bash
