@@ -49,8 +49,12 @@ def main():
     if len(bindings)!=1: raise SystemExit(f'galaxy_monitor=BINDING_COUNT_{len(bindings)}')
     bid,item=bindings[0]
     headers={'X-AgentOS-Product-Key':key}
-    _,ident=post(BASE+'/status',req('identity.read',bid),headers)
-    _,posts=post(BASE+'/status',req('post.read',bid),headers)
+    identity_status,ident=post(BASE+'/status',req('identity.read',bid),headers)
+    posts_status,posts=post(BASE+'/status',req('post.read',bid),headers)
+    if identity_status!=200 or ident.get('ok') is not True:
+        raise RuntimeError('galaxy_monitor=IDENTITY_READ_FAILED')
+    if posts_status!=200 or posts.get('ok') is not True:
+        raise RuntimeError('galaxy_monitor=POST_READ_FAILED')
     identity=(ident.get('result') or {}).get('identity') or {}
     post_items=(posts.get('result') or {}).get('items') or []
     root=next((x for x in post_items if str(x.get('id') or '')==ROOT_POST_ID),{})
@@ -60,7 +64,9 @@ def main():
         post_id=str(post_item.get('id') or '')
         if not post_id or post_item.get('has_replies') is False:
             continue
-        _,reply_receipt=post(BASE+'/status',req('replies.read',bid,post_id),headers)
+        reply_status,reply_receipt=post(BASE+'/status',req('replies.read',bid,post_id),headers)
+        if reply_status!=200 or reply_receipt.get('ok') is not True:
+            raise RuntimeError('galaxy_monitor=REPLIES_READ_FAILED:'+post_id)
         for item_reply in (reply_receipt.get('result') or {}).get('items') or []:
             rid=str(item_reply.get('id') or '')
             if not rid or rid in seen_reply_ids:
