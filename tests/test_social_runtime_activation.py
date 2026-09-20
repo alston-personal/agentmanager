@@ -208,7 +208,7 @@ def test_oauth_completion_redirect_has_no_binding_and_product_redeems_result_onc
 
     redeemed = rt.status(status_request(started["connection_id"]))
     assert redeemed["schema"] == "agentos.social-connection-result/v1"
-    assert redeemed["binding_id"] == "leopardcat-tarot:threads:42"
+    assert redeemed["binding_id"] == "leopardcat-tarot:threads:persona:42"
     assert redeemed["account"] == {"provider_account_id": "42", "username": "cat"}
     assert "token" not in repr(redeemed).lower()
     assert vault.get_access_token(redeemed["binding_id"]) == "provider-token"
