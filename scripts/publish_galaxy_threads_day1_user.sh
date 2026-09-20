@@ -148,7 +148,7 @@ if status!=200 or posts.get('ok') is not True:
     raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
-        if str(row.get('text') or '').strip()==text.strip() and (not request.get('image_url') or str(row.get('media_type') or '').upper()=='IMAGE'):
+        if str(row.get('text') or '').strip()==text.strip() and (not request.get('image_url') or (str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True)):
             result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
             marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
             os.chmod(marker,0o600)
@@ -187,7 +187,7 @@ if status==200 and posts.get('ok') is True:
         if str(row.get('id') or '')==obj:
             permalink=str(row.get('permalink') or '')
             if not obj: obj=str(row.get('id') or '')
-            if request.get('image_url') and str(row.get('media_type') or '').upper()!='IMAGE':
+            if request.get('image_url') and (str(row.get('media_type') or '').upper()!='IMAGE' or row.get('image_visible') is not True or str(row.get('text') or '').strip()!=text.strip()):
                 raise SystemExit('social_publish=IMAGE_NOT_VERIFIED')
             break
 
