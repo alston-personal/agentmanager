@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -310,17 +311,32 @@ class ThreadsCapability:
             params["reply_to_id"] = request.reply_to_id
         token = self.vault.get_access_token(binding.binding_id)
         try:
-            created = self.transport.api("me/threads", token=token, method="POST", params=params)
+            try:
+                created = self.transport.api("me/threads", token=token, method="POST", params=params)
+            except ThreadsProviderError as exc:
+                if request.operation == "reply":
+                    raise ThreadsProviderError("threads_reply_container_create_"+str(exc)) from exc
+                raise
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
             if request.operation == "reply":
-                published = self.transport.api(
-                    "me/threads_publish",
-                    token=token,
-                    method="POST",
-                    params={"creation_id": creation_id},
-                )
+                # Meta can return code 24 while a freshly created media container
+                # is propagating. Retry the SAME creation_id, never create another
+                # container for this request: a new container could duplicate replies.
+                for attempt in range(4):
+                    try:
+                        published = self.transport.api(
+                            "me/threads_publish",
+                            token=token,
+                            method="POST",
+                            params={"creation_id": creation_id},
+                        )
+                        break
+                    except ThreadsProviderError as exc:
+                        if "http_400_OAuthException_24" not in str(exc) or attempt == 3:
+                            raise ThreadsProviderError("threads_reply_container_publish_"+str(exc)) from exc
+                        time.sleep((4, 8, 16)[attempt])
                 thread_id = str(published.get("id") or "")
                 if not thread_id:
                     raise ThreadsProviderError("threads_publish_id_missing")
