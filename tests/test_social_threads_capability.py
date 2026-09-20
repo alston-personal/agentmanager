@@ -17,7 +17,7 @@ class FakeTransport:
     def config(self):
         return ThreadsProviderConfig("app-id", "server-only-secret", "https://core.example/callback")
 
-    def authorization_url(self, state):
+    def authorization_url(self, state, *, auth_profile='persona'):
         return f"https://threads.net/oauth/authorize?client_id=app-id&state={state}"
 
     def exchange_code(self, code):
