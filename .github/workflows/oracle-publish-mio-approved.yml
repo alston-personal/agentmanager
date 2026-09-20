@@ -116,7 +116,7 @@ jobs:
           if '${{ env.AGENTOS_REQUIRE_IMAGE }}' == '1':
               assert 'galaxy_day1_image_asset=VERIFIED' in text, 'image_cdn_asset_not_verified'
               assert 'galaxy_day1_image_readback=PASS' in text or ('galaxy_day1_publish=ALREADY_PRESENT' in text and 'galaxy_day1_object_id=' in text), 'image_not_verified_on_threads'
-          assert any(line.startswith('galaxy_day1_permalink=https://www.threads.com/@sunlake.milkcat/post/') for line in text.splitlines()), text[-12000:]
+          assert any(line.startswith('galaxy_day1_permalink=https://www.threads.com/@mio.milkcat/post/') for line in text.splitlines()), text[-12000:]
           assert any(line.startswith('galaxy_day1_object_id=') and line.split('=',1)[1].strip() for line in text.splitlines()), text[-12000:]
           for forbidden in ('access_token','app_secret','control_token','product_key'):
               assert forbidden not in text.lower(), forbidden
