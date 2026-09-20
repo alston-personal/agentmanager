@@ -60,10 +60,12 @@ def main():
     root=next((x for x in post_items if str(x.get('id') or '')==ROOT_POST_ID),{})
     reply_items=[]
     seen_reply_ids=set()
-    for post_item in post_items[:50]:
+    # The five newest owned posts are always read, including newly published
+    # IMAGE posts whose has_replies flag can lag behind real comments.
+    # Older posts retain the original bounded selective polling policy.
+    for position, post_item in enumerate(post_items[:50]):
         post_id=str(post_item.get('id') or '')
-        # Refresh recently published posts even when Meta's has_replies flag lags.
-        if not post_id or (post_item.get('has_replies') is False and post_id not in ('17994092795835001','18042529955827294')):
+        if not post_id or (position >= 5 and post_item.get('has_replies') is False and post_id not in ('17994092795835001','18042529955827294')):
             continue
         reply_status,reply_receipt=post(BASE+'/status',req('replies.read',bid,post_id),headers)
         if reply_status!=200 or reply_receipt.get('ok') is not True:
