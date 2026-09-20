@@ -21,7 +21,7 @@ THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
 THREADS_READ_PAGE_LIMIT = 3
 THREADS_READ_ITEM_LIMIT = 150
-THREAD_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies"
+THREAD_FIELDS = "id,text,media_type,media_url,timestamp,username,permalink,is_quote_post,has_replies"
 REPLY_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies,is_reply,is_reply_owned_by_me,root_post,replied_to"
 
 
@@ -181,6 +181,8 @@ class ThreadsCapability:
         return {
             "id": str(item.get("id") or ""),
             "text": str(item.get("text") or "")[:12000],
+            "media_type": str(item.get("media_type") or ""),
+            "image_visible": str(item.get("media_type") or "").upper() == "IMAGE" and str(item.get("media_url") or "").startswith("https://"),
             "timestamp": item.get("timestamp"),
             "username": item.get("username"),
             "permalink": item.get("permalink"),
@@ -292,7 +294,9 @@ class ThreadsCapability:
         if not primary or len(primary) > THREADS_TEXT_LIMIT:
             return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_primary_text_invalid").to_dict()
         params: dict[str, Any] = {"media_type": "TEXT", "text": primary}
-        if request.operation != "reply":
+        if request.image_url:
+            params.update(media_type="IMAGE", image_url=request.image_url, alt_text=request.image_alt_text)
+        elif request.operation != "reply":
             params["auto_publish_text"] = "true"
         attachment = request.text_attachment
         if attachment:
@@ -320,7 +324,24 @@ class ThreadsCapability:
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
-            if request.operation == "reply":
+            if request.image_url:
+                # Meta fetches remote images asynchronously. Never downgrade
+                # an IMAGE request to TEXT, and do not create a second container.
+                ready = False
+                for attempt in range(20):
+                    state = self.transport.api(creation_id, token=token, params={"fields": "status,error_message"})
+                    status = str(state.get("status") or "").upper()
+                    if status == "FINISHED":
+                        ready = True
+                        break
+                    if status in {"ERROR", "EXPIRED"}:
+                        raise ThreadsProviderError("threads_image_container_failed")
+                    if status not in {"IN_PROGRESS", "PUBLISHED"}:
+                        raise ThreadsProviderError("threads_image_container_unknown_status")
+                    time.sleep(3)
+                if not ready:
+                    raise ThreadsProviderError("threads_image_container_not_ready")
+            if request.operation == "reply" or request.image_url:
                 # Meta can return code 24 while a freshly created media container
                 # is propagating. Retry the SAME creation_id, never create another
                 # container for this request: a new container could duplicate replies.
