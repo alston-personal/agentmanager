@@ -16,6 +16,7 @@ LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/life_st
 LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/stochastic_events.jsonl')
 LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
 DECISION_PENDING=STATE_DIR/'decision-pending.json'
+RELAY_PROBE=STATE_DIR/'relay-probe.json'
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
 RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
@@ -249,6 +250,41 @@ def publish(item,product_key,control_token,binding_id,account_id):
     if status==200 and receipt.get('ok') is True:return True,str(receipt.get('platform_object_id') or '')
     return False,str(receipt.get('error_code') or receipt.get('error') or status)
 
+def relay_probe_once():
+    """One private, side-effect-free relay health check with a durable receipt."""
+    state=load_json(RELAY_PROBE,{})
+    if state.get('status')=='pass':
+        return
+    cid=str(state.get('capsule_id') or '')
+    client=AntigravityRelayClient(RELAY_ROOT)
+    if not cid:
+        cap=client.submit(
+            project_id='sunlake-milkcat-persona-social',
+            canonical_ir={'goal':'Check that the existing model executor can return one JSON value.','constraints':['no external actions','no credentials','no user data']},
+            instruction='PRIVATE HEALTH CHECK. Return exactly this JSON object, with no other text: {"ok":true}. Do not call tools or take any actions.',
+            workspace='/home/ubuntu/agentmanager')
+        save_json(RELAY_PROBE,{'schema':'agentos.mio-relay-probe/v1','capsule_id':cap['capsule_id'],'created_at':iso(utc_now()),'status':'pending'})
+        print('mio_social_decision=RELAY_PROBE_QUEUED')
+        return
+    receipt=client.receipt(cid)
+    if receipt is None:
+        print('mio_social_decision=RELAY_PROBE_WAITING')
+        return
+    result='failed'
+    if receipt.get('ok') is True:
+        try:
+            result='pass' if extract_json(receipt.get('stdout') or '').get('ok') is True else 'invalid_result'
+        except (TypeError,ValueError,AttributeError):
+            result='invalid_result'
+    save_json(RELAY_PROBE,{'schema':'agentos.mio-relay-probe/v1','capsule_id':cid,'created_at':state.get('created_at'),'observed_at':iso(utc_now()),'status':result})
+    if result=='pass':
+        print('mio_social_decision=RELAY_PROBE_PASS')
+    else:
+        provider=str(receipt.get('provider') or 'unknown')[:20]
+        code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
+        print('mio_social_decision=RELAY_PROBE_FAILED:'+result+':provider='+provider+':returncode='+code)
+
+
 def main():
     if os.geteuid()!=1001:raise SystemExit('mio_social_loop=WRONG_USER')
     STATE_DIR.mkdir(parents=True,exist_ok=True); os.chmod(STATE_DIR,0o700)
@@ -261,6 +297,8 @@ def main():
     last_discovery_at=state.get('last_discovery_at')
     product_key,control,bid,binding=auth()
     now=utc_now()
+    try: relay_probe_once()
+    except Exception as exc: print('mio_social_decision=RELAY_PROBE_ERROR:'+type(exc).__name__)
     persona_state=load_json(PERSONA_ROOT/'persona_state.json',{})
     energy_config=persona_state.get('energy') or {
       'policy_version':'mio-energy-v1','capacity':100,'current':72,'floor':0,
