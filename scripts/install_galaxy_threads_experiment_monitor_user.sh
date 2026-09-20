@@ -55,6 +55,20 @@ elif (root/'inbox'/f'{cid}.json').is_file():
 else:
     state='missing'
 print('mio_relay_capsule_state='+state)
+probe=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat/relay-probe.json')
+try: test=json.loads(probe.read_text(encoding='utf-8'))
+except (FileNotFoundError,ValueError): test={}
+probe_id=str(test.get('capsule_id') or '')
+if test.get('status')=='pass':
+    probe_state='pass'
+elif re.fullmatch(r'relay-[0-9a-f]{32}',probe_id):
+    if (root/'receipts'/f'{probe_id}.json').is_file(): probe_state='receipt_ready'
+    elif (root/'processing'/f'{probe_id}.json').is_file(): probe_state='processing'
+    elif (root/'inbox'/f'{probe_id}.json').is_file(): probe_state='queued'
+    else: probe_state='missing'
+else:
+    probe_state='not_submitted'
+print('mio_relay_probe_state='+probe_state)
 PY
 # Relay restart is a targeted repair, not part of normal monitor reinstallation.
 # Keep the background executor undisturbed during subsequent code deployments.
