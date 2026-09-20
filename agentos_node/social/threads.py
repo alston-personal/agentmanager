@@ -291,7 +291,11 @@ class ThreadsCapability:
         if not primary or len(primary) > THREADS_TEXT_LIMIT:
             return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code="threads_primary_text_invalid").to_dict()
         params: dict[str, Any] = {"media_type": "TEXT", "text": primary}
-        if request.operation != "reply":
+        if request.image_url:
+            params["media_type"] = "IMAGE"
+            params["image_url"] = request.image_url
+            params["alt_text"] = request.image_alt_text
+        elif request.operation != "reply":
             params["auto_publish_text"] = "true"
         attachment = request.text_attachment
         if attachment:
@@ -314,7 +318,7 @@ class ThreadsCapability:
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
-            if request.operation == "reply":
+            if request.operation == "reply" or request.image_url:
                 published = self.transport.api(
                     "me/threads_publish",
                     token=token,
