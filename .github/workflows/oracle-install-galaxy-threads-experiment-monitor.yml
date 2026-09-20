@@ -15,6 +15,7 @@ on:
       - 'scripts/monitor_galaxy_threads_experiment_user.py'
       - 'scripts/sync_sunlake_milkcat_persona_user.py'
       - 'scripts/mio_persona_social_loop_user.py'
+      - 'scripts/diagnose_mio_threads_search_scope_user.py'
       - 'tests/test_mio_social_contract.py'
       - 'agentos_node/persona_life.py'
 
@@ -34,7 +35,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/core/integration"
           test "$(id -un)" = "agentos-node"
-          python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/persona_life.py scripts/monitor_galaxy_threads_experiment_user.py scripts/sync_sunlake_milkcat_persona_user.py scripts/mio_persona_social_loop_user.py
+          python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/persona_life.py scripts/monitor_galaxy_threads_experiment_user.py scripts/sync_sunlake_milkcat_persona_user.py scripts/mio_persona_social_loop_user.py scripts/diagnose_mio_threads_search_scope_user.py
           bash -n scripts/install_galaxy_threads_experiment_monitor_user.sh
           grep -Fq "mio_social_outbound=SEARCH_READ_PASS" scripts/mio_persona_social_loop_user.py
           PYTHONPATH=. python3 -m unittest discover -s tests -p test_mio_social_contract.py -v
@@ -57,6 +58,7 @@ jobs:
           cat scripts/monitor_galaxy_threads_experiment_user.py > "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py"
           cat scripts/sync_sunlake_milkcat_persona_user.py > "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py"
           cat scripts/mio_persona_social_loop_user.py > "$LIVE/scripts/mio_persona_social_loop_user.py"
+          cat scripts/diagnose_mio_threads_search_scope_user.py > "$LIVE/scripts/diagnose_mio_threads_search_scope_user.py"
           cat agentos_node/persona_life.py > "$LIVE/agentos_node/persona_life.py"
           chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/agentos_node/persona_life.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py" "$LIVE/scripts/mio_persona_social_loop_user.py" || true
           python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/agentos_node/persona_life.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py" "$LIVE/scripts/mio_persona_social_loop_user.py"
@@ -104,7 +106,7 @@ jobs:
           assert 'galaxy_experiment_monitor_snapshot=PASS' in text,text[-12000:]
           print('galaxy_experiment_monitor_receipt=PASS')
           for line in text.splitlines():
-              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=','mio_social_loop=','mio_social_decision=','mio_social_publish=','mio_social_pending=','mio_social_new_external=','mio_social_outbound=','mio_social_outbound_today=','mio_life_event=','mio_energy=','mio_life_phase=','mio_relay_','mio_agy_probe=','mio_agy_relay=','mio_latest_comment_')):
+              if line.startswith(('galaxy_experiment_monitor_reply_count=','galaxy_experiment_monitor_new_replies=','galaxy_experiment_monitor_needs_attention=','galaxy_experiment_monitor_reply_catalog=','mio_social_loop=','mio_social_decision=','mio_social_publish=','mio_social_pending=','mio_social_new_external=','mio_social_outbound=','mio_social_outbound_today=','mio_life_event=','mio_energy=','mio_life_phase=','mio_relay_','mio_agy_probe=','mio_agy_relay=','mio_search_scope_probe=','mio_latest_comment_')):
                   print(line)
           PY
 
