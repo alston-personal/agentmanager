@@ -2,6 +2,10 @@
 
 This repository is the **AgentOS logic/runtime root**. Mutable project state belongs in the configured data layer; runtime semantics, contracts, tests, governance, and automation live here.
 
+## Mio / 澪 Threads publishing — mandatory continuation
+
+For requests to publish Mio's text/photos or troubleshoot repeated loss of publishing capability, **first read** `personas/mio/PUBLISH_NOW.md` and then `personas/mio/THREADS_RUNBOOK.md` (latest live state). Discover currently available GitHub connector actions before claiming a tool is unavailable. Do not trigger duplicate public posts as technical tests or reuse old visuals without owner approval.
+
 ## Required reading order
 
 Before architecture or system-level changes:
