@@ -363,7 +363,7 @@ class ThreadsCapability:
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
-            if request.image_url:
+            if request.image_url or request.image_urls:
                 # Meta fetches remote images asynchronously. Never downgrade
                 # an IMAGE request to TEXT, and do not create a second container.
                 ready = False
