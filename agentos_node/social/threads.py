@@ -319,6 +319,24 @@ class ThreadsCapability:
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
+            if request.image_url:
+                # Meta processes remotely fetched image containers asynchronously.
+                # Do not publish until the container is ready; never fall back to TEXT.
+                import time
+                ready = False
+                for attempt in range(12):
+                    status = self.transport.api(creation_id, token=token, params={"fields": "status,error_message"})
+                    state = str(status.get("status") or "").upper()
+                    if state == "FINISHED":
+                        ready = True
+                        break
+                    if state in {"ERROR", "EXPIRED"}:
+                        raise ThreadsProviderError("threads_image_container_failed")
+                    if state not in {"IN_PROGRESS", "PUBLISHED"}:
+                        raise ThreadsProviderError("threads_image_container_unknown_status")
+                    time.sleep(2)
+                if not ready:
+                    raise ThreadsProviderError("threads_image_container_not_ready")
             if request.operation == "reply" or request.image_url:
                 published = self.transport.api(
                     "me/threads_publish",
