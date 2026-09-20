@@ -189,6 +189,22 @@ fi
 systemctl --user is-enabled --quiet agentos-galaxy-experiment-monitor.timer
 systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
 
+# Emit only IDs for the newly observed reader comment; never expose the
+# surrounding private monitor snapshot or other commenters in run logs.
+python3 - <<'PY'
+import json
+from pathlib import Path
+catalog=Path('/tmp/agentos-social-public/sunlake-milkcat-replies.json')
+if catalog.is_file():
+    doc=json.loads(catalog.read_text(encoding='utf-8'))
+    item=next((x for x in (doc.get('replies') or []) if str(x.get('id') or '')=='18124006117843631'),None)
+    if item:
+        print('mio_latest_comment_id='+str(item['id']))
+        print('mio_latest_comment_root_id='+str(item.get('root_post_id') or ''))
+        print('mio_latest_comment_replied_to_id='+str(item.get('replied_to_id') or ''))
+        print('mio_latest_comment_owned='+str(bool(item.get('is_reply_owned_by_me'))).lower())
+PY
+
 SNAPSHOT="$HOME/agent-data/runtime/social/experiments/ai-subscription/latest.json"
 test -f "$SNAPSHOT"
 python3 - "$SNAPSHOT" <<'PY'
