@@ -101,7 +101,7 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
         if set(spec)!={'image_path','image_alt_text'}:
             raise SystemExit('social_publish=INVALID_IMAGE_MANIFEST')
         rel=str(spec['image_path'])
-        if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\\.(?:png|jpg|jpeg)',rel):
+        if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)',rel):
             raise SystemExit('social_publish=INVALID_IMAGE_PATH')
         image_alt_text=str(spec['image_alt_text']).strip()
         if not image_alt_text or len(image_alt_text)>1000:
