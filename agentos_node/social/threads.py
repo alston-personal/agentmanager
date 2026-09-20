@@ -181,6 +181,7 @@ class ThreadsCapability:
             "id": str(item.get("id") or ""),
             "text": str(item.get("text") or "")[:12000],
             "media_type": str(item.get("media_type") or ""),
+            "image_visible": str(item.get("media_type") or "").upper() == "IMAGE" and str(item.get("media_url") or "").startswith("https://"),
             "timestamp": item.get("timestamp"),
             "username": item.get("username"),
             "permalink": item.get("permalink"),
