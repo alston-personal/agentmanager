@@ -614,6 +614,10 @@ def main():
                 print('mio_social_outbound=NO_CANDIDATES')
         else:
             err=str(receipt.get('error_code') or receipt.get('error') or status)
+            # Do not hammer Meta every ten minutes while the current token
+            # lacks the keyword-search OAuth grant. Retry at the next bounded
+            # discovery window; a fresh authorized token can recover then.
+            last_discovery_at=iso(now)
             print('mio_social_outbound=DISCOVERY_UNAVAILABLE:'+err)
 
     kept=[]
