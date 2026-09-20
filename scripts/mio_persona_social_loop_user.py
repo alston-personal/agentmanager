@@ -138,8 +138,19 @@ If should_reply=false, text must be null and delay_minutes must be null.
                 provider=str(receipt.get('provider') or 'unknown')[:20]
                 code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
                 timed_out=str(bool(receipt.get('timed_out'))).lower()
+                internal_error=str(receipt.get('error') or '').lower()
+                if 'no authorized local antigravity executor' in internal_error:
+                    category='executor_not_found'
+                elif 'workspace unavailable' in internal_error:
+                    category='workspace_unavailable'
+                elif 'permission' in internal_error:
+                    category='permission_denied'
+                elif 'invalid' in internal_error:
+                    category='invalid_capsule'
+                else:
+                    category='other'
                 # Diagnostic metadata only; never echo executor stdout/stderr or credentials.
-                raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out)
+                raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category)
             return extract_json(receipt.get('stdout') or '')
         time.sleep(2)
     raise TimeoutError('persona_decision_timeout')
