@@ -18,6 +18,25 @@ test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
 test -f "$REPO/scripts/mio_persona_social_loop_user.py"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
+# Diagnose the real ubuntu-owned relay executor; do not expose binary paths,
+# account state, credentials, model output, or user-private files.
+PYTHONPATH="$REPO" python3 - <<'PY'
+from pathlib import Path
+from agentos_node.antigravity_relay_worker import discover_executor
+for provider in ('claude','agy'):
+    try:
+        _, selected=discover_executor(provider)
+        available=bool(selected and Path(selected[0]).is_file())
+    except Exception:
+        available=False
+    print('mio_relay_'+provider+'_available='+str(available).lower())
+PY
+if systemctl --user is-active --quiet agentos-antigravity-relay.service; then
+  echo 'mio_relay_service=ACTIVE'
+else
+  echo 'mio_relay_service=INACTIVE'
+fi
+
 cat > "$SERVICE" <<EOF
 [Unit]
 Description=AgentOS Threads AI Subscription Experiment Monitor
