@@ -91,6 +91,34 @@ def extract_json(text):
                 except ValueError: pass
     raise ValueError('model_json_missing_or_schema_invalid')
 
+def extract_reply_decisions(raw_text, expected_ids):
+    """Accept only model decisions referencing an actual pending comment ID."""
+    clean=re.sub(r'\x1b\[[0-9;]*[A-Za-z]','',str(raw_text or ''))
+    decoder=json.JSONDecoder()
+    candidates=[]
+    def consider(data):
+        if not isinstance(data,dict): return
+        decisions=data.get('decisions')
+        if isinstance(decisions,list):
+            matched=[d for d in decisions if isinstance(d,dict)
+                     and str(d.get('reply_id') or '') in expected_ids
+                     and isinstance(d.get('should_reply'),bool)]
+            if matched: candidates.append({'decisions':matched})
+        for key in ('content','text','output','response','message'):
+            nested=data.get(key)
+            if isinstance(nested,str): scan(nested)
+            elif isinstance(nested,dict): consider(nested)
+    def scan(value):
+        for index,ch in enumerate(value):
+            if ch!='{': continue
+            try: obj,_=decoder.raw_decode(value[index:])
+            except (ValueError,TypeError): continue
+            consider(obj)
+    scan(clean)
+    if not candidates: raise ValueError('persona_decision_missing_expected_ids')
+    return candidates[-1]
+
+
 def persona_context():
     files={}
     for name in ('character_core.json','persona_state.json','reply_policy.json'):
@@ -196,7 +224,7 @@ If should_reply=false, text must be null and delay_minutes must be null.
         exists=str(missing_file.exists()).lower() if missing_file else 'unknown'
         # Diagnostic metadata only; never echo stdout/stderr or absolute paths.
         raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+error_type+':errno='+safe_errno+':missing_file='+basename+':exists='+exists)
-    return extract_json(receipt.get('stdout') or '')
+    return extract_reply_decisions(receipt.get('stdout') or '',{str(x.get('id') or '') for x in items})
 
 def decide_outbound(candidates,account_username):
     local=datetime.now(LOCAL_TZ)
@@ -451,6 +479,9 @@ def main():
                 rid=str(row.get('id'));d=by_id.get(rid)
                 if d is None:
                     print('mio_social_decision=DEFERRED_MISSING_DECISION:'+rid)
+                    continue
+                if d.get('should_reply') is True and (not isinstance(d.get('text'),str) or not 1<=len(d['text'].strip())<=500):
+                    print('mio_social_decision=DEFERRED_INVALID_TEXT:'+rid)
                     continue
                 processed.add(rid)
                 record={'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001','decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other')}
