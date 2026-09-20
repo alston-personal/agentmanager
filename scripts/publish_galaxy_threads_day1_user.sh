@@ -119,8 +119,8 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
             image_alt_text=str(media['image_alt_text'])
             if not image_alt_text.strip():
                 raise SystemExit('social_publish=INVALID_IMAGE_METADATA')
-            gateway=os.environ.get('AGENTOS_SOCIAL_MEDIA_GATEWAY','').rstrip('/')
-            if not gateway.startswith('https://'):
+            gateway=os.environ.get('AGENTOS_SOCIAL_MEDIA_GATEWAY','http://127.0.0.1:8771').rstrip('/')
+            if gateway != 'http://127.0.0.1:8771' and not gateway.startswith('https://'):
                 raise SystemExit('social_publish=MEDIA_GATEWAY_UNCONFIGURED')
             # Gateway accepts bytes authenticated by the existing product key and
             # returns a temporary public URL; never place the image in GitHub Actions logs.
