@@ -288,6 +288,21 @@ def already_replied(product_key,binding_id,root_id,target_id):
             return True
     return False
 
+def verify_reply_readback(product_key,binding_id,root_id,reply_id,reply_text,object_id=''):
+    """Return (state, platform_id). Never treat an unavailable read as absence."""
+    status,response=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or response.get('ok') is not True:
+        return 'unavailable',''
+    for row in ((response.get('result') or {}).get('items') or []):
+        rid=str(row.get('id') or '')
+        parent=str((row.get('replied_to') or {}).get('id') or '')
+        if (rid and row.get('is_reply_owned_by_me') is True and parent==str(reply_id)
+                and str(row.get('text') or '').strip()==str(reply_text).strip()
+                and (not object_id or rid==str(object_id))):
+            return 'verified',rid
+    return 'not_found',''
+
+
 def publish(item,product_key,control_token,binding_id,account_id):
     request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':'mio-auto-'+item['reply_id']+'-v1'}
     status,issued=post('http://127.0.0.1:8771/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
@@ -379,6 +394,18 @@ def main():
     account_id=str(binding.get('provider_account_id') or '')
 
     for item in items:
+        if item.get('status')=='verification_pending':
+            root_id=str(item.get('root_post_id') or '')
+            check,rid=verify_reply_readback(product_key,bid,root_id,item['reply_id'],item['text'],item.get('platform_object_id') or '') if root_id else ('unavailable','')
+            if check=='verified':
+                item.update(status='sent',platform_object_id=rid,completed_at=iso(now),result='platform_readback_verified')
+                print('mio_social_publish=VERIFIED:'+item['reply_id']+':'+rid)
+            else:
+                item['result']='awaiting_platform_readback'
+                print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':'+check)
+            # An ambiguous acceptance is NEVER retried blindly: it might already
+            # have published on Threads while the transport response was lost.
+            continue
         if item.get('status')!='scheduled':continue
         try:due=datetime.fromisoformat(str(item['scheduled_at']).replace('Z','+00:00'))
         except Exception:due=now
@@ -402,14 +429,23 @@ def main():
         ok,result=publish(item,product_key,control,bid,account_id)
         item['attempts']=int(item.get('attempts') or 0)+1;item['last_attempt_at']=iso(now)
         if ok:
-            item['status']='sent';item['platform_object_id']=result;item['completed_at']=iso(now)
-            costs=energy_config.get('action_costs') or {}
-            if item.get('outbound_discovery'):
-                cost=float(costs.get('proactive_reply',6))
+            item['platform_object_id']=result
+            check,rid=verify_reply_readback(product_key,bid,root_id,item['reply_id'],item['text'],result)
+            if check=='verified':
+                item.update(status='sent',platform_object_id=rid,completed_at=iso(now),result='platform_readback_verified')
+                costs=energy_config.get('action_costs') or {}
+                if item.get('outbound_discovery'):
+                    cost=float(costs.get('proactive_reply',6))
+                else:
+                    cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
+                spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':bool(item.get('outbound_discovery'))},temporal=temporal_config)
+                print('mio_social_publish=PASS:'+item['reply_id']+':'+rid)
             else:
-                cost=float(costs.get('long_reply' if len(str(item.get('text') or ''))>180 else 'short_reply',5 if len(str(item.get('text') or ''))>180 else 3))
-            spend(LIFE_STATE,energy_config,cost,reason='threads_reply',meta={'reply_id':item['reply_id'],'outbound':bool(item.get('outbound_discovery'))},temporal=temporal_config)
-            print('mio_social_publish=PASS:'+item['reply_id']+':'+result)
+                item['status']='verification_pending';item['result']='awaiting_platform_readback'
+                print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':'+check)
+        elif result!='acceptance_failed':
+            item['status']='verification_pending';item['result']='write_result_ambiguous'
+            print('mio_social_publish=AWAITING_VERIFICATION:'+item['reply_id']+':write_result_ambiguous')
         elif item['attempts']>=3:
             item['status']='failed';item['result']=result
             print('mio_social_publish=FAILED:'+item['reply_id']+':'+result)
