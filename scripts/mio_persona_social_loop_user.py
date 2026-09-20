@@ -346,10 +346,16 @@ def main():
             continue
         # Do not re-process legacy snapshots that predate the root-post field,
         # and never treat a missing timestamp as an invitation to reply to old content.
-        try: event_at=datetime.fromisoformat(str(row.get('timestamp') or '').replace('Z','+00:00'))
+        raw_ts=str(row.get('timestamp') or '')
+        try:
+            event_at=datetime.fromisoformat(raw_ts.replace('Z','+00:00'))
         except (ValueError,TypeError):
-            print('mio_social_decision=SKIP_UNDATED:'+rid)
-            continue
+            # Meta replies use offsets such as +0000; Python 3.10 on Oracle
+            # must parse this spelling explicitly instead of treating it as now.
+            try: event_at=datetime.strptime(raw_ts,'%Y-%m-%dT%H:%M:%S%z')
+            except (ValueError,TypeError):
+                print('mio_social_decision=SKIP_UNDATED:'+rid)
+                continue
         if not event_at.tzinfo or now-event_at>timedelta(days=1):
             continue
         root_id=str(row.get('root_post_id') or '')
@@ -403,6 +409,13 @@ def main():
             print('mio_social_decision=WAITING:'+str(exc)[:80])
         except Exception as exc:
             print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:170])
+
+    # A previous decision can become inapplicable after a human-assisted reply
+    # or timestamp cleanup. It is decision-only: discard its pointer rather
+    # than ever publishing an answer to an ineligible or already answered reply.
+    if not new_external and DECISION_PENDING.is_file():
+        DECISION_PENDING.unlink(missing_ok=True)
+        print('mio_social_decision=DISCARDED_NO_ELIGIBLE_REPLIES')
 
     # Proactive social exploration: bounded, low-volume, and persona-driven.
     # Discovery is separate from replying to people who contacted Mio.
