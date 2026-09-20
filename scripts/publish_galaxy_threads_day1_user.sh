@@ -132,9 +132,7 @@ request={
 if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key) and image_url:
     request['image_url']=image_url
     request['image_alt_text']=image_alt_text
-request={**request}
-
-# Idempotency: if the exact post already exists, do not publish again.
+\n# Idempotency: if the exact post already exists, do not publish again.
 read_req={
     'schema':'agentos.social-request/v1',
     'product_id':'galaxy',
@@ -189,6 +187,9 @@ if status==200 and posts.get('ok') is True:
             if request.get('image_url') and str(row.get('media_type') or '').upper()!='IMAGE':
                 raise SystemExit('social_publish=IMAGE_NOT_VERIFIED')
             break
+
+if request.get('image_url') and not permalink:
+    raise SystemExit('social_publish=IMAGE_READBACK_MISSING')
 
 result={
     'schema':'agentos.social-day1-publish/v1',
