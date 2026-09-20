@@ -87,7 +87,7 @@ class MioImageContractTests(unittest.TestCase):
                 if path=="me/threads" and d.get("is_carousel_item")=="true":
                     self.children+=1
                     return {"id":f"child-{self.children}"}
-                if path in {"child-1","child-2"}:
+                if path in {"child-1","child-2","carousel-parent"}:
                     return {"status":"FINISHED"}
                 if path=="me/threads" and d.get("media_type")=="CAROUSEL":
                     assert d["children"]=="child-1,child-2"
@@ -109,7 +109,7 @@ class MioImageContractTests(unittest.TestCase):
         self.assertTrue(receipt["ok"],receipt)
         self.assertEqual(receipt["platform_object_id"],"public-carousel-post")
         self.assertEqual([call[0] for call in transport.calls],[
-            "me/threads","child-1","me/threads","child-2","me/threads","me/threads_publish"])
+            "me/threads","child-1","me/threads","child-2","me/threads","carousel-parent","me/threads_publish"])
         self.assertEqual(transport.calls[0][2]["alt_text"],"燉飯與干貝")
         self.assertEqual(transport.calls[2][2]["alt_text"],"甜點")
 
