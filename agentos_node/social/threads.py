@@ -225,19 +225,10 @@ class ThreadsCapability:
                     "fields": "id,text,timestamp,username,permalink",
                     "limit": 10,
                 }
-                try:
-                    rows = self.transport.paged("keyword_search", token=token, params=search_params, max_pages=1)
-                except ThreadsProviderError as error:
-                    # Other read/write routes work on the unversioned host.
-                    # Limit a versioned keyword-search fallback strictly to Meta
-                    # 500 responses; do not retry authorization failures or writes.
-                    if not str(error).startswith("threads_api_unavailable_http_500"):
-                        raise
-                    host = self.transport.config().graph_host.rstrip("/")
-                    alt_path = "keyword_search" if host.endswith("/v1.0") else "v1.0/keyword_search"
-                    if alt_path == "keyword_search":
-                        raise
-                    rows = self.transport.paged(alt_path, token=token, params=search_params, max_pages=1)
+                # Meta /debug_token identified that the current user token
+                # lacks threads_keyword_search; retries or URL variants cannot
+                # grant OAuth permissions. Leave reauthorization to the owner.
+                rows = self.transport.paged("keyword_search", token=token, params=search_params, max_pages=1)
                 return receipt_for(request, started_at=started, ok=True, capability="social.threads.keyword.search", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= 50}).to_dict()
             if request.operation == "replies.read":
                 object_id = str(request.object_id or "").strip()
