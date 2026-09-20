@@ -53,5 +53,20 @@ class MioSocialContractTests(unittest.TestCase):
             self.assertIsNone(mio.already_replied("test-key","test-binding","owned-root","18124006117843631"))
 
 
+    def test_publish_readback_requires_own_matching_id_parent_and_text(self):
+        own={"id":"our-200","is_reply_owned_by_me":True,
+             "replied_to":{"id":"reader-100"},"text":"回覆內容"}
+        other={"id":"not-our-201","is_reply_owned_by_me":False,
+               "replied_to":{"id":"reader-100"},"text":"回覆內容"}
+        with patch.object(mio,"post",return_value=(200,{"ok":True,"result":{"items":[other,own]}})):
+            self.assertEqual(mio.verify_reply_readback("key","binding","root","reader-100","回覆內容","our-200"),("verified","our-200"))
+            self.assertEqual(mio.verify_reply_readback("key","binding","root","reader-100","回覆內容","wrong-id"),("not_found",""))
+            self.assertEqual(mio.verify_reply_readback("key","binding","root","reader-100","不同內容","our-200"),("not_found",""))
+
+    def test_unavailable_reply_readback_cannot_confirm_publication(self):
+        with patch.object(mio,"post",return_value=(503,{"ok":False})):
+            self.assertEqual(mio.verify_reply_readback("key","binding","root","reader-100","回覆內容","our-200"),("unavailable",""))
+
+
 if __name__=="__main__":
     unittest.main()
