@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import json, os, re, sys, time, urllib.error, urllib.request
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat')
 LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/life_state.json')
 LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/stochastic_events.jsonl')
 LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
+HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
 RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
 BASE='http://127.0.0.1:8771/v1/social'
@@ -193,14 +195,14 @@ def auth():
 
 def already_replied(product_key,binding_id,root_id,target_id):
     status,receipt=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
-    if status!=200 or receipt.get('ok') is not True:return False
+    if status!=200 or receipt.get('ok') is not True:return None
     for row in (receipt.get('result') or {}).get('items') or []:
         if row.get('is_reply_owned_by_me') and str((row.get('replied_to') or {}).get('id') or '')==str(target_id):
             return True
     return False
 
 def publish(item,product_key,control_token,binding_id,account_id):
-    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':'mio-auto-'+item['reply_id']+'-'+str(item.get('attempts',0)+1)}
+    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':'mio-auto-'+item['reply_id']+'-v1'}
     status,issued=post('http://127.0.0.1:8771/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
     if status!=201 or not issued.get('acceptance_id'):return False,'acceptance_failed'
     status,receipt=post(BASE+'/reply',request,{'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':str(issued['acceptance_id'])})
@@ -256,7 +258,13 @@ def main():
             continue
         root_id=str(item.get('root_post_id') or latest.get('root_post',{}).get('id') or '')
         if not root_id:item['status']='skipped';item['result']='root_missing';continue
-        if already_replied(product_key,bid,root_id,item['reply_id']):
+        replied=already_replied(product_key,bid,root_id,item['reply_id'])
+        if replied is None:
+            item['scheduled_at']=iso(now+timedelta(minutes=20))
+            item['result']='read_unavailable'
+            print('mio_social_publish=DEFERRED_READ_UNAVAILABLE:'+item['reply_id'])
+            continue
+        if replied:
             item['status']='sent';item['result']='already_replied';item['completed_at']=iso(now);continue
         ok,result=publish(item,product_key,control,bid,account_id)
         item['attempts']=int(item.get('attempts') or 0)+1;item['last_attempt_at']=iso(now)
@@ -276,10 +284,43 @@ def main():
             item['scheduled_at']=iso(now+timedelta(minutes=30*item['attempts']));item['result']=result
             print('mio_social_publish=RETRY:'+item['reply_id']+':'+result)
 
-    new_external=[]
+    # Replay the durable monitor history, not just latest.json: a failed relay
+    # decision must never make the next 10-minute snapshot erase a comment.
+    observed={}
+    if HISTORY.is_file():
+        with HISTORY.open(encoding='utf-8') as fh:
+            for raw in deque(fh,maxlen=1000):
+                try: snapshot=json.loads(raw)
+                except (ValueError,TypeError): continue
+                for row in snapshot.get('new_replies') or []:
+                    rid=str(row.get('id') or '')
+                    if rid: observed[rid]=row
     for row in latest.get('new_replies') or []:
-        rid=str(row.get('id') or '');username=str(row.get('username') or '').lstrip('@')
-        if not rid or rid in processed or row.get('is_reply_owned_by_me') or username.lower()==account_username.lower():continue
+        rid=str(row.get('id') or '')
+        if rid: observed[rid]=row
+    queued={str(x.get('reply_id') or '') for x in items if x.get('status') in ('scheduled','sent','failed')}
+    new_external=[]
+    for rid,row in observed.items():
+        username=str(row.get('username') or '').lstrip('@')
+        if not rid or rid in processed or rid in queued or row.get('is_reply_owned_by_me') or username.lower()==account_username.lower():
+            continue
+        root_id=str(row.get('root_post_id') or '')
+        if not root_id:
+            print('mio_social_decision=DEFERRED_NO_ROOT:'+rid)
+            continue
+        # Only interact with fresh comments; old events remain in Persona memory.
+        try: event_at=datetime.fromisoformat(str(row.get('timestamp') or '').replace('Z','+00:00'))
+        except (ValueError,TypeError): event_at=now
+        if event_at.tzinfo and now-event_at>timedelta(days=2):
+            continue
+        replied=already_replied(product_key,bid,root_id,rid)
+        if replied is None:
+            print('mio_social_decision=DEFERRED_READ_UNAVAILABLE:'+rid)
+            continue
+        if replied:
+            processed.add(rid)
+            print('mio_social_decision=SKIP_ALREADY_REPLIED:'+rid)
+            continue
         new_external.append(row)
 
     if new_external:
@@ -289,14 +330,21 @@ def main():
             result=decide_batch(new_external,account_username)
             by_id={str(d.get('reply_id') or ''):d for d in result.get('decisions') or [] if isinstance(d,dict)}
             for row in new_external:
-                rid=str(row.get('id'));d=by_id.get(rid) or {'should_reply':False,'reason_category':'other'};processed.add(rid)
+                rid=str(row.get('id'));d=by_id.get(rid)
+                if d is None:
+                    print('mio_social_decision=DEFERRED_MISSING_DECISION:'+rid)
+                    continue
+                processed.add(rid)
                 record={'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001','decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other')}
                 if d.get('should_reply') and str(d.get('text') or '').strip():
                     costs=energy_config.get('action_costs') or {}
                     est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
                     if phase in ('sleep','rest'):
-                        record['status']='deferred_for_'+phase
-                        print('mio_social_decision=DEFERRED_'+phase.upper()+':'+rid)
+                        wake=next_awake_at(now,temporal_config)
+                        action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(wake+timedelta(minutes=8)),'status':'scheduled','attempts':0,'estimated_energy_cost':est};items.append(action)
+                        record['status']='scheduled_after_'+phase
+                        record['scheduled_at']=action['scheduled_at']
+                        print('mio_social_decision=SCHEDULED_AFTER_'+phase.upper()+':'+rid)
                     elif can_spend(LIFE_STATE,energy_config,est,reserve=5,temporal=temporal_config):
                         delay=max(8,min(720,int(d.get('delay_minutes') or 30)));scheduled=now+timedelta(minutes=delay)
                         action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0,'estimated_energy_cost':est};items.append(action);record['scheduled_at']=action['scheduled_at']
@@ -309,7 +357,7 @@ def main():
                 with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
             os.chmod(decisions_path,0o600)
         except Exception as exc:
-            print('mio_social_decision=DEFERRED:'+type(exc).__name__)
+            print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:90])
 
     # Proactive social exploration: bounded, low-volume, and persona-driven.
     # Discovery is separate from replying to people who contacted Mio.
