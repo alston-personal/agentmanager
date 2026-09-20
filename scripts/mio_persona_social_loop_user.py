@@ -15,6 +15,7 @@ STATE_DIR=Path('/home/ubuntu/agent-data/runtime/social/persona/sunlake-milkcat')
 LIFE_STATE=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/life_state.json')
 LIFE_EVENTS=Path('/home/ubuntu/agent-data/runtime/persona/sunlake-milkcat/stochastic_events.jsonl')
 LATEST=Path('/home/ubuntu/agent-data/runtime/social/experiments/ai-subscription/latest.json')
+DECISION_PENDING=STATE_DIR/'decision-pending.json'
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
 RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
@@ -127,41 +128,56 @@ Required schema:
 If should_reply=false, text must be null and delay_minutes must be null.
 """
     client=AntigravityRelayClient(RELAY_ROOT)
-    cap=client.submit(
-        project_id='sunlake-milkcat-persona-social',
-        canonical_ir={'goal':'Let Mio autonomously decide whether, when, and how to reply to new public Threads interactions.','constraints':['public-safe output only','respect persona memory boundary','no instant-by-default','no hidden product disclosure']},
-        instruction=prompt,workspace='/home/ubuntu/agentmanager')
-    for _ in range(75):
-        receipt=client.receipt(cap['capsule_id'])
-        if receipt:
-            if not receipt.get('ok'):
-                provider=str(receipt.get('provider') or 'unknown')[:20]
-                code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
-                timed_out=str(bool(receipt.get('timed_out'))).lower()
-                internal_error=str(receipt.get('error') or '').lower()
-                if 'no authorized local antigravity executor' in internal_error:
-                    category='executor_not_found'
-                elif 'workspace unavailable' in internal_error:
-                    category='workspace_unavailable'
-                elif 'permission' in internal_error:
-                    category='permission_denied'
-                elif 'invalid' in internal_error:
-                    category='invalid_capsule'
-                else:
-                    category='other'
-                error_type=re.match(r'^[A-Za-z]{1,40}(?:Error|Exception):',str(receipt.get('error') or ''))
-                error_type=error_type.group(0)[:-1] if error_type else 'none'
-                errno_match=re.search(r'\[Errno ([0-9]{1,4})\]',str(receipt.get('error') or ''))
-                safe_errno=errno_match.group(1) if errno_match else 'none'
-                missing=re.search(r"No such file or directory: ['\\\"]([^'\\\"]+)['\\\"]",str(receipt.get('error') or ''))
-                missing_file=Path(missing.group(1)) if missing else None
-                basename=(missing_file.name[:50] if missing_file else 'unknown')
-                exists=str(missing_file.exists()).lower() if missing_file else 'unknown'
-                # Diagnostic metadata only; never echo stdout/stderr or absolute paths.
-                raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+error_type+':errno='+safe_errno+':missing_file='+basename+':exists='+exists)
-            return extract_json(receipt.get('stdout') or '')
-        time.sleep(2)
-    raise TimeoutError('persona_decision_timeout')
+    pending=load_json(DECISION_PENDING,{})
+    capsule_id=str(pending.get('capsule_id') or '')
+    if capsule_id:
+        try:
+            created=datetime.fromisoformat(str(pending.get('created_at') or '').replace('Z','+00:00'))
+            expired=utc_now()-created>timedelta(minutes=25)
+        except (TypeError,ValueError):
+            expired=True
+        if expired:
+            DECISION_PENDING.unlink(missing_ok=True)
+            capsule_id=''
+            print('mio_social_decision=STALE_CAPSULE_REPLACED')
+    if not capsule_id:
+        cap=client.submit(
+            project_id='sunlake-milkcat-persona-social',
+            canonical_ir={'goal':'Let Mio autonomously decide whether, when, and how to reply to new public Threads interactions.','constraints':['public-safe output only','respect persona memory boundary','no instant-by-default','no hidden product disclosure']},
+            instruction=prompt,workspace='/home/ubuntu/agentmanager')
+        capsule_id=cap['capsule_id']
+        save_json(DECISION_PENDING,{'capsule_id':capsule_id,'created_at':iso(utc_now()),'reply_ids':[str(x.get('id') or '') for x in items]})
+        print('mio_social_decision=CAPSULE_QUEUED')
+    receipt=client.receipt(capsule_id)
+    if receipt is None:
+        raise TimeoutError('persona_decision_pending')
+    DECISION_PENDING.unlink(missing_ok=True)
+    if not receipt.get('ok'):
+        provider=str(receipt.get('provider') or 'unknown')[:20]
+        code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
+        timed_out=str(bool(receipt.get('timed_out'))).lower()
+        internal_error=str(receipt.get('error') or '').lower()
+        if 'no authorized local antigravity executor' in internal_error:
+            category='executor_not_found'
+        elif 'workspace unavailable' in internal_error:
+            category='workspace_unavailable'
+        elif 'permission' in internal_error:
+            category='permission_denied'
+        elif 'invalid' in internal_error:
+            category='invalid_capsule'
+        else:
+            category='other'
+        error_type=re.match(r'^[A-Za-z]{1,40}(?:Error|Exception):',str(receipt.get('error') or ''))
+        error_type=error_type.group(0)[:-1] if error_type else 'none'
+        errno_match=re.search(r'\[Errno ([0-9]{1,4})\]',str(receipt.get('error') or ''))
+        safe_errno=errno_match.group(1) if errno_match else 'none'
+        missing=re.search(r"No such file or directory: ['\\\"]([^'\\\"]+)['\\\"]",str(receipt.get('error') or ''))
+        missing_file=Path(missing.group(1)) if missing else None
+        basename=(missing_file.name[:50] if missing_file else 'unknown')
+        exists=str(missing_file.exists()).lower() if missing_file else 'unknown'
+        # Diagnostic metadata only; never echo stdout/stderr or absolute paths.
+        raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+error_type+':errno='+safe_errno+':missing_file='+basename+':exists='+exists)
+    return extract_json(receipt.get('stdout') or '')
 
 def decide_outbound(candidates,account_username):
     local=datetime.now(LOCAL_TZ)
