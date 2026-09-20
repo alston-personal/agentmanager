@@ -104,10 +104,23 @@ if source:
     shown=subprocess.run(['git','-C',repo,'show',source+':'+approved[0]],capture_output=True,text=True,check=True)
     plan=json.loads(shown.stdout)
     approved_target=str(plan.get('reply_to_id') or '')
-    if str(plan.get('root_post_id') or '')!=root_post_id or not approved_target.isdecimal():
+    plan_root=str(plan.get('root_post_id') or '')
+    plan_author=str(plan.get('comment_author') or '').lstrip('@').lower()
+    if not plan_root.isdecimal() or not approved_target.isdecimal() or not plan_author or plan_author==username.lstrip('@').lower():
         raise SystemExit('persona_threads_reply=TARGET_INVALID')
-    if str(plan.get('comment_author') or '').lstrip('@').lower()!='vivian780927':
-        raise SystemExit('persona_threads_reply=AUTHOR_MISMATCH')
+    if plan_root!=root_post_id:
+        # The reviewed reply may target any post actually owned by this account.
+        post_req={**read_req,'operation':'post.read'}
+        post_req.pop('object_id',None)
+        ps,pr=post(base+'/status',post_req,{'X-AgentOS-Product-Key':product_key})
+        if ps!=200 or pr.get('ok') is not True or not any(str(x.get('id') or '')==plan_root for x in ((pr.get('result') or {}).get('items') or [])):
+            raise SystemExit('persona_threads_reply=ROOT_NOT_OWNED_OR_NOT_VISIBLE')
+        root_post_id=plan_root
+        read_req['object_id']=root_post_id
+        read_status,read=post(base+'/status',read_req,{'X-AgentOS-Product-Key':product_key})
+        if read_status!=200 or read.get('ok') is not True:
+            raise SystemExit('persona_threads_reply=TARGET_ROOT_READ_FAILED')
+        items=((read.get('result') or {}).get('items') or [])
     text=str(plan.get('text') or '').strip()
     if not text or len(text)>500:
         raise SystemExit('persona_threads_reply=TEXT_INVALID')
