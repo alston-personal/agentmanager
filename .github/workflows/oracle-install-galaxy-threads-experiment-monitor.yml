@@ -15,6 +15,7 @@ on:
       - 'scripts/monitor_galaxy_threads_experiment_user.py'
       - 'scripts/sync_sunlake_milkcat_persona_user.py'
       - 'scripts/mio_persona_social_loop_user.py'
+      - 'tests/test_mio_social_contract.py'
       - 'agentos_node/persona_life.py'
 
 permissions:
@@ -35,6 +36,8 @@ jobs:
           test "$(id -un)" = "agentos-node"
           python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/persona_life.py scripts/monitor_galaxy_threads_experiment_user.py scripts/sync_sunlake_milkcat_persona_user.py scripts/mio_persona_social_loop_user.py
           bash -n scripts/install_galaxy_threads_experiment_monitor_user.sh
+          PYTHONPATH=. python3 -m unittest discover -s tests -p test_mio_social_contract.py -v
+          echo "mio_social_regression=PASS"
           echo "galaxy_experiment_monitor_preflight=PASS"
 
       - name: Install persistent monitor through bootstrap control
