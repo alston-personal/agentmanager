@@ -42,6 +42,8 @@ class SocialRequest:
     target_account_id: str | None = None
     primary_text: str | None = None
     text_attachment: dict[str, str] | None = None
+    image_url: str | None = None
+    image_alt_text: str | None = None
     object_id: str | None = None
     reply_to_id: str | None = None
     return_to: str | None = None
@@ -73,6 +75,17 @@ class SocialRequest:
                     raise ValueError("text_attachment_plaintext_required")
                 if set(self.text_attachment) - {"plaintext", "link_attachment_url"}:
                     raise ValueError("unsupported_text_attachment_field")
+        if self.image_url is not None:
+            from urllib.parse import urlsplit
+            url = urlsplit(self.image_url)
+            if self.operation != "publish" or self.platform != "threads" or url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment or len(self.image_url) > 2048:
+                raise ValueError("invalid_publish_image_url")
+            if not str(self.image_alt_text or "").strip() or len(self.image_alt_text or "") > 1000:
+                raise ValueError("image_alt_text_required")
+            if self.text_attachment is not None:
+                raise ValueError("image_text_attachment_combination_unsupported")
+        elif self.image_alt_text is not None:
+            raise ValueError("image_alt_text_without_image")
         if self.operation == "reply" and not self.reply_to_id:
             raise ValueError("reply_target_required")
         if self.operation == "keyword.search":

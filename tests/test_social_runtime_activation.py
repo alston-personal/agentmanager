@@ -31,7 +31,7 @@ class FakeThreadsTransport(ThreadsProviderTransport):
             raise ThreadsProviderError("threads_oauth_not_configured")
         return ThreadsProviderConfig("app", "secret", "https://runtime.example/v1/social/oauth/threads/callback")
 
-    def authorization_url(self, state: str) -> str:
+    def authorization_url(self, state: str, *, auth_profile: str = 'persona') -> str:
         return f"https://threads.example/oauth?state={state}"
 
     def exchange_code(self, code: str) -> str:
@@ -208,7 +208,7 @@ def test_oauth_completion_redirect_has_no_binding_and_product_redeems_result_onc
 
     redeemed = rt.status(status_request(started["connection_id"]))
     assert redeemed["schema"] == "agentos.social-connection-result/v1"
-    assert redeemed["binding_id"] == "leopardcat-tarot:threads:42"
+    assert redeemed["binding_id"] == "leopardcat-tarot:threads:persona:42"
     assert redeemed["account"] == {"provider_account_id": "42", "username": "cat"}
     assert "token" not in repr(redeemed).lower()
     assert vault.get_access_token(redeemed["binding_id"]) == "provider-token"

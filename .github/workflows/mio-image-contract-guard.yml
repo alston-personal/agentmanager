@@ -1,0 +1,37 @@
+name: Mio IMAGE Contract Guard
+on:
+  push:
+    branches: [mio-image-ship-20260920]
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'agentos_node/social/**'
+      - 'scripts/publish_galaxy_threads_day1_user.sh'
+      - '.github/workflows/oracle-publish-mio-approved.yml'
+      - '.github/workflows/mio-image-contract-guard.yml'
+      - 'personas/mio/approved/assets/**'
+      - 'tests/test_mio_image_contract.py'
+permissions:
+  contents: read
+jobs:
+  image-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate governed image publishing and binary asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile agentos_node/social/contracts.py agentos_node/social/threads.py agentos_node/social/runtime_http.py
+          bash -n scripts/publish_galaxy_threads_day1_user.sh
+          PYTHONPATH=. python3 -m unittest discover -s tests -p test_mio_image_contract.py -v
+          echo 'mio_image_contract=PASS'
+      - name: Verify pinned Persona PNG is publicly fetchable with identical bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW="https://raw.githubusercontent.com/alston-personal/agentmanager/$GITHUB_SHA/personas/mio/approved/assets/mio-evening-park-20260920.png"
+          curl --fail --location --silent --show-error --max-time 25 -o /tmp/mio-raw.png "$RAW"
+          cmp personas/mio/approved/assets/mio-evening-park-20260920.png /tmp/mio-raw.png
+          echo 'mio_image_public_asset=PASS'

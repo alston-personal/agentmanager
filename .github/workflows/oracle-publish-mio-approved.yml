@@ -29,6 +29,21 @@ jobs:
           test "$(wc -m < "${files[0]}")" -le 500
           [[ "$post_key" =~ ^mio-post-[a-z0-9-]{1,72}$ ]]
           printf 'POST_KEY=%s\n' "$post_key" >> "$GITHUB_ENV"
+          if [ -f "personas/mio/approved/$post_key.json" ]; then
+            python3 - "$post_key" <<'PY'
+          import json,re,subprocess,sys
+          from pathlib import Path
+          key=sys.argv[1]
+          data=json.loads(Path(f"personas/mio/approved/{key}.json").read_text(encoding="utf-8"))
+          assert set(data)=={"image_path","image_alt_text"}, "mio_image_manifest_fields_invalid"
+          rel=str(data["image_path"])
+          assert re.fullmatch(r"personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)",rel), "mio_image_path_invalid"
+          asset=Path(rel)
+          assert asset.is_file() and 32<=asset.stat().st_size<=8*1024*1024, "mio_image_asset_missing_or_too_large"
+          assert 0<len(str(data["image_alt_text"]).strip())<=1000, "mio_image_alt_missing"
+          PY
+            printf 'AGENTOS_REQUIRE_IMAGE=1\n' >> "$GITHUB_ENV"
+          fi
 
       - name: Preflight governed one-shot publisher
         shell: bash
