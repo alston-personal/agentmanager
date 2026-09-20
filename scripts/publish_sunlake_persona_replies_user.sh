@@ -98,7 +98,7 @@ if source:
         raise SystemExit('persona_threads_reply=INVALID_SOURCE')
     repo='/home/ubuntu/agentmanager'
     diff=subprocess.run(['git','-C',repo,'diff-tree','--no-commit-id','--name-only','-r','--diff-filter=A',source,'--','personas/mio/approved/replies/'],capture_output=True,text=True,check=True)
-    approved=[p for p in diff.stdout.splitlines() if re.fullmatch(r'personas/mio/approved/replies/mio-reply-[a-z0-9-]{1,72}\\.json',p)]
+    approved=[p for p in diff.stdout.splitlines() if re.fullmatch(r'personas/mio/approved/replies/mio-reply-[a-z0-9-]{1,72}\.json',p)]
     if len(approved)!=1:
         raise SystemExit('persona_threads_reply=REQUIRE_EXACTLY_ONE_NEW_APPROVED_REPLY')
     shown=subprocess.run(['git','-C',repo,'show',source+':'+approved[0]],capture_output=True,text=True,check=True)
