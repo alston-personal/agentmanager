@@ -134,7 +134,12 @@ If should_reply=false, text must be null and delay_minutes must be null.
     for _ in range(75):
         receipt=client.receipt(cap['capsule_id'])
         if receipt:
-            if not receipt.get('ok'): raise RuntimeError('persona_decision_executor_failed')
+            if not receipt.get('ok'):
+                provider=str(receipt.get('provider') or 'unknown')[:20]
+                code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:8]
+                timed_out=str(bool(receipt.get('timed_out'))).lower()
+                # Diagnostic metadata only; never echo executor stdout/stderr or credentials.
+                raise RuntimeError('persona_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out)
             return extract_json(receipt.get('stdout') or '')
         time.sleep(2)
     raise TimeoutError('persona_decision_timeout')
@@ -311,7 +316,7 @@ def main():
         # Only interact with fresh comments; old events remain in Persona memory.
         try: event_at=datetime.fromisoformat(str(row.get('timestamp') or '').replace('Z','+00:00'))
         except (ValueError,TypeError): event_at=now
-        if event_at.tzinfo and now-event_at>timedelta(days=2):
+        if event_at.tzinfo and now-event_at>timedelta(days=1):
             continue
         replied=already_replied(product_key,bid,root_id,rid)
         if replied is None:
