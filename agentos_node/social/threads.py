@@ -215,12 +215,15 @@ class ThreadsCapability:
                 rows = self.transport.paged("me/threads", token=token, params={"fields": THREAD_FIELDS, "limit": 50})
                 return receipt_for(request, started_at=started, ok=True, capability="social.threads.post.read", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= THREADS_READ_ITEM_LIMIT}).to_dict()
             if request.operation == "keyword.search":
+                # Search uses a smaller documented projection than owned-post
+                # readback. media_url/has_replies can be omitted from discovery.
+                # Never degrade or modify IMAGE verification on owned posts.
                 rows = self.transport.paged("keyword_search", token=token, params={
                     "q": str(request.query or "").strip(),
                     "search_type": str(request.search_type or "RECENT").upper(),
                     "search_mode": str(request.search_mode or "KEYWORD").upper(),
-                    "fields": THREAD_FIELDS,
-                    "limit": 50,
+                    "fields": "id,text,timestamp,username,permalink",
+                    "limit": 10,
                 }, max_pages=1)
                 return receipt_for(request, started_at=started, ok=True, capability="social.threads.keyword.search", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= 50}).to_dict()
             if request.operation == "replies.read":
