@@ -443,6 +443,10 @@ def main():
             spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)},temporal=temporal_config)
             result=decide_batch(new_external,account_username)
             by_id={str(d.get('reply_id') or ''):d for d in result.get('decisions') or [] if isinstance(d,dict)}
+            expected={str(row.get('id') or '') for row in new_external}
+            print('mio_social_decision_schema='+','.join(sorted(str(k)[:35] for k in result.keys())[:12])+':count='+str(len(by_id))+':matched='+str(len(expected.intersection(by_id))))
+            if not expected.intersection(by_id):
+                raise ValueError('persona_decision_missing_expected_ids')
             for row in new_external:
                 rid=str(row.get('id'));d=by_id.get(rid)
                 if d is None:
@@ -469,7 +473,7 @@ def main():
                 else:
                     record['status']='no_reply';print('mio_social_decision=NO_REPLY:'+rid)
                 with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
-            os.chmod(decisions_path,0o600)
+            if decisions_path.is_file(): os.chmod(decisions_path,0o600)
         except TimeoutError as exc:
             print('mio_social_decision=WAITING:'+str(exc)[:80])
         except Exception as exc:
