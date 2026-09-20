@@ -1,8 +1,14 @@
 name: Oracle Publish Sunlake Persona Replies
 
-# Historic fixed reply batch: manual-only; never replay on deployment or source edits.
+# Publish exactly one reviewed reply on new manifest; keep historic dispatch inert
+# unless an approved manifest was introduced in the exact source commit.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'personas/mio/approved/replies/mio-reply-*.json'
 
 permissions:
   contents: read
@@ -23,6 +29,9 @@ jobs:
           python3 -m py_compile agentos_node/bootstrap_control.py
           bash -n scripts/publish_sunlake_persona_replies_user.sh
           grep -Fq 'agentos.social_threads_sunlake_persona_replies.publish' agentos_node/bootstrap_control.py
+          test "$GITHUB_EVENT_NAME" = 'push'
+          mapfile -t approved < <(git diff --name-only --diff-filter=A "${{ github.event.before }}" "$GITHUB_SHA" -- 'personas/mio/approved/replies/mio-reply-*.json')
+          test "${#approved[@]}" -eq 1 || { echo 'persona_threads_reply_preflight=REQUIRE_ONE_APPROVED_REPLY'; exit 2; }
           echo 'persona_threads_reply_preflight=PASS'
 
       - name: Publish governed reply batch
@@ -80,10 +89,11 @@ jobs:
           assert r.get('ok') is True,r
           text='\n'.join(str(s.get('stdout',''))+'\n'+str(s.get('stderr','')) for s in r.get('steps',[]))
           assert 'persona_threads_reply=PASS' in text,text[-12000:]
+          assert ('persona_threads_reply_publish=PASS:' in text) or ('persona_threads_reply_skip=' in text),text[-12000:]
           for forbidden in ('access_token','app_secret','control_token','product_key'):
               assert forbidden not in text.lower(), forbidden
           print('persona_threads_reply_receipt=PASS')
           for line in text.splitlines():
-              if line.startswith(('persona_threads_reply_publish=','persona_threads_reply_skip=','persona_threads_reply_account=','persona_threads_reply_published=')):
+              if line.startswith(('persona_threads_reply_publish=','persona_threads_reply_skip=','persona_threads_reply_account=','persona_threads_reply_published=','persona_threads_reply_permalink=')):
                   print(line)
           PY
