@@ -180,6 +180,7 @@ class ThreadsCapability:
         return {
             "id": str(item.get("id") or ""),
             "text": str(item.get("text") or "")[:12000],
+            "media_type": str(item.get("media_type") or ""),
             "timestamp": item.get("timestamp"),
             "username": item.get("username"),
             "permalink": item.get("permalink"),
