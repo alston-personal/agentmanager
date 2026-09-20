@@ -36,6 +36,18 @@ if systemctl --user is-active --quiet agentos-antigravity-relay.service; then
 else
   echo 'mio_relay_service=INACTIVE'
 fi
+# The previous ubuntu daemon captured a Claude executable which an IDE update
+# later removed (actual relay receipt: FileNotFoundError errno=2, basename=claude).
+# Refresh the existing ubuntu-owned service so discovery selects a currently
+# installed executable. Do not reset credentials, delete pending capsules or
+# touch any other AgentOS service.
+systemctl --user restart agentos-antigravity-relay.service
+for _ in $(seq 1 15); do
+  if systemctl --user is-active --quiet agentos-antigravity-relay.service; then break; fi
+  sleep 1
+done
+systemctl --user is-active --quiet agentos-antigravity-relay.service
+echo 'mio_relay_service_restart=PASS'
 
 cat > "$SERVICE" <<EOF
 [Unit]
