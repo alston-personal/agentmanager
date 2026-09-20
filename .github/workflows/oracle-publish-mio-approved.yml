@@ -51,9 +51,11 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/core/integration'
           test "$(id -un)" = 'agentos-node'
-          python3 -m py_compile agentos_node/bootstrap_control.py
+          python3 -m py_compile agentos_node/bootstrap_control.py agentos_node/social/contracts.py agentos_node/social/threads.py
           bash -n scripts/publish_galaxy_threads_day1_user.sh
+          PYTHONPATH=. python3 -m unittest discover -s tests -p test_mio_image_contract.py -v
           grep -Fq 'agentos.social_threads_mio_approved.publish' agentos_node/bootstrap_control.py
+          echo 'mio_approved_image_contract=PASS'
           echo 'mio_approved_preflight=PASS'
 
       - name: Publish bounded bootstrap hook and request approved Mio post
