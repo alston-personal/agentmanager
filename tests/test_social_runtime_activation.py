@@ -31,7 +31,7 @@ class FakeThreadsTransport(ThreadsProviderTransport):
             raise ThreadsProviderError("threads_oauth_not_configured")
         return ThreadsProviderConfig("app", "secret", "https://runtime.example/v1/social/oauth/threads/callback")
 
-    def authorization_url(self, state: str) -> str:
+    def authorization_url(self, state: str, *, auth_profile: str = 'persona') -> str:
         return f"https://threads.example/oauth?state={state}"
 
     def exchange_code(self, code: str) -> str:
