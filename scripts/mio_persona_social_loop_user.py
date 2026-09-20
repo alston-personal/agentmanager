@@ -69,7 +69,7 @@ def extract_json(text):
 
     Reject unrelated CLI metadata and never evaluate arbitrary expressions.
     """
-    raw=re.sub(r'\x1b\\[[0-9;]*[A-Za-z]','',str(text or ''))
+    raw=re.sub(r'\x1b\[[0-9;]*[A-Za-z]','',str(text or ''))
     decoder=json.JSONDecoder()
     for index,ch in enumerate(raw):
         if ch!='{': continue
