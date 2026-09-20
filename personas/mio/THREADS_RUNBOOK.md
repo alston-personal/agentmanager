@@ -100,3 +100,14 @@ Autonomous reply delivery safety: source commit `29b07dbfa6e3ffdbd91bf7e56cd8b14
 - Duplicate older image proposal [PR #405](https://github.com/alston-personal/agentmanager/pull/405) was closed as superseded to prevent accidentally merging its out-of-date branch.
 - Persona event `threads-18356065492302036` with caption, image asset provenance, author, and verified URL was persisted in private `alston-personal/my-agent-data/main` commit `e8d9ca4aedb5c85b83ac9ac5e0dc6178f5aaaa77`.
 - **Future operator path:** commit a new reviewed original PNG/JPEG under `personas/mio/approved/assets/` first; create a new `mio-post-<key>.json` manifest with `image_path` and `image_alt_text`; only *then* add exactly one matching new `mio-post-<key>.txt` under `personas/mio/approved/` on `core/integration` to trigger the publish workflow. Never reuse an existing post key; always verify the public Threads IMAGE receipt. MIME/digest/media type checks block accidental text-only fallback.
+
+
+## Authentic photo stories and persistent wardrobe (policy v1)
+
+Canonical Persona data, owned by `alston-personal/my-agent-data/main` (private):
+- `personas/sunlake-milkcat/visual_content_policy.json`: real location photo + virtual Mio composite; weather/season guard, no fabricated live location/real-world purchase/usage, natural response to questions about source, proper disclosure of actual paid/gifted/affiliate relationship.
+- `personas/sunlake-milkcat/wardrobe/item_schema.json`, `catalog.json`, `look_templates.json`, `README.md`: candidate→saved→approved_for_render→rendered_and_verified→retired product lifecycle; item/variant IDs, retailer, rights, dated pricing, commercial provenance and look/post usage. First three looks are styling drafts, **not shopped, worn or purchased items**. Catalog intentionally begins empty.
+- `personas/sunlake-milkcat/visual_anchor_spec.json` currently says `reference_status: pending first approved semi-realistic anchor set`. Do not turn an unapproved randomly generated face into Mio's canonical likeness or publish a different face as identity-consistent. Request/locate user-approved identity references before photorealistic outfit posts.
+- The above are persistent policy and data specifications, not a deployed wardrobe-shopping API or a confirmed automatic visual-identity match system. Any future `wardrobe.*` capabilities require separate implementation and acceptance.
+- When using a real location photo background, record image rights, source, capture date if available, and place granularity. **Actual location photo does not mean Mio truly visited, paid for an item, or was photographed at that place**. Reply truthfully if asked. Set visual narrative to mood/composite rather than personal documentary.
+- Do not assert brand relationships without verified contract and human approval; explicitly label sponsored, gifted or affiliate content when real. Never pretend Mio physically wore/tested a product.
