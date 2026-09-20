@@ -136,6 +136,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now agentos-mio-agy-relay.service >/dev/null
 systemctl --user is-active --quiet agentos-mio-agy-relay.service
 echo 'mio_agy_relay=ACTIVE'
+# Read-only scope diagnostics; never log access tokens or OAuth responses.
+PYTHONPATH="$REPO" python3 "$REPO/scripts/diagnose_mio_threads_search_scope_user.py" || echo 'mio_search_scope_probe=unavailable'
 # Relay restart is a targeted repair, not part of normal monitor reinstallation.
 # Keep the background executor undisturbed during subsequent code deployments.
 
