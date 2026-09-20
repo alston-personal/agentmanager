@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import ipaddress
 import hmac
 import html
 import json
@@ -22,11 +25,13 @@ from .provider_callbacks import ThreadsLifecycleCallbacks
 from .runtime_storage import FileCredentialVault, OneShotAcceptanceStore
 from .threads import ThreadsCapability, ThreadsProviderConfig, ThreadsProviderTransport
 
-MAX_BODY = 64 * 1024
+MAX_BODY = 12 * 1024 * 1024
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8771
 DEFAULT_CREDENTIAL_PATH = Path("/home/ubuntu/agent-data/runtime/social/credentials.json")
 DEFAULT_PUBLIC_BASE = "https://studio.milkcat.org/dashboard/api/social"
+MEDIA_ROOT = Path("/home/ubuntu/.local/state/agentos/social/public-media")
+MEDIA_MAX_BYTES = 8 * 1024 * 1024
 SESSION_COOKIE = "agentos_social_session"
 BROWSER_HANDOFF_TTL_SECONDS = 300
 CONNECTION_RESULT_TTL_SECONDS = 600
@@ -475,6 +480,23 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlsplit(self.path)
+        if parsed.path.startswith("/v1/social/media/"):
+            name = parsed.path.removeprefix("/v1/social/media/")
+            if not __import__("re").fullmatch(r"[a-f0-9]{64}\\.(?:png|jpg)", name):
+                self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"})
+                return
+            asset = MEDIA_ROOT / name
+            if not asset.is_file():
+                self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not_found"})
+                return
+            data = asset.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/png" if name.endswith(".png") else "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if parsed.path == "/healthz":
             self._json(HTTPStatus.OK, self.runtime.configured_status())
             return
@@ -535,6 +557,37 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.runtime.provider_data_deletion(self._signed_request()))
                 return
 
+            if parsed.path == "/v1/social/media":
+                media = self._body()
+                product_id = str(media.get("product_id") or "")
+                self.runtime.products.authenticate(product_id, self.headers.get("X-AgentOS-Product-Key", ""))
+                if media.get("schema") != "agentos.social-media/v1" or set(media) != {"schema", "product_id", "filename", "content_type", "sha256", "image_base64"}:
+                    raise ValueError("invalid_social_media_request")
+                raw = base64.b64decode(media["image_base64"], validate=True)
+                if len(raw) < 32 or len(raw) > MEDIA_MAX_BYTES:
+                    raise ValueError("invalid_social_media_size")
+                kind = ("image/png" if raw.startswith(bytes.fromhex("89504e470d0a1a0a")) else
+                        "image/jpeg" if raw.startswith(bytes.fromhex("ffd8ff")) else None)
+                if kind is None or kind != media["content_type"]:
+                    raise ValueError("invalid_social_media_content")
+                digest = hashlib.sha256(raw).hexdigest()
+                if digest != media["sha256"]:
+                    raise ValueError("social_media_digest_mismatch")
+                name = digest + (".png" if kind == "image/png" else ".jpg")
+                MEDIA_ROOT.mkdir(mode=0o755, parents=True, exist_ok=True)
+                dest = MEDIA_ROOT / name
+                if not dest.exists():
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(dir=MEDIA_ROOT, delete=False) as tmp:
+                        tmp.write(raw)
+                        staged = Path(tmp.name)
+                    staged.chmod(0o644)
+                    staged.replace(dest)
+                public_base = self.runtime.public_base.rstrip("/")
+                if not public_base.startswith("https://"):
+                    raise ValueError("social_media_https_public_base_required")
+                self._json(HTTPStatus.CREATED, {"image_url": public_base + "/v1/social/media/" + name, "sha256": digest})
+                return
             body = self._body()
             request = self._request(body)
             if parsed.path == "/v1/social/status":
