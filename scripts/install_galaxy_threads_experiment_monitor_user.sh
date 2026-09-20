@@ -103,6 +103,39 @@ else:
     os.chmod(state,0o600)
     print('mio_agy_probe='+result)
 PY
+# Give Mio her own ubuntu-owned AGY relay. Never change the shared
+# Antigravity/Claude worker or other AgentOS projects' model provider.
+MIO_RELAY_ROOT="$HOME/agent-data/runtime/mio-antigravity-relay"
+MIO_RELAY_UNIT="$UNIT_DIR/agentos-mio-agy-relay.service"
+test "$(python3 - "$HOME/agent-data/runtime/social/experiments/ai-subscription/agy-health.json" <<'PY'
+import json,sys,time
+try: s=json.load(open(sys.argv[1],encoding='utf-8'))
+except (FileNotFoundError,ValueError): s={}
+print('yes' if s.get('result')=='pass' and time.time()-float(s.get('checked_unix') or 0)<21600 else 'no')
+PY
+)" = yes || { echo 'mio_agy_relay=PROBE_NOT_PASS'; exit 5; }
+cat > "$MIO_RELAY_UNIT" <<EOF
+[Unit]
+Description=AgentOS Mio Private AGY Persona Decision Relay
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$REPO
+Environment=PYTHONPATH=$REPO
+UMask=0007
+ExecStart=/usr/bin/python3 -m agentos_node.antigravity_relay_worker --provider agy --root $MIO_RELAY_ROOT
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now agentos-mio-agy-relay.service >/dev/null
+systemctl --user is-active --quiet agentos-mio-agy-relay.service
+echo 'mio_agy_relay=ACTIVE'
 # Relay restart is a targeted repair, not part of normal monitor reinstallation.
 # Keep the background executor undisturbed during subsequent code deployments.
 
@@ -116,6 +149,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=$REPO
+Environment=AGENTOS_MIO_RELAY_ROOT=$MIO_RELAY_ROOT
 ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
 ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py || echo mio_social_loop=DEFERRED'
 ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py || echo persona_git_sync=DEFERRED'
