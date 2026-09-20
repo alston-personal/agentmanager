@@ -113,7 +113,7 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
             if not isinstance(photo,dict) or set(photo)!={'image_path','image_alt_text'}:
                 raise SystemExit('social_publish=INVALID_IMAGE_ITEM')
             rel=str(photo['image_path'])
-            if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\\.(?:png|jpg|jpeg)',rel):
+            if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)',rel):
                 raise SystemExit('social_publish=INVALID_IMAGE_PATH')
             alt=str(photo['image_alt_text']).strip()
             if not alt or len(alt)>1000:
