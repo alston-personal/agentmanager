@@ -1,0 +1,28 @@
+name: Mio Telegram Private Bridge Guard
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/mio_telegram_user.py'
+      - 'scripts/install_mio_telegram_user.sh'
+      - 'tests/test_mio_telegram_user.py'
+      - '.github/workflows/mio-telegram-private-guard.yml'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and owner-only contract tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/mio_telegram_user.py
+          bash -n scripts/install_mio_telegram_user.sh
+          python3 -m unittest discover -s tests -p test_mio_telegram_user.py -v
+          echo 'mio_telegram_offline_contract=PASS'
