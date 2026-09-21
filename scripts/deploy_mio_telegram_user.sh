@@ -83,3 +83,21 @@ assert subprocess.check_output(["git","-C",str(candidate),"rev-parse","HEAD"],
 print("mio_telegram_deploy_source_commit="+expected)
 print("mio_telegram_deploy=PASS")
 PY
+# Passive, owner-scoped diagnosis of the last Telegram reply. This does NOT
+# create a model task, fetch Telegram updates, or publish private model output.
+(cd "$CAND" && PYTHONPATH="$CAND" /usr/bin/python3 - <<'PYSAFE'
+from scripts import mio_telegram_user as mio
+status = mio.last_status()
+reason = status.get("reason")
+if reason not in {"ready","working","executor_failed","parse_failed","relay_wait_timeout","context_failed","transport_failed","unknown"}:
+    reason = "unknown"
+meta = status.get("meta") if isinstance(status.get("meta"), dict) else {}
+hint = meta.get("error_hint")
+if hint not in {"quota_or_rate","authentication","context_limit","network","permission","timeout","unclassified","unknown"}:
+    hint = "unknown"
+code = meta.get("returncode")
+code = code if type(code) is int and -128 <= code <= 255 else "unknown"
+print("mio_telegram_last_status=" + str(reason))
+print("mio_telegram_last_error_hint=" + str(hint))
+print("mio_telegram_last_exit_code=" + str(code))
+PYSAFE
