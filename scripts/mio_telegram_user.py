@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import queue
+import threading
 import os
 import re
 import secrets
@@ -29,6 +31,9 @@ PERSONA_ROOT = DATA_ROOT / "personas/sunlake-milkcat"
 STATE_DIR = DATA_ROOT / "runtime/persona/sunlake-milkcat/telegram"
 RELAY_ROOT = DATA_ROOT / "runtime/mio-antigravity-relay"
 WORKSPACE = str(Path.home() / "agentmanager")
+DEBUG_PATH = STATE_DIR / "debug.json"
+LAST_STATUS_PATH = STATE_DIR / "last-status.json"
+MAX_PENDING_MESSAGES = 12
 
 
 def timestamp() -> str:
@@ -258,7 +263,28 @@ def parse_persona_reply(stdout: str, expected_request_id: str) -> str:
     return candidates[-1]
 
 
-def respond_to_text(text: str) -> tuple[str, str]:
+class PersonaReplyError(RuntimeError):
+    """Contains bounded technical metadata, never raw prompts or model output."""
+    def __init__(self, reason: str, metadata: dict | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.metadata = metadata or {}
+
+
+def receipt_diagnostic(receipt: dict, capsule_id: str) -> dict:
+    """Safe diagnostic projection of an untrusted, potentially private receipt."""
+    return {
+        "capsule_id": capsule_id if re.fullmatch(r"relay-[0-9a-f]{32}", capsule_id) else "unknown",
+        "provider": str(receipt.get("provider") or "unknown") if receipt.get("provider") in ("agy", "claude") else "unknown",
+        "returncode": receipt.get("returncode") if type(receipt.get("returncode")) is int else None,
+        "timed_out": receipt.get("timed_out") is True,
+        "stdout_chars": len(str(receipt.get("stdout") or "")),
+        "error_type": ("none" if not receipt.get("error")
+                       else "executor_error"),
+    }
+
+
+def respond_to_text(text: str, *, progress=None) -> tuple[str, str]:
     context = persona_context()
     request_id = secrets.token_hex(12)
     prompt = (
@@ -290,15 +316,63 @@ def respond_to_text(text: str) -> tuple[str, str]:
         executor_hint="agy",
     )
     capsule_id = capsule["capsule_id"]
-    until = time.monotonic() + 170
+    started = time.monotonic()
+    until = started + 170
+    last_progress = started
     while time.monotonic() < until:
         receipt = relay.receipt(capsule_id)
         if receipt is not None:
+            meta = receipt_diagnostic(receipt, capsule_id)
             if receipt.get("ok") is not True:
-                raise RuntimeError("mio_relay_executor_failed")
-            return parse_persona_reply(str(receipt.get("stdout") or ""), request_id), capsule_id
+                raise PersonaReplyError("executor_failed", meta)
+            try:
+                return parse_persona_reply(str(receipt.get("stdout") or ""), request_id), capsule_id
+            except (RuntimeError, ValueError):
+                raise PersonaReplyError("parse_failed", meta) from None
+        if progress and time.monotonic() - last_progress >= 5:
+            progress()
+            last_progress = time.monotonic()
         time.sleep(2)
-    raise RuntimeError("mio_relay_receipt_timeout")
+    raise PersonaReplyError("relay_wait_timeout", {"capsule_id": capsule_id})
+
+
+def debug_enabled() -> bool:
+    return private_json(DEBUG_PATH, {}).get("enabled") is True
+
+
+def diagnostic_text(status: dict) -> str:
+    """Only stable allowlisted fields; never raw receipt, stdout or chat text."""
+    reason = str(status.get("reason") or "unknown")
+    if reason not in ("ready", "working", "executor_failed", "parse_failed",
+                      "relay_wait_timeout", "context_failed", "transport_failed", "unknown"):
+        reason = "unknown"
+    meta = status.get("meta") if isinstance(status.get("meta"), dict) else {}
+    code = meta.get("returncode")
+    code = str(code) if type(code) is int else "?"
+    provider = meta.get("provider") if meta.get("provider") in ("agy", "claude") else "?"
+    output_size = meta.get("stdout_chars") if type(meta.get("stdout_chars")) is int else 0
+    seconds = status.get("elapsed_seconds")
+    seconds = str(seconds) if type(seconds) is int and 0 <= seconds <= 600 else "?"
+    return ("🛠 診斷｜狀態：" + reason + "｜耗時：" + seconds
+            + " 秒｜執行器：" + provider + "｜代碼：" + code
+            + "｜輸出長度：" + str(output_size) + " 字元")
+
+
+def set_debug(enabled: bool) -> None:
+    atomic_json(DEBUG_PATH, {"enabled": bool(enabled), "updated_at": timestamp()})
+
+
+def last_status() -> dict:
+    return private_json(LAST_STATUS_PATH, {"reason": "unknown"})
+
+
+def record_status(reason: str, elapsed: float, meta: dict | None = None) -> dict:
+    status = {
+        "reason": reason, "elapsed_seconds": min(600, max(0, int(elapsed))),
+        "observed_at": timestamp(), "meta": meta or {},
+    }
+    atomic_json(LAST_STATUS_PATH, status)
+    return status
 
 
 def record_history(owner: int, message: str, reply: str, capsule_id: str, platform_id: int) -> None:
@@ -326,6 +400,58 @@ def run(token: str, owner: int) -> None:
     os.chmod(STATE_DIR, 0o700)
     offset_path = STATE_DIR / "offset.json"
     offset = int(private_json(offset_path, {"offset": 0}).get("offset") or 0)
+    incoming: queue.Queue[tuple[int, str]] = queue.Queue(maxsize=MAX_PENDING_MESSAGES)
+
+    def respond_worker():
+        # A separate single consumer prevents the model wait from blocking
+        # /debug commands and Telegram polling. Replies remain ordered.
+        while True:
+            message_id, body = incoming.get()
+            started = time.monotonic()
+            sent_ack = False
+            def progress():
+                nonlocal sent_ack
+                if not sent_ack and time.monotonic() - started >= 8:
+                    try:
+                        send(token, owner, "收到，我想一下 🌱")
+                        sent_ack = True
+                    except RuntimeError:
+                        print("mio_telegram_ack=FAILED", flush=True)
+                try:
+                    telegram("sendChatAction", token, {"chat_id": owner, "action": "typing"})
+                except RuntimeError:
+                    pass
+            try:
+                record_status("working", 0)
+                reply, capsule_id = respond_to_text(body, progress=progress)
+                platform_id = send(token, owner, reply)
+                record_history(owner, body, reply, capsule_id, platform_id)
+                status = record_status("ready", time.monotonic() - started)
+                print("mio_telegram_persona_reply=PASS", flush=True)
+                if debug_enabled():
+                    send(token, owner, diagnostic_text(status))
+            except PersonaReplyError as exc:
+                status = record_status(exc.reason, time.monotonic() - started, exc.metadata)
+                print("mio_telegram_persona_reply=" + exc.reason.upper(), flush=True)
+                try:
+                    send(token, owner, "剛才那句話沒有順利接上。我還在這裡，你可以再傳一次給我。")
+                    if debug_enabled():
+                        send(token, owner, diagnostic_text(status))
+                except RuntimeError:
+                    print("mio_telegram_error_notice=FAILED", flush=True)
+            except (RuntimeError, OSError, ValueError):
+                status = record_status("context_failed", time.monotonic() - started)
+                print("mio_telegram_persona_reply=CONTEXT_FAILED", flush=True)
+                try:
+                    send(token, owner, "剛才的對話沒有順利完成，你可以再傳一次給我。")
+                    if debug_enabled():
+                        send(token, owner, diagnostic_text(status))
+                except RuntimeError:
+                    print("mio_telegram_error_notice=FAILED", flush=True)
+            finally:
+                incoming.task_done()
+
+    threading.Thread(target=respond_worker, name="mio-persona-reply", daemon=True).start()
     print("mio_telegram_bridge=ACTIVE", flush=True)
     while True:
         try:
@@ -336,28 +462,40 @@ def run(token: str, owner: int) -> None:
             for update in updates:
                 next_offset = int(update["update_id"]) + 1
                 message = update.get("message") or {}
-                # Persist before processing: never generate a duplicate model
-                # response for the same Telegram update after a restart.
+                # Persist before processing to prevent automatic duplicate
+                # messages on restart; a subsequent durable work queue remains
+                # a separate reliability milestone.
                 offset = max(offset, next_offset)
                 atomic_json(offset_path, {"offset": offset, "updated_at": timestamp()})
                 if not is_owner_message(message, owner):
                     continue
                 body = str(message.get("text") or "").strip()
-                if body.split(maxsplit=1)[0:1] == ["/start"]:
+                command = body.split(maxsplit=1)[0].split("@", 1)[0] if body else ""
+                if command == "/start":
                     send(token, owner, "嗨，我是澪。你可以直接跟我聊天。🌱")
                     print("mio_telegram_start=PASS", flush=True)
+                elif command == "/debug":
+                    argument = body.split(maxsplit=1)[1].strip().lower() if len(body.split(maxsplit=1)) == 2 else ""
+                    if argument == "on":
+                        set_debug(True)
+                        send(token, owner, "🛠 Debug 已開啟。一般聊天與診斷將分開顯示；不會顯示憑證或私人原始紀錄。")
+                    elif argument == "off":
+                        set_debug(False)
+                        send(token, owner, "Debug 已關閉，回到一般聊天。")
+                    elif argument in ("", "status"):
+                        send(token, owner, ("🛠 Debug 目前：" + ("開啟" if debug_enabled() else "關閉")
+                             + "\n" + diagnostic_text(last_status())
+                             + "\n等待中的訊息：" + str(incoming.qsize())))
+                    else:
+                        send(token, owner, "使用 /debug on、/debug off 或 /debug status。")
+                elif command == "/status":
+                    send(token, owner, "我在這裡 🌱" + ("（正在想事情）" if incoming.qsize() else ""))
                 elif body and not body.startswith("/") and len(body) <= 1200:
                     try:
-                        reply, capsule_id = respond_to_text(body)
-                        platform_id = send(token, owner, reply)
-                        record_history(owner, body, reply, capsule_id, platform_id)
-                        print("mio_telegram_persona_reply=PASS", flush=True)
-                    except (RuntimeError, OSError, ValueError):
-                        print("mio_telegram_persona_reply=DEFERRED", flush=True)
-                        try:
-                            send(token, owner, "我現在暫時沒辦法好好回答，晚點再傳一次給我，好嗎？")
-                        except RuntimeError:
-                            print("mio_telegram_error_notice=FAILED", flush=True)
+                        incoming.put_nowait((int(message.get("message_id") or 0), body))
+                        print("mio_telegram_message=QUEUED", flush=True)
+                    except queue.Full:
+                        send(token, owner, "目前有幾句話還在處理，我先把前面的回完，再傳給我好嗎？")
         except (RuntimeError, OSError, ValueError):
             print("mio_telegram_poll=DEFERRED", flush=True)
             time.sleep(5)
