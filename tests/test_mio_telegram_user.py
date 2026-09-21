@@ -57,6 +57,17 @@ class MioTelegramBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "mio_reply_missing_or_invalid"):
             mio.parse_persona_reply('{"reply":"hello","request_id":"other"}', "mine")
 
+    def test_verify_only_uses_getme_and_never_steals_polling_updates(self):
+        with patch.object(mio.os, "geteuid", return_value=1001), patch.object(
+                mio.os.environ, "get", return_value="ubuntu"), patch.object(
+                mio, "bot_token", return_value="hidden"), patch.object(
+                mio, "verified_bot") as verify, patch.object(
+                mio, "telegram") as telegram_request, patch.object(
+                mio.sys, "argv", ["mio_telegram_user", "verify"]):
+            self.assertEqual(mio.main(), 0)
+            verify.assert_called_once_with("hidden")
+            telegram_request.assert_not_called()
+
     def test_start_candidates_only_private_person_and_exact_start(self):
         updates = [
             {"message": {"text": "/start", "from": {"id": 123},
