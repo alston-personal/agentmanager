@@ -147,6 +147,19 @@ scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
   has no shell, workflow, Threads-publish, or AgentOS commander command.
   The relay executor has its own separate security/permission boundary;
   a prompt prohibiting tools is not, by itself, an OS-enforced sandbox.
+- **ChatGPT-first authority correction (Issue #422):** Telegram transport and
+  conversational model are separate. Default `MIO_TELEGRAM_CHAT_MODE` is
+  `chatgpt_pending`: paired owner's messages are kept in the existing
+  Oracle-local private FIFO, but no model is called and **there is no
+  ChatGPT auto-reply or ChatGPT-Plus API path yet**. The bot's /mode and
+  /status show this limitation. This mode does not modify or stop the
+  separate AGY relay used by other authorized Persona/Threads tasks.
+  Owner's explicit local `MIO_TELEGRAM_CHAT_MODE=agy_opt_in` is required to
+  enable the former Telegram AGY route; it must never be labeled ChatGPT.
+  Private Telegram text/IDs/receipts must NOT go into this public repo,
+  public GitHub Issue #50, CI logs, or unprotected callback URLs. Native
+  ChatGPT inbound auth, privacy, and actual reply must be independently
+  accepted before this mode can change from `chatgpt_pending`.
 - Normal owner-only chat and technical diagnostics are separate:
   /debug on enables sanitized per-message status, /debug status shows the last
   Telegram-specific result, and /debug off disables it. All private chats
