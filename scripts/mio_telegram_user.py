@@ -423,7 +423,23 @@ def set_debug(enabled: bool) -> None:
 
 
 def last_status() -> dict:
-    return private_json(LAST_STATUS_PATH, {"reason": "unknown"})
+    """Refresh safe hints from the precise Telegram capsule, not shared relay recency."""
+    status = private_json(LAST_STATUS_PATH, {"reason": "unknown"})
+    if not isinstance(status, dict):
+        return {"reason": "unknown"}
+    meta = status.get("meta") if isinstance(status.get("meta"), dict) else {}
+    cid = str(meta.get("capsule_id") or "")
+    if not re.fullmatch(r"relay-[0-9a-f]{32}", cid):
+        return status
+    try:
+        actual = AntigravityRelayClient(RELAY_ROOT).receipt(cid)
+    except (OSError, ValueError):
+        actual = None
+    if isinstance(actual, dict):
+        enriched = dict(status)
+        enriched["meta"] = receipt_diagnostic(actual, cid)
+        return enriched
+    return status
 
 
 def record_status(reason: str, elapsed: float, meta: dict | None = None) -> dict:
