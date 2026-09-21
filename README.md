@@ -167,8 +167,17 @@ scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
   continues polling and processing /debug commands. After a prolonged response
   wait the owner receives a short normal acknowledgement rather than silence;
   the reply itself still depends on a valid executor receipt and JSON parsing.
-  The relay waits up to 170 seconds; reducing model latency and crash-safe
-  durable inbound message replay are separate, unverified milestones.
+  The relay waits up to 170 seconds. Owner-only text input now enters
+  ~/agent-data/runtime/persona/sunlake-milkcat/telegram/pending.json (mode
+  0600) before Telegram update offset advances. On an exact Telegram
+  executor_failed receipt classified as quota_or_rate, Mio retains that
+  original message and retries on a bounded 15m/1h/3h/6h/12h schedule;
+  after that it stops automatically and keeps the original for owner review.
+  Unknown send outcomes are marked delivery_uncertain and never resent
+  automatically. Only verified successful replies enter private chat history.
+  Successful offline tests do not establish that an AGY quota has reset,
+  that model-generated Telegram delivery has succeeded, or that all
+  possible crash windows can be distinguished from the Telegram API.
 - One-time install or reinstallation on Oracle as ubuntu from an accepted,
   verified source worktree: AGENTOS_REPO=/path/to/worktree
   bash scripts/install_mio_telegram_user.sh. Reinstallation uses getMe-only
