@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +13,17 @@ from scripts import mio_telegram_user as mio
 
 
 class MioTelegramBridgeTests(unittest.TestCase):
+    def test_module_launch_does_not_import_shadow_script(self):
+        # Running scripts/mio_telegram_user.py directly prepends scripts/ and
+        # imports scripts/agentos_node.py instead of the agentos_node package.
+        repo = Path(__file__).resolve().parents[1]
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.mio_telegram_user", "--help"],
+            cwd=repo, text=True, capture_output=True, timeout=10,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Mio private Telegram bridge", completed.stdout)
+
     def test_start_candidates_only_private_person_and_exact_start(self):
         updates = [
             {"message": {"text": "/start", "from": {"id": 123},
