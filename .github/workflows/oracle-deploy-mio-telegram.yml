@@ -111,4 +111,12 @@ jobs:
           print('mio_telegram_deploy_receipt=PASS')
           print('mio_telegram_source_commit='+sys.argv[2])
           print('mio_telegram_telegram_reply=NOT_VERIFIED_BY_DEPLOY')
+          # Exact last Telegram capsule only; ignore untrusted freeform output.
+          for line in source_text.splitlines():
+              if __import__('re').fullmatch(r'mio_telegram_last_status=(?:ready|working|executor_failed|parse_failed|relay_wait_timeout|context_failed|transport_failed|unknown)',line):
+                  print(line)
+              elif __import__('re').fullmatch(r'mio_telegram_last_error_hint=(?:quota_or_rate|authentication|context_limit|network|permission|timeout|unclassified|unknown)',line):
+                  print(line)
+              elif __import__('re').fullmatch(r'mio_telegram_last_exit_code=(?:unknown|-?[0-9]{1,3})',line):
+                  print(line)
           PY
