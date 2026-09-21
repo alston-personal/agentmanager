@@ -190,7 +190,10 @@ jobs:
           find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
 
           ASSET_REFS="$TMP/astro-assets.txt"
-          grep -oE '/_astro/[A-Za-z0-9._/-]+' "$ROUTE_DIR/index.html" | sort -u > "$ASSET_REFS" || true
+          # Nested route pages may reference different hashed CSS/JS than index.html.
+          find "$ROUTE_DIR" -type f -name '*.html' -print0 \
+            | xargs -0 -r grep -ohE '/_astro/[A-Za-z0-9._/-]+' \
+            | sort -u > "$ASSET_REFS" || true
           if [ -s "$ASSET_REFS" ]; then
             mkdir -p "$LIVE/_astro"
             while IFS= read -r ref; do
