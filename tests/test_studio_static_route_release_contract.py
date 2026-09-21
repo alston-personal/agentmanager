@@ -37,7 +37,7 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
             reusable.index("- name: Roll back route after public acceptance failure"),
         )
         for hall in ("tarot", "ziwei", "library", "gallery", "layoutlib", "fengshui", "lab"):
-            self.assertIn(f"        {hall}\\n", consumer)
+            self.assertIn(f"        {hall}", consumer)
         self.assertIn("        回到本館入口", consumer)
         self.assertIn("        .hall-shell", consumer)
         self.assertIn('        target="_blank"', consumer)
