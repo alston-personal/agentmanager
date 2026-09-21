@@ -1,0 +1,30 @@
+name: Oracle Probe Studio Nginx Threads Hook
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-studio-nginx-threads.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Studio nginx shape only
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG=/etc/nginx/sites-enabled/studio.milkcat.org
+          test -r "$CFG"
+          echo 'studio_nginx_readable=YES'
+          echo '=== server/location outline ==='
+          grep -nE '^\s*(server\s*\{|server_name\s+|listen\s+|location\s+|root\s+|include\s+)' "$CFG" | head -120
+          echo '=== tail ==='
+          tail -80 "$CFG"
+          echo 'probe_complete=PASS'
