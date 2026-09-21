@@ -161,6 +161,8 @@ class MioTelegramBridgeTests(unittest.TestCase):
             restarted = mio.DurableChatInbox(path)
             self.assertIsNone(restarted.due(now=999999.0))
             self.assertEqual(restarted.uncertain_count(), 1)
+            self.assertTrue(restarted.is_uncertain(42))
+            self.assertFalse(restarted.is_uncertain(77))
             self.assertIn("private Mio reply", path.read_text())
             restarted.finish(42)
             self.assertEqual(restarted.count(), 0)
