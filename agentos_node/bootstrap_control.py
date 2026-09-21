@@ -23,6 +23,7 @@ ACTION_PUBLISH_MIO_DAY2 = "agentos.social_threads_mio_day2.publish"
 ACTION_PUBLISH_MIO_APPROVED = "agentos.social_threads_mio_approved.publish"
 ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES = "agentos.social_threads_sunlake_persona_replies.publish"
 ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
+ACTION_DEPLOY_MIO_TELEGRAM = "agentos.mio_telegram.deploy"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -35,6 +36,7 @@ ALLOWED_ACTIONS = {
     ACTION_PUBLISH_MIO_APPROVED,
     ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
     ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
+    ACTION_DEPLOY_MIO_TELEGRAM,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -103,6 +105,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_PUBLISH_GALAXY_DAY1,
         ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
         ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
+        ACTION_DEPLOY_MIO_TELEGRAM,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -203,6 +206,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/publish_sunlake_persona_replies_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR:
         return _run_canonical_script("scripts/install_galaxy_threads_experiment_monitor_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_DEPLOY_MIO_TELEGRAM:
+        return _run_canonical_script("scripts/deploy_mio_telegram_user.sh", timeout=150, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
