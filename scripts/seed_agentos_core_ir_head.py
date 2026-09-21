@@ -45,6 +45,7 @@ def build_seed_payload() -> dict[str, Any]:
             "recommended_action": NEXT_ACTION,
             "canonical_ir": {
                 "schema_version": "agentos.ir/v1",
+                "project_id": PROJECT_ID,
                 "index_id": INDEX_ID,
                 "ir_id": IR_ID,
                 "parent_ir_id": None,
