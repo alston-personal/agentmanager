@@ -88,33 +88,7 @@ jobs:
 
           grep -Fq 'uses: ./.github/workflows/reusable-studio-static-route-release.yml' "$C"
           grep -Fq 'route: world' "$C"
-          grep -Eq '^[[:space:]]+source_sha: [0-9a-f]{40}
-          grep -Fq 'credit_account:' "$C"
-          grep -Fq 'credit_cost:' "$C"
-          grep -Fq 'provider_id: service://studio.static-route.release' "$G"
-          grep -Fq 'capability_uri: capability://studio.static-route.release' "$G"
-          grep -Fq 'status: extracted-first-consumer' "$G"
-          grep -Fq 'asset_id: studio-static-route-release' "$A"
-          grep -Fq 'evidence_scope: shared-carrier-live' "$A"
-          grep -Fq 'shared_carrier_live_verification: passed' "$A"
-          grep -Fq 'shared_carrier_release_run: 35199712046' "$A"
-          grep -Fq 'shared_carrier_main_commit: 369585b7d4a6f3885e0d0c79aeca57b8957fd164' "$A"
-
-          if grep -Fq 'npm run build' "$C"; then
-            echo 'Milkcat World consumer regressed to duplicated deployment logic' >&2
-            exit 1
-          fi
-          if grep -Fq 'ssh -o StrictHostKeyChecking' "$C"; then
-            echo 'Milkcat World consumer regressed to direct SSH deployment logic' >&2
-            exit 1
-          fi
-          if grep -Fq 'milkcat_platform_execution.py' "$C"; then
-            echo 'Milkcat World consumer regressed to product-owned accounting logic' >&2
-            exit 1
-          fi
-
-          echo 'studio_static_route_release_guard=PASS'
- "$C"
+          grep -Eq '^[[:space:]]+source_sha: [0-9a-f]{40}$' "$C"
           grep -Fq 'credit_account:' "$C"
           grep -Fq 'credit_cost:' "$C"
           grep -Fq 'provider_id: service://studio.static-route.release' "$G"

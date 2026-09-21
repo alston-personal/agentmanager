@@ -31,7 +31,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 345359b396067d3fc86d1a18140ec1139c154432
+      source_sha: d4e3682fd9f1af7ab2bc0e630c78fdabcc2dfdf6
       route: world
       backup_key: milkcat-world
       receipt_schema: studio-web.milkcat-world-release/v4
@@ -42,6 +42,8 @@ jobs:
         LAYOUTLIB · CANONICAL SPATIAL LIBRARY
         three@0.186.0
         data-spatial-ir=
+        data-temple-ir=
+        直接進入
         buildCeremonialPlaza
       credit_account: ${{ inputs.credit_account || '' }}
       credit_cost: ${{ inputs.credit_cost || 0 }}
