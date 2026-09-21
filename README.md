@@ -147,8 +147,22 @@ scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
   has no shell, workflow, Threads-publish, or AgentOS commander command.
   The relay executor has its own separate security/permission boundary;
   a prompt prohibiting tools is not, by itself, an OS-enforced sandbox.
-- One-time install on Oracle as ubuntu from an accepted, verified source
-  worktree: AGENTOS_REPO=/path/to/worktree bash scripts/install_mio_telegram_user.sh.
+- Normal owner-only chat and technical diagnostics are separate:
+  /debug on enables sanitized per-message status, /debug status shows the last
+  Telegram-specific result, and /debug off disables it. All private chats
+  default to normal mode. The status contains a bounded category, elapsed
+  seconds, relay provider, exit code and output size; it never includes raw
+  executor stdout/stderr, prompt, token or private conversation.
+- Persona responses are processed serially by a worker thread while the bot
+  continues polling and processing /debug commands. After a prolonged response
+  wait the owner receives a short normal acknowledgement rather than silence;
+  the reply itself still depends on a valid executor receipt and JSON parsing.
+  The relay waits up to 170 seconds; reducing model latency and crash-safe
+  durable inbound message replay are separate, unverified milestones.
+- One-time install or reinstallation on Oracle as ubuntu from an accepted,
+  verified source worktree: AGENTOS_REPO=/path/to/worktree
+  bash scripts/install_mio_telegram_user.sh. Reinstallation uses getMe-only
+  verification; it does not compete with the running bot's getUpdates polling.
   This installer does not merge branches, touch the old Telegram commander,
   or install a new model/API credential.
 - Run offline safety regression:
