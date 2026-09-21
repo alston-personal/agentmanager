@@ -26,6 +26,22 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
         ):
             self.assertIn(required, text)
 
+    def test_nested_world_halls_are_checked_before_existing_public_failure_rollback(self):
+        reusable = REUSABLE.read_text(encoding="utf-8")
+        consumer = CONSUMER.read_text(encoding="utf-8")
+        self.assertIn("acceptance_nested_routes:", reusable)
+        self.assertIn("acceptance_nested_anchors:", reusable)
+        self.assertIn("public_studio_static_nested_route_acceptance=PASS", reusable)
+        self.assertLess(
+            reusable.index("public_studio_static_nested_route_acceptance=PASS"),
+            reusable.index("- name: Roll back route after public acceptance failure"),
+        )
+        for hall in ("tarot", "ziwei", "library", "gallery", "layoutlib", "fengshui", "lab"):
+            self.assertIn(f"        {hall}", consumer)
+        self.assertIn("        回到本館入口", consumer)
+        self.assertIn("        .hall-shell", consumer)
+        self.assertIn('        target="_blank"', consumer)
+
     def test_reusable_workflow_has_opt_in_platform_execution_contract(self):
         text = REUSABLE.read_text(encoding="utf-8")
         for required in (

@@ -23,6 +23,16 @@ on:
         description: Newline-delimited literal strings required in built/local/public HTML
         required: true
         type: string
+      acceptance_nested_routes:
+        description: Optional newline-separated hall slugs to verify on the public site after publication
+        required: false
+        type: string
+        default: ''
+      acceptance_nested_anchors:
+        description: Optional newline-separated literal strings required in each public nested route HTML
+        required: false
+        type: string
+        default: ''
       credit_account:
         description: Optional funded Milkcat Platform credit account; empty disables metering
         required: false
@@ -61,6 +71,8 @@ jobs:
       BACKUP_KEY: ${{ inputs.backup_key }}
       RECEIPT_SCHEMA: ${{ inputs.receipt_schema }}
       ACCEPTANCE_ANCHORS: ${{ inputs.acceptance_anchors }}
+      ACCEPTANCE_NESTED_ROUTES: ${{ inputs.acceptance_nested_routes }}
+      ACCEPTANCE_NESTED_ANCHORS: ${{ inputs.acceptance_nested_anchors }}
       CREDIT_ACCOUNT: ${{ inputs.credit_account }}
       CREDIT_COST: ${{ inputs.credit_cost }}
       PLATFORM_EXECUTION_ID: studio-static-route-${{ inputs.route }}-${{ github.run_id }}
@@ -262,6 +274,19 @@ jobs:
           fi
           echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
           echo "public_studio_static_assets_acceptance=PASS route=$ROUTE"
+          # Public nested pages are checked within the same job so any failure
+          # triggers the existing backed-up route rollback on the next step.
+          while IFS= read -r nested || [ -n "$nested" ]; do
+            [ -z "$nested" ] && continue
+            [[ "$nested" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo 'invalid nested route' >&2; exit 2; }
+            NESTED_OUT="${OUT}-${nested}"
+            curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/$ROUTE/$nested/?_=$GITHUB_RUN_ID" -o "$NESTED_OUT"
+            while IFS= read -r anchor || [ -n "$anchor" ]; do
+              [ -z "$anchor" ] && continue
+              grep -Fq -- "$anchor" "$NESTED_OUT"
+            done <<< "$ACCEPTANCE_NESTED_ANCHORS"
+            echo "public_studio_static_nested_route_acceptance=PASS route=$ROUTE/$nested"
+          done <<< "$ACCEPTANCE_NESTED_ROUTES"
 
       - name: Roll back route after public acceptance failure
         if: ${{ failure() && steps.publish.outcome == 'success' }}
