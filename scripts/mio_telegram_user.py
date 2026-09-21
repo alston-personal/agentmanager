@@ -503,7 +503,7 @@ def run(token: str, owner: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Mio private Telegram bridge")
-    parser.add_argument("mode", choices=("inspect", "pair", "run"))
+    parser.add_argument("mode", choices=("verify", "inspect", "pair", "run"))
     args = parser.parse_args()
     if os.geteuid() != 1001 or os.environ.get("USER") not in (None, "ubuntu"):
         print("mio_telegram=WRONG_USER")
@@ -512,7 +512,9 @@ def main() -> int:
         token = bot_token()
         verified_bot(token)
         print("mio_telegram_bot_identity=PASS", flush=True)
-        if args.mode == "inspect":
+        if args.mode == "verify":
+            return 0
+        elif args.mode == "inspect":
             results = telegram("getUpdates", token, {"timeout": 0, "limit": 100,
                 "allowed_updates": ["message"]}).get("result") or []
             ids = start_candidates(results)
