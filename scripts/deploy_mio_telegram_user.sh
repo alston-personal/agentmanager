@@ -67,9 +67,15 @@ STAGE=services
 systemctl --user is-active --quiet agentos-mio-telegram.service || {
   echo "mio_telegram_deploy=SERVICE_INACTIVE"; exit 7;
 }
-systemctl --user is-active --quiet agentos-mio-agy-relay.service || {
-  echo "mio_telegram_deploy=PRIVATE_RELAY_INACTIVE"; exit 7;
-}
+# Telegram is transport-only until ChatGPT reply ingress has been accepted.
+if grep -Eq '^MIO_TELEGRAM_CHAT_MODE=agy_opt_in$' "$HOME/.config/agentos/mio-telegram.env"; then
+  systemctl --user is-active --quiet agentos-mio-agy-relay.service || {
+    echo "mio_telegram_deploy=OPT_IN_RELAY_INACTIVE"; exit 7;
+  }
+  echo "mio_telegram_deploy_chat_mode=AGY_EXPLICIT_OPT_IN"
+else
+  echo "mio_telegram_deploy_chat_mode=CHATGPT_PENDING"
+fi
 STAGE=verify
 python3 - "$CAND" "$SHA" <<'PY'
 import subprocess,sys
@@ -89,7 +95,7 @@ PY
 from scripts import mio_telegram_user as mio
 status = mio.last_status()
 reason = status.get("reason")
-if reason not in {"ready","working","executor_failed","parse_failed","relay_wait_timeout","context_failed","transport_failed","unknown"}:
+if reason not in {"ready","working","chatgpt_not_connected","executor_failed","parse_failed","relay_wait_timeout","context_failed","transport_failed","unknown"}:
     reason = "unknown"
 meta = status.get("meta") if isinstance(status.get("meta"), dict) else {}
 hint = meta.get("error_hint")

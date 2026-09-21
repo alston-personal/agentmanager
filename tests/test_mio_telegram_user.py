@@ -178,6 +178,57 @@ class MioTelegramBridgeTests(unittest.TestCase):
             self.assertEqual(inbox.enqueue(200, ""), "invalid")
             self.assertEqual(inbox.enqueue(201, "X" * 1201), "invalid")
 
+    def test_chatgpt_pending_is_default_and_invalid_configuration_fails_closed(self):
+        with patch.object(mio, "env_values", return_value={}):
+            self.assertEqual(mio.chat_mode(), mio.CHATGPT_PENDING)
+        with patch.object(mio, "env_values",
+                          return_value={"MIO_TELEGRAM_CHAT_MODE": "agy"}):
+            self.assertEqual(mio.chat_mode(), mio.CHATGPT_PENDING)
+        with patch.object(mio, "env_values",
+                          return_value={"MIO_TELEGRAM_CHAT_MODE": "chatgpt"}):
+            self.assertEqual(mio.chat_mode(), mio.CHATGPT_PENDING)
+        with patch.object(mio, "env_values",
+                          return_value={"MIO_TELEGRAM_CHAT_MODE": "agy_opt_in"}):
+            self.assertEqual(mio.chat_mode(), mio.AGY_OPT_IN)
+
+    def test_pending_chat_preserves_owner_message_without_model_task(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inbox = mio.DurableChatInbox(root / "pending.json")
+            notifications = []
+            calls = [0]
+            update = {"update_id": 1, "message": {"message_id": 123,
+                "text": "test_private_owner_message",
+                "from": {"id": 42},
+                "chat": {"id": 42, "type": "private"}}}
+            def fake_telegram(method, token, payload):
+                if method == "getUpdates":
+                    calls[0] += 1
+                    if calls[0] > 1:
+                        raise KeyboardInterrupt()
+                    return {"ok": True, "result": [update]}
+                if method == "sendMessage":
+                    notifications.append(payload["text"])
+                    return {"ok": True, "result": {"message_id": 555}}
+                raise AssertionError("unexpected Telegram API call: " + method)
+            with patch.object(mio, "STATE_DIR", root), patch.object(
+                    mio, "LAST_STATUS_PATH", root / "last-status.json"), patch.object(
+                    mio, "chat_mode", return_value=mio.CHATGPT_PENDING), patch.object(
+                    mio, "DurableChatInbox", return_value=inbox), patch.object(
+                    mio, "telegram", side_effect=fake_telegram), patch.object(
+                    mio, "respond_to_text", side_effect=AssertionError("model must not run")
+                    ) as model, patch.object(mio.threading, "Thread") as worker:
+                with self.assertRaises(KeyboardInterrupt):
+                    mio.run("dummy", 42)
+                model.assert_not_called()
+                worker.assert_not_called()
+            self.assertEqual(inbox.count(), 1)
+            self.assertEqual(inbox.due(now=0)["body"], "test_private_owner_message")
+            self.assertEqual(__import__("json").loads(
+                (root / "offset.json").read_text())["offset"], 2)
+            self.assertTrue(any("ChatGPT 尚未連" in note for note in notifications))
+            self.assertFalse(any("AGY 已明確選用" in note for note in notifications))
+
     def test_start_candidates_only_private_person_and_exact_start(self):
         updates = [
             {"message": {"text": "/start", "from": {"id": 123},

@@ -33,6 +33,8 @@ WORKSPACE = str(Path.home() / "agentmanager")
 DEBUG_PATH = STATE_DIR / "debug.json"
 LAST_STATUS_PATH = STATE_DIR / "last-status.json"
 MAX_PENDING_MESSAGES = 12
+CHATGPT_PENDING = "chatgpt_pending"
+AGY_OPT_IN = "agy_opt_in"
 
 
 def timestamp() -> str:
@@ -48,6 +50,12 @@ def env_values() -> dict[str, str]:
         key, value = line.split("=", 1)
         result[key] = value.strip().strip('"').strip("'")
     return result
+
+
+def chat_mode() -> str:
+    """ChatGPT-first: absent or invalid config must never silently call AGY."""
+    configured = env_values().get("MIO_TELEGRAM_CHAT_MODE", CHATGPT_PENDING)
+    return AGY_OPT_IN if configured == AGY_OPT_IN else CHATGPT_PENDING
 
 
 def bot_token() -> str:
@@ -396,7 +404,7 @@ def debug_enabled() -> bool:
 def diagnostic_text(status: dict) -> str:
     """Only stable allowlisted fields; never raw receipt, stdout or chat text."""
     reason = str(status.get("reason") or "unknown")
-    if reason not in ("ready", "working", "executor_failed", "parse_failed",
+    if reason not in ("ready", "working", "chatgpt_not_connected", "executor_failed", "parse_failed",
                       "relay_wait_timeout", "context_failed", "transport_failed", "unknown"):
         reason = "unknown"
     meta = status.get("meta") if isinstance(status.get("meta"), dict) else {}
@@ -569,6 +577,13 @@ def run(token: str, owner: int) -> None:
     offset_path = STATE_DIR / "offset.json"
     offset = int(private_json(offset_path, {"offset": 0}).get("offset") or 0)
     inbox = DurableChatInbox()
+    mode = chat_mode()
+    if mode == CHATGPT_PENDING:
+        # This is a transport-only inbox, NOT a ChatGPT model invocation.
+        record_status("chatgpt_not_connected", 0)
+        print("mio_telegram_chat_model=CHATGPT_NOT_CONNECTED", flush=True)
+    else:
+        print("mio_telegram_chat_model=AGY_EXPLICIT_OPT_IN", flush=True)
 
     def respond_worker():
         # Owner commands/polling keep working independently of model waits.
@@ -652,7 +667,8 @@ def run(token: str, owner: int) -> None:
                 except RuntimeError:
                     print("mio_telegram_error_notice=FAILED", flush=True)
 
-    threading.Thread(target=respond_worker, name="mio-persona-reply", daemon=True).start()
+    if mode == AGY_OPT_IN:
+        threading.Thread(target=respond_worker, name="mio-persona-reply", daemon=True).start()
     print("mio_telegram_bridge=ACTIVE", flush=True)
     while True:
         try:
@@ -667,8 +683,16 @@ def run(token: str, owner: int) -> None:
                     body = str(message.get("text") or "").strip()
                     command = body.split(maxsplit=1)[0].split("@", 1)[0] if body else ""
                     if command == "/start":
-                        send(token, owner, "嗨，我是澪。你可以直接跟我聊天。🌱")
+                        if mode == CHATGPT_PENDING:
+                            send(token, owner, "我是澪 🌱 目前只有私人收訊通道，還沒有接通 ChatGPT 的自動回覆。訊息會保存在 Oracle，並不會送去 AGY。")
+                        else:
+                            send(token, owner, "嗨，我是澪。你可以直接跟我聊天。🌱")
                         print("mio_telegram_start=PASS", flush=True)
+                    elif command == "/mode":
+                        if mode == CHATGPT_PENDING:
+                            send(token, owner, "目前模式：ChatGPT 待連線。已停止 AGY 自動聊天與重試；Telegram 訊息只保存在私人待處理區，尚未送達 ChatGPT。")
+                        else:
+                            send(token, owner, "目前模式：AGY（曾於 Oracle 設定檔明確選用）；此路徑不是 ChatGPT。")
                     elif command == "/debug":
                         argument = body.split(maxsplit=1)[1].strip().lower() if len(body.split(maxsplit=1)) == 2 else ""
                         if argument == "on":
@@ -680,6 +704,7 @@ def run(token: str, owner: int) -> None:
                         elif argument in ("", "status"):
                             send(token, owner, ("🛠 Debug 目前：" + ("開啟" if debug_enabled() else "關閉")
                                  + "\n" + diagnostic_text(last_status())
+                                 + "\n模型通道：" + ("ChatGPT 尚未連線" if mode == CHATGPT_PENDING else "AGY 已明確選用")
                                  + "\n私人待處理：" + str(inbox.count())
                                  + "｜送達待確認：" + str(inbox.uncertain_count())))
                         else:
@@ -689,14 +714,16 @@ def run(token: str, owner: int) -> None:
                         uncertain = inbox.uncertain_count()
                         detail = ("｜有一筆可能已送達，為避免重複發送，請先確認聊天紀錄。"
                                   if uncertain else "")
-                        send(token, owner, ("🌱 澪的通訊服務已連線｜待處理："
+                        send(token, owner, ("🌱 Telegram 通道已連線｜模型：" + ("ChatGPT 尚未連線" if mode == CHATGPT_PENDING else "AGY（非 ChatGPT）") + "｜私人待處理："
                             + str(count) + detail))
                     elif body and not body.startswith("/") and len(body) <= 1200:
                         result = inbox.enqueue(int(message.get("message_id") or 0), body)
                         if result == "queued":
                             print("mio_telegram_message=PERSISTED", flush=True)
+                            if mode == CHATGPT_PENDING:
+                                send(token, owner, "這句話已保存在 Oracle 的私人待處理區；ChatGPT 尚未連到 Telegram，我還不能自動回答，也不會改用 AGY。")
                         elif result == "full":
-                            send(token, owner, "澪目前有幾句話還在等模型恢復，私人待處理區已滿。請稍後再傳。")
+                            send(token, owner, "澪的私人待處理區已滿。為避免遺失訊息，請先不要繼續傳送。")
                 # Advance only after the private owner message is persisted,
                 # or intentionally rejected with an explicit bounded notice.
                 offset = max(offset, next_offset)
