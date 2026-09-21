@@ -153,6 +153,16 @@ scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
   default to normal mode. The status contains a bounded category, elapsed
   seconds, relay provider, exit code and output size; it never includes raw
   executor stdout/stderr, prompt, token or private conversation.
+  The displayed AGY stdout character count is the size of a CLI execution
+  envelope, NOT the persona reply size or model token usage. The compact
+  Telegram prompt reads only selected fields from the canonical persona IR
+  and bounded recent observed events/private turns; it never copies the
+  complete persona state into each short chat request. AGY returncode=1 is
+  an execution failure even if stdout is nonempty. Diagnostic stderr hints
+  are coarse guesses from sanitized patterns, never a raw log or confirmed
+  root cause. /debug status may refresh the last Telegram-specific status
+  from its exact capsule receipt without sending a new message or confusing
+  it with an unrelated Threads decision.
 - Persona responses are processed serially by a worker thread while the bot
   continues polling and processing /debug commands. After a prolonged response
   wait the owner receives a short normal acknowledgement rather than silence;
