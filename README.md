@@ -121,3 +121,42 @@ AgentOS is an active research and engineering project. Some subsystems are produ
 ---
 
 *Models are replaceable executors. Durable work should not be trapped inside one session.*
+
+
+## Mio Telegram private bridge (deployment candidate; live acceptance pending)
+
+The dedicated @Mio_MilkcatBot uses scripts/mio_telegram_user.py and
+scripts/install_mio_telegram_user.sh. It does **not** reuse the privileged
+scripts/tg_bridge.py command handlers or its TELEGRAM_BOT_TOKEN.
+
+- Oracle ubuntu-owned credential: ~/.config/agentos/mio-telegram.env,
+  containing MIO_TELEGRAM_BOT_TOKEN. Never commit or print this value.
+- One-time owner pairing: the installer validates Telegram getMe, observes
+  private /start messages, requires exactly one candidate, then requires
+  local SSH confirmation before writing MIO_TELEGRAM_OWNER_ID (a private
+  Telegram user/chat ID). Unknown sender IDs and groups receive no response.
+- Existing persona source: ~/agent-data/personas/sunlake-milkcat/
+  (character_core.json, persona_state.json, reply_policy.json, recent
+  provenance-bearing public events). Local, private Telegram dialogue
+  history resides in ~/agent-data/runtime/persona/sunlake-milkcat/telegram/,
+  never in the public persona event-sync file or Git repository.
+- Existing private model execution boundary:
+  agentos-mio-agy-relay.service and
+  ~/agent-data/runtime/mio-antigravity-relay/. The Telegram transport only
+  submits a text-only persona request and checks its receipt; the transport
+  has no shell, workflow, Threads-publish, or AgentOS commander command.
+  The relay executor has its own separate security/permission boundary;
+  a prompt prohibiting tools is not, by itself, an OS-enforced sandbox.
+- One-time install on Oracle as ubuntu from an accepted, verified source
+  worktree: AGENTOS_REPO=/path/to/worktree bash scripts/install_mio_telegram_user.sh.
+  This installer does not merge branches, touch the old Telegram commander,
+  or install a new model/API credential.
+- Run offline safety regression:
+  python3 -m unittest discover -s tests -p test_mio_telegram_user.py -v
+  and bash -n scripts/install_mio_telegram_user.sh.
+
+Acceptance requires an actual on-Oracle getMe identity check, confirmed
+owner-only binding, active service and private relay, a Telegram /start
+delivery and a real owner message receiving a request-ID-bound Persona
+reply with a model receipt. The source commit/PR and static tests alone
+are **not** proof that the bot is online.
