@@ -100,6 +100,10 @@ jobs:
                       for line in str(step.get('stdout') or '').splitlines():
                           if __import__('re').fullmatch(r'mio_telegram_deploy=[A-Z_]{2,48}',line):
                               print(line)
+                          elif __import__('re').fullmatch(r'mio_telegram_deploy_stage=(?:preconditions|fetch_integration|fetch_source|candidate_checkout|preflight|owner_pair_check|install|services|verify)',line):
+                              print(line)
+                          elif __import__('re').fullmatch(r'mio_telegram_deploy_exit=[1-9][0-9]{0,2}',line):
+                              print(line)
               raise SystemExit(4)
           source_text='\n'.join(str(x.get('stdout') or '') for x in receipt.get('steps') or [])
           assert 'mio_telegram_deploy=PASS' in source_text
