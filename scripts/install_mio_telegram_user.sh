@@ -80,7 +80,8 @@ print('mio_telegram_persona_identity=PASS')
 PYCHECK
 chmod 600 "$ENV_FILE"
 python3 -m py_compile "$PYTHON"
-(cd "$REPO" && PYTHONPATH="$REPO" /usr/bin/python3 -m scripts.mio_telegram_user inspect)
+# Do not call getUpdates here: the already-running bot owns long polling.
+(cd "$REPO" && PYTHONPATH="$REPO" /usr/bin/python3 -m scripts.mio_telegram_user verify)
 # Never bind Telegram to the first untrusted inbound chat automatically.
 if ! grep -Eq '^MIO_TELEGRAM_OWNER_ID=[1-9][0-9]*$' "$ENV_FILE"; then
   echo "mio_telegram_install=OWNER_PAIR_REQUIRED"
