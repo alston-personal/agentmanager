@@ -274,12 +274,12 @@ class PersonaReplyError(RuntimeError):
 def stderr_category(stderr: str) -> str:
     """Return only a coarse hint; do not print or save raw executor messages."""
     patterns = (
-        ("quota_or_rate", r"(?i)\\b(?:429|resource[_ -]?exhausted|rate[_ -]?limit|quota[_ -]?exceeded|usage[_ -]?limit)\\b"),
-        ("authentication", r"(?i)\\b(?:unauthorized|unauthenticated|oauth|login required|token expired|invalid credentials|401|403)\\b"),
-        ("context_limit", r"(?i)\\b(?:context window|prompt too long|input too long|maximum context|token limit|413)\\b"),
-        ("network", r"(?i)\\b(?:connection refused|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|dns failure|network unreachable)\\b"),
-        ("permission", r"(?i)\\b(?:permission denied|EACCES)\\b"),
-        ("timeout", r"(?i)\\b(?:timed out|timeout)\\b"),
+        ("quota_or_rate", r"(?i)\b(?:429|resource[_ -]?exhausted|rate[_ -]?limit|quota[_ -]?exceeded|usage[_ -]?limit)\b"),
+        ("authentication", r"(?i)\b(?:unauthorized|unauthenticated|oauth|login required|token expired|invalid credentials|401|403)\b"),
+        ("context_limit", r"(?i)\b(?:context window|prompt too long|input too long|maximum context|token limit|413)\b"),
+        ("network", r"(?i)\b(?:connection refused|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|dns failure|network unreachable)\b"),
+        ("permission", r"(?i)\b(?:permission denied|EACCES)\b"),
+        ("timeout", r"(?i)\b(?:timed out|timeout)\b"),
     )
     for name, pattern in patterns:
         if re.search(pattern, stderr[:20000]):
