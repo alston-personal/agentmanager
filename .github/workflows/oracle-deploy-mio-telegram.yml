@@ -92,7 +92,14 @@ jobs:
           if receipt.get('ok') is not True:
               print('mio_telegram_deploy_receipt=FAILED')
               for step in receipt.get('steps') or []:
-                  print('mio_telegram_deploy_failed_step='+str(step.get('step') or 'unknown')[:48])
+                  label=str(step.get('step') or 'unknown')
+                  print('mio_telegram_deploy_step='+label[:48]+':returncode='+str(step.get('returncode') if type(step.get('returncode')) is int else 'unknown'))
+                  # Only print literal fixed markers authored by the known
+                  # deployment script, never generic stdout/stderr or tracebacks.
+                  if label == 'run_script':
+                      for line in str(step.get('stdout') or '').splitlines():
+                          if __import__('re').fullmatch(r'mio_telegram_deploy=[A-Z_]{2,48}',line):
+                              print(line)
               raise SystemExit(4)
           source_text='\n'.join(str(x.get('stdout') or '') for x in receipt.get('steps') or [])
           assert 'mio_telegram_deploy=PASS' in source_text
