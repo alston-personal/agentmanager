@@ -24,6 +24,39 @@ class MioTelegramBridgeTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Mio private Telegram bridge", completed.stdout)
 
+    def test_safe_diagnostics_never_echo_raw_executor_or_private_chat(self):
+        sensitive = "SENSITIVE_PRIVATE_MESSAGE_TOKEN"
+        receipt = {
+            "provider": "agy", "returncode": 1, "timed_out": False,
+            "stdout": sensitive * 4, "stderr": sensitive,
+            "error": "RuntimeError: " + sensitive,
+        }
+        meta = mio.receipt_diagnostic(receipt, "relay-" + "a" * 32)
+        self.assertEqual(meta["returncode"], 1)
+        self.assertEqual(meta["provider"], "agy")
+        self.assertEqual(meta["stdout_chars"], len(sensitive) * 4)
+        self.assertNotIn(sensitive, str(meta))
+        status = {"reason": "executor_failed", "elapsed_seconds": 12, "meta": meta}
+        self.assertNotIn(sensitive, mio.diagnostic_text(status))
+        self.assertIn("代碼：1", mio.diagnostic_text(status))
+
+    def test_debug_is_opt_in_and_persists_outside_persona_git(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "debug.json"
+            with patch.object(mio, "DEBUG_PATH", state):
+                self.assertFalse(mio.debug_enabled())
+                mio.set_debug(True)
+                self.assertTrue(mio.debug_enabled())
+                self.assertEqual(state.stat().st_mode & 0o777, 0o600)
+                mio.set_debug(False)
+                self.assertFalse(mio.debug_enabled())
+
+    def test_parse_failure_is_distinct_from_relay_executor_failure(self):
+        failure = mio.PersonaReplyError("executor_failed", {"returncode": 1})
+        self.assertEqual(failure.reason, "executor_failed")
+        with self.assertRaisesRegex(RuntimeError, "mio_reply_missing_or_invalid"):
+            mio.parse_persona_reply('{"reply":"hello","request_id":"other"}', "mine")
+
     def test_start_candidates_only_private_person_and_exact_start(self):
         updates = [
             {"message": {"text": "/start", "from": {"id": 123},
