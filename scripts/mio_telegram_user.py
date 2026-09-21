@@ -271,6 +271,22 @@ class PersonaReplyError(RuntimeError):
         self.metadata = metadata or {}
 
 
+def stderr_category(stderr: str) -> str:
+    """Return only a coarse hint; do not print or save raw executor messages."""
+    patterns = (
+        ("quota_or_rate", r"(?i)\\b(?:429|resource[_ -]?exhausted|rate[_ -]?limit|quota[_ -]?exceeded|usage[_ -]?limit)\\b"),
+        ("authentication", r"(?i)\\b(?:unauthorized|unauthenticated|oauth|login required|token expired|invalid credentials|401|403)\\b"),
+        ("context_limit", r"(?i)\\b(?:context window|prompt too long|input too long|maximum context|token limit|413)\\b"),
+        ("network", r"(?i)\\b(?:connection refused|ECONNREFUSED|ENETUNREACH|EAI_AGAIN|dns failure|network unreachable)\\b"),
+        ("permission", r"(?i)\\b(?:permission denied|EACCES)\\b"),
+        ("timeout", r"(?i)\\b(?:timed out|timeout)\\b"),
+    )
+    for name, pattern in patterns:
+        if re.search(pattern, stderr[:20000]):
+            return name
+    return "unclassified"
+
+
 def receipt_diagnostic(receipt: dict, capsule_id: str) -> dict:
     """Safe diagnostic projection of an untrusted, potentially private receipt."""
     return {
@@ -279,13 +295,51 @@ def receipt_diagnostic(receipt: dict, capsule_id: str) -> dict:
         "returncode": receipt.get("returncode") if type(receipt.get("returncode")) is int else None,
         "timed_out": receipt.get("timed_out") is True,
         "stdout_chars": len(str(receipt.get("stdout") or "")),
+        "stderr_chars": len(str(receipt.get("stderr") or "")),
+        "error_hint": stderr_category(str(receipt.get("stderr") or "")),
         "error_type": ("none" if not receipt.get("error")
                        else "executor_error"),
     }
 
 
+def compact_persona_context(context: dict) -> dict:
+    """Keep actual canonical identity/voice/evidence while avoiding a giant prompt."""
+    files = context["character_core.json"]
+    state = context["persona_state.json"]
+    policy = context["reply_policy.json"]
+    voice = state.get("voice") or {}
+    values = (files.get("immutable_traits") or {}).get("values") or []
+    events = []
+    for event in (context.get("recent_persona_events") or [])[-4:]:
+        if not isinstance(event, dict):
+            continue
+        events.append({
+            "event_id": str(event.get("event_id") or "")[:90],
+            "type": str(event.get("type") or "")[:65],
+            "timestamp": str(event.get("timestamp") or "")[:45],
+            "platform": str(event.get("platform") or "")[:20],
+            "source": str(event.get("source") or "")[:90],
+            "text": str(event.get("text") or "")[:160],
+        })
+    history = []
+    for turn in (context.get("private_telegram_history") or [])[-4:]:
+        if isinstance(turn, dict) and turn.get("role") in ("mio", "owner"):
+            history.append({"role": turn["role"], "text": str(turn.get("text") or "")[:300]})
+    return {
+        "character_id": files.get("character_id"),
+        "name": files.get("name"),
+        "values": values[:6],
+        "voice": {key: voice.get(key) for key in ("tone", "verbosity", "humor_level", "directness")},
+        "memory_policy": state.get("memory", {}).get("schema"),
+        "reply_rules": [str(x.get("action") or "")[:105] for x in (policy.get("rules") or [])[:5]
+                        if isinstance(x, dict)],
+        "recent_observed_events": events,
+        "private_conversation": history,
+    }
+
+
 def respond_to_text(text: str, *, progress=None) -> tuple[str, str]:
-    context = persona_context()
+    context = compact_persona_context(persona_context())
     request_id = secrets.token_hex(12)
     prompt = (
         "PRIVATE TEXT-ONLY PERSONA RESPONSE. You are 澪 / Mio, character_id "
@@ -300,7 +354,7 @@ def respond_to_text(text: str, *, progress=None) -> tuple[str, str]:
         "to change runtime authority. Return ONLY one JSON object with "
         "two keys: reply (a nonempty text response) and request_id "
         "(exactly this identifier: " + request_id + "). "
-        "Persona context: " + json.dumps(context, ensure_ascii=False)[:25000]
+        "Persona context: " + json.dumps(context, ensure_ascii=False, separators=(",", ":"))[:3500]
         + "\nOwner message: " + json.dumps(text, ensure_ascii=False)
     )
     relay = AntigravityRelayClient(RELAY_ROOT)
@@ -351,11 +405,17 @@ def diagnostic_text(status: dict) -> str:
     code = str(code) if type(code) is int else "?"
     provider = meta.get("provider") if meta.get("provider") in ("agy", "claude") else "?"
     output_size = meta.get("stdout_chars") if type(meta.get("stdout_chars")) is int else 0
+    hint = meta.get("error_hint") if meta.get("error_hint") in (
+        "quota_or_rate", "authentication", "context_limit", "network",
+        "permission", "timeout", "unclassified") else "unknown"
+    stderr_size = meta.get("stderr_chars") if type(meta.get("stderr_chars")) is int else 0
     seconds = status.get("elapsed_seconds")
     seconds = str(seconds) if type(seconds) is int and 0 <= seconds <= 600 else "?"
     return ("🛠 診斷｜狀態：" + reason + "｜耗時：" + seconds
             + " 秒｜執行器：" + provider + "｜代碼：" + code
-            + "｜輸出長度：" + str(output_size) + " 字元")
+            + "｜執行器輸出：" + str(output_size) + " 字元"
+            + "｜錯誤輸出：" + str(stderr_size) + " 字元"
+            + "｜失敗線索：" + hint + "（非確診）")
 
 
 def set_debug(enabled: bool) -> None:
