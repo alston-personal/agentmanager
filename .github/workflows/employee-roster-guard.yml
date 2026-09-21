@@ -1,0 +1,33 @@
+name: Employee Roster Guard
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/employee_roster.py'
+      - 'tests/test_employee_roster.py'
+      - 'docs/EMPLOYEE_ROSTER.md'
+      - '.github/workflows/employee-roster-guard.yml'
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agent_core/employee_roster.py'
+      - 'tests/test_employee_roster.py'
+      - '.github/workflows/employee-roster-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  roster-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Read-only roster unit regressions
+        run: python -m unittest discover -s tests -p 'test_employee_roster.py' -v
