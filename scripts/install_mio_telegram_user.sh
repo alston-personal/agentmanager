@@ -80,11 +80,11 @@ print('mio_telegram_persona_identity=PASS')
 PYCHECK
 chmod 600 "$ENV_FILE"
 python3 -m py_compile "$PYTHON"
-PYTHONPATH="$REPO" /usr/bin/python3 "$PYTHON" inspect
+(cd "$REPO" && PYTHONPATH="$REPO" /usr/bin/python3 -m scripts.mio_telegram_user inspect)
 # Never bind Telegram to the first untrusted inbound chat automatically.
 if ! grep -Eq '^MIO_TELEGRAM_OWNER_ID=[1-9][0-9]*$' "$ENV_FILE"; then
   echo "mio_telegram_install=OWNER_PAIR_REQUIRED"
-  PYTHONPATH="$REPO" /usr/bin/python3 "$PYTHON" pair
+  (cd "$REPO" && PYTHONPATH="$REPO" /usr/bin/python3 -m scripts.mio_telegram_user pair)
 fi
 if ! systemctl --user is-active --quiet agentos-mio-agy-relay.service; then
   echo "mio_telegram_install=MIO_PERSONA_RELAY_NOT_ACTIVE"
@@ -105,7 +105,7 @@ WorkingDirectory=$REPO
 Environment=PYTHONPATH=$REPO
 Environment=AGENT_DATA_ROOT=$HOME/agent-data
 EnvironmentFile=$ENV_FILE
-ExecStart=/usr/bin/python3 -u $PYTHON run
+ExecStart=/usr/bin/python3 -u -m scripts.mio_telegram_user run
 Restart=on-failure
 RestartSec=5
 UMask=0077
