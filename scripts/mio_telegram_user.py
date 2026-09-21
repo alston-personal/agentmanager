@@ -96,21 +96,54 @@ def start_candidates(updates: list[dict]) -> list[int]:
     return sorted(candidates)
 
 
-def pair_owner(token: str, *, confirm=input) -> None:
+def pair_owner(token: str, *, confirm=input, challenge: str | None = None,
+               poll_seconds: int = 180) -> None:
+    """Pair only the private sender of a fresh, locally approved /start nonce.
+
+    An old /start may be absent because Telegram updates were already consumed.
+    Never select an arbitrary account from stale or unsolicited bot messages.
+    """
     values = env_values()
     if values.get("MIO_TELEGRAM_OWNER_ID"):
         raise RuntimeError("mio_owner_already_configured")
-    result = telegram("getUpdates", token, {"timeout": 0, "limit": 100, "allowed_updates": ["message"]})
-    ids = start_candidates(result.get("result") or [])
-    if len(ids) != 1:
-        raise RuntimeError("mio_pair_requires_exactly_one_private_start; candidates=" + str(len(ids)))
-    owner = ids[0]
-    print("mio_pair_candidate_chat_id=" + str(owner))
-    # A local SSH user explicitly approves binding the observed private /start.
-    if confirm("確認這是你自己的 Telegram Chat ID？輸入 YES：").strip() != "YES":
+    challenge = challenge or secrets.token_hex(4)
+    if not re.fullmatch(r"[0-9a-f]{8}", challenge):
+        raise RuntimeError("mio_pair_challenge_invalid")
+    print("mio_pair_send_to_bot=/start " + challenge, flush=True)
+    print("mio_pair_instruction=SEND_ABOVE_COMMAND_TO_MIO_BOT_THEN_RETURN_TO_SSH", flush=True)
+    owner = None
+    deadline = time.monotonic() + poll_seconds
+    offset = None
+    while time.monotonic() < deadline:
+        request = {"timeout": 10, "limit": 100, "allowed_updates": ["message"]}
+        if offset is not None:
+            request["offset"] = offset
+        updates = telegram("getUpdates", token, request).get("result") or []
+        for item in updates:
+            update_id = item.get("update_id")
+            if isinstance(update_id, int):
+                offset = max(offset or 0, update_id + 1)
+            message = item.get("message") or {}
+            sender = message.get("from") or {}
+            chat = message.get("chat") or {}
+            text = str(message.get("text") or "").strip()
+            if (text == "/start " + challenge
+                    and chat.get("type") == "private"
+                    and isinstance(sender.get("id"), int)
+                    and sender["id"] > 0
+                    and chat.get("id") == sender["id"]):
+                owner = sender["id"]
+                break
+        if owner is not None:
+            break
+    if owner is None:
+        raise RuntimeError("mio_pair_challenge_not_observed")
+    print("mio_pair_candidate_chat_id=" + str(owner), flush=True)
+    # Local SSH operator must explicitly approve the owner before persistence.
+    if confirm("確認這是你剛才傳送配對碼的私人帳號？輸入 YES：").strip() != "YES":
         raise RuntimeError("mio_pair_cancelled")
     original = ENV_PATH.read_text(encoding="utf-8")
-    if "MIO_TELEGRAM_OWNER_ID=" in original:
+    if any(line.startswith("MIO_TELEGRAM_OWNER_ID=") for line in original.splitlines()):
         raise RuntimeError("mio_owner_already_configured")
     ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=ENV_PATH.parent)
@@ -122,7 +155,7 @@ def pair_owner(token: str, *, confirm=input) -> None:
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
-    print("mio_telegram_owner_pair=PASS")
+    print("mio_telegram_owner_pair=PASS", flush=True)
 
 
 def owner_id() -> int:
