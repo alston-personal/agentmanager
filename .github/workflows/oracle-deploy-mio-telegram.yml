@@ -1,0 +1,103 @@
+name: Oracle Mio Telegram Exact-Source Deployment
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-deploy-mio-telegram.yml'
+      - 'scripts/deploy_mio_telegram_user.sh'
+      - 'scripts/install_mio_telegram_user.sh'
+      - 'scripts/mio_telegram_user.py'
+      - 'tests/test_mio_telegram_user.py'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight exact branch and private chat contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          test -f scripts/deploy_mio_telegram_user.sh
+          python3 -m py_compile agentos_node/bootstrap_control.py scripts/mio_telegram_user.py
+          bash -n scripts/deploy_mio_telegram_user.sh scripts/install_mio_telegram_user.sh
+          PYTHONPATH=. python3 -m unittest discover -s tests -p test_mio_telegram_user.py -v
+          echo "mio_telegram_deploy_preflight=PASS"
+
+      - name: Submit fixed-purpose ubuntu bootstrap deploy request
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          ID="mio-telegram-deploy-$(printenv GITHUB_RUN_ID)-$(printenv GITHUB_RUN_ATTEMPT)"
+          REQUEST="$REQUESTS/$ID.request.json"
+          RECEIPT="$RECEIPTS/$ID.json"
+          test -w "$LIVE/agentos_node/bootstrap_control.py"
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+
+          # The ubuntu-owned bootstrap consumer already accepts only fixed
+          # actions. Publish exactly the CI-verified revision of that contract.
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          value={
+              'schema':'agentos.bootstrap-request/v1',
+              'request_id':sys.argv[2],
+              'action':'agentos.mio_telegram.deploy',
+              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'params':{'source_commit':sys.argv[3]},
+              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          temp=path.with_suffix(path.suffix+'.tmp')
+          temp.write_text(json.dumps(value,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(temp,0o644)
+          temp.replace(path)
+          os.chmod(path,0o644)
+          PY
+          for i in $(seq 1 240); do
+            test ! -f "$RECEIPT" || break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo "mio_telegram_deploy_receipt=TIMEOUT"; exit 3; }
+
+          # Emit only fixed metadata; never echo a private receipt, token,
+          # Telegram chat ID, model output, or debug logs into GitHub Actions.
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          receipt=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert receipt.get('schema')=='agentos.bootstrap-receipt/v1'
+          assert receipt.get('action')=='agentos.mio_telegram.deploy'
+          assert receipt.get('executor_user')=='ubuntu'
+          assert receipt.get('executor_uid')==1001
+          assert receipt.get('source_commit')==sys.argv[2]
+          if receipt.get('ok') is not True:
+              print('mio_telegram_deploy_receipt=FAILED')
+              for step in receipt.get('steps') or []:
+                  print('mio_telegram_deploy_failed_step='+str(step.get('step') or 'unknown')[:48])
+              raise SystemExit(4)
+          source_text='\n'.join(str(x.get('stdout') or '') for x in receipt.get('steps') or [])
+          assert 'mio_telegram_deploy=PASS' in source_text
+          assert 'mio_telegram_deploy_source_commit='+sys.argv[2] in source_text
+          print('mio_telegram_deploy_receipt=PASS')
+          print('mio_telegram_source_commit='+sys.argv[2])
+          print('mio_telegram_telegram_reply=NOT_VERIFIED_BY_DEPLOY')
+          PY
