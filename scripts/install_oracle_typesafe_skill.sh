@@ -41,7 +41,7 @@ receipt_dir="$data_root/runtime/skills/typesafe-ai"
 mkdir -p "$receipt_dir"
 receipt_tmp="$(mktemp "$receipt_dir/install-receipt.json.XXXXXXXX")"
 trap 'rm -f "$receipt_tmp"' EXIT
-printf '{"schema":"agentos.skill-install-receipt/v1","skill":"typesafe-ai","agent":"antigravity","scope":"oracle-ubuntu-global","installation_method":"npx-skills-add","installed_at":"%s","skill_sha256":"%s","file_verified":true,"fresh_session_loaded":false,"agy_loaded":false}\n' \
+printf '{"schema":"agentos.skill-install-receipt/v1","skill":"typesafe-ai","agent":"antigravity","scope":"oracle-ubuntu-global","installation_method":"npx-skills-add","installed_at":"%s","skill_sha256":"%s","file_verified":true,"fresh_session_loaded":null,"agy_loaded":null}\n' \
   "$installed_at" "$hash" > "$receipt_tmp"
 chmod 0600 "$receipt_tmp"
 mv -f "$receipt_tmp" "$receipt_dir/install-receipt.json"
