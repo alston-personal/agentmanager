@@ -5,6 +5,8 @@ on:
     paths:
       - 'scripts/mio_telegram_user.py'
       - 'scripts/install_mio_telegram_user.sh'
+      - 'scripts/deploy_mio_telegram_user.sh'
+      - '.github/workflows/oracle-deploy-mio-telegram.yml'
       - 'tests/test_mio_telegram_user.py'
       - '.github/workflows/mio-telegram-private-guard.yml'
       - 'README.md'
@@ -23,6 +25,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/mio_telegram_user.py
-          bash -n scripts/install_mio_telegram_user.sh
+          bash -n scripts/install_mio_telegram_user.sh scripts/deploy_mio_telegram_user.sh
           python3 -m unittest discover -s tests -p test_mio_telegram_user.py -v
           echo 'mio_telegram_offline_contract=PASS'
