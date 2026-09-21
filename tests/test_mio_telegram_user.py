@@ -57,33 +57,46 @@ class MioTelegramBridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "mio_reply_missing_or_invalid"):
             mio.parse_persona_reply(prompt_echo, "correct")
 
-    def test_pair_requires_exactly_one_private_start(self):
-        with tempfile.TemporaryDirectory() as temp:
-            cfg = Path(temp) / "mio-telegram.env"
-            cfg.write_text("MIO_TELEGRAM_BOT_TOKEN=12345:abcdefghijklmnopqrstuvwxyz\n")
-            with patch.object(mio, "ENV_PATH", cfg), patch.object(mio, "telegram", return_value={
-                "result": [{"message": {"text": "/start", "from": {"id": 33},
-                                        "chat": {"id": 33, "type": "private"}}},
-                           {"message": {"text": "/start", "from": {"id": 44},
-                                        "chat": {"id": 44, "type": "private"}}}]
-            }):
-                with self.assertRaisesRegex(RuntimeError, "requires_exactly_one"):
-                    mio.pair_owner("test-token", confirm=lambda _: "YES")
-            self.assertNotIn("MIO_TELEGRAM_OWNER_ID", cfg.read_text())
-
-    def test_pair_is_explicit_and_does_not_replace_token(self):
+    def test_pair_does_not_accept_old_start_or_wrong_challenge(self):
         with tempfile.TemporaryDirectory() as temp:
             cfg = Path(temp) / "mio-telegram.env"
             original = "MIO_TELEGRAM_BOT_TOKEN=12345:abcdefghijklmnopqrstuvwxyz\n"
             cfg.write_text(original)
-            with patch.object(mio, "ENV_PATH", cfg), patch.object(mio, "telegram", return_value={
-                "result": [{"message": {"text": "/start", "from": {"id": 33},
-                                        "chat": {"id": 33, "type": "private"}}}]
-            }):
+            updates = {"result": [
+                {"update_id": 10, "message": {"text": "/start", "from": {"id": 33},
+                    "chat": {"id": 33, "type": "private"}}},
+                {"update_id": 11, "message": {"text": "/start abcdef00", "from": {"id": 33},
+                    "chat": {"id": 33, "type": "private"}}},
+                {"update_id": 12, "message": {"text": "/start abcdef01", "from": {"id": 77},
+                    "chat": {"id": 77, "type": "private"}}},
+            ]}
+            with patch.object(mio, "ENV_PATH", cfg), patch.object(mio, "telegram",
+                return_value=updates), patch.object(mio.time, "monotonic", side_effect=[0, 0, 1]):
+                with self.assertRaisesRegex(RuntimeError, "mio_pair_challenge_not_observed"):
+                    mio.pair_owner("test-token", challenge="abcdef01", poll_seconds=0)
+            self.assertEqual(cfg.read_text(), original)
+
+    def test_pair_requires_matching_private_chat_and_confirmation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cfg = Path(temp) / "mio-telegram.env"
+            original = "MIO_TELEGRAM_BOT_TOKEN=12345:abcdefghijklmnopqrstuvwxyz\n"
+            cfg.write_text(original)
+            updates = {"result": [
+                {"update_id": 10, "message": {"text": "/start abcdef01",
+                    "from": {"id": 33}, "chat": {"id": 33, "type": "private"}}},
+                {"update_id": 11, "message": {"text": "/start abcdef01",
+                    "from": {"id": 44}, "chat": {"id": -12, "type": "group"}}},
+                {"update_id": 12, "message": {"text": "/start abcdef01",
+                    "from": {"id": 99}, "chat": {"id": 33, "type": "private"}}},
+            ]}
+            with patch.object(mio, "ENV_PATH", cfg), patch.object(
+                    mio, "telegram", return_value=updates):
                 with self.assertRaisesRegex(RuntimeError, "mio_pair_cancelled"):
-                    mio.pair_owner("test-token", confirm=lambda _: "NO")
+                    mio.pair_owner("test-token", challenge="abcdef01",
+                                   confirm=lambda _: "NO")
                 self.assertEqual(cfg.read_text(), original)
-                mio.pair_owner("test-token", confirm=lambda _: "YES")
+                mio.pair_owner("test-token", challenge="abcdef01",
+                               confirm=lambda _: "YES")
             self.assertEqual(cfg.read_text(), original + "MIO_TELEGRAM_OWNER_ID=33\n")
             self.assertEqual(cfg.stat().st_mode & 0o777, 0o600)
 
