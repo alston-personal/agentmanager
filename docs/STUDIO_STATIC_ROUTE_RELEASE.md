@@ -21,6 +21,7 @@ A consumer supplies only product-specific release facts:
 - backup namespace
 - receipt schema
 - newline-delimited literal acceptance anchors
+- optionally, newline-delimited nested route slugs and literal HTML anchors that each public nested page must satisfy (checked before the existing rollback decision)
 - optionally, a funded Milkcat Platform credit account and positive integer credit cost
 
 The shared carrier owns the repeated release mechanics:
@@ -36,7 +37,7 @@ The shared carrier owns the repeated release mechanics:
 9. roll back on any post-deploy failure;
 10. verify the route through local Nginx;
 11. emit the route release receipt;
-12. verify the public route;
+12. verify the public route and any configured nested pages (a missing hall or stylesheet marker causes the existing public-failure rollback);
 13. when metering is enabled, commit the reserved credits only after successful end-to-end acceptance, or release the reservation after failure/rollback.
 
 ## Reuse Before Build and Credits boundary
