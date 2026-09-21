@@ -87,9 +87,56 @@ if ! grep -Eq '^MIO_TELEGRAM_OWNER_ID=[1-9][0-9]*$' "$ENV_FILE"; then
   echo "mio_telegram_install=OWNER_PAIR_REQUIRED"
   (cd "$REPO" && PYTHONPATH="$REPO" /usr/bin/python3 -m scripts.mio_telegram_user pair)
 fi
-if ! systemctl --user is-active --quiet agentos-mio-agy-relay.service; then
-  echo "mio_telegram_install=MIO_PERSONA_RELAY_NOT_ACTIVE"
-  exit 5
+# ChatGPT-pending mode does not call AGY or depend on an AGY worker.
+# Only a deliberate, exact local owner opt-in enables the separate AGY route.
+if grep -Eq '^MIO_TELEGRAM_CHAT_MODE=agy_opt_in
+
+mkdir -p "$UNIT_DIR" "$HOME/agent-data/runtime/persona/sunlake-milkcat/telegram"
+chmod 700 "$HOME/agent-data/runtime/persona/sunlake-milkcat/telegram"
+cat > "$UNIT" <<EOF
+[Unit]
+Description=Mio owner-only Telegram Persona Bridge
+After=network-online.target agentos-mio-agy-relay.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$REPO
+Environment=PYTHONPATH=$REPO
+Environment=AGENT_DATA_ROOT=$HOME/agent-data
+EnvironmentFile=$ENV_FILE
+ExecStart=/usr/bin/python3 -u -m scripts.mio_telegram_user run
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$HOME/agent-data/runtime/persona/sunlake-milkcat/telegram $HOME/agent-data/runtime/mio-antigravity-relay
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now agentos-mio-telegram.service >/dev/null
+systemctl --user restart agentos-mio-telegram.service
+sleep 2
+if systemctl --user is-active --quiet agentos-mio-telegram.service; then
+  echo "mio_telegram_install=PASS"
+  echo "mio_telegram_service=ACTIVE"
+else
+  echo "mio_telegram_install=SERVICE_NOT_ACTIVE"
+  exit 6
+fi
+ "$ENV_FILE"; then
+  systemctl --user is-active --quiet agentos-mio-agy-relay.service || {
+    echo "mio_telegram_install=OPT_IN_RELAY_NOT_ACTIVE"
+    exit 5
+  }
+  echo "mio_telegram_install_chat_mode=AGY_EXPLICIT_OPT_IN"
+else
+  echo "mio_telegram_install_chat_mode=CHATGPT_PENDING"
 fi
 
 mkdir -p "$UNIT_DIR" "$HOME/agent-data/runtime/persona/sunlake-milkcat/telegram"
