@@ -69,6 +69,31 @@ class MioTelegramBridgeTests(unittest.TestCase):
         self.assertNotIn(secret, mio.diagnostic_text(
             {"reason": "executor_failed", "elapsed_seconds": 4, "meta": meta}))
 
+    def test_debug_status_reads_only_its_own_exact_capsule(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cid = "relay-" + "a" * 32
+            state = root / "last-status.json"
+            state.write_text(__import__("json").dumps({
+                "reason": "executor_failed", "elapsed_seconds": 4,
+                "meta": {"capsule_id": cid, "returncode": 1, "stdout_chars": 14071}
+            }))
+            receipts = root / "receipts"
+            receipts.mkdir()
+            (receipts / (cid + ".json")).write_text(__import__("json").dumps({
+                "schema": "agentos.antigravity-receipt/v1",
+                "capsule_id": cid, "provider": "agy", "returncode": 1,
+                "stdout": "SENSITIVE_PROMPT", "stderr": "HTTP 429 PRIVATE_TOKEN", "ok": False
+            }))
+            with patch.object(mio, "RELAY_ROOT", root), patch.object(
+                    mio, "LAST_STATUS_PATH", state):
+                status = mio.last_status()
+            self.assertEqual(status["meta"]["error_hint"], "quota_or_rate")
+            self.assertEqual(status["meta"]["stdout_chars"], len("SENSITIVE_PROMPT"))
+            self.assertNotIn("SENSITIVE_PROMPT", str(status))
+            self.assertNotIn("PRIVATE_TOKEN", str(status))
+            self.assertEqual(status["reason"], "executor_failed")
+
     def test_debug_is_opt_in_and_persists_outside_persona_git(self):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "debug.json"
