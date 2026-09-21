@@ -519,6 +519,12 @@ class DurableChatInbox:
         with self.lock:
             return sum(row.get("state") == "delivery_uncertain" for row in self._read())
 
+    def is_uncertain(self, message_id: int) -> bool:
+        with self.lock:
+            return any(row.get("message_id") == message_id
+                       and row.get("state") == "delivery_uncertain"
+                       for row in self._read())
+
     def defer_quota(self, message_id: int, *, now: float | None = None) -> tuple[int, bool]:
         """Bound retry traffic; preserve the original owner message for recovery."""
         with self.lock:
@@ -635,7 +641,7 @@ def run(token: str, owner: int) -> None:
                     print("mio_telegram_error_notice=FAILED", flush=True)
             except (RuntimeError, OSError, ValueError):
                 # Includes an uncertain send outcome: NEVER blindly resend.
-                if inbox.uncertain_count() == 0:
+                if not inbox.is_uncertain(message_id):
                     inbox.finish(message_id)
                 status = record_status("context_failed", time.monotonic() - started)
                 print("mio_telegram_persona_reply=CONTEXT_FAILED", flush=True)
