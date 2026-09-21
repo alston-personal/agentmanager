@@ -2,7 +2,7 @@
 # Fixed-purpose ubuntu-owned Mio Telegram deploy. NOT a generic shell carrier.
 set -euo pipefail
 STAGE=preconditions
-trap 'rc=$?; printf "mio_telegram_deploy_stage=%s\\nmio_telegram_deploy_exit=%s\\n" "$STAGE" "$rc"' ERR
+trap 'rc=$?; printf "mio_telegram_deploy_stage=%s\nmio_telegram_deploy_exit=%s\n" "$STAGE" "$rc"' ERR
 [ "$(id -un)" = ubuntu ] || { echo "mio_telegram_deploy=WRONG_USER"; exit 2; }
 
 LIVE="$HOME/agentmanager"
@@ -52,7 +52,7 @@ bash -n "$CAND/scripts/install_mio_telegram_user.sh"
 
 # Do not pair in unattended deploy or emit a private chat ID.
 STAGE=owner_pair_check
-grep -Eq '^MIO_TELEGRAM_OWNER_ID=[1-9][0-9]* || {
+grep -Eq '^MIO_TELEGRAM_OWNER_ID=[1-9][0-9]*$' "$HOME/.config/agentos/mio-telegram.env" || {
   echo "mio_telegram_deploy=OWNER_NOT_PAIRED"; exit 5;
 }
 PRIVATE_LOG="$DATA/runtime/persona/sunlake-milkcat/telegram/deploy-private.log"
@@ -77,34 +77,6 @@ from pathlib import Path
 candidate, expected = Path(sys.argv[1]), sys.argv[2]
 status=subprocess.run(["systemctl","--user","show","agentos-mio-telegram.service",
     "--property=WorkingDirectory","--no-pager"],check=True,text=True,capture_output=True)
-assert str(candidate) in status.stdout, "mio_telegram_service_candidate_mismatch"
-assert subprocess.check_output(["git","-C",str(candidate),"rev-parse","HEAD"],
-    text=True).strip()==expected, "mio_telegram_source_mismatch"
-print("mio_telegram_deploy_source_commit="+expected)
-print("mio_telegram_deploy=PASS")
-PY
- "$HOME/.config/agentos/mio-telegram.env" || {
-  echo "mio_telegram_deploy=OWNER_NOT_PAIRED"; exit 5;
-}
-PRIVATE_LOG="$DATA/runtime/persona/sunlake-milkcat/telegram/deploy-private.log"
-mkdir -p "$(dirname "$PRIVATE_LOG")"
-chmod 700 "$(dirname "$PRIVATE_LOG")"
-umask 077
-AGENTOS_REPO="$CAND" bash "$CAND/scripts/install_mio_telegram_user.sh" > "$PRIVATE_LOG" 2>&1 || {
-  echo "mio_telegram_deploy=INSTALL_FAILED"; exit 6;
-}
-systemctl --user is-active --quiet agentos-mio-telegram.service || {
-  echo "mio_telegram_deploy=SERVICE_INACTIVE"; exit 7;
-}
-systemctl --user is-active --quiet agentos-mio-agy-relay.service || {
-  echo "mio_telegram_deploy=PRIVATE_RELAY_INACTIVE"; exit 7;
-}
-python3 - "$CAND" "$SHA" <<'PY'
-import subprocess,sys
-from pathlib import Path
-candidate, expected = Path(sys.argv[1]), sys.argv[2]
-status=subprocess.run(["systemctl","--user","show","agentos-mio-telegram.service",
-    "--property=ExecStart","--no-pager"],check=True,text=True,capture_output=True)
 assert str(candidate) in status.stdout, "mio_telegram_service_candidate_mismatch"
 assert subprocess.check_output(["git","-C",str(candidate),"rev-parse","HEAD"],
     text=True).strip()==expected, "mio_telegram_source_mismatch"
