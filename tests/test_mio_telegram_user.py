@@ -40,6 +40,35 @@ class MioTelegramBridgeTests(unittest.TestCase):
         self.assertNotIn(sensitive, mio.diagnostic_text(status))
         self.assertIn("代碼：1", mio.diagnostic_text(status))
 
+    def test_compact_persona_context_retains_identity_not_entire_ir(self):
+        original = {
+            "character_core.json": {"character_id": mio.PERSONA_ID, "name": {"display": "澪"},
+                                    "immutable_traits": {"values": ["尊重他人"]}},
+            "persona_state.json": {"voice": {"tone": "溫和"}, "memory": {"schema": "v1"},
+                                   "large_legacy_field": "X" * 20000},
+            "reply_policy.json": {"rules": [{"action": "reply directly"}]},
+            "recent_persona_events": [{"event_id": "recent", "text": "E" * 2000}],
+            "private_telegram_history": [{"role": "owner", "text": "H" * 2000}],
+        }
+        compact = mio.compact_persona_context(original)
+        self.assertEqual(compact["character_id"], mio.PERSONA_ID)
+        self.assertEqual(compact["name"], {"display": "澪"})
+        self.assertNotIn("large_legacy_field", str(compact))
+        self.assertLess(len(str(compact)), 1300)
+        self.assertLessEqual(len(compact["private_conversation"][0]["text"]), 300)
+
+    def test_error_hint_is_coarse_and_never_contains_raw_stderr(self):
+        self.assertEqual(mio.stderr_category("HTTP 429 resource exhausted"), "quota_or_rate")
+        self.assertEqual(mio.stderr_category("connection refused"), "network")
+        self.assertEqual(mio.stderr_category("no actionable details"), "unclassified")
+        secret = "PRIVATE_ERROR_TOKEN_abc"
+        meta = mio.receipt_diagnostic({"provider": "agy", "returncode": 1,
+                "stdout": "data", "stderr": "HTTP 429 " + secret}, "relay-" + "a" * 32)
+        self.assertEqual(meta["error_hint"], "quota_or_rate")
+        self.assertNotIn(secret, str(meta))
+        self.assertNotIn(secret, mio.diagnostic_text(
+            {"reason": "executor_failed", "elapsed_seconds": 4, "meta": meta}))
+
     def test_debug_is_opt_in_and_persists_outside_persona_git(self):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "debug.json"
