@@ -122,6 +122,60 @@ class MioTelegramBridgeTests(unittest.TestCase):
             verify.assert_called_once_with("hidden")
             telegram_request.assert_not_called()
 
+    def test_durable_owner_message_survives_restart_without_duplicate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "private-pending.json"
+            inbox = mio.DurableChatInbox(path)
+            self.assertEqual(inbox.enqueue(123, "澪早安"), "queued")
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            restarted = mio.DurableChatInbox(path)
+            self.assertEqual(restarted.count(), 1)
+            self.assertEqual(restarted.enqueue(123, "澪早安"), "duplicate")
+            self.assertEqual(restarted.due(now=0)["body"], "澪早安")
+            self.assertEqual(restarted.enqueue(124, "第二句"), "queued")
+            self.assertEqual(restarted.count(), 2)
+            self.assertEqual(restarted.due(now=0)["message_id"], 123)
+
+    def test_rate_limit_defers_then_retries_fifo_without_repeated_new_task(self):
+        with tempfile.TemporaryDirectory() as temp:
+            inbox = mio.DurableChatInbox(Path(temp) / "pending.json")
+            self.assertEqual(inbox.enqueue(101, "first"), "queued")
+            self.assertEqual(inbox.enqueue(102, "second"), "queued")
+            attempts, exhausted = inbox.defer_quota(101, now=1000.0)
+            self.assertEqual((attempts, exhausted), (1, False))
+            self.assertIsNone(inbox.due(now=1899.0))
+            self.assertEqual(inbox.due(now=1900.0)["message_id"], 101)
+            for next_attempt in range(2, 7):
+                attempts, exhausted = inbox.defer_quota(101, now=10000.0 * next_attempt)
+            self.assertTrue(exhausted)
+            self.assertEqual(attempts, 6)
+            self.assertEqual(inbox.due(now=999999.0)["message_id"], 102)
+            self.assertEqual(inbox.count(), 2)
+
+    def test_unknown_delivery_is_preserved_and_never_replayed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "pending.json"
+            inbox = mio.DurableChatInbox(path)
+            self.assertEqual(inbox.enqueue(42, "private owner text"), "queued")
+            inbox.mark_delivery_uncertain(42, "private Mio reply", "relay-" + "a" * 32)
+            restarted = mio.DurableChatInbox(path)
+            self.assertIsNone(restarted.due(now=999999.0))
+            self.assertEqual(restarted.uncertain_count(), 1)
+            self.assertIn("private Mio reply", path.read_text())
+            restarted.finish(42)
+            self.assertEqual(restarted.count(), 0)
+
+    def test_inbox_is_bounded_and_does_not_write_repo(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "owner-private.json"
+            inbox = mio.DurableChatInbox(path)
+            for idx in range(mio.MAX_PENDING_MESSAGES):
+                self.assertEqual(inbox.enqueue(idx + 1, "test"), "queued")
+            self.assertEqual(inbox.enqueue(100, "overflow"), "full")
+            self.assertEqual(inbox.count(), mio.MAX_PENDING_MESSAGES)
+            self.assertEqual(inbox.enqueue(200, ""), "invalid")
+            self.assertEqual(inbox.enqueue(201, "X" * 1201), "invalid")
+
     def test_start_candidates_only_private_person_and_exact_start(self):
         updates = [
             {"message": {"text": "/start", "from": {"id": 123},
