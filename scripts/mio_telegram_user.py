@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import queue
 import threading
 import os
 import re
@@ -471,23 +470,124 @@ def send(token: str, owner: int, text: str) -> int:
     return message_id
 
 
+# Owner-private, crash-persistent chat inbox. Never sync these messages to Git.
+PENDING_PATH = STATE_DIR / "pending.json"
+RETRY_DELAYS_SECONDS = (900, 3600, 10800, 21600, 43200)
+
+
+class DurableChatInbox:
+    """Single-owner FIFO, lock-protected across polling and model worker."""
+
+    def __init__(self, path: Path = PENDING_PATH):
+        self.path = path
+        self.lock = threading.Lock()
+
+    def _read(self) -> list[dict]:
+        values = private_json(self.path, [])
+        return values if isinstance(values, list) else []
+
+    def enqueue(self, message_id: int, body: str) -> str:
+        if message_id <= 0 or not body or len(body) > 1200:
+            return "invalid"
+        with self.lock:
+            items = self._read()
+            if any(row.get("message_id") == message_id for row in items):
+                return "duplicate"
+            if len(items) >= MAX_PENDING_MESSAGES:
+                return "full"
+            items.append({"message_id": message_id, "body": body,
+                          "state": "queued", "attempts": 0, "next_attempt_at": 0,
+                          "observed_at": timestamp()})
+            atomic_json(self.path, items)
+            return "queued"
+
+    def due(self, now: float | None = None) -> dict | None:
+        with self.lock:
+            items = self._read()
+            # An uncertain delivery is never replayed automatically.
+            waiting = next((x for x in items if x.get("state") == "queued"), None)
+            if waiting and float(waiting.get("next_attempt_at") or 0) <= (
+                    time.time() if now is None else now):
+                return dict(waiting)
+            return None
+
+    def count(self) -> int:
+        with self.lock:
+            return len(self._read())
+
+    def uncertain_count(self) -> int:
+        with self.lock:
+            return sum(row.get("state") == "delivery_uncertain" for row in self._read())
+
+    def is_uncertain(self, message_id: int) -> bool:
+        with self.lock:
+            return any(row.get("message_id") == message_id
+                       and row.get("state") == "delivery_uncertain"
+                       for row in self._read())
+
+    def defer_quota(self, message_id: int, *, now: float | None = None) -> tuple[int, bool]:
+        """Bound retry traffic; preserve the original owner message for recovery."""
+        with self.lock:
+            items = self._read()
+            row = next((x for x in items if x.get("message_id") == message_id), None)
+            if row is None:
+                raise RuntimeError("mio_pending_message_missing")
+            attempts = int(row.get("attempts") or 0) + 1
+            row["attempts"] = attempts
+            exhausted = attempts > len(RETRY_DELAYS_SECONDS)
+            if exhausted:
+                row["state"] = "retry_exhausted"
+                row["next_attempt_at"] = 0
+            else:
+                row["state"] = "queued"
+                row["next_attempt_at"] = (time.time() if now is None else now) + (
+                    RETRY_DELAYS_SECONDS[attempts - 1])
+            atomic_json(self.path, items)
+            return attempts, exhausted
+
+    def mark_delivery_uncertain(self, message_id: int, reply: str, capsule_id: str) -> None:
+        with self.lock:
+            items = self._read()
+            row = next((x for x in items if x.get("message_id") == message_id), None)
+            if row is None:
+                raise RuntimeError("mio_pending_message_missing")
+            # Persist before send. A crash after this point cannot trigger
+            # blind duplicate Telegram delivery or re-run the model.
+            row.update({"state": "delivery_uncertain", "reply": reply,
+                        "capsule_id": capsule_id})
+            atomic_json(self.path, items)
+
+    def finish(self, message_id: int) -> None:
+        with self.lock:
+            items = self._read()
+            atomic_json(self.path, [x for x in items if x.get("message_id") != message_id])
+
+
 def run(token: str, owner: int) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(STATE_DIR, 0o700)
     offset_path = STATE_DIR / "offset.json"
     offset = int(private_json(offset_path, {"offset": 0}).get("offset") or 0)
-    incoming: queue.Queue[tuple[int, str]] = queue.Queue(maxsize=MAX_PENDING_MESSAGES)
+    inbox = DurableChatInbox()
 
     def respond_worker():
-        # A separate single consumer prevents the model wait from blocking
-        # /debug commands and Telegram polling. Replies remain ordered.
+        # Owner commands/polling keep working independently of model waits.
+        # Queued owner messages survive service restarts and quota cooldowns.
         while True:
-            message_id, body = incoming.get()
+            item = inbox.due()
+            if item is None:
+                time.sleep(2)
+                continue
+            message_id = int(item["message_id"])
+            body = str(item["body"])
+            previous_attempts = int(item.get("attempts") or 0)
             started = time.monotonic()
             sent_ack = False
+
             def progress():
                 nonlocal sent_ack
-                if not sent_ack and time.monotonic() - started >= 8:
+                if (not sent_ack and previous_attempts == 0
+                        and time.monotonic() - started >= 8):
                     try:
                         send(token, owner, "收到，我想一下 🌱")
                         sent_ack = True
@@ -497,11 +597,15 @@ def run(token: str, owner: int) -> None:
                     telegram("sendChatAction", token, {"chat_id": owner, "action": "typing"})
                 except RuntimeError:
                     pass
+
             try:
                 record_status("working", 0)
                 reply, capsule_id = respond_to_text(body, progress=progress)
+                inbox.mark_delivery_uncertain(message_id, reply, capsule_id)
                 platform_id = send(token, owner, reply)
+                # Private history only: no public Git or other persona log.
                 record_history(owner, body, reply, capsule_id, platform_id)
+                inbox.finish(message_id)
                 status = record_status("ready", time.monotonic() - started)
                 print("mio_telegram_persona_reply=PASS", flush=True)
                 if debug_enabled():
@@ -509,23 +613,44 @@ def run(token: str, owner: int) -> None:
             except PersonaReplyError as exc:
                 status = record_status(exc.reason, time.monotonic() - started, exc.metadata)
                 print("mio_telegram_persona_reply=" + exc.reason.upper(), flush=True)
+                meta = exc.metadata or {}
+                quota_or_rate = (exc.reason == "executor_failed"
+                                 and meta.get("error_hint") == "quota_or_rate")
+                if quota_or_rate:
+                    attempts, exhausted = inbox.defer_quota(message_id)
+                    # Inform once, then resume silently on a bounded schedule.
+                    # No fake persona answer and no model calls while cooling down.
+                    if attempts == 1:
+                        notice = ("澪的模型目前遇到額度或請求頻率限制。"
+                                  "我已把這句話保存在私人待處理區，會間隔重試，"
+                                  "恢復後再由澪回覆。")
+                    elif exhausted:
+                        notice = ("澪的模型仍未恢復，這句話已保留，"
+                                  "但自動重試次數已達上限。請稍後再傳給澪。")
+                    else:
+                        notice = ""
+                else:
+                    inbox.finish(message_id)
+                    notice = "剛才的對話沒有順利完成。你可以再傳一次給澪。"
                 try:
-                    send(token, owner, "剛才那句話沒有順利接上。我還在這裡，你可以再傳一次給我。")
+                    if notice:
+                        send(token, owner, notice)
                     if debug_enabled():
                         send(token, owner, diagnostic_text(status))
                 except RuntimeError:
                     print("mio_telegram_error_notice=FAILED", flush=True)
             except (RuntimeError, OSError, ValueError):
+                # Includes an uncertain send outcome: NEVER blindly resend.
+                if not inbox.is_uncertain(message_id):
+                    inbox.finish(message_id)
                 status = record_status("context_failed", time.monotonic() - started)
                 print("mio_telegram_persona_reply=CONTEXT_FAILED", flush=True)
                 try:
-                    send(token, owner, "剛才的對話沒有順利完成，你可以再傳一次給我。")
+                    send(token, owner, "剛才的對話沒有順利完成；若尚未收到回覆，請查看 /status。")
                     if debug_enabled():
                         send(token, owner, diagnostic_text(status))
                 except RuntimeError:
                     print("mio_telegram_error_notice=FAILED", flush=True)
-            finally:
-                incoming.task_done()
 
     threading.Thread(target=respond_worker, name="mio-persona-reply", daemon=True).start()
     print("mio_telegram_bridge=ACTIVE", flush=True)
@@ -538,40 +663,44 @@ def run(token: str, owner: int) -> None:
             for update in updates:
                 next_offset = int(update["update_id"]) + 1
                 message = update.get("message") or {}
-                # Persist before processing to prevent automatic duplicate
-                # messages on restart; a subsequent durable work queue remains
-                # a separate reliability milestone.
+                if is_owner_message(message, owner):
+                    body = str(message.get("text") or "").strip()
+                    command = body.split(maxsplit=1)[0].split("@", 1)[0] if body else ""
+                    if command == "/start":
+                        send(token, owner, "嗨，我是澪。你可以直接跟我聊天。🌱")
+                        print("mio_telegram_start=PASS", flush=True)
+                    elif command == "/debug":
+                        argument = body.split(maxsplit=1)[1].strip().lower() if len(body.split(maxsplit=1)) == 2 else ""
+                        if argument == "on":
+                            set_debug(True)
+                            send(token, owner, "🛠 Debug 已開啟。一般聊天與診斷將分開顯示；不會顯示憑證或私人原始紀錄。")
+                        elif argument == "off":
+                            set_debug(False)
+                            send(token, owner, "Debug 已關閉，回到一般聊天。")
+                        elif argument in ("", "status"):
+                            send(token, owner, ("🛠 Debug 目前：" + ("開啟" if debug_enabled() else "關閉")
+                                 + "\n" + diagnostic_text(last_status())
+                                 + "\n私人待處理：" + str(inbox.count())
+                                 + "｜送達待確認：" + str(inbox.uncertain_count())))
+                        else:
+                            send(token, owner, "使用 /debug on、/debug off 或 /debug status。")
+                    elif command == "/status":
+                        count = inbox.count()
+                        uncertain = inbox.uncertain_count()
+                        detail = ("｜有一筆可能已送達，為避免重複發送，請先確認聊天紀錄。"
+                                  if uncertain else "")
+                        send(token, owner, ("🌱 澪的通訊服務已連線｜待處理："
+                            + str(count) + detail))
+                    elif body and not body.startswith("/") and len(body) <= 1200:
+                        result = inbox.enqueue(int(message.get("message_id") or 0), body)
+                        if result == "queued":
+                            print("mio_telegram_message=PERSISTED", flush=True)
+                        elif result == "full":
+                            send(token, owner, "澪目前有幾句話還在等模型恢復，私人待處理區已滿。請稍後再傳。")
+                # Advance only after the private owner message is persisted,
+                # or intentionally rejected with an explicit bounded notice.
                 offset = max(offset, next_offset)
                 atomic_json(offset_path, {"offset": offset, "updated_at": timestamp()})
-                if not is_owner_message(message, owner):
-                    continue
-                body = str(message.get("text") or "").strip()
-                command = body.split(maxsplit=1)[0].split("@", 1)[0] if body else ""
-                if command == "/start":
-                    send(token, owner, "嗨，我是澪。你可以直接跟我聊天。🌱")
-                    print("mio_telegram_start=PASS", flush=True)
-                elif command == "/debug":
-                    argument = body.split(maxsplit=1)[1].strip().lower() if len(body.split(maxsplit=1)) == 2 else ""
-                    if argument == "on":
-                        set_debug(True)
-                        send(token, owner, "🛠 Debug 已開啟。一般聊天與診斷將分開顯示；不會顯示憑證或私人原始紀錄。")
-                    elif argument == "off":
-                        set_debug(False)
-                        send(token, owner, "Debug 已關閉，回到一般聊天。")
-                    elif argument in ("", "status"):
-                        send(token, owner, ("🛠 Debug 目前：" + ("開啟" if debug_enabled() else "關閉")
-                             + "\n" + diagnostic_text(last_status())
-                             + "\n等待中的訊息：" + str(incoming.qsize())))
-                    else:
-                        send(token, owner, "使用 /debug on、/debug off 或 /debug status。")
-                elif command == "/status":
-                    send(token, owner, "我在這裡 🌱" + ("（正在想事情）" if incoming.qsize() else ""))
-                elif body and not body.startswith("/") and len(body) <= 1200:
-                    try:
-                        incoming.put_nowait((int(message.get("message_id") or 0), body))
-                        print("mio_telegram_message=QUEUED", flush=True)
-                    except queue.Full:
-                        send(token, owner, "目前有幾句話還在處理，我先把前面的回完，再傳給我好嗎？")
         except (RuntimeError, OSError, ValueError):
             print("mio_telegram_poll=DEFERRED", flush=True)
             time.sleep(5)
