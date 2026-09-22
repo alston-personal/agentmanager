@@ -40,7 +40,11 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
             self.assertIn(f"        {hall}", consumer)
         self.assertIn("        回到本館入口", consumer)
         self.assertIn("        .hall-shell", consumer)
-        self.assertIn('        target="_blank"', consumer)
+        # Unlaunched Ziwei has a deliberately disabled link; all seven pages
+        # still require native World return, inlined CSS, and a destination card.
+        self.assertNotIn('        target="_blank"', consumer)
+        self.assertIn('        destination-card', consumer)
+        self.assertIn('        .hall-shell', consumer)
 
     def test_world_es_module_is_verified_as_executable_before_success_and_rollback(self):
         reusable = REUSABLE.read_text(encoding="utf-8")
