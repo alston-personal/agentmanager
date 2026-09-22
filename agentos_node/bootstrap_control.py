@@ -235,7 +235,7 @@ def _mirror_mio_receipt(receipt: dict[str, Any], post_key: str | None) -> None:
         return
     if not re.fullmatch(r"[0-9]{8,32}", object_id):
         return
-    if not re.fullmatch(r"https://www\\.threads\\.com/@[A-Za-z0-9_.]+/post/[A-Za-z0-9_-]+", permalink):
+    if not re.fullmatch(r"https://www\.threads\.com/@[A-Za-z0-9_.]+/post/[A-Za-z0-9_-]+", permalink):
         return
     target = Path(os.environ.get("AGENTOS_MIO_RECEIPT_DIR") or
                   "/home/ubuntu/.local/state/agentos/social/mio-publish-receipts")
@@ -261,7 +261,7 @@ def _mirror_mio_receipt(receipt: dict[str, Any], post_key: str | None) -> None:
         return
     tmp = target / (post_key + "." + str(os.getpid()) + ".tmp")
     try:
-        tmp.write_text(json.dumps(sanitized, ensure_ascii=False, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+        tmp.write_text(json.dumps(sanitized, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         os.chmod(tmp, 0o600)
         tmp.replace(dest)
     finally:
