@@ -322,6 +322,7 @@ class ThreadsCapability:
         if request.operation == "reply":
             params["reply_to_id"] = request.reply_to_id
         token = self.vault.get_access_token(binding.binding_id)
+        carousel_stage = "setup"
         try:
             if request.image_urls:
                 # Official carousel flow: create private image items, wait for
@@ -329,6 +330,7 @@ class ThreadsCapability:
                 # No individual item is ever published as a separate post.
                 children = []
                 for url, alt in zip(request.image_urls, request.image_alt_texts or []):
+                    carousel_stage = "child_create"
                     child = self.transport.api(
                         "me/threads", token=token, method="POST",
                         params={"media_type": "IMAGE", "image_url": url,
@@ -339,6 +341,7 @@ class ThreadsCapability:
                         raise ThreadsProviderError("threads_carousel_child_id_missing")
                     child_ready = False
                     for attempt in range(20):
+                        carousel_stage = "child_status"
                         state = self.transport.api(child_id, token=token, params={"fields": "status,error_message"})
                         child_status = str(state.get("status") or "").upper()
                         if child_status == "FINISHED":
@@ -354,6 +357,7 @@ class ThreadsCapability:
                     children.append(child_id)
                 params.update(media_type="CAROUSEL", children=",".join(children))
                 params.pop("auto_publish_text", None)
+                carousel_stage = "parent_create"
             try:
                 created = self.transport.api("me/threads", token=token, method="POST", params=params)
             except ThreadsProviderError as exc:
@@ -368,6 +372,8 @@ class ThreadsCapability:
                 # an IMAGE request to TEXT, and do not create a second container.
                 ready = False
                 for attempt in range(20):
+                    if request.image_urls:
+                        carousel_stage = "parent_status"
                     state = self.transport.api(creation_id, token=token, params={"fields": "status,error_message"})
                     status = str(state.get("status") or "").upper()
                     if status == "FINISHED":
@@ -386,6 +392,8 @@ class ThreadsCapability:
                 # container for this request: a new container could duplicate replies.
                 for attempt in range(4):
                     try:
+                        if request.image_urls:
+                            carousel_stage = "parent_publish"
                         published = self.transport.api(
                             "me/threads_publish",
                             token=token,
@@ -404,4 +412,5 @@ class ThreadsCapability:
                 thread_id = creation_id
             return receipt_for(request, started_at=started, ok=True, capability=f"social.threads.{request.operation}", platform_object_id=thread_id).to_dict()
         except ThreadsProviderError as exc:
-            return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code=str(exc)).to_dict()
+            safe_error = ("threads_carousel_" + carousel_stage + "_" + str(exc)) if request.image_urls else str(exc)
+            return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code=safe_error).to_dict()
