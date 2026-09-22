@@ -1,0 +1,114 @@
+name: Oracle Inspect Mio Squirrel Follow-up (Read Only)
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-inspect-mio-squirrel-followup.yml'
+      - 'scripts/inspect_mio_squirrel_followup_user.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify no model call or social write
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          bash -n scripts/inspect_mio_squirrel_followup_user.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          script=Path('scripts/inspect_mio_squirrel_followup_user.sh').read_text()
+          inline=script.split("<<'PY'\n",1)[1].rsplit("\nPY",1)[0]
+          compile(inline,'inspect_mio_squirrel_inline.py','exec')
+          assert '"operation":operation' in inline
+          assert 'status("post.read"' in inline
+          assert 'status("replies.read"' in inline
+          assert 'http://127.0.0.1:8771/v1/social/status' in inline
+          assert 'acceptances' not in inline and '/reply' not in inline
+          assert 'subprocess' not in inline and 'executor' not in inline
+          assert '17873481411585255' in inline
+          assert '18187717183406888' in inline
+          assert '18125707952493175' in inline
+          PY
+          echo 'mio_squirrel_readonly_preflight=PASS'
+
+      - name: Inspect exact public reply thread through ubuntu bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          ID="mio-squirrel-inspect-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          REQUEST="$REQUESTS/$ID.request.json"
+          RECEIPT="$RECEIPTS/$ID.json"
+          test -w "$LIVE/agentos_node/bootstrap_control.py"
+          test -d "$REQUESTS" && test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          payload={
+              'schema':'agentos.bootstrap-request/v1',
+              'request_id':sys.argv[2],
+              'action':'agentos.social_threads_mio_squirrel.inspect',
+              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'params':{'source_commit':sys.argv[3]},
+              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path.with_suffix(path.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644)
+          tmp.replace(path)
+          os.chmod(path,0o644)
+          PY
+          for _ in $(seq 1 180); do
+            test ! -f "$RECEIPT" || break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'mio_squirrel_readonly_receipt=TIMEOUT'; exit 3; }
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys,re
+          doc=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert doc.get('schema')=='agentos.bootstrap-receipt/v1'
+          assert doc.get('action')=='agentos.social_threads_mio_squirrel.inspect'
+          assert doc.get('executor_user')=='ubuntu'
+          assert doc.get('executor_uid')==1001
+          assert doc.get('source_commit')==sys.argv[2]
+          assert doc.get('ok') is True,'mio_squirrel_readonly_executor_failed'
+          lines='\n'.join(str(x.get('stdout') or '') for x in doc.get('steps') or []).splitlines()
+          assert 'mio_squirrel_inspect=PASS' in lines,'mio_squirrel_readonly_platform_read_failed'
+          public=next((line.split('=',1)[1] for line in lines if line.startswith('mio_squirrel_public_replies=')),None)
+          assert public is not None,'mio_squirrel_readonly_missing_catalog'
+          rows=json.loads(public)
+          assert isinstance(rows,list) and len(rows)<=40
+          allowed={'17873481411585255','18187717183406888','18125707952493175'}
+          for row in rows:
+              assert isinstance(row,dict) and re.fullmatch(r'[0-9]{10,25}',str(row.get('id') or ''))
+              assert row.get('replied_to_id') in allowed or row.get('id') in allowed or row.get('username')=='faithedennis_0917'
+              assert len(str(row.get('text') or ''))<=500
+          print('mio_squirrel_readonly_receipt=PASS')
+          for line in lines:
+              if line.startswith('mio_squirrel_read_modes='):
+                  modes=json.loads(line.split('=',1)[1])
+                  assert set(modes)=={'root','question','mio_reply'}
+                  assert all(v in ('PASS','UNAVAILABLE') for v in modes.values())
+                  print(line)
+          print('mio_squirrel_public_replies='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
+          PY
