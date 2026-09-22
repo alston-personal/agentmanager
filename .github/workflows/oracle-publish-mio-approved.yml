@@ -13,7 +13,7 @@ permissions:
 jobs:
   publish:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -108,7 +108,7 @@ jobs:
           os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
           PY
 
-          for i in $(seq 1 480); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          for i in $(seq 1 750); do [ -f "$RECEIPT" ] && break; sleep 1; done
           test -f "$RECEIPT" || { echo 'mio_approved_receipt=TIMEOUT'; exit 3; }
 
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'

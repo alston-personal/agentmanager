@@ -37,13 +37,13 @@ def parse_env(path: Path) -> dict[str,str]:
         out[k]=v
     return out
 
-def post_json(url: str, payload: dict, headers: dict[str,str] | None=None) -> tuple[int,dict]:
+def post_json(url: str, payload: dict, headers: dict[str,str] | None=None, timeout_seconds: int=20) -> tuple[int,dict]:
     data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode('utf-8')
     h={'content-type':'application/json','accept':'application/json'}
     if headers: h.update(headers)
     req=urllib.request.Request(url,data=data,headers=h,method='POST')
     try:
-        with urllib.request.urlopen(req,timeout=20) as r:
+        with urllib.request.urlopen(req,timeout=timeout_seconds) as r:
             return r.status,json.loads(r.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         body=e.read().decode('utf-8','replace')
@@ -216,6 +216,7 @@ status,receipt=post_json(
     'http://127.0.0.1:8771/v1/social/publish',
     request,
     {'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':acceptance_id},
+    timeout_seconds=(480 if request.get('image_urls') else 90 if request.get('image_url') else 20),
 )
 if status!=200 or receipt.get('ok') is not True:
     print('galaxy_day1_publish=FAIL')

@@ -199,7 +199,7 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_PUBLISH_MIO_APPROVED:
         if not post_key:
             raise ValueError("approved post key missing")
-        return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit, env_extra={"AGENTOS_SOCIAL_POST_KEY": post_key})
+        return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=600, source_commit=source_commit, env_extra={"AGENTOS_SOCIAL_POST_KEY": post_key})
     if action == ACTION_PUBLISH_MIO_DAY2:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit, env_extra={"AGENTOS_SOCIAL_POST_KEY": "mio-second-post-20260919"})
     if action == ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES:
