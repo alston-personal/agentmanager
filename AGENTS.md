@@ -37,6 +37,12 @@ The Gemini-side `agentos-one` MCP server remains an explicit live-query surface 
 
 If the active selector, Canonical IR head, or generation fence is unavailable/malformed/stale, fail closed with `ONE_IR_HEAD_UNRESOLVED`; do not reconstruct current state from local evidence.
 
+## TypeSafe on Oracle — scoped use
+
+For Oracle Antigravity project work that needs typed semantic judgments (routing, extraction, relevance, verification, uncertainty handling), read `/home/ubuntu/.gemini/antigravity/skills/typesafe-ai/SKILL.md` **if its Oracle-local installation has been verified**. Follow the Skill's links to the current TypeSafe docs before implementing API/SDK integrations. Preserve existing deterministic rules and AgentOS authority boundaries; a Skill does not grant a new execution capability or API credential.
+
+Installation/verification instructions and separate-executor caveats: `docs/ORACLE_TYPESAFE_SKILL.md`. Do not treat this repository instruction or an unexecuted installer as proof that TypeSafe is already installed or loaded on Oracle.
+
 ## OpenAI Codex IDE extension ONE bootstrap
 
 The OpenAI Codex IDE extension is a **separate extension/client** from the Gemini/Antigravity extension. Do not expect Codex to trigger `~/.gemini/config/hooks.json`, and do not use a retained Gemini PreInvocation attestation as evidence that a Codex thread was hydrated.

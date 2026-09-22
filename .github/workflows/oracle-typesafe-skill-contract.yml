@@ -1,0 +1,38 @@
+name: Oracle TypeSafe Skill Source Contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install_oracle_typesafe_skill.sh"
+      - "docs/ORACLE_TYPESAFE_SKILL.md"
+      - "AGENTS.md"
+      - ".github/workflows/oracle-typesafe-skill-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out PR source
+        uses: actions/checkout@v4
+      - name: Check installer syntax (no Oracle execution)
+        run: bash -n scripts/install_oracle_typesafe_skill.sh
+      - name: Validate install scope and unknown runtime status
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path("scripts/install_oracle_typesafe_skill.sh").read_text()
+          doc = Path("docs/ORACLE_TYPESAFE_SKILL.md").read_text()
+          assert script.count("npx --yes skills add ") == 1
+          assert "--skill typesafe-ai --agent antigravity --global --yes" in script
+          assert '"fresh_session_loaded":null,"agy_loaded":null' in script
+          assert "install-receipt.json" in script
+          assert "fresh-session" in doc.lower()
+          assert "agy" in doc
+          print("ORACLE_TYPESAFE_SOURCE_CONTRACT=PASS")
+          print("ORACLE_INSTALLATION=NOT_TESTED_BY_THIS_CI")
+          PY
