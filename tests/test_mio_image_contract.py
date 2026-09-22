@@ -66,6 +66,12 @@ class MioImageContractTests(unittest.TestCase):
         self.assertEqual(normalized["media_type"],"IMAGE")
         self.assertFalse(ThreadsCapability._safe_media({"id":"fake","media_type":"TEXT"})["image_visible"])
 
+    def test_provider_carousel_album_readback_keeps_child_count(self):
+        row=ThreadsCapability._safe_media({"id":"carousel-post","text":"two images",
+            "media_type":"CAROUSEL_ALBUM","children":{"data":[{"id":"child-1"},{"id":"child-2"}]}})
+        self.assertEqual(row["media_type"],"CAROUSEL_ALBUM")
+        self.assertEqual(row["carousel_child_count"],2)
+
     def test_carousel_rejects_invalid_media_and_mutually_exclusive_single_image(self):
         urls=["https://example.org/one.jpg","https://example.org/two.jpg"]
         with self.assertRaisesRegex(ValueError,"invalid_publish_carousel"):
