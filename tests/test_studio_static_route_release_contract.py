@@ -53,6 +53,13 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
             reusable.index("public_studio_static_js_module_acceptance=PASS"),
             reusable.index("- name: Roll back route after public acceptance failure"),
         )
+        self.assertIn("acceptance_focused_nested_route: layoutlib", consumer)
+        self.assertIn("acceptance_focused_nested_anchor: 'href=\"/layout-lab/\"'", consumer)
+        self.assertIn("public_studio_static_focused_nested_route_acceptance=PASS", reusable)
+        self.assertLess(
+            reusable.index("public_studio_static_focused_nested_route_acceptance=PASS"),
+            reusable.index("- name: Roll back route after public acceptance failure"),
+        )
         self.assertIn("acceptance_js_module: world-navigation.js", consumer)
         self.assertIn("acceptance_js_anchor: export function createWalkabilityMap", consumer)
         self.assertIn("        /world/world-navigation.js", consumer)
