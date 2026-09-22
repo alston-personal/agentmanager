@@ -33,6 +33,16 @@ on:
         required: false
         type: string
         default: ''
+      acceptance_js_module:
+        description: Optional relative JS module path whose public response must have executable JavaScript MIME
+        required: false
+        type: string
+        default: ''
+      acceptance_js_anchor:
+        description: Literal body marker required in the accepted JavaScript module
+        required: false
+        type: string
+        default: ''
       credit_account:
         description: Optional funded Milkcat Platform credit account; empty disables metering
         required: false
@@ -73,6 +83,8 @@ jobs:
       ACCEPTANCE_ANCHORS: ${{ inputs.acceptance_anchors }}
       ACCEPTANCE_NESTED_ROUTES: ${{ inputs.acceptance_nested_routes }}
       ACCEPTANCE_NESTED_ANCHORS: ${{ inputs.acceptance_nested_anchors }}
+      ACCEPTANCE_JS_MODULE: ${{ inputs.acceptance_js_module }}
+      ACCEPTANCE_JS_ANCHOR: ${{ inputs.acceptance_js_anchor }}
       CREDIT_ACCOUNT: ${{ inputs.credit_account }}
       CREDIT_COST: ${{ inputs.credit_cost }}
       PLATFORM_EXECUTION_ID: studio-static-route-${{ inputs.route }}-${{ github.run_id }}
@@ -271,6 +283,23 @@ jobs:
               [ -z "$ref" ] && continue
               curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE$ref" -o /dev/null
             done < "$ASSET_REFS"
+          fi
+          # A module's HTTP 200 is insufficient: browsers reject an ES module
+          # if Nginx serves it as octet-stream. Keep this check inside public
+          # acceptance so a failure triggers the existing backed-up rollback.
+          if [ -n "$ACCEPTANCE_JS_MODULE" ]; then
+            [[ "$ACCEPTANCE_JS_MODULE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*\.js$ ]] &&
+              [[ "$ACCEPTANCE_JS_MODULE" != *..* ]] || { echo 'invalid JS module path' >&2; exit 2; }
+            [ -n "$ACCEPTANCE_JS_ANCHOR" ] || { echo 'missing JS module anchor' >&2; exit 2; }
+            JS_HEADERS="${OUT}-module.headers"
+            JS_BODY="${OUT}-module.js"
+            curl -fsS --retry 8 --retry-delay 2 --retry-all-errors -D "$JS_HEADERS" \
+              "$BASE/$ROUTE/$ACCEPTANCE_JS_MODULE?_=$GITHUB_RUN_ID" -o "$JS_BODY"
+            grep -Eiq '^content-type:[[:space:]]*(application|text)/(x-)?javascript([;[:space:]]|$)' "$JS_HEADERS" ||
+              { echo 'public JS module MIME rejected' >&2; exit 1; }
+            grep -Fq -- "$ACCEPTANCE_JS_ANCHOR" "$JS_BODY" ||
+              { echo 'public JS module body rejected' >&2; exit 1; }
+            echo "public_studio_static_js_module_acceptance=PASS route=$ROUTE/$ACCEPTANCE_JS_MODULE"
           fi
           echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
           echo "public_studio_static_assets_acceptance=PASS route=$ROUTE"
