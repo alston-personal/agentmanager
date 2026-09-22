@@ -63,7 +63,8 @@ jobs:
         回到本館入口
         destination-card
         .hall-shell
-        target="_blank"
+      # The Ziwei service is intentionally not launched; its disabled card has
+      # no new-tab link. Validate all seven halls, without requiring one.
       acceptance_focused_nested_route: layoutlib
       acceptance_focused_nested_anchor: 'href="/layout-lab/"'
       acceptance_js_module: world-navigation.js
