@@ -31,7 +31,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: ba629c6ab6462bb37594125647ce096d81d34e32
+      source_sha: bdee07cfc9d4b902eac005173fd45d4aed45d930
       route: world
       backup_key: milkcat-world
       receipt_schema: studio-web.milkcat-world-release/v4
@@ -47,7 +47,10 @@ jobs:
         buildCeremonialPlaza
         data-wayfinding-ir=
         data-plaza-waypoint=
-        帶我走
+        步道導覽
+        七館導覽
+        確認進入
+        data-directory-zone-id=
         wayfinding-status
         /world/world-navigation.js
         moveWalkably(camera.position, motion, walkability)
