@@ -191,7 +191,7 @@ if status!=200 or posts.get('ok') is not True:
     raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
-        if str(row.get('text') or '').strip()==text.strip() and ((not request.get('image_url') and not request.get('image_urls')) or (request.get('image_url') and str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True) or (request.get('image_urls') and str(row.get('media_type') or '').upper()=='CAROUSEL' and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))):
+        if str(row.get('text') or '').strip()==text.strip() and ((not request.get('image_url') and not request.get('image_urls')) or (request.get('image_url') and str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True) or (request.get('image_urls') and str(row.get('media_type') or '').upper() in {'CAROUSEL','CAROUSEL_ALBUM'} and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))):
             result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
             marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
             os.chmod(marker,0o600)
@@ -239,7 +239,7 @@ for attempt in range(10 if (request.get('image_url') or request.get('image_urls'
             is_verified_image=(str(row.get('text') or '').strip()==text.strip()
                                and permalink.startswith('https://')
                                and ((request.get('image_url') and actual_type=='IMAGE' and row.get('image_visible') is True)
-                                    or (request.get('image_urls') and actual_type=='CAROUSEL'
+                                    or (request.get('image_urls') and actual_type in {'CAROUSEL','CAROUSEL_ALBUM'}
                                         and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))))
         break
     if not (request.get('image_url') or request.get('image_urls')) or is_verified_image: break
