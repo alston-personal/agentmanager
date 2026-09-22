@@ -33,6 +33,26 @@ on:
         required: false
         type: string
         default: ''
+      acceptance_focused_nested_route:
+        description: Optional one nested route needing an additional route-specific HTML anchor
+        required: false
+        type: string
+        default: ''
+      acceptance_focused_nested_anchor:
+        description: Additional literal marker required only in the specified nested route
+        required: false
+        type: string
+        default: ''
+      acceptance_js_module:
+        description: Optional relative JS module path whose public response must have executable JavaScript MIME
+        required: false
+        type: string
+        default: ''
+      acceptance_js_anchor:
+        description: Literal body marker required in the accepted JavaScript module
+        required: false
+        type: string
+        default: ''
       credit_account:
         description: Optional funded Milkcat Platform credit account; empty disables metering
         required: false
@@ -73,6 +93,10 @@ jobs:
       ACCEPTANCE_ANCHORS: ${{ inputs.acceptance_anchors }}
       ACCEPTANCE_NESTED_ROUTES: ${{ inputs.acceptance_nested_routes }}
       ACCEPTANCE_NESTED_ANCHORS: ${{ inputs.acceptance_nested_anchors }}
+      ACCEPTANCE_FOCUSED_NESTED_ROUTE: ${{ inputs.acceptance_focused_nested_route }}
+      ACCEPTANCE_FOCUSED_NESTED_ANCHOR: ${{ inputs.acceptance_focused_nested_anchor }}
+      ACCEPTANCE_JS_MODULE: ${{ inputs.acceptance_js_module }}
+      ACCEPTANCE_JS_ANCHOR: ${{ inputs.acceptance_js_anchor }}
       CREDIT_ACCOUNT: ${{ inputs.credit_account }}
       CREDIT_COST: ${{ inputs.credit_cost }}
       PLATFORM_EXECUTION_ID: studio-static-route-${{ inputs.route }}-${{ github.run_id }}
@@ -272,10 +296,34 @@ jobs:
               curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE$ref" -o /dev/null
             done < "$ASSET_REFS"
           fi
+          # A module's HTTP 200 is insufficient: browsers reject an ES module
+          # if Nginx serves it as octet-stream. Keep this check inside public
+          # acceptance so a failure triggers the existing backed-up rollback.
+          if [ -n "$ACCEPTANCE_JS_MODULE" ]; then
+            [[ "$ACCEPTANCE_JS_MODULE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*\.js$ ]] &&
+              [[ "$ACCEPTANCE_JS_MODULE" != *..* ]] || { echo 'invalid JS module path' >&2; exit 2; }
+            [ -n "$ACCEPTANCE_JS_ANCHOR" ] || { echo 'missing JS module anchor' >&2; exit 2; }
+            JS_HEADERS="${OUT}-module.headers"
+            JS_BODY="${OUT}-module.js"
+            curl -fsS --retry 8 --retry-delay 2 --retry-all-errors -D "$JS_HEADERS" \
+              "$BASE/$ROUTE/$ACCEPTANCE_JS_MODULE?_=$GITHUB_RUN_ID" -o "$JS_BODY"
+            grep -Eiq '^content-type:[[:space:]]*(application|text)/(x-)?javascript([;[:space:]]|$)' "$JS_HEADERS" ||
+              { echo 'public JS module MIME rejected' >&2; exit 1; }
+            grep -Fq -- "$ACCEPTANCE_JS_ANCHOR" "$JS_BODY" ||
+              { echo 'public JS module body rejected' >&2; exit 1; }
+            echo "public_studio_static_js_module_acceptance=PASS route=$ROUTE/$ACCEPTANCE_JS_MODULE"
+          fi
           echo "public_studio_static_route_acceptance=PASS route=$ROUTE"
           echo "public_studio_static_assets_acceptance=PASS route=$ROUTE"
           # Public nested pages are checked within the same job so any failure
           # triggers the existing backed-up route rollback on the next step.
+          FOCUSED_NESTED_FOUND=0
+          if [ -n "$ACCEPTANCE_FOCUSED_NESTED_ROUTE" ]; then
+            [[ "$ACCEPTANCE_FOCUSED_NESTED_ROUTE" =~ ^[a-z0-9][a-z0-9-]*$ ]] ||
+              { echo 'invalid focused nested route' >&2; exit 2; }
+            [ -n "$ACCEPTANCE_FOCUSED_NESTED_ANCHOR" ] ||
+              { echo 'missing focused nested anchor' >&2; exit 2; }
+          fi
           while IFS= read -r nested || [ -n "$nested" ]; do
             [ -z "$nested" ] && continue
             [[ "$nested" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo 'invalid nested route' >&2; exit 2; }
@@ -285,8 +333,20 @@ jobs:
               [ -z "$anchor" ] && continue
               grep -Fq -- "$anchor" "$NESTED_OUT"
             done <<< "$ACCEPTANCE_NESTED_ANCHORS"
+            if [ -n "$ACCEPTANCE_FOCUSED_NESTED_ROUTE" ] &&
+               [ "$nested" = "$ACCEPTANCE_FOCUSED_NESTED_ROUTE" ]; then
+              grep -Fq -- "$ACCEPTANCE_FOCUSED_NESTED_ANCHOR" "$NESTED_OUT" ||
+                { echo 'focused nested route anchor rejected' >&2; exit 1; }
+              FOCUSED_NESTED_FOUND=1
+              echo "public_studio_static_focused_nested_route_acceptance=PASS route=$ROUTE/$nested"
+            fi
             echo "public_studio_static_nested_route_acceptance=PASS route=$ROUTE/$nested"
           done <<< "$ACCEPTANCE_NESTED_ROUTES"
+          if [ -n "$ACCEPTANCE_FOCUSED_NESTED_ROUTE" ] &&
+             [ "$FOCUSED_NESTED_FOUND" -ne 1 ]; then
+            echo 'focused nested route not in acceptance list' >&2
+            exit 1
+          fi
 
       - name: Roll back route after public acceptance failure
         if: ${{ failure() && steps.publish.outcome == 'success' }}

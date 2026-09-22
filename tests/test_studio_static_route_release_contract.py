@@ -42,6 +42,29 @@ class StudioStaticRouteReleaseContractTest(unittest.TestCase):
         self.assertIn("        .hall-shell", consumer)
         self.assertIn('        target="_blank"', consumer)
 
+    def test_world_es_module_is_verified_as_executable_before_success_and_rollback(self):
+        reusable = REUSABLE.read_text(encoding="utf-8")
+        consumer = CONSUMER.read_text(encoding="utf-8")
+        self.assertIn("acceptance_js_module:", reusable)
+        self.assertIn("acceptance_js_anchor:", reusable)
+        self.assertIn("public_studio_static_js_module_acceptance=PASS", reusable)
+        self.assertIn("public JS module MIME rejected", reusable)
+        self.assertLess(
+            reusable.index("public_studio_static_js_module_acceptance=PASS"),
+            reusable.index("- name: Roll back route after public acceptance failure"),
+        )
+        self.assertIn("acceptance_focused_nested_route: layoutlib", consumer)
+        self.assertIn("acceptance_focused_nested_anchor: 'href=\"/layout-lab/\"'", consumer)
+        self.assertIn("public_studio_static_focused_nested_route_acceptance=PASS", reusable)
+        self.assertLess(
+            reusable.index("public_studio_static_focused_nested_route_acceptance=PASS"),
+            reusable.index("- name: Roll back route after public acceptance failure"),
+        )
+        self.assertIn("acceptance_js_module: world-navigation.js", consumer)
+        self.assertIn("acceptance_js_anchor: export function createWalkabilityMap", consumer)
+        self.assertIn("        /world/world-navigation.js", consumer)
+        self.assertNotIn("        /world/world-navigation.mjs", consumer)
+
     def test_reusable_workflow_has_opt_in_platform_execution_contract(self):
         text = REUSABLE.read_text(encoding="utf-8")
         for required in (

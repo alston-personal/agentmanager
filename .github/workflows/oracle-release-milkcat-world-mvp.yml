@@ -31,7 +31,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: d57fc53a97f8cbb5cd0713f4539da2537e797b3d
+      source_sha: ba629c6ab6462bb37594125647ce096d81d34e32
       route: world
       backup_key: milkcat-world
       receipt_schema: studio-web.milkcat-world-release/v4
@@ -49,7 +49,7 @@ jobs:
         data-plaza-waypoint=
         帶我走
         wayfinding-status
-        /world/world-navigation.mjs
+        /world/world-navigation.js
         moveWalkably(camera.position, motion, walkability)
       acceptance_nested_routes: |-
         tarot
@@ -64,6 +64,10 @@ jobs:
         destination-card
         .hall-shell
         target="_blank"
+      acceptance_focused_nested_route: layoutlib
+      acceptance_focused_nested_anchor: 'href="/layout-lab/"'
+      acceptance_js_module: world-navigation.js
+      acceptance_js_anchor: export function createWalkabilityMap
       credit_account: ${{ inputs.credit_account || '' }}
       credit_cost: ${{ inputs.credit_cost || 0 }}
     secrets:
