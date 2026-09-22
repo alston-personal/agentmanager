@@ -44,6 +44,8 @@ class SocialRequest:
     text_attachment: dict[str, str] | None = None
     image_url: str | None = None
     image_alt_text: str | None = None
+    image_urls: list[str] | None = None
+    image_alt_texts: list[str] | None = None
     object_id: str | None = None
     reply_to_id: str | None = None
     return_to: str | None = None
@@ -75,6 +77,26 @@ class SocialRequest:
                     raise ValueError("text_attachment_plaintext_required")
                 if set(self.text_attachment) - {"plaintext", "link_attachment_url"}:
                     raise ValueError("unsupported_text_attachment_field")
+        if self.image_urls is not None:
+            from urllib.parse import urlsplit
+            if (self.operation != "publish" or self.platform != "threads"
+                    or self.image_url is not None or self.image_alt_text is not None
+                    or self.text_attachment is not None
+                    or not isinstance(self.image_urls, list)
+                    or not 2 <= len(self.image_urls) <= 20
+                    or not isinstance(self.image_alt_texts, list)
+                    or len(self.image_alt_texts) != len(self.image_urls)):
+                raise ValueError("invalid_publish_carousel")
+            for media_url, alt in zip(self.image_urls, self.image_alt_texts):
+                if not isinstance(media_url, str) or not isinstance(alt, str):
+                    raise ValueError("invalid_publish_carousel_item")
+                parsed = urlsplit(media_url)
+                if (parsed.scheme != "https" or not parsed.hostname
+                        or parsed.username or parsed.password or parsed.fragment
+                        or len(media_url) > 2048 or not 0 < len(alt.strip()) <= 1000):
+                    raise ValueError("invalid_publish_carousel_item")
+        elif self.image_alt_texts is not None:
+            raise ValueError("carousel_alt_texts_without_images")
         if self.image_url is not None:
             from urllib.parse import urlsplit
             url = urlsplit(self.image_url)

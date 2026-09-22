@@ -21,7 +21,7 @@ THREADS_TEXT_LIMIT = 500
 THREADS_ATTACHMENT_LIMIT = 10000
 THREADS_READ_PAGE_LIMIT = 3
 THREADS_READ_ITEM_LIMIT = 150
-THREAD_FIELDS = "id,text,media_type,media_url,timestamp,username,permalink,is_quote_post,has_replies"
+THREAD_FIELDS = "id,text,media_type,media_url,timestamp,username,permalink,is_quote_post,has_replies,children"
 REPLY_FIELDS = "id,text,timestamp,username,permalink,is_quote_post,has_replies,is_reply,is_reply_owned_by_me,root_post,replied_to"
 
 
@@ -183,6 +183,7 @@ class ThreadsCapability:
             "text": str(item.get("text") or "")[:12000],
             "media_type": str(item.get("media_type") or ""),
             "image_visible": str(item.get("media_type") or "").upper() == "IMAGE" and str(item.get("media_url") or "").startswith("https://"),
+            "carousel_child_count": len((item.get("children") or {}).get("data") or []) if isinstance(item.get("children"), dict) else 0,
             "timestamp": item.get("timestamp"),
             "username": item.get("username"),
             "permalink": item.get("permalink"),
@@ -322,6 +323,37 @@ class ThreadsCapability:
             params["reply_to_id"] = request.reply_to_id
         token = self.vault.get_access_token(binding.binding_id)
         try:
+            if request.image_urls:
+                # Official carousel flow: create private image items, wait for
+                # each item, create ONE CAROUSEL parent, publish that parent.
+                # No individual item is ever published as a separate post.
+                children = []
+                for url, alt in zip(request.image_urls, request.image_alt_texts or []):
+                    child = self.transport.api(
+                        "me/threads", token=token, method="POST",
+                        params={"media_type": "IMAGE", "image_url": url,
+                                "alt_text": alt, "is_carousel_item": "true"},
+                    )
+                    child_id = str(child.get("id") or "")
+                    if not child_id:
+                        raise ThreadsProviderError("threads_carousel_child_id_missing")
+                    child_ready = False
+                    for attempt in range(20):
+                        state = self.transport.api(child_id, token=token, params={"fields": "status,error_message"})
+                        child_status = str(state.get("status") or "").upper()
+                        if child_status == "FINISHED":
+                            child_ready = True
+                            break
+                        if child_status in {"ERROR", "EXPIRED"}:
+                            raise ThreadsProviderError("threads_carousel_child_failed")
+                        if child_status not in {"IN_PROGRESS", "PUBLISHED"}:
+                            raise ThreadsProviderError("threads_carousel_child_unknown_status")
+                        time.sleep(3)
+                    if not child_ready:
+                        raise ThreadsProviderError("threads_carousel_child_not_ready")
+                    children.append(child_id)
+                params.update(media_type="CAROUSEL", children=",".join(children))
+                params.pop("auto_publish_text", None)
             try:
                 created = self.transport.api("me/threads", token=token, method="POST", params=params)
             except ThreadsProviderError as exc:
@@ -331,7 +363,7 @@ class ThreadsCapability:
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
-            if request.image_url:
+            if request.image_url or request.image_urls:
                 # Meta fetches remote images asynchronously. Never downgrade
                 # an IMAGE request to TEXT, and do not create a second container.
                 ready = False
@@ -348,7 +380,7 @@ class ThreadsCapability:
                     time.sleep(3)
                 if not ready:
                     raise ThreadsProviderError("threads_image_container_not_ready")
-            if request.operation == "reply" or request.image_url:
+            if request.operation == "reply" or request.image_url or request.image_urls:
                 # Meta can return code 24 while a freshly created media container
                 # is propagating. Retry the SAME creation_id, never create another
                 # container for this request: a new container could duplicate replies.

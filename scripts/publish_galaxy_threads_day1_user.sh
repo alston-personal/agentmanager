@@ -93,38 +93,55 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
     text=article.stdout.strip()
     image_url=None
     image_alt_text=None
+    image_urls=None
+    image_alt_texts=None
     manifest=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':personas/mio/approved/'+post_key+'.json'],capture_output=True,text=True)
     if manifest.returncode==0:
         from urllib.parse import quote
         import hashlib
         spec=json.loads(manifest.stdout)
-        if set(spec)!={'image_path','image_alt_text'}:
+        if isinstance(spec,dict) and set(spec)=={'image_path','image_alt_text'}:
+            ordered=[{'image_path':spec['image_path'],'image_alt_text':spec['image_alt_text']}]
+        elif (isinstance(spec,dict) and set(spec)=={'images'}
+              and isinstance(spec['images'],list) and 2<=len(spec['images'])<=20):
+            ordered=spec['images']
+        else:
             raise SystemExit('social_publish=INVALID_IMAGE_MANIFEST')
-        rel=str(spec['image_path'])
-        if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)',rel):
-            raise SystemExit('social_publish=INVALID_IMAGE_PATH')
-        image_alt_text=str(spec['image_alt_text']).strip()
-        if not image_alt_text or len(image_alt_text)>1000:
-            raise SystemExit('social_publish=IMAGE_ALT_MISSING')
-        blob=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':'+rel],capture_output=True,check=True).stdout
-        if not 32<=len(blob)<=8*1024*1024:
-            raise SystemExit('social_publish=INVALID_IMAGE_SIZE')
-        kind='image/png' if blob.startswith(bytes.fromhex('89504e470d0a1a0a')) else 'image/jpeg' if blob.startswith(bytes.fromhex('ffd8ff')) else ''
-        if not kind or (kind=='image/png' and not rel.endswith('.png')) or (kind=='image/jpeg' and not rel.endswith(('.jpg','.jpeg'))):
-            raise SystemExit('social_publish=INVALID_IMAGE_CONTENT')
-        image_url='https://raw.githubusercontent.com/alston-personal/agentmanager/'+source+'/'+quote(rel,safe='/')
-        # Meta must be able to fetch the exact immutable, already public asset.
-        # This bypasses any new media gateway, OAuth flows or arbitrary URLs.
-        try:
-            with urllib.request.urlopen(urllib.request.Request(image_url,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'}),timeout=18) as hosted:
-                remote=hosted.read(len(blob)+1)
-                served_type=str(hosted.headers.get('Content-Type') or '').lower()
-                if hosted.status!=200 or hashlib.sha256(remote).digest()!=hashlib.sha256(blob).digest() or kind not in served_type:
-                    raise SystemExit('social_publish=IMAGE_CDN_MISMATCH')
-        except (OSError,TimeoutError) as exc:
-            raise SystemExit('social_publish=IMAGE_CDN_UNAVAILABLE') from exc
+        hosted_images=[]
+        hosted_alts=[]
+        for photo in ordered:
+            if not isinstance(photo,dict) or set(photo)!={'image_path','image_alt_text'}:
+                raise SystemExit('social_publish=INVALID_IMAGE_ITEM')
+            rel=str(photo['image_path'])
+            if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)',rel):
+                raise SystemExit('social_publish=INVALID_IMAGE_PATH')
+            alt=str(photo['image_alt_text']).strip()
+            if not alt or len(alt)>1000:
+                raise SystemExit('social_publish=IMAGE_ALT_MISSING')
+            blob=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':'+rel],capture_output=True,check=True).stdout
+            if not 32<=len(blob)<=8*1024*1024:
+                raise SystemExit('social_publish=INVALID_IMAGE_SIZE')
+            kind='image/png' if blob.startswith(bytes.fromhex('89504e470d0a1a0a')) else 'image/jpeg' if blob.startswith(bytes.fromhex('ffd8ff')) else ''
+            if not kind or (kind=='image/png' and not rel.endswith('.png')) or (kind=='image/jpeg' and not rel.endswith(('.jpg','.jpeg'))):
+                raise SystemExit('social_publish=INVALID_IMAGE_CONTENT')
+            remote_url='https://raw.githubusercontent.com/alston-personal/agentmanager/'+source+'/'+quote(rel,safe='/')
+            try:
+                with urllib.request.urlopen(urllib.request.Request(remote_url,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'}),timeout=18) as hosted:
+                    remote=hosted.read(len(blob)+1)
+                    served_type=str(hosted.headers.get('Content-Type') or '').lower()
+                    if hosted.status!=200 or hashlib.sha256(remote).digest()!=hashlib.sha256(blob).digest() or kind not in served_type:
+                        raise SystemExit('social_publish=IMAGE_CDN_MISMATCH')
+            except (OSError,TimeoutError) as exc:
+                raise SystemExit('social_publish=IMAGE_CDN_UNAVAILABLE') from exc
+            hosted_images.append(remote_url)
+            hosted_alts.append(alt)
+        if len(hosted_images)==1:
+            image_url,image_alt_text=hosted_images[0],hosted_alts[0]
+        else:
+            image_urls,image_alt_texts=hosted_images,hosted_alts
         print('galaxy_day1_image_asset=VERIFIED')
-    if os.environ.get('AGENTOS_REQUIRE_IMAGE','0')=='1' and not image_url:
+        print('galaxy_day1_image_count='+str(len(hosted_images)))
+    if os.environ.get('AGENTOS_REQUIRE_IMAGE','0')=='1' and not (image_url or image_urls):
         raise SystemExit('social_publish=IMAGE_REQUIRED_NO_TEXT_FALLBACK')
     if not text or len(text)>500:
         raise SystemExit('social_publish=INVALID_TEXT')
@@ -153,9 +170,13 @@ request={
     'primary_text':text,
     'write_intent_id':post_key,
 }
-if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key) and image_url:
-    request['image_url']=image_url
-    request['image_alt_text']=image_alt_text
+if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
+    if image_url:
+        request['image_url']=image_url
+        request['image_alt_text']=image_alt_text
+    elif image_urls:
+        request['image_urls']=image_urls
+        request['image_alt_texts']=image_alt_texts
 
 # Idempotency: if the exact post already exists, do not publish again.
 read_req={
@@ -170,7 +191,7 @@ if status!=200 or posts.get('ok') is not True:
     raise SystemExit('social_publish=PREPUBLISH_READ_FAILED')
 if status==200 and posts.get('ok') is True:
     for row in ((posts.get('result') or {}).get('items') or []):
-        if str(row.get('text') or '').strip()==text.strip() and (not request.get('image_url') or (str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True)):
+        if str(row.get('text') or '').strip()==text.strip() and ((not request.get('image_url') and not request.get('image_urls')) or (request.get('image_url') and str(row.get('media_type') or '').upper()=='IMAGE' and row.get('image_visible') is True) or (request.get('image_urls') and str(row.get('media_type') or '').upper() in {'CAROUSEL','CAROUSEL_ALBUM'} and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))):
             result={'schema':'agentos.social-day1-publish/v1','ok':True,'already_present':True,'username':username,'platform_object_id':row.get('id'),'permalink':row.get('permalink')}
             marker.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
             os.chmod(marker,0o600)
@@ -205,7 +226,7 @@ obj=str(receipt.get('platform_object_id') or '')
 if not obj: raise SystemExit('social_publish=PLATFORM_OBJECT_ID_MISSING')
 permalink=''
 is_verified_image=False
-for attempt in range(10 if request.get('image_url') else 1):
+for attempt in range(10 if (request.get('image_url') or request.get('image_urls')) else 1):
     status,posts=post_json('http://127.0.0.1:8771/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
     if status!=200 or posts.get('ok') is not True:
         raise SystemExit('social_publish=POSTPUBLISH_READ_FAILED')
@@ -213,18 +234,20 @@ for attempt in range(10 if request.get('image_url') else 1):
         if str(row.get('id') or '')!=obj:
             continue
         permalink=str(row.get('permalink') or '')
-        if request.get('image_url'):
-            is_verified_image=(str(row.get('media_type') or '').upper()=='IMAGE'
-                               and row.get('image_visible') is True
-                               and str(row.get('text') or '').strip()==text.strip()
-                               and permalink.startswith('https://'))
+        if request.get('image_url') or request.get('image_urls'):
+            actual_type=str(row.get('media_type') or '').upper()
+            is_verified_image=(str(row.get('text') or '').strip()==text.strip()
+                               and permalink.startswith('https://')
+                               and ((request.get('image_url') and actual_type=='IMAGE' and row.get('image_visible') is True)
+                                    or (request.get('image_urls') and actual_type in {'CAROUSEL','CAROUSEL_ALBUM'}
+                                        and int(row.get('carousel_child_count') or 0)==len(request['image_urls']))))
         break
-    if not request.get('image_url') or is_verified_image: break
+    if not (request.get('image_url') or request.get('image_urls')) or is_verified_image: break
     import time
     time.sleep(3)
-if request.get('image_url') and not is_verified_image:
+if (request.get('image_url') or request.get('image_urls')) and not is_verified_image:
     raise SystemExit('social_publish=IMAGE_READBACK_MISSING_OR_NOT_VISIBLE')
-if request.get('image_url'):
+if request.get('image_url') or request.get('image_urls'):
     print('galaxy_day1_image_readback=PASS')
 
 result={

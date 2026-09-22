@@ -457,7 +457,7 @@ class SocialRuntimeHandler(BaseHTTPRequestHandler):
     def _request(self, body: dict[str, Any]) -> SocialRequest:
         allowed = {
             "schema", "product_id", "platform", "operation", "account_binding_id", "target_account_id",
-            "primary_text", "text_attachment", "image_url", "image_alt_text", "object_id", "reply_to_id", "return_to", "write_intent_id",
+            "primary_text", "text_attachment", "image_url", "image_alt_text", "image_urls", "image_alt_texts", "object_id", "reply_to_id", "return_to", "write_intent_id",
             "query", "search_type", "search_mode", "auth_profile",
         }
         if set(body) - allowed:

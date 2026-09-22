@@ -66,6 +66,59 @@ class MioImageContractTests(unittest.TestCase):
         self.assertEqual(normalized["media_type"],"IMAGE")
         self.assertFalse(ThreadsCapability._safe_media({"id":"fake","media_type":"TEXT"})["image_visible"])
 
+    def test_provider_carousel_album_readback_keeps_child_count(self):
+        row=ThreadsCapability._safe_media({"id":"carousel-post","text":"two images",
+            "media_type":"CAROUSEL_ALBUM","children":{"data":[{"id":"child-1"},{"id":"child-2"}]}})
+        self.assertEqual(row["media_type"],"CAROUSEL_ALBUM")
+        self.assertEqual(row["carousel_child_count"],2)
+
+    def test_carousel_rejects_invalid_media_and_mutually_exclusive_single_image(self):
+        urls=["https://example.org/one.jpg","https://example.org/two.jpg"]
+        with self.assertRaisesRegex(ValueError,"invalid_publish_carousel"):
+            request(image_urls=urls[:1],image_alt_texts=["one"]).validate()
+        with self.assertRaisesRegex(ValueError,"invalid_publish_carousel"):
+            request(image_urls=urls,image_alt_texts=["only-one"]).validate()
+        with self.assertRaisesRegex(ValueError,"invalid_publish_carousel"):
+            request(image_url=urls[0],image_alt_text="single",image_urls=urls,image_alt_texts=["one","two"]).validate()
+        with self.assertRaisesRegex(ValueError,"invalid_publish_carousel_item"):
+            request(image_urls=[urls[0],"http://localhost/unsafe"],image_alt_texts=["one","two"]).validate()
+        self.assertEqual(request(image_urls=urls,image_alt_texts=["one","two"]).validate().image_urls,urls)
+
+    def test_two_original_images_publish_as_one_carousel_parent(self):
+        class FakeCarouselTransport:
+            def __init__(self): self.calls=[];self.children=0
+            def api(self,path,*,token,method="GET",params=None):
+                d=dict(params or {})
+                self.calls.append((path,method,d))
+                if path=="me/threads" and d.get("is_carousel_item")=="true":
+                    self.children+=1
+                    return {"id":f"child-{self.children}"}
+                if path in {"child-1","child-2","carousel-parent"}:
+                    return {"status":"FINISHED"}
+                if path=="me/threads" and d.get("media_type")=="CAROUSEL":
+                    assert d["children"]=="child-1,child-2"
+                    assert "image_url" not in d
+                    return {"id":"carousel-parent"}
+                if path=="me/threads_publish":
+                    assert d=={"creation_id":"carousel-parent"}
+                    return {"id":"public-carousel-post"}
+                raise AssertionError((path,method,d))
+        urls=["https://cdn.example.org/first.jpg","https://cdn.example.org/second.jpg"]
+        vault=EphemeralCredentialVault()
+        vault.bind(AccountBinding("galaxy:threads:42","galaxy","threads","42","sunlake.milkcat"),"dummy-token")
+        transport=FakeCarouselTransport()
+        cap=ThreadsCapability(vault,transport)
+        req=request(image_urls=urls,image_alt_texts=["燉飯與干貝","甜點"])
+        acceptance=RuntimeWriteAcceptance("accepted-carousel-1","galaxy","threads",frozenset({"publish"}),frozenset({req.account_binding_id}))
+        with patch("agentos_node.social.threads.time.sleep"):
+            receipt=cap.publish(req,acceptance=acceptance)
+        self.assertTrue(receipt["ok"],receipt)
+        self.assertEqual(receipt["platform_object_id"],"public-carousel-post")
+        self.assertEqual([call[0] for call in transport.calls],[
+            "me/threads","child-1","me/threads","child-2","me/threads","carousel-parent","me/threads_publish"])
+        self.assertEqual(transport.calls[0][2]["alt_text"],"燉飯與干貝")
+        self.assertEqual(transport.calls[2][2]["alt_text"],"甜點")
+
     def test_pinned_original_artwork_is_valid_png(self):
         data=ASSET.read_bytes()
         self.assertTrue(data.startswith(bytes.fromhex("89504e470d0a1a0a")))
