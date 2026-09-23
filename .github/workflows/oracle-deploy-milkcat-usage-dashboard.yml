@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/oracle-deploy-milkcat-usage-dashboard.yml'
+      - 'dashboard/app/admin/usage/page.tsx'
+      - 'dashboard/app/api/admin/usage/route.ts'
+      - 'dashboard/lib/fengshui-admin.ts'
+      - 'dashboard/lib/auth/roles.ts'
 
 permissions:
   contents: read
