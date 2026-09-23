@@ -17,7 +17,7 @@ API = "http://127.0.0.1:8771/v1/social/status"
 # Verify the newest owned posts, plus the known squirrel/first experiment roots.
 EXTRA_ROOTS = ("17873481411585255", "18353956147218749")
 LIMIT_POSTS = 14
-LIMIT_ROWS = 46
+LIMIT_ROWS = 36
 SINCE = datetime.now(timezone.utc) - timedelta(hours=42)
 
 def fail(category):
@@ -124,12 +124,12 @@ for root in target_ids:
         results[rid] = {
             "id": rid,
             "root_post_id": root,
-            "root_post_text": str(post.get("text") or "")[:165],
+            "root_post_text": str(post.get("text") or "")[:115],
             "username": str(row.get("username") or "")[:70].lstrip("@"),
-            "text": str(row.get("text") or "")[:400],
+            "text": str(row.get("text") or "")[:290],
             "timestamp": str(row.get("timestamp") or "")[:48],
             "replied_to_id": parent,
-            "permalink": str(row.get("permalink") or "")[:160],
+            "permalink": str(row.get("permalink") or "")[:135],
             "is_reply_owned_by_me": bool(row.get("is_reply_owned_by_me")),
         }
 items = sorted(results.values(), key=lambda x: (x["timestamp"], x["id"]))
