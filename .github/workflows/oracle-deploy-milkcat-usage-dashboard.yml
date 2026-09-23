@@ -249,7 +249,22 @@ jobs:
           curl --noproxy '*' -k -sS -D "$TMP/headers" -o /dev/null \
             --resolve studio.milkcat.org:443:127.0.0.1 \
             https://studio.milkcat.org/dashboard/admin/usage
-          grep -Eiq '^location: /dashboard/api/auth/signin/google' "$TMP/headers"
+          # Next.js can serialize redirect locations as absolute same-origin URLs.
+          # Validate the actual destination and preserved returnTo, not the header's URL shape.
+          node - "$TMP/headers" <<'NODE'
+          const fs = require('node:fs');
+          const raw = fs.readFileSync(process.argv[2], 'utf8');
+          const match = raw.match(/^location:\s*(.+?)\r?$/im);
+          if (!match) throw Error('dashboard_signin_redirect_location_missing');
+          const target = new URL(match[1].trim(), 'https://studio.milkcat.org');
+          console.log('dashboard_signin_redirect_path=' + target.pathname);
+          if (target.origin !== 'https://studio.milkcat.org' ||
+              target.pathname !== '/dashboard/api/auth/signin/google' ||
+              target.searchParams.get('returnTo') !== '/dashboard/admin/usage') {
+            throw Error('dashboard_signin_redirect_destination_invalid');
+          }
+          console.log('dashboard_signin_redirect=PASS');
+          NODE
 
           # Probe the actual public host from Oracle, without publishing protected data.
           check_public() {
