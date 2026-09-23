@@ -24,6 +24,7 @@ ACTION_PUBLISH_MIO_APPROVED = "agentos.social_threads_mio_approved.publish"
 ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES = "agentos.social_threads_sunlake_persona_replies.publish"
 ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
 ACTION_INSPECT_MIO_SQUIRREL = "agentos.social_threads_mio_squirrel.inspect"
+ACTION_INSPECT_MIO_RECENT = "agentos.social_threads_mio_recent.inspect"
 ACTION_DEPLOY_MIO_TELEGRAM = "agentos.mio_telegram.deploy"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
@@ -38,6 +39,7 @@ ALLOWED_ACTIONS = {
     ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
     ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
     ACTION_INSPECT_MIO_SQUIRREL,
+    ACTION_INSPECT_MIO_RECENT,
     ACTION_DEPLOY_MIO_TELEGRAM,
 }
 MAX_REQUEST_AGE_SECONDS = 900
@@ -108,6 +110,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES,
         ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
         ACTION_INSPECT_MIO_SQUIRREL,
+        ACTION_INSPECT_MIO_RECENT,
         ACTION_DEPLOY_MIO_TELEGRAM,
     }
     if action in exact_actions and source_commit is None:
@@ -211,6 +214,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/install_galaxy_threads_experiment_monitor_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_INSPECT_MIO_SQUIRREL:
         return _run_canonical_script("scripts/inspect_mio_squirrel_followup_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_INSPECT_MIO_RECENT:
+        return _run_canonical_script("scripts/inspect_mio_recent_threads_user.sh", timeout=240, source_commit=source_commit)
     if action == ACTION_DEPLOY_MIO_TELEGRAM:
         return _run_canonical_script("scripts/deploy_mio_telegram_user.sh", timeout=150, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
