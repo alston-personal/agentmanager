@@ -58,7 +58,7 @@ jobs:
               if [ -d "$OLD" ]; then
                 rm -rf "$APP/.next"
                 mv "$OLD" "$APP/.next"
-                pm2 restart "$PM_ID" >/dev/null || true
+                node "$PM2_CLI" restart "$PM_ID" >/dev/null || true
                 echo "dashboard_rollback=RESTORED_PREVIOUS_BUILD"
               else
                 echo "dashboard_rollback=ERROR_OLD_BUILD_MISSING"
@@ -75,7 +75,24 @@ jobs:
           test -d "$APP/.next"
           test -f "$APP/package-lock.json"
           test ! -e "$CANDIDATE" && test ! -e "$OLD"
-          PM_ID=$(pm2 jlist | python3 -c 'import json,sys; xs=[x for x in json.load(sys.stdin) if x.get("pm2_env",{}).get("pm_cwd")=="/home/ubuntu/agentmanager/dashboard"]; assert len(xs)==1, "dashboard_pm2_target_not_unique"; print(xs[0]["pm_id"])')
+          # Use the already-running Oracle PM2 daemon; no global package installation.
+          export PM2_HOME=/home/ubuntu/.pm2
+          test -S "$PM2_HOME/rpc.sock"
+          PM2_CLI=''
+          for candidate in /home/ubuntu/.npm/_npx/*/node_modules/pm2/bin/pm2; do
+            test -f "$candidate" || continue
+            pkg="${candidate%/bin/pm2}/package.json"
+            test -f "$pkg" || continue
+            version=$(node -p 'require(process.argv[1]).version' "$pkg")
+            if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
+          done
+          if [ -z "$PM2_CLI" ]; then
+            npm install --prefix "$TMP/pm2-client" --ignore-scripts --no-audit --no-fund pm2@7.0.1 >/dev/null
+            PM2_CLI="$TMP/pm2-client/node_modules/pm2/bin/pm2"
+          fi
+          test -f "$PM2_CLI"
+          echo 'dashboard_pm2_client=ISOLATED'
+          PM_ID=$(node "$PM2_CLI" jlist | python3 -c 'import json,sys; xs=[x for x in json.load(sys.stdin) if x.get("pm2_env",{}).get("pm_cwd")=="/home/ubuntu/agentmanager/dashboard"]; assert len(xs)==1, "dashboard_pm2_target_not_unique"; print(xs[0]["pm_id"])')
           [[ "$PM_ID" =~ ^[0-9]+$ ]]
           echo "dashboard_pm2_target=RESOLVED"
           curl --noproxy '*' -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:3000/dashboard/api/auth/session -o /dev/null
@@ -101,7 +118,7 @@ jobs:
           mv "$APP/.next" "$OLD"
           DEPLOYED=1
           mv "$CANDIDATE" "$APP/.next"
-          pm2 restart "$PM_ID" >/dev/null
+          node "$PM2_CLI" restart "$PM_ID" >/dev/null
           echo "dashboard_restart=PASS"
 
           check_route() {
