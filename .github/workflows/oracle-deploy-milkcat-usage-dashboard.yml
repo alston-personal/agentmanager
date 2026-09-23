@@ -1,0 +1,140 @@
+name: Oracle Deploy Milkcat Usage Dashboard
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-deploy-milkcat-usage-dashboard.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-milkcat-usage-dashboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 18
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start existing Oracle SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Build isolated pinned Next.js dashboard, back up and verify or roll back
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" \
+            bash -s -- "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_SHA="$1"; RUN_ID="$2"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          APP=/home/ubuntu/agentmanager/dashboard
+          TMP=$(mktemp -d /tmp/milkcat-dashboard-release-XXXXXXXX)
+          SRC="$TMP/agentmanager"
+          CANDIDATE="$APP/.next.usage-candidate-$RUN_ID"
+          OLD="$APP/.next.usage-previous-$RUN_ID"
+          BACKUP="/home/ubuntu/agent-data/releases/dashboard/usage-$RUN_ID"
+          PM_ID=''
+          DEPLOYED=0
+          finish() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$DEPLOYED" -eq 1 ]; then
+              echo "dashboard_acceptance=FAILED rollback=STARTED"
+              if [ -d "$OLD" ]; then
+                rm -rf "$APP/.next"
+                mv "$OLD" "$APP/.next"
+                pm2 restart "$PM_ID" >/dev/null || true
+                echo "dashboard_rollback=RESTORED_PREVIOUS_BUILD"
+              else
+                echo "dashboard_rollback=ERROR_OLD_BUILD_MISSING"
+              fi
+            fi
+            if [ "$rc" -eq 0 ] && [ "$DEPLOYED" -eq 1 ]; then
+              rm -rf "$OLD"
+            fi
+            rm -rf "$CANDIDATE" "$TMP"
+            exit "$rc"
+          }
+          trap finish EXIT
+
+          test -d "$APP/.next"
+          test -f "$APP/package-lock.json"
+          test ! -e "$CANDIDATE" && test ! -e "$OLD"
+          PM_ID=$(pm2 jlist | python3 -c 'import json,sys; xs=[x for x in json.load(sys.stdin) if x.get("pm2_env",{}).get("pm_cwd")=="/home/ubuntu/agentmanager/dashboard"]; assert len(xs)==1, "dashboard_pm2_target_not_unique"; print(xs[0]["pm_id"])')
+          [[ "$PM_ID" =~ ^[0-9]+$ ]]
+          echo "dashboard_pm2_target=RESOLVED"
+          curl --noproxy '*' -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:3000/dashboard/api/auth/session -o /dev/null
+          echo "dashboard_preflight_auth=PASS"
+
+          git clone -q --depth 1 https://github.com/alston-personal/agentmanager.git "$SRC"
+          test "$(git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
+          test -f "$SRC/dashboard/app/admin/usage/page.tsx"
+          test -f "$SRC/dashboard/app/api/admin/usage/route.ts"
+          cmp "$SRC/dashboard/package-lock.json" "$APP/package-lock.json" ||
+            { echo 'Dashboard dependencies changed: requires separate node_modules upgrade, refusing partial release'; exit 2; }
+
+          cd "$SRC/dashboard"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          test -f .next/server/app-paths-manifest.json
+          node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route"]) if (!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
+
+          mkdir -p "$BACKUP"
+          cp -a "$APP/.next" "$BACKUP/.next.previous"
+          cp -a "$SRC/dashboard/.next" "$CANDIDATE"
+          test -f "$CANDIDATE/server/app-paths-manifest.json"
+          mv "$APP/.next" "$OLD"
+          DEPLOYED=1
+          mv "$CANDIDATE" "$APP/.next"
+          pm2 restart "$PM_ID" >/dev/null
+          echo "dashboard_restart=PASS"
+
+          check_route() {
+            route="$1"; expected="$2"
+            code=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 12 \
+              --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route")
+            printf 'dashboard_route=%s status=%s expected=%s\n' "$route" "$code" "$expected"
+            test "$code" = "$expected"
+          }
+          check_route /dashboard/api/auth/session 200
+          check_route /dashboard/api/admin/usage 401
+          check_route /dashboard/admin/usage 307
+          check_route /dashboard/ 308
+
+          # A route-specific Next.js redirect, not a homepage fallback, must exist.
+          curl --noproxy '*' -k -sS -D "$TMP/headers" -o /dev/null \
+            --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/dashboard/admin/usage
+          grep -Eiq '^location: /dashboard/api/auth/signin/google' "$TMP/headers"
+
+          # Probe the actual public host from Oracle, without publishing protected data.
+          check_public() {
+            route="$1"; expected="$2"
+            code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
+              "https://studio.milkcat.org$route")
+            printf 'dashboard_public_route=%s status=%s expected=%s\n' "$route" "$code" "$expected"
+            test "$code" = "$expected"
+          }
+          check_public /dashboard/api/auth/session 200
+          check_public /dashboard/api/admin/usage 401
+          check_public /dashboard/admin/usage 307
+
+          printf 'source_sha=%s\nrelease_id=%s\nbackup=%s\nanonymous_auth=200\nanonymous_admin_api=401\nanonymous_admin_page=307\nstatus=PASS\n' \
+            "$SOURCE_SHA" "$RUN_ID" "$BACKUP" > "$BACKUP/receipt.txt"
+          echo "dashboard_usage_deploy=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
+          REMOTE
