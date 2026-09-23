@@ -34,7 +34,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$DEPLOY_USER"
-          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
           set -euo pipefail
           echo "audit_timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           ROOT=/home/ubuntu/agentmanager
