@@ -1,0 +1,63 @@
+name: Provision MetaCollector Private Repository Once
+
+on:
+  push:
+    branches:
+      - feat/metacollector-repo-provision-20260923
+    paths:
+      - .github/workflows/provision-metacollector-repo-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-metacollector-repo-once
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Connect with existing Oracle deploy identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Create only the approved private MetaCollector repository and read it back
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER" || { echo 'oracle_deploy_identity=UNAVAILABLE'; exit 3; }
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          target='alston-personal/metacollector'
+          gh_ubuntu() { sudo -n -u ubuntu -H /usr/bin/gh "$@"; }
+          if ! gh_ubuntu auth status >/dev/null 2>&1; then
+            echo 'ubuntu_github_auth=UNAVAILABLE'
+            exit 4
+          fi
+          echo 'ubuntu_github_auth=PASS'
+          if gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '.nameWithOwner' >/dev/null 2>&1; then
+            echo 'metacollector_create_state=EXISTS'
+          else
+            if gh_ubuntu repo create "$target" --private --add-readme --description 'MetaCollector: immersive collection showroom, third-party endorsements and auction platform' >/dev/null 2>&1; then
+              echo 'metacollector_create_state=CREATED'
+            else
+              echo 'metacollector_create_state=NO_GO'
+              exit 5
+            fi
+          fi
+          metadata="$(gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '[.nameWithOwner, (.isPrivate|tostring)] | @tsv' 2>/dev/null)" || {
+            echo 'metacollector_readback=FAILED'
+            exit 6
+          }
+          expected="$(printf 'alston-personal/metacollector\ttrue')"
+          test "$metadata" = "$expected" || { echo 'metacollector_readback=NAME_OR_VISIBILITY_MISMATCH'; exit 7; }
+          echo 'metacollector_repository=alston-personal/metacollector'
+          echo 'metacollector_visibility=PRIVATE'
+          echo 'metacollector_readback=PASS'
+          REMOTE
