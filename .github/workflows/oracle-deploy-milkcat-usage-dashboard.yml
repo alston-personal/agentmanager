@@ -59,7 +59,16 @@ jobs:
                 rm -rf "$APP/.next"
                 mv "$OLD" "$APP/.next"
                 node "$PM2_CLI" restart "$PM_ID" >/dev/null || true
-                echo "dashboard_rollback=RESTORED_PREVIOUS_BUILD"
+                rollback_ready=0
+                for attempt in $(seq 1 18); do
+                  if curl --noproxy '*' -fsS --connect-timeout 3 --max-time 8 \
+                    http://127.0.0.1:3000/dashboard/api/auth/session -o /dev/null 2>/dev/null; then
+                    rollback_ready=1
+                    break
+                  fi
+                  sleep 2
+                done
+                echo "dashboard_rollback=RESTORED_PREVIOUS_BUILD auth_ready=$rollback_ready"
               else
                 echo "dashboard_rollback=ERROR_OLD_BUILD_MISSING"
               fi
@@ -123,10 +132,17 @@ jobs:
 
           check_route() {
             route="$1"; expected="$2"
-            code=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 12 \
-              --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route")
-            printf 'dashboard_route=%s status=%s expected=%s\n' "$route" "$code" "$expected"
-            test "$code" = "$expected"
+            for attempt in $(seq 1 18); do
+              code=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 12 \
+                --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route" || true)
+              if [ "$code" = "$expected" ]; then
+                printf 'dashboard_route=%s status=%s expected=%s ready_after_attempt=%s\n' "$route" "$code" "$expected" "$attempt"
+                return 0
+              fi
+              if [ "$attempt" -lt 18 ]; then sleep 2; fi
+            done
+            printf 'dashboard_route=%s status=%s expected=%s readiness=FAILED\n' "$route" "$code" "$expected"
+            return 1
           }
           check_route /dashboard/api/auth/session 200
           check_route /dashboard/api/admin/usage 401
