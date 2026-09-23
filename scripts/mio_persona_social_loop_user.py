@@ -357,6 +357,11 @@ def relay_probe_once():
 
 def main():
     if os.geteuid()!=1001:raise SystemExit('mio_social_loop=WRONG_USER')
+    # Fail closed until owner-reviewed public-reply policy is installed.
+    # Background monitor still reads comments; model or social write must not run.
+    if os.environ.get('MIO_SOCIAL_AUTO_REPLY_ALLOWED', '') != 'owner_explicitly_enabled':
+        print('mio_social_loop=OWNER_REVIEW_REQUIRED')
+        return
     STATE_DIR.mkdir(parents=True,exist_ok=True); os.chmod(STATE_DIR,0o700)
     latest=load_json(LATEST,{})
     pending_path=STATE_DIR/'pending.json'; decisions_path=STATE_DIR/'decisions.jsonl'
