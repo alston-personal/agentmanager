@@ -19,7 +19,7 @@ export default async function AdminUsagePage() {
   const identity = token ? verifyToken(token) : null;
 
   if (!identity) {
-    redirect('/dashboard/api/auth/signin/google?returnTo=/dashboard/admin/usage');
+    redirect('/api/auth/signin/google?returnTo=/dashboard/admin/usage');
   }
   if (!isMilkcatAdmin(identity)) {
     return (
