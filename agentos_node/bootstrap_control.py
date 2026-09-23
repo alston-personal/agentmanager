@@ -226,6 +226,63 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     raise ValueError("unsupported bootstrap action")
 
 
+
+def _mirror_mio_receipt(receipt: dict[str, Any], post_key: str | None) -> None:
+    """Persist a sanitized, queryable result without changing the live spool protocol.
+
+    Only mirror verified publisher output; never store tokens or full stdout/stderr.
+    The original /tmp receipt remains the source consumed by existing Actions.
+    """
+    if receipt.get("action") != ACTION_PUBLISH_MIO_APPROVED or not post_key:
+        return
+    if not re.fullmatch(r"mio-post-[a-z0-9-]{1,72}", post_key):
+        return
+    values: dict[str, str] = {}
+    for step in receipt.get("steps", []):
+        for line in str(step.get("stdout") or "").splitlines():
+            for key in ("galaxy_day1_publish", "galaxy_day1_object_id", "galaxy_day1_permalink", "galaxy_day1_username"):
+                if line.startswith(key + "="):
+                    values[key] = line.split("=", 1)[1].strip()
+    status = values.get("galaxy_day1_publish")
+    object_id = values.get("galaxy_day1_object_id", "")
+    permalink = values.get("galaxy_day1_permalink", "")
+    if receipt.get("ok") is not True or status not in ("PASS", "ALREADY_PRESENT"):
+        return
+    if not re.fullmatch(r"[0-9]{8,32}", object_id):
+        return
+    if not re.fullmatch(r"https://www\.threads\.com/@[A-Za-z0-9_.]+/post/[A-Za-z0-9_-]+", permalink):
+        return
+    target = Path(os.environ.get("AGENTOS_MIO_RECEIPT_DIR") or
+                  "/home/ubuntu/.local/state/agentos/social/mio-publish-receipts")
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(target, 0o700)
+    sanitized = {
+        "schema": "agentos.mio-publish-result/v1",
+        "post_key": post_key,
+        "request_id": receipt.get("request_id"),
+        "source_commit": receipt.get("source_commit"),
+        "completed_at": receipt.get("completed_at"),
+        "publish_status": status,
+        "platform_object_id": object_id,
+        "permalink": permalink,
+        "username": values.get("galaxy_day1_username"),
+        "verified_by": "oracle-publisher-receipt",
+    }
+    dest = target / (post_key + ".json")
+    if dest.exists():
+        previous = json.loads(dest.read_text(encoding="utf-8"))
+        if previous.get("platform_object_id") != object_id:
+            raise RuntimeError("conflicting Mio receipt for existing post_key")
+        return
+    tmp = target / (post_key + "." + str(os.getpid()) + ".tmp")
+    try:
+        tmp.write_text(json.dumps(sanitized, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def run_bootstrap_control_plane() -> dict[str, Any] | None:
     """Process at most one fresh fixed-schema bootstrap request as ubuntu.
 
@@ -261,6 +318,11 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
             **result,
         }
         _atomic_json(receipt_path, receipt)
+        try:
+            _mirror_mio_receipt(receipt, post_key)
+        except Exception as mirror_exc:
+            # Preserve existing Oracle/Actions success even if optional mirror fails.
+            print(f"mio_receipt_mirror_error={type(mirror_exc).__name__}")
         source.unlink(missing_ok=True)
         return receipt
     except BaseException as exc:
