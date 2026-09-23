@@ -78,9 +78,11 @@ export default async function AdminUsagePage({ searchParams }: { searchParams: P
   const tarot = tarotResult.status === 'fulfilled' ? tarotResult.value : null;
   const fengError = fengshuiResult.status === 'rejected' ? '宅向資料目前無法讀取，請檢查內部統計連線。' : '';
   const tarotError = tarotResult.status === 'rejected' ? '石虎塔羅統計尚未完成連線或目前無法讀取；不代表占卜次數為零。' : '';
-  const events = countMap(fengshui?.analytics?.by_event);
-  const feedback = countMap(fengshui?.feedback?.by_category);
-  const byDate = countMap(fengshui?.analytics?.by_date);
+  const fengAnalytics = fengshui?.analytics as Record<string, unknown> | undefined;
+  const fengFeedback = fengshui?.feedback as Record<string, unknown> | undefined;
+  const events = countMap(fengAnalytics?.by_event);
+  const feedback = countMap(fengFeedback?.by_category);
+  const byDate = countMap(fengAnalytics?.by_date);
   const dateRows = Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).slice(-14);
   const dateMax = Math.max(1, ...dateRows.map(([, n]) => n));
   return (
@@ -131,7 +133,7 @@ export default async function AdminUsagePage({ searchParams }: { searchParams: P
                   </div>)}
                 </div>}
             </div>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '.85rem', marginTop: '.8rem' }}>全部紀錄共 {quantity(fengshui?.analytics?.total_events).toLocaleString('zh-TW')} 次事件、{quantity(fengshui?.feedback?.total)} 筆錯誤回報；兩者計數單位不同，不相加為使用人數。</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '.85rem', marginTop: '.8rem' }}>全部紀錄共 {quantity(fengAnalytics?.total_events).toLocaleString('zh-TW')} 次事件、{quantity(fengFeedback?.total)} 筆錯誤回報；兩者計數單位不同，不相加為使用人數。</p>
           </>}
         </section>
 
