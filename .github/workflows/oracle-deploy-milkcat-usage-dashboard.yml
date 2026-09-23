@@ -51,6 +51,21 @@ jobs:
           PM_ID=''
           CANARY_PID=''
           DEPLOYED=0
+          listener_pid() {
+            local pids
+            pids=$(ss -H -ltnp 'sport = :3000' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)
+            [[ "$pids" =~ ^[0-9]+$ ]] || return 1
+            printf '%s' "$pids"
+          }
+          assert_dashboard_listener() {
+            local pid="$1"
+            [[ "$pid" =~ ^[0-9]+$ ]]
+            test "$(readlink -f "/proc/$pid/cwd")" = "$APP"
+            ps -p "$pid" -o args= | grep -Fq 'next-server'
+          }
+          port_3000_clear() {
+            ! ss -H -ltn 'sport = :3000' | grep -q LISTEN
+          }
           finish() {
             rc=$?
             trap - EXIT
@@ -60,10 +75,28 @@ jobs:
             fi
             if [ "$rc" -ne 0 ] && [ "$DEPLOYED" -eq 1 ]; then
               echo "dashboard_acceptance=FAILED rollback=STARTED"
+              node "$PM2_CLI" stop "$PM_ID" >/dev/null || true
+              current=$(listener_pid || true)
+              if [ -n "$current" ]; then
+                if assert_dashboard_listener "$current"; then
+                  kill -TERM "$current" 2>/dev/null || true
+                else
+                  echo 'dashboard_rollback_listener=UNVERIFIED_REFUSING_KILL'
+                fi
+              fi
+              rollback_port_clear=0
+              for attempt in $(seq 1 15); do
+                if port_3000_clear; then rollback_port_clear=1; break; fi
+                sleep 1
+              done
               if [ -d "$OLD" ]; then
                 rm -rf "$APP/.next"
                 mv "$OLD" "$APP/.next"
-                node "$PM2_CLI" restart "$PM_ID" >/dev/null || true
+                if [ "$rollback_port_clear" -eq 1 ]; then
+                  node "$PM2_CLI" start "$PM_ID" >/dev/null || true
+                else
+                  echo 'dashboard_rollback=BUILD_RESTORED_LISTENER_BLOCKED'
+                fi
                 rollback_ready=0
                 for attempt in $(seq 1 18); do
                   if curl --noproxy '*' -fsS --connect-timeout 3 --max-time 8 \
@@ -73,7 +106,11 @@ jobs:
                   fi
                   sleep 2
                 done
-                echo "dashboard_rollback=RESTORED_PREVIOUS_BUILD auth_ready=$rollback_ready"
+                if [ "$rollback_ready" -eq 1 ]; then
+                  echo 'dashboard_rollback=RESTORED_PREVIOUS_BUILD auth_ready=1'
+                else
+                  echo 'dashboard_rollback=BUILD_RESTORED_AUTH_UNVERIFIED'
+                fi
               else
                 echo "dashboard_rollback=ERROR_OLD_BUILD_MISSING"
               fi
@@ -149,6 +186,10 @@ jobs:
           CANARY_PID=''
           echo '=== LIVE PORT 3000 BEFORE RESTART ==='
           ss -ltnp 'sport = :3000' || true
+          LISTENER_BEFORE=$(listener_pid)
+          assert_dashboard_listener "$LISTENER_BEFORE" ||
+            { echo 'dashboard_listener_ownership=UNVERIFIED_REFUSING_DEPLOY'; exit 2; }
+          echo "dashboard_listener_ownership=PASS pid=$LISTENER_BEFORE"
 
           mkdir -p "$BACKUP"
           cp -a "$APP/.next" "$BACKUP/.next.previous"
@@ -157,8 +198,26 @@ jobs:
           mv "$APP/.next" "$OLD"
           DEPLOYED=1
           mv "$CANDIDATE" "$APP/.next"
-          node "$PM2_CLI" restart "$PM_ID" >/dev/null
-          echo "dashboard_restart=PASS"
+          # PM2 supervises an npm wrapper, whose Next.js child can survive 'pm2 restart'.
+          # Stop the exact verified Dashboard PM2 app, then terminate only its already-verified listener.
+          node "$PM2_CLI" stop "$PM_ID" >/dev/null
+          remaining=$(listener_pid || true)
+          if [ -n "$remaining" ]; then
+            test "$remaining" = "$LISTENER_BEFORE" ||
+              { echo "dashboard_listener_changed_unexpectedly=REFUSED"; exit 2; }
+            assert_dashboard_listener "$remaining" ||
+              { echo "dashboard_listener_ownership_changed=REFUSED"; exit 2; }
+            kill -TERM "$remaining"
+            echo "dashboard_old_listener_signal=TERM pid=$remaining"
+          fi
+          port_clear=0
+          for attempt in $(seq 1 15); do
+            if port_3000_clear; then port_clear=1; break; fi
+            sleep 1
+          done
+          test "$port_clear" -eq 1 || { echo 'dashboard_old_listener_stop=FAILED'; exit 1; }
+          node "$PM2_CLI" start "$PM_ID" >/dev/null
+          echo "dashboard_restart=PASS old_listener_released=1"
           echo '=== LIVE PORT 3000 AFTER RESTART ==='
           ss -ltnp 'sport = :3000' || true
 
@@ -177,6 +236,11 @@ jobs:
             return 1
           }
           check_route /dashboard/api/auth/session 200
+          LISTENER_AFTER=$(listener_pid)
+          assert_dashboard_listener "$LISTENER_AFTER"
+          test "$LISTENER_AFTER" != "$LISTENER_BEFORE" ||
+            { echo 'dashboard_listener_handoff=FAILED_STALE_PID'; exit 1; }
+          echo "dashboard_listener_handoff=PASS before=$LISTENER_BEFORE after=$LISTENER_AFTER"
           check_route /dashboard/api/admin/usage 401
           check_route /dashboard/admin/usage 307
           check_route /dashboard/ 308
