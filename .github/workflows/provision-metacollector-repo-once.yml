@@ -45,7 +45,7 @@ jobs:
             echo 'metacollector_create_state=EXISTS'
           else
             error_file="$(mktemp)"
-            if gh_ubuntu repo create "$target" --private --add-readme --description 'MetaCollector: immersive collection showroom, third-party endorsements and auction platform' >/dev/null 2>"$error_file"; then
+            if gh_ubuntu repo create "$target" --private --description 'MetaCollector: immersive collection showroom, third-party endorsements and auction platform' >/dev/null 2>"$error_file"; then
               echo 'metacollector_create_state=CREATED'
             else
               echo 'metacollector_create_state=NO_GO'
