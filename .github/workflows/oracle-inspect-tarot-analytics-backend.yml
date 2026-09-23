@@ -49,6 +49,14 @@ jobs:
                   continue
               s=p.lstat()
               print('config_candidate_exists=True regular='+str(stat.S_ISREG(s.st_mode) and not stat.S_ISLNK(s.st_mode)))
+              if str(p) == '/home/ubuntu/agentmanager/.env':
+                  import pwd, grp
+                  ubuntu=pwd.getpwnam('ubuntu')
+                  print('shared_env_owner_is_ubuntu='+str(s.st_uid==ubuntu.pw_uid))
+                  print('shared_env_owner_uid='+str(s.st_uid))
+                  print('shared_env_group_gid='+str(s.st_gid))
+                  print('shared_env_mode_octal='+oct(stat.S_IMODE(s.st_mode)))
+                  print('shared_env_ubuntu_can_read='+str(bool(s.st_mode & stat.S_IROTH) or (s.st_uid==ubuntu.pw_uid and bool(s.st_mode&stat.S_IRUSR)) or (s.st_gid in os.getgrouplist('ubuntu', ubuntu.pw_gid) and bool(s.st_mode&stat.S_IRGRP))))
               # Only whether the specific analytics token key is configured.
               contents=p.read_text(encoding='utf8')
               print('config_analytics_token_key_present='+str(bool(re.search(r'^LEOPARDCAT_ANALYTICS_TOKEN=',contents,re.M))))
