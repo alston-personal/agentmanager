@@ -1,0 +1,60 @@
+name: Oracle Inspect Tarot Analytics Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-inspect-tarot-analytics-backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect local Tarot API and private token presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="$DEPLOY_PORT"; test -n "$PORT" || PORT=22
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== TAROT LOCAL API ==='
+          for route in /api/v1/personas /api/v1/analytics/summary?days=1 /api/stats; do
+            code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 7 "http://127.0.0.1:8088$route" || true)
+            echo "tarot_route=$route anonymous_status=$code"
+          done
+          echo '=== TAROT RUNTIME ==='
+          ss -ltn 'sport = :8088' || true
+          systemctl --no-pager --plain --type=service --all | grep -Ei 'leopardcat|tarot|fortune' | sed -E 's/^[[:space:]]*//; s/[[:space:]]+/ /g' | head -12 || true
+          echo '=== TOKEN PRESENCE (NO SECRET VALUES) ==='
+          sudo -n python3 - <<'PY'
+          import os, pathlib, re, stat
+          private=pathlib.Path('/home/ubuntu/.config/milkcat/leopardcat-analytics-token')
+          print('dashboard_tarot_token_present='+str(private.is_file() and not private.is_symlink()))
+          for candidate in ('/home/ubuntu/agentmanager/.env', '/etc/milkcat/leopardcat.env', '/etc/systemd/system/leopardcat-tarot.service'):
+              p=pathlib.Path(candidate)
+              if not p.is_file():
+                  print('config_candidate_exists=False')
+                  continue
+              s=p.lstat()
+              print('config_candidate_exists=True regular='+str(stat.S_ISREG(s.st_mode) and not stat.S_ISLNK(s.st_mode)))
+              # Only whether the specific analytics token key is configured.
+              contents=p.read_text(encoding='utf8')
+              print('config_analytics_token_key_present='+str(bool(re.search(r'^LEOPARDCAT_ANALYTICS_TOKEN=',contents,re.M))))
+          for base in ('/home/ubuntu/leopardcat-tarot/website/data', '/opt/milkcat/leopardcat-tarot/website/data'):
+              p=pathlib.Path(base)/'analytics.sqlite3'
+              print('tarot_analytics_database_candidate_present='+str(p.is_file()))
+          PY
+          echo 'tarot_readonly_audit=COMPLETE'
+          REMOTE
