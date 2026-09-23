@@ -49,10 +49,15 @@ jobs:
           OLD="$APP/.next.usage-previous-$RUN_ID"
           BACKUP="/home/ubuntu/agent-data/releases/dashboard/usage-$RUN_ID"
           PM_ID=''
+          CANARY_PID=''
           DEPLOYED=0
           finish() {
             rc=$?
             trap - EXIT
+            if [ -n "$CANARY_PID" ]; then
+              kill "$CANARY_PID" 2>/dev/null || true
+              wait "$CANARY_PID" 2>/dev/null || true
+            fi
             if [ "$rc" -ne 0 ] && [ "$DEPLOYED" -eq 1 ]; then
               echo "dashboard_acceptance=FAILED rollback=STARTED"
               if [ -d "$OLD" ]; then
@@ -120,6 +125,31 @@ jobs:
           test -f .next/server/app-paths-manifest.json
           node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route"]) if (!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
 
+          # Prove new compiled routes independently, before modifying the live build.
+          if ss -ltn 'sport = :3099' | grep -q LISTEN; then
+            echo 'dashboard_canary_port_in_use=REFUSED'
+            exit 2
+          fi
+          "$SRC/dashboard/node_modules/.bin/next" start -H 127.0.0.1 -p 3099 > "$TMP/canary.log" 2>&1 &
+          CANARY_PID=$!
+          canary_ready=0
+          for attempt in $(seq 1 18); do
+            canary_code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 8 \
+              http://127.0.0.1:3099/dashboard/api/admin/usage 2>/dev/null || true)
+            if [ "$canary_code" = 401 ]; then
+              canary_ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$canary_ready" -eq 1 || { echo "dashboard_isolated_canary=FAIL code=$canary_code"; exit 1; }
+          echo "dashboard_isolated_canary=PASS code=$canary_code"
+          kill "$CANARY_PID" 2>/dev/null || true
+          wait "$CANARY_PID" 2>/dev/null || true
+          CANARY_PID=''
+          echo '=== LIVE PORT 3000 BEFORE RESTART ==='
+          ss -ltnp 'sport = :3000' || true
+
           mkdir -p "$BACKUP"
           cp -a "$APP/.next" "$BACKUP/.next.previous"
           cp -a "$SRC/dashboard/.next" "$CANDIDATE"
@@ -129,6 +159,8 @@ jobs:
           mv "$CANDIDATE" "$APP/.next"
           node "$PM2_CLI" restart "$PM_ID" >/dev/null
           echo "dashboard_restart=PASS"
+          echo '=== LIVE PORT 3000 AFTER RESTART ==='
+          ss -ltnp 'sport = :3000' || true
 
           check_route() {
             route="$1"; expected="$2"
