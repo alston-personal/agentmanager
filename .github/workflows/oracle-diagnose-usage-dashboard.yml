@@ -19,15 +19,15 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
     env:
-      DEPLOY_USER: \${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_PORT: \${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Start existing Oracle SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: \${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
       - name: Inspect dashboard build, process and routes without mutation
         shell: bash
