@@ -65,6 +65,14 @@ jobs:
             fi
           done
           test -d /home/ubuntu/.pm2 && echo 'ubuntu_pm2_home=present' || echo 'ubuntu_pm2_home=missing'
+          echo '=== RUNTIME PACKAGE LOCATIONS ==='
+          npm root -g || true
+          npm prefix -g || true
+          for root in /usr/lib/node_modules /usr/local/lib/node_modules /home/ubuntu/.npm-global /home/ubuntu/.local/share/pnpm /home/ubuntu/.nvm /opt; do
+            if test -d "$root"; then
+              find "$root" -maxdepth 7 \( -name pm2 -o -name Daemon.js \) -print 2>/dev/null | head -20 || true
+            fi
+          done
           echo '=== DASHBOARD LISTENER AND PROCESS ==='
           ss -ltn 'sport = :3000' || true
           ps -eo user,pid,ppid,args | grep -E '[n]ext start|[n]ext-server|[n]pm start' | head -15 || true
