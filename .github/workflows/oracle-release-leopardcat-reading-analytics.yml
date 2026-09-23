@@ -178,8 +178,8 @@ jobs:
               assert donor.count(rec_start)==1 and donor.count(rec_end)==1
               snippet=rec_start+donor.split(rec_start,1)[1].split(rec_end,1)[0]
               legacy_issue_anchor="                    expires_at = issued['expires_at']\n"
-          assert source.count(legacy_issue_anchor)==1, 'old_tarot_issue_point_not_unique'
-          source=source.replace(legacy_issue_anchor,legacy_issue_anchor+snippet,1)
+              assert source.count(legacy_issue_anchor)==1, 'old_tarot_issue_point_not_unique'
+              source=source.replace(legacy_issue_anchor,legacy_issue_anchor+snippet,1)
               compile(source,str(SCRIPT),'exec')
               compile(analytics,str(MODULE),'exec')
               # Preserve the exact deployed program and all existing data; never
