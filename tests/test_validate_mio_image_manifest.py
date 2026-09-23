@@ -15,7 +15,7 @@ class ManifestGateTest(unittest.TestCase):
             {"id": "scene-1", "kind": "scene", "reality_class": "virtual_fictional"},
             {"id": "food-1", "kind": "food", "reality_class": "virtual_fictional"}]}
         self.wardrobe = {"character_id": "mio-001", "items": [
-            {"item_id": "shirt-1", "state": "approved",
+            {"item_id": "shirt-1", "category": "top", "state": "approved",
              "rights": {"product_image_use": "approved"}}]}
         self.m = {"schema": "milkcat.image-manifest/v1", "asset_id": "a1", "draft_id": "d1",
                   "character_id": "mio-001", "state": "planned",
@@ -62,6 +62,18 @@ class ManifestGateTest(unittest.TestCase):
         self.assertIn("missing_independent_review_record", self.check("post"))
         self.m["reviewer"], self.m["reviewed_at"] = "visual-review-1", "2026-09-23T10:00:00+08:00"
         self.assertEqual([], self.check("post"))
+
+    def test_outfit_requires_visible_garments_and_cannot_pass_scene_only(self):
+        self.m["objects"] = self.m["objects"][:1]
+        self.assertIn("outfit_missing_top_bottom_or_dress", gate.validate(self.m, self.world, self.wardrobe, "pre", require_outfit=True))
+
+    def test_outfit_rejects_just_top_without_bottom(self):
+        self.assertIn("outfit_missing_top_bottom_or_dress", gate.validate(self.m, self.world, self.wardrobe, "pre", require_outfit=True))
+
+    def test_outfit_allows_valid_top_and_bottom(self):
+        self.wardrobe["items"].append({"item_id": "skirt-1", "category": "bottom", "state": "approved", "rights": {"product_image_use": "approved"}})
+        self.m["objects"].append({"object_id": "skirt-1", "catalog": "wardrobe", "kind": "wearable", "visible": None, "verification": "pending"})
+        self.assertEqual([], gate.validate(self.m, self.world, self.wardrobe, "pre", require_outfit=True))
 
     def test_published_manifest_cannot_be_reused(self):
         self.m["publication"]["published"] = True
