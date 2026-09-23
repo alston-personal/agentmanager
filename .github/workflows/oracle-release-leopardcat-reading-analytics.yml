@@ -1,0 +1,229 @@
+name: Oracle Release LeopardCat Reading Analytics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-leopardcat-reading-analytics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-leopardcat-reading-analytics
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify ownership, patch only analytics hooks, deploy with previous-source rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="$DEPLOY_PORT"; test -n "$PORT" || PORT=22
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          sudo -n python3 - "$1" <<'PY'
+          import hashlib, json, os, pathlib, pwd, re, secrets, shutil, signal, socket, stat, subprocess, sys, tempfile, time, urllib.error, urllib.request
+          
+          RUN_ID=sys.argv[1]
+          assert re.fullmatch(r'[0-9]+', RUN_ID)
+          OWNER=pwd.getpwnam('ubuntu')
+          APP=pathlib.Path('/home/ubuntu/leopardcat-tarot/website')
+          SCRIPT=APP/'fortune_server.py'
+          MODULE=APP/'divination'/'analytics.py'
+          DATA=APP/'data'/'analytics.sqlite3'
+          BACKUP=pathlib.Path('/home/ubuntu/agent-data/releases/tarot')/('analytics-'+RUN_ID)
+          DASH=pathlib.Path('/home/ubuntu/.config/milkcat/leopardcat-analytics-token')
+          ENV=pathlib.Path('/etc/milkcat/leopardcat-analytics.env')
+          UNIT=pathlib.Path('/etc/systemd/system/milkcat-leopardcat-analytics.service')
+          SHA='848a9671604b50f9f22cbe6ae6a54dd40493dc7a'
+          OLD_SHA='20c604eccff3786e5442c06d32a23fb23f995e67247c02c26ba791818c2126e3'
+          created=[]
+          swapped=False
+          killed=False
+          unit_created=False
+          original=None
+          original_stat=None
+          
+          def call(*args, timeout=25, check=True):
+              p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+              if check and p.returncode:
+                  raise RuntimeError('command_failed:'+str(args[0])+':'+str(args[1] if len(args)>1 else ''))
+              return p
+          
+          def port_pid():
+              s=call('ss','-H','-ltnp','sport = :8088').stdout
+              pids=sorted(set(int(n) for n in re.findall(r'pid=(\d+)',s)))
+              return pids[0] if len(pids)==1 else None
+          
+          def owned_server(pid):
+              if pid is None:return False
+              p=pathlib.Path('/proc')/str(pid)
+              try:
+                  args=(p/'cmdline').read_bytes().split(b'\x00')
+                  return p.stat().st_uid==OWNER.pw_uid and pathlib.Path(os.readlink(p/'cwd'))==APP and any(b'fortune_server.py' in arg for arg in args[1:])
+              except (OSError,ValueError):return False
+          
+          def write_file(path, data, uid, gid, mode):
+              fd,t=tempfile.mkstemp(dir=path.parent,prefix='.analytics-stage-')
+              try:
+                  with os.fdopen(fd,'wb') as stream:
+                      stream.write(data);stream.flush();os.fsync(stream.fileno())
+                  os.chown(t,uid,gid);os.chmod(t,mode);os.replace(t,path)
+              finally:
+                  if os.path.exists(t):os.unlink(t)
+          
+          def status(path,token=None):
+              hdr={'X-Analytics-Token':token} if token else {}
+              req=urllib.request.Request('http://127.0.0.1:8088'+path,headers=hdr)
+              try:
+                  with urllib.request.urlopen(req,timeout=5) as res:
+                      return res.status,res.read(131072)
+              except urllib.error.HTTPError as error:
+                  return error.code,b''
+          
+          def fetch_pinned(path):
+              assert path in ('website/fortune_server.py','website/divination/analytics.py')
+              url='https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/'+SHA+'/'+path
+              with urllib.request.urlopen(url,timeout=20) as res:
+                  data=res.read(256000)
+              assert 1000<len(data)<256000, 'donor_source_invalid'
+              return data.decode('utf8')
+          
+          def insert_once(text,anchor,addition):
+              assert text.count(anchor)==1, 'analytics_upgrade_anchor_mismatch'
+              return text.replace(anchor,addition+anchor,1)
+          
+          def await_port(expected,seconds=15):
+              deadline=time.monotonic()+seconds
+              while time.monotonic()<deadline:
+                  current=port_pid()
+                  if (current is None)==(not expected):return current
+                  time.sleep(.6)
+              raise RuntimeError('tarot_listener_handoff_timeout')
+          
+          def restore():
+              if unit_created:
+                  call('systemctl','stop',UNIT.stem,check=False)
+              if original is not None and swapped:
+                  write_file(SCRIPT,original,original_stat.st_uid,original_stat.st_gid,stat.S_IMODE(original_stat.st_mode))
+              if MODULE in created:MODULE.unlink(missing_ok=True)
+              for p in (DASH,ENV):
+                  if p in created:p.unlink(missing_ok=True)
+              if killed:
+                  # Keep a managed supervisor for the restored original script.
+                  call('systemctl','daemon-reload',check=False)
+                  call('systemctl','start',UNIT.stem,check=False)
+                  call('systemctl','enable',UNIT.stem,check=False)
+                  try:
+                      assert status('/api/v1/personas')[0]==200
+                      print('tarot_analytics_rollback=PREVIOUS_CODE_RESTORED_ALIVE')
+                  except Exception:
+                      print('tarot_analytics_rollback=PREVIOUS_CODE_RESTORED_HEALTH_UNVERIFIED')
+              elif unit_created:
+                  UNIT.unlink(missing_ok=True)
+                  call('systemctl','daemon-reload',check=False)
+                  print('tarot_analytics_rollback=NO_LISTENER_CHANGE')
+              else:
+                  print('tarot_analytics_rollback=NO_LISTENER_CHANGE')
+          
+          try:
+              assert os.geteuid()==0
+              assert not any(p.exists() or p.is_symlink() for p in (MODULE,DASH,ENV,UNIT)), 'analytics_already_installed_refusing_overwrite'
+              assert SCRIPT.is_file() and not SCRIPT.is_symlink()
+              original_stat=SCRIPT.lstat()
+              assert original_stat.st_uid==OWNER.pw_uid and stat.S_ISREG(original_stat.st_mode)
+              original=SCRIPT.read_bytes()
+              assert hashlib.sha256(original).hexdigest()==OLD_SHA, 'live_source_changed_since_preflight'
+              pid=port_pid()
+              assert owned_server(pid), 'tarot_listener_not_verified'
+              assert int((pathlib.Path('/proc')/str(pid)/'stat').read_text().split(') ',1)[1].split()[1])==1,'unknown_existing_supervisor'
+              assert status('/api/v1/personas')[0]==200,'tarot_baseline_route_failed'
+              assert status('/api/v1/analytics/summary?days=1')[0]==404,'analytics_route_already_present'
+              assert DATA.parent.is_dir() and DATA.parent.stat().st_uid==OWNER.pw_uid
+              assert not DATA.exists(),'existing_analytics_database_refused'
+              parent=DASH.parent.lstat()
+              assert stat.S_ISDIR(parent.st_mode) and parent.st_uid==OWNER.pw_uid and (parent.st_mode&0o077)==0
+              assert not BACKUP.exists()
+              donor=fetch_pinned('website/fortune_server.py')
+              analytics=fetch_pinned('website/divination/analytics.py')
+              assert "from divination.analytics import ReadingAnalyticsStore, classify_question, normalize_source" in donor
+              assert "'/api/v1/analytics/summary'" in donor and 'class ReadingAnalyticsStore' in analytics
+              source=original.decode('utf8')
+              assert "from divination.analytics import" not in source and "'/api/v1/analytics/summary'" not in source
+              assert 'import secrets\n' in source
+              source=insert_once(source,"from divination.tarot import plan_spread, spread_catalog\n","from divination.analytics import ReadingAnalyticsStore, classify_question, normalize_source\n")
+              store_anchor="SESSION_STORE = ReadingSessionStore(os.path.join(DATA_DIR, 'reading_sessions.sqlite3'), ttl_seconds=86400)\n"
+              source=insert_once(source,store_anchor,"") if False else source
+              assert source.count(store_anchor)==1
+              source=source.replace(store_anchor,store_anchor+"ANALYTICS_STORE = ReadingAnalyticsStore(os.path.join(DATA_DIR, 'analytics.sqlite3'))\n",1)
+              start="        if path == '/api/v1/analytics/summary':\n"
+              end="        if path == '/api/stats':\n"
+              assert donor.count(start)==1 and donor.count(end)==1
+              snippet=start+donor.split(start,1)[1].split(end,1)[0]
+              source=insert_once(source,end,snippet)
+              rec_start="                    analytics_meta = req_data.get('analytics') if isinstance(req_data.get('analytics'), dict) else {}\n"
+              rec_end="                    update_stats(divination=True)\n"
+              assert donor.count(rec_start)==1 and donor.count(rec_end)==1
+              snippet=rec_start+donor.split(rec_start,1)[1].split(rec_end,1)[0]
+              source=insert_once(source,rec_end,snippet)
+              compile(source,str(SCRIPT),'exec')
+              compile(analytics,str(MODULE),'exec')
+              # Preserve the exact deployed program and all existing data; never
+              # overwrite the two already-dirty tracked files through a git checkout.
+              BACKUP.mkdir(mode=0o700,parents=True,exist_ok=False)
+              write_file(BACKUP/'fortune_server.py.before',original,0,0,0o600)
+              (BACKUP/'receipt.txt').write_text('run_id='+RUN_ID+'\nsource_sha256='+OLD_SHA+'\ndonor_sha='+SHA+'\n')
+              print('tarot_analytics_pinned_patch=PASS backup=CREATED preexisting_data=PRESERVED')
+              ENV.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+              assert ENV.parent.stat().st_uid==0 and (ENV.parent.stat().st_mode&0o022)==0
+              token=secrets.token_urlsafe(48)
+              write_file(ENV,('LEOPARDCAT_ANALYTICS_TOKEN='+token+'\n').encode(),0,0,0o600);created.append(ENV)
+              write_file(DASH,(token+'\n').encode(),OWNER.pw_uid,OWNER.pw_gid,0o600);created.append(DASH)
+              write_file(MODULE,analytics.encode(),OWNER.pw_uid,OWNER.pw_gid,0o644);created.append(MODULE)
+              unit=('[Unit]\nDescription=Milkcat LeopardCat Tarot managed analytics release\nAfter=network-online.target\nWants=network-online.target\n'
+                    '[Service]\nType=simple\nUser=ubuntu\nGroup=ubuntu\nWorkingDirectory=/home/ubuntu/leopardcat-tarot/website\n'
+                    'ExecStart=/usr/bin/python3 /home/ubuntu/leopardcat-tarot/website/fortune_server.py\n'
+                    'EnvironmentFile=-/etc/milkcat/leopardcat-analytics.env\nEnvironment=PYTHONUNBUFFERED=1\n'
+                    'Restart=on-failure\nRestartSec=3\nNoNewPrivileges=true\n'
+                    '[Install]\nWantedBy=multi-user.target\n')
+              write_file(UNIT,unit.encode(),0,0,0o644);unit_created=True
+              call('systemctl','daemon-reload')
+              write_file(SCRIPT,source.encode(),original_stat.st_uid,original_stat.st_gid,stat.S_IMODE(original_stat.st_mode));swapped=True
+              assert owned_server(pid) and port_pid()==pid,'tarot_listener_changed_during_release'
+              os.kill(pid,signal.SIGTERM);killed=True
+              await_port(False,15)
+              call('systemctl','start',UNIT.stem)
+              new_pid=await_port(True,15)
+              assert owned_server(new_pid) and new_pid!=pid,'new_tarot_listener_invalid'
+              assert status('/api/v1/personas')[0]==200,'tarot_existing_api_regression'
+              assert status('/api/v1/analytics/summary?days=1')[0]==403,'tarot_anonymous_summary_not_denied'
+              code,payload=status('/api/v1/analytics/summary?days=30',token)
+              assert code==200,'tarot_protected_summary_unavailable'
+              obj=json.loads(payload)
+              assert type(obj.get('total_readings')) is int and isinstance(obj.get('by_source'),dict),'tarot_aggregate_invalid'
+              # On a fresh anonymous analytics DB, no synthetic readings are inserted.
+              assert obj['total_readings']>=0 and DATA.is_file() and DATA.stat().st_uid==OWNER.pw_uid
+              call('systemctl','enable',UNIT.stem)
+              print('tarot_analytics_release=PASS protected_summary=200 anonymous=403 existing_api=200')
+              print('tarot_analytics_data=NEW_COUNTER_NO_HISTORICAL_BACKFILL')
+          except Exception as error:
+              print('tarot_analytics_release=FAILED reason='+str(error).split(':',1)[0][:110])
+              try:restore()
+              except Exception:
+                  print('tarot_analytics_rollback=FAILED_REQUIRES_OPERATOR')
+              raise
+          
+          PY
+          REMOTE
