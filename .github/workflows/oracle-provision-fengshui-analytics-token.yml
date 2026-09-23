@@ -1,0 +1,135 @@
+name: Oracle Provision Fengshui Analytics Server Token
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-provision-fengshui-analytics-token.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-fengshui-analytics-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start existing Oracle SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Provision matching private service and Dashboard credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="$DEPLOY_PORT"; test -n "$PORT" || PORT=22
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import pwd
+          import secrets
+          import stat
+          import subprocess
+          import tempfile
+          import time
+          import urllib.request
+
+          SERVICE = 'milkcat-fengshui.service'
+          ENV = pathlib.Path('/etc/milkcat/fengshui.env')
+          account = pwd.getpwnam('ubuntu')
+          dash_dir = pathlib.Path(account.pw_dir) / '.config' / 'milkcat'
+          DASH = dash_dir / 'fengshui-analytics-token'
+          created = []
+          service_restarted = False
+
+          def command(*args):
+              return subprocess.run(args, check=True, capture_output=True, text=True, timeout=40).stdout
+
+          def write_private(target, content, owner_uid, owner_gid):
+              fd, temp = tempfile.mkstemp(prefix='.analytics-tmp-', dir=target.parent)
+              try:
+                  with os.fdopen(fd, 'w', encoding='utf8') as out:
+                      out.write(content)
+                      out.flush()
+                      os.fsync(out.fileno())
+                  os.chown(temp, owner_uid, owner_gid)
+                  os.chmod(temp, 0o600)
+                  os.replace(temp, target)
+                  created.append(target)
+              finally:
+                  if os.path.exists(temp):
+                      os.unlink(temp)
+
+          def assert_private(target, uid):
+              meta=target.lstat()
+              assert stat.S_ISREG(meta.st_mode) and not stat.S_ISLNK(meta.st_mode)
+              assert meta.st_uid == uid and (meta.st_mode & 0o077) == 0
+
+          try:
+              assert os.geteuid() == 0
+              assert command('systemctl', 'is-active', SERVICE).strip() == 'active'
+              unit=command('systemctl', 'cat', SERVICE)
+              assert 'EnvironmentFile=-/etc/milkcat/fengshui.env' in unit, 'unmanaged_fengshui_env_boundary'
+              assert command('systemctl','show','-p','User','--value',SERVICE).strip() == 'ubuntu'
+              # The earlier read-only audit found both files absent. Reject a
+              # concurrent operator update instead of replacing unknown secrets.
+              assert not ENV.exists() and not ENV.is_symlink(), 'existing_service_env_refused'
+              assert not DASH.exists() and not DASH.is_symlink(), 'existing_dashboard_token_refused'
+              parent=dash_dir.lstat()
+              assert stat.S_ISDIR(parent.st_mode) and parent.st_uid == account.pw_uid
+              assert (parent.st_mode & 0o077) == 0, 'insecure_dashboard_private_directory'
+              ENV.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+              root_parent=ENV.parent.lstat()
+              assert stat.S_ISDIR(root_parent.st_mode) and root_parent.st_uid == 0
+              assert (root_parent.st_mode & 0o022) == 0, 'insecure_service_env_directory'
+              token=secrets.token_urlsafe(48)
+              assert len(token) >= 32 and all(c.isalnum() or c in '_-' for c in token)
+              write_private(ENV, 'FENGSHUI_ANALYTICS_TOKEN=' + token + '\n', 0, 0)
+              write_private(DASH, token + '\n', account.pw_uid, account.pw_gid)
+              assert_private(ENV, 0)
+              assert_private(DASH, account.pw_uid)
+              assert ENV.read_text(encoding='utf8').split('=',1)[1].strip() == DASH.read_text(encoding='utf8').strip()
+              command('systemctl', 'restart', SERVICE)
+              service_restarted = True
+              base='http://127.0.0.1:8868/fengshui/api/'
+              for route in ('analytics/summary', 'feedback/summary'):
+                  success=False
+                  for attempt in range(18):
+                      try:
+                          request=urllib.request.Request(base+route+'?days=1', headers={'x-analytics-token':token})
+                          with urllib.request.urlopen(request, timeout=4) as response:
+                              payload=json.load(response)
+                              assert response.status == 200 and isinstance(payload,dict)
+                              success=True
+                              break
+                      except Exception:
+                          time.sleep(1)
+                  assert success, 'protected_summary_not_ready:' + route
+                  print('fengshui_protected_summary=PASS route=' + route)
+              # No secret or aggregate content ever enters GitHub Actions logs.
+              print('fengshui_private_token_provision=PASS service=active dashboard_file=private')
+          except Exception:
+              for item in reversed(created):
+                  item.unlink(missing_ok=True)
+              if created:
+                  try:
+                      command('systemctl', 'restart', SERVICE)
+                      print('fengshui_private_token_provision=ROLLBACK')
+                  except Exception:
+                      print('fengshui_private_token_provision=ROLLBACK_RESTART_FAILED')
+              raise
+          PY
+          REMOTE
