@@ -1,0 +1,67 @@
+name: Diagnose Milkcat Usage Dashboard Route
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-diagnose-usage-dashboard.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-diagnose-usage-dashboard
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: \${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: \${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start existing Oracle SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: \${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect dashboard build, process and routes without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "audit_timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ROOT=/home/ubuntu/agentmanager
+          APP="$ROOT/dashboard"
+          echo '=== DEPLOYED SOURCE AND BUILD ==='
+          git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD || true
+          test -f "$APP/app/admin/usage/page.tsx" && echo 'usage_source=present' || echo 'usage_source=missing'
+          test -f "$APP/app/api/admin/usage/route.ts" && echo 'usage_api_source=present' || echo 'usage_api_source=missing'
+          if test -f "$APP/.next/server/app-paths-manifest.json"; then
+            python3 - "$APP/.next/server/app-paths-manifest.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f:
+              paths = json.load(f)
+          for path in ('/admin/usage/page', '/api/admin/usage/route', '/api/auth/session/route'):
+              print(f'built_route={path} present={path in paths}')
+          PY
+          else
+            echo 'app_paths_manifest=missing'
+          fi
+          echo '=== DASHBOARD LISTENER AND PROCESS ==='
+          ss -ltn 'sport = :3000' || true
+          ps -eo user,pid,ppid,args | grep -E '[n]ext start|[n]ext-server|[n]pm start' | head -15 || true
+          echo '=== LOCAL PUBLIC AND UPSTREAM STATUS ==='
+          for route in /dashboard/ /dashboard/api/auth/session /dashboard/admin/usage /dashboard/api/admin/usage; do
+            pub=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route" || true)
+            direct=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 "http://127.0.0.1:3000$route" || true)
+            printf 'route=%s local_nginx=%s dashboard_upstream=%s\n' "$route" "$pub" "$direct"
+          done
+          echo '=== CHECKS COMPLETE: READ ONLY ==='
+          REMOTE
