@@ -1,0 +1,105 @@
+name: Oracle Pause Mio Auto Replies Keep Monitor
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-pause-mio-autoreply.yml'
+      - 'scripts/pause_mio_autoreply_keep_monitor_user.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  pause:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight owner review and passive monitor contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          python3 -m py_compile agentos_node/bootstrap_control.py scripts/mio_persona_social_loop_user.py
+          bash -n scripts/pause_mio_autoreply_keep_monitor_user.sh
+          grep -Fq 'mio_social_loop=OWNER_REVIEW_REQUIRED' scripts/mio_persona_social_loop_user.py
+          grep -Fq 'ACTION_PAUSE_MIO_AUTOREPLY' agentos_node/bootstrap_control.py
+          grep -Fq 'ExecStartPost=' scripts/pause_mio_autoreply_keep_monitor_user.sh
+          grep -Fq 'scripts/sync_sunlake_milkcat_persona_user.py' scripts/pause_mio_autoreply_keep_monitor_user.sh
+          if grep -Eq '(/v1/social/reply|/internal/v1/social/acceptances|AGY_SELECTED|AntigravityRelayClient)' scripts/pause_mio_autoreply_keep_monitor_user.sh; then
+            echo 'mio_autoreply_pause_preflight=UNSAFE_SIDE_EFFECT'; exit 2
+          fi
+          echo 'mio_autoreply_pause_preflight=PASS'
+
+      - name: Apply owner review boundary using governed ubuntu bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          ID="mio-autoreply-pause-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          REQUEST="$REQUESTS/$ID.request.json"
+          RECEIPT="$RECEIPTS/$ID.json"
+          test -d "$REQUESTS" && test -d "$RECEIPTS"
+          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
+          test "$(stat -c '%a' "$REQUESTS")" = 1777
+          test -w "$LIVE/agentos_node/bootstrap_control.py"
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          payload={
+              'schema':'agentos.bootstrap-request/v1',
+              'request_id':sys.argv[2],
+              'action':'agentos.social_threads_mio.pause_autoreply',
+              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+              'params':{'source_commit':sys.argv[3]},
+              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path.with_suffix(path.suffix+'.tmp')
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(tmp,0o644)
+          tmp.replace(path)
+          os.chmod(path,0o644)
+          PY
+          for _ in $(seq 1 175); do
+            test -f "$RECEIPT" && break
+            sleep 1
+          done
+          test -f "$RECEIPT" || { echo 'mio_autoreply_pause_receipt=TIMEOUT'; exit 3; }
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          doc=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert doc.get('schema')=='agentos.bootstrap-receipt/v1'
+          assert doc.get('action')=='agentos.social_threads_mio.pause_autoreply'
+          assert doc.get('executor_user')=='ubuntu'
+          assert doc.get('executor_uid')==1001
+          assert doc.get('source_commit')==sys.argv[2]
+          text='\n'.join(str(x.get('stdout') or '') for x in doc.get('steps') or [])
+          allowed={
+              'mio_autoreply_pause=PASS',
+              'mio_autoreply_model_decisions=DISABLED',
+              'mio_autoreply_unreviewed_publishing=DISABLED',
+              'mio_autoreply_passive_monitor_timer=ACTIVE',
+              'mio_autoreply_pending_items=PRESERVED'
+          }
+          if doc.get('ok') is not True:
+              for line in text.splitlines():
+                  if line.startswith('mio_autoreply_pause=') and len(line)<140:
+                      print(line)
+              print('mio_autoreply_pause_receipt=FAILED')
+              raise SystemExit(3)
+          assert allowed.issubset(set(text.splitlines())),'mio_autoreply_pause_proof_incomplete'
+          print('mio_autoreply_pause_receipt=PASS')
+          for line in text.splitlines():
+              if line in allowed:
+                  print(line)
+          PY
