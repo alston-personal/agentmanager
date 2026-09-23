@@ -56,6 +56,35 @@ jobs:
                   print('tarot_parent_comm='+(pr/'comm').read_text().strip())
                   print('tarot_parent_cwd='+os.readlink(pr/'cwd'))
           PY
+          echo '=== DEPLOYED TAROT SUMMARY CONTRACT (NO CONTENT) ==='
+          sudo -n python3 - <<'PY'
+          import json, os, pathlib, re, subprocess, urllib.error, urllib.request
+          raw=subprocess.run(['ss','-H','-ltnp','sport = :8088'],capture_output=True,text=True,check=True).stdout
+          pids=sorted(set(int(p) for p in re.findall(r'pid=(\d+)',raw)))
+          for pid in pids:
+              cwd=pathlib.Path(os.readlink('/proc/'+str(pid)+'/cwd'))
+              script=cwd/'fortune_server.py'
+              if script.is_file():
+                  body=script.read_text(encoding='utf8')
+                  print('deployed_summary_route_present='+str("'/api/v1/analytics/summary'" in body))
+                  print('deployed_anonymous_reading_store_present='+str('ReadingAnalyticsStore' in body))
+              db=cwd/'data'/'analytics.sqlite3'
+              print('deployed_analytics_database_present='+str(db.is_file()))
+              if db.is_file():
+                  print('deployed_analytics_database_nonempty='+str(db.stat().st_size>0))
+          url='http://127.0.0.1:8088/api/v1/analytics/summary?days=1'
+          try:
+              urllib.request.urlopen(url,timeout=5)
+              print('anonymous_summary_unexpected_200=True')
+          except urllib.error.HTTPError as error:
+              raw=error.read(4096)
+              try:
+                  payload=json.loads(raw)
+                  code=payload.get('error')
+                  print('anonymous_summary_error_kind='+ (code if code in ('analytics_not_configured','analytics_denied') else 'other'))
+              except (ValueError,TypeError):
+                  print('anonymous_summary_error_kind=non_json_or_unrecognized')
+          PY
           echo '=== TOKEN PRESENCE (NO SECRET VALUES) ==='
           sudo -n python3 - <<'PY'
           import os, pathlib, re, stat
