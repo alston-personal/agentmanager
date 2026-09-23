@@ -1,0 +1,73 @@
+name: Oracle Audit Fengshui Analytics Token
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-audit-fengshui-analytics-token.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start existing Oracle SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect token boundary without printing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="$DEPLOY_PORT"; test -n "$PORT" || PORT=22
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "ssh_identity=$(id -un)"
+          if sudo -n true 2>/dev/null; then echo 'sudo_noninteractive=YES'; else echo 'sudo_noninteractive=NO'; fi
+          echo '=== FENGSHUI SERVICE ==='
+          systemctl is-active milkcat-fengshui.service || true
+          systemctl show -p User -p MainPID -p EnvironmentFiles milkcat-fengshui.service || true
+          echo '=== TOKEN-FREE SUMMARY HTTP STATUS ==='
+          for route in analytics/summary feedback/summary; do
+            code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 6 "http://127.0.0.1:8868/fengshui/api/$route?days=1" || true)
+            echo "route=$route anonymous_status=$code"
+          done
+          echo '=== FENGSHUI ENV KEY PRESENCE ==='
+          if sudo -n true 2>/dev/null; then
+            sudo -n python3 - <<'PY'
+          import pathlib, re, stat
+          p=pathlib.Path('/etc/milkcat/fengshui.env')
+          if not p.exists():
+              print('fengshui_env_file=MISSING')
+          else:
+              s=p.lstat()
+              print('fengshui_env_regular='+str(stat.S_ISREG(s.st_mode) and not stat.S_ISLNK(s.st_mode)))
+              print('fengshui_env_mode_private='+str((s.st_mode & 0o077)==0))
+              keys=set(re.findall(r'^([A-Za-z][A-Za-z0-9_]*)=',p.read_text(encoding='utf8'),re.M))
+              print('fengshui_env_analytics_key_present='+str('FENGSHUI_ANALYTICS_TOKEN' in keys))
+          PY
+          else
+            echo 'fengshui_env_audit=UNAVAILABLE_NO_SUDO'
+          fi
+          echo '=== DASHBOARD TOKEN FILE ==='
+          python3 - <<'PY'
+          import pathlib, stat
+          p=pathlib.Path.home()/'.config'/'milkcat'/'fengshui-analytics-token'
+          if not p.exists():
+              print('dashboard_private_token_file=MISSING')
+          else:
+              s=p.lstat()
+              print('dashboard_private_token_file_regular='+str(stat.S_ISREG(s.st_mode) and not stat.S_ISLNK(s.st_mode)))
+              print('dashboard_private_token_file_mode_private='+str((s.st_mode&0o077)==0))
+          PY
+          echo 'fengshui_token_boundary_audit=COMPLETE_READ_ONLY'
+          REMOTE
