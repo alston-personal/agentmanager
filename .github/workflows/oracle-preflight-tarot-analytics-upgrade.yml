@@ -1,0 +1,75 @@
+name: Oracle Preflight Tarot Analytics Upgrade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-preflight-tarot-analytics-upgrade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live Tarot runtime and safe rollback prerequisites read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="$DEPLOY_PORT"; test -n "$PORT" || PORT=22
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import hashlib, os, pathlib, pwd, re, stat, subprocess
+          raw=subprocess.run(['ss','-H','-ltnp','sport = :8088'],capture_output=True,text=True,check=True).stdout
+          pids=sorted(set(int(p) for p in re.findall(r'pid=(\d+)',raw)))
+          assert len(pids)==1, 'tarot_listener_not_unique'
+          pid=pids[0]; proc=pathlib.Path('/proc')/str(pid)
+          cwd=pathlib.Path(os.readlink(proc/'cwd'))
+          print('tarot_listener_pid='+str(pid))
+          print('tarot_runtime_dir='+str(cwd))
+          print('tarot_listener_user='+pwd.getpwuid(proc.stat().st_uid).pw_name)
+          print('tarot_listener_parent='+str(int((proc/'stat').read_text().split(') ',1)[1].split()[1])))
+          print('tarot_listener_exe='+os.readlink(proc/'exe'))
+          print('tarot_runtime_script_exists='+str((cwd/'fortune_server.py').is_file()))
+          script=cwd/'fortune_server.py'
+          if script.is_file():
+              raw=script.read_bytes()
+              print('tarot_runtime_script_sha256='+hashlib.sha256(raw).hexdigest())
+              print('tarot_runtime_script_size='+str(len(raw)))
+              print('tarot_runtime_analytics_import='+str(b'from divination.analytics import' in raw))
+              print('tarot_runtime_analytics_route='+str(b'/api/v1/analytics/summary' in raw))
+              print('tarot_runtime_server_port='+str(b'PORT = 8088' in raw))
+          for p in ('divination/__init__.py', 'divination/analytics.py', 'divination/core.py','data/analytics.sqlite3','data/reading_sessions.sqlite3','stats.json', 'dist/index.html', 'manifest.json'):
+              f=cwd/p
+              print('tarot_runtime_path='+p+' exists='+str(f.exists())+' bytes='+(str(f.stat().st_size) if f.is_file() else '0'))
+          repo=cwd.parent
+          if (repo/'.git').exists():
+              def git(*args):
+                  r=subprocess.run(['git','-C',str(repo),*args],capture_output=True,text=True,timeout=10)
+                  return r.stdout.strip() if r.returncode==0 else 'UNAVAILABLE'
+              print('tarot_runtime_git_head='+git('rev-parse','HEAD'))
+              print('tarot_runtime_git_status_count='+str(len(git('status','--porcelain','--untracked-files=no').splitlines())))
+              print('tarot_runtime_git_tracked_script='+str(git('ls-files','website/fortune_server.py')=='website/fortune_server.py'))
+          else:
+              print('tarot_runtime_git_present=False')
+          print('tarot_runtime_data_dir_owner='+str((cwd/'data').stat().st_uid if (cwd/'data').exists() else -1))
+          print('tarot_runtime_script_owner='+str(script.stat().st_uid if script.is_file() else -1))
+          # Report only entrypoint shape, not arguments or environment contents.
+          argv=(proc/'cmdline').read_bytes().split(b'\x00')
+          print('tarot_runtime_argv_binary='+pathlib.Path(argv[0].decode(errors='replace')).name)
+          print('tarot_runtime_argv_has_fortune_server='+str(any(b'fortune_server.py' in a for a in argv[1:])))
+          print('tarot_runtime_cgroup='+ ('system.slice' if 'system.slice' in (proc/'cgroup').read_text() else 'non_system_slice'))
+          PY
+          echo 'tarot_preflight_audit=COMPLETE_READ_ONLY'
+          REMOTE
