@@ -54,6 +54,17 @@ jobs:
           else
             echo 'app_paths_manifest=missing'
           fi
+          echo '=== REMOTE PROCESS MANAGER ENVIRONMENT ==='
+          id -un
+          command -v node || true
+          command -v npm || true
+          command -v pm2 || true
+          for candidate in /home/ubuntu/.nvm/versions/node/*/bin/pm2 /home/ubuntu/.npm-global/bin/pm2 /usr/local/bin/pm2 /usr/bin/pm2; do
+            if test -e "$candidate"; then
+              printf 'pm2_candidate=%s\n' "$candidate"
+            fi
+          done
+          test -d /home/ubuntu/.pm2 && echo 'ubuntu_pm2_home=present' || echo 'ubuntu_pm2_home=missing'
           echo '=== DASHBOARD LISTENER AND PROCESS ==='
           ss -ltn 'sport = :3000' || true
           ps -eo user,pid,ppid,args | grep -E '[n]ext start|[n]ext-server|[n]pm start' | head -15 || true
