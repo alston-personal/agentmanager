@@ -52,6 +52,7 @@ jobs:
           account = pwd.getpwnam('ubuntu')
           dash_dir = pathlib.Path(account.pw_dir) / '.config' / 'milkcat'
           DASH = dash_dir / 'fengshui-analytics-token'
+          DROP = pathlib.Path('/etc/systemd/system/milkcat-fengshui.service.d/analytics-token.conf')
           created = []
           service_restarted = False
 
@@ -82,7 +83,10 @@ jobs:
               assert os.geteuid() == 0
               assert command('systemctl', 'is-active', SERVICE).strip() == 'active'
               unit=command('systemctl', 'cat', SERVICE)
-              assert 'EnvironmentFile=-/etc/milkcat/fengshui.env' in unit, 'unmanaged_fengshui_env_boundary'
+              assert 'Description=Milkcat Fengshui managed release' in unit, 'unmanaged_fengshui_service'
+              assert '/opt/milkcat/fengshui/' in unit and 'server/index.mjs' in unit, 'unexpected_service_entrypoint'
+              assert 'EnvironmentFile=-/etc/milkcat/fengshui.env' not in unit, 'unexpected_existing_env_binding'
+              assert not DROP.exists() and not DROP.is_symlink(), 'existing_analytics_dropin_refused'
               assert command('systemctl','show','-p','User','--value',SERVICE).strip() == 'ubuntu'
               # The earlier read-only audit found both files absent. Reject a
               # concurrent operator update instead of replacing unknown secrets.
@@ -99,6 +103,14 @@ jobs:
               assert len(token) >= 32 and all(c.isalnum() or c in '_-' for c in token)
               write_private(ENV, 'FENGSHUI_ANALYTICS_TOKEN=' + token + '\n', 0, 0)
               write_private(DASH, token + '\n', account.pw_uid, account.pw_gid)
+              DROP.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+              drop_parent=DROP.parent.lstat()
+              assert stat.S_ISDIR(drop_parent.st_mode) and drop_parent.st_uid == 0
+              assert (drop_parent.st_mode & 0o022) == 0, 'insecure_systemd_dropin_directory'
+              write_private(DROP, '[Service]\nEnvironmentFile=-/etc/milkcat/fengshui.env\n', 0, 0)
+              assert_private(DROP, 0)
+              command('systemctl', 'daemon-reload')
+              assert 'EnvironmentFile=-/etc/milkcat/fengshui.env' in command('systemctl', 'cat', SERVICE)
               assert_private(ENV, 0)
               assert_private(DASH, account.pw_uid)
               assert ENV.read_text(encoding='utf8').split('=',1)[1].strip() == DASH.read_text(encoding='utf8').strip()
@@ -126,6 +138,7 @@ jobs:
                   item.unlink(missing_ok=True)
               if created:
                   try:
+                      command('systemctl', 'daemon-reload')
                       command('systemctl', 'restart', SERVICE)
                       print('fengshui_private_token_provision=ROLLBACK')
                   except Exception:
