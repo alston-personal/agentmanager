@@ -1,0 +1,108 @@
+name: Oracle Provision Protected Tarot Analytics Token
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-provision-tarot-analytics-token.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-provision-tarot-analytics-token
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Provision server-only Tarot statistics access and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="$DEPLOY_PORT"; test -n "$PORT" || PORT=22
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          sudo -n python3 - <<'PY'
+          import json, os, pathlib, pwd, re, secrets, stat, tempfile, urllib.request, urllib.error
+          account = pwd.getpwnam('ubuntu')
+          env = pathlib.Path('/home/ubuntu/agentmanager/.env')
+          directory = pathlib.Path('/home/ubuntu/.config/milkcat')
+          target = directory / 'leopardcat-analytics-token'
+          url = 'http://127.0.0.1:8088/api/v1/analytics/summary?days=30'
+          def status(token=None):
+              req = urllib.request.Request(url, headers={'X-Analytics-Token': token} if token else {})
+              try:
+                  with urllib.request.urlopen(req, timeout=5) as response:
+                      return response.status, response.read(128*1024)
+              except urllib.error.HTTPError as error:
+                  return error.code, b''
+          def atomic_replace(path, content, uid, gid, mode):
+              fd, temporary = tempfile.mkstemp(dir=path.parent, prefix='.analytics-private-')
+              try:
+                  with os.fdopen(fd, 'wb') as stream:
+                      stream.write(content)
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                  os.chown(temporary, uid, gid)
+                  os.chmod(temporary, mode)
+                  os.replace(temporary, path)
+              finally:
+                  if os.path.exists(temporary):
+                      os.unlink(temporary)
+          assert os.geteuid() == 0
+          original_stat = env.lstat()
+          assert stat.S_ISREG(original_stat.st_mode) and not stat.S_ISLNK(original_stat.st_mode), 'shared_env_not_regular'
+          assert original_stat.st_uid == account.pw_uid and (original_stat.st_mode & 0o077) == 0, 'shared_env_not_owner_private'
+          original = env.read_bytes()
+          assert not re.search(rb'(?m)^\s*(?:export\s+)?LEOPARDCAT_ANALYTICS_TOKEN\s*=', original), 'existing_analytics_config_refused'
+          assert not target.exists() and not target.is_symlink(), 'existing_dashboard_token_refused'
+          parent = directory.lstat()
+          assert stat.S_ISDIR(parent.st_mode) and parent.st_uid == account.pw_uid and (parent.st_mode & 0o077) == 0, 'unsafe_dashboard_private_dir'
+          anonymous_before, _ = status()
+          assert anonymous_before == 404, 'analytics_already_configured_or_endpoint_missing'
+          token = secrets.token_urlsafe(48)
+          line = b'' if not original or original.endswith(b'\n') else b'\n'
+          proposed = original + line + b'LEOPARDCAT_ANALYTICS_TOKEN=' + token.encode('ascii') + b'\n'
+          assert env.lstat().st_ino == original_stat.st_ino and env.read_bytes() == original, 'concurrent_env_edit_refused'
+          env_changed = False
+          target_created = False
+          try:
+              # fortune_server.load_env_value reads this existing private env file on each request.
+              atomic_replace(env, proposed, original_stat.st_uid, original_stat.st_gid, stat.S_IMODE(original_stat.st_mode))
+              env_changed = True
+              atomic_replace(target, token.encode('ascii') + b'\n', account.pw_uid, account.pw_gid, 0o600)
+              target_created = True
+              st = target.lstat()
+              assert stat.S_ISREG(st.st_mode) and not stat.S_ISLNK(st.st_mode) and st.st_uid == account.pw_uid and (st.st_mode & 0o077) == 0
+              authorized, raw = status(token)
+              assert authorized == 200, 'tarot_authorized_summary_failed'
+              data = json.loads(raw)
+              assert type(data.get('total_readings')) is int and isinstance(data.get('by_source'), dict), 'tarot_summary_schema_invalid'
+              anonymous_after, _ = status()
+              assert anonymous_after == 403, 'tarot_anonymous_summary_not_denied'
+              print('tarot_analytics_private_token=PASS')
+              print('tarot_analytics_summary=PASS status=200 aggregate_schema=valid')
+              print('tarot_anonymous_summary=PASS status=403')
+          except Exception:
+              if target_created:
+                  target.unlink(missing_ok=True)
+              if env_changed:
+                  if env.read_bytes() == proposed:
+                      atomic_replace(env, original, original_stat.st_uid, original_stat.st_gid, stat.S_IMODE(original_stat.st_mode))
+                      print('tarot_analytics_provision=ROLLED_BACK')
+                  else:
+                      print('tarot_analytics_provision=CONCURRENT_MODIFICATION_MANUAL_REVIEW')
+              raise
+          PY
+          REMOTE
