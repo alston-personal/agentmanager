@@ -37,6 +37,25 @@ jobs:
           echo '=== TAROT RUNTIME ==='
           ss -ltn 'sport = :8088' || true
           systemctl --no-pager --plain --type=service --all | grep -Ei 'leopardcat|tarot|fortune' | sed -E 's/^[[:space:]]*//; s/[[:space:]]+/ /g' | head -12 || true
+          echo '=== TAROT LISTENER PROCESS / MANAGER (NO ENV OR ARGS) ==='
+          sudo -n python3 - <<'PY'
+          import os, pathlib, re, subprocess, pwd
+          raw=subprocess.run(['ss','-H','-ltnp','sport = :8088'], capture_output=True,text=True,check=True).stdout
+          pids=sorted(set(int(p) for p in re.findall(r'pid=(\d+)',raw)))
+          print('tarot_listener_pid_count='+str(len(pids)))
+          for pid in pids:
+              root=pathlib.Path('/proc')/str(pid)
+              print('tarot_listener_uid='+str(root.stat().st_uid))
+              print('tarot_listener_cwd='+os.readlink(root/'cwd'))
+              print('tarot_listener_comm='+(root/'comm').read_text().strip())
+              print('tarot_listener_cgroup_kind='+('systemd' if 'system.slice' in (root/'cgroup').read_text() else 'user'))
+              stat_fields=(root/'stat').read_text().split(') ',1)[1].split()
+              parent=int(stat_fields[1]); print('tarot_listener_ppid='+str(parent))
+              if parent>1:
+                  pr=pathlib.Path('/proc')/str(parent)
+                  print('tarot_parent_comm='+(pr/'comm').read_text().strip())
+                  print('tarot_parent_cwd='+os.readlink(pr/'cwd'))
+          PY
           echo '=== TOKEN PRESENCE (NO SECRET VALUES) ==='
           sudo -n python3 - <<'PY'
           import os, pathlib, re, stat
