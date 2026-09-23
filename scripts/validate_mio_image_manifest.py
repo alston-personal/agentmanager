@@ -4,7 +4,7 @@ Usage:
  python scripts/validate_mio_image_manifest.py --manifest FILE --world FILE --wardrobe FILE --phase pre
  python scripts/validate_mio_image_manifest.py --manifest FILE --world FILE --wardrobe FILE --phase post
 
-This validates IDs and evidence bookkeeping, NOT image pixels or ownership.
+For A/B outfit content trusted dispatcher MUST pass --require-outfit.\nThis validates IDs and evidence bookkeeping, NOT image pixels or ownership.
 The post phase requires separately attested visual review evidence.
 """
 import argparse
@@ -22,7 +22,7 @@ def load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def validate(manifest, world, wardrobe, phase):
+def validate(manifest, world, wardrobe, phase, require_outfit=False):
     errors = []
     if manifest.get("schema") != "milkcat.image-manifest/v1":
         errors.append("wrong_manifest_schema")
@@ -58,6 +58,8 @@ def validate(manifest, world, wardrobe, phase):
             errors.append("unresolved_object:" + str(oid))
             continue
         if kind == "wearable":
+            if source.get("category") not in WEARABLE_CATEGORIES:
+                errors.append("invalid_wearable_category:" + str(oid))
             if cat != "wardrobe":
                 errors.append("wearable_not_from_wardrobe:" + str(oid))
             if source.get("state") not in ("usable", "approved"):
@@ -76,6 +78,13 @@ def validate(manifest, world, wardrobe, phase):
             errors.append("visibility_not_reviewed:" + str(oid))
     if manifest.get("scene_id") not in seen:
         errors.append("scene_not_in_objects")
+    if require_outfit:
+        worn = [wardrobe_items.get(o.get("object_id"), {}) for o in objs
+                if o.get("catalog") == "wardrobe" and o.get("kind") == "wearable"
+                and (phase == "pre" or o.get("visible") is True)]
+        categories = {item.get("category") for item in worn}
+        if not ({"top", "bottom"} <= categories or "dress" in categories):
+            errors.append("outfit_missing_top_bottom_or_dress")
     extras = manifest.get("unregistered_visible_objects", [])
     if extras:
         errors.append("unregistered_visible_objects")
@@ -103,8 +112,11 @@ def main():
     parser.add_argument("--world", required=True)
     parser.add_argument("--wardrobe", required=True)
     parser.add_argument("--phase", choices=("pre", "post"), required=True)
+    parser.add_argument("--require-outfit", action="store_true",
+                        help="Set by trusted outfit-post dispatch, never derive from user-editable manifest")
     args = parser.parse_args()
-    errors = validate(load(args.manifest), load(args.world), load(args.wardrobe), args.phase)
+    errors = validate(load(args.manifest), load(args.world), load(args.wardrobe), args.phase,
+                      require_outfit=args.require_outfit)
     print(json.dumps({"phase": args.phase, "allowed": not errors, "errors": errors}, ensure_ascii=False))
     return int(bool(errors))
 
