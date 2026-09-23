@@ -41,6 +41,16 @@ jobs:
             code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 6 "http://127.0.0.1:8868/fengshui/api/$route?days=1" || true)
             echo "route=$route anonymous_status=$code"
           done
+          echo '=== SERVICE UNIT STRUCTURE (NO ENV VALUES) ==='
+          python3 - <<'PY'
+          import subprocess
+          content=subprocess.run(['systemctl','cat','milkcat-fengshui.service'],capture_output=True,text=True,check=True).stdout
+          for marker in ('Description=Milkcat Fengshui managed release', 'EnvironmentFile=-/etc/milkcat/fengshui.env', 'User=ubuntu', '/opt/milkcat/fengshui/', 'server/index.mjs'):
+              print('unit_has_'+marker.split('=')[0].lower().replace('/','_').replace(' ','_')+'='+str(marker in content))
+          for line in content.splitlines():
+              if line.strip().startswith(('ExecStart=', 'WorkingDirectory=', 'EnvironmentFile=')):
+                  print('unit_directive_kind='+line.strip().split('=',1)[0])
+          PY
           echo '=== FENGSHUI ENV KEY PRESENCE ==='
           if sudo -n true 2>/dev/null; then
             sudo -n python3 - <<'PY'
