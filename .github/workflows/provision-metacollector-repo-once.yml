@@ -44,12 +44,26 @@ jobs:
           if gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '.nameWithOwner' >/dev/null 2>&1; then
             echo 'metacollector_create_state=EXISTS'
           else
-            if gh_ubuntu repo create "$target" --private --add-readme --description 'MetaCollector: immersive collection showroom, third-party endorsements and auction platform' >/dev/null 2>&1; then
+            error_file="$(mktemp)"
+            if gh_ubuntu repo create "$target" --private --add-readme --description 'MetaCollector: immersive collection showroom, third-party endorsements and auction platform' >/dev/null 2>"$error_file"; then
               echo 'metacollector_create_state=CREATED'
             else
               echo 'metacollector_create_state=NO_GO'
+              if grep -Eiq 'permission|Resource not accessible|not authorized|insufficient|not allowed' "$error_file"; then
+                echo 'metacollector_create_error=AUTHORIZATION_OR_ORG_POLICY'
+              elif grep -Eiq 'unknown flag|unknown command|invalid argument' "$error_file"; then
+                echo 'metacollector_create_error=CLI_ARGUMENT'
+              elif grep -Eiq 'already exists|name already exists|name is reserved' "$error_file"; then
+                echo 'metacollector_create_error=NAME_CONFLICT'
+              elif grep -Eiq 'network|connection|timeout|TLS' "$error_file"; then
+                echo 'metacollector_create_error=NETWORK'
+              else
+                echo 'metacollector_create_error=OTHER_REDACTED'
+              fi
+              rm -f "$error_file"
               exit 5
             fi
+            rm -f "$error_file"
           fi
           metadata="$(gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '[.nameWithOwner, (.isPrivate|tostring)] | @tsv' 2>/dev/null)" || {
             echo 'metacollector_readback=FAILED'
