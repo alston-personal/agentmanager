@@ -1,0 +1,78 @@
+name: Oracle Release Anime Meme Studio World and Studio Navigation Once
+
+on:
+  push:
+    branches:
+      - release/anime-meme-studio-static-20260924
+    paths:
+      - .github/workflows/oracle-release-anime-meme-nav-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anime-meme-studio-nav-release-once
+  cancel-in-progress: false
+
+jobs:
+  world:
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: b2a7d62a2cc6ea7ca98a0761d268ef4d924121bb
+      route: world
+      backup_key: milkcat-world-anime-meme
+      receipt_schema: studio-web.milkcat-world-anime-meme-release/v1
+      acceptance_anchors: |-
+        Milkcat World
+        走進 Milkcat
+        id="milkcat-world"
+        data-directory-zone-id=
+        七館導覽
+        /world/world-navigation.js
+      acceptance_nested_routes: |-
+        tarot
+        ziwei
+        library
+        gallery
+        layoutlib
+        fengshui
+        lab
+      acceptance_nested_anchors: |-
+        回到本館入口
+        destination-card
+        .hall-shell
+      acceptance_focused_nested_route: lab
+      acceptance_focused_nested_anchor: 'href="/anime-meme/"'
+      acceptance_js_module: world-navigation.js
+      acceptance_js_anchor: export function createWalkabilityMap
+      credit_account: ''
+      credit_cost: 0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+
+  studio:
+    needs: [world]
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: b2a7d62a2cc6ea7ca98a0761d268ef4d924121bb
+      route: studio
+      backup_key: milkcat-studio-anime-meme
+      receipt_schema: studio-web.studio-nav-anime-meme-release/v1
+      acceptance_anchors: |-
+        Milkcat Studio Portal
+        動漫哏圖
+        href="/anime-meme/"
+      credit_account: ''
+      credit_cost: 0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
