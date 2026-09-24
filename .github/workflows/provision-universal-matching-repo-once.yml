@@ -1,0 +1,53 @@
+name: Provision Universal Matching Core Private Repository Once
+
+on:
+  push:
+    branches:
+      - feat/universal-matching-repo-provision-20260925
+    paths:
+      - .github/workflows/provision-universal-matching-repo-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-universal-matching-repo-once
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Connect with existing Oracle deploy identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Create only the approved private universal-matching-core repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER" || { echo 'oracle_deploy_identity=UNAVAILABLE'; exit 3; }
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          target='alston-personal/universal-matching-core'
+          gh_ubuntu() { sudo -n -u ubuntu -H /usr/bin/gh "$@"; }
+          if ! gh_ubuntu auth status >/dev/null 2>&1; then echo 'github_auth=UNAVAILABLE'; exit 4; fi
+          echo 'github_auth=PASS'
+          if gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '.nameWithOwner' >/dev/null 2>&1; then
+            echo 'matching_repo_create_state=EXISTS'
+          else
+            if gh_ubuntu repo create "$target" --private --description 'Universal Matching Core: reusable matching and resource allocation library' >/dev/null; then
+              echo 'matching_repo_create_state=CREATED'
+            else echo 'matching_repo_create_state=FAILED'; exit 5; fi
+          fi
+          metadata="$(gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '[.nameWithOwner, (.isPrivate|tostring)] | @tsv' 2>/dev/null)" || { echo 'matching_repo_readback=FAILED'; exit 6; }
+          expected="$(printf 'alston-personal/universal-matching-core\ttrue')"
+          test "$metadata" = "$expected" || { echo 'matching_repo_readback=MISMATCH'; exit 7; }
+          echo 'matching_repo_visibility=PRIVATE'
+          echo 'matching_repo_readback=PASS'
+          REMOTE
