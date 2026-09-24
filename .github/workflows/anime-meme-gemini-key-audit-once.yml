@@ -1,0 +1,53 @@
+name: Anime Meme Gemini Key Free-Tier Audit Once
+on:
+  push:
+    branches: [diag/anime-meme-gemini-free-key-20260924]
+    paths: [.github/workflows/anime-meme-gemini-key-audit-once.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe existing Gemini env metadata without printing key or invoking paid image generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          sudo -n -u ubuntu -H python3 - <<'PY'
+          from pathlib import Path
+          import json
+          paths=[
+             "/home/ubuntu/agentmanager/.env",
+             "/home/ubuntu/agentmanager/dashboard/.env",
+             "/home/ubuntu/agentmanager/dashboard/.env.local",
+             "/home/ubuntu/agentmanager/.env.production",
+             "/home/ubuntu/.env",
+             "/home/ubuntu/agent-data/.env",
+             "/home/ubuntu/zeus-writer/website/.env",
+             "/home/ubuntu/zeus-writer/website/.env.local",
+             "/home/ubuntu/agent-data/services/anime-meme-studio/.env",
+          ]
+          keys=("GEMINI_API_KEY","GOOGLE_API_KEY","GOOGLE_GENERATIVE_AI_API_KEY","GEMINI_KEY","GENAI_API_KEY")
+          result=[]
+          for name in paths:
+              p=Path(name)
+              if not p.is_file():continue
+              try:
+                  lines=p.read_text(encoding="utf-8").splitlines()
+                  found=[key for key in keys if any(line.strip().startswith(key+"=") and line.partition("=")[2].strip().strip("'\"") for line in lines)]
+              except (OSError,UnicodeError):found=[]
+              result.append({"path":name,"gemini_key_names_present":found})
+          print("gemini_env_inventory="+json.dumps(result,separators=(",",":")))
+          print("gemini_candidate_count="+str(sum(bool(x["gemini_key_names_present"]) for x in result)))
+          PY
+          REMOTE
