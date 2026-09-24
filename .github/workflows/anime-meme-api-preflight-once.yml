@@ -1,0 +1,45 @@
+name: Anime Meme Studio API Preflight Once
+on:
+  push:
+    branches: [diag/anime-meme-api-preflight-20260924]
+    paths: [.github/workflows/anime-meme-api-preflight-once.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read live API requirements without mutation or secret disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "runtime_user=$(id -un)"
+          if test -d /home/ubuntu/zeus-writer/website/dist/anime-meme; then echo "meme_static_on_disk=YES"; else echo "meme_static_on_disk=NO"; fi
+          for name in node nginx gh; do
+            if command -v "$name" >/dev/null; then echo "$name available=YES"; else echo "$name available=NO"; fi
+          done
+          code=$(curl --noproxy '*' -ksS --connect-timeout 2 --max-time 6 --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org/anime-meme/api/status" -o /tmp/meme-api-preflight-body -w '%{http_code}' 2>/dev/null || true)
+          echo "meme_status_http=$code"
+          if python3 -c 'import json;json.load(open("/tmp/meme-api-preflight-body"))' >/dev/null 2>&1; then echo "meme_status_valid_json=YES"; else echo "meme_status_valid_json=NO"; fi
+          rm -f /tmp/meme-api-preflight-body
+          code=$(curl --noproxy '*' -sS --connect-timeout 2 --max-time 6 http://127.0.0.1:3000/dashboard/api/auth/session -o /tmp/meme-auth-preflight-body -w '%{http_code}' 2>/dev/null || true)
+          echo "dashboard_session_http=$code"
+          if python3 -c 'import json; d=json.load(open("/tmp/meme-auth-preflight-body")); assert d.get("loggedIn") is False' >/dev/null 2>&1; then echo "dashboard_guest_session=PASS"; else echo "dashboard_guest_session=NOT_VERIFIED"; fi
+          rm -f /tmp/meme-auth-preflight-body
+          if ss -H -ltn 'sport = :8876' | grep -q LISTEN; then echo "meme_port_8876=OCCUPIED"; else echo "meme_port_8876=FREE"; fi
+          if sudo -n test -f /etc/nginx/sites-available/studio.milkcat.org; then
+            if sudo -n grep -q 'anime-meme/api' /etc/nginx/sites-available/studio.milkcat.org; then echo "meme_api_nginx_mapping=PRESENT"; else echo "meme_api_nginx_mapping=ABSENT"; fi
+          else echo "studio_nginx_config=UNREADABLE"; fi
+          if sudo -n test -f /etc/milkcat/anime-meme.env; then echo "meme_env_file=PRESENT_METADATA_ONLY"; else echo "meme_env_file=ABSENT"; fi
+          if systemctl list-unit-files anime-meme-studio.service --no-legend 2>/dev/null | grep -q 'anime-meme-studio.service'; then echo "meme_systemd_unit=PRESENT"; else echo "meme_systemd_unit=ABSENT"; fi
+          REMOTE
