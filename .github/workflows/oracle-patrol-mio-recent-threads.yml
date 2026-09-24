@@ -116,3 +116,5 @@ jobs:
               print(key+val)
           print('mio_recent_patrol_public_replies='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
           PY
+
+# Owner-requested read-only patrol of Mio public comments on 2026-09-25; no post or reply side effects.
