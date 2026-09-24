@@ -32,7 +32,7 @@ jobs:
       acceptance_nested_anchors: |-
         動漫名場面圖鑑
       acceptance_focused_nested_route: library
-      acceptance_focused_nested_anchor: /anime-meme/library/scenes.json
+      acceptance_focused_nested_anchor: /anime-meme/library/app.js
       acceptance_js_module: library/app.js
       acceptance_js_anchor: scenes.json
       credit_account: ''
