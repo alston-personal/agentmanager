@@ -1,0 +1,42 @@
+name: Oracle Release Anime Meme Studio Static Preview Once
+
+on:
+  push:
+    branches:
+      - release/anime-meme-studio-static-20260924
+    paths:
+      - .github/workflows/oracle-release-anime-meme-studio-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anime-meme-studio-static-release-once
+  cancel-in-progress: false
+
+jobs:
+  release-meme:
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: b2a7d62a2cc6ea7ca98a0761d268ef4d924121bb
+      route: anime-meme
+      backup_key: anime-meme-studio
+      receipt_schema: studio-web.anime-meme-preview-release/v1
+      acceptance_anchors: |-
+        Anime Meme Studio
+        你想哏
+        id="form"
+        /anime-meme/app.js
+        /anime-meme/style.css
+        目前為整合預覽
+      acceptance_js_module: app.js
+      acceptance_js_anchor: /anime-meme/api/generate
+      credit_account: ''
+      credit_cost: 0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
