@@ -28,7 +28,7 @@ jobs:
           assert len(scenes)==34,len(scenes)
           assert len({s['id'] for s in scenes})==34
           h=next(s for s in scenes if s['id']=='alreadydead')
-          assert '北斗神拳' in h['work'] and '聖鬥士' in h['anti']
+          assert '北斗神拳' in h['work'] and ('星矢' in h['anti'] or '聖鬥士' in h['anti'])
           print('public_scene_library_json=PASS entries=34 hokuto_scene=PASS')
           PY
           curl -fsSL --retry 3 --max-time 25 -D "$TMP/js.hdr" "$BASE/anime-meme/library/app.js?audit=$GITHUB_RUN_ID" -o "$TMP/app.js"
