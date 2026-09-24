@@ -1,0 +1,48 @@
+name: Verify Anime Meme Scene Library Public Once
+on:
+  push:
+    branches: [release/anime-meme-scene-library-20260925]
+    paths: [.github/workflows/verify-anime-meme-scene-library-public-once.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public content is real library rather than SPA fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          curl -fsSL --retry 3 --max-time 25 "$BASE/anime-meme/library/?audit=$GITHUB_RUN_ID" -o "$TMP/library.html"
+          grep -Fq '動漫名場面圖鑑' "$TMP/library.html"
+          grep -Fq '/anime-meme/library/app.js' "$TMP/library.html"
+          curl -fsSL --retry 3 --max-time 25 "$BASE/anime-meme/library/scenes.json?audit=$GITHUB_RUN_ID" -o "$TMP/scenes.json"
+          python3 - "$TMP/scenes.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          scenes=d['scenes']
+          assert len(scenes)==34,len(scenes)
+          assert len({s['id'] for s in scenes})==34
+          h=next(s for s in scenes if s['id']=='alreadydead')
+          assert '北斗神拳' in h['work'] and '聖鬥士' in h['anti']
+          print('public_scene_library_json=PASS entries=34 hokuto_scene=PASS')
+          PY
+          curl -fsSL --retry 3 --max-time 25 -D "$TMP/js.hdr" "$BASE/anime-meme/library/app.js?audit=$GITHUB_RUN_ID" -o "$TMP/app.js"
+          grep -Eiq '^content-type:[[:space:]]*(application|text)/(x-)?javascript' "$TMP/js.hdr"
+          grep -Fq 'scenes.json' "$TMP/app.js"
+          curl -fsSL --retry 3 --max-time 25 "$BASE/anime-meme/" -o "$TMP/meme.html"
+          grep -Fq 'href="/anime-meme/library/"' "$TMP/meme.html"
+          curl -fsSL --retry 3 --max-time 25 "$BASE/world/lab/" -o "$TMP/lab.html"
+          grep -Fq 'href="/anime-meme/library/"' "$TMP/lab.html"
+          curl -fsSL --retry 3 --max-time 25 "$BASE/anime-meme/api/status" -o "$TMP/api.json"
+          python3 - "$TMP/api.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d.get('ready') is False,'must not activate paid generation'
+          print('public_meme_api_status=PASS paid_generation=DISABLED')
+          PY
+          echo 'public_anime_meme_library_complete=PASS'
