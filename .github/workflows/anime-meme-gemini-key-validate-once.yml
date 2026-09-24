@@ -1,0 +1,54 @@
+name: Anime Meme Gemini API Key Validation No Image Requests
+on:
+  push:
+    branches: [diag/anime-meme-gemini-free-key-20260924]
+    paths: [.github/workflows/anime-meme-gemini-key-validate-once.yml]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: List Gemini model metadata without image generation or key disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          sudo -n -u ubuntu -H python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError,URLError
+          import json
+          p=Path('/home/ubuntu/agentmanager/.env')
+          names=('GEMINI_API_KEY','GOOGLE_API_KEY')
+          key=''
+          for line in p.read_text(encoding='utf8').splitlines():
+              k,sep,v=line.strip().partition('=')
+              if sep and k in names and v.strip(): key=v.strip().strip("'\"");break
+          if not key: print('gemini_existing_key=ABSENT');raise SystemExit(1)
+          req=Request('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100',headers={'x-goog-api-key':key,'Accept':'application/json'})
+          try:
+              with urlopen(req,timeout=12) as response:
+                  metadata=json.load(response);status=response.status
+              names=[m.get('name','') for m in metadata.get('models',[])]
+              print('gemini_key_models_http='+str(status))
+              print('gemini_text_model_listed='+str(any('gemini-2.5-flash' in n for n in names)))
+              print('gemini_image_model_listed='+str(any(n.endswith(('/gemini-3.1-flash-lite-image','/gemini-3.1-flash-image','/gemini-2.5-flash-image')) for n in names)))
+              print('gemini_image_free_tier=NOT_ESTABLISHED_BY_MODEL_LIST')
+              print('image_generation_requests_sent=0')
+          except HTTPError as e:
+              print('gemini_key_models_http='+str(e.code))
+              print('image_generation_requests_sent=0')
+          except (URLError,TimeoutError,ValueError):
+              print('gemini_key_metadata=UNAVAILABLE')
+              print('image_generation_requests_sent=0')
+          PY
+          REMOTE
