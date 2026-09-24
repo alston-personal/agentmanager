@@ -1,0 +1,47 @@
+name: Anime Meme Studio API Host Inventory Once
+on:
+  push:
+    branches: [diag/anime-meme-api-preflight-20260924]
+    paths: [.github/workflows/anime-meme-api-host-inventory-once.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect production routing metadata and source access only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          if sudo -n -u ubuntu -H /usr/bin/gh repo view alston-personal/anime-meme-studio --json nameWithOwner --jq .nameWithOwner >/dev/null 2>&1; then echo 'product_repo_access=PASS'; else echo 'product_repo_access=FAILED'; fi
+          node --version
+          if sudo -n true; then echo 'sudo_available=YES'; else echo 'sudo_available=NO'; fi
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/etc/nginx/sites-available/studio.milkcat.org')
+          t=p.read_text()
+          for ix,match in enumerate(re.finditer(r'(?m)^\s*server\s*\{',t)):
+              start=match.start(); depth=0;end=0
+              for k in range(start,len(t)):
+                  if t[k]=='{':depth+=1
+                  if t[k]=='}':
+                      depth-=1
+                      if depth==0:
+                          end=k+1;break
+              b=t[start:end]
+              print('server_block='+str(ix)+' names='+','.join(re.findall(r'(?m)^\s*server_name\s+([^;]+);',b))+' listens='+','.join(re.findall(r'(?m)^\s*listen\s+([^;]+);',b)))
+              print('server_block_'+str(ix)+'_start_line='+str(t[:start].count('\n')+1))
+              print('server_block_'+str(ix)+'_locations='+','.join(re.findall(r'(?m)^\s*location\s+([^\{]+)\{',b))[:700])
+          print('nginx_file_readable=PASS')
+          PY
+          REMOTE
