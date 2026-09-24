@@ -62,7 +62,12 @@ jobs:
           test -d /home/ubuntu/zeus-writer/website/dist/anime-meme
           test ! -e "$UNIT"
           test ! -e "$LIVE" && test ! -L "$LIVE"
-          test ! -e "$RELEASE"
+          if test -e "$RELEASE"; then
+            test -f "$RELEASE/server.mjs"
+            test "$(sudo -n -u ubuntu -H git -C "$RELEASE" rev-parse HEAD)" = "$SHA"
+            sudo -n -u ubuntu -H rm -rf "$RELEASE"
+            echo 'previous_failed_release_artifact=VERIFIED_AND_CLEANED'
+          fi
           test ! -e "$BACKUP"
           if ss -H -ltn 'sport = :8876' | grep -q LISTEN; then echo 'port_8876=BUSY_REFUSE'; exit 2; fi
           if sudo -n grep -q 'anime-meme/api' "$CONFIG"; then echo 'meme_nginx_route=EXISTS_REFUSE'; exit 2; fi
@@ -89,7 +94,7 @@ jobs:
           User=ubuntu
           Group=ubuntu
           WorkingDirectory=/home/ubuntu/agent-data/services/anime-meme-studio/current
-          ExecStart=/usr/bin/node server.mjs
+          ExecStart=/usr/bin/node /home/ubuntu/agent-data/services/anime-meme-studio/releases/bde98b3c96626b6956472ae41d1fd748e3a1682e/server.mjs
           Environment=HOST=127.0.0.1
           Environment=PORT=8876
           Environment=MEME_API_ENABLED=0
@@ -107,8 +112,13 @@ jobs:
           sudo -n systemctl daemon-reload
           sudo -n systemctl start anime-meme-studio.service
           sudo -n systemctl is-active --quiet anime-meme-studio.service
-          curl --noproxy '*' -fsS --connect-timeout 2 --max-time 6 http://127.0.0.1:8876/anime-meme/api/status |
-            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["ready"] is False'
+          API_READY=0
+          for attempt in $(seq 1 15); do
+            if curl --noproxy '*' -fsS --connect-timeout 2 --max-time 6 http://127.0.0.1:8876/anime-meme/api/status -o "$STAGE/api-status.json" 2>/dev/null &&
+               python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["ready"] is False' "$STAGE/api-status.json"; then API_READY=1; break; fi
+            sleep 1
+          done
+          test "$API_READY" = 1 || { echo 'anime_meme_loopback_status_json=FAILED'; sudo -n systemctl status anime-meme-studio.service --no-pager -n 8 || true; exit 1; }
           echo 'anime_meme_loopback_status_json=PASS ready=false'
           sudo -n python3 - <<'PY'
           import re,os,tempfile
