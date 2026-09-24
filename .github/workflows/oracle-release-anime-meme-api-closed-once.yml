@@ -1,0 +1,174 @@
+name: Oracle Release Anime Meme API Closed-By-Default Once
+on:
+  push:
+    branches: [release/anime-meme-api-closed-20260924]
+    paths: [.github/workflows/oracle-release-anime-meme-api-closed-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: anime-meme-api-once
+  cancel-in-progress: false
+jobs:
+  api:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      PRODUCT_SHA: bde98b3c96626b6956472ae41d1fd748e3a1682e
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install pinned product API with no paid generation enabled, back up and accept or roll back
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$PRODUCT_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RID="$2"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RID" =~ ^[0-9]+$ ]]
+          ROOT=/home/ubuntu/agent-data/services/anime-meme-studio
+          RELEASE="$ROOT/releases/$SHA"
+          LIVE="$ROOT/current"
+          CONFIG=/etc/nginx/sites-available/studio.milkcat.org
+          UNIT=/etc/systemd/system/anime-meme-studio.service
+          BACKUP="/home/ubuntu/agent-data/releases/anime-meme-api/$RID"
+          STAGE=''
+          MUTATED=0
+          cleanup() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$MUTATED" -eq 1 ]; then
+              echo 'anime_meme_api_release=FAILED rollback=START'
+              sudo -n systemctl disable --now anime-meme-studio.service >/dev/null 2>&1 || true
+              if sudo -n test -f "$BACKUP/nginx.before"; then
+                sudo -n cp -a "$BACKUP/nginx.before" "$CONFIG"
+                sudo -n nginx -t && sudo -n systemctl reload nginx || true
+              fi
+              sudo -n rm -f "$UNIT"
+              sudo -n systemctl daemon-reload || true
+              sudo -n -u ubuntu -H rm -f "$LIVE" || true
+              echo 'anime_meme_api_release=ROLLBACK_ATTEMPTED'
+            fi
+            if [ -n "$STAGE" ]; then sudo -n -u ubuntu -H rm -rf "$STAGE" || true; fi
+            exit "$rc"
+          }
+          trap cleanup EXIT
+          test -x /usr/bin/node
+          test -f "$CONFIG"
+          test -d /home/ubuntu/zeus-writer/website/dist/anime-meme
+          test ! -e "$UNIT"
+          test ! -e "$LIVE" && test ! -L "$LIVE"
+          test ! -e "$RELEASE"
+          test ! -e "$BACKUP"
+          if ss -H -ltn 'sport = :8876' | grep -q LISTEN; then echo 'port_8876=BUSY_REFUSE'; exit 2; fi
+          if sudo -n grep -q 'anime-meme/api' "$CONFIG"; then echo 'meme_nginx_route=EXISTS_REFUSE'; exit 2; fi
+          if sudo -n test -e /etc/milkcat/anime-meme.env; then echo 'meme_env=EXISTS_REQUIRE_MANUAL_REVIEW'; exit 2; fi
+          sudo -n -u ubuntu -H /usr/bin/gh repo view alston-personal/anime-meme-studio --json nameWithOwner --jq .nameWithOwner >/dev/null
+          STAGE=$(sudo -n -u ubuntu -H mktemp -d /tmp/anime-meme-api-stage-XXXXXXXX)
+          sudo -n -u ubuntu -H /usr/bin/gh repo clone alston-personal/anime-meme-studio "$STAGE/src" -- --no-checkout >/dev/null
+          sudo -n -u ubuntu -H /usr/bin/git -C "$STAGE/src" fetch --depth=1 origin "$SHA" >/dev/null
+          sudo -n -u ubuntu -H /usr/bin/git -C "$STAGE/src" checkout --detach "$SHA" >/dev/null
+          test "$(sudo -n -u ubuntu -H /usr/bin/git -C "$STAGE/src" rev-parse HEAD)" = "$SHA"
+          sudo -n -u ubuntu -H npm --prefix "$STAGE/src" test
+          echo "anime_meme_product_source_and_tests=PASS sha=$SHA"
+          sudo -n -u ubuntu -H mkdir -p "$ROOT/releases"
+          sudo -n -u ubuntu -H cp -a "$STAGE/src" "$RELEASE"
+          sudo -n -u ubuntu -H ln -s "$RELEASE" "$LIVE"
+          sudo -n mkdir -p "$BACKUP"
+          sudo -n cp -a "$CONFIG" "$BACKUP/nginx.before"
+          MUTATED=1
+          sudo -n tee "$UNIT" >/dev/null <<'UNITFILE'
+          [Unit]
+          Description=Anime Meme Studio API (closed until funded, authenticated configuration)
+          After=network.target
+          [Service]
+          User=ubuntu
+          Group=ubuntu
+          WorkingDirectory=/home/ubuntu/agent-data/services/anime-meme-studio/current
+          ExecStart=/usr/bin/node server.mjs
+          Environment=HOST=127.0.0.1
+          Environment=PORT=8876
+          Environment=MEME_API_ENABLED=0
+          Environment=PUBLIC_ORIGIN=https://studio.milkcat.org
+          Environment=MILKCAT_AUTH_SESSION_URL=http://127.0.0.1:3000/dashboard/api/auth/session
+          EnvironmentFile=-/etc/milkcat/anime-meme.env
+          Restart=on-failure
+          RestartSec=3
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=full
+          [Install]
+          WantedBy=multi-user.target
+          UNITFILE
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl start anime-meme-studio.service
+          sudo -n systemctl is-active --quiet anime-meme-studio.service
+          curl --noproxy '*' -fsS --connect-timeout 2 --max-time 6 http://127.0.0.1:8876/anime-meme/api/status |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["ready"] is False'
+          echo 'anime_meme_loopback_status_json=PASS ready=false'
+          sudo -n python3 - <<'PY'
+          import re,os,tempfile
+          from pathlib import Path
+          p=Path('/etc/nginx/sites-available/studio.milkcat.org')
+          t=p.read_text()
+          if 'anime-meme/api' in t: raise SystemExit('duplicate meme API route, refusing edit')
+          hits=[]
+          for match in re.finditer(r'(?m)^[ \t]*server[ \t]*\{', t):
+              start=match.start(); depth=0;end=None
+              for i in range(start,len(t)):
+                  if t[i]=='{': depth+=1
+                  elif t[i]=='}':
+                      depth-=1
+                      if depth==0: end=i+1;break
+              if end is None: raise SystemExit('malformed server config')
+              b=t[start:end]
+              if re.search(r'(?m)^\s*server_name\s+studio\.milkcat\.org\s*;',b) and re.search(r'(?m)^\s*listen\s+(?:[^\n; ]*:)?443\s+ssl\s*;',b):
+                  hits.append((start,end,b))
+          if len(hits)!=1: raise SystemExit('HTTPS server block not uniquely resolved: '+str(len(hits)))
+          start,end,b=hits[0]
+          m=re.search(r'(?m)^([ \t]+)location\s+/\s*\{',b)
+          if not m: raise SystemExit('HTTPS fallback location not found')
+          i=m.group(1)
+          loc='\n'.join([
+              i+'location ^~ /anime-meme/api/ {',
+              i+'    client_max_body_size 15m;',
+              i+'    proxy_pass http://127.0.0.1:8876;',
+              i+'    proxy_set_header Host $host;',
+              i+'    proxy_set_header X-Forwarded-Proto $scheme;',
+              i+'    proxy_set_header Origin $http_origin;',
+              i+'    proxy_set_header Cookie $http_cookie;',
+              i+'    proxy_connect_timeout 4s;',
+              i+'    proxy_read_timeout 190s;',
+              i+'    add_header Cache-Control "no-store" always;',
+              i+'}',
+              ''
+          ])
+          updated=t[:start]+b[:m.start()]+loc+b[m.start():]+t[end:]
+          fd,tmp=tempfile.mkstemp(prefix='.studio-meme-nginx-',dir=str(p.parent))
+          with os.fdopen(fd,'w') as f: f.write(updated)
+          os.chmod(tmp,p.stat().st_mode & 0o777)
+          os.replace(tmp,p)
+          print('anime_meme_exact_https_server_mount=PASS')
+          PY
+          sudo -n nginx -t
+          sudo -n systemctl reload nginx
+          verify() {
+            BASE="$1"
+            curl --noproxy '*' -fsS --connect-timeout 3 --max-time 12 "$BASE/anime-meme/api/status" |
+              python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ready") is False and d.get("mode")=="unavailable"'
+            code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 12 -X POST \
+              -H 'Origin: https://studio.milkcat.org' -H 'Content-Type: application/json' -d '{"idea":"status check"}' \
+              "$BASE/anime-meme/api/generate")
+            test "$code" = 503
+            curl --noproxy '*' -fsS --connect-timeout 3 --max-time 12 "$BASE/anime-meme/" | grep -Fq 'Anime Meme Studio'
+          }
+          verify https://studio.milkcat.org
+          echo 'anime_meme_public_api_status=PASS ready=false generation=DISABLED'
+          sudo -n systemctl enable anime-meme-studio.service >/dev/null
+          echo "anime_meme_api_deploy=PASS source_sha=$SHA backend=RUNNING generation=DISABLED rollback_backup=$BACKUP"
+          MUTATED=0
+          REMOTE
