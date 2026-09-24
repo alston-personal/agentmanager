@@ -118,3 +118,4 @@ jobs:
           grep -Fq '2026.09.18' "$RUNNER_TEMP/mio-pedigree-index.html"
           echo 'mio_pedigree_public_acceptance=PASS'
           echo 'threads_galaxy_public_acceptance=PASS'
+# 2026-09-25 deploy explicit owner-initiated Mio Persona OAuth consent entry; no automatic Threads token mutation.
