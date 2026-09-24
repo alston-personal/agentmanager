@@ -1,0 +1,87 @@
+name: Oracle Release Anime Meme Scene Library Once
+on:
+  push:
+    branches:
+      - release/anime-meme-scene-library-20260925
+    paths:
+      - .github/workflows/oracle-release-anime-meme-library-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anime-meme-scene-library-release-20260925
+  cancel-in-progress: false
+
+jobs:
+  library:
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: 7e4c880ab8066012f290eb8a8561bb8ea674e3f6
+      route: anime-meme
+      backup_key: anime-meme-scene-library
+      receipt_schema: studio-web.anime-meme-scene-library-release/v1
+      acceptance_anchors: |-
+        Anime Meme Studio
+        你想哏
+        id="form"
+        href="/anime-meme/library/"
+        /anime-meme/app.js
+      acceptance_nested_routes: |-
+        library
+      acceptance_nested_anchors: |-
+        動漫名場面圖鑑
+      acceptance_focused_nested_route: library
+      acceptance_focused_nested_anchor: /anime-meme/library/scenes.json
+      acceptance_js_module: library/app.js
+      acceptance_js_anchor: scenes.json
+      credit_account: ''
+      credit_cost: 0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+
+  world:
+    needs: [library]
+    uses: ./.github/workflows/reusable-studio-static-route-release.yml
+    with:
+      source_sha: 7e4c880ab8066012f290eb8a8561bb8ea674e3f6
+      route: world
+      backup_key: milkcat-world-anime-meme-library
+      receipt_schema: studio-web.world-anime-meme-library-release/v1
+      acceptance_anchors: |-
+        Milkcat World
+        走進 Milkcat
+        id="milkcat-world"
+        data-directory-zone-id=
+        七館導覽
+        /world/world-navigation.js
+      acceptance_nested_routes: |-
+        tarot
+        ziwei
+        library
+        gallery
+        layoutlib
+        fengshui
+        lab
+      acceptance_nested_anchors: |-
+        回到本館入口
+        destination-card
+        .hall-shell
+      acceptance_focused_nested_route: lab
+      acceptance_focused_nested_anchor: 'href="/anime-meme/library/"'
+      acceptance_js_module: world-navigation.js
+      acceptance_js_anchor: export function createWalkabilityMap
+      credit_account: ''
+      credit_cost: 0
+    secrets:
+      AGENTOS_DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER }}
+      AGENTOS_DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT }}
+      AGENTOS_DEPLOY_SSH_KEY: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY }}
+      N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
+      N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
+      N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
