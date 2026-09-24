@@ -1,0 +1,51 @@
+name: Provision Anime Meme Studio Private Repository Once
+
+on:
+  push:
+    branches:
+      - feat/anime-meme-studio-repo-provision-20260924
+    paths:
+      - .github/workflows/provision-anime-meme-studio-repo-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-anime-meme-studio-repo-once
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Connect with existing Oracle deploy identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Create only approved private repo and verify identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER" || { echo 'oracle_deploy_identity=UNAVAILABLE'; exit 3; }
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          target='alston-personal/anime-meme-studio'
+          gh_ubuntu() { sudo -n -u ubuntu -H /usr/bin/gh "$@"; }
+          gh_ubuntu auth status >/dev/null 2>&1 || { echo 'github_auth=UNAVAILABLE'; exit 4; }
+          if gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '.nameWithOwner' >/dev/null 2>&1; then
+            echo 'anime_meme_repo_state=EXISTS'
+          else
+            gh_ubuntu repo create "$target" --private --description 'Anime Meme Studio: user-directed single-scene anime meme MVP' >/dev/null || { echo 'anime_meme_repo_state=FAILED'; exit 5; }
+            echo 'anime_meme_repo_state=CREATED'
+          fi
+          metadata="$(gh_ubuntu repo view "$target" --json nameWithOwner,isPrivate --jq '[.nameWithOwner, (.isPrivate|tostring)] | @tsv' 2>/dev/null)" || exit 6
+          expected="$(printf 'alston-personal/anime-meme-studio\ttrue')"
+          test "$metadata" = "$expected" || { echo 'anime_meme_repo_readback=MISMATCH'; exit 7; }
+          echo 'anime_meme_repo_visibility=PRIVATE'
+          echo 'anime_meme_repo_readback=PASS'
+          REMOTE
