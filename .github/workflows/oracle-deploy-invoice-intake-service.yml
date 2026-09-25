@@ -44,9 +44,77 @@ jobs:
           BASE=/home/ubuntu/invoice-intake-service
           DATA=/home/ubuntu/agent-data/invoice-intake
           mkdir -p "$BASE" "$DATA" /home/ubuntu/.config/systemd/user
-          sudo -n apt-get update -qq
-          sudo -n apt-get install -y -qq tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-tra python3-venv
-          python3 -m venv "$BASE/.venv"
+          if ! command -v tesseract >/dev/null 2>&1 || ! tesseract --list-langs 2>/dev/null | grep -Eq '^chi_tra
+          "$BASE/.venv/bin/pip" install --disable-pip-version-check -q -r "$BASE/app-new/requirements.txt"
+          rm -rf "$BASE/app"
+          mv "$BASE/app-new" "$BASE/app"
+          cat > /home/ubuntu/.config/systemd/user/invoice-intake.service <<'UNIT'
+          [Unit]
+          Description=Milkcat Invoice Intake Service
+          After=network-online.target
+
+          [Service]
+          Type=simple
+          WorkingDirectory=/home/ubuntu/invoice-intake-service/app
+          Environment=INVOICE_DATA_ROOT=/home/ubuntu/agent-data/invoice-intake
+          Environment=DASHBOARD_SESSION_URL=http://127.0.0.1:3000/dashboard/api/auth/session
+          ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 18766
+          Restart=on-failure
+          RestartSec=2
+
+          [Install]
+          WantedBy=default.target
+          UNIT
+          systemctl --user daemon-reload
+          systemctl --user enable --now invoice-intake.service
+          systemctl --user restart invoice-intake.service
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:18766/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18766/healthz
+          tesseract --list-langs | grep -Eq '^chi_tra$'
+          echo 'invoice_intake_service=PASS'
+          REMOTE
+
+      - name: Deploy nginx API boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'sudo -n python3 -'             < scripts/deploy_invoice_intake_nginx.py
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 6 --retry-delay 1 https://studio.milkcat.org/api/invoice-intake/v1/status > /tmp/invoice-status.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/invoice-status.json'))
+          assert x['ok'] is True
+          assert x['service'] == 'invoice-intake'
+          assert x['continuous_scan'] is True
+          assert x['immutable_originals'] is True
+          print('invoice_intake_public_status=PASS')
+          PY
+; then
+            mapfile -t BAD_APT < <(grep -RIl 'antigravity-auto-updater-dev' /etc/apt/sources.list.d 2>/dev/null || true)
+            for f in "${BAD_APT[@]}"; do sudo -n mv "$f" "$f.invoice-intake-disabled"; done
+            restore_apt() { for f in "${BAD_APT[@]}"; do sudo -n mv "$f.invoice-intake-disabled" "$f" 2>/dev/null || true; done; }
+            trap restore_apt EXIT
+            sudo -n apt-get update -qq
+            sudo -n apt-get install -y -qq tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-tra python3-venv
+            restore_apt
+            trap - EXIT
+          fi
+          if ! python3 -m venv "$BASE/.venv" 2>/dev/null; then
+            mapfile -t BAD_APT < <(grep -RIl 'antigravity-auto-updater-dev' /etc/apt/sources.list.d 2>/dev/null || true)
+            for f in "${BAD_APT[@]}"; do sudo -n mv "$f" "$f.invoice-intake-disabled"; done
+            sudo -n apt-get update -qq
+            sudo -n apt-get install -y -qq python3-venv
+            for f in "${BAD_APT[@]}"; do sudo -n mv "$f.invoice-intake-disabled" "$f" 2>/dev/null || true; done
+            python3 -m venv "$BASE/.venv"
+          fi
           "$BASE/.venv/bin/pip" install --disable-pip-version-check -q -r "$BASE/app-new/requirements.txt"
           rm -rf "$BASE/app"
           mv "$BASE/app-new" "$BASE/app"
