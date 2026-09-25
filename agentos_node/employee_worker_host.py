@@ -40,7 +40,7 @@ CAPSULE_FIELDS = {
     "employee_wake_route",
 }
 ACTIVE_RUNNER_KINDS = {"spec_steward_o3"}
-TERMINAL_DISPATCH_STATES = {"checkpointed", "completed", "failed", "unknown", "rejected"}
+TERMINAL_DISPATCH_STATES = {"checkpointed", "completed", "blocked", "handoff", "failed", "unknown", "rejected"}
 SAFE_CHILD_RESULT_KEYS = {
     "schema",
     "status",
@@ -427,7 +427,7 @@ class EmployeeWorkerHost:
             if not exact:
                 state["status"] = "unknown"
                 state["error_code"] = "employee_worker_child_wake_mismatch"
-            elif status in {"checkpointed", "completed"} and returncode == 0 and lease_generation == expected_generation:
+            elif status in {"checkpointed", "completed", "blocked", "handoff"} and returncode == 0 and lease_generation == expected_generation:
                 state["status"] = status
                 state["error_code"] = None
             elif status == "failed":
