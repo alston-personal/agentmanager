@@ -5,12 +5,12 @@ import os
 import urllib.request
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from invoice_core import InvoiceStore
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
@@ -53,7 +53,7 @@ def status(request: Request):
         "ok": True,
         "service": "invoice-intake",
         "version": VERSION,
-        "ocr_engine": "tesseract-layout-v1",
+        "ocr_engine": "tesseract-layout-v2-async",
         "authenticated": bool(session.get("loggedIn")),
         "role": session.get("role") if session.get("loggedIn") else None,
         "continuous_scan": True,
@@ -63,7 +63,11 @@ def status(request: Request):
 
 
 @app.post("/v1/ingest")
-async def ingest(request: Request, file: UploadFile = File(...)):
+async def ingest(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
     require_user(request)
     mime = (file.content_type or "").lower()
     if mime not in {"image/jpeg", "image/png", "image/webp"}:
@@ -74,9 +78,21 @@ async def ingest(request: Request, file: UploadFile = File(...)):
     if not data:
         raise HTTPException(status_code=400, detail="empty_image")
     try:
-        return store.ingest(data, file.filename or "camera.jpg", mime)
+        payload = store.ingest(data, file.filename or "camera.jpg", mime)
+        if not payload.get("duplicate") and payload.get("status") == "processing":
+            background_tasks.add_task(store.process, payload["invoice_id"])
+        return payload
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"invoice_ingest_failed:{type(exc).__name__}") from exc
+
+
+@app.get("/v1/invoices/{invoice_id}")
+def get_invoice(invoice_id: str, request: Request):
+    require_user(request)
+    try:
+        return store.get_invoice(invoice_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="invoice_not_found")
 
 
 @app.get("/v1/recent")
