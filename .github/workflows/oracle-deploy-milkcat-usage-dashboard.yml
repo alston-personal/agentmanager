@@ -39,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$DEPLOY_USER"
+          echo 'dashboard_recovery_reason=owner_reported_404_2026-09-25'
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" \
             bash -s -- "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
