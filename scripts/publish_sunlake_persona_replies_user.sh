@@ -51,14 +51,22 @@ if not product_key or not control_token:
 
 store=json.load(open(cred_file,encoding='utf-8'))
 bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items()
-          if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads']
-if len(bindings)!=1:
-    raise SystemExit('persona_threads_reply=BINDING_COUNT_'+str(len(bindings)))
-binding_id,item=bindings[0]
+          if isinstance(item,dict) and item.get('product_id')=='galaxy'
+          and item.get('platform')=='threads'
+          and item.get('auth_profile','persona')=='persona'
+          and str(item.get('username') or '').lstrip('@').lower() in ('sunlake.milkcat','mio.milkcat')]
+if not bindings:
+    raise SystemExit('persona_threads_reply=BINDING_UNAVAILABLE')
+# Reauthorization can legitimately leave multiple Persona bindings for the same
+# Threads account. Never choose across different provider identities, but allow
+# duplicate bindings for the same account and prefer the newest JSON entry.
+identities={(str(item.get('provider_account_id') or ''),str(item.get('username') or '').lstrip('@').lower())
+            for _,item in bindings}
+if len(identities)!=1 or not next(iter(identities))[0]:
+    raise SystemExit('persona_threads_reply=ACCOUNT_BINDING_AMBIGUOUS')
+binding_id,item=bindings[-1]
 account_id=str(item.get('provider_account_id') or '')
 username=str(item.get('username') or '')
-if not account_id:
-    raise SystemExit('persona_threads_reply=ACCOUNT_ID_MISSING')
 
 base='http://127.0.0.1:8771/v1/social'
 read_req={
