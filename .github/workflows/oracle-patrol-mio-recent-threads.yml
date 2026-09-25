@@ -124,6 +124,12 @@ jobs:
           print('mio_recent_readonly_receipt=PASS')
           for key,val in stats.items():
               print(key+val)
+          for prefix in ('mio_oauth_persona_binding_count=','mio_oauth_persona_known_binding_count=','mio_oauth_owned_post_binding_count=','mio_oauth_owned_post_granted_count=','mio_search_scope_probe=','mio_social_outbound=','mio_search_results_count='):
+              found=next((line.split('=',1)[1] for line in lines if line.startswith(prefix)),None)
+              if found is None or not re.fullmatch(r'[a-zA-Z0-9_]{1,60}',found):
+                  print('mio_scope_diagnostic_missing='+prefix.rstrip('='))
+              else:
+                  print(prefix+found)
           print('mio_recent_patrol_public_replies='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
           PY
 
