@@ -58,9 +58,21 @@ def read(operation, binding, key, object_id=None, query=None):
         with urllib.request.urlopen(request, timeout=16) as response:
             result = json.load(response)
             if response.status != 200 or result.get("ok") is not True:
+                if operation == "keyword.search":
+                    error = str(result.get("error_code") or "")
+                    if re.fullmatch(r"threads_[a-zA-Z0-9_]{1,100}", error):
+                        print("mio_search_api_error=" + error)
+                    else:
+                        print("mio_search_api_error=unknown_receipt")
                 return None
             return result.get("result") or {}
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, OSError):
+    except urllib.error.HTTPError as exc:
+        if operation == "keyword.search":
+            print("mio_search_api_error=http_" + str(int(exc.code)))
+        return None
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        if operation == "keyword.search":
+            print("mio_search_api_error=transport")
         return None
 
 def datetime_or_none(raw):
