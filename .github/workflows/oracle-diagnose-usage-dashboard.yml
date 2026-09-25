@@ -192,30 +192,10 @@ jobs:
             if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
           done
           if [ -n "$PM2_CLI" ]; then
-            node "$PM2_CLI" jlist | python3 - <<'PY'
-import json, sys
-apps=json.load(sys.stdin)
-rows=[]
-for app in apps:
-    env=app.get('pm2_env') or {}
-    cwd=str(env.get('pm_cwd') or '')
-    if cwd == '/home/ubuntu/agentmanager/dashboard':
-        secretish={'JWT_SECRET','ADMIN_PASSWORD_HASH','GOOGLE_CLIENT_SECRET','FACEBOOK_CLIENT_SECRET','LINE_CHANNEL_SECRET','GITHUB_CLIENT_SECRET'}
-        keys=sorted(k for k in env if isinstance(k,str) and (k in secretish or k.startswith(('GOOGLE_','MILKCAT_','FENGSHUI_','LEOPARDCAT_','ADMIN_','JWT_'))))
-        rows.append({
-            'name': app.get('name'),
-            'pm_id': app.get('pm_id'),
-            'pm_cwd': cwd,
-            'pm_exec_path': env.get('pm_exec_path'),
-            'args': env.get('args'),
-            'exec_interpreter': env.get('exec_interpreter'),
-            'exec_mode': env.get('exec_mode'),
-            'watch': env.get('watch'),
-            'env_keys_only': keys,
-        })
-assert len(rows)==1, f'dashboard_pm2_safe_metadata_target_count={len(rows)}'
-print(json.dumps(rows[0], ensure_ascii=False, sort_keys=True))
-PY
+            PM2_SAFE_JSON="/tmp/dashboard-pm2-safe-$RUN_ID.json"
+            node "$PM2_CLI" jlist > "$PM2_SAFE_JSON"
+            python3 -c 'import json,sys; apps=json.load(open(sys.argv[1],encoding="utf8")); rows=[]; secretish={"JWT_SECRET","ADMIN_PASSWORD_HASH","GOOGLE_CLIENT_SECRET","FACEBOOK_CLIENT_SECRET","LINE_CHANNEL_SECRET","GITHUB_CLIENT_SECRET"}; [(rows.append({"name":a.get("name"),"pm_id":a.get("pm_id"),"pm_cwd":e.get("pm_cwd"),"pm_exec_path":e.get("pm_exec_path"),"args":e.get("args"),"exec_interpreter":e.get("exec_interpreter"),"exec_mode":e.get("exec_mode"),"watch":e.get("watch"),"env_keys_only":sorted(k for k in e if isinstance(k,str) and (k in secretish or k.startswith(("GOOGLE_","MILKCAT_","FENGSHUI_","LEOPARDCAT_","ADMIN_","JWT_"))))}) if str(e.get("pm_cwd") or "")=="/home/ubuntu/agentmanager/dashboard" else None) for a in apps for e in [a.get("pm2_env") or {}]]; assert len(rows)==1, "dashboard_pm2_safe_metadata_target_count="+str(len(rows)); print(json.dumps(rows[0],ensure_ascii=False,sort_keys=True))' "$PM2_SAFE_JSON"
+            rm -f "$PM2_SAFE_JSON"
           else
             echo 'dashboard_pm2_safe_metadata=PM2_CLIENT_NOT_FOUND'
           fi
