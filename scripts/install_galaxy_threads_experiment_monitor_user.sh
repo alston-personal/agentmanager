@@ -26,6 +26,24 @@ if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   done
   echo "galaxy_experiment_monitor_companions=SYNCED_FROM_SOURCE_COMMIT"
 fi
+
+# Persona IR/event sync is part of the live social decision path and must be
+# able to read/write the private canonical my-agent-data repo as ubuntu.
+# Reuse the owner's existing GitHub CLI credential without ever echoing it.
+if command -v gh >/dev/null 2>&1 && \
+   env -u GH_TOKEN -u GITHUB_TOKEN gh repo view alston-personal/my-agent-data --json name --jq .name >/dev/null 2>&1; then
+  env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null 2>&1
+  if git -C /home/ubuntu/agent-data fetch origin main >/dev/null 2>&1; then
+    echo "mio_persona_git_auth=PASS"
+  else
+    echo "mio_persona_git_auth=FETCH_FAILED" >&2
+    exit 8
+  fi
+else
+  echo "mio_persona_git_auth=GH_AUTH_UNAVAILABLE" >&2
+  exit 8
+fi
+
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE="$UNIT_DIR/agentos-galaxy-experiment-monitor.service"
 TIMER="$UNIT_DIR/agentos-galaxy-experiment-monitor.timer"
