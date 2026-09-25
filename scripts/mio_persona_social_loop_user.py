@@ -121,7 +121,7 @@ def extract_reply_decisions(raw_text, expected_ids):
 
 def persona_context():
     files={}
-    for name in ('character_core.json','persona_state.json','reply_policy.json'):
+    for name in ('character_core.json','persona_state.json','reply_policy.json','social_stances.json'):
         p=PERSONA_ROOT/name
         if p.is_file(): files[name]=load_json(p,{})
     events=[]
@@ -152,6 +152,11 @@ Critical rules:
 - Never make payment, contract, legal, identity-security, or sensitive commitments.
 - Avoid repetitive self-explanations that she is AI unless directly relevant.
 - The reply should sound like a person with her current voice, not customer support.
+- Never evaluate a comment in isolation. Reconcile the root post, parent chain, sibling replies, Mio's own earlier replies in the thread, relevant persona memories/events, and explicit social stances.
+- Before drafting text, decide Mio's own position: agree, partly_agree, disagree, uncertain, playful_only, or no_reply. Warmth does not imply agreement.
+- Do not mirror the commenter's premise just to be pleasant. If it conflicts with Mio's recorded memory/stance, politely disagree, qualify, ask, or stay silent.
+- A changed position requires a relevant recorded event/evidence. Otherwise preserve continuity with Mio's earlier words.
+- If thread context or relevant memory is unavailable, prefer should_reply=false rather than improvising a stance.
 
 Current local time: {local.isoformat()}
 Persona context:
@@ -168,7 +173,11 @@ Required schema:
       "should_reply":true,
       "delay_minutes":25,
       "text":"...",
-      "reason_category":"relationship|question|conversation|low_value|rest|boundary|other"
+      "reason_category":"relationship|question|conversation|low_value|rest|boundary|other",
+      "position":"agree|partly_agree|disagree|uncertain|playful_only|no_reply",
+      "memory_basis":"brief private reason grounded in supplied persona memory/stance",
+      "thread_basis":"brief private reason grounded in supplied conversation context",
+      "consistency_check":"pass|changed_with_evidence|insufficient_context"
     }}
   ]
 }}
@@ -279,6 +288,40 @@ def auth():
     bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items() if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads' and str(item.get('username') or '').lstrip('@').lower()=='sunlake.milkcat' and str(item.get('auth_profile') or 'persona')=='persona']
     if len(bindings)!=1 or not key or not control: raise RuntimeError('persona_social_auth_unavailable')
     return key,control,*bindings[0]
+
+def conversation_context(product_key,binding_id,root_id):
+    """Read the whole owned-post conversation before deciding a reply.
+
+    Returns only public/thread-safe fields. Failure is fail-closed: caller must
+    defer instead of treating an isolated comment as sufficient context.
+    """
+    status,posts_receipt=post(BASE+'/status',req('post.read',binding_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or posts_receipt.get('ok') is not True:
+        return None
+    root=next((x for x in ((posts_receipt.get('result') or {}).get('items') or [])
+               if str(x.get('id') or '')==str(root_id)),None)
+    if not isinstance(root,dict):
+        return None
+    status,replies_receipt=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
+    if status!=200 or replies_receipt.get('ok') is not True:
+        return None
+    thread=[]
+    for row in ((replies_receipt.get('result') or {}).get('items') or [])[-80:]:
+        if not isinstance(row,dict):
+            continue
+        parent=row.get('replied_to') if isinstance(row.get('replied_to'),dict) else {}
+        thread.append({
+            'id':str(row.get('id') or ''),
+            'username':str(row.get('username') or ''),
+            'text':str(row.get('text') or '')[:500],
+            'replied_to_id':str(parent.get('id') or ''),
+            'is_reply_owned_by_me':bool(row.get('is_reply_owned_by_me')),
+            'timestamp':row.get('timestamp'),
+        })
+    return {
+        'root_post':{'id':str(root.get('id') or ''),'text':str(root.get('text') or '')[:1200]},
+        'thread':thread,
+    }
 
 def already_replied(product_key,binding_id,root_id,target_id):
     status,receipt=post(BASE+'/status',req('replies.read',binding_id,root_id),{'X-AgentOS-Product-Key':product_key})
@@ -510,9 +553,24 @@ def main():
         try:
             read_cost=float((energy_config.get('action_costs') or {}).get('read_thread',1))
             spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)},temporal=temporal_config)
-            result=decide_batch(new_external,account_username)
+            thread_cache={}
+            decision_items=[]
+            for row in new_external:
+                root_id=str(row.get('root_post_id') or '')
+                if root_id not in thread_cache:
+                    thread_cache[root_id]=conversation_context(product_key,bid,root_id)
+                ctx=thread_cache[root_id]
+                if ctx is None:
+                    print('mio_social_decision=DEFERRED_CONTEXT_UNAVAILABLE:'+str(row.get('id') or ''))
+                    continue
+                enriched=dict(row)
+                enriched['conversation_context']=ctx
+                decision_items.append(enriched)
+            if not decision_items:
+                raise RuntimeError('conversation_context_unavailable')
+            result=decide_batch(decision_items,account_username)
             by_id={str(d.get('reply_id') or ''):d for d in result.get('decisions') or [] if isinstance(d,dict)}
-            expected={str(row.get('id') or '') for row in new_external}
+            expected={str(row.get('id') or '') for row in decision_items}
             print('mio_social_decision_schema='+','.join(sorted(str(k)[:35] for k in result.keys())[:12])+':count='+str(len(by_id))+':matched='+str(len(expected.intersection(by_id))))
             if not expected.intersection(by_id):
                 raise ValueError('persona_decision_missing_expected_ids')
@@ -524,8 +582,13 @@ def main():
                 if d.get('should_reply') is True and (not isinstance(d.get('text'),str) or not 1<=len(d['text'].strip())<=500):
                     print('mio_social_decision=DEFERRED_INVALID_TEXT:'+rid)
                     continue
+                position=str(d.get('position') or '')
+                consistency=str(d.get('consistency_check') or '')
+                if d.get('should_reply') is True and (position not in ('agree','partly_agree','disagree','uncertain','playful_only') or consistency not in ('pass','changed_with_evidence')):
+                    print('mio_social_decision=DEFERRED_POSITION_OR_CONSISTENCY:'+rid)
+                    continue
                 processed.add(rid)
-                record={'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001','decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other')}
+                record={'schema':'agentos.persona-social-decision/v1','persona_id':'sunlake-milkcat-ai-001','decided_at':iso(now),'reply_id':rid,'root_post_id':row.get('root_post_id'),'author_handle':row.get('username'),'should_reply':bool(d.get('should_reply')),'reason_category':str(d.get('reason_category') or 'other'),'position':str(d.get('position') or 'no_reply'),'memory_basis':str(d.get('memory_basis') or '')[:240],'thread_basis':str(d.get('thread_basis') or '')[:240],'consistency_check':str(d.get('consistency_check') or 'insufficient_context')}
                 if d.get('should_reply') and str(d.get('text') or '').strip():
                     costs=energy_config.get('action_costs') or {}
                     est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
