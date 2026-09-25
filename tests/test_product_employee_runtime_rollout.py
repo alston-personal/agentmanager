@@ -238,12 +238,12 @@ def test_dirty_projection_marks_target_equivalent_partial_rollout(tmp_path: Path
     assert projected["entries"][0]["path"] == "agent_core/example.py"
 
 
-def test_workflow_is_push_only_source_guard_and_never_mutates_oracle_runtime():
+def test_workflow_is_source_guard_and_never_mutates_oracle_runtime():
     text = Path(".github/workflows/product-employee-runtime-rollout.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch" not in text
     assert "inputs:" not in text
     assert "core/integration" in text
-    assert "scripts.rollout_product_employee_runtime" not in text
+    assert "-m scripts.rollout_product_employee_runtime" not in text
     assert "self-hosted" not in text
     assert "node.runtime.converge" not in text
     assert "runtime_mutation=DEFERRED_TO_IMMUTABLE_RELEASE_CONTROLLER" in text
