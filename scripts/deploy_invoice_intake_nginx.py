@@ -15,7 +15,7 @@ END = "# END milkcat invoice intake api"
 BLOCK = r'''    # BEGIN milkcat invoice intake api
     location = /api/invoice-intake/v1/status {
         limit_except GET HEAD { deny all; }
-        proxy_pass http://127.0.0.1:18766/v1/status;
+        proxy_pass http://127.0.0.1:18767/v1/status;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -25,7 +25,7 @@ BLOCK = r'''    # BEGIN milkcat invoice intake api
     location ^~ /api/invoice-intake/v1/ {
         client_max_body_size 16m;
         rewrite ^/api/invoice-intake(/.*)$ $1 break;
-        proxy_pass http://127.0.0.1:18766;
+        proxy_pass http://127.0.0.1:18767;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

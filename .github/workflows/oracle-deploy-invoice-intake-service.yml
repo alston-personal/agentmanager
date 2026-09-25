@@ -83,7 +83,7 @@ jobs:
           WorkingDirectory=/home/ubuntu/invoice-intake-service/app
           Environment=INVOICE_DATA_ROOT=/home/ubuntu/agent-data/invoice-intake
           Environment=DASHBOARD_SESSION_URL=http://127.0.0.1:3000/dashboard/api/auth/session
-          ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 18766
+          ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 18767
           Restart=on-failure
           RestartSec=2
 
@@ -95,11 +95,45 @@ jobs:
           systemctl --user enable --now invoice-intake.service
           systemctl --user restart invoice-intake.service
           for i in $(seq 1 40); do
-            if curl -fsS http://127.0.0.1:18766/healthz >/dev/null 2>&1; then break; fi
+            if curl -fsS http://127.0.0.1:18767/healthz >/dev/null 2>&1; then break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:18766/healthz
-          tesseract --list-langs | grep -Eq '^chi_tra$'
+          curl -fsS http://127.0.0.1:18767/healthz > /tmp/invoice-intake-health.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/invoice-intake-health.json'))
+          assert x.get('ok') is True, x
+          assert x.get('service') == 'invoice-intake', x
+          print('invoice_intake_service_identity=PASS')
+          PY
+          tesseract --list-langs | grep -Eq '^chi_tra
+          REMOTE
+
+      - name: Deploy nginx API boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'sudo -n python3 -' \
+            < scripts/deploy_invoice_intake_nginx.py
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 6 --retry-delay 1 https://studio.milkcat.org/api/invoice-intake/v1/status > /tmp/invoice-status.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/invoice-status.json'))
+          assert x['ok'] is True
+          assert x['service'] == 'invoice-intake'
+          assert x['continuous_scan'] is True
+          assert x['immutable_originals'] is True
+          print('invoice_intake_public_status=PASS')
+          PY
+          code=$(curl -sS -o /tmp/invoice-unauth.json -w '%{http_code}' -X POST https://studio.milkcat.org/api/invoice-intake/v1/ingest || true)
+          test "$code" = "422" -o "$code" = "401"
+          echo "invoice_intake_unauthenticated_write_block=PASS code=$code"
+
           echo 'invoice_intake_service=PASS'
           REMOTE
 
