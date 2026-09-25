@@ -1,0 +1,106 @@
+name: Oracle Accept Runtime Completion 470
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-accept-runtime-completion-470.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-runtime-completion-acceptance
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify independent Dashboard runtime and close durable work item
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          DASH_RELEASE_ROOT=/home/ubuntu/agent-data/releases/dashboard/apps
+          DASH_LIVE=/home/ubuntu/agent-data/runtime/dashboard/current
+          SHARED=/home/ubuntu/agentmanager/dashboard
+          COMPLETION_LIVE=/home/ubuntu/agent-data/runtime/agentos-lobster/current
+          STATE=/home/ubuntu/agent-data/governance/work-items.json
+          BOARD=/home/ubuntu/agent-data/TASK_BOARD.md
+          WORK_ID=agentos-core-470-runtime-completion
+
+          PID=$(ss -H -ltnp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)
+          [[ "$PID" =~ ^[0-9]+$ ]]
+          CWD=$(readlink -f "/proc/$PID/cwd")
+          LIVE_TARGET=$(readlink -f "$DASH_LIVE")
+          case "$CWD" in
+            "$DASH_RELEASE_ROOT"/*) ;;
+            *) echo "runtime_470_dashboard_cwd=INVALID:$CWD"; exit 2 ;;
+          esac
+          test "$CWD" = "$LIVE_TARGET"
+          test "$CWD" != "$SHARED"
+          ps -p "$PID" -o args= | grep -Fq 'next-server'
+          echo "runtime_470_dashboard_isolation=PASS cwd=$CWD"
+
+          for pair in             '/dashboard/api/auth/session 200'             '/dashboard/api/admin/usage 401'             '/dashboard/admin/usage 307'
+          do
+            set -- $pair
+            code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 4 --max-time 12 "https://studio.milkcat.org$1")
+            test "$code" = "$2"
+            printf 'runtime_470_route=%s status=%s\n' "$1" "$code"
+          done
+
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          test "$(systemctl --user is-active lobster-engine.service)" = active
+          test "$(systemctl --user is-active agentos-completion-watchdog.timer)" = active
+          COMP_TARGET=$(readlink -f "$COMPLETION_LIVE")
+          case "$COMP_TARGET" in
+            /home/ubuntu/agent-data/releases/agentos-lobster/*) ;;
+            *) echo "runtime_470_completion_cwd=INVALID:$COMP_TARGET"; exit 2 ;;
+          esac
+          test -f "$COMP_TARGET/scripts/work_completion.py"
+          echo "runtime_470_completion_runtime=PASS release=$COMP_TARGET"
+
+          python3 - "$COMP_TARGET/scripts/work_completion.py" "$STATE" "$WORK_ID" <<'PY'
+          import importlib.util, pathlib, sys
+          module_path=pathlib.Path(sys.argv[1])
+          state=pathlib.Path(sys.argv[2])
+          work_id=sys.argv[3]
+          spec=importlib.util.spec_from_file_location('work_completion_live', module_path)
+          mod=importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(mod)
+          before=mod.load(state)['items'].get(work_id)
+          assert before, 'runtime_470_work_item_missing'
+          evidence='oracle:dashboard=36197636857;diagnostic=36197636810;completion=36130001931'
+          if before.get('status') != 'done':
+              mod.verified_done(state, work_id=work_id, actor='role://runtime-acceptance-470', evidence=evidence)
+          after=mod.load(state)['items'][work_id]
+          assert after.get('status')=='done'
+          assert (after.get('verification') or {}).get('status')=='passed'
+          assert after.get('evidence')
+          print('runtime_470_durable_work=VERIFIED_DONE')
+          PY
+
+          python3 "$COMP_TARGET/scripts/work_completion.py" --state "$STATE" project-board --board "$BOARD" >/dev/null
+          if grep -Fq "[WI:$WORK_ID]" "$BOARD"; then
+            echo 'runtime_470_board_projection=STALE'
+            exit 1
+          fi
+          echo 'runtime_470_board_projection=REMOVED_DONE_ITEM'
+          echo 'runtime_completion_470=PASS'
+          REMOTE
