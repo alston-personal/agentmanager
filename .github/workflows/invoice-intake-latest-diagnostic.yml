@@ -1,0 +1,40 @@
+name: Invoice Intake Latest Diagnostic
+
+on:
+  push:
+    branches:
+      - diag/invoice-intake-latest
+    paths:
+      - '.github/workflows/invoice-intake-latest-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect latest invoice rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, sqlite3
+          db='/home/ubuntu/agent-data/invoice-intake/invoice-intake.sqlite3'
+          con=sqlite3.connect(db)
+          con.row_factory=sqlite3.Row
+          rows=con.execute("""
+            SELECT i.id AS invoice_id,i.invoice_number,i.invoice_date,
+                   i.amount_before_tax,i.tax_amount,i.total_amount,i.status,
+                   i.confidence_json,i.created_at,d.original_filename,d.sha256
+            FROM invoices i JOIN documents d ON d.id=i.document_id
+            ORDER BY i.created_at DESC LIMIT 5
+          """).fetchall()
+          print('invoice_diagnostic_count='+str(len(rows)))
+          for r in rows:
+              x=dict(r)
+              x['confidence']=json.loads(x.pop('confidence_json') or '{}')
+              print(json.dumps(x,ensure_ascii=False))
+          PY
