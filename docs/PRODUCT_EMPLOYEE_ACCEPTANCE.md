@@ -1,6 +1,6 @@
 # Product Employee Operating Acceptance
 
-Status: **contract candidate; live operating acceptance not yet proven**
+Status: **persistent product runtime exists; live useful-product acceptance remains incomplete**
 
 Issue: #238
 
@@ -21,9 +21,14 @@ This source slice does **not** grant product execution authority and does not em
 
 ## Worker Host boundary
 
-The current shared Employee Worker Host is intentionally allowlisted and currently implements only `spec_steward_o3`. Product Employees must not be registered by lying about their runner kind or by introducing module/argv/shell fields into the adapter registry.
+The shared Employee Worker Host now has fixed source-controlled runner kinds for `spec_steward_o3`, `zeus_writer_v1`, and `youtube_ai_manager_scan_v1`. Product Employees must not introduce module/argv/shell fields into the adapter registry.
 
-The next execution slice must extend the shared host with fixed source-controlled runner kinds while preserving these invariants:
+A production incident on 2026-09-26 exposed an important lifecycle rule: a bounded child that exits after checkpoint cannot leave the canonical assignment active indefinitely. Otherwise the lease expires, Core correctly preserves prior execution as UNKNOWN, and the same Employee is re-woken forever. Product v1 therefore closes every bounded run with an explicit canonical terminal outcome:
+- Zeus successful read-only existing-draft review -> `handoff` receipt requiring separate Zeus product mutation authority;
+- Zeus missing/untrusted work intent -> `blocked` receipt;
+- YouTube without a governed live read adapter -> `blocked` receipt, never a fake scan success.
+
+These are truthful bounded outcomes, not the final product acceptance markers. The next execution slices must preserve these invariants:
 
 1. `runner_kind` is an enum selected by Core source, not an executable/module/argv string.
 2. Each runner maps to one fixed bounded CLI surface in source code.
@@ -61,7 +66,7 @@ Machine-hydratable Employee, role, skill, assignment. No external API access.
 
 ### Y1 — bounded local/read-only scan
 
-A fixed worker performs a credential-free scan over explicitly authorized local/canonical inputs and persists optimization candidates.
+A fixed worker performs a credential-free scan over explicitly authorized local/canonical inputs and persists optimization candidates. Until such an adapter is actually connected, the Employee must terminate with an explicit blocker receipt rather than repeatedly checkpointing the same assignment.
 
 ### Y2 — governed live channel read
 
@@ -84,3 +89,9 @@ Success marker `YOUTUBE_AI_MANAGER_PERSISTENT_EMPLOYEE=VERIFIED` requires at lea
 `role registered` != `Employee running` != `product work executed` != `external side effect accepted`.
 
 Each transition requires its own evidence and receipt.
+
+
+## Runtime isolation rule
+
+Product Employee source integration must not move the shared `/home/ubuntu/agentmanager` checkout to deploy a role fix. That checkout is source-cache-only under current runtime ownership governance. The `core/integration` product push lane is therefore source/CI only; live recovery must install an exact immutable Core release and repoint only the affected Core Employee services through the governed release controller.
+
