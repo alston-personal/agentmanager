@@ -106,6 +106,44 @@ class WorkCompletionTests(unittest.TestCase):
             )
             self.assertEqual(item["workspace"], workspace)
 
+    def test_stale_owner_is_reclaimed_for_autonomous_resume(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            item = mod.register(
+                path,
+                work_id="wi-stale",
+                project_id="agentmanager",
+                title="must resume",
+                owner="role://chat-session",
+                next_action="finish implementation",
+                acceptance=["production receipt"],
+                lease_seconds=60,
+            )
+            state = mod.load(path)
+            state["items"]["wi-stale"]["lease_expires_at"] = "2000-01-01T00:00:00+00:00"
+            mod.save(path, state)
+            reclaimed = mod.reclaim_stale(path, lease_seconds=600)
+            self.assertEqual(reclaimed, ["wi-stale"])
+            resumed = mod.load(path)["items"]["wi-stale"]
+            self.assertEqual(resumed["owner"], "role://completion.controller")
+            self.assertEqual(resumed["owner_generation"], 2)
+            self.assertIn("[WI:wi-stale]", mod.board_projection(path))
+
+    def test_live_external_owner_is_not_projected_to_lobster(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            mod.register(
+                path,
+                work_id="wi-live",
+                project_id="agentmanager",
+                title="active elsewhere",
+                owner="role://chat-session",
+                next_action="continue current implementation",
+                acceptance=["verified"],
+                lease_seconds=3600,
+            )
+            self.assertNotIn("[WI:wi-live]", mod.board_projection(path))
+
     def test_verified_done_helper_walks_required_states(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
