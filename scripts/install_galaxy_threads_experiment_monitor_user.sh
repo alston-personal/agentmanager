@@ -212,6 +212,12 @@ fi
 systemctl --user is-enabled --quiet agentos-galaxy-experiment-monitor.timer
 systemctl --user is-active --quiet agentos-galaxy-experiment-monitor.timer
 
+# Installation acceptance also runs the deterministic Persona IR reducer
+# directly. This is idempotent: after the service cycle advanced the IR it
+# emits NO_CHANGE; if the service deferred IR evolution, installation fails
+# here instead of silently claiming the growth loop is live.
+PYTHONPATH="$REPO" /usr/bin/python3 "$REPO/scripts/evolve_mio_persona_ir_user.py"
+
 # Emit only IDs for the newly observed reader comment; never expose the
 # surrounding private monitor snapshot or other commenters in run logs.
 python3 - <<'PY'
