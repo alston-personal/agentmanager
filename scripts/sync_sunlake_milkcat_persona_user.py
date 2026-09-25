@@ -15,7 +15,10 @@ def now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
 
 def run(args, cwd=None, check=True):
-    p=subprocess.run(args,cwd=cwd,text=True,capture_output=True,timeout=60,check=False)
+    clean_env=os.environ.copy()
+    clean_env.pop('GH_TOKEN',None)
+    clean_env.pop('GITHUB_TOKEN',None)
+    p=subprocess.run(args,cwd=cwd,text=True,capture_output=True,timeout=60,check=False,env=clean_env)
     if check and p.returncode!=0:
         raise RuntimeError('git_operation_failed')
     return p
