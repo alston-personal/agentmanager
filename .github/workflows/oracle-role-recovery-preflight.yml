@@ -1,0 +1,291 @@
+name: Oracle Role Recovery Preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-role-recovery-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-role-recovery-preflight
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Read-only role/runtime inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+
+          echo 'role_recovery_preflight=START'
+          python3 - <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import pathlib
+          import subprocess
+          from datetime import datetime, timezone
+
+          def iso_now():
+              return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")
+
+          def cmd(args):
+              try:
+                  p=subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5, check=False)
+                  return p.returncode, p.stdout.strip()
+              except Exception:
+                  return 255, ""
+
+          def service(unit):
+              rc,state=cmd(["systemctl","--user","is-active",unit])
+              if not state:
+                  state="missing" if rc==4 else "unknown"
+              _,enabled=cmd(["systemctl","--user","is-enabled",unit])
+              _,pid=cmd(["systemctl","--user","show","-p","MainPID","--value",unit])
+              cwd=None
+              if pid.isdigit() and int(pid)>0:
+                  try:
+                      cwd=os.path.realpath(f"/proc/{pid}/cwd")
+                  except Exception:
+                      cwd=None
+              return {
+                  "unit":unit,
+                  "active_state":state,
+                  "enabled_state":enabled or "unknown",
+                  "pid_present":bool(pid.isdigit() and int(pid)>0),
+                  "cwd":cwd,
+              }
+
+          units=[
+              "agentos-core-supervisor.service",
+              "agentos-employee-worker-host.service",
+              "agentos-employee-wake-node.service",
+              "agentos-product-work-intent-reconciler.service",
+              "agentos-product-work-intent-reconciler.timer",
+              "agentos-completion-watchdog.timer",
+              "lobster-engine.service",
+              "agentos-mio-telegram.service",
+              "agentos-galaxy-experiment-monitor.service",
+              "agentos-galaxy-experiment-monitor.timer",
+              "agentos-social-runtime.service",
+              "agentos-mio-agy-relay.service",
+          ]
+
+          data_root=pathlib.Path("/home/ubuntu/agent-data")
+          runtime=data_root/"employee-runtime"
+          out={
+              "schema":"agentos.role-recovery-preflight/v1",
+              "observed_at":iso_now(),
+              "credential_exposed":False,
+              "mutation_performed":False,
+              "services":[service(u) for u in units],
+              "employee_runtime":{"present":runtime.is_dir(),"employees":[],"assignments":[],"leases":[],"latest_receipts":[]},
+              "supervisor":{},
+              "realm":{"present":False,"nodes":[]},
+              "completion":{"ledger_present":False,"tracked":[]},
+              "shared_source_cache":{},
+              "completion_runtime":{},
+          }
+
+          shared=pathlib.Path("/home/ubuntu/agentmanager")
+          if (shared/".git").is_dir():
+              _,head=cmd(["git","-C",str(shared),"rev-parse","HEAD"])
+              _,branch=cmd(["git","-C",str(shared),"branch","--show-current"])
+              _,status=cmd(["git","-C",str(shared),"status","--porcelain","--untracked-files=no"])
+              out["shared_source_cache"]={
+                  "present":True,
+                  "head":head if len(head)==40 else None,
+                  "branch":branch or None,
+                  "tracked_dirty":bool(status),
+              }
+          else:
+              out["shared_source_cache"]={"present":False}
+
+          live=pathlib.Path("/home/ubuntu/agent-data/runtime/agentos-lobster/current")
+          out["completion_runtime"]={
+              "live_pointer_present":live.exists() or live.is_symlink(),
+              "resolved":os.path.realpath(live) if live.exists() or live.is_symlink() else None,
+          }
+
+          def read_obj(path):
+              try:
+                  value=json.loads(path.read_text(encoding="utf-8"))
+                  return value if isinstance(value,dict) else None
+              except Exception:
+                  return None
+
+          expected={"agentos-spec-steward","zeus-writer","youtube-ai-manager"}
+          empdir=runtime/"employees"
+          if empdir.is_dir():
+              seen=set()
+              for p in sorted(empdir.glob("*.json")):
+                  obj=read_obj(p)
+                  if not obj:
+                      continue
+                  eid=str(obj.get("agent_id") or p.stem)
+                  seen.add(eid)
+                  out["employee_runtime"]["employees"].append({
+                      "employee_id":eid,
+                      "registered":True,
+                      "status":obj.get("status"),
+                      "role_ids":obj.get("role_ids") if isinstance(obj.get("role_ids"),list) else [],
+                      "skill_ids":obj.get("skill_ids") if isinstance(obj.get("skill_ids"),list) else [],
+                      "updated_at":obj.get("updated_at"),
+                  })
+              for eid in sorted(expected-seen):
+                  out["employee_runtime"]["employees"].append({"employee_id":eid,"registered":False})
+
+          assdir=runtime/"assignments"
+          if assdir.is_dir():
+              for p in sorted(assdir.glob("*.json")):
+                  obj=read_obj(p)
+                  if not obj:
+                      continue
+                  eid=str(obj.get("employee_id") or "")
+                  if eid not in expected:
+                      continue
+                  aid=str(obj.get("assignment_id") or p.stem)
+                  out["employee_runtime"]["assignments"].append({
+                      "assignment_id":aid,
+                      "employee_id":eid,
+                      "state":obj.get("state"),
+                      "thread_head_present":bool(obj.get("thread_head")),
+                      "work_intent_ref_present":bool(obj.get("work_intent_ref")),
+                      "updated_at":obj.get("updated_at"),
+                  })
+
+          leasedir=runtime/"lifecycle"/"leases"
+          if leasedir.is_dir():
+              for p in sorted(leasedir.glob("*.json")):
+                  obj=read_obj(p)
+                  if not obj or str(obj.get("employee_id") or "") not in expected:
+                      continue
+                  out["employee_runtime"]["leases"].append({
+                      "assignment_id":obj.get("assignment_id"),
+                      "employee_id":obj.get("employee_id"),
+                      "generation":obj.get("generation"),
+                      "status":obj.get("status"),
+                      "heartbeat_at":obj.get("heartbeat_at"),
+                      "expires_at":obj.get("expires_at"),
+                      "resume_required":obj.get("resume_required"),
+                      "prior_execution_state":obj.get("prior_execution_state"),
+                      "last_checkpoint_at":obj.get("last_checkpoint_at"),
+                  })
+
+          receipts=runtime/"lifecycle"/"receipts"
+          if receipts.is_dir():
+              for adir in sorted(x for x in receipts.iterdir() if x.is_dir()):
+                  rows=[]
+                  for p in sorted(adir.glob("*.json")):
+                      obj=read_obj(p)
+                      if obj and str(obj.get("employee_id") or "") in expected:
+                          rows.append(obj)
+                  if rows:
+                      obj=max(rows,key=lambda x:int(x.get("generation") or 0))
+                      out["employee_runtime"]["latest_receipts"].append({
+                          "assignment_id":obj.get("assignment_id"),
+                          "employee_id":obj.get("employee_id"),
+                          "generation":obj.get("generation"),
+                          "outcome":obj.get("outcome"),
+                          "recorded_at":obj.get("recorded_at"),
+                          "credential_exposed":obj.get("credential_exposed"),
+                      })
+
+          state=read_obj(runtime/"supervisor"/"state.json")
+          leader=read_obj(runtime/"supervisor"/"leader.json")
+          if state:
+              out["supervisor"].update({
+                  "state_present":True,
+                  "status":state.get("status"),
+                  "leader_generation":state.get("leader_generation"),
+                  "cycle_generation":state.get("cycle_generation"),
+                  "last_cycle_at":state.get("last_cycle_at"),
+                  "next_poll_seconds":state.get("next_poll_seconds"),
+                  "authority_boundary":state.get("authority_boundary"),
+                  "delivery_dispatch_count":state.get("delivery_dispatch_count"),
+                  "delivery_awaiting_claim_count":state.get("delivery_awaiting_claim_count"),
+                  "delivery_claimed_count":state.get("delivery_claimed_count"),
+                  "delivery_blocked_count":state.get("delivery_blocked_count"),
+                  "delivery_unknown_count":state.get("delivery_unknown_count"),
+                  "delivery_failed_count":state.get("delivery_failed_count"),
+                  "delivery_error_count":state.get("delivery_error_count"),
+              })
+          else:
+              out["supervisor"]["state_present"]=False
+          if leader:
+              out["supervisor"]["leader"]={
+                  "generation":leader.get("generation"),
+                  "heartbeat_at":leader.get("heartbeat_at"),
+                  "expires_at":leader.get("expires_at"),
+                  "prior_owner_state":leader.get("prior_owner_state"),
+              }
+
+          nodes=read_obj(data_root/"realm"/"nodes.json")
+          if nodes:
+              out["realm"]["present"]=True
+              raw=nodes.get("nodes") or {}
+              if isinstance(raw,dict):
+                  iterable=raw.values()
+              elif isinstance(raw,list):
+                  iterable=raw
+              else:
+                  iterable=[]
+              allow={"oracle-core-node","oracle-employee-wake-node","vopc5750"}
+              for node in iterable:
+                  if not isinstance(node,dict) or str(node.get("node_id") or "") not in allow:
+                      continue
+                  out["realm"]["nodes"].append({
+                      "node_id":node.get("node_id"),
+                      "status":node.get("status"),
+                      "last_heartbeat_at":node.get("last_heartbeat_at"),
+                      "capabilities":sorted(x for x in (node.get("capabilities") or []) if isinstance(x,str)),
+                  })
+
+          ledger=read_obj(data_root/"governance"/"work-items.json")
+          if ledger:
+              out["completion"]["ledger_present"]=True
+              items=ledger.get("items") or {}
+              for wid in (
+                  "agentos-core-470-runtime-completion",
+                  "agentos-core-420-role-recovery",
+                  "agentos-core-200-supervisor-acceptance",
+                  "agentos-core-197-spec-steward",
+                  "agentos-core-238-product-employees",
+              ):
+                  item=items.get(wid) if isinstance(items,dict) else None
+                  if isinstance(item,dict):
+                      out["completion"]["tracked"].append({
+                          "work_id":wid,
+                          "status":item.get("status"),
+                          "owner":item.get("owner"),
+                          "owner_generation":item.get("owner_generation"),
+                          "lease_expires_at":item.get("lease_expires_at"),
+                          "blocker_present":bool(item.get("blocker")),
+                          "evidence_count":len(item.get("evidence") or []),
+                          "verification_status":(item.get("verification") or {}).get("status") if isinstance(item.get("verification"),dict) else None,
+                      })
+
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":")))
+          PY
+          echo 'role_recovery_preflight=PASS'
+          REMOTE
