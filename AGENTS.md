@@ -81,6 +81,32 @@ python3 scripts/documentation_reality_guard.py
 
 CI enforces the same rule. Treat a documentation-drift failure as an architecture regression, not optional cleanup.
 
+## Public Web Surface Machine-Readability Rule
+
+Web surfaces created or materially changed by AgentOS MUST be classified before implementation as one of:
+
+1. **public-discoverable** — intended to be found, shared, indexed, summarized, or understood by humans, search engines, link previewers, or AI agents;
+2. **public-noindex** — publicly reachable but intentionally excluded from discovery/indexing;
+3. **private/authenticated** — user-specific, administrative, sensitive, or access-controlled.
+
+For **public-discoverable** routes:
+
+- The initial HTTP response MUST contain meaningful semantic HTML without requiring client-side JavaScript to reveal the page's purpose or primary result.
+- At minimum provide a descriptive `<title>`, one meaningful `<h1>`, a concise textual summary, canonical URL, and share metadata (Open Graph; equivalent metadata where relevant).
+- Use stable, linkable URLs and correct HTTP status codes. A `200` response containing only an empty SPA shell is not acceptable evidence that the route is crawler-friendly.
+- Prefer SSR, SSG, prerendering, or an equivalent server-rendered summary layer; client-side JavaScript may enhance the experience but MUST NOT be the only source of critical content.
+- Use semantic structure, accessible text alternatives for meaningful images, and structured data when it accurately represents the page. Keep `robots.txt`, sitemap, canonical/noindex behavior, and route intent consistent.
+- Dynamic tools may expose a sanitized public share/result page when product intent requires it. Do not expose private inputs, hidden state, account data, secrets, or internal diagnostics merely to improve discoverability.
+
+For **public-noindex** and **private/authenticated** routes:
+
+- Machine-readable HTML is still preferred for accessibility and agent interoperability, but indexing/crawling MUST follow the route's privacy and product policy.
+- Admin, account, private result, temporary job-state, and sensitive user-data routes MUST NOT become public/indexable merely to satisfy SEO or AI readability.
+
+**AI-friendly does not mean blanket training permission.** Separate content machine-readability from crawler authorization. Whether specific search, archival, or AI-training crawlers are allowed is a deployment/policy decision and MUST be expressible independently through crawler controls. Optional conventions such as `llms.txt` may be added as hints, but MUST NOT substitute for semantic HTML, standard metadata, access control, or robots directives.
+
+Acceptance for a public-discoverable route must include a no-JavaScript fetch/inspection proving that a crawler can recover the route's title, primary heading, concise summary, canonical URL, and intended indexability from the server response.
+
 ## Useful verification
 
 ```bash
