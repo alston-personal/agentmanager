@@ -68,7 +68,8 @@ def main() -> int:
         return 3
 
     remote = run(["git", "remote", "get-url", "origin"]).stdout.strip()
-    if not remote.rstrip("/").removesuffix(".git").endswith("github.com/alston-personal/my-agent-data"):
+    safe = remote.rstrip("/").removesuffix(".git")
+    if not safe.endswith("/my-agent-data") and not safe.endswith(":alston-personal/my-agent-data"):
         print("mio_persona_ir_evolve=UNEXPECTED_REMOTE")
         return 4
 
