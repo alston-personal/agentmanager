@@ -20,7 +20,8 @@ AGY_SELECTED=os.environ.get('AGENTOS_MIO_RELAY_ROOT','')==str(MIO_AGY_ROOT)
 DECISION_PENDING=STATE_DIR/('agy-decision-pending.json' if AGY_SELECTED else 'decision-pending.json')
 RELAY_PROBE=STATE_DIR/('agy-relay-probe-v2.json' if AGY_SELECTED else 'relay-probe.json')
 HISTORY=LATEST.with_name('history.jsonl')
-PERSONA_ROOT=Path('/home/ubuntu/agent-data/personas/sunlake-milkcat')
+PERSONA_DATA_REPO=Path('/home/ubuntu/agent-data')
+PERSONA_ROOT=PERSONA_DATA_REPO/'personas/sunlake-milkcat'
 RELAY_ROOT=MIO_AGY_ROOT if AGY_SELECTED else Path('/home/ubuntu/agent-data/runtime/antigravity-relay')
 BASE='http://127.0.0.1:8771/v1/social'
 LOCAL_TZ=ZoneInfo('Asia/Taipei')
@@ -119,19 +120,50 @@ def extract_reply_decisions(raw_text, expected_ids):
     return candidates[-1]
 
 
+def canonical_persona_text(rel):
+    """Read canonical persona data from the fetched origin/main snapshot.
+
+    The runtime checkout itself may intentionally remain detached/stale because
+    event/IR writers use temporary worktrees. Never silently fall back to a
+    different persona or invent missing canonical state.
+    """
+    target='personas/sunlake-milkcat/'+str(rel).lstrip('/')
+    try:
+        r=subprocess.run(['git','-C',str(PERSONA_DATA_REPO),'show','origin/main:'+target],
+                         capture_output=True,text=True,timeout=4,check=False)
+        if r.returncode==0 and r.stdout:
+            return r.stdout
+    except (OSError,subprocess.TimeoutExpired):
+        pass
+    p=PERSONA_ROOT/rel
+    try:
+        return p.read_text(encoding='utf-8') if p.is_file() else ''
+    except OSError:
+        return ''
+
+def canonical_persona_json(rel):
+    try:
+        return json.loads(canonical_persona_text(rel) or '{}')
+    except (ValueError,TypeError):
+        return {}
+
 def persona_context():
     files={}
     for name in ('character_core.json','persona_state.json','reply_policy.json','social_stances.json'):
-        p=PERSONA_ROOT/name
-        if p.is_file(): files[name]=load_json(p,{})
+        doc=canonical_persona_json(name)
+        if doc: files[name]=doc
+    persona_ir=canonical_persona_json('ir/current.json')
+    if persona_ir:
+        files['persona_ir']=persona_ir
     events=[]
-    ep=PERSONA_ROOT/'events/events.jsonl'
-    if ep.is_file():
-        for raw in ep.read_text(encoding='utf-8').splitlines()[-30:]:
-            try: events.append(json.loads(raw))
-            except Exception: pass
+    raw_events=canonical_persona_text('events/events.jsonl')
+    for raw in raw_events.splitlines()[-40:]:
+        try:
+            item=json.loads(raw)
+            if isinstance(item,dict): events.append(item)
+        except Exception: pass
     life_state=load_json(LIFE_STATE,{})
-    return {'files':files,'recent_events':events[-12:],'life_state':life_state}
+    return {'files':files,'recent_events':events[-16:],'life_state':life_state}
 
 def decide_batch(items,account_username):
     local=datetime.now(LOCAL_TZ)
@@ -140,7 +172,8 @@ def decide_batch(items,account_username):
 Return JSON only, no markdown.
 
 For each NEW external Threads reply, decide independently whether Mio would naturally reply.
-Use her persona state, memory boundary, current local time, temporal behavior, rest/productivity profile and public secrecy rules.
+Use her CURRENT persona IR as the primary self-model, then reconcile persona state, memory boundary, recent events, current local time, temporal behavior, rest/productivity profile and public secrecy rules.
+The persona IR is not a decorative summary: it is Mio's versioned accumulated self shaped by prior events and promoted growth. Earlier raw comments do not override a newer IR.
 
 Critical rules:
 - Do NOT mention internal implementation terms, IR, branching, marketplace, royalty, research roadmap, hidden product mechanics, AgentOS internals, credentials, or private owner plans.
