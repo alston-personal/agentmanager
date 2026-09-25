@@ -22,7 +22,10 @@
       "release_root": "/home/ubuntu/agent-data/releases/dashboard",
       "live_pointer": "/home/ubuntu/agent-data/runtime/dashboard/current",
       "lock": "production/dashboard",
-      "migration_state": "required"
+      "migration_state": "candidate",
+      "process_name": "agentos-dashboard",
+      "runtime_controller": "scripts/deploy_dashboard_release.sh",
+      "config_path": "/home/ubuntu/.config/milkcat/dashboard.env.local"
     },
     "agentos-core": {
       "owner": "role://release-controller.core",
@@ -62,7 +65,8 @@
       "release_root": "/home/ubuntu/agent-data/releases/agentos-lobster",
       "live_pointer": "/home/ubuntu/agent-data/runtime/agentos-lobster/current",
       "lock": "production/completion-executor",
-      "migration_state": "candidate"
+      "migration_state": "active",
+      "live_receipt": "github-actions:36130001931"
     }
   },
   "invariants": [
