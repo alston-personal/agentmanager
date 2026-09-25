@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: oracle-diagnose-usage-dashboard
+  group: diagnose-production-dashboard
   cancel-in-progress: false
 
 jobs:
@@ -29,88 +29,39 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Inspect dashboard build, process and routes without mutation
+      - name: Inspect shared source, live release, PM2 and routes without mutation
         shell: bash
         run: |
           set -euo pipefail
           test -n "$DEPLOY_USER"
-          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
           set -euo pipefail
+          SHARED=/home/ubuntu/agentmanager
+          SHARED_APP="$SHARED/dashboard"
+          LIVE=/home/ubuntu/agent-data/runtime/dashboard/current
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+
           echo "audit_timestamp_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          ROOT=/home/ubuntu/agentmanager
-          APP="$ROOT/dashboard"
-          echo '=== DEPLOYED SOURCE AND BUILD ==='
-          git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD || true
-          test -f "$APP/app/admin/usage/page.tsx" && echo 'usage_source=present' || echo 'usage_source=missing'
-          test -f "$APP/app/api/admin/usage/route.ts" && echo 'usage_api_source=present' || echo 'usage_api_source=missing'
-          if test -f "$APP/.next/server/app-paths-manifest.json"; then
-            python3 - "$APP/.next/server/app-paths-manifest.json" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding='utf-8') as f:
-              paths = json.load(f)
-          for path in ('/admin/usage/page', '/api/admin/usage/route', '/api/auth/session/route'):
-              print(f'built_route={path} present={path in paths}')
+          printf 'shared_head='
+          git -c safe.directory="$SHARED" -C "$SHARED" rev-parse HEAD || true
+          test -f "$SHARED_APP/app/admin/usage/page.tsx" && echo 'shared_usage_source=present' || echo 'shared_usage_source=missing'
+
+          PID=$(ss -H -ltnp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)
+          [[ "$PID" =~ ^[0-9]+$ ]]
+          RUNTIME_APP=$(readlink -f "/proc/$PID/cwd")
+          printf 'dashboard_listener_pid=%s\n' "$PID"
+          printf 'dashboard_runtime_cwd=%s\n' "$RUNTIME_APP"
+          printf 'dashboard_live_pointer=%s\n' "$(readlink -f "$LIVE" 2>/dev/null || true)"
+
+          test -f "$RUNTIME_APP/.next/server/app-paths-manifest.json"
+          python3 - "$RUNTIME_APP/.next/server/app-paths-manifest.json" <<'PY'
+          import json,sys
+          paths=json.load(open(sys.argv[1],encoding='utf8'))
+          for route in ('/admin/usage/page','/api/admin/usage/route','/api/auth/session/route'):
+              print(f'runtime_built_route={route} present={route in paths}')
           PY
-          else
-            echo 'app_paths_manifest=missing'
-          fi
-          echo '=== REMOTE PROCESS MANAGER ENVIRONMENT ==='
-          id -un
-          command -v node || true
-          command -v npm || true
-          command -v pm2 || true
-          for candidate in /home/ubuntu/.nvm/versions/node/*/bin/pm2 /home/ubuntu/.npm-global/bin/pm2 /usr/local/bin/pm2 /usr/bin/pm2; do
-            if test -e "$candidate"; then
-              printf 'pm2_candidate=%s\n' "$candidate"
-            fi
-          done
-          test -d /home/ubuntu/.pm2 && echo 'ubuntu_pm2_home=present' || echo 'ubuntu_pm2_home=missing'
-          echo '=== RUNTIME PACKAGE LOCATIONS ==='
-          npm root -g || true
-          npm prefix -g || true
-          for root in /usr/lib/node_modules /usr/local/lib/node_modules /home/ubuntu/.npm-global /home/ubuntu/.local/share/pnpm /home/ubuntu/.nvm /opt; do
-            if test -d "$root"; then
-              find "$root" -maxdepth 7 \( -name pm2 -o -name Daemon.js \) -print 2>/dev/null | head -20 || true
-            fi
-          done
-          echo '=== DASHBOARD LISTENER AND PROCESS ==='
-          ss -ltn 'sport = :3000' || true
-          ps -eo user,pid,ppid,args | grep -E '[n]ext start|[n]ext-server|[n]pm start' | head -15 || true
-          echo '=== LOCAL PUBLIC AND UPSTREAM STATUS ==='
-          for route in /dashboard/ /dashboard/api/auth/session /dashboard/admin/usage /dashboard/api/admin/usage; do
-            pub=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route" || true)
-            direct=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 "http://127.0.0.1:3000$route" || true)
-            printf 'route=%s local_nginx=%s dashboard_upstream=%s\n' "$route" "$pub" "$direct"
-          done
-          echo 'diagnostic_reason=owner_reported_usage_404_2026-09-25'
-          echo '=== DASHBOARD RUNTIME ISOLATION PREFLIGHT ==='
-          PID=$(ss -H -ltnp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u | head -1)
-          if [[ "$PID" =~ ^[0-9]+$ ]]; then
-            printf 'dashboard_listener_pid=%s\n' "$PID"
-            printf 'dashboard_listener_cwd='; readlink -f "/proc/$PID/cwd" || true
-            python3 - "$PID" <<'PY'
-          import pathlib,sys
-          raw=(pathlib.Path('/proc')/sys.argv[1]/'stat').read_text()
-          fields=raw.split(') ',1)[1].split()
-          print('dashboard_listener_parent='+fields[1])
-          PY
-            python3 - "$PID" <<'PY'
-          import os, pathlib, sys
-          pid=sys.argv[1]
-          keys=[
-              'JWT_SECRET','ADMIN_USERNAME','ADMIN_PASSWORD_HASH',
-              'GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET',
-              'GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET',
-              'LINE_CLIENT_ID','LINE_CLIENT_SECRET',
-              'FACEBOOK_CLIENT_ID','FACEBOOK_CLIENT_SECRET',
-              'NEXT_PUBLIC_SITE_URL',
-          ]
-          raw=(pathlib.Path('/proc')/pid/'environ').read_bytes().split(b'\0')
-          present={part.split(b'=',1)[0].decode('utf8','ignore') for part in raw if b'=' in part}
-          for key in keys:
-              print('dashboard_process_env_'+key.lower()+'_present='+str(key in present))
-          PY
-          fi
+
           export PM2_HOME=/home/ubuntu/.pm2
           PM2_CLI=''
           for candidate in /home/ubuntu/.npm/_npx/*/node_modules/pm2/bin/pm2; do
@@ -121,83 +72,52 @@ jobs:
             if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
           done
           if [ -n "$PM2_CLI" ] && [ -S "$PM2_HOME/rpc.sock" ]; then
-            PM2_JSON=$(mktemp /tmp/dashboard-pm2-jlist-XXXXXXXX.json)
+            PM2_JSON=$(mktemp /tmp/dashboard-pm2-XXXXXXXX.json)
             node "$PM2_CLI" jlist > "$PM2_JSON"
             python3 - "$PM2_JSON" <<'PY'
           import json,sys
-          with open(sys.argv[1],encoding='utf8') as stream:
-              apps=json.load(stream)
-          rows=[a for a in apps if a.get('pm2_env',{}).get('pm_cwd')=='/home/ubuntu/agentmanager/dashboard']
-          print('dashboard_pm2_target_count='+str(len(rows)))
-          for app in rows:
-              env=app.get('pm2_env',{})
-              print('dashboard_pm2_id='+str(app.get('pm_id')))
-              print('dashboard_pm2_name='+str(app.get('name')))
-              print('dashboard_pm2_status='+str(env.get('status')))
-              print('dashboard_pm2_script='+str(env.get('pm_exec_path') or ''))
+          apps=json.load(open(sys.argv[1],encoding='utf8'))
+          rows=[a for a in apps if a.get('name')=='agentos-dashboard']
+          assert len(rows)==1, f'dashboard_pm2_target_count={len(rows)}'
+          app=rows[0]; env=app.get('pm2_env') or {}
+          print('dashboard_pm2_target_count=1')
+          print('dashboard_pm2_id='+str(app.get('pm_id')))
+          print('dashboard_pm2_name='+str(app.get('name')))
+          print('dashboard_pm2_status='+str(env.get('status')))
+          print('dashboard_pm2_cwd='+str(env.get('pm_cwd') or ''))
+          print('dashboard_pm2_script='+str(env.get('pm_exec_path') or ''))
+          keys=sorted(k for k in env if isinstance(k,str) and k.startswith(('GOOGLE_','MILKCAT_','FENGSHUI_','LEOPARDCAT_','ADMIN_','JWT_')))
+          print('dashboard_pm2_sensitive_key_names='+','.join(keys))
           PY
             rm -f "$PM2_JSON"
           else
             echo 'dashboard_pm2_target_count=UNAVAILABLE'
           fi
-          python3 - <<'PY'
-          import pathlib,stat
-          keys=[
-              'JWT_SECRET','ADMIN_USERNAME','ADMIN_PASSWORD_HASH',
-              'GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET',
-              'GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET',
-              'LINE_CLIENT_ID','LINE_CLIENT_SECRET',
-              'FACEBOOK_CLIENT_ID','FACEBOOK_CLIENT_SECRET',
-              'NEXT_PUBLIC_SITE_URL',
-          ]
-          candidates=[
-              ('root_env',pathlib.Path('/home/ubuntu/agentmanager/.env')),
-              ('dashboard_env',pathlib.Path('/home/ubuntu/agentmanager/dashboard/.env')),
-              ('dashboard_env_local',pathlib.Path('/home/ubuntu/agentmanager/dashboard/.env.local')),
-              ('dashboard_env_production',pathlib.Path('/home/ubuntu/agentmanager/dashboard/.env.production')),
-              ('dashboard_env_production_local',pathlib.Path('/home/ubuntu/agentmanager/dashboard/.env.production.local')),
-          ]
-          for label,p in candidates:
+
+          python3 - "$CONFIG" "$RUNTIME_APP/.env.local" <<'PY'
+          import pathlib,stat,sys
+          required={'JWT_SECRET','GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET'}
+          for label,raw in [('canonical_config',sys.argv[1]),('runtime_env_local',sys.argv[2])]:
+              p=pathlib.Path(raw)
               if not p.is_file():
                   print(label+'_file=MISSING')
                   continue
               st=p.lstat()
               print(label+'_regular='+str(stat.S_ISREG(st.st_mode) and not stat.S_ISLNK(st.st_mode)))
               print(label+'_mode_octal='+oct(stat.S_IMODE(st.st_mode)))
-              present=set()
-              for raw in p.read_text(encoding='utf8').splitlines():
-                  line=raw.strip()
-                  if not line or line.startswith('#') or '=' not in line:
-                      continue
-                  key,_=line.split('=',1); present.add(key.strip())
-              for key in keys:
-                  print(label+'_'+key.lower()+'_present='+str(key in present))
+              keys=set()
+              for line in p.read_text(encoding='utf8').splitlines():
+                  line=line.strip()
+                  if line and not line.startswith('#') and '=' in line:
+                      keys.add(line.split('=',1)[0].strip())
+              for key in sorted(required):
+                  print(label+'_'+key.lower()+'_present='+str(key in keys))
           PY
-          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-          if systemctl --user show-environment >/dev/null 2>&1; then
-            echo 'dashboard_user_systemd=AVAILABLE'
-          else
-            echo 'dashboard_user_systemd=UNAVAILABLE'
-          fi
-          echo 'dashboard_runtime_isolation_preflight=COMPLETE_READ_ONLY'
-          echo '=== DASHBOARD PM2 SAFE METADATA ==='
-          export PM2_HOME=/home/ubuntu/.pm2
-          PM2_CLI=''
-          for candidate in /home/ubuntu/.npm/_npx/*/node_modules/pm2/bin/pm2; do
-            test -f "$candidate" || continue
-            pkg="${candidate%/bin/pm2}/package.json"
-            test -f "$pkg" || continue
-            version=$(node -p 'require(process.argv[1]).version' "$pkg")
-            if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
+
+          for route in /dashboard/ /dashboard/api/auth/session /dashboard/admin/usage /dashboard/api/admin/usage; do
+            pub=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route" || true)
+            direct=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 "http://127.0.0.1:3000$route" || true)
+            printf 'route=%s local_nginx=%s dashboard_upstream=%s\n' "$route" "$pub" "$direct"
           done
-          if [ -n "$PM2_CLI" ]; then
-            PM2_SAFE_JSON="/tmp/dashboard-pm2-safe-$RUN_ID.json"
-            node "$PM2_CLI" jlist > "$PM2_SAFE_JSON"
-            python3 -c 'import json,sys; apps=json.load(open(sys.argv[1],encoding="utf8")); rows=[]; secretish={"JWT_SECRET","ADMIN_PASSWORD_HASH","GOOGLE_CLIENT_SECRET","FACEBOOK_CLIENT_SECRET","LINE_CHANNEL_SECRET","GITHUB_CLIENT_SECRET"}; [(rows.append({"name":a.get("name"),"pm_id":a.get("pm_id"),"pm_cwd":e.get("pm_cwd"),"pm_exec_path":e.get("pm_exec_path"),"args":e.get("args"),"exec_interpreter":e.get("exec_interpreter"),"exec_mode":e.get("exec_mode"),"watch":e.get("watch"),"env_keys_only":sorted(k for k in e if isinstance(k,str) and (k in secretish or k.startswith(("GOOGLE_","MILKCAT_","FENGSHUI_","LEOPARDCAT_","ADMIN_","JWT_"))))}) if str(e.get("pm_cwd") or "")=="/home/ubuntu/agentmanager/dashboard" else None) for a in apps for e in [a.get("pm2_env") or {}]]; assert len(rows)==1, "dashboard_pm2_safe_metadata_target_count="+str(len(rows)); print(json.dumps(rows[0],ensure_ascii=False,sort_keys=True))' "$PM2_SAFE_JSON"
-            rm -f "$PM2_SAFE_JSON"
-          else
-            echo 'dashboard_pm2_safe_metadata=PM2_CLIENT_NOT_FOUND'
-          fi
-          echo '=== CHECKS COMPLETE: READ ONLY ==='
+          echo 'dashboard_diagnostic=COMPLETE_READ_ONLY'
           REMOTE
