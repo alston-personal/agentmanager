@@ -89,10 +89,17 @@ print("mio_oauth_viewer_binding_count=" + str(sum(1 for b in (cred.get("bindings
 verified_matches = [(bid, row) for bid, row in matches if str(row.get("username") or "").lstrip("@").lower() in ("sunlake.milkcat", "mio.milkcat")]
 print("mio_oauth_persona_known_handle=" + str(bool(verified_matches)).lower())
 print("mio_oauth_persona_known_binding_count=" + str(len(verified_matches)))
-if not product_key or len(verified_matches) != 1:
+if not product_key or not verified_matches:
     fail("BINDING_UNAVAILABLE")
-bid, account = verified_matches[0]
-posts = read("post.read", bid, product_key)
+owned_candidates = []
+for candidate_bid, candidate_account in verified_matches:
+    candidate_posts = read("post.read", candidate_bid, product_key)
+    if isinstance(candidate_posts, dict) and any(str(p.get("id") or "") == "18131575054809711" for p in (candidate_posts.get("items") or []) if isinstance(p, dict)):
+        owned_candidates.append((candidate_bid, candidate_account, candidate_posts))
+print("mio_oauth_owned_post_binding_count=" + str(len(owned_candidates)))
+if len(owned_candidates) != 1:
+    fail("TARGET_MIO_POST_OWNER_AMBIGUOUS")
+bid, account, posts = owned_candidates[0]
 if not isinstance(posts, dict):
     fail("POSTS_READ_FAILED")
 owned_posts = [p for p in (posts.get("items") or [])
