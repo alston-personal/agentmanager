@@ -6,11 +6,12 @@ import urllib.request
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from invoice_core import InvoiceStore
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
@@ -99,6 +100,30 @@ def get_invoice(invoice_id: str, request: Request):
 def recent(request: Request, limit: int = 30):
     require_user(request)
     return {"ok": True, "items": store.recent(limit)}
+
+
+@app.get("/v1/invoices/{invoice_id}/original")
+def get_original(invoice_id: str, request: Request):
+    require_user(request)
+    try:
+        original = store.get_original(invoice_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="invoice_not_found")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="original_not_found")
+    except ValueError:
+        raise HTTPException(status_code=500, detail="original_store_integrity_error")
+
+    response = FileResponse(
+        path=original["path"],
+        media_type=original["mime_type"],
+        filename=original["original_filename"],
+        content_disposition_type="inline",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Invoice-SHA256"] = original["sha256"]
+    return response
 
 
 @app.post("/v1/invoices/{invoice_id}/review")
