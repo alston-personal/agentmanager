@@ -182,10 +182,13 @@ class ProductWorkerState:
 class GovernedProductEmployeeWorker:
     """Credential-isolated product Employee worker behind the governed wake boundary.
 
-    YouTube v1 remains a deterministic dry-run checkpoint. Zeus may additionally consume
-    a content-addressed product work-intent reference and execute only the fixed
-    read-only review adapter. Product repository writes, publication, credentials,
-    network and arbitrary executable selection remain outside this worker's authority.
+    Product v1 is intentionally bounded. Zeus may consume a content-addressed
+    work-intent and execute only the fixed read-only review adapter. YouTube has no
+    governed live read adapter in this runner yet. A bounded run must therefore end
+    in a durable terminal handoff/blocker receipt rather than leaving an active lease
+    to expire into an infinite UNKNOWN/resume loop. Product repository writes,
+    publication, external API mutation, credentials, network and arbitrary executable
+    selection remain outside this worker's authority.
     """
 
     def __init__(
@@ -288,53 +291,155 @@ class GovernedProductEmployeeWorker:
                 error_code="product_employee_worker_lease_generation_mismatch",
             )
 
-        thread_head = f"product-worker:{self.runner_kind}:dry-run:{wake}:p{generation}:l{lease.generation}"
-        if self.runner_kind == "zeus_writer_v1":
-            wake_intent = capsule.get("wake_intent") or {}
-            work_ref = wake_intent.get("work_intent_ref")
-            if work_ref is not None:
-                receipt = self._execute_zeus_review(
-                    work_ref,
-                    employee_id=employee_id,
-                    wake_id=wake,
-                    presence_generation=generation,
-                )
-                if receipt.get("result_status") != "success":
-                    return ProductWorkerState(
-                        status="unknown",
-                        runner_kind=self.runner_kind,
-                        employee_id=employee_id,
-                        assignment_id=assignment_id,
-                        wake_id=wake,
-                        presence_generation=generation,
-                        lease_generation=lease.generation,
-                        thread_head=lease.thread_head,
-                        error_code=str(receipt.get("error_code") or "zeus_product_review_not_accepted"),
-                    )
-                evidence = receipt.get("evidence") or {}
-                chapter = str(evidence.get("chapter") or "").strip()
-                digest = str(evidence.get("work_intent_digest") or "").removeprefix("sha256:")
-                if not chapter or len(digest) != 64:
-                    return ProductWorkerState(
-                        status="unknown",
-                        runner_kind=self.runner_kind,
-                        employee_id=employee_id,
-                        assignment_id=assignment_id,
-                        wake_id=wake,
-                        presence_generation=generation,
-                        lease_generation=lease.generation,
-                        thread_head=lease.thread_head,
-                        error_code="zeus_product_review_receipt_invalid",
-                    )
-                thread_head = (
-                    f"product-worker:{self.runner_kind}:review-existing-draft:"
-                    f"{chapter}:{digest[:16]}:{wake}:p{generation}:l{lease.generation}"
-                )
+        if self.runner_kind == "youtube_ai_manager_scan_v1":
+            blocker = "youtube_governed_read_adapter_unavailable"
+            thread_head = (
+                f"product-worker:{self.runner_kind}:blocked:{blocker}:"
+                f"{wake}:p{generation}:l{lease.generation}"
+            )
+            lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+            lifecycle.finish(
+                assignment_id,
+                lease_id,
+                state="blocked",
+                result_summary={
+                    "bounded_stage": "youtube-read-only-scan",
+                    "blocker_code": blocker,
+                    "external_api_read_performed": False,
+                    "external_api_mutation_performed": False,
+                    "credential_exposed": False,
+                },
+            )
+            employee = runtime.get_employee(employee_id)
+            return ProductWorkerState(
+                status="blocked",
+                runner_kind=self.runner_kind,
+                employee_id=employee_id,
+                assignment_id=assignment_id,
+                wake_id=wake,
+                presence_generation=generation,
+                lease_generation=lease.generation,
+                thread_head=lease.thread_head,
+                error_code=blocker,
+                executor_provider=employee.executor.provider,
+                executor_model=employee.executor.model,
+            )
 
+        wake_intent = capsule.get("wake_intent") or {}
+        work_ref = wake_intent.get("work_intent_ref")
+        if work_ref is None:
+            blocker = "zeus_product_work_intent_missing"
+            thread_head = (
+                f"product-worker:{self.runner_kind}:blocked:{blocker}:"
+                f"{wake}:p{generation}:l{lease.generation}"
+            )
+            lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+            lifecycle.finish(
+                assignment_id,
+                lease_id,
+                state="blocked",
+                result_summary={
+                    "bounded_stage": "zeus-existing-draft-review",
+                    "blocker_code": blocker,
+                    "mutation_performed": False,
+                    "publish_performed": False,
+                    "credential_exposed": False,
+                },
+            )
+            employee = runtime.get_employee(employee_id)
+            return ProductWorkerState(
+                status="blocked",
+                runner_kind=self.runner_kind,
+                employee_id=employee_id,
+                assignment_id=assignment_id,
+                wake_id=wake,
+                presence_generation=generation,
+                lease_generation=lease.generation,
+                thread_head=lease.thread_head,
+                error_code=blocker,
+                executor_provider=employee.executor.provider,
+                executor_model=employee.executor.model,
+            )
+
+        receipt = self._execute_zeus_review(
+            work_ref,
+            employee_id=employee_id,
+            wake_id=wake,
+            presence_generation=generation,
+        )
+        evidence = receipt.get("evidence") if isinstance(receipt, dict) else None
+        evidence = evidence if isinstance(evidence, dict) else {}
+        result_status = str(receipt.get("result_status") or "") if isinstance(receipt, dict) else ""
+        chapter = str(evidence.get("chapter") or "").strip()
+        digest = str(evidence.get("work_intent_digest") or "").removeprefix("sha256:")
+        safe_review = bool(
+            result_status == "success"
+            and chapter
+            and len(digest) == 64
+            and evidence.get("mutation_performed") is False
+            and evidence.get("publish_performed") is False
+            and receipt.get("credential_exposed") is False
+        )
+        if not safe_review:
+            blocker = str(
+                receipt.get("error_code")
+                if isinstance(receipt, dict) and receipt.get("error_code")
+                else "zeus_product_review_receipt_invalid"
+            )[:160]
+            thread_head = (
+                f"product-worker:{self.runner_kind}:blocked:{blocker}:"
+                f"{wake}:p{generation}:l{lease.generation}"
+            )
+            lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+            lifecycle.finish(
+                assignment_id,
+                lease_id,
+                state="blocked",
+                result_summary={
+                    "bounded_stage": "zeus-existing-draft-review",
+                    "blocker_code": blocker,
+                    "mutation_performed": False,
+                    "publish_performed": False,
+                    "credential_exposed": False,
+                },
+            )
+            employee = runtime.get_employee(employee_id)
+            return ProductWorkerState(
+                status="blocked",
+                runner_kind=self.runner_kind,
+                employee_id=employee_id,
+                assignment_id=assignment_id,
+                wake_id=wake,
+                presence_generation=generation,
+                lease_generation=lease.generation,
+                thread_head=lease.thread_head,
+                error_code=blocker,
+                executor_provider=employee.executor.provider,
+                executor_model=employee.executor.model,
+            )
+
+        thread_head = (
+            f"product-worker:{self.runner_kind}:review-existing-draft:"
+            f"{chapter}:{digest[:16]}:{wake}:p{generation}:l{lease.generation}"
+        )
         lease = lifecycle.checkpoint(assignment_id, lease_id, thread_head)
+        lifecycle.finish(
+            assignment_id,
+            lease_id,
+            state="handoff",
+            result_summary={
+                "bounded_stage": "zeus-existing-draft-review",
+                "chapter": chapter,
+                "work_intent_digest": "sha256:" + digest,
+                "mutation_performed": False,
+                "publish_performed": False,
+                "next_authority_required": "zeus-product-draft-mutation",
+                "credential_exposed": False,
+            },
+        )
         employee = runtime.get_employee(employee_id)
         return ProductWorkerState(
-            status="checkpointed",
+            status="handoff",
             runner_kind=self.runner_kind,
             employee_id=employee_id,
             assignment_id=assignment_id,
