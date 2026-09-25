@@ -49,6 +49,8 @@ live_runtime = re.compile(r"(?:WorkingDirectory|ExecStart)\s*=.*?/home/ubuntu/ag
 
 for path, additions in files.items():
     p = ROOT / path
+    if p.resolve() == Path(__file__).resolve():
+        continue
     full = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
     aliases = set(re.findall(r"(?m)^\s*([A-Z][A-Z0-9_]*)=(?:[\"'])?" + re.escape(shared) + r"(?:[\"'])?\s*$", full))
     alias_expr = "|".join(re.escape(name) for name in sorted(aliases))
