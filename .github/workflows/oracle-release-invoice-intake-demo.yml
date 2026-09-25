@@ -20,7 +20,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 197fc36a4ffcd295734d73effb0f1f14912b0df1
+      source_sha: 26103058c483ba75bab3aa0906fa1c6564ca2f99
       route: invoice-intake
       backup_key: invoice-intake-demo
       receipt_schema: studio-web.invoice-intake-release/v2
@@ -32,6 +32,7 @@ jobs:
         id="auto-toggle"
         開啟相機連續掃描
         先登入再掃描
+        重新整理
         立即拍這張
         辨識中
         最近歸檔
@@ -44,3 +45,30 @@ jobs:
       N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
       N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
       N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+
+
+  auth-smoke:
+    needs: release
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Verify Milkcat auth endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          curl -fsS --retry 4 --retry-delay 1 "$BASE/dashboard/api/auth/session" > /tmp/invoice-auth-session.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/invoice-auth-session.json'))
+          assert x.get('loggedIn') is False, x
+          providers=x.get('providers') or {}
+          assert providers.get('google') is True, providers
+          print('invoice_auth_session_provider_google=PASS')
+          PY
+
+          curl -sS -D /tmp/invoice-auth-google.headers -o /tmp/invoice-auth-google.body             --max-redirs 0 "$BASE/dashboard/api/auth/signin/google?returnTo=%2Finvoice-intake%2F"
+          status=$(awk 'NR==1 {print $2}' /tmp/invoice-auth-google.headers)
+          test "$status" = "307" -o "$status" = "302"
+          grep -Eiq '^location:[[:space:]]*https://accounts\.google\.com/' /tmp/invoice-auth-google.headers
+          echo "invoice_auth_google_redirect=PASS status=$status"
