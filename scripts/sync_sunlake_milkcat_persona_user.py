@@ -44,7 +44,14 @@ def main():
             fetched=True; break
         time.sleep(1)
     if not fetched:
-        print('persona_git_sync=GIT_FETCH_FAILED',file=sys.stderr); return 8
+        err=str(p.stderr or '').lower()
+        if 'cannot lock' in err or 'fetch_head.lock' in err or 'index.lock' in err: category='LOCK'
+        elif 'could not resolve host' in err or 'temporary failure in name resolution' in err: category='DNS'
+        elif 'authentication failed' in err or 'could not read username' in err or 'permission denied' in err: category='AUTH_OR_PERMISSION'
+        elif 'dubious ownership' in err: category='OWNERSHIP'
+        elif 'unable to access' in err or 'failed to connect' in err or 'connection timed out' in err: category='NETWORK'
+        else: category='OTHER'
+        print('persona_git_sync=GIT_FETCH_FAILED_'+category,file=sys.stderr); return 8
     root=Path(tempfile.mkdtemp(prefix='agentos-persona-sync-'))
     work=root/'work'
     try:
