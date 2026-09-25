@@ -80,3 +80,55 @@ echo 'mio_social_timer=ACTIVE'
 if [ -f "$LOG" ]; then
   tail -n 260 "$LOG" | grep -E '^(mio_persona_ir_|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_outbound=|mio_social_outbound_today=|mio_energy=|mio_life_phase=)' | tail -n 100 || true
 fi
+
+# Persist a secret-free execution receipt in Mio's canonical data repo so the
+# owner can independently verify that this specific exploration cycle ran.
+DATA_REPO="$HOME/agent-data"
+DATA_HTTPS='https://github.com/alston-personal/my-agent-data.git'
+RECEIPT_REL='personas/sunlake-milkcat/runtime/social-cycle-latest.json'
+LOCK='/tmp/agentos-mio-persona-data-git.lock'
+exec 9>>"$LOCK"
+flock -x 9
+env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
+  -C "$DATA_REPO" fetch "$DATA_HTTPS" '+refs/heads/main:refs/remotes/origin/main' >/dev/null
+WORK="$(mktemp -d)"
+git -C "$DATA_REPO" worktree add --detach "$WORK" origin/main >/dev/null
+cleanup_receipt_worktree() {
+  git -C "$DATA_REPO" worktree remove --force "$WORK" >/dev/null 2>&1 || true
+  rm -rf "$WORK"
+}
+trap cleanup_receipt_worktree EXIT
+mkdir -p "$WORK/$(dirname "$RECEIPT_REL")"
+python3 - "$LOG" "$WORK/$RECEIPT_REL" "$SHA" <<'PY'
+import json,re,sys
+from datetime import datetime,timezone
+from pathlib import Path
+log=Path(sys.argv[1])
+out=Path(sys.argv[2])
+sha=sys.argv[3]
+allowed=re.compile(r'^(mio_(?:persona_ir_[a-z_]+|social_loop|social_decision|social_publish|social_outbound|social_outbound_today|energy|life_phase))=(.{1,180}))
+rows=[]
+if log.is_file():
+    for raw in log.read_text(encoding='utf-8',errors='replace').splitlines()[-320:]:
+        m=allowed.fullmatch(raw.strip())
+        if m:
+            rows.append(raw.strip())
+payload={
+  'schema':'agentos.mio-social-cycle-receipt/v1',
+  'recorded_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+  'source_commit':sha,
+  'owner_authorized':True,
+  'discovery_policy':'current_persona_ir_interest_driven',
+  'silence_is_valid':True,
+  'markers':rows[-100:],
+}
+out.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+PY
+git -C "$WORK" add "$RECEIPT_REL"
+if ! git -C "$WORK" diff --cached --quiet; then
+  git -C "$WORK" -c user.name='AgentOS Mio Social' -c user.email='agentos-mio-social@users.noreply.github.com' \
+    commit -m 'chore(mio): persist latest IR-governed social cycle receipt' >/dev/null
+  env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
+    -C "$WORK" push "$DATA_HTTPS" HEAD:main >/dev/null
+fi
+echo 'mio_social_cycle_receipt=PASS'
