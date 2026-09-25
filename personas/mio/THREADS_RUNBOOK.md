@@ -209,3 +209,17 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
 - Runtime commit `84b114736cc5134a3912234e10f70536cf8f3b3a` adds whole-thread read context, loads `social_stances.json`, requires private `memory_basis`, `thread_basis`, `position`, and `consistency_check`, and blocks replies that fail position/consistency validation.
 - Canonical data policy commits: `cc914def9277c8b119449b56dc21002612c640cd` (runtime-effective persona reply policy), `98364744f1fff1f6c31bb013d8bfcda21bfb5760` (social stance memory). Legacy/mirrored policy also updated to avoid divergent truth.
 - Oracle persistent monitor deployment [Run #36098114737](https://github.com/alston-personal/agentmanager/actions/runs/36098114737): preflight PASS and install receipt PASS. During deployment the old cross-user companion-script copy exposed a permission issue; installer ownership handoff was repaired so ubuntu now materializes immutable companion scripts from the triggering commit.
+
+## 2026-09-25｜Persona IR 是澪的養成主體
+
+- **核心定義**：澪不是「固定 prompt + 留言即時迎合」。她有自己的 versioned Persona IR，代表此刻的自己；留言、發文、關係、失敗、被質疑、做過的選擇等實際事件先進事件帳本，再經成長判斷影響下一版 IR。回覆必須以當前 IR 為主要 self-model。
+- **因果順序已固定為**：`Threads observe → canonical event ledger → growth candidate / validated promotion → advance Persona IR → load current IR + whole thread → form Mio's own position → reply / no-reply`。若 event sync 或 IR evolution 失敗，social decision fail-closed，不應從孤立留言直接作答。
+- Canonical IR：`my-agent-data/personas/sunlake-milkcat/ir/current.json`；每次 advance 同時保留 `ir/history/<ir_id>.json`，含 `parent_ir_id`，因此人格改變可追溯、可比較、可回滾，不會把過去改寫掉。
+- **事件不等於立即改人格**：raw event 會進入 journey / experience history；只有 evidence-backed、治理允許的 growth event 才能改成 durable learned delta。這避免一個人說 A 就同意 A，下一個人說 B 又同意 B。
+- 2026-09-25 實際驗證已產生 lineage：
+  - r1：17 個既有事件、2 個 promoted growth units。
+  - r2：parent=r1，新增 10 個事件，並把「生成圖片被直接質疑」的經驗＋owner truth boundary promotion 納入 durable growth。
+  - r3：parent=r2；Social monitor 將既有公開互動補回 canonical ledger，總事件數來到 82，新增 55 個經歷；沒有新的 validated growth 時只增加 journey，不任意改 beliefs。
+- 目前 promoted generated-media delta：直接問生成圖就誠實；但不自動接受「假人設」等價值判斷、不因對方批評就道歉或承諾改掉虛實交錯的呈現。這是「事實可以同意、評價可以反駁」的具體案例。
+- Runtime `mio_persona_social_loop_user.py` 現在會從 canonical `origin/main` 載入 `ir/current.json`，並連同 root post、parent/ancestor/sibling context、Mio 的 earlier replies、recent events、relationship/context 一起做 stance decision。需要輸出 private `position` / `memory_basis` / `thread_basis` / `consistency_check`；不一致則 defer。
+- IR reducer：`scripts/evolve_mio_persona_ir_user.py`。它不宣稱模型權重被訓練；遵循 cognitive-growth 原則，只有有證據的 reusable delta 才可提升為 durable growth。之後應以獨立後續回覆是否真的載入新版 IR 並減少矛盾來累積 demonstrated-growth evidence。
