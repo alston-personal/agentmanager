@@ -82,5 +82,6 @@ jobs:
             direct=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 8 "http://127.0.0.1:3000$route" || true)
             printf 'route=%s local_nginx=%s dashboard_upstream=%s\n' "$route" "$pub" "$direct"
           done
+          echo 'diagnostic_reason=owner_reported_usage_404_2026-09-25'
           echo '=== CHECKS COMPLETE: READ ONLY ==='
           REMOTE
