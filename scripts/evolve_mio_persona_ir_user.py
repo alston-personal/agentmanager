@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import copy
+import fcntl
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,9 +75,21 @@ def main() -> int:
         print("mio_persona_ir_evolve=UNEXPECTED_REMOTE")
         return 4
 
-    # The immediately preceding persona sync fetches/pushes main. Refresh once
-    # more so the reducer always sees the canonical event ledger it will cite.
-    run(["git", "fetch", "origin", "main"])
+    # Serialize git metadata access with the persona event synchronizer. The
+    # persistent monitor and deployment acceptance may run close together.
+    lock_path = Path("/tmp/agentos-mio-persona-data-git.lock")
+    lock = lock_path.open("a+")
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    fetched = False
+    for _ in range(3):
+        result = run(["git", "fetch", "origin", "main"], check=False)
+        if result.returncode == 0:
+            fetched = True
+            break
+        time.sleep(1)
+    if not fetched:
+        print("mio_persona_ir_evolve=GIT_FETCH_FAILED")
+        return 8
     ref = "origin/main"
 
     try:
@@ -184,8 +198,11 @@ def main() -> int:
         if pushed.returncode:
             print("mio_persona_ir_evolve=PUSH_FAILED")
             return 7
-        # Keep remote-tracking state fresh for the social decision that follows.
-        run(["git", "fetch", "origin", "main"])
+        # The push succeeded. Refresh the remote-tracking ref without another
+        # network fetch so the following reply decision loads this exact IR.
+        head = run(["git", "rev-parse", "HEAD"], cwd=work).stdout.strip()
+        if re.fullmatch(r"[0-9a-f]{40}", head):
+            run(["git", "update-ref", "refs/remotes/origin/main", head], cwd=DATA_REPO)
         print("mio_persona_ir_evolve=PASS")
         print("mio_persona_ir_revision=" + str(revision))
         print("mio_persona_ir_new_events=" + str(len(new_rows)))
