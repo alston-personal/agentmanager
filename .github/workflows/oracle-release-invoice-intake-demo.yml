@@ -20,7 +20,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 26103058c483ba75bab3aa0906fa1c6564ca2f99
+      source_sha: 3702542563afa9f5f9b3612078f7ffdd801e4f32
       route: invoice-intake
       backup_key: invoice-intake-demo
       receipt_schema: studio-web.invoice-intake-release/v2
@@ -35,6 +35,8 @@ jobs:
         重新整理
         立即拍這張
         辨識中
+        即時辨識結果
+        查看／修正完整欄位
         最近歸檔
       credit_account: ''
       credit_cost: 0
