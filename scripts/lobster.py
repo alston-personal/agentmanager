@@ -415,6 +415,17 @@ def completion_begin(task_text: str) -> Optional[str]:
         logger.error(f"completion begin failed for {work_id}: {exc}")
         return None
 
+def completion_workspace(work_id: Optional[str], fallback_project: str) -> Path:
+    if WorkCompletion is not None and work_id:
+        try:
+            item = WorkCompletion.load(COMPLETION_STATE)["items"].get(work_id) or {}
+            candidate = Path(str(item.get("workspace") or "")).expanduser()
+            if candidate.is_absolute() and candidate.exists():
+                return candidate
+        except Exception as exc:
+            logger.warning(f"completion workspace resolve failed for {work_id}: {exc}")
+    return resolve_project_workspace(fallback_project)
+
 def completion_finish(work_id: Optional[str], success: bool, output: str) -> None:
     if WorkCompletion is None or not work_id:
         return
@@ -815,7 +826,7 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
     
     # 執行任務
     work_id = completion_begin(task["text"])
-    success, output = run_with_inspector(resolve_project_workspace(proj_name), task["text"], dry_run)
+    success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], dry_run)
     completion_finish(work_id, success, output)
     
     if success:
@@ -882,7 +893,7 @@ def main():
                 
                 # 執行任務。Completion Controller 項目先進入 durable in_progress。
                 work_id = completion_begin(task["text"])
-                success, output = run_with_inspector(resolve_project_workspace(proj_name), task["text"], args.dry_run)
+                success, output = run_with_inspector(completion_workspace(work_id, proj_name), task["text"], args.dry_run)
                 completion_finish(work_id, success, output)
                 
                 # 在 TASK_BOARD 更新狀態

@@ -90,6 +90,22 @@ class WorkCompletionTests(unittest.TestCase):
             self.assertEqual(second.count("<!-- WORK_COMPLETION_START -->"), 1)
             self.assertEqual(second.count("[WI:wi-1]"), 1)
 
+    def test_work_item_can_pin_a_non_runtime_workspace(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = self.path(temp)
+            workspace = str(Path(temp) / "workspace")
+            item = mod.register(
+                path,
+                work_id="wi-workspace",
+                project_id="agentmanager",
+                title="continue safely",
+                owner="role://completion.controller",
+                next_action="resume implementation",
+                acceptance=["verified receipt"],
+                workspace=workspace,
+            )
+            self.assertEqual(item["workspace"], workspace)
+
     def test_verified_done_helper_walks_required_states(self):
         with tempfile.TemporaryDirectory() as temp:
             path = self.path(temp)
