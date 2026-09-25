@@ -80,7 +80,7 @@ try:
     cred = json.loads(CREDS.read_text(encoding="utf-8"))
     matches = [(bid, row) for bid, row in (cred.get("bindings") or {}).items()
                if isinstance(row, dict) and row.get("product_id") == "galaxy"
-               and row.get("platform") == "threads"]
+               and row.get("platform") == "threads" and row.get("auth_profile", "persona") == "persona"]
 except (OSError, ValueError, TypeError, AttributeError):
     fail("CONFIG_UNAVAILABLE")
 if not product_key or len(matches) != 1:
