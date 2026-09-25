@@ -2,6 +2,12 @@ name: Oracle Deploy Invoice Intake Service
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/invoice_intake/**'
+      - 'scripts/deploy_invoice_intake_nginx.py'
+      - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
   push:
     branches: [main]
     paths:
@@ -17,7 +23,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate invoice service Python syntax
+        run: |
+          python3 -m py_compile services/invoice_intake/app.py services/invoice_intake/invoice_core.py
+          echo 'invoice_intake_python_syntax=PASS'
+
   deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 15
     env:
