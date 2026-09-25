@@ -90,6 +90,16 @@ jobs:
           assert doc.get('executor_user')=='ubuntu'
           assert doc.get('executor_uid')==1001
           assert doc.get('source_commit')==sys.argv[2]
+          if doc.get('ok') is not True:
+            for step in doc.get('steps') or []:
+              if not isinstance(step,dict): continue
+              name=str(step.get('step') or '')
+              if name in ('git_fetch','verify_source_commit','git_show_script','run_script'):
+                code=step.get('returncode')
+                print('mio_recent_readonly_failed_step='+name+':'+(str(code) if isinstance(code,int) else 'unknown'))
+              for line in str(step.get('stdout') or '').splitlines():
+                if line.startswith(('mio_recent_patrol=','mio_search_scope_probe=','mio_social_outbound=')) and len(line)<180:
+                  print(line)
           assert doc.get('ok') is True,'mio_recent_readonly_executor_failed'
           lines='\n'.join(str(x.get('stdout') or '') for x in doc.get('steps') or []).splitlines()
           assert 'mio_recent_patrol=PASS' in lines,'mio_recent_readonly_platform_read_failed'
