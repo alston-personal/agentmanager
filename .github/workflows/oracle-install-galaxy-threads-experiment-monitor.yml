@@ -55,14 +55,12 @@ jobs:
           REQUEST="$REQUESTS/$REQUEST_ID.request.json"
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
 
+          # Only bootstrap_control is updated by the runner identity. The
+          # ubuntu-owned installer materializes all companion scripts from the
+          # immutable source commit, avoiding cross-user write failures.
           cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          cat scripts/monitor_galaxy_threads_experiment_user.py > "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py"
-          cat scripts/sync_sunlake_milkcat_persona_user.py > "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py"
-          cat scripts/mio_persona_social_loop_user.py > "$LIVE/scripts/mio_persona_social_loop_user.py"
-          cat scripts/diagnose_mio_threads_search_scope_user.py > "$LIVE/scripts/diagnose_mio_threads_search_scope_user.py"
-          cat agentos_node/persona_life.py > "$LIVE/agentos_node/persona_life.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/agentos_node/persona_life.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py" "$LIVE/scripts/mio_persona_social_loop_user.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py" "$LIVE/agentos_node/persona_life.py" "$LIVE/scripts/monitor_galaxy_threads_experiment_user.py" "$LIVE/scripts/sync_sunlake_milkcat_persona_user.py" "$LIVE/scripts/mio_persona_social_loop_user.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
 
           for i in $(seq 1 120); do
             [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
