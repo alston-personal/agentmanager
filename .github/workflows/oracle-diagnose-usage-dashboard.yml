@@ -83,5 +83,11 @@ jobs:
             printf 'route=%s local_nginx=%s dashboard_upstream=%s\n' "$route" "$pub" "$direct"
           done
           echo 'diagnostic_reason=owner_reported_usage_404_2026-09-25'
+          echo '=== SHARED CHECKOUT REFLOG (SANITIZED) ==='
+          git -c safe.directory="$ROOT" -C "$ROOT" reflog -n 25 --date=iso-strict --format='%h|%gd|%gs|%cd' 2>/dev/null || true
+          echo '=== SHARED CHECKOUT STATUS ==='
+          printf 'shared_head='; git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD || true
+          printf 'shared_branch='; git -c safe.directory="$ROOT" -C "$ROOT" branch --show-current || true
+          printf 'shared_dirty_count='; git -c safe.directory="$ROOT" -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' '
           echo '=== CHECKS COMPLETE: READ ONLY ==='
           REMOTE
