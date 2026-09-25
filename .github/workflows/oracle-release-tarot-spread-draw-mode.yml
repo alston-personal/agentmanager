@@ -62,7 +62,9 @@ jobs:
           test -f "$TARGET"
           test -f "$DB"
           test -f "$TOKEN"
-          mkdir -p "$BACKUP"
+          sudo -n mkdir -p "$BACKUP"
+          sudo -n chown "$(id -u):$(id -g)" "$BACKUP"
+          chmod 700 "$BACKUP"
           cp "$TARGET" "$BACKUP/analytics.py.before"
 
           curl -fsSL --max-time 20             "https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/$SHA/website/divination/analytics.py"             -o "$TMP/analytics.py"
