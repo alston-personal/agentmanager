@@ -701,7 +701,21 @@ def main():
     active_hour=datetime.now(LOCAL_TZ).hour
     proactive_cost=float((energy_config.get('action_costs') or {}).get('proactive_reply',6))
     if discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and phase=='awake' and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15,temporal=temporal_config):
-        queries=['AI角色','AI實驗','虛擬角色','人工智慧創作','數位角色']
+        # Discovery topics come from Mio's canonical current IR instead of a
+        # fixed growth-hacking keyword list. The search only supplies candidates;
+        # decide_outbound() still independently decides whether Mio actually
+        # cares enough to join a conversation.
+        context=persona_context()
+        interests=((context.get('current_ir') or {}).get('current_self') or {}).get('interests_with_evidence') or []
+        queries=[]
+        for row in interests:
+            topic=str((row or {}).get('topic') or '').strip()
+            if topic and len(topic)<=60 and topic not in queries:
+                queries.append(topic)
+        # Conservative fallback when the IR has not yet accumulated interests.
+        # These are ordinary everyday topics, not engagement-oriented prompts.
+        if not queries:
+            queries=['散步','日常觀察','貓與小動物']
         query=queries[(datetime.now(LOCAL_TZ).timetuple().tm_yday + active_hour) % len(queries)]
         spend(LIFE_STATE,energy_config,float((energy_config.get('action_costs') or {}).get('read_thread',1)),reason='threads_discovery_read',meta={'query':query},temporal=temporal_config)
         status,receipt=post(BASE+'/status',req('keyword.search',bid,query=query,search_type='RECENT',search_mode='KEYWORD'),{'X-AgentOS-Product-Key':product_key})
