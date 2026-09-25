@@ -17,6 +17,31 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
     steps:
+      - name: Diagnose Galaxy Social Capability 404 without credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for spec in \
+            'LOCAL|http://127.0.0.1:8771/healthz|GET' \
+            'PUBLIC_HEALTH|https://studio.milkcat.org/dashboard/api/social/healthz|GET' \
+            'PUBLIC_START|https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/start|GET' \
+            'PUBLIC_CONNECT|https://studio.milkcat.org/dashboard/api/social/v1/social/connect|POST' \
+            'GALAXY_PAGE|https://studio.milkcat.org/threads-galaxy/|GET' \
+            'GALAXY_ADAPTER|https://studio.milkcat.org/threads-galaxy/adapters/threads.js|GET' \
+            'NEXT_3000|http://127.0.0.1:3000/dashboard/api/social/healthz|GET' \
+            'NEXT_8800|http://127.0.0.1:8800/dashboard/api/social/healthz|GET'; do
+            IFS='|' read -r label url method <<< "$spec"
+            if [ "$method" = POST ]; then
+              result=$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{redirect_url}' --max-time 10 -X POST -H 'content-type: application/json' --data '{}' "$url" 2>/dev/null || true)
+            else
+              result=$(curl -sS -o /dev/null -w '%{http_code} %{content_type} %{redirect_url}' --max-time 10 "$url" 2>/dev/null || true)
+            fi
+            echo "galaxy_social_probe_${label}=${result:-unreachable}"
+          done
+          echo 'galaxy_social_listeners_begin'
+          ss -ltn 2>/dev/null | grep -E ':(80|443|3000|8771|8800)\\b' | head -15 || true
+          echo 'galaxy_social_nginx_routes_begin'
+          grep -nE 'location |proxy_pass|root |alias ' /etc/nginx/sites-enabled/studio.milkcat.org 2>/dev/null | head -70 || true
       - name: Verify shared Threads provider is configured through public boundary
         shell: bash
         run: |
