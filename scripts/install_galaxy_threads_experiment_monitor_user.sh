@@ -15,6 +15,7 @@ if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   for rel in \
     scripts/monitor_galaxy_threads_experiment_user.py \
     scripts/sync_sunlake_milkcat_persona_user.py \
+    scripts/evolve_mio_persona_ir_user.py \
     scripts/mio_persona_social_loop_user.py \
     scripts/diagnose_mio_threads_search_scope_user.py \
     agentos_node/persona_life.py; do
@@ -33,6 +34,7 @@ LOG="$LOG_DIR/galaxy-experiment-monitor.log"
 
 test -f "$REPO/scripts/monitor_galaxy_threads_experiment_user.py"
 test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
+test -f "$REPO/scripts/evolve_mio_persona_ir_user.py"
 test -f "$REPO/scripts/mio_persona_social_loop_user.py"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
@@ -171,8 +173,9 @@ Type=oneshot
 WorkingDirectory=$REPO
 Environment=AGENTOS_MIO_RELAY_ROOT=$MIO_RELAY_ROOT
 ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
-ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py || echo mio_social_loop=DEFERRED'
-ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py || echo persona_git_sync=DEFERRED'
+# Order is causal: observe -> persist event -> evolve current self -> decide/reply.
+# If canonical sync/evolution fails, do not answer from stale or isolated context.
+ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $REPO/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 
