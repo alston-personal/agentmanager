@@ -32,7 +32,6 @@ jobs:
         開啟相機連續掃描
         立即拍這張
         最近歸檔
-        /api/invoice-intake/v1
       credit_account: ''
       credit_cost: 0
     secrets:
