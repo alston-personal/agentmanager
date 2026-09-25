@@ -91,15 +91,45 @@ print("mio_oauth_persona_known_handle=" + str(bool(verified_matches)).lower())
 print("mio_oauth_persona_known_binding_count=" + str(len(verified_matches)))
 if not product_key or not verified_matches:
     fail("BINDING_UNAVAILABLE")
+# Read-only Meta debug_token scopes are checked for each candidate without printing tokens.
+def effective_keyword_scope(row):
+    token = str(row.get("access_token") or "")
+    if not token:
+        return "missing_token"
+    try:
+        import urllib.parse
+        url = "https://graph.threads.net/debug_token?" + urllib.parse.urlencode({"input_token": token})
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "Accept": "application/json"}, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as response:
+            result = json.load(response)
+        info = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(info, dict):
+            return "invalid_response"
+        if info.get("is_valid") is False:
+            return "token_invalid"
+        if not isinstance(info.get("scopes"), list):
+            return "scope_field_unavailable"
+        return "granted" if "threads_keyword_search" in info["scopes"] else "not_granted"
+    except urllib.error.HTTPError as exc:
+        return "http_" + str(int(exc.code))
+    except (OSError, ValueError, TypeError):
+        return "probe_unavailable"
+
 owned_candidates = []
 for candidate_bid, candidate_account in verified_matches:
     candidate_posts = read("post.read", candidate_bid, product_key)
     if isinstance(candidate_posts, dict) and any(str(p.get("id") or "") == "18131575054809711" for p in (candidate_posts.get("items") or []) if isinstance(p, dict)):
-        owned_candidates.append((candidate_bid, candidate_account, candidate_posts))
+        owned_candidates.append((candidate_bid, candidate_account, candidate_posts, effective_keyword_scope(candidate_account)))
 print("mio_oauth_owned_post_binding_count=" + str(len(owned_candidates)))
-if len(owned_candidates) != 1:
+if not owned_candidates:
     fail("TARGET_MIO_POST_OWNER_AMBIGUOUS")
-bid, account, posts = owned_candidates[0]
+granted_candidates = [row for row in owned_candidates if row[3] == "granted"]
+print("mio_oauth_owned_post_granted_count=" + str(len(granted_candidates)))
+if len(granted_candidates) == 1:
+    bid, account, posts, scope_result = granted_candidates[0]
+else:
+    # Read-only validation only; never choose a write target from this probe.
+    bid, account, posts, scope_result = owned_candidates[-1]
 if not isinstance(posts, dict):
     fail("POSTS_READ_FAILED")
 owned_posts = [p for p in (posts.get("items") or [])
@@ -152,32 +182,7 @@ for root in target_ids:
 items = sorted(results.values(), key=lambda x: (x["timestamp"], x["id"]))
 if len(items) > LIMIT_ROWS:
     items = items[-LIMIT_ROWS:]
-# User-confirmed OAuth reauthorization 2026-09-25: read-only effective scope + API probe.
-# Never print credential contents, input tokens, provider responses, or account identifiers.
-scope_result = "probe_unavailable"
-try:
-    token = str(account.get("access_token") or "")
-    if not token:
-        scope_result = "missing_token"
-    else:
-        import urllib.parse
-        debug_url = "https://graph.threads.net/debug_token?" + urllib.parse.urlencode({"input_token": token})
-        debug_req = urllib.request.Request(debug_url, headers={"Authorization": "Bearer " + token, "Accept": "application/json"}, method="GET")
-        with urllib.request.urlopen(debug_req, timeout=15) as resp:
-            info = json.load(resp)
-        data = info.get("data") if isinstance(info, dict) else None
-        if not isinstance(data, dict):
-            scope_result = "invalid_response"
-        elif data.get("is_valid") is False:
-            scope_result = "token_invalid"
-        elif not isinstance(data.get("scopes"), list):
-            scope_result = "scope_field_unavailable"
-        else:
-            scope_result = "granted" if "threads_keyword_search" in data["scopes"] else "not_granted"
-except urllib.error.HTTPError as exc:
-    scope_result = "http_" + str(int(exc.code))
-except (OSError, ValueError, TypeError):
-    scope_result = "probe_unavailable"
+# Persona effective OAuth grant evaluated on the selected post-owning binding above.
 print("mio_search_scope_probe=" + scope_result)
 # Exercise the shared provider's actual read-only keyword search; no social write.
 if scope_result == "granted":
