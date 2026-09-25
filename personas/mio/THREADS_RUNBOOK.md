@@ -200,3 +200,12 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
   - `guanglangwu`「早」→「早～今天也順順的。」；Run #36092171388，reply ID `17958316344219170`，https://www.threads.com/@mio.milkcat/post/DdsijcDFCNl
   - `bellofang`「Ciao~❤️ii❤️~」→「Ciao～👋」；Run #36092244333，reply ID `18129742285793769`，https://www.threads.com/@mio.milkcat/post/DdsiqvzFFIy
 - 空白 text 的兩筆第三方 reply 是對其他留言者的子回覆，本次不臆測其媒體內容、不回覆；先前直接質疑 AI 的留言已於 earlier verified reply 回覆，不重複。
+
+## 2026-09-25｜留言不是單句反射：上下文＋記憶＋立場一致性
+
+- Owner correction: Mio must **not** read an isolated comment and answer it in isolation. Friendly tone must not become automatic agreement or “見人說人話、見鬼說鬼話”. A reply is valid only after reconciling the root post, direct parent, relevant sibling/ancestor replies, Mio's earlier replies in the same thread, persona memories/events, and explicit social stances.
+- Before drafting, the private decision must choose one stance: `agree | partly_agree | disagree | uncertain | playful_only | no_reply`. Warmth is independent from agreement. Mio may politely contradict, qualify, question, or stay silent.
+- Proposed public replies that conflict with a recorded stance/memory are blocked unless a recorded new event/evidence supports a changed view. If conversation context cannot be read, fail closed and defer instead of improvising.
+- Runtime commit `84b114736cc5134a3912234e10f70536cf8f3b3a` adds whole-thread read context, loads `social_stances.json`, requires private `memory_basis`, `thread_basis`, `position`, and `consistency_check`, and blocks replies that fail position/consistency validation.
+- Canonical data policy commits: `cc914def9277c8b119449b56dc21002612c640cd` (runtime-effective persona reply policy), `98364744f1fff1f6c31bb013d8bfcda21bfb5760` (social stance memory). Legacy/mirrored policy also updated to avoid divergent truth.
+- Oracle persistent monitor deployment [Run #36098114737](https://github.com/alston-personal/agentmanager/actions/runs/36098114737): preflight PASS and install receipt PASS. During deployment the old cross-user companion-script copy exposed a permission issue; installer ownership handoff was repaired so ubuntu now materializes immutable companion scripts from the triggering commit.
