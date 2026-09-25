@@ -52,6 +52,32 @@ def main():
 
         account=str(payload.get('account_username') or '').lower()
         added=[]
+        # First persist Mio's own recent posts as lived public events. This lets
+        # the Persona IR remember what she actually said/published, rather than
+        # reconstructing a personality only from incoming comments.
+        for item in payload.get('owned_posts') or []:
+            oid=str(item.get('id') or '')
+            if not oid or oid in existing: continue
+            row={
+              'schema':'agentos.persona-event/v1',
+              'event_id':f'threads-{oid}',
+              'timestamp':item.get('timestamp') or payload.get('captured_at') or now(),
+              'observed_at':now(),
+              'type':'post.sent',
+              'platform':'threads',
+              'actor':CHARACTER_ID,
+              'author_handle':account or None,
+              'object_id':oid,
+              'parent_object_id':None,
+              'root_post_id':oid,
+              'permalink':item.get('permalink'),
+              'text':item.get('text'),
+              'media_type':item.get('media_type'),
+              'source':'AgentOS Social owned-post export',
+              'execution_origin':'threads_platform_observed',
+            }
+            added.append(row); existing.add(oid)
+
         for item in payload.get('replies') or []:
             rid=str(item.get('id') or '')
             if not rid or rid in existing: continue
