@@ -1,0 +1,214 @@
+name: Oracle Release Mio Persona
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-mio-persona.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mio-persona-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      SOURCE_REPOSITORY: alston-personal/studio-web
+      SOURCE_SHA: fb0272cf5b0f5791a5ee647c0f0628a3039d48fa
+      LIVE_ROOT: /home/ubuntu/zeus-writer/website/dist
+      ROUTE_PATH: personas/mio
+      BACKUP_KEY: mio-persona
+      RECEIPT_SCHEMA: studio-web.mio-persona-release/v1
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate pinned release contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$ROUTE_PATH" = "personas/mio"
+          test "$BACKUP_KEY" = "mio-persona"
+          echo "mio_persona_release_contract=PASS source_sha=$SOURCE_SHA"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Build pinned Studio Web and publish Mio route
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE_PATH" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          REPO="$1"; SOURCE_SHA="$2"; ROUTE_PATH="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          TMP=$(mktemp -d /tmp/mio-persona-release-XXXXXX)
+          SRC="$TMP/studio-web"
+          ROUTE_DIR="$SRC/dist/$ROUTE_PATH"
+          BACKUP="/home/ubuntu/agent-data/releases/studio-web/$BACKUP_KEY/${SOURCE_SHA:0:12}-$RUN_ID"
+          NEW_ROUTE="$LIVE/personas/.mio-$RUN_ID"
+          DEPLOYED=0
+
+          cleanup() {
+            rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true
+          }
+          rollback() {
+            if [ "$DEPLOYED" = 1 ]; then
+              rm -rf "$LIVE/$ROUTE_PATH" || true
+              if [ -d "$BACKUP/mio.previous" ]; then
+                mkdir -p "$LIVE/personas"
+                cp -a "$BACKUP/mio.previous" "$LIVE/$ROUTE_PATH" || true
+              fi
+            fi
+          }
+          on_error() {
+            rc=$?
+            trap - ERR
+            rollback || true
+            cleanup || true
+            exit "$rc"
+          }
+          trap 'on_error' ERR
+          trap 'cleanup' EXIT
+
+          test "$ROUTE_PATH" = "personas/mio"
+          test -d "$LIVE"
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone "$REPO" "$SRC" -- --no-checkout
+          /usr/bin/git -C "$SRC" fetch --depth=1 origin "$SOURCE_SHA"
+          /usr/bin/git -C "$SRC" checkout --detach "$SOURCE_SHA"
+          test "$(/usr/bin/git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
+
+          cd "$SRC"
+          npm install --no-package-lock --ignore-scripts
+          npm run build
+
+          test -f "$ROUTE_DIR/index.html"
+          test -f "$ROUTE_DIR/wardrobe/index.html"
+          test -f "$ROUTE_DIR/mio-avatar.webp"
+
+          grep -Fq '@mio.milkcat' "$ROUTE_DIR/index.html"
+          grep -Fq '最近在意什麼' "$ROUTE_DIR/index.html"
+          grep -Fq '她記住的幾件事' "$ROUTE_DIR/index.html"
+          grep -Fq '公開里程碑' "$ROUTE_DIR/index.html"
+          grep -Fq '澪的衣櫃' "$ROUTE_DIR/index.html"
+          grep -Fq 'WARDROBE JOURNAL' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '透膚捲邊上衣' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '半月肩背包' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '未購買' "$ROUTE_DIR/wardrobe/index.html"
+
+          for forbidden in reply_contract human_reserved_boundaries AGENTOS_CONTROLLER_TOKEN AGENTOS_SOCIAL_CONTROL_TOKEN control-inbox ir_id; do
+            ! grep -Fq "$forbidden" "$ROUTE_DIR/index.html"
+            ! grep -Fq "$forbidden" "$ROUTE_DIR/wardrobe/index.html"
+          done
+          echo "mio_persona_build_acceptance=PASS"
+
+          mkdir -p "$BACKUP" "$LIVE/personas"
+          if [ -d "$LIVE/$ROUTE_PATH" ]; then
+            cp -a "$LIVE/$ROUTE_PATH" "$BACKUP/mio.previous"
+          fi
+
+          cp -a "$ROUTE_DIR" "$NEW_ROUTE"
+          find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
+          find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
+          rm -rf "$LIVE/$ROUTE_PATH"
+          mv "$NEW_ROUTE" "$LIVE/$ROUTE_PATH"
+          DEPLOYED=1
+
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            "https://studio.milkcat.org/personas/mio/" -o "$TMP/live-profile"
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            "https://studio.milkcat.org/personas/mio/wardrobe/" -o "$TMP/live-wardrobe"
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
+            "https://studio.milkcat.org/personas/mio/mio-avatar.webp" -o "$TMP/live-avatar"
+
+          grep -Fq '@mio.milkcat' "$TMP/live-profile"
+          grep -Fq '她記住的幾件事' "$TMP/live-profile"
+          grep -Fq '公開里程碑' "$TMP/live-profile"
+          grep -Fq 'WARDROBE JOURNAL' "$TMP/live-wardrobe"
+          grep -Fq '半月肩背包' "$TMP/live-wardrobe"
+          grep -Fq '未購買' "$TMP/live-wardrobe"
+          test -s "$TMP/live-avatar"
+          echo "local_nginx_mio_persona_acceptance=PASS"
+
+          printf '%s\n' \
+            "schema=$RECEIPT_SCHEMA" \
+            "source_repository=$REPO" \
+            "source_sha=$SOURCE_SHA" \
+            "scope=/personas/mio/" \
+            "backup=$BACKUP" \
+            "ok=true" > "$BACKUP/receipt.txt"
+
+          trap - ERR
+          echo "mio_persona_deploy=PASS backup=$BACKUP"
+          REMOTE
+
+      - name: Public acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          PROFILE=/tmp/mio-profile-$GITHUB_RUN_ID
+          WARDROBE=/tmp/mio-wardrobe-$GITHUB_RUN_ID
+          AVATAR=/tmp/mio-avatar-$GITHUB_RUN_ID.webp
+
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/?_=$GITHUB_RUN_ID" -o "$PROFILE"
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/wardrobe/?_=$GITHUB_RUN_ID" -o "$WARDROBE"
+          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/mio-avatar.webp?_=$GITHUB_RUN_ID" -o "$AVATAR"
+
+          grep -Fq '@mio.milkcat' "$PROFILE"
+          grep -Fq '最近在意什麼' "$PROFILE"
+          grep -Fq '她記住的幾件事' "$PROFILE"
+          grep -Fq '公開里程碑' "$PROFILE"
+          grep -Fq '澪的衣櫃' "$PROFILE"
+          grep -Fq 'WARDROBE JOURNAL' "$WARDROBE"
+          grep -Fq '透膚捲邊上衣' "$WARDROBE"
+          grep -Fq '半月肩背包' "$WARDROBE"
+          grep -Fq '未購買' "$WARDROBE"
+          test -s "$AVATAR"
+          echo "public_mio_persona_acceptance=PASS"
+
+      - name: Roll back after public acceptance failure
+        if: ${{ failure() && steps.publish.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$SOURCE_SHA" "$BACKUP_KEY" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_SHA="$1"; BACKUP_KEY="$2"; RUN_ID="$3"
+          LIVE=/home/ubuntu/zeus-writer/website/dist
+          BACKUP="/home/ubuntu/agent-data/releases/studio-web/$BACKUP_KEY/${SOURCE_SHA:0:12}-$RUN_ID"
+
+          test -d "$BACKUP"
+          rm -rf "$LIVE/personas/mio"
+          if [ -d "$BACKUP/mio.previous" ]; then
+            mkdir -p "$LIVE/personas"
+            cp -a "$BACKUP/mio.previous" "$LIVE/personas/mio"
+          fi
+
+          printf '%s\n' \
+            "schema=studio-web.mio-persona-release/v1" \
+            "source_sha=$SOURCE_SHA" \
+            "scope=/personas/mio/" \
+            "backup=$BACKUP" \
+            "ok=false" \
+            "rolled_back=true" \
+            "failure_stage=public_acceptance" > "$BACKUP/receipt.txt"
+          echo "mio_persona_public_failure_rollback=PASS backup=$BACKUP"
+          REMOTE
