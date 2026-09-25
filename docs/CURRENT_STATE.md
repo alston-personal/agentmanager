@@ -23,7 +23,7 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Persistent control plane | Implemented + tested | `agent_core/control_plane.py` | `tests/test_control_plane.py`, `.agentos/evidence/bootstrap-control-plane.txt` |
 | Canonical Project Identity | Implemented + tested | `agent_core/project_store.py`, `agent_core/resolve_facade.py` | `tests/test_project_store_canonical.py`, governed Core registration workflow/evidence |
 | Project release-lane authority | Implemented + tested | `.agent/governance/project_release_lanes.yaml`, `scripts/check_project_release_lane.py` | `tests/test_project_release_lane.py`, `Project Release Lane Guard` |
-| Runtime ownership isolation | Implemented policy + CI guard; Dashboard immutable-runtime migration candidate | `.agent/governance/runtime_ownership.json`, `scripts/check_runtime_ownership.py`, `scripts/deploy_dashboard_release.sh` | `tests/test_runtime_ownership.py`, `Runtime and Completion Governance`, issue #470 |
+| Runtime ownership isolation | Implemented + Dashboard live accepted; remaining services migrate independently | `.agent/governance/runtime_ownership.json`, `scripts/check_runtime_ownership.py`, `scripts/deploy_dashboard_release.sh` | `tests/test_runtime_ownership.py`, Dashboard run `36197636857`, diagnostic run `36197636810`, issue #470 |
 | Durable work completion ownership | Implemented + live accepted | `scripts/work_completion.py`, Lobster integration in `scripts/lobster.py`, immutable completion-executor runtime | `tests/test_work_completion.py`, Oracle run `36130001931`, issue #470 |
 | Pinned project POC candidate deployment | Implemented for LayoutLib candidate path | `.github/workflows/oracle-release-layoutlab-v08-dev.yml` | release-lane static acceptance + public POC acceptance after dispatch |
 | Node registry / capability discovery | Implemented + tested | `agent_core/node_registry.py`, `scripts/agentos_node.py` | `tests/test_agentos_node.py`, `tests/test_node_registry_v01.py` |
@@ -89,7 +89,10 @@ The Milkcat Dashboard production process name is `agentos-dashboard`. New Dashbo
 
 Dashboard secrets and OAuth configuration are configuration state, not source-tree state. The migration controller canonicalizes them in the owner-only file `/home/ubuntu/.config/milkcat/dashboard.env.local`; release builds receive that configuration without logging values. The shared checkout remains a source/cache surface and may move independently.
 
-`scripts/deploy_dashboard_release.sh` owns the release switch, exact listener verification, canary, PM2 replacement, rollback, auth/admin route checks and a regression probe that temporarily removes only the legacy shared `.next` build. A release is accepted only if the public protected routes remain healthy while that legacy build is absent. Until the first successful Oracle receipt, the registry marks this Dashboard migration as candidate rather than live.
+`scripts/deploy_dashboard_release.sh` owns the release switch, exact listener verification, canary, PM2 replacement, rollback, auth/admin route checks and a regression probe that temporarily removes only the legacy shared `.next` build. A release is accepted only if the public protected routes remain healthy while that legacy build is absent. Oracle run `36197636857` accepted the immutable Dashboard release, PM2 cwd, auth/admin routes, private Fengshui/Tarot summary access and the shared-`.next` independence regression. Read-only run `36197636810` independently confirmed the listener cwd, live pointer and PM2 cwd all resolve to the same service-owned release. The registry therefore marks the Dashboard migration active.
+
+
+The Completion Controller installer is intentionally **not** triggered by arbitrary edits to the cross-service runtime ownership registry. Its rollout trigger is limited to its own workflow and completion-executor implementation files; changing Dashboard/Fengshui/Tarot ownership metadata must not cause an unrelated Completion Controller reinstall.
 
 ## Realm Node Map and capability semantics
 
