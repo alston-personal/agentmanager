@@ -199,6 +199,63 @@ if len(items) > LIMIT_ROWS:
     items = items[-LIMIT_ROWS:]
 # Persona effective OAuth grant evaluated on the selected post-owning binding above.
 print("mio_search_scope_probe=" + scope_result)
+# Diagnose provider 400 with bounded, read-only official GET requests.
+# Only known error type/code/subcode and status are emitted. Never log access tokens,
+# unredacted provider errors, account details, URLs, post text or HTTP response bodies.
+def safe_search_probe(label, use_query_token=False, versioned=False):
+    import urllib.parse
+    token = str(account.get("access_token") or "")
+    if not token:
+        print("mio_direct_search_" + label + "=NO_TOKEN")
+        return False
+    params = {"q": "貓咪", "search_type": "RECENT",
+              "fields": "id,text,username,permalink", "limit": 2}
+    if use_query_token:
+        params["access_token"] = token
+    endpoint = "https://graph.threads.net/" + ("v1.0/" if versioned else "") + "keyword_search"
+    url = endpoint + "?" + urllib.parse.urlencode(params)
+    headers = {"Accept": "application/json", "User-Agent": "AgentOS-Social/1.0"}
+    if not use_query_token:
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=16) as response:
+            payload = json.load(response)
+            rows = payload.get("data") if isinstance(payload, dict) else None
+            if isinstance(rows, list):
+                print("mio_direct_search_" + label + "=PASS")
+                print("mio_direct_search_" + label + "_result_count=" + str(len(rows)))
+                return True
+            print("mio_direct_search_" + label + "=INVALID_RESPONSE")
+            return False
+    except urllib.error.HTTPError as exc:
+        code, subcode, kind = "unknown", "unknown", "unknown"
+        try:
+            data = json.loads(exc.read().decode("utf-8", "replace"))
+            err = data.get("error") if isinstance(data, dict) else None
+            if isinstance(err, dict):
+                raw = err.get("code")
+                if isinstance(raw, int) and 0 <= raw < 1000000:
+                    code = str(raw)
+                raw = err.get("error_subcode")
+                if isinstance(raw, int) and 0 <= raw < 10000000:
+                    subcode = str(raw)
+                raw = str(err.get("type") or "")
+                if raw in ("OAuthException", "GraphMethodException", "InvalidParameter", "APIException"):
+                    kind = raw
+        except (ValueError, TypeError, OSError):
+            pass
+        print("mio_direct_search_" + label + "=HTTP_" + str(int(exc.code)) +
+              "_TYPE_" + kind + "_CODE_" + code + "_SUBCODE_" + subcode)
+        return False
+    except (OSError, ValueError, TypeError, TimeoutError):
+        print("mio_direct_search_" + label + "=TRANSPORT_OR_PARSE_FAILED")
+        return False
+
+if scope_result == "granted":
+    if not safe_search_probe("MINIMAL_BEARER"):
+        if not safe_search_probe("MINIMAL_QUERY_TOKEN", use_query_token=True):
+            safe_search_probe("MINIMAL_VERSIONED_BEARER", versioned=True)
 # Exercise the shared provider's actual read-only keyword search; no social write.
 if scope_result == "granted":
     discovery = read("keyword.search", bid, product_key, query="貓咪")
