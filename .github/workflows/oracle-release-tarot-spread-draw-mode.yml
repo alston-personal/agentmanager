@@ -49,7 +49,7 @@ jobs:
             trap - EXIT
             if [ "$rc" -ne 0 ] && [ "$MUTATED" -eq 1 ]; then
               cp "$BACKUP/analytics.py.before" "$TARGET"
-              systemctl --user restart milkcat-leopardcat-analytics.service >/dev/null 2>&1 || true
+              sudo -n systemctl restart milkcat-leopardcat-analytics.service >/dev/null 2>&1 || true
               echo 'tarot_spread_draw_mode_release=ROLLBACK_ATTEMPTED'
             fi
             rm -rf "$TMP"
@@ -57,8 +57,8 @@ jobs:
           }
           trap finish EXIT
 
-          test "$(systemctl --user is-active milkcat-leopardcat-analytics.service)" = active
-          test "$(systemctl --user show -p WorkingDirectory --value milkcat-leopardcat-analytics.service)" = "$APP"
+          test "$(sudo -n systemctl is-active milkcat-leopardcat-analytics.service)" = active
+          test "$(sudo -n systemctl show -p WorkingDirectory --value milkcat-leopardcat-analytics.service)" = "$APP"
           test -f "$TARGET"
           test -f "$DB"
           test -f "$TOKEN"
@@ -97,13 +97,13 @@ jobs:
           install -m "$MODE" "$TMP/analytics.py" "$TARGET"
           chown "$OWNER" "$TARGET"
           MUTATED=1
-          systemctl --user restart milkcat-leopardcat-analytics.service
+          sudo -n systemctl restart milkcat-leopardcat-analytics.service
 
           for _ in $(seq 1 20); do
-            systemctl --user is-active --quiet milkcat-leopardcat-analytics.service &&               curl -fsS --max-time 4 http://127.0.0.1:8088/api/v1/personas >/dev/null && break
+            sudo -n systemctl is-active --quiet milkcat-leopardcat-analytics.service &&               curl -fsS --max-time 4 http://127.0.0.1:8088/api/v1/personas >/dev/null && break
             sleep 1
           done
-          test "$(systemctl --user is-active milkcat-leopardcat-analytics.service)" = active
+          test "$(sudo -n systemctl is-active milkcat-leopardcat-analytics.service)" = active
 
           python3 - "$TOKEN" <<'PY'
           import json, pathlib, sys, urllib.error, urllib.request
