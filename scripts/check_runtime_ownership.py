@@ -46,18 +46,45 @@ violations: list[str] = []
 dangerous_git = re.compile(r"\bgit\b[^\n]*(?:checkout|switch|pull|reset\s+--hard|clean\b)", re.I)
 copy_into_shared = re.compile(r"\b(?:cp|mv|rsync)\b[^\n]*(?:/home/ubuntu/agentmanager|\$\{?(?:ROOT|APP_ROOT|AGENT_ROOT)\}?)", re.I)
 live_runtime = re.compile(r"(?:WorkingDirectory|ExecStart)\s*=.*?/home/ubuntu/agentmanager(?:/|\b)", re.I)
+process_manager_runtime = re.compile(
+    r"\b(?:pm2|node\s+[^\n]*pm2[^\n]*)\b[^\n]*--cwd\s+(?:[\"']?)"
+    + re.escape(shared)
+    + r"(?:/|\b)",
+    re.I,
+)
 
 for path, additions in files.items():
     p = ROOT / path
     if p.resolve() == Path(__file__).resolve():
         continue
     full = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
-    aliases = set(re.findall(r"(?m)^\s*([A-Z][A-Z0-9_]*)=(?:[\"'])?" + re.escape(shared) + r"(?:[\"'])?\s*$", full))
+    aliases = set(
+        re.findall(
+            r"(?m)^\s*([A-Z][A-Z0-9_]*)=(?:[\"'])?"
+            + re.escape(shared)
+            + r"(?:/[^\s\"']*)?(?:[\"'])?\s*$",
+            full,
+        )
+    )
     alias_expr = "|".join(re.escape(name) for name in sorted(aliases))
-    alias_git = re.compile(
-        r"\bgit\s+-C\s+(?:[\"']?\$\{?(?:" + alias_expr + r")\}?[\"']?)[^\n]*(?:checkout|switch|pull|reset\s+--hard|clean\b)",
-        re.I,
-    ) if aliases else None
+    alias_git = (
+        re.compile(
+            r"\bgit\s+-C\s+(?:[\"']?\$\{?(?:" + alias_expr + r")\}?[\"']?)[^\n]*(?:checkout|switch|pull|reset\s+--hard|clean\b)",
+            re.I,
+        )
+        if aliases
+        else None
+    )
+    alias_process_runtime = (
+        re.compile(
+            r"\b(?:pm2|node\s+[^\n]*pm2[^\n]*)\b[^\n]*--cwd\s+(?:[\"']?\$\{?(?:"
+            + alias_expr
+            + r")\}?[\"']?)",
+            re.I,
+        )
+        if aliases
+        else None
+    )
 
     for line_no, added in additions:
         stripped = added.strip()
@@ -70,6 +97,10 @@ for path, additions in files.items():
             reason = "copies/moves files into shared AgentOS checkout"
         elif live_runtime.search(added):
             reason = "declares production runtime directly from mutable shared checkout"
+        elif process_manager_runtime.search(added):
+            reason = "launches a process manager from mutable shared checkout"
+        elif alias_process_runtime and alias_process_runtime.search(added):
+            reason = "launches a process manager from mutable shared checkout through an alias"
 
         if reason:
             violations.append(f"{path}:{line_no}: {reason}: {stripped[:180]}")
