@@ -20,7 +20,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: e8364aedb79ae7af56f86b9c3760866344ad87e6
+      source_sha: 197fc36a4ffcd295734d73effb0f1f14912b0df1
       route: invoice-intake
       backup_key: invoice-intake-demo
       receipt_schema: studio-web.invoice-intake-release/v2
@@ -31,6 +31,7 @@ jobs:
         id="detector-canvas"
         id="auto-toggle"
         開啟相機連續掃描
+        先登入再掃描
         立即拍這張
         辨識中
         最近歸檔
