@@ -31,7 +31,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: bdee07cfc9d4b902eac005173fd45d4aed45d930
+      source_sha: 922410f1913408faf9b5791f476a271cf51625da
       route: world
       backup_key: milkcat-world
       receipt_schema: studio-web.milkcat-world-release/v4
@@ -53,6 +53,7 @@ jobs:
         data-directory-zone-id=
         wayfinding-status
         /world/world-navigation.js
+        發票 Demo
         moveWalkably(camera.position, motion, walkability)
       acceptance_nested_routes: |-
         tarot
