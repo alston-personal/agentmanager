@@ -64,15 +64,18 @@ def read(operation, binding, key, object_id=None, query=None):
                         print("mio_search_api_error=" + error)
                     else:
                         print("mio_search_api_error=unknown_receipt")
+                    return {"_keyword_error": error if re.fullmatch(r"threads_[a-zA-Z0-9_]{1,100}", error) else "unknown_receipt"}
                 return None
             return result.get("result") or {}
     except urllib.error.HTTPError as exc:
         if operation == "keyword.search":
             print("mio_search_api_error=http_" + str(int(exc.code)))
+            return {"_keyword_error": "http_" + str(int(exc.code))}
         return None
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         if operation == "keyword.search":
             print("mio_search_api_error=transport")
+            return {"_keyword_error": "transport"}
         return None
 
 def datetime_or_none(raw):
@@ -203,7 +206,9 @@ if scope_result == "granted":
         print("mio_social_outbound=SEARCH_READ_PASS")
         print("mio_search_results_count=" + str(len(discovery["items"])))
     else:
-        print("mio_social_outbound=SEARCH_READ_FAILED")
+        reason = str(discovery.get("_keyword_error") or "unknown") if isinstance(discovery, dict) else "unknown"
+        reason = re.sub(r"[^a-zA-Z0-9_]", "", reason)[:55] or "unknown"
+        print("mio_social_outbound=SEARCH_READ_FAILED_" + reason)
 else:
     print("mio_social_outbound=SEARCH_SKIPPED_SCOPE_" + scope_result)
 print("mio_recent_patrol=PASS")
