@@ -37,7 +37,7 @@ def parse_env():
         out[key] = value
     return out
 
-def read(operation, binding, key, object_id=None):
+def read(operation, binding, key, object_id=None, query=None):
     payload = {
         "schema": "agentos.social-request/v1",
         "product_id": "galaxy",
@@ -47,6 +47,8 @@ def read(operation, binding, key, object_id=None):
     }
     if object_id is not None:
         payload["object_id"] = object_id
+    if query is not None:
+        payload["query"] = query
     request = urllib.request.Request(
         API, method="POST",
         data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
@@ -135,6 +137,43 @@ for root in target_ids:
 items = sorted(results.values(), key=lambda x: (x["timestamp"], x["id"]))
 if len(items) > LIMIT_ROWS:
     items = items[-LIMIT_ROWS:]
+# User-confirmed OAuth reauthorization 2026-09-25: read-only effective scope + API probe.
+# Never print credential contents, input tokens, provider responses, or account identifiers.
+scope_result = "probe_unavailable"
+try:
+    token = str(account.get("access_token") or "")
+    if not token:
+        scope_result = "missing_token"
+    else:
+        import urllib.parse
+        debug_url = "https://graph.threads.net/debug_token?" + urllib.parse.urlencode({"input_token": token})
+        debug_req = urllib.request.Request(debug_url, headers={"Authorization": "Bearer " + token, "Accept": "application/json"}, method="GET")
+        with urllib.request.urlopen(debug_req, timeout=15) as resp:
+            info = json.load(resp)
+        data = info.get("data") if isinstance(info, dict) else None
+        if not isinstance(data, dict):
+            scope_result = "invalid_response"
+        elif data.get("is_valid") is False:
+            scope_result = "token_invalid"
+        elif not isinstance(data.get("scopes"), list):
+            scope_result = "scope_field_unavailable"
+        else:
+            scope_result = "granted" if "threads_keyword_search" in data["scopes"] else "not_granted"
+except urllib.error.HTTPError as exc:
+    scope_result = "http_" + str(int(exc.code))
+except (OSError, ValueError, TypeError):
+    scope_result = "probe_unavailable"
+print("mio_search_scope_probe=" + scope_result)
+# Exercise the shared provider's actual read-only keyword search; no social write.
+if scope_result == "granted":
+    discovery = read("keyword.search", bid, product_key, query="貓咪")
+    if isinstance(discovery, dict) and isinstance(discovery.get("items"), list):
+        print("mio_social_outbound=SEARCH_READ_PASS")
+        print("mio_search_results_count=" + str(len(discovery["items"])))
+    else:
+        print("mio_social_outbound=SEARCH_READ_FAILED")
+else:
+    print("mio_social_outbound=SEARCH_SKIPPED_SCOPE_" + scope_result)
 print("mio_recent_patrol=PASS")
 print("mio_recent_patrol_post_count=" + str(len(target_ids)))
 print("mio_recent_patrol_failed_reads=" + str(len(failed)))
