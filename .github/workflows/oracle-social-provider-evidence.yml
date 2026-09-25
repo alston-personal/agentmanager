@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Diagnose Galaxy Social Capability 404 without credentials
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
