@@ -134,3 +134,4 @@ jobs:
           PY
 
 # Owner-requested read-only patrol of Mio public comments on 2026-09-25; no post or reply side effects.
+# 2026-09-25 owner-confirmed reauthorization: run sanitized scope and public keyword search validation.
