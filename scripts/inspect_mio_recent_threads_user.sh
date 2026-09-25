@@ -207,7 +207,7 @@ if scope_result == "granted":
         print("mio_search_results_count=" + str(len(discovery["items"])))
     else:
         reason = str(discovery.get("_keyword_error") or "unknown") if isinstance(discovery, dict) else "unknown"
-        reason = re.sub(r"[^a-zA-Z0-9_]", "", reason)[:55] or "unknown"
+        reason = re.sub(r"[^a-zA-Z0-9_]", "", reason)[:34] or "unknown"
         print("mio_social_outbound=SEARCH_READ_FAILED_" + reason)
 else:
     print("mio_social_outbound=SEARCH_SKIPPED_SCOPE_" + scope_result)
