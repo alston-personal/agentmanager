@@ -36,5 +36,26 @@ jobs:
           for r in rows:
               x=dict(r)
               x['confidence']=json.loads(x.pop('confidence_json') or '{}')
+              ext=con.execute("""
+                SELECT engine,payload_json,created_at
+                FROM extractions
+                WHERE document_id=(SELECT document_id FROM invoices WHERE id=?)
+                ORDER BY created_at DESC LIMIT 1
+              """,(x['invoice_id'],)).fetchone()
+              if ext:
+                  try:
+                      x['extraction']={
+                        'engine':ext['engine'],
+                        'created_at':ext['created_at'],
+                        'payload':json.loads(ext['payload_json'] or '{}')
+                      }
+                  except Exception:
+                      x['extraction']={'engine':ext['engine'],'created_at':ext['created_at']}
               print(json.dumps(x,ensure_ascii=False))
           PY
+
+      - name: Show recent invoice service errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          journalctl --user -u invoice-intake.service --since '15 minutes ago' --no-pager | tail -n 120
