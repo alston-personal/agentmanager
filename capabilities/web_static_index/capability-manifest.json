@@ -1,0 +1,36 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "web.static-index.render",
+  "display_name": "Web Static Index Renderer",
+  "semantic_owner": "web-static-index",
+  "version": "0.1.0",
+  "lifecycle": "implemented",
+  "contract": {
+    "input_schema": "agentos.web-static-index/v1",
+    "inputs": ["web.page-summary"],
+    "outputs": ["text/html", "agentos.web-static-index-receipt/v1"],
+    "side_effects": ["writes-output-file-when-requested"]
+  },
+  "invocation": {
+    "kind": "python-cli",
+    "entrypoint": "scripts/web_static_index.py",
+    "example": "python3 scripts/web_static_index.py --spec page-index.json --output dist/index.html"
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://web.static-index.renderer",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "consumer_rule": "Public-discoverable web generation resolves and invokes this capability instead of reimplementing static crawler markup in product code.",
+    "arbitrary_html_input": false,
+    "javascript_required_for_primary_content": false,
+    "crawler_authorization_separate": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}

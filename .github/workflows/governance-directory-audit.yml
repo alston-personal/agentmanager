@@ -5,13 +5,17 @@ on:
   push:
     paths:
       - 'agent_core/governance_directory.py'
+      - 'agent_core/capability_manifest_adapter.py'
       - 'agent_core/resource_registry.py'
+      - 'capabilities/**'
       - 'scripts/agentos_node.py'
       - 'scripts/governance_directory.py'
       - 'scripts/core_services/port_manager.py'
       - 'scripts/drift_guard.py'
       - 'tests/test_agentos_node.py'
       - 'tests/test_governance_directory.py'
+      - 'tests/test_capability_manifest_adapter.py'
+      - 'tests/test_web_static_index.py'
       - '.agent/CONSTITUTION.yaml'
       - '.agent/governance/**'
       - '.agent/roles/**'
@@ -36,8 +40,8 @@ jobs:
         run: |
           set -euo pipefail
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          python3 -m py_compile agent_core/governance_directory.py agent_core/studio_capability_adapter.py agent_core/resource_registry.py scripts/agentos_node.py scripts/governance_directory.py scripts/core_services/port_manager.py
-          python3 -m unittest tests.test_governance_directory tests.test_agentos_node -v
+          python3 -m py_compile agent_core/governance_directory.py agent_core/capability_manifest_adapter.py agent_core/studio_capability_adapter.py agent_core/resource_registry.py capabilities/web_static_index/renderer.py scripts/web_static_index.py scripts/agentos_node.py scripts/governance_directory.py scripts/core_services/port_manager.py
+          python3 -m unittest tests.test_governance_directory tests.test_agentos_node tests.test_capability_manifest_adapter tests.test_web_static_index -v
 
       - name: Install canonical agentos-node runtime for node identity
         shell: bash
@@ -46,11 +50,12 @@ jobs:
           RUNTIME="$HOME/.local/share/agentos-node"
           BIN="$HOME/.local/bin"
           rm -rf "$RUNTIME"
-          mkdir -p "$RUNTIME/agent_core" "$RUNTIME/scripts" "$RUNTIME/.agent/roles" "$RUNTIME/.agent/governance" "$BIN"
-          cp agent_core/__init__.py agent_core/governance_directory.py agent_core/studio_capability_adapter.py agent_core/resource_registry.py "$RUNTIME/agent_core/"
+          mkdir -p "$RUNTIME/agent_core" "$RUNTIME/scripts" "$RUNTIME/.agent/roles" "$RUNTIME/.agent/governance" "$RUNTIME/capabilities/web_static_index" "$BIN"
+          cp agent_core/__init__.py agent_core/governance_directory.py agent_core/capability_manifest_adapter.py agent_core/studio_capability_adapter.py agent_core/resource_registry.py "$RUNTIME/agent_core/"
           cp scripts/agentos_node.py "$RUNTIME/scripts/"
           cp .agent/roles/registry.yaml "$RUNTIME/.agent/roles/registry.yaml"
           cp .agent/governance/studio_release_capabilities.yaml "$RUNTIME/.agent/governance/studio_release_capabilities.yaml"
+          cp capabilities/web_static_index/capability-manifest.json "$RUNTIME/capabilities/web_static_index/capability-manifest.json"
           cat > "$BIN/agentos-node" <<EOF
           #!/usr/bin/env bash
           set -euo pipefail
@@ -70,6 +75,9 @@ jobs:
           agentos-node governance resolve capability://network.port.allocate > /tmp/port-owner.json
           cat /tmp/port-owner.json
           python3 -c 'import json; d=json.load(open("/tmp/port-owner.json")); assert d and d[0]["id"]=="manager://port" and d[0]["authority"]["exclusive"] is True'
+          agentos-node governance resolve capability://web.static-index.render > /tmp/web-static-index-owner.json
+          cat /tmp/web-static-index-owner.json
+          python3 -c 'import json; d=json.load(open("/tmp/web-static-index-owner.json")); assert d and d[0]["id"]=="service://web.static-index.renderer"'
           agentos-node governance get role://governance.spec_steward > /tmp/spec-steward.json
           python3 -c 'import json; d=json.load(open("/tmp/spec-steward.json")); assert d["state"] not in ("stale","retired","superseded")'
           agentos-node resource get site://studio.milkcat.org > /tmp/studio-resource.json

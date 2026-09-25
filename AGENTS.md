@@ -81,6 +81,31 @@ python3 scripts/documentation_reality_guard.py
 
 CI enforces the same rule. Treat a documentation-drift failure as an architecture regression, not optional cleanup.
 
+## Public Web Surface Machine-Readability Rule
+
+Web surfaces created or materially changed by AgentOS MUST be classified before implementation as one of:
+
+1. **public-discoverable** — intended to be found, shared, indexed, summarized, or understood by humans, search engines, link previewers, or AI agents;
+2. **public-noindex** — publicly reachable but intentionally excluded from discovery/indexing;
+3. **private/authenticated** — user-specific, administrative, sensitive, or access-controlled.
+
+The reusable implementation owner is **`capability://web.static-index.render`**. Public web generators MUST resolve and invoke that capability; they MUST NOT independently embed another project-specific crawler/AI static-index implementation into application code.
+
+For **public-discoverable** routes:
+
+- Produce an `agentos.web-static-index/v1` input from the page/result's already-authorized public data and invoke `capability://web.static-index.render`.
+- Serve the generated semantic HTML as the initial representation of the public route, or as a deterministic public summary/share route included in the product's discovery strategy. Client JavaScript may enhance the page but must not be the only source of its purpose or primary result.
+- The static representation must contain a descriptive `<title>`, one meaningful `<h1>`, a concise textual summary, canonical URL, share metadata, correct robots intent, stable URLs, and correct HTTP status codes.
+- Product code supplies page-specific data; the shared capability owns escaping, base semantic markup, crawler-facing metadata, and its render receipt. Do not fork/copy its template merely to customize a product.
+- Structured data may be supplied only when it accurately represents the public page. Keep `robots.txt`, sitemap, canonical/noindex behavior, and route intent consistent.
+- Do not expose private inputs, hidden state, account data, secrets, or internal diagnostics merely to improve discoverability.
+
+For **public-noindex** routes, the same capability may be invoked with an explicit `noindex` robots policy when a machine-readable/shareable representation is useful. For **private/authenticated** routes, access control wins: do not create a public index artifact from private data.
+
+**AI-friendly does not mean blanket training permission.** Content machine-readability and crawler authorization are separate controls. Search, archival, and AI-training crawlers may be allowed or denied independently through deployment policy. Optional conventions such as `llms.txt` may be added as hints, but they do not replace the static-index capability, semantic HTML, access control, or robots directives.
+
+Acceptance for a public-discoverable route requires both the `agentos.web-static-index-receipt/v1` render receipt and a no-JavaScript fetch/inspection proving that a crawler can recover the route's title, primary heading, concise summary, canonical URL, and intended indexability.
+
 ## Useful verification
 
 ```bash
