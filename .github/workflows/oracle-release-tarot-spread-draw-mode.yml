@@ -1,0 +1,135 @@
+name: Oracle Release Tarot Spread Draw Mode Analytics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-release-tarot-spread-draw-mode.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-leopardcat-tarot
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      TAROT_SHA: 5355e97700e696a3ce12fae5540590040b1c0e17
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Upgrade anonymous Tarot aggregate only and verify protected summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAROT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$TAROT_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN_ID="$2"
+          APP=/home/ubuntu/leopardcat-tarot/website
+          TARGET="$APP/divination/analytics.py"
+          DB="$APP/data/analytics.sqlite3"
+          TOKEN=/home/ubuntu/.config/milkcat/leopardcat-analytics-token
+          BACKUP="/home/ubuntu/agent-data/releases/tarot/analytics-spread-mode-$RUN_ID"
+          TMP=$(mktemp -d /tmp/tarot-analytics-mode-XXXXXXXX)
+          MUTATED=0
+
+          finish() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$MUTATED" -eq 1 ]; then
+              cp "$BACKUP/analytics.py.before" "$TARGET"
+              systemctl --user restart milkcat-leopardcat-analytics.service >/dev/null 2>&1 || true
+              echo 'tarot_spread_draw_mode_release=ROLLBACK_ATTEMPTED'
+            fi
+            rm -rf "$TMP"
+            exit "$rc"
+          }
+          trap finish EXIT
+
+          test "$(systemctl --user is-active milkcat-leopardcat-analytics.service)" = active
+          test "$(systemctl --user show -p WorkingDirectory --value milkcat-leopardcat-analytics.service)" = "$APP"
+          test -f "$TARGET"
+          test -f "$DB"
+          test -f "$TOKEN"
+          mkdir -p "$BACKUP"
+          cp "$TARGET" "$BACKUP/analytics.py.before"
+
+          curl -fsSL --max-time 20             "https://raw.githubusercontent.com/alston-personal/leopardcat-tarot/$SHA/website/divination/analytics.py"             -o "$TMP/analytics.py"
+          grep -q '"by_spread_draw_mode"' "$TMP/analytics.py"
+          grep -q 'spread_draw_mode' "$TMP/analytics.py"
+          python3 -m py_compile "$TMP/analytics.py"
+
+          python3 - "$TMP/analytics.py" <<'PY'
+          import importlib.util, pathlib, tempfile, sys
+          path=pathlib.Path(sys.argv[1])
+          spec=importlib.util.spec_from_file_location('candidate_analytics', path)
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          with tempfile.TemporaryDirectory() as td:
+              store=module.ReadingAnalyticsStore(pathlib.Path(td)/'probe.sqlite3')
+              base={
+                  'deck':{'deck_id':'leopardcat'},
+                  'spread':'three_card',
+                  'spread_plan':{'intent':'guidance'},
+                  'cards':[{'card_id':'probe','orientation':'upright','position':'past'}],
+              }
+              for mode in ('manual','auto','auto'):
+                  payload=dict(base)
+                  payload['rules']={'draw_mode':mode}
+                  store.record_reading(source='direct',question_category='general',method='tarot',method_result=payload,language='zh-TW',persona_id='master')
+              summary=store.summary(days=30)
+              assert summary['by_spread_draw_mode']['three_card']=={'manual':1,'auto':2,'unknown':0}
+          print('tarot_spread_draw_mode_candidate=PASS')
+          PY
+
+          MODE=$(stat -c '%a' "$TARGET")
+          OWNER=$(stat -c '%u:%g' "$TARGET")
+          install -m "$MODE" "$TMP/analytics.py" "$TARGET"
+          chown "$OWNER" "$TARGET"
+          MUTATED=1
+          systemctl --user restart milkcat-leopardcat-analytics.service
+
+          for _ in $(seq 1 20); do
+            systemctl --user is-active --quiet milkcat-leopardcat-analytics.service &&               curl -fsS --max-time 4 http://127.0.0.1:8088/api/v1/personas >/dev/null && break
+            sleep 1
+          done
+          test "$(systemctl --user is-active milkcat-leopardcat-analytics.service)" = active
+
+          python3 - "$TOKEN" <<'PY'
+          import json, pathlib, sys, urllib.error, urllib.request
+          token=pathlib.Path(sys.argv[1]).read_text(encoding='utf8').strip()
+          assert len(token)>=32
+          url='http://127.0.0.1:8088/api/v1/analytics/summary?days=30'
+          req=urllib.request.Request(url,headers={'X-Analytics-Token':token})
+          with urllib.request.urlopen(req,timeout=6) as response:
+              payload=json.load(response)
+              assert response.status==200
+          cross=payload.get('by_spread_draw_mode')
+          assert isinstance(cross,dict)
+          for spread,modes in cross.items():
+              assert isinstance(spread,str) and isinstance(modes,dict)
+              assert {'manual','auto','unknown'} <= set(modes)
+              assert all(type(modes[k]) is int and modes[k]>=0 for k in ('manual','auto','unknown'))
+          try:
+              urllib.request.urlopen(url,timeout=6)
+              raise AssertionError('anonymous_summary_exposed')
+          except urllib.error.HTTPError as error:
+              assert error.code==403
+          print('tarot_spread_draw_mode_protected_summary=PASS schema=VALID anonymous=403')
+          PY
+
+          test -f "$DB"
+          echo 'tarot_spread_draw_mode_existing_db=PRESERVED'
+          printf 'tarot_sha=%s\nservice=active\nprotected_summary=pass\ndata_preserved=1\n' "$SHA" > "$BACKUP/receipt.txt"
+          echo "tarot_spread_draw_mode_release=PASS tarot_sha=$SHA"
+          REMOTE
