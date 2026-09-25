@@ -1,6 +1,26 @@
 name: Product Employee Runtime Source Guard
 
 on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/product-employee-runtime-rollout.yml'
+      - 'agent_core/work_intent.py'
+      - 'agent_core/governed_execution.py'
+      - 'agent_core/employee_runtime.py'
+      - 'agent_core/employee_lifecycle.py'
+      - 'agent_core/employee_wake.py'
+      - 'agent_core/core_supervisor_delivery.py'
+      - 'agentos_node/employee_wake_inbox.py'
+      - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/employee_worker_host.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'governance/execution-authority.json'
+      - 'governance/employee-worker-adapters-v2.json'
+      - 'tests/test_product_employee_worker.py'
+      - 'tests/test_product_employee_runtime_rollout.py'
   push:
     branches:
       - core/integration
