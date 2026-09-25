@@ -1,0 +1,268 @@
+name: Oracle Install Completion Controller
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-install-completion-controller.yml'
+      - 'scripts/work_completion.py'
+      - 'scripts/lobster.py'
+      - '.agent/governance/runtime_ownership.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-completion-executor
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install immutable completion runtime, watchdog and durable first work item
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_USER"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_SHA="$1"; RUN_ID="$2"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+
+          RELEASE_ROOT=/home/ubuntu/agent-data/releases/agentos-lobster
+          RUNTIME_ROOT=/home/ubuntu/agent-data/runtime/agentos-lobster
+          RELEASE="$RELEASE_ROOT/$SOURCE_SHA"
+          LIVE="$RUNTIME_ROOT/current"
+          DEV=/home/ubuntu/agent-workspaces/agentmanager
+          STATE=/home/ubuntu/agent-data/governance/work-items.json
+          BOARD=/home/ubuntu/agent-data/TASK_BOARD.md
+          USER_UNITS=/home/ubuntu/.config/systemd/user
+          PRIVATE_ENV=/home/ubuntu/.config/agentos/completion-executor.env
+          BACKUP=/home/ubuntu/agent-data/releases/completion-controller-backups/$RUN_ID
+          TMP=$(mktemp -d /tmp/agentos-completion-install-XXXXXXXX)
+          PREV_LIVE=''
+          OLD_LOBSTER_FRAGMENT=''
+          MUTATED=0
+
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+
+          finish() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ "$MUTATED" -eq 1 ]; then
+              echo 'completion_install=FAILED rollback=STARTED'
+              systemctl --user stop lobster-engine.service >/dev/null 2>&1 || true
+              if [ -n "$OLD_LOBSTER_FRAGMENT" ] && [ -f "$BACKUP/lobster-engine.service.previous" ]; then
+                cp "$BACKUP/lobster-engine.service.previous" "$OLD_LOBSTER_FRAGMENT"
+              elif [ -f "$BACKUP/lobster-unit-was-absent" ]; then
+                rm -f "$USER_UNITS/lobster-engine.service"
+              fi
+              rm -f "$USER_UNITS/agentos-completion-watchdog.service" "$USER_UNITS/agentos-completion-watchdog.timer"
+              if [ -n "$PREV_LIVE" ] && [ -e "$PREV_LIVE" ]; then
+                ln -sfn "$PREV_LIVE" "$RUNTIME_ROOT/.rollback-current-$RUN_ID"
+                mv -Tf "$RUNTIME_ROOT/.rollback-current-$RUN_ID" "$LIVE"
+              else
+                rm -f "$LIVE"
+              fi
+              systemctl --user daemon-reload || true
+              systemctl --user restart lobster-engine.service >/dev/null 2>&1 || true
+              echo 'completion_install=ROLLBACK_ATTEMPTED'
+            fi
+            rm -rf "$TMP"
+            exit "$rc"
+          }
+          trap finish EXIT
+
+          test -d "$XDG_RUNTIME_DIR"
+          systemctl --user show-environment >/dev/null
+          python3 -c 'import yaml, requests'
+          mkdir -p "$RELEASE_ROOT" "$RUNTIME_ROOT" "$BACKUP" "$USER_UNITS" /home/ubuntu/.config/agentos
+          chmod 700 /home/ubuntu/.config/agentos
+
+          PREV_LIVE=$(readlink -f "$LIVE" 2>/dev/null || true)
+          OLD_LOBSTER_FRAGMENT=$(systemctl --user show -p FragmentPath --value lobster-engine.service 2>/dev/null || true)
+          if [ -n "$OLD_LOBSTER_FRAGMENT" ] && [ -f "$OLD_LOBSTER_FRAGMENT" ]; then
+            cp "$OLD_LOBSTER_FRAGMENT" "$BACKUP/lobster-engine.service.previous"
+          else
+            : > "$BACKUP/lobster-unit-was-absent"
+            OLD_LOBSTER_FRAGMENT="$USER_UNITS/lobster-engine.service"
+          fi
+
+          if [ ! -d "$RELEASE" ]; then
+            git clone -q https://github.com/alston-personal/agentmanager.git "$TMP/source"
+            git -C "$TMP/source" fetch -q --depth=1 origin "$SOURCE_SHA"
+            test "$(git -C "$TMP/source" rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+            mkdir "$RELEASE"
+            git -C "$TMP/source" archive "$SOURCE_SHA" | tar -x -C "$RELEASE"
+          fi
+          test -f "$RELEASE/scripts/work_completion.py"
+          test -f "$RELEASE/scripts/lobster.py"
+          python3 -m py_compile "$RELEASE/scripts/work_completion.py" "$RELEASE/scripts/lobster.py"
+          grep -q 'reclaim_stale' "$RELEASE/scripts/work_completion.py"
+          grep -q 'completion_workspace' "$RELEASE/scripts/lobster.py"
+          echo 'completion_release_candidate=PASS'
+
+          if [ ! -d "$DEV/.git" ]; then
+            git clone -q https://github.com/alston-personal/agentmanager.git "$DEV"
+          fi
+          test "$(git -C "$DEV" remote get-url origin)" = "https://github.com/alston-personal/agentmanager.git"
+          echo 'completion_development_workspace=PASS isolated_from_runtime=1'
+
+          python3 - "$PRIVATE_ENV" <<'PY'
+          import os, pathlib, stat, tempfile
+          dst=pathlib.Path(os.sys.argv[1])
+          source=pathlib.Path('/home/ubuntu/agentmanager/.env')
+          allowed={'LOBSTER_ENGINE','TELEGRAM_BOT_TOKEN','TELEGRAM_CHANNEL_ID'}
+          values={}
+          if source.is_file():
+              for raw in source.read_text(encoding='utf8').splitlines():
+                  line=raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key,value=line.split('=',1)
+                  key=key.strip()
+                  if key in allowed:
+                      values[key]=value.strip()
+          if values.get('LOBSTER_ENGINE','').strip('"\'') not in {'claude','agy'}:
+              values['LOBSTER_ENGINE']='claude'
+          fd,name=tempfile.mkstemp(prefix='.completion-env-',dir=dst.parent)
+          try:
+              with os.fdopen(fd,'w',encoding='utf8') as out:
+                  for key in sorted(values):
+                      out.write(key+'='+values[key]+'\n')
+                  out.flush(); os.fsync(out.fileno())
+              os.chmod(name,0o600)
+              os.replace(name,dst)
+          finally:
+              if os.path.exists(name): os.unlink(name)
+          st=dst.lstat()
+          assert stat.S_ISREG(st.st_mode) and not stat.S_ISLNK(st.st_mode)
+          assert st.st_uid==os.getuid() and (st.st_mode&0o077)==0
+          print('completion_private_env=PASS')
+          PY
+
+          if [ ! -e "$STATE" ]; then
+            python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" register               --id agentos-core-470-runtime-completion               --project agentmanager               --title 'Runtime isolation and completion ownership controller'               --owner role://chatgpt.current               --lease-seconds 3600               --workspace "$DEV"               --source 'https://github.com/alston-personal/agentmanager/issues/470'               --next-action 'Migrate Dashboard production runtime from shared checkout to a service-specific immutable release/live pointer and prove the usage route survives unrelated checkout changes.'               --accept 'Dashboard production runtime no longer executes from /home/ubuntu/agentmanager'               --accept 'Runtime ownership CI rejects newly added shared-checkout production mutations'               --accept 'Completion watchdog and immutable Lobster runtime have live Oracle receipts' >/dev/null
+          else
+            if ! python3 - "$STATE" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf8'))
+          raise SystemExit(0 if 'agentos-core-470-runtime-completion' in data.get('items',{}) else 1)
+          PY
+            then
+              python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" register                 --id agentos-core-470-runtime-completion                 --project agentmanager                 --title 'Runtime isolation and completion ownership controller'                 --owner role://chatgpt.current                 --lease-seconds 3600                 --workspace "$DEV"                 --source 'https://github.com/alston-personal/agentmanager/issues/470'                 --next-action 'Migrate Dashboard production runtime from shared checkout to a service-specific immutable release/live pointer and prove the usage route survives unrelated checkout changes.'                 --accept 'Dashboard production runtime no longer executes from /home/ubuntu/agentmanager'                 --accept 'Runtime ownership CI rejects newly added shared-checkout production mutations'                 --accept 'Completion watchdog and immutable Lobster runtime have live Oracle receipts' >/dev/null
+            fi
+          fi
+          python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" audit >/dev/null
+          echo 'completion_ledger=PASS issue_470=durable'
+
+          cat > "$USER_UNITS/agentos-completion-watchdog.service" <<EOF
+          [Unit]
+          Description=AgentOS Completion Watchdog
+          After=network.target
+
+          [Service]
+          Type=oneshot
+          WorkingDirectory=$LIVE
+          Environment=HOME=/home/ubuntu
+          Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          Environment=PYTHONDONTWRITEBYTECODE=1
+          ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE reclaim-stale --lease-seconds 1800
+          ExecStart=/usr/bin/python3 $LIVE/scripts/work_completion.py --state $STATE project-board --board $BOARD
+          EOF
+
+          cat > "$USER_UNITS/agentos-completion-watchdog.timer" <<'EOF'
+          [Unit]
+          Description=Periodically reclaim abandoned AgentOS work
+
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec=5min
+          AccuracySec=30s
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+          EOF
+
+          cat > "$USER_UNITS/lobster-engine.service" <<EOF
+          [Unit]
+          Description=AgentOS Lobster Engine - immutable completion executor
+          After=network.target agentos-completion-watchdog.service
+
+          [Service]
+          Type=simple
+          WorkingDirectory=$LIVE
+          Environment=HOME=/home/ubuntu
+          Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          Environment=PYTHONDONTWRITEBYTECODE=1
+          EnvironmentFile=-$PRIVATE_ENV
+          ExecStart=/usr/bin/python3 $LIVE/scripts/lobster.py --loop --cool-down 60
+          Restart=on-failure
+          RestartSec=30
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=default.target
+          EOF
+
+          ln -sfn "$RELEASE" "$RUNTIME_ROOT/.candidate-$RUN_ID"
+          mv -Tf "$RUNTIME_ROOT/.candidate-$RUN_ID" "$LIVE"
+          MUTATED=1
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-completion-watchdog.timer >/dev/null
+          systemctl --user start agentos-completion-watchdog.service
+          systemctl --user enable lobster-engine.service >/dev/null
+          systemctl --user restart lobster-engine.service
+
+          for attempt in $(seq 1 20); do
+            if systemctl --user is-active --quiet lobster-engine.service; then
+              PID=$(systemctl --user show -p MainPID --value lobster-engine.service)
+              if [[ "$PID" =~ ^[1-9][0-9]*$ ]] && [ "$(readlink -f "/proc/$PID/cwd")" = "$RELEASE" ]; then
+                break
+              fi
+            fi
+            sleep 1
+          done
+          test "$(systemctl --user is-active lobster-engine.service)" = active
+          PID=$(systemctl --user show -p MainPID --value lobster-engine.service)
+          [[ "$PID" =~ ^[1-9][0-9]*$ ]]
+          test "$(readlink -f "/proc/$PID/cwd")" = "$RELEASE"
+          test "$(systemctl --user is-active agentos-completion-watchdog.timer)" = active
+          echo 'completion_lobster_runtime=PASS immutable_release=1'
+          echo 'completion_watchdog=PASS timer=active'
+
+          TEST_STATE="$TMP/resume.json"
+          TEST_BOARD="$TMP/TASK_BOARD.md"
+          python3 "$LIVE/scripts/work_completion.py" --state "$TEST_STATE" register             --id resume-probe --project agentmanager --title resume             --owner role://probe-session --lease-seconds 60             --workspace "$DEV" --next-action 'resume probe action' --accept verified >/dev/null
+          python3 - "$TEST_STATE" <<'PY'
+          import json,sys
+          path=sys.argv[1]
+          data=json.load(open(path,encoding='utf8'))
+          data['items']['resume-probe']['lease_expires_at']='2000-01-01T00:00:00+00:00'
+          json.dump(data,open(path,'w',encoding='utf8'))
+          PY
+          python3 "$LIVE/scripts/work_completion.py" --state "$TEST_STATE" reclaim-stale >/dev/null
+          python3 "$LIVE/scripts/work_completion.py" --state "$TEST_STATE" project-board --board "$TEST_BOARD" >/dev/null
+          grep -q '\[WI:resume-probe\]' "$TEST_BOARD"
+          echo 'completion_stale_resume_probe=PASS'
+
+          printf 'source_sha=%s\nrelease=%s\nservice=active\nwatchdog=active\nledger=pass\nresume_probe=pass\n'             "$SOURCE_SHA" "$RELEASE" > "$BACKUP/receipt.txt"
+          echo "completion_controller_oracle=PASS source_sha=$SOURCE_SHA release=$RELEASE"
+          REMOTE
