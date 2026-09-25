@@ -37,16 +37,13 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
-          tar -C services/invoice_intake -czf /tmp/invoice-intake-service.tgz .
-          cat /tmp/invoice-intake-service.tgz | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'cat > /tmp/invoice-intake-service.tgz'
+          tar -C services/invoice_intake -czf - . | ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'set -euo pipefail; BASE=/home/ubuntu/invoice-intake-service; mkdir -p "$BASE/app-new"; rm -rf "$BASE/app-new"/*; tar -C "$BASE/app-new" -xzf -'
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -s' <<'REMOTE'
           set -euo pipefail
           BASE=/home/ubuntu/invoice-intake-service
           DATA=/home/ubuntu/agent-data/invoice-intake
           mkdir -p "$BASE" "$DATA" /home/ubuntu/.config/systemd/user
-          rm -rf "$BASE/app-new"
-          mkdir -p "$BASE/app-new"
-          tar -C "$BASE/app-new" -xzf /tmp/invoice-intake-service.tgz
           sudo -n apt-get update -qq
           sudo -n apt-get install -y -qq tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-tra python3-venv
           python3 -m venv "$BASE/.venv"
