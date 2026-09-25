@@ -176,3 +176,9 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
 - 同一只讀診斷重跑 [Run #36075551731 attempt 2](https://github.com/alston-personal/agentmanager/actions/runs/36075551731)：Oracle 本機健康 200；公開 Gateway health 200 JSON、無票券 OAuth start 400 JSON、空 JSON connect 400 JSON（驗證路由可達；不是有有效 OAuth 票券）；Galaxy 網頁、JS 各 200；拒絕公開內部控制路由與偽造 provider callback 均通過。
 - 防止往後從 `main` rebuild Dashboard 造成相同 404：已將既有守護式 `dashboard/app/api/social/[...path]/route.ts` 僅此一檔透過 [PR #467](https://github.com/alston-personal/agentmanager/pull/467) 合併至 `main`，required guard 與所有 PR checks 通過，merge commit `c14525d453f8059872ed2accf309a8ab3a21c97f`。
 - **權限仍須使用者本人核准**：授權前先實測 Gateway 200；然後用 Galaxy 的「為澪重新授權 Threads（搜尋與互動）」進入 Meta 帳號同意頁。Scope 必須後續以 sanitized `/debug_token` 及實際唯讀 keyword search 驗證，不可把路由修復誤認為授權完成。不得把憑證、code、ticket 粘貼到對話或 repo。
+
+## 2026-09-25｜重新授權後實際驗證
+
+- 使用者已於 2026-09-25 在 Galaxy 入口完成 Meta 授權；這不是僅有使用者宣告，已由 Oracle 實際查核。
+- [Oracle 唯讀巡視 Run #36077227347](https://github.com/alston-personal/agentmanager/actions/runs/36077227347) 成功，`mio_search_scope_probe=granted`，兩個 Persona 綁定皆可讀回澪 2026-09-25 已發佈的貼文，且兩者有效 Token 均取得關鍵字搜尋 scope；澪自己貼文下的留言讀取失敗數為 0。
+- **尚未完成搜尋功能驗收**：同一實際巡視的 `mio_social_outbound=SEARCH_READ_FAILED`。授權已取得，搜尋 API 實際呼叫仍未成功。不得再次要求使用者授權、不可宣稱能搜尋陌生人貼文、也不可據此發送他人貼文下留言。後續應單獨追查搜尋 API 失敗類型與平台限制，優先唯讀與清理後的錯誤代碼，保留現有正常的自己貼文巡視／回覆流程。
