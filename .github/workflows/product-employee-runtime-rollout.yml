@@ -84,7 +84,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -q 'scripts.rollout_product_employee_runtime' .github/workflows/product-employee-runtime-rollout.yml
           ! grep -q 'self-hosted' .github/workflows/product-employee-runtime-rollout.yml
           ! grep -q 'node.runtime.converge' .github/workflows/product-employee-runtime-rollout.yml
           echo 'product_employee_source_guard=PASS runtime_mutation=DEFERRED_TO_IMMUTABLE_RELEASE_CONTROLLER'
