@@ -35,6 +35,11 @@ except ImportError:
     logger = logging.getLogger("Lobster")
     logger.warning("⚠️ Inspector 模組未載入，無驗證功能")
 
+try:
+    import work_completion as WorkCompletion
+except ImportError:
+    WorkCompletion = None
+
 # Telegram 通知配置
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
@@ -357,6 +362,78 @@ logging.basicConfig(
 logger = logging.getLogger("Lobster")
 
 PROJECTS_DIR = AGENT_DATA_ROOT / "projects"
+COMPLETION_STATE = AGENT_DATA_ROOT / "governance" / "work-items.json"
+
+def resolve_project_workspace(proj_name: str) -> Path:
+    """Resolve canonical project workspace; project identity is not a path."""
+    project_yaml = PROJECTS_DIR / proj_name / "project.yaml"
+    if project_yaml.exists():
+        try:
+            data = yaml.safe_load(project_yaml.read_text(encoding="utf-8")) or {}
+            source = data.get("source") or {}
+            candidate = Path(str(source.get("canonical_path") or "")).expanduser()
+            if candidate.is_absolute() and candidate.exists():
+                return candidate
+            legacy = Path(str(data.get("actual_code_path") or "")).expanduser()
+            if legacy.is_absolute() and legacy.exists():
+                return legacy
+        except Exception as exc:
+            logger.warning(f"canonical workspace resolve failed for {proj_name}: {exc}")
+    return HOME / proj_name
+
+def reconcile_completion_queue() -> None:
+    """Project durable unfinished work into the board before ordinary backlog."""
+    if WorkCompletion is None:
+        return
+    try:
+        WorkCompletion.project_board(COMPLETION_STATE, TASK_BOARD)
+    except Exception as exc:
+        logger.error(f"completion ledger projection failed: {exc}")
+
+def completion_begin(task_text: str) -> Optional[str]:
+    if WorkCompletion is None:
+        return None
+    work_id = WorkCompletion.item_id_from_task(task_text)
+    if not work_id:
+        return None
+    try:
+        item = WorkCompletion.load(COMPLETION_STATE)["items"].get(work_id)
+        if not item:
+            raise KeyError("work_item_not_found")
+        if item["status"] == "accepted":
+            WorkCompletion.transition(
+                COMPLETION_STATE, work_id=work_id, target="in_progress",
+                actor="role://lobster", next_action=item["next_action"],
+            )
+        elif item["status"] == "blocked":
+            WorkCompletion.transition(
+                COMPLETION_STATE, work_id=work_id, target="in_progress",
+                actor="role://lobster", next_action=item["next_action"],
+            )
+        return work_id
+    except Exception as exc:
+        logger.error(f"completion begin failed for {work_id}: {exc}")
+        return None
+
+def completion_finish(work_id: Optional[str], success: bool, output: str) -> None:
+    if WorkCompletion is None or not work_id:
+        return
+    try:
+        if success:
+            WorkCompletion.verified_done(
+                COMPLETION_STATE, work_id=work_id, actor="role://lobster+inspector",
+                evidence=f"lobster_inspector_pass:{output[:240]}",
+            )
+        elif "BLOCKED:" in output:
+            state = WorkCompletion.load(COMPLETION_STATE)
+            item = state["items"][work_id]
+            WorkCompletion.transition(
+                COMPLETION_STATE, work_id=work_id, target="blocked",
+                actor="role://lobster", next_action=item["next_action"],
+                blocker=output[:500],
+            )
+    except Exception as exc:
+        logger.error(f"completion finish failed for {work_id}: {exc}")
 
 def _find_claude_bin() -> Path:
     extensions_dir = HOME / ".antigravity-ide-server/extensions"
@@ -737,7 +814,9 @@ def process_project(proj_name: str, dry_run: bool = False) -> bool:
         task["raw_line"] = task["raw_line"].replace("[ ]", "[/]", 1)
     
     # 執行任務
-    success, output = run_with_inspector(HOME / proj_name, task["text"], dry_run)
+    work_id = completion_begin(task["text"])
+    success, output = run_with_inspector(resolve_project_workspace(proj_name), task["text"], dry_run)
+    completion_finish(work_id, success, output)
     
     if success:
         mark_task_done(status_md, task)
@@ -780,6 +859,7 @@ def main():
         logger.info(f"━━━ 迭代 #{iteration} ━━━")
         
         did_work = False
+        reconcile_completion_queue()
         
         if args.project:
             did_work = process_project(args.project, args.dry_run)
@@ -800,8 +880,10 @@ def main():
                 if task["status"] == "todo":
                     mark_board_task(proj_name, task["text"], "in_progress", current_status="todo")
                 
-                # 執行任務
-                success, output = run_with_inspector(HOME / proj_name, task["text"], args.dry_run)
+                # 執行任務。Completion Controller 項目先進入 durable in_progress。
+                work_id = completion_begin(task["text"])
+                success, output = run_with_inspector(resolve_project_workspace(proj_name), task["text"], args.dry_run)
+                completion_finish(work_id, success, output)
                 
                 # 在 TASK_BOARD 更新狀態
                 if success:
