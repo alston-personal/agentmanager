@@ -89,23 +89,22 @@ Web surfaces created or materially changed by AgentOS MUST be classified before 
 2. **public-noindex** — publicly reachable but intentionally excluded from discovery/indexing;
 3. **private/authenticated** — user-specific, administrative, sensitive, or access-controlled.
 
+The reusable implementation owner is **`capability://web.static-index.render`**. Public web generators MUST resolve and invoke that capability; they MUST NOT independently embed another project-specific crawler/AI static-index implementation into application code.
+
 For **public-discoverable** routes:
 
-- The initial HTTP response MUST contain meaningful semantic HTML without requiring client-side JavaScript to reveal the page's purpose or primary result.
-- At minimum provide a descriptive `<title>`, one meaningful `<h1>`, a concise textual summary, canonical URL, and share metadata (Open Graph; equivalent metadata where relevant).
-- Use stable, linkable URLs and correct HTTP status codes. A `200` response containing only an empty SPA shell is not acceptable evidence that the route is crawler-friendly.
-- Prefer SSR, SSG, prerendering, or an equivalent server-rendered summary layer; client-side JavaScript may enhance the experience but MUST NOT be the only source of critical content.
-- Use semantic structure, accessible text alternatives for meaningful images, and structured data when it accurately represents the page. Keep `robots.txt`, sitemap, canonical/noindex behavior, and route intent consistent.
-- Dynamic tools may expose a sanitized public share/result page when product intent requires it. Do not expose private inputs, hidden state, account data, secrets, or internal diagnostics merely to improve discoverability.
+- Produce an `agentos.web-static-index/v1` input from the page/result's already-authorized public data and invoke `capability://web.static-index.render`.
+- Serve the generated semantic HTML as the initial representation of the public route, or as a deterministic public summary/share route included in the product's discovery strategy. Client JavaScript may enhance the page but must not be the only source of its purpose or primary result.
+- The static representation must contain a descriptive `<title>`, one meaningful `<h1>`, a concise textual summary, canonical URL, share metadata, correct robots intent, stable URLs, and correct HTTP status codes.
+- Product code supplies page-specific data; the shared capability owns escaping, base semantic markup, crawler-facing metadata, and its render receipt. Do not fork/copy its template merely to customize a product.
+- Structured data may be supplied only when it accurately represents the public page. Keep `robots.txt`, sitemap, canonical/noindex behavior, and route intent consistent.
+- Do not expose private inputs, hidden state, account data, secrets, or internal diagnostics merely to improve discoverability.
 
-For **public-noindex** and **private/authenticated** routes:
+For **public-noindex** routes, the same capability may be invoked with an explicit `noindex` robots policy when a machine-readable/shareable representation is useful. For **private/authenticated** routes, access control wins: do not create a public index artifact from private data.
 
-- Machine-readable HTML is still preferred for accessibility and agent interoperability, but indexing/crawling MUST follow the route's privacy and product policy.
-- Admin, account, private result, temporary job-state, and sensitive user-data routes MUST NOT become public/indexable merely to satisfy SEO or AI readability.
+**AI-friendly does not mean blanket training permission.** Content machine-readability and crawler authorization are separate controls. Search, archival, and AI-training crawlers may be allowed or denied independently through deployment policy. Optional conventions such as `llms.txt` may be added as hints, but they do not replace the static-index capability, semantic HTML, access control, or robots directives.
 
-**AI-friendly does not mean blanket training permission.** Separate content machine-readability from crawler authorization. Whether specific search, archival, or AI-training crawlers are allowed is a deployment/policy decision and MUST be expressible independently through crawler controls. Optional conventions such as `llms.txt` may be added as hints, but MUST NOT substitute for semantic HTML, standard metadata, access control, or robots directives.
-
-Acceptance for a public-discoverable route must include a no-JavaScript fetch/inspection proving that a crawler can recover the route's title, primary heading, concise summary, canonical URL, and intended indexability from the server response.
+Acceptance for a public-discoverable route requires both the `agentos.web-static-index-receipt/v1` render receipt and a no-JavaScript fetch/inspection proving that a crawler can recover the route's title, primary heading, concise summary, canonical URL, and intended indexability.
 
 ## Useful verification
 
