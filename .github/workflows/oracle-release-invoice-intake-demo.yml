@@ -40,7 +40,6 @@ jobs:
         查看已掃描發票
         id="archive-viewer"
         查看／修正完整欄位
-        最近歸檔
       credit_account: ''
       credit_cost: 0
     secrets:
