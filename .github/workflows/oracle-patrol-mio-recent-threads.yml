@@ -130,6 +130,16 @@ jobs:
                   print('mio_scope_diagnostic_missing='+prefix.rstrip('='))
               else:
                   print(prefix+found)
+          # The Oracle receipt stdout is otherwise not visible in GitHub job logs.
+          # Forward only bounded diagnostic status markers, never raw API errors,
+          # URLs, token strings or provider response bodies.
+          for line in lines:
+              if re.fullmatch(r'mio_direct_search_[A-Z_]{4,35}=(?:PASS|NO_TOKEN|INVALID_RESPONSE|TRANSPORT_OR_PARSE_FAILED|HTTP_[0-9]{3}_TYPE_(?:unknown|OAuthException|GraphMethodException|InvalidParameter|APIException)_CODE_(?:unknown|[0-9]{1,6})_SUBCODE_(?:unknown|[0-9]{1,7}))',line):
+                  print(line)
+              elif re.fullmatch(r'mio_direct_search_[A-Z_]{4,35}_result_count=[0-9]{1,3}',line):
+                  print(line)
+              elif re.fullmatch(r'mio_search_api_error=threads_[a-zA-Z0-9_]{1,100}',line):
+                  print(line)
           print('mio_recent_patrol_public_replies='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
           PY
 
