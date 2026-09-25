@@ -83,6 +83,10 @@ try:
                and row.get("platform") == "threads" and row.get("auth_profile", "persona") == "persona"]
 except (OSError, ValueError, TypeError, AttributeError):
     fail("CONFIG_UNAVAILABLE")
+print("mio_oauth_product_configured=" + str(bool(product_key)).lower())
+print("mio_oauth_persona_binding_count=" + str(len(matches)))
+print("mio_oauth_viewer_binding_count=" + str(sum(1 for b in (cred.get("bindings") or {}).values() if isinstance(b, dict) and b.get("product_id") == "galaxy" and b.get("platform") == "threads" and b.get("auth_profile") == "viewer")))
+print("mio_oauth_persona_known_handle=" + str(any(str(row.get("username") or "").lstrip("@").lower() in ("sunlake.milkcat","mio.milkcat") for _, row in matches)).lower())
 if not product_key or len(matches) != 1:
     fail("BINDING_UNAVAILABLE")
 bid, account = matches[0]
