@@ -1,0 +1,53 @@
+name: Runtime and Completion Governance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.agent/governance/runtime_ownership.json'
+      - 'scripts/check_runtime_ownership.py'
+      - 'scripts/work_completion.py'
+      - 'scripts/lobster.py'
+      - 'tests/test_runtime_ownership.py'
+      - 'tests/test_work_completion.py'
+      - '.github/workflows/runtime-completion-governance.yml'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - '.agent/governance/runtime_ownership.json'
+      - 'scripts/check_runtime_ownership.py'
+      - 'scripts/work_completion.py'
+      - 'scripts/lobster.py'
+      - 'tests/test_runtime_ownership.py'
+      - 'tests/test_work_completion.py'
+      - '.github/workflows/runtime-completion-governance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-completion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch main comparison base
+        if: github.event_name == 'pull_request'
+        run: git fetch origin main
+      - name: Compile completion and executor integration
+        run: python3 -m py_compile scripts/work_completion.py scripts/lobster.py scripts/check_runtime_ownership.py
+      - name: Run durable completion regressions
+        run: python3 -m unittest -v tests.test_work_completion tests.test_runtime_ownership
+      - name: Enforce no new shared-runtime mutation
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check_runtime_ownership.py origin/main HEAD
+      - name: Self-audit fresh empty ledger
+        run: |
+          tmp="$(mktemp -d)"
+          AGENT_DATA_ROOT="$tmp" python3 scripts/work_completion.py audit
