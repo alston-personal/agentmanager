@@ -22,10 +22,12 @@
       "release_root": "/home/ubuntu/agent-data/releases/dashboard",
       "live_pointer": "/home/ubuntu/agent-data/runtime/dashboard/current",
       "lock": "production/dashboard",
-      "migration_state": "candidate",
+      "migration_state": "active",
       "process_name": "agentos-dashboard",
       "runtime_controller": "scripts/deploy_dashboard_release.sh",
-      "config_path": "/home/ubuntu/.config/milkcat/dashboard.env.local"
+      "config_path": "/home/ubuntu/.config/milkcat/dashboard.env.local",
+      "live_receipt": "github-actions:36197636857",
+      "diagnostic_receipt": "github-actions:36197636810"
     },
     "agentos-core": {
       "owner": "role://release-controller.core",
