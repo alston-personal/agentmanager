@@ -20,7 +20,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 684bee5548dcac290bbdafebb9fa99e3e806daf8
+      source_sha: 896fb90cbc7c4539234f161a89518d3c3f53c54d
       route: invoice-intake
       backup_key: invoice-intake-demo
       receipt_schema: studio-web.invoice-intake-release/v2
@@ -28,6 +28,7 @@ jobs:
         發票連續掃描
         CONTINUOUS INVOICE INTAKE · MVP
         id="camera"
+        id="detector-canvas"
         id="auto-toggle"
         開啟相機連續掃描
         立即拍這張
