@@ -64,8 +64,31 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 'alston-personal/agentmanager'
-          test "$GITHUB_REF" = 'refs/heads/core/integration'
-          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            test "$GITHUB_BASE_REF" = 'core/integration'
+          else
+            test "$GITHUB_REF" = 'refs/heads/core/integration'
+          fi
+          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python -m py_compile \
+            agentos_node/product_employee_worker.py \
+            agentos_node/product_employee_worker_cli.py \
+            agentos_node/employee_worker_host.py \
+            agentos_node/employee_worker_host_runtime.py
+          python -m pytest -q \
+            tests/test_product_employee_worker.py \
+            tests/test_product_employee_contracts.py
+
+      - name: Enforce immutable-runtime deployment boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -q 'scripts.rollout_product_employee_runtime' .github/workflows/product-employee-runtime-rollout.yml
+          ! grep -q 'self-hosted' .github/workflows/product-employee-runtime-rollout.yml
+          ! grep -q 'node.runtime.converge' .github/workflows/product-employee-runtime-rollout.yml
+          echo 'product_employee_source_guard=PASS runtime_mutation=DEFERRED_TO_IMMUTABLE_RELEASE_CONTROLLER'
+
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python -m py_compile \
             agentos_node/product_employee_worker.py \
