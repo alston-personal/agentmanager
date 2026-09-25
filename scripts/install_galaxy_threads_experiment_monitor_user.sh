@@ -11,7 +11,21 @@ SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 # This installer executes as ubuntu. Materialize its companion scripts from the
 # immutable triggering commit here, instead of requiring the agentos-node
 # runner identity to overwrite ubuntu-owned live files.
-if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}"${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+  for rel in \
+    scripts/monitor_galaxy_threads_experiment_user.py \
+    scripts/sync_sunlake_milkcat_persona_user.py \
+    scripts/mio_persona_social_loop_user.py \
+    scripts/diagnose_mio_threads_search_scope_user.py \
+    agentos_node/persona_life.py; do
+    tmp="$(mktemp)"
+    git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$tmp"
+    install -m 0644 "$tmp" "$REPO/$rel"
+    rm -f "$tmp"
+  done
+  echo "galaxy_experiment_monitor_companions=SYNCED_FROM_SOURCE_COMMIT"
+fi
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE="$UNIT_DIR/agentos-galaxy-experiment-monitor.service"
 TIMER="$UNIT_DIR/agentos-galaxy-experiment-monitor.timer"
 LOG_DIR="$HOME/agent-data/logs"
