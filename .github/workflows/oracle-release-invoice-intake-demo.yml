@@ -30,7 +30,7 @@ jobs:
         id="invoice-file"
         原始發票
         Demo 覆核清單
-        /api/invoice-intake/v1/status
+        開始辨識
       credit_account: ''
       credit_cost: 0
     secrets:
