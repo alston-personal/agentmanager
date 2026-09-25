@@ -409,6 +409,33 @@ class InvoiceStore:
                 raise KeyError(invoice_id)
             return self._row_payload(row)
 
+    def get_original(self, invoice_id: str) -> dict[str, Any]:
+        """Return validated metadata for the immutable original image."""
+        with self.connect() as db:
+            row = db.execute("""
+              SELECT d.stored_path, d.mime_type, d.original_filename, d.sha256
+              FROM invoices i JOIN documents d ON d.id=i.document_id
+              WHERE i.id=?
+            """, (invoice_id,)).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+
+        path = Path(row["stored_path"]).resolve()
+        originals_root = self.originals.resolve()
+        try:
+            path.relative_to(originals_root)
+        except ValueError as exc:
+            raise ValueError("original_path_outside_store") from exc
+        if not path.is_file():
+            raise FileNotFoundError(invoice_id)
+
+        return {
+            "path": path,
+            "mime_type": row["mime_type"],
+            "original_filename": row["original_filename"],
+            "sha256": row["sha256"],
+        }
+
     def _row_payload(self, row: sqlite3.Row, duplicate: bool = False) -> dict[str, Any]:
         return {
             "ok": True,
