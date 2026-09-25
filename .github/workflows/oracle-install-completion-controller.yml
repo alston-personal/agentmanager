@@ -17,6 +17,8 @@ concurrency:
   group: production-completion-executor
   cancel-in-progress: false
 
+# Rollout trigger 2026-09-25: install the already-merged lease/reclaim controller on Oracle.
+
 jobs:
   install:
     runs-on: [self-hosted, Linux, ARM64, oracle]
