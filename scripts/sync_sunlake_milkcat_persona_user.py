@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DATA_REPO=Path('/home/ubuntu/agent-data')
+DATA_HTTPS='https://github.com/alston-personal/my-agent-data.git'
+GIT_CREDENTIAL='credential.helper=!gh auth git-credential'
 EXPORT=Path('/tmp/agentos-social-public/sunlake-milkcat-replies.json')
 EVENTS_REL=Path('personas/sunlake-milkcat/events/events.jsonl')
 CHARACTER_ID='sunlake-milkcat-ai-001'
@@ -39,7 +41,7 @@ def main():
     fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
     fetched=False
     for _ in range(3):
-        p=run(['git','fetch','origin','main'],cwd=DATA_REPO,check=False)
+        p=run(['git','-c',GIT_CREDENTIAL,'fetch',DATA_HTTPS,'+refs/heads/main:refs/remotes/origin/main'],cwd=DATA_REPO,check=False)
         if p.returncode==0:
             fetched=True; break
         time.sleep(1)
@@ -128,7 +130,7 @@ def main():
         run(['git','add',str(EVENTS_REL)],cwd=work)
         run(['git','-c','user.name=AgentOS Persona Sync','-c','user.email=agentos-persona-sync@users.noreply.github.com',
              'commit','-m','chore(persona): sync Sunlake Milkcat Threads events'],cwd=work)
-        push=run(['git','push','origin','HEAD:main'],cwd=work,check=False)
+        push=run(['git','-c',GIT_CREDENTIAL,'push',DATA_HTTPS,'HEAD:main'],cwd=work,check=False)
         if push.returncode!=0:
             print('persona_git_sync=PUSH_FAILED',file=sys.stderr); return 7
         print('persona_git_sync=PASS')
