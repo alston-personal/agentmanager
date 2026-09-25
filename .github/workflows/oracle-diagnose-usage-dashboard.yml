@@ -83,5 +83,85 @@ jobs:
             printf 'route=%s local_nginx=%s dashboard_upstream=%s\n' "$route" "$pub" "$direct"
           done
           echo 'diagnostic_reason=owner_reported_usage_404_2026-09-25'
+          echo '=== DASHBOARD RUNTIME ISOLATION PREFLIGHT ==='
+          PID=$(ss -H -ltnp 'sport = :3000' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u | head -1)
+          if [[ "$PID" =~ ^[0-9]+$ ]]; then
+            printf 'dashboard_listener_pid=%s\n' "$PID"
+            printf 'dashboard_listener_cwd='; readlink -f "/proc/$PID/cwd" || true
+            printf 'dashboard_listener_parent='; awk '{print $4}' "/proc/$PID/stat" 2>/dev/null || true
+            python3 - "$PID" <<'PY'
+          import os, pathlib, sys
+          pid=sys.argv[1]
+          keys=[
+              'JWT_SECRET','ADMIN_USERNAME','ADMIN_PASSWORD_HASH',
+              'GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET',
+              'GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET',
+              'LINE_CLIENT_ID','LINE_CLIENT_SECRET',
+              'FACEBOOK_CLIENT_ID','FACEBOOK_CLIENT_SECRET',
+              'NEXT_PUBLIC_SITE_URL',
+          ]
+          raw=(pathlib.Path('/proc')/pid/'environ').read_bytes().split(b'\0')
+          present={part.split(b'=',1)[0].decode('utf8','ignore') for part in raw if b'=' in part}
+          for key in keys:
+              print('dashboard_process_env_'+key.lower()+'_present='+str(key in present))
+          PY
+          fi
+          export PM2_HOME=/home/ubuntu/.pm2
+          PM2_CLI=''
+          for candidate in /home/ubuntu/.npm/_npx/*/node_modules/pm2/bin/pm2; do
+            test -f "$candidate" || continue
+            pkg="${candidate%/bin/pm2}/package.json"
+            test -f "$pkg" || continue
+            version=$(node -p 'require(process.argv[1]).version' "$pkg" 2>/dev/null || true)
+            if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
+          done
+          if [ -n "$PM2_CLI" ] && [ -S "$PM2_HOME/rpc.sock" ]; then
+            node "$PM2_CLI" jlist | python3 - <<'PY'
+          import json,sys
+          apps=json.load(sys.stdin)
+          rows=[a for a in apps if a.get('pm2_env',{}).get('pm_cwd')=='/home/ubuntu/agentmanager/dashboard']
+          print('dashboard_pm2_target_count='+str(len(rows)))
+          for app in rows:
+              env=app.get('pm2_env',{})
+              print('dashboard_pm2_id='+str(app.get('pm_id')))
+              print('dashboard_pm2_name='+str(app.get('name')))
+              print('dashboard_pm2_status='+str(env.get('status')))
+              print('dashboard_pm2_script='+str(env.get('pm_exec_path') or ''))
+          PY
+          fi
+          python3 - <<'PY'
+          import os,pathlib,stat
+          p=pathlib.Path('/home/ubuntu/agentmanager/.env')
+          keys=[
+              'JWT_SECRET','ADMIN_USERNAME','ADMIN_PASSWORD_HASH',
+              'GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET',
+              'GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET',
+              'LINE_CLIENT_ID','LINE_CLIENT_SECRET',
+              'FACEBOOK_CLIENT_ID','FACEBOOK_CLIENT_SECRET',
+              'NEXT_PUBLIC_SITE_URL',
+          ]
+          if not p.is_file():
+              print('dashboard_shared_env_file=MISSING')
+          else:
+              st=p.lstat()
+              print('dashboard_shared_env_regular='+str(stat.S_ISREG(st.st_mode) and not stat.S_ISLNK(st.st_mode)))
+              print('dashboard_shared_env_mode_octal='+oct(stat.S_IMODE(st.st_mode)))
+              data={}
+              for raw in p.read_text(encoding='utf8').splitlines():
+                  line=raw.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key,_=line.split('=',1); data[key.strip()]=True
+              for key in keys:
+                  print('dashboard_shared_env_'+key.lower()+'_present='+str(key in data))
+          PY
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          if systemctl --user show-environment >/dev/null 2>&1; then
+            echo 'dashboard_user_systemd=AVAILABLE'
+          else
+            echo 'dashboard_user_systemd=UNAVAILABLE'
+          fi
+          echo 'dashboard_runtime_isolation_preflight=COMPLETE_READ_ONLY'
           echo '=== CHECKS COMPLETE: READ ONLY ==='
           REMOTE
