@@ -13,6 +13,16 @@ function countMap(value: unknown): Counts {
 function quantity(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
+
+function spreadDrawModeMap(value: unknown): Record<string, Counts> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, Counts> = {};
+  for (const [spread, modes] of Object.entries(value)) {
+    result[spread] = countMap(modes);
+  }
+  return result;
+}
+
 function Metric({ label, value, detail }: { label: string; value: string | number; detail: string }) {
   return (
     <div className="card" style={{ padding: '1.2rem', minWidth: 0 }}>
@@ -22,6 +32,46 @@ function Metric({ label, value, detail }: { label: string; value: string | numbe
     </div>
   );
 }
+function SpreadDrawModeTable({ data }: { data: Record<string, Counts> }) {
+  const rows = Object.entries(data)
+    .map(([spread, modes]) => ({
+      spread,
+      manual: quantity(modes.manual),
+      auto: quantity(modes.auto),
+      unknown: quantity(modes.unknown),
+    }))
+    .map((row) => ({ ...row, total: row.manual + row.auto + row.unknown }))
+    .sort((a, b) => b.total - a.total || a.spread.localeCompare(b.spread));
+
+  return (
+    <div className="card" style={{ padding: '1.2rem', overflowX: 'auto' }}>
+      <h3 style={{ fontWeight: 750 }}>各牌陣：手動選牌 vs 自動抽牌</h3>
+      <p style={{ color: 'var(--color-text-secondary)', fontSize: '.85rem', margin: '.35rem 0 1rem' }}>
+        同一個牌陣分開計算選牌方式；可用來觀察哪些牌陣更偏好自己選牌。
+      </p>
+      {rows.length === 0 ? <p style={{ color: 'var(--color-text-secondary)' }}>目前還沒有可比較的占卜紀錄</p> :
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+          <thead><tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)', fontSize: '.82rem' }}>
+            <th style={{ padding: '.45rem' }}>牌陣</th>
+            <th style={{ padding: '.45rem', textAlign: 'right' }}>手動選牌</th>
+            <th style={{ padding: '.45rem', textAlign: 'right' }}>自動抽牌</th>
+            <th style={{ padding: '.45rem', textAlign: 'right' }}>其他／舊紀錄</th>
+            <th style={{ padding: '.45rem', textAlign: 'right' }}>合計</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((row) => <tr key={row.spread} style={{ borderTop: '1px solid rgba(148,163,184,.14)' }}>
+              <td style={{ padding: '.6rem .45rem' }}>{SPREAD_LABELS[row.spread] || row.spread}</td>
+              <td style={{ padding: '.6rem .45rem', textAlign: 'right' }}><strong>{row.manual.toLocaleString('zh-TW')}</strong></td>
+              <td style={{ padding: '.6rem .45rem', textAlign: 'right' }}><strong>{row.auto.toLocaleString('zh-TW')}</strong></td>
+              <td style={{ padding: '.6rem .45rem', textAlign: 'right', color: 'var(--color-text-muted)' }}>{row.unknown.toLocaleString('zh-TW')}</td>
+              <td style={{ padding: '.6rem .45rem', textAlign: 'right' }}>{row.total.toLocaleString('zh-TW')}</td>
+            </tr>)}
+          </tbody>
+        </table>}
+    </div>
+  );
+}
+
 function Breakdown({ title, data, labels }: { title: string; data: Counts; labels: Record<string, string> }) {
   const rows = Object.entries(data).sort((a, b) => b[1] - a[1]);
   const max = Math.max(1, ...rows.map(([, value]) => value));
@@ -85,6 +135,8 @@ export default async function AdminUsagePage({ searchParams }: { searchParams: P
   const byDate = countMap(fengAnalytics?.by_date);
   const dateRows = Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).slice(-14);
   const dateMax = Math.max(1, ...dateRows.map(([, n]) => n));
+  const tarotDrawModes = countMap(tarot?.by_draw_mode);
+  const tarotSpreadDrawModes = spreadDrawModeMap(tarot?.by_spread_draw_mode);
   return (
     <main style={{ minHeight: '100vh', padding: '2.5rem 1rem 4rem' }}>
       <div className="container" style={{ maxWidth: 1200 }}>
@@ -143,15 +195,20 @@ export default async function AdminUsagePage({ searchParams }: { searchParams: P
           {tarotError ? <div className="card" role="status" style={{ padding: '1.2rem' }}>
             <strong>尚無法讀取占卜統計</strong><p style={{ marginTop: '.35rem', color: 'var(--color-text-secondary)' }}>{tarotError}</p>
           </div> : <>
-            <div className="grid grid-cols-3">
+            <div className="grid grid-cols-4">
               <Metric label="已記錄占卜" value={quantity(tarot?.total_readings).toLocaleString('zh-TW')} detail="占卜紀錄次數，不是人數" />
+              <Metric label="手動選牌" value={quantity(tarotDrawModes.manual).toLocaleString('zh-TW')} detail="使用者自行選擇牌背位置" />
+              <Metric label="自動抽牌" value={quantity(tarotDrawModes.auto).toLocaleString('zh-TW')} detail="由系統自動完成抽牌" />
               <Metric label="來自 Threads" value={quantity(countMap(tarot?.by_source).threads).toLocaleString('zh-TW')} detail="來源標記為 Threads 的占卜" />
-              <Metric label="石虎牌組占卜" value={quantity(countMap(tarot?.by_deck).leopardcat).toLocaleString('zh-TW')} detail="牌組標記為 leopardcat 的占卜" />
+            </div>
+            <div style={{ marginTop: '1rem' }}>
+              <SpreadDrawModeTable data={tarotSpreadDrawModes} />
             </div>
             <div className="grid grid-cols-2" style={{ marginTop: '1rem' }}>
               <Breakdown title="占卜從哪裡進來" data={countMap(tarot?.by_source)} labels={SOURCE_LABELS} />
               <Breakdown title="大家問什麼類型的問題" data={countMap(tarot?.by_category)} labels={CATEGORY_LABELS} />
-              <Breakdown title="使用的牌陣" data={countMap(tarot?.by_spread)} labels={SPREAD_LABELS} />
+              <Breakdown title="使用的牌陣（總次數）" data={countMap(tarot?.by_spread)} labels={SPREAD_LABELS} />
+              <Breakdown title="選牌方式（總次數）" data={tarotDrawModes} labels={{ manual: '手動選牌', auto: '自動抽牌', unknown: '其他／舊紀錄' }} />
               <Breakdown title="使用的牌組" data={countMap(tarot?.by_deck)} labels={{ leopardcat: '石虎塔羅' }} />
             </div>
             <p style={{ color: 'var(--color-text-muted)', fontSize: '.85rem', marginTop: '.8rem' }}>只呈現匿名彙總；不顯示原始提問、占卜回答、帳號或訪客識別資訊。</p>
