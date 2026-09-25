@@ -86,10 +86,12 @@ except (OSError, ValueError, TypeError, AttributeError):
 print("mio_oauth_product_configured=" + str(bool(product_key)).lower())
 print("mio_oauth_persona_binding_count=" + str(len(matches)))
 print("mio_oauth_viewer_binding_count=" + str(sum(1 for b in (cred.get("bindings") or {}).values() if isinstance(b, dict) and b.get("product_id") == "galaxy" and b.get("platform") == "threads" and b.get("auth_profile") == "viewer")))
-print("mio_oauth_persona_known_handle=" + str(any(str(row.get("username") or "").lstrip("@").lower() in ("sunlake.milkcat","mio.milkcat") for _, row in matches)).lower())
-if not product_key or len(matches) != 1:
+verified_matches = [(bid, row) for bid, row in matches if str(row.get("username") or "").lstrip("@").lower() in ("sunlake.milkcat", "mio.milkcat")]
+print("mio_oauth_persona_known_handle=" + str(bool(verified_matches)).lower())
+print("mio_oauth_persona_known_binding_count=" + str(len(verified_matches)))
+if not product_key or len(verified_matches) != 1:
     fail("BINDING_UNAVAILABLE")
-bid, account = matches[0]
+bid, account = verified_matches[0]
 posts = read("post.read", bid, product_key)
 if not isinstance(posts, dict):
     fail("POSTS_READ_FAILED")
@@ -97,6 +99,8 @@ owned_posts = [p for p in (posts.get("items") or [])
                if isinstance(p, dict) and re.fullmatch(r"[0-9]{10,25}", str(p.get("id") or ""))]
 if not owned_posts:
     fail("NO_VERIFIED_OWNED_POSTS")
+if not any(str(p.get("id") or "") == "18131575054809711" for p in owned_posts):
+    fail("TARGET_MIO_POST_NOT_OWNED")
 by_id = {str(p["id"]): p for p in owned_posts}
 target_ids = list(by_id)[:LIMIT_POSTS]
 for root in EXTRA_ROOTS:
