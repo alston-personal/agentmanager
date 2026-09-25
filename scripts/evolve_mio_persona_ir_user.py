@@ -27,7 +27,10 @@ ADOPTED_STATUSES = {"adopted", "adopted_as_interaction_policy", "promoted", "val
 
 
 def run(args: list[str], *, cwd: Path = DATA_REPO, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(args, cwd=str(cwd), text=True, capture_output=True, timeout=60, check=False)
+    clean_env = os.environ.copy()
+    clean_env.pop("GH_TOKEN", None)
+    clean_env.pop("GITHUB_TOKEN", None)
+    result = subprocess.run(args, cwd=str(cwd), text=True, capture_output=True, timeout=60, check=False, env=clean_env)
     if check and result.returncode:
         raise RuntimeError("git_operation_failed")
     return result
