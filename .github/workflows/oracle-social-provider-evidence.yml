@@ -42,6 +42,29 @@ jobs:
           ss -ltn 2>/dev/null | grep -E ':(80|443|3000|8771|8800)\\b' | head -15 || true
           echo 'galaxy_social_nginx_routes_begin'
           grep -nE 'location |proxy_pass|root |alias ' /etc/nginx/sites-enabled/studio.milkcat.org 2>/dev/null | head -70 || true
+      - name: Identify configured Threads Meta app safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV=/home/ubuntu/.config/agentos/social-runtime.env
+          test -f "$ENV"
+          APP_ID=$(sed -n 's/^AGENTOS_THREADS_APP_ID=//p' "$ENV" | head -n1)
+          APP_SECRET=$(sed -n 's/^AGENTOS_THREADS_APP_SECRET=//p' "$ENV" | head -n1)
+          test -n "$APP_ID"
+          suffix="$APP_ID"
+          [ "${#suffix}" -gt 6 ] && suffix="${suffix: -6}"
+          echo "threads_configured_app_suffix=$suffix"
+          if [ -n "$APP_SECRET" ]; then
+            APP_NAME=$(curl -fsS --max-time 15 --get               --data-urlencode 'fields=name'               --data-urlencode "access_token=$APP_ID|$APP_SECRET"               "https://graph.facebook.com/$APP_ID" 2>/dev/null |               python3 -c 'import json,sys; d=json.load(sys.stdin); n=d.get("name"); print(n if isinstance(n,str) and n else "")' 2>/dev/null || true)
+            if [ -n "$APP_NAME" ]; then
+              printf 'threads_configured_app_name=%s\n' "$APP_NAME"
+            else
+              echo 'threads_configured_app_name=UNAVAILABLE'
+            fi
+          else
+            echo 'threads_configured_app_name=UNAVAILABLE'
+          fi
+          echo 'threads_configured_app_identification=PASS'
       - name: Verify shared Threads provider is configured through public boundary
         shell: bash
         run: |
