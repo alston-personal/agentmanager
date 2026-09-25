@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import subprocess
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -211,6 +212,7 @@ class InvoiceStore:
         self.root = root
         self.originals = root / "originals"
         self.db_path = root / "invoice-intake.sqlite3"
+        self.processing_lock = threading.Lock()
         self.originals.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -267,6 +269,11 @@ class InvoiceStore:
             """)
 
     def ingest(self, image_bytes: bytes, filename: str, mime_type: str) -> dict[str, Any]:
+        """Persist immutable original and provisional DB row quickly.
+
+        OCR intentionally runs later so continuous scanning is not blocked
+        by Tesseract latency.
+        """
         sha = hashlib.sha256(image_bytes).hexdigest()
         with self.connect() as db:
             found = db.execute("""
@@ -282,54 +289,125 @@ class InvoiceStore:
             ext = ".png"
         elif mime_type == "image/webp":
             ext = ".webp"
+
         now = datetime.now(timezone.utc)
         rel_dir = Path(f"{now.year:04d}") / f"{now.month:02d}"
         target_dir = self.originals / rel_dir
         target_dir.mkdir(parents=True, exist_ok=True)
         document_id = str(uuid.uuid4())
+        invoice_id = str(uuid.uuid4())
+        created = utcnow()
         target = target_dir / f"{document_id}{ext}"
+
         with target.open("xb") as fh:
             fh.write(image_bytes)
-
-        extraction = extract_invoice(image_bytes)
-        invoice_id = str(uuid.uuid4())
-        extraction_id = str(uuid.uuid4())
-        created = utcnow()
-        status = "needs_review" if extraction.review_required else "extracted"
 
         with self.connect() as db:
             db.execute(
                 "INSERT INTO documents VALUES(?,?,?,?,?,?,?)",
                 (document_id, sha, filename, mime_type, len(image_bytes), str(target), created),
             )
-            db.execute(
-                "INSERT INTO extractions VALUES(?,?,?,?,?)",
-                (extraction_id, document_id, extraction.raw["engine"], json.dumps(extraction.raw, ensure_ascii=False), created),
-            )
-            f = extraction.fields
             db.execute("""
               INSERT INTO invoices(
                 id,document_id,invoice_number,invoice_date,vendor_name,seller_tax_id,
                 amount_before_tax,tax_amount,total_amount,status,confidence_json,created_at,updated_at
               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
-                invoice_id, document_id, f["invoice_number"], f["invoice_date"], f["vendor_name"], f["seller_tax_id"],
-                f["amount_before_tax"], f["tax_amount"], f["total_amount"], status,
-                json.dumps(extraction.confidence, ensure_ascii=False), created, created
+                invoice_id, document_id, None, None, None, None,
+                None, None, None, "processing", "{}", created, created
             ))
+
         return {
             "ok": True,
             "duplicate": False,
             "archived": True,
             "document_id": document_id,
             "invoice_id": invoice_id,
-            "status": status,
-            "fields": extraction.fields,
-            "confidence": extraction.confidence,
-            "engine": extraction.raw["engine"],
+            "status": "processing",
+            "fields": {
+                "invoice_number": None,
+                "invoice_date": None,
+                "vendor_name": None,
+                "seller_tax_id": None,
+                "amount_before_tax": None,
+                "tax_amount": None,
+                "total_amount": None,
+            },
+            "confidence": {},
+            "engine": "tesseract-layout-v2-async",
             "sha256": sha,
             "original_filename": filename,
         }
+
+    def process(self, invoice_id: str) -> dict[str, Any]:
+        """Run OCR for one archived invoice and update its DB row."""
+        with self.processing_lock:
+            with self.connect() as db:
+                row = db.execute("""
+                  SELECT i.*, d.stored_path, d.sha256, d.original_filename
+                  FROM invoices i JOIN documents d ON d.id=i.document_id
+                  WHERE i.id=?
+                """, (invoice_id,)).fetchone()
+                if not row:
+                    raise KeyError(invoice_id)
+                if row["status"] != "processing":
+                    return self._row_payload(row)
+                image_path = Path(row["stored_path"])
+
+            try:
+                image_bytes = image_path.read_bytes()
+                extraction = extract_invoice(image_bytes)
+                extraction_id = str(uuid.uuid4())
+                updated = utcnow()
+                status = "needs_review" if extraction.review_required else "extracted"
+                f = extraction.fields
+
+                with self.connect() as db:
+                    db.execute(
+                        "INSERT INTO extractions VALUES(?,?,?,?,?)",
+                        (
+                            extraction_id,
+                            row["document_id"],
+                            extraction.raw["engine"],
+                            json.dumps(extraction.raw, ensure_ascii=False),
+                            updated,
+                        ),
+                    )
+                    db.execute("""
+                      UPDATE invoices SET
+                        invoice_number=?, invoice_date=?, vendor_name=?, seller_tax_id=?,
+                        amount_before_tax=?, tax_amount=?, total_amount=?, status=?,
+                        confidence_json=?, updated_at=?
+                      WHERE id=?
+                    """, (
+                        f["invoice_number"], f["invoice_date"], f["vendor_name"], f["seller_tax_id"],
+                        f["amount_before_tax"], f["tax_amount"], f["total_amount"], status,
+                        json.dumps(extraction.confidence, ensure_ascii=False), updated, invoice_id,
+                    ))
+                    done = db.execute("""
+                      SELECT i.*, d.sha256, d.original_filename
+                      FROM invoices i JOIN documents d ON d.id=i.document_id
+                      WHERE i.id=?
+                    """, (invoice_id,)).fetchone()
+                    return self._row_payload(done)
+            except Exception:
+                with self.connect() as db:
+                    db.execute(
+                        "UPDATE invoices SET status='error', updated_at=? WHERE id=?",
+                        (utcnow(), invoice_id),
+                    )
+                raise
+
+    def get_invoice(self, invoice_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("""
+              SELECT i.*, d.sha256, d.original_filename
+              FROM invoices i JOIN documents d ON d.id=i.document_id
+              WHERE i.id=?
+            """, (invoice_id,)).fetchone()
+            if not row:
+                raise KeyError(invoice_id)
+            return self._row_payload(row)
 
     def _row_payload(self, row: sqlite3.Row, duplicate: bool = False) -> dict[str, Any]:
         return {
