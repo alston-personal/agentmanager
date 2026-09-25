@@ -45,9 +45,19 @@ def main():
     key=str((products.get('galaxy') or {}).get('api_key') or '')
     if not key: raise SystemExit('galaxy_monitor=PRODUCT_KEY_UNAVAILABLE')
     store=json.loads(CRED_FILE.read_text(encoding='utf-8'))
-    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items() if isinstance(item,dict) and item.get('product_id')=='galaxy' and item.get('platform')=='threads' and str(item.get('username') or '').lstrip('@').lower()=='sunlake.milkcat' and str(item.get('auth_profile') or 'persona')=='persona']
-    if len(bindings)!=1: raise SystemExit(f'galaxy_monitor=BINDING_COUNT_{len(bindings)}')
-    bid,item=bindings[0]
+    bindings=[(bid,item) for bid,item in (store.get('bindings') or {}).items()
+              if isinstance(item,dict) and item.get('product_id')=='galaxy'
+              and item.get('platform')=='threads'
+              and str(item.get('username') or '').lstrip('@').lower() in ('sunlake.milkcat','mio.milkcat')
+              and str(item.get('auth_profile') or 'persona')=='persona']
+    if not bindings: raise SystemExit('galaxy_monitor=BINDING_UNAVAILABLE')
+    provider_ids={str(item.get('provider_account_id') or '') for _,item in bindings}
+    if len(provider_ids)!=1 or not next(iter(provider_ids)):
+        raise SystemExit('galaxy_monitor=ACCOUNT_BINDING_AMBIGUOUS')
+    # OAuth reauthorization may leave more than one binding for the same stable
+    # provider account. Prefer the newest stored binding without treating an
+    # old handle alias as a second identity.
+    bid,item=bindings[-1]
     headers={'X-AgentOS-Product-Key':key}
     identity_status,ident=post(BASE+'/status',req('identity.read',bid),headers)
     posts_status,posts=post(BASE+'/status',req('post.read',bid),headers)
@@ -130,6 +140,13 @@ def main():
       'account_username':snapshot['account'].get('username'),
       'root_post_id':ROOT_POST_ID,
       'root_post_permalink':snapshot['root_post'].get('permalink'),
+      'owned_posts':[{
+          'id':str(x.get('id') or ''),
+          'text':x.get('text'),
+          'timestamp':x.get('timestamp'),
+          'permalink':x.get('permalink'),
+          'media_type':x.get('media_type'),
+      } for x in post_items[:20] if str(x.get('id') or '')],
       'replies':list(catalog.values()),
     }
     PUBLIC_EXPORT_DIR.mkdir(parents=True,exist_ok=True)
