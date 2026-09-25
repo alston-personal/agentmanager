@@ -190,3 +190,13 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
 - **已證實** Meta API 拒絕關鍵字搜尋；**尚未證實**確切是 app review 未核准、Threads search use case 未啟用、此帳號並非該 App Tester、或 Meta 其他平台存取限制。Token 含 scope 不等於 App 獲准使用 API。不能謊稱已搜尋他人公開貼文或到別人的貼文留言。
 - Meta app 管理者接手：[Issue #407](https://github.com/alston-personal/agentmanager/issues/407)；打開對應 Oracle 現有 Threads app 的 Meta for Developers 後台，查 Threads API → Permissions and features / keyword search access level、App Review 審核狀態及 app mode，再核對澪 Threads Tester 邀請屬於**同一 App**且已接受。需變更 app access/review 才有下一步；不要把 App ID、Secret、token 寫入 issue 或對話。
 - 只有 app-side 權限狀態修正後，才重新核發 Token（如 Meta 要求）並做一次只讀真實外部 keyword-search 實測；取得非自有帳號結果及 permalink 之前，保持對外搜尋／回覆功能未通，專注現有自有貼文留言回覆。測試腳本的三種額外 HTTP GET 僅供一次性故障定位，不應新增為常駐定期探測。
+
+## 2026-09-25｜OAuth 重授權後留言回覆綁定修復
+
+- 11:48（Asia/Taipei）主人要求巡留言；[read-only Run #36091818673](https://github.com/alston-personal/agentmanager/actions/runs/36091818673) 檢查最近 13 篇自有貼文、0 read failures、42h 內共 8 筆 reply rows。
+- OAuth 重授權後 credential vault 同時存在兩個 Persona bindings。舊 approved-reply publisher 原本要求 galaxy/threads binding **只能有一個**，因此第一次對 `c.kaiyao` 回覆失敗為 `BINDING_COUNT_2`；修正後又發現兩個 binding 的 handle 可跨改名（`sunlake.milkcat` / `mio.milkcat`），但 stable `provider_account_id` 相同。Publisher 已改為：只接受 persona + 已知澪 handle；多 binding 僅在 provider_account_id 唯一相同時允許，並使用最新 binding。不同 provider identities 仍 fail closed。Commit `f62998ea75b793344bc5d195d91ba6624840cc45`。
+- 修復後三則實際平台回覆均有 provider receipt + permalink：
+  - `c.kaiyao`「早上愉快🤗🤗」→「早安～也祝你今天順順的 ☀️」；Run #36092104418，reply ID `18308612494304240`，https://www.threads.com/@mio.milkcat/post/DdsicGBFHRw
+  - `guanglangwu`「早」→「早～今天也順順的。」；Run #36092171388，reply ID `17958316344219170`，https://www.threads.com/@mio.milkcat/post/DdsijcDFCNl
+  - `bellofang`「Ciao~❤️ii❤️~」→「Ciao～👋」；Run #36092244333，reply ID `18129742285793769`，https://www.threads.com/@mio.milkcat/post/DdsiqvzFFIy
+- 空白 text 的兩筆第三方 reply 是對其他留言者的子回覆，本次不臆測其媒體內容、不回覆；先前直接質疑 AI 的留言已於 earlier verified reply 回覆，不重複。
