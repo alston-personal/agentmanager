@@ -8,7 +8,7 @@ on:
       - '.github/workflows/oracle-resume-mio-social-owner-authorized.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   resume:
@@ -89,5 +89,32 @@ jobs:
           assert 'mio_social_resume=PASS' in lines
           assert 'mio_social_discovery=IR_INTEREST_DRIVEN' in lines
           assert 'mio_social_reply_decision=IR_REQUIRED' in lines
+          safe=[line for line in lines if re.fullmatch(r'mio_(?:social_resume|social_discovery|social_reply_decision|social_silence|social_daily_outbound_cap|social_timer|persona_ir_[a-z_]+|social_loop|social_outbound|social_outbound_today|social_decision|social_publish|energy|life_phase)=[^\\s]{1,180}',line)]
+          from pathlib import Path
+          out=Path('.agentos/evidence/mio-social-resume-latest.json')
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps({
+              'schema':'agentos.mio-social-resume-evidence/v1',
+              'source_commit':sys.argv[2],
+              'workflow_run_id':'${{ github.run_id }}',
+              'status':'pass',
+              'markers':safe[-100:],
+          },ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')
           print('mio_social_resume_receipt=PASS')
           PY
+
+      - name: Persist sanitized social resume evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .agentos/evidence/mio-social-resume-latest.json
+          git config user.name 'agentos-actions'
+          git config user.email 'agentos-actions@users.noreply.github.com'
+          git add .agentos/evidence/mio-social-resume-latest.json
+          if git diff --cached --quiet; then
+            echo 'mio_social_resume_evidence=UNCHANGED'
+            exit 0
+          fi
+          git commit -m 'evidence(mio): persist owner-authorized social exploration receipt'
+          git push origin HEAD:core/integration
+          echo 'mio_social_resume_evidence=PUSHED'
