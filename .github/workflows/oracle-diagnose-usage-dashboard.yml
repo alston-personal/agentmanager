@@ -181,5 +181,43 @@ jobs:
             echo 'dashboard_user_systemd=UNAVAILABLE'
           fi
           echo 'dashboard_runtime_isolation_preflight=COMPLETE_READ_ONLY'
+          echo '=== DASHBOARD PM2 SAFE METADATA ==='
+          export PM2_HOME=/home/ubuntu/.pm2
+          PM2_CLI=''
+          for candidate in /home/ubuntu/.npm/_npx/*/node_modules/pm2/bin/pm2; do
+            test -f "$candidate" || continue
+            pkg="${candidate%/bin/pm2}/package.json"
+            test -f "$pkg" || continue
+            version=$(node -p 'require(process.argv[1]).version' "$pkg")
+            if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
+          done
+          if [ -n "$PM2_CLI" ]; then
+            node "$PM2_CLI" jlist | python3 - <<'PY'
+import json, sys
+apps=json.load(sys.stdin)
+rows=[]
+for app in apps:
+    env=app.get('pm2_env') or {}
+    cwd=str(env.get('pm_cwd') or '')
+    if cwd == '/home/ubuntu/agentmanager/dashboard':
+        secretish={'JWT_SECRET','ADMIN_PASSWORD_HASH','GOOGLE_CLIENT_SECRET','FACEBOOK_CLIENT_SECRET','LINE_CHANNEL_SECRET','GITHUB_CLIENT_SECRET'}
+        keys=sorted(k for k in env if isinstance(k,str) and (k in secretish or k.startswith(('GOOGLE_','MILKCAT_','FENGSHUI_','LEOPARDCAT_','ADMIN_','JWT_'))))
+        rows.append({
+            'name': app.get('name'),
+            'pm_id': app.get('pm_id'),
+            'pm_cwd': cwd,
+            'pm_exec_path': env.get('pm_exec_path'),
+            'args': env.get('args'),
+            'exec_interpreter': env.get('exec_interpreter'),
+            'exec_mode': env.get('exec_mode'),
+            'watch': env.get('watch'),
+            'env_keys_only': keys,
+        })
+assert len(rows)==1, f'dashboard_pm2_safe_metadata_target_count={len(rows)}'
+print(json.dumps(rows[0], ensure_ascii=False, sort_keys=True))
+PY
+          else
+            echo 'dashboard_pm2_safe_metadata=PM2_CLIENT_NOT_FOUND'
+          fi
           echo '=== CHECKS COMPLETE: READ ONLY ==='
           REMOTE
