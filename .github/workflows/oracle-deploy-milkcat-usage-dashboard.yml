@@ -6,22 +6,29 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/oracle-deploy-milkcat-usage-dashboard.yml'
-      - 'dashboard/app/admin/usage/page.tsx'
-      - 'dashboard/app/api/admin/usage/route.ts'
+      - 'scripts/deploy_dashboard_release.sh'
+      - 'dashboard/app/admin/usage/**'
+      - 'dashboard/app/api/admin/usage/**'
+      - 'dashboard/app/api/auth/**'
       - 'dashboard/lib/fengshui-admin.ts'
-      - 'dashboard/lib/auth/roles.ts'
+      - 'dashboard/lib/tarot-admin.ts'
+      - 'dashboard/lib/auth/**'
+      - 'dashboard/lib/auth.ts'
+      - 'dashboard/next.config.ts'
+      - 'dashboard/package.json'
+      - 'dashboard/package-lock.json'
 
 permissions:
   contents: read
 
 concurrency:
-  group: oracle-milkcat-usage-dashboard
+  group: production-dashboard
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 18
+    timeout-minutes: 22
     env:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
@@ -34,256 +41,29 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Build isolated pinned Next.js dashboard, back up and verify or roll back
+      - name: Build exact Dashboard release, atomically switch PM2, verify or roll back
         shell: bash
         run: |
           set -euo pipefail
           test -n "$DEPLOY_USER"
-          echo 'dashboard_recovery_reason=owner_reported_404_2026-09-25'
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          ssh -o StrictHostKeyChecking=accept-new -p "$DEPLOY_PORT" "$DEPLOY_USER@127.0.0.1" \
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" \
             bash -s -- "$SOURCE_SHA" "$GITHUB_RUN_ID" <<'REMOTE'
           set -euo pipefail
           SOURCE_SHA="$1"; RUN_ID="$2"
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$RUN_ID" =~ ^[0-9]+$ ]]
-          APP=/home/ubuntu/agentmanager/dashboard
-          TMP=$(mktemp -d /tmp/milkcat-dashboard-release-XXXXXXXX)
-          SRC="$TMP/agentmanager"
-          CANDIDATE="$APP/.next.usage-candidate-$RUN_ID"
-          OLD="$APP/.next.usage-previous-$RUN_ID"
-          BACKUP="/home/ubuntu/agent-data/releases/dashboard/usage-$RUN_ID"
-          PM_ID=''
-          CANARY_PID=''
-          DEPLOYED=0
-          listener_pid() {
-            local pids
-            pids=$(ss -H -ltnp 'sport = :3000' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)
-            [[ "$pids" =~ ^[0-9]+$ ]] || return 1
-            printf '%s' "$pids"
-          }
-          assert_dashboard_listener() {
-            local pid="$1"
-            [[ "$pid" =~ ^[0-9]+$ ]]
-            test "$(readlink -f "/proc/$pid/cwd")" = "$APP"
-            ps -p "$pid" -o args= | grep -Fq 'next-server'
-          }
-          port_3000_clear() {
-            ! ss -H -ltn 'sport = :3000' | grep -q LISTEN
-          }
-          finish() {
-            rc=$?
-            trap - EXIT
-            if [ -n "$CANARY_PID" ]; then
-              kill "$CANARY_PID" 2>/dev/null || true
-              wait "$CANARY_PID" 2>/dev/null || true
-            fi
-            if [ "$rc" -ne 0 ] && [ "$DEPLOYED" -eq 1 ]; then
-              echo "dashboard_acceptance=FAILED rollback=STARTED"
-              node "$PM2_CLI" stop "$PM_ID" >/dev/null || true
-              current=$(listener_pid || true)
-              if [ -n "$current" ]; then
-                if assert_dashboard_listener "$current"; then
-                  kill -TERM "$current" 2>/dev/null || true
-                else
-                  echo 'dashboard_rollback_listener=UNVERIFIED_REFUSING_KILL'
-                fi
-              fi
-              rollback_port_clear=0
-              for attempt in $(seq 1 15); do
-                if port_3000_clear; then rollback_port_clear=1; break; fi
-                sleep 1
-              done
-              if [ -d "$OLD" ]; then
-                rm -rf "$APP/.next"
-                mv "$OLD" "$APP/.next"
-                if [ "$rollback_port_clear" -eq 1 ]; then
-                  node "$PM2_CLI" start "$PM_ID" >/dev/null || true
-                else
-                  echo 'dashboard_rollback=BUILD_RESTORED_LISTENER_BLOCKED'
-                fi
-                rollback_ready=0
-                for attempt in $(seq 1 18); do
-                  if curl --noproxy '*' -fsS --connect-timeout 3 --max-time 8 \
-                    http://127.0.0.1:3000/dashboard/api/auth/session -o /dev/null 2>/dev/null; then
-                    rollback_ready=1
-                    break
-                  fi
-                  sleep 2
-                done
-                if [ "$rollback_ready" -eq 1 ]; then
-                  echo 'dashboard_rollback=RESTORED_PREVIOUS_BUILD auth_ready=1'
-                else
-                  echo 'dashboard_rollback=BUILD_RESTORED_AUTH_UNVERIFIED'
-                fi
-              else
-                echo "dashboard_rollback=ERROR_OLD_BUILD_MISSING"
-              fi
-            fi
-            if [ "$rc" -eq 0 ] && [ "$DEPLOYED" -eq 1 ]; then
-              rm -rf "$OLD"
-            fi
-            rm -rf "$CANDIDATE" "$TMP"
-            exit "$rc"
-          }
-          trap finish EXIT
+          TMP="$(mktemp -d /tmp/milkcat-dashboard-source-XXXXXXXX)"
+          cleanup() { rm -rf "$TMP"; }
+          trap cleanup EXIT
 
-          test -d "$APP/.next"
-          test -f "$APP/package-lock.json"
-          test ! -e "$CANDIDATE" && test ! -e "$OLD"
-          # Use the already-running Oracle PM2 daemon; no global package installation.
-          export PM2_HOME=/home/ubuntu/.pm2
-          test -S "$PM2_HOME/rpc.sock"
-          PM2_CLI=''
-          for candidate in /home/ubuntu/.npm/_npx/*/node_modules/pm2/bin/pm2; do
-            test -f "$candidate" || continue
-            pkg="${candidate%/bin/pm2}/package.json"
-            test -f "$pkg" || continue
-            version=$(node -p 'require(process.argv[1]).version' "$pkg")
-            if [ "$version" = '7.0.1' ]; then PM2_CLI="$candidate"; break; fi
-          done
-          if [ -z "$PM2_CLI" ]; then
-            npm install --prefix "$TMP/pm2-client" --ignore-scripts --no-audit --no-fund pm2@7.0.1 >/dev/null
-            PM2_CLI="$TMP/pm2-client/node_modules/pm2/bin/pm2"
-          fi
-          test -f "$PM2_CLI"
-          echo 'dashboard_pm2_client=ISOLATED'
-          PM_ID=$(node "$PM2_CLI" jlist | python3 -c 'import json,sys; xs=[x for x in json.load(sys.stdin) if x.get("pm2_env",{}).get("pm_cwd")=="/home/ubuntu/agentmanager/dashboard"]; assert len(xs)==1, "dashboard_pm2_target_not_unique"; print(xs[0]["pm_id"])')
-          [[ "$PM_ID" =~ ^[0-9]+$ ]]
-          echo "dashboard_pm2_target=RESOLVED"
-          curl --noproxy '*' -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:3000/dashboard/api/auth/session -o /dev/null
-          echo "dashboard_preflight_auth=PASS"
-
-          git clone -q --depth 1 https://github.com/alston-personal/agentmanager.git "$SRC"
-          test "$(git -C "$SRC" rev-parse HEAD)" = "$SOURCE_SHA"
-          test -f "$SRC/dashboard/app/admin/usage/page.tsx"
-          test -f "$SRC/dashboard/app/api/admin/usage/route.ts"
-          cmp "$SRC/dashboard/package-lock.json" "$APP/package-lock.json" ||
-            { echo 'Dashboard dependencies changed: requires separate node_modules upgrade, refusing partial release'; exit 2; }
-
-          cd "$SRC/dashboard"
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run build
-          test -f .next/server/app-paths-manifest.json
-          node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route"]) if (!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
-
-          # Prove new compiled routes independently, before modifying the live build.
-          if ss -ltn 'sport = :3099' | grep -q LISTEN; then
-            echo 'dashboard_canary_port_in_use=REFUSED'
-            exit 2
-          fi
-          "$SRC/dashboard/node_modules/.bin/next" start -H 127.0.0.1 -p 3099 > "$TMP/canary.log" 2>&1 &
-          CANARY_PID=$!
-          canary_ready=0
-          for attempt in $(seq 1 18); do
-            canary_code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 2 --max-time 8 \
-              http://127.0.0.1:3099/dashboard/api/admin/usage 2>/dev/null || true)
-            if [ "$canary_code" = 401 ]; then
-              canary_ready=1
-              break
-            fi
-            sleep 2
-          done
-          test "$canary_ready" -eq 1 || { echo "dashboard_isolated_canary=FAIL code=$canary_code"; exit 1; }
-          echo "dashboard_isolated_canary=PASS code=$canary_code"
-          kill "$CANARY_PID" 2>/dev/null || true
-          wait "$CANARY_PID" 2>/dev/null || true
-          CANARY_PID=''
-          echo '=== LIVE PORT 3000 BEFORE RESTART ==='
-          ss -ltnp 'sport = :3000' || true
-          LISTENER_BEFORE=$(listener_pid)
-          assert_dashboard_listener "$LISTENER_BEFORE" ||
-            { echo 'dashboard_listener_ownership=UNVERIFIED_REFUSING_DEPLOY'; exit 2; }
-          echo "dashboard_listener_ownership=PASS pid=$LISTENER_BEFORE"
-
-          mkdir -p "$BACKUP"
-          cp -a "$APP/.next" "$BACKUP/.next.previous"
-          cp -a "$SRC/dashboard/.next" "$CANDIDATE"
-          test -f "$CANDIDATE/server/app-paths-manifest.json"
-          mv "$APP/.next" "$OLD"
-          DEPLOYED=1
-          mv "$CANDIDATE" "$APP/.next"
-          # PM2 supervises an npm wrapper, whose Next.js child can survive 'pm2 restart'.
-          # Stop the exact verified Dashboard PM2 app, then terminate only its already-verified listener.
-          node "$PM2_CLI" stop "$PM_ID" >/dev/null
-          remaining=$(listener_pid || true)
-          if [ -n "$remaining" ]; then
-            test "$remaining" = "$LISTENER_BEFORE" ||
-              { echo "dashboard_listener_changed_unexpectedly=REFUSED"; exit 2; }
-            assert_dashboard_listener "$remaining" ||
-              { echo "dashboard_listener_ownership_changed=REFUSED"; exit 2; }
-            kill -TERM "$remaining"
-            echo "dashboard_old_listener_signal=TERM pid=$remaining"
-          fi
-          port_clear=0
-          for attempt in $(seq 1 15); do
-            if port_3000_clear; then port_clear=1; break; fi
-            sleep 1
-          done
-          test "$port_clear" -eq 1 || { echo 'dashboard_old_listener_stop=FAILED'; exit 1; }
-          node "$PM2_CLI" start "$PM_ID" >/dev/null
-          echo "dashboard_restart=PASS old_listener_released=1"
-          echo '=== LIVE PORT 3000 AFTER RESTART ==='
-          ss -ltnp 'sport = :3000' || true
-
-          check_route() {
-            route="$1"; expected="$2"
-            for attempt in $(seq 1 18); do
-              code=$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 12 \
-                --resolve studio.milkcat.org:443:127.0.0.1 "https://studio.milkcat.org$route" || true)
-              if [ "$code" = "$expected" ]; then
-                printf 'dashboard_route=%s status=%s expected=%s ready_after_attempt=%s\n' "$route" "$code" "$expected" "$attempt"
-                return 0
-              fi
-              if [ "$attempt" -lt 18 ]; then sleep 2; fi
-            done
-            printf 'dashboard_route=%s status=%s expected=%s readiness=FAILED\n' "$route" "$code" "$expected"
-            return 1
-          }
-          check_route /dashboard/api/auth/session 200
-          LISTENER_AFTER=$(listener_pid)
-          assert_dashboard_listener "$LISTENER_AFTER"
-          test "$LISTENER_AFTER" != "$LISTENER_BEFORE" ||
-            { echo 'dashboard_listener_handoff=FAILED_STALE_PID'; exit 1; }
-          echo "dashboard_listener_handoff=PASS before=$LISTENER_BEFORE after=$LISTENER_AFTER"
-          check_route /dashboard/api/admin/usage 401
-          check_route /dashboard/admin/usage 307
-          check_route /dashboard/ 308
-
-          # A route-specific Next.js redirect, not a homepage fallback, must exist.
-          curl --noproxy '*' -k -sS -D "$TMP/headers" -o /dev/null \
-            --resolve studio.milkcat.org:443:127.0.0.1 \
-            https://studio.milkcat.org/dashboard/admin/usage
-          # Next.js can serialize redirect locations as absolute same-origin URLs.
-          # Validate the actual destination and preserved returnTo, not the header's URL shape.
-          node - "$TMP/headers" <<'NODE'
-          const fs = require('node:fs');
-          const raw = fs.readFileSync(process.argv[2], 'utf8');
-          const match = raw.match(/^location:\s*(.+?)\r?$/im);
-          if (!match) throw Error('dashboard_signin_redirect_location_missing');
-          const target = new URL(match[1].trim(), 'https://studio.milkcat.org');
-          console.log('dashboard_signin_redirect_path=' + target.pathname);
-          if (target.origin !== 'https://studio.milkcat.org' ||
-              target.pathname !== '/dashboard/api/auth/signin/google' ||
-              target.searchParams.get('returnTo') !== '/dashboard/admin/usage') {
-            throw Error('dashboard_signin_redirect_destination_invalid');
-          }
-          console.log('dashboard_signin_redirect=PASS');
-          NODE
-
-          # Probe the actual public host from Oracle, without publishing protected data.
-          check_public() {
-            route="$1"; expected="$2"
-            code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 \
-              "https://studio.milkcat.org$route")
-            printf 'dashboard_public_route=%s status=%s expected=%s\n' "$route" "$code" "$expected"
-            test "$code" = "$expected"
-          }
-          check_public /dashboard/api/auth/session 200
-          check_public /dashboard/api/admin/usage 401
-          check_public /dashboard/admin/usage 307
-
-          printf 'source_sha=%s\nrelease_id=%s\nbackup=%s\nanonymous_auth=200\nanonymous_admin_api=401\nanonymous_admin_page=307\nstatus=PASS\n' \
-            "$SOURCE_SHA" "$RUN_ID" "$BACKUP" > "$BACKUP/receipt.txt"
-          echo "dashboard_usage_deploy=PASS source_sha=$SOURCE_SHA backup=$BACKUP"
+          git clone -q --no-checkout https://github.com/alston-personal/agentmanager.git "$TMP/agentmanager"
+          git -C "$TMP/agentmanager" fetch -q --depth=1 origin "$SOURCE_SHA"
+          test "$(git -C "$TMP/agentmanager" rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          git -C "$TMP/agentmanager" checkout -q --detach "$SOURCE_SHA"
+          test "$(git -C "$TMP/agentmanager" rev-parse HEAD)" = "$SOURCE_SHA"
+          test -f "$TMP/agentmanager/scripts/deploy_dashboard_release.sh"
+          chmod +x "$TMP/agentmanager/scripts/deploy_dashboard_release.sh"
+          "$TMP/agentmanager/scripts/deploy_dashboard_release.sh" "$SOURCE_SHA" "$RUN_ID" "$TMP/agentmanager"
           REMOTE
