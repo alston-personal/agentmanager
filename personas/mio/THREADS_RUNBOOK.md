@@ -167,3 +167,12 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
 - **下一步只需由帳號持有人操作**：在 Safari 開啟上列 Galaxy 網址，點「為澪重新授權 Threads（搜尋與互動）」，於同一瀏覽器內按「繼續 Threads 網頁授權」，核對登入的是澪既有的 Threads 帳號，查看並同意 Meta 當次實際提供的授權範圍，完成返回 Galaxy。不要使用一般 viewer 連結按鈕假裝升級成功。勿分享權杖、OAuth code 或 App Secret。
 - 授權回來後執行 Oracle 既有清理過的 `scripts/diagnose_mio_threads_search_scope_user.py`，要求 `mio_search_scope_probe=granted`，再執行實際 **唯讀** `keyword.search`，確認結果與有效帳號綁定。若 Meta 同意畫面未包含此 scope 或拒絕，先由 Meta App 管理者檢查應用程式權限／審查／角色或測試員邀請，不能靠重試其他 URL 繞過。
 - 搜尋可用不等於取得任意第三人私密留言或自動到其他貼文留言的全面授權；後續外部回覆須獨立驗證允許的 Threads API 能力與平台回執。
+
+## 2026-09-25｜Social Capability 404 修復回執
+
+- 初次 Persona OAuth 授權按鈕部署後，使用者實際遇到 `Social Capability 404`；**靜態網頁部署成功不代表 Social Gateway API 可用**。
+- [只讀診斷 Run #36075551731 attempt 1](https://github.com/alston-personal/agentmanager/actions/runs/36075551731)：Oracle 本機 `127.0.0.1:8771/healthz=200`，Galaxy 靜態入口/JS = 200，但 `/dashboard/api/social/healthz`、`/v1/social/connect`、`/oauth/threads/start` = 404 (HTML)，本機 Next :3000 對應路由也 = 404。根因是部署中的 Next Dashboard 缺少 Social Gateway 路由，**不是** Threads 帳號 OAuth 權限不足所造成的本次 404。
+- 由 `core/integration` 上既有權限隔離／備份失敗回滾的 `oracle-social-runtime-rollout.yml` 正式恢復 Dashboard Gateway：[Run #36075598584](https://github.com/alston-personal/agentmanager/actions/runs/36075598584)，`social_runtime_bootstrap_receipt=PASS`、`oracle_social_gateway_public=PASS`。
+- 同一只讀診斷重跑 [Run #36075551731 attempt 2](https://github.com/alston-personal/agentmanager/actions/runs/36075551731)：Oracle 本機健康 200；公開 Gateway health 200 JSON、無票券 OAuth start 400 JSON、空 JSON connect 400 JSON（驗證路由可達；不是有有效 OAuth 票券）；Galaxy 網頁、JS 各 200；拒絕公開內部控制路由與偽造 provider callback 均通過。
+- 防止往後從 `main` rebuild Dashboard 造成相同 404：已將既有守護式 `dashboard/app/api/social/[...path]/route.ts` 僅此一檔透過 [PR #467](https://github.com/alston-personal/agentmanager/pull/467) 合併至 `main`，required guard 與所有 PR checks 通過，merge commit `c14525d453f8059872ed2accf309a8ab3a21c97f`。
+- **權限仍須使用者本人核准**：授權前先實測 Gateway 200；然後用 Galaxy 的「為澪重新授權 Threads（搜尋與互動）」進入 Meta 帳號同意頁。Scope 必須後續以 sanitized `/debug_token` 及實際唯讀 keyword search 驗證，不可把路由修復誤認為授權完成。不得把憑證、code、ticket 粘貼到對話或 repo。
