@@ -44,7 +44,7 @@ def _safe_output(runner_kind: str, state: Any) -> dict[str, Any]:
     return {
         "schema": schema,
         "status": state.status,
-        "work_performed": state.status in {"checkpointed", "completed", "unknown"},
+        "work_performed": state.status in {"checkpointed", "completed", "blocked", "handoff", "unknown"},
         "employee_id": state.employee_id,
         "assignment_id": state.assignment_id,
         "wake_id": state.wake_id,
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         presence_generation=args.presence_generation,
     )
     print(json.dumps(_safe_output(args.runner_kind, state), ensure_ascii=False, sort_keys=True))
-    if state is None or state.status in {"checkpointed", "completed"}:
+    if state is None or state.status in {"checkpointed", "completed", "blocked", "handoff"}:
         return 0
     return 2
 

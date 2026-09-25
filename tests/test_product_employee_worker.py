@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import agentos_node.employee_worker_host_runtime as worker_runtime
+from agent_core.employee_runtime import EmployeeRuntime
 import agentos_node.product_employee_worker as product_worker
 from agentos_node.employee_worker_host import WorkerHostCandidate
 from agentos_node.employee_worker_host_runtime import (
@@ -268,3 +269,172 @@ def test_shared_host_accepts_only_runner_specific_result_schema(tmp_path: Path) 
     assert host._parse_child_result(json.dumps(good)) is not None  # noqa: SLF001
     good["schema"] = "agentos.zeus-writer-worker-cli-result/v1"
     assert host._parse_child_result(json.dumps(good)) is None  # noqa: SLF001
+
+
+def _materialize_product_assignment(root: Path, *, employee_id: str, assignment_id: str, role_id: str, skill_id: str) -> EmployeeRuntime:
+    runtime = EmployeeRuntime(root)
+    runtime.create_employee(employee_id, employee_id, role_ids=[role_id], skill_ids=[skill_id])
+    runtime.create_assignment(assignment_id, employee_id, "bounded product acceptance")
+    return runtime
+
+
+def test_youtube_missing_governed_read_adapter_finishes_blocked_instead_of_lease_churn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    wake_root = tmp_path / "wake"
+    worker_root = tmp_path / "worker"
+    for item in (runtime_root, wake_root, worker_root):
+        item.mkdir()
+    runtime = _materialize_product_assignment(
+        runtime_root,
+        employee_id="youtube-ai-manager",
+        assignment_id="youtube-ai-manager-scan-v1",
+        role_id="product.youtube_ai_manager",
+        skill_id="youtube.optimization.scan",
+    )
+    capsule = _capsule(
+        "youtube-ai-manager",
+        "youtube-ai-manager-scan-v1",
+        "product.youtube_ai_manager",
+        "youtube.optimization.scan",
+    )
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root,
+        wake_root=wake_root,
+        worker_state_root=worker_root,
+        node_id="oracle-core-node",
+        runner_kind="youtube_ai_manager_scan_v1",
+    )
+    monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+
+    state = worker.process_exact(wake_id="wake-1", presence_generation=1)
+    assert state is not None
+    assert state.status == "blocked"
+    assert state.error_code == "youtube_governed_read_adapter_unavailable"
+    assert runtime.get_assignment("youtube-ai-manager-scan-v1").state == "blocked"
+    receipt = json.loads(
+        (runtime_root / "lifecycle" / "receipts" / "youtube-ai-manager-scan-v1" / "000001.json").read_text(encoding="utf-8")
+    )
+    assert receipt["outcome"] == "blocked"
+    assert receipt["result_summary"]["external_api_read_performed"] is False
+    assert receipt["result_summary"]["external_api_mutation_performed"] is False
+
+
+def test_zeus_safe_review_finishes_handoff_with_terminal_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    wake_root = tmp_path / "wake"
+    worker_root = tmp_path / "worker"
+    for item in (runtime_root, wake_root, worker_root):
+        item.mkdir()
+    runtime = _materialize_product_assignment(
+        runtime_root,
+        employee_id="zeus-writer",
+        assignment_id="zeus-writer-continuation-v1",
+        role_id="product.zeus_writer",
+        skill_id="writing.project.continue",
+    )
+    capsule = _capsule(
+        "zeus-writer",
+        "zeus-writer-continuation-v1",
+        "product.zeus_writer",
+        "writing.project.continue",
+    )
+    work_ref = {
+        "schema": "agentos.employee-work-intent-ref/v1",
+        "product_id": "zeus-writer",
+        "state_key": "current-work",
+        "revision": 1,
+        "digest": "sha256:" + "a" * 64,
+    }
+    capsule["wake_intent"]["work_intent_ref"] = work_ref
+    worker = product_worker.GovernedProductEmployeeWorker(
+        runtime_root=runtime_root,
+        wake_root=wake_root,
+        worker_state_root=worker_root,
+        node_id="oracle-core-node",
+        runner_kind="zeus_writer_v1",
+    )
+    monkeypatch.setattr(product_worker, "require_governed_product_delivery", lambda *args, **kwargs: {"status": "awaiting_claim"})
+    monkeypatch.setattr(worker, "_capsules", lambda: [(Path("wake.json"), capsule)])
+    monkeypatch.setattr(
+        worker,
+        "_execute_zeus_review",
+        lambda *args, **kwargs: {
+            "schema": "agentos.execution-receipt/v1",
+            "result_status": "success",
+            "evidence": {
+                "chapter": "Ch05",
+                "work_intent_digest": work_ref["digest"],
+                "mutation_performed": False,
+                "publish_performed": False,
+                "credential_exposed": False,
+            },
+            "credential_exposed": False,
+        },
+    )
+
+    state = worker.process_exact(wake_id="wake-1", presence_generation=1)
+    assert state is not None
+    assert state.status == "handoff"
+    assert state.error_code is None
+    assert runtime.get_assignment("zeus-writer-continuation-v1").state == "handoff"
+    receipt = json.loads(
+        (runtime_root / "lifecycle" / "receipts" / "zeus-writer-continuation-v1" / "000001.json").read_text(encoding="utf-8")
+    )
+    assert receipt["outcome"] == "handoff"
+    assert receipt["result_summary"]["mutation_performed"] is False
+    assert receipt["result_summary"]["publish_performed"] is False
+    assert receipt["result_summary"]["next_authority_required"] == "zeus-product-draft-mutation"
+
+
+def test_worker_host_preserves_trusted_blocked_terminal_result(tmp_path: Path) -> None:
+    roots = [tmp_path / name for name in ("runtime", "wake", "host", "worker")]
+    for item in roots:
+        item.mkdir()
+    host = ExactEmployeeWorkerHost(
+        runtime_root=roots[0],
+        wake_root=roots[1],
+        host_state_root=roots[2],
+        worker_state_root=roots[3],
+        node_id="oracle-core-node",
+    )
+    capsule = _capsule(
+        "youtube-ai-manager",
+        "youtube-ai-manager-scan-v1",
+        "product.youtube_ai_manager",
+        "youtube.optimization.scan",
+    )
+    adapter = host.registry.resolve(capsule)
+    assert adapter is not None
+    candidate = WorkerHostCandidate(Path("wake.json"), capsule, adapter)
+    host._pinned_candidate = candidate  # noqa: SLF001
+    payload = {
+        "schema": "agentos.youtube-ai-manager-scan-worker-cli-result/v1",
+        "status": "blocked",
+        "work_performed": True,
+        "employee_id": "youtube-ai-manager",
+        "assignment_id": "youtube-ai-manager-scan-v1",
+        "wake_id": "wake-1",
+        "presence_generation": 1,
+        "lease_generation": 1,
+        "thread_head": "blocked",
+        "error_code": "youtube_governed_read_adapter_unavailable",
+        "executor_provider": "unbound",
+        "executor_model": "",
+        "credential_exposed": False,
+        "session_identity_exposed": False,
+        "verified_marker_emitted": False,
+    }
+    state = host._new_dispatch(candidate)  # noqa: SLF001
+    result = host._reconcile_child_result(  # noqa: SLF001
+        candidate,
+        state,
+        returncode=0,
+        stdout=json.dumps(payload),
+    )
+    assert result["status"] == "blocked"
+    assert result["error_code"] is None

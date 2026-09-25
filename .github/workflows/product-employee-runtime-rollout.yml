@@ -1,6 +1,26 @@
-name: Product Employee Runtime Rollout
+name: Product Employee Runtime Source Guard
 
 on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/product-employee-runtime-rollout.yml'
+      - 'agent_core/work_intent.py'
+      - 'agent_core/governed_execution.py'
+      - 'agent_core/employee_runtime.py'
+      - 'agent_core/employee_lifecycle.py'
+      - 'agent_core/employee_wake.py'
+      - 'agent_core/core_supervisor_delivery.py'
+      - 'agentos_node/employee_wake_inbox.py'
+      - 'agentos_node/product_employee_worker.py'
+      - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/employee_worker_host.py'
+      - 'agentos_node/employee_worker_host_runtime.py'
+      - 'governance/execution-authority.json'
+      - 'governance/employee-worker-adapters-v2.json'
+      - 'tests/test_product_employee_worker.py'
+      - 'tests/test_product_employee_runtime_rollout.py'
   push:
     branches:
       - core/integration
@@ -9,47 +29,56 @@ on:
       - 'agent_core/work_intent.py'
       - 'agent_core/governed_execution.py'
       - 'agent_core/employee_runtime.py'
+      - 'agent_core/employee_lifecycle.py'
       - 'agent_core/employee_wake.py'
       - 'agent_core/core_supervisor_delivery.py'
       - 'agentos_node/employee_wake_inbox.py'
       - 'agentos_node/product_employee_worker.py'
       - 'agentos_node/product_employee_worker_cli.py'
+      - 'agentos_node/employee_worker_host.py'
       - 'agentos_node/employee_worker_host_runtime.py'
-      - 'agentos_node/runtime_converge_action_relay.py'
       - 'governance/execution-authority.json'
       - 'governance/employee-worker-adapters-v2.json'
-      - 'scripts/activate_product_employees_oracle.sh'
-      - 'scripts/rollout_product_employee_runtime.py'
-      - '.agent/scripts/agentos-employee-worker-host.service'
+      - 'tests/test_product_employee_worker.py'
+      - 'tests/test_product_employee_runtime_rollout.py'
 
 permissions:
   contents: read
 
-concurrency:
-  group: product-employee-runtime-rollout
-  cancel-in-progress: false
-
 jobs:
-  rollout:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+  source-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - name: Checkout exact integration generation
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Validate immutable rollout source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install existing test dependencies
+        run: python -m pip install PyYAML pytest
+
+      - name: Validate bounded Product Employee source
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 'alston-personal/agentmanager'
-          test "$GITHUB_REF" = 'refs/heads/core/integration'
-          printf '%s' "$GITHUB_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            test "$GITHUB_BASE_REF" = 'core/integration'
+          else
+            test "$GITHUB_REF" = 'refs/heads/core/integration'
+          fi
+          python -c 'import os,re; assert re.fullmatch(r"[0-9a-f]{40}", os.environ["GITHUB_SHA"])'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 -m py_compile scripts/rollout_product_employee_runtime.py
-          echo "product_employee_rollout_source_commit=$GITHUB_SHA"
+          python -m py_compile \
+            agentos_node/product_employee_worker.py \
+            agentos_node/product_employee_worker_cli.py \
+            agentos_node/employee_worker_host.py \
+            agentos_node/employee_worker_host_runtime.py
+          python -m pytest -q \
+            tests/test_product_employee_worker.py \
+            tests/test_product_employee_contracts.py
 
-      - name: Converge exact Product Employee runtime through Action Relay
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/sg agentos -c "cd '$GITHUB_WORKSPACE' && export PYTHONPATH='$GITHUB_WORKSPACE' && exec /usr/bin/python3 -m scripts.rollout_product_employee_runtime"
+      - name: Record immutable-runtime deployment boundary
+        run: echo 'product_employee_source_guard=PASS runtime_mutation=DEFERRED_TO_IMMUTABLE_RELEASE_CONTROLLER'
