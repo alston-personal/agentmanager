@@ -60,10 +60,11 @@ if not bindings:
 # Reauthorization can legitimately leave multiple Persona bindings for the same
 # Threads account. Never choose across different provider identities, but allow
 # duplicate bindings for the same account and prefer the newest JSON entry.
-identities={(str(item.get('provider_account_id') or ''),str(item.get('username') or '').lstrip('@').lower())
-            for _,item in bindings}
-if len(identities)!=1 or not next(iter(identities))[0]:
+provider_ids={str(item.get('provider_account_id') or '') for _,item in bindings}
+if len(provider_ids)!=1 or not next(iter(provider_ids)):
     raise SystemExit('persona_threads_reply=ACCOUNT_BINDING_AMBIGUOUS')
+# The username may differ across duplicate bindings after an account rename
+# (sunlake.milkcat -> mio.milkcat); provider account ID is the stable identity.
 binding_id,item=bindings[-1]
 account_id=str(item.get('provider_account_id') or '')
 username=str(item.get('username') or '')
