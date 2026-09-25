@@ -56,6 +56,13 @@
       "live_pointer": "/home/ubuntu/agent-data/runtime/social/current",
       "lock": "production/social",
       "migration_state": "required"
+    },
+    "completion-executor": {
+      "owner": "role://release-controller.completion",
+      "release_root": "/home/ubuntu/agent-data/releases/agentos-lobster",
+      "live_pointer": "/home/ubuntu/agent-data/runtime/agentos-lobster/current",
+      "lock": "production/completion-executor",
+      "migration_state": "candidate"
     }
   },
   "invariants": [
