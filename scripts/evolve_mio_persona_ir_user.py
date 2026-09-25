@@ -88,7 +88,20 @@ def main() -> int:
             break
         time.sleep(1)
     if not fetched:
-        print("mio_persona_ir_evolve=GIT_FETCH_FAILED")
+        err = str(result.stderr or "").lower()
+        if "cannot lock" in err or "fetch_head.lock" in err or "index.lock" in err:
+            category = "LOCK"
+        elif "could not resolve host" in err or "temporary failure in name resolution" in err:
+            category = "DNS"
+        elif "authentication failed" in err or "could not read username" in err or "permission denied" in err:
+            category = "AUTH_OR_PERMISSION"
+        elif "dubious ownership" in err:
+            category = "OWNERSHIP"
+        elif "unable to access" in err or "failed to connect" in err or "connection timed out" in err:
+            category = "NETWORK"
+        else:
+            category = "OTHER"
+        print("mio_persona_ir_evolve=GIT_FETCH_FAILED_" + category)
         return 8
     ref = "origin/main"
 
