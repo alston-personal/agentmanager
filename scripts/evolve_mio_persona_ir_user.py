@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DATA_REPO = Path("/home/ubuntu/agent-data")
+DATA_HTTPS = "https://github.com/alston-personal/my-agent-data.git"
+GIT_CREDENTIAL = "credential.helper=!gh auth git-credential"
 PERSONA = Path("personas/sunlake-milkcat")
 IR_REL = PERSONA / "ir/current.json"
 IR_HISTORY_DIR = PERSONA / "ir/history"
@@ -82,7 +84,7 @@ def main() -> int:
     fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
     fetched = False
     for _ in range(3):
-        result = run(["git", "fetch", "origin", "main"], check=False)
+        result = run(["git", "-c", GIT_CREDENTIAL, "fetch", DATA_HTTPS, "+refs/heads/main:refs/remotes/origin/main"], check=False)
         if result.returncode == 0:
             fetched = True
             break
@@ -207,7 +209,7 @@ def main() -> int:
             "-c", "user.email=agentos-persona-growth@users.noreply.github.com",
             "commit", "-m", f"chore(mio): advance persona IR to r{revision}",
         ], cwd=work)
-        pushed = run(["git", "push", "origin", "HEAD:main"], cwd=work, check=False)
+        pushed = run(["git", "-c", GIT_CREDENTIAL, "push", DATA_HTTPS, "HEAD:main"], cwd=work, check=False)
         if pushed.returncode:
             print("mio_persona_ir_evolve=PUSH_FAILED")
             return 7
