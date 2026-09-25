@@ -112,3 +112,4 @@ jobs:
 
           # Snapshot/timer evidence is emitted by the ubuntu bootstrap action.
           # Do not cross the user boundary from the self-hosted runner to inspect private state.
+# 2026-09-25 owner confirmed Mio lifecycle: observe -> event ledger -> persona IR -> reply.
