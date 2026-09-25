@@ -98,7 +98,7 @@ jobs:
                 code=step.get('returncode')
                 print('mio_recent_readonly_failed_step='+name+':'+(str(code) if isinstance(code,int) else 'unknown'))
               for line in str(step.get('stdout') or '').splitlines():
-                if line.startswith(('mio_recent_patrol=','mio_search_scope_probe=','mio_social_outbound=')) and len(line)<180:
+                if line.startswith(('mio_recent_patrol=','mio_search_scope_probe=','mio_social_outbound=','mio_oauth_')) and len(line)<180:
                   print(line)
           assert doc.get('ok') is True,'mio_recent_readonly_executor_failed'
           lines='\n'.join(str(x.get('stdout') or '') for x in doc.get('steps') or []).splitlines()
