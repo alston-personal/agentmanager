@@ -267,5 +267,14 @@ echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=10m"
 echo "galaxy_experiment_monitor_log=$LOG"
 if [ -f "$LOG" ]; then
-  tail -n 160 "$LOG" | grep -E '^(mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 50 || true
+  tail -n 220 "$LOG" | grep -E '^(galaxy_monitor=|galaxy_monitor_reply_count=|galaxy_monitor_new_replies=|persona_git_sync=|persona_git_sync_added=|mio_persona_ir_evolve=|mio_persona_ir_revision=|mio_persona_ir_new_events=|mio_persona_ir_new_growth=|mio_persona_cycle=|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 80 || true
 fi
+python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('/tmp/agentos-social-public/sunlake-milkcat-replies.json')
+try: d=json.loads(p.read_text(encoding='utf-8'))
+except (FileNotFoundError,ValueError): d={}
+print('mio_public_export_owned_posts='+str(len(d.get('owned_posts') or [])))
+print('mio_public_export_replies='+str(len(d.get('replies') or [])))
+PY
