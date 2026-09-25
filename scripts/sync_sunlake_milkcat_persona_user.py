@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, os, shutil, subprocess, sys, tempfile
+import fcntl, json, os, shutil, subprocess, sys, tempfile, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,7 +35,16 @@ def main():
     if payload.get('schema')!='agentos.social-public-reply-export/v1':
         print('persona_git_sync=BAD_EXPORT_SCHEMA',file=sys.stderr); return 5
 
-    run(['git','fetch','origin','main'],cwd=DATA_REPO)
+    lock=open('/tmp/agentos-mio-persona-data-git.lock','a+')
+    fcntl.flock(lock.fileno(),fcntl.LOCK_EX)
+    fetched=False
+    for _ in range(3):
+        p=run(['git','fetch','origin','main'],cwd=DATA_REPO,check=False)
+        if p.returncode==0:
+            fetched=True; break
+        time.sleep(1)
+    if not fetched:
+        print('persona_git_sync=GIT_FETCH_FAILED',file=sys.stderr); return 8
     root=Path(tempfile.mkdtemp(prefix='agentos-persona-sync-'))
     work=root/'work'
     try:
