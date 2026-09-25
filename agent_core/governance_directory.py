@@ -204,6 +204,14 @@ def sync_roles_from_canonical_registry(path: Path = REGISTRY_PATH) -> None:
 def seed_core(path: Path = REGISTRY_PATH) -> None:
     # Canonical registries are mirrored into the query directory; they remain authority.
     sync_roles_from_canonical_registry(path)
+
+    # Reusable capability providers opt in through their own manifests. This
+    # keeps cross-project capability registration data-driven instead of adding
+    # one hard-coded Governance Directory entity per capability.
+    from .capability_manifest_adapter import sync_discoverable_capability_manifests
+
+    sync_discoverable_capability_manifests(directory_path=path)
+
     if yaml is not None:
         from .studio_capability_adapter import (
             STUDIO_CAPABILITY_REGISTRY,
