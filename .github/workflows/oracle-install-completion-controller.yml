@@ -173,6 +173,11 @@ jobs:
           python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" audit >/dev/null
           echo 'completion_ledger=PASS issue_470=durable'
 
+          # Prove the two watchdog commands work as the real user before touching units.
+          python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" reclaim-stale --lease-seconds 1800 >/tmp/completion-reclaim-preflight.json
+          python3 "$RELEASE/scripts/work_completion.py" --state "$STATE" project-board --board "$BOARD" >/tmp/completion-board-preflight.json
+          echo 'completion_watchdog_commands_preflight=PASS'
+
           cat > "$USER_UNITS/agentos-completion-watchdog.service" <<EOF
           [Unit]
           Description=AgentOS Completion Watchdog
@@ -229,7 +234,11 @@ jobs:
           MUTATED=1
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-completion-watchdog.timer >/dev/null
-          systemctl --user start agentos-completion-watchdog.service
+          if ! systemctl --user start agentos-completion-watchdog.service; then
+            systemctl --user status agentos-completion-watchdog.service --no-pager || true
+            journalctl --user -u agentos-completion-watchdog.service -n 60 --no-pager || true
+            exit 1
+          fi
           systemctl --user enable lobster-engine.service >/dev/null
           systemctl --user restart lobster-engine.service
 
