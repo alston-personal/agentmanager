@@ -118,3 +118,5 @@ jobs:
           git commit -m 'evidence(mio): persist owner-authorized social exploration receipt'
           git push origin HEAD:core/integration
           echo 'mio_social_resume_evidence=PUSHED'
+
+# Owner requested live IR-governed exploration cycle: 2026-09-25T11:09Z
