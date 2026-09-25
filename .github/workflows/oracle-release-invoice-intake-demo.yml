@@ -44,3 +44,30 @@ jobs:
       N8N_DEPLOY_USER: ${{ secrets.N8N_DEPLOY_USER }}
       N8N_DEPLOY_SSH_PORT: ${{ secrets.N8N_DEPLOY_SSH_PORT }}
       N8N_DEPLOY_SSH_KEY: ${{ secrets.N8N_DEPLOY_SSH_KEY }}
+
+
+  auth-smoke:
+    needs: release
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    steps:
+      - name: Verify Milkcat auth endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          curl -fsS --retry 4 --retry-delay 1 "$BASE/dashboard/api/auth/session" > /tmp/invoice-auth-session.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/invoice-auth-session.json'))
+          assert x.get('loggedIn') is False, x
+          providers=x.get('providers') or {}
+          assert providers.get('google') is True, providers
+          print('invoice_auth_session_provider_google=PASS')
+          PY
+
+          curl -sS -D /tmp/invoice-auth-google.headers -o /tmp/invoice-auth-google.body             --max-redirs 0 "$BASE/dashboard/api/auth/signin/google?returnTo=%2Finvoice-intake%2F"
+          status=$(awk 'NR==1 {print $2}' /tmp/invoice-auth-google.headers)
+          test "$status" = "307" -o "$status" = "302"
+          grep -Eiq '^location:[[:space:]]*https://accounts\.google\.com/' /tmp/invoice-auth-google.headers
+          echo "invoice_auth_google_redirect=PASS status=$status"
