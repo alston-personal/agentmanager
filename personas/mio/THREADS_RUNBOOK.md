@@ -182,3 +182,11 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
 - 使用者已於 2026-09-25 在 Galaxy 入口完成 Meta 授權；這不是僅有使用者宣告，已由 Oracle 實際查核。
 - [Oracle 唯讀巡視 Run #36077227347](https://github.com/alston-personal/agentmanager/actions/runs/36077227347) 成功，`mio_search_scope_probe=granted`，兩個 Persona 綁定皆可讀回澪 2026-09-25 已發佈的貼文，且兩者有效 Token 均取得關鍵字搜尋 scope；澪自己貼文下的留言讀取失敗數為 0。
 - **尚未完成搜尋功能驗收**：同一實際巡視的 `mio_social_outbound=SEARCH_READ_FAILED`。授權已取得，搜尋 API 實際呼叫仍未成功。不得再次要求使用者授權、不可宣稱能搜尋陌生人貼文、也不可據此發送他人貼文下留言。後續應單獨追查搜尋 API 失敗類型與平台限制，優先唯讀與清理後的錯誤代碼，保留現有正常的自己貼文巡視／回覆流程。
+
+## 2026-09-25｜Meta keyword_search HTTP 400 Code 10 診斷結論
+
+- 授權後真實 `/debug_token` 已回報 `mio_search_scope_probe=granted`，不是要求使用者再授權就能解決的情況。
+- [Oracle 唯讀診斷 Run #36078531124](https://github.com/alston-personal/agentmanager/actions/runs/36078531124) 對現存澪帳號綁定 Token 使用三種最小、合法的官方 GET：unversioned Bearer、unversioned access_token query、v1.0 Bearer；結果**全部**是 HTTP 400 `OAuthException`, `code=10`, `error_subcode=4279067`。現有 shared runtime `keyword.search` 同樣 HTTP 400 / code 10。這排除了單一 URL 版本／Authorization 傳法／欄位集合的問題。
+- **已證實** Meta API 拒絕關鍵字搜尋；**尚未證實**確切是 app review 未核准、Threads search use case 未啟用、此帳號並非該 App Tester、或 Meta 其他平台存取限制。Token 含 scope 不等於 App 獲准使用 API。不能謊稱已搜尋他人公開貼文或到別人的貼文留言。
+- Meta app 管理者接手：[Issue #407](https://github.com/alston-personal/agentmanager/issues/407)；打開對應 Oracle 現有 Threads app 的 Meta for Developers 後台，查 Threads API → Permissions and features / keyword search access level、App Review 審核狀態及 app mode，再核對澪 Threads Tester 邀請屬於**同一 App**且已接受。需變更 app access/review 才有下一步；不要把 App ID、Secret、token 寫入 issue 或對話。
+- 只有 app-side 權限狀態修正後，才重新核發 Token（如 Meta 要求）並做一次只讀真實外部 keyword-search 實測；取得非自有帳號結果及 permalink 之前，保持對外搜尋／回覆功能未通，專注現有自有貼文留言回覆。測試腳本的三種額外 HTTP GET 僅供一次性故障定位，不應新增為常駐定期探測。
