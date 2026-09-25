@@ -20,17 +20,19 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 922410f1913408faf9b5791f476a271cf51625da
+      source_sha: e5039e51ac01a5bd59a4370ab003836172126ddc
       route: invoice-intake
       backup_key: invoice-intake-demo
-      receipt_schema: studio-web.invoice-intake-release/v1
+      receipt_schema: studio-web.invoice-intake-release/v2
       acceptance_anchors: |-
-        發票登錄 Demo
-        INVOICE INTAKE · MVP
-        id="invoice-file"
-        原始發票
-        Demo 覆核清單
-        開始辨識
+        發票連續掃描
+        CONTINUOUS INVOICE INTAKE · MVP
+        id="camera"
+        id="auto-toggle"
+        開啟相機連續掃描
+        立即拍這張
+        最近歸檔
+        /api/invoice-intake/v1
       credit_account: ''
       credit_cost: 0
     secrets:
