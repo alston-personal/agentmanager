@@ -25,6 +25,7 @@ ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES = "agentos.social_threads_sunlake_persona
 ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR = "agentos.social_threads_experiment_monitor.install"
 ACTION_INSPECT_MIO_SQUIRREL = "agentos.social_threads_mio_squirrel.inspect"
 ACTION_INSPECT_MIO_RECENT = "agentos.social_threads_mio_recent.inspect"
+ACTION_PROBE_MIO_IMAGE_CONTAINER = "agentos.social_threads_mio_image_container.probe"
 ACTION_PAUSE_MIO_AUTOREPLY = "agentos.social_threads_mio.pause_autoreply"
 ACTION_DEPLOY_MIO_TELEGRAM = "agentos.mio_telegram.deploy"
 ALLOWED_ACTIONS = {
@@ -41,6 +42,7 @@ ALLOWED_ACTIONS = {
     ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
     ACTION_INSPECT_MIO_SQUIRREL,
     ACTION_INSPECT_MIO_RECENT,
+    ACTION_PROBE_MIO_IMAGE_CONTAINER,
     ACTION_PAUSE_MIO_AUTOREPLY,
     ACTION_DEPLOY_MIO_TELEGRAM,
 }
@@ -113,6 +115,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR,
         ACTION_INSPECT_MIO_SQUIRREL,
         ACTION_INSPECT_MIO_RECENT,
+        ACTION_PROBE_MIO_IMAGE_CONTAINER,
         ACTION_PAUSE_MIO_AUTOREPLY,
         ACTION_DEPLOY_MIO_TELEGRAM,
     }
@@ -205,6 +208,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/provision_ziwei_master_repo_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_PUBLISH_GALAXY_DAY1:
         return _run_canonical_script("scripts/publish_galaxy_threads_day1_user.sh", timeout=120, source_commit=source_commit)
+    if action == ACTION_PROBE_MIO_IMAGE_CONTAINER:
+        return _run_canonical_script("scripts/probe_mio_threads_image_container_user.sh", timeout=90, source_commit=source_commit)
     if action == ACTION_PUBLISH_MIO_APPROVED:
         if not post_key:
             raise ValueError("approved post key missing")

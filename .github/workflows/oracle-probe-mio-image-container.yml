@@ -1,0 +1,83 @@
+name: Oracle Probe Mio Threads Image Container
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-probe-mio-image-container.yml'
+      - 'scripts/probe_mio_threads_image_container_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight bounded unpublished image-container probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/core/integration'
+          test "$(id -un)" = 'agentos-node'
+          bash -n scripts/probe_mio_threads_image_container_user.sh
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          grep -Fq 'agentos.social_threads_mio_image_container.probe' agentos_node/bootstrap_control.py
+          grep -Fq 'mio_image_container_probe_publish=NOT_CALLED' scripts/probe_mio_threads_image_container_user.sh
+          test "$(grep -c "threads_publish" scripts/probe_mio_threads_image_container_user.sh || true)" -eq 0
+          echo 'mio_image_container_probe_preflight=PASS'
+
+      - name: Probe known-good historical JPEG through ubuntu bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          ID="mio-image-container-probe-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          REQUEST="$REQUESTS/$ID.request.json"
+          RECEIPT="$RECEIPTS/$ID.json"
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          d={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':sys.argv[2],
+            'action':'agentos.social_threads_mio_image_container.probe',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{'source_commit':sys.argv[3]},
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          t=p.with_suffix(p.suffix+'.tmp')
+          t.write_text(json.dumps(d,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          os.chmod(t,0o644); t.replace(p); os.chmod(p,0o644)
+          PY
+          for _ in $(seq 1 180); do test ! -f "$RECEIPT" || break; sleep 1; done
+          test -f "$RECEIPT" || { echo 'mio_image_container_probe_receipt=TIMEOUT'; exit 3; }
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys,re
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1'
+          assert r.get('action')=='agentos.social_threads_mio_image_container.probe'
+          assert r.get('source_commit')==sys.argv[2]
+          text='\n'.join(str(s.get('stdout') or '') for s in r.get('steps') or [])
+          for line in text.splitlines():
+              if re.fullmatch(r'mio_image_container_probe(?:_http|_error_type|_error_code|_error_subcode|_binding|_publish)?=[A-Za-z0-9_ -]{1,90}',line):
+                  print(line)
+          assert 'mio_image_container_probe_publish=NOT_CALLED' in text or 'mio_image_container_probe=CREATE_FAILED' in text
+          if r.get('ok') is True:
+              assert 'mio_image_container_probe=CREATE_PASS' in text
+              print('mio_image_container_probe_receipt=PASS')
+          else:
+              assert 'mio_image_container_probe=CREATE_FAILED' in text
+              print('mio_image_container_probe_receipt=EXPECTED_DIAGNOSTIC_FAILURE')
+          PY
