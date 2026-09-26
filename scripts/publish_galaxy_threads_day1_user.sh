@@ -123,9 +123,14 @@ print('galaxy_day1_persona_candidate_count='+str(len(candidates)))
 print('galaxy_day1_publish_scope_granted_count='+str(len(granted)))
 if not granted:
     raise SystemExit('galaxy_day1_publish=PUBLISH_SCOPE_UNAVAILABLE')
-preferred=[row for row in granted if row[0]==f'galaxy:threads:persona:{account_id}']
-binding_id,item,_=(preferred[0] if preferred else granted[0])
+# Publishing has previously succeeded through the legacy binding for this same
+# provider account. Prefer that proven credential first; the newer persona alias
+# can remain as fallback. Both were scope-checked above.
+legacy=[row for row in granted if row[0]==f'galaxy:threads:{account_id}']
+persona=[row for row in granted if row[0]==f'galaxy:threads:persona:{account_id}']
+binding_id,item,_=(legacy[0] if legacy else persona[0] if persona else granted[0])
 username=str(item.get('username') or '')
+print('galaxy_day1_selected_binding_kind=' + ('legacy' if binding_id==f'galaxy:threads:{account_id}' else 'persona'))
 
 # Reuse the original governed publisher for a pinned, reviewed second post.
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
