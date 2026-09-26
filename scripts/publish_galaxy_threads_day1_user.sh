@@ -177,6 +177,9 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
             if not 32<=len(blob)<=8*1024*1024:
                 raise SystemExit('social_publish=INVALID_IMAGE_SIZE')
             kind='image/png' if blob.startswith(bytes.fromhex('89504e470d0a1a0a')) else 'image/jpeg' if blob.startswith(bytes.fromhex('ffd8ff')) else ''
+            if kind=='image/jpeg' and len(blob)<30000:
+                print('galaxy_day1_image_asset_size='+str(len(blob)))
+                raise SystemExit('social_publish=JPEG_SUSPICIOUSLY_SMALL')
             if not kind or (kind=='image/png' and not rel.endswith('.png')) or (kind=='image/jpeg' and not rel.endswith(('.jpg','.jpeg'))):
                 raise SystemExit('social_publish=INVALID_IMAGE_CONTENT')
             remote_url='https://raw.githubusercontent.com/alston-personal/agentmanager/'+source+'/'+quote(rel,safe='/')
