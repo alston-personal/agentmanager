@@ -77,14 +77,51 @@ if len(provider_accounts)!=1:
     raise SystemExit(3)
 
 account_id=next(iter(provider_accounts))
-# Prefer the persona binding for the current Mio account. The legacy binding can
-# remain for backward compatibility and the viewer binding is intentionally last.
-persona=[(b,i) for b,i in bindings if b==f'galaxy:threads:persona:{account_id}']
-legacy=[(b,i) for b,i in bindings if b==f'galaxy:threads:{account_id}']
-binding_id,item=(persona[0] if persona else legacy[0] if legacy else bindings[0])
-username=str(item.get('username') or '')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
+
+def publish_scope_state(row):
+    token=str(row.get('access_token') or '')
+    if not token:
+        return 'missing_token'
+    try:
+        import urllib.parse
+        url='https://graph.threads.net/debug_token?'+urllib.parse.urlencode({'input_token':token})
+        req=urllib.request.Request(url,headers={'Authorization':'Bearer '+token,'Accept':'application/json'},method='GET')
+        with urllib.request.urlopen(req,timeout=15) as response:
+            result=json.load(response)
+        info=result.get('data') if isinstance(result,dict) else None
+        if not isinstance(info,dict) or info.get('is_valid') is False:
+            return 'invalid'
+        scopes=info.get('scopes')
+        if not isinstance(scopes,list):
+            return 'unknown'
+        return 'granted' if 'threads_content_publish' in scopes else 'not_granted'
+    except urllib.error.HTTPError:
+        return 'http_error'
+    except (OSError,ValueError,TypeError):
+        return 'probe_unavailable'
+
+# Historical/legacy aliases can coexist for the same provider account. Choose a
+# persona credential that is currently valid for threads_content_publish rather
+# than assuming the newest-looking binding ID is the healthy token.
+candidates=[]
+for b,i in bindings:
+    if str(i.get('provider_account_id') or '')!=account_id:
+        continue
+    if str(i.get('auth_profile') or 'persona')!='persona':
+        continue
+    if str(i.get('username') or '').lstrip('@').lower() not in {'sunlake.milkcat','mio.milkcat'}:
+        continue
+    candidates.append((b,i,publish_scope_state(i)))
+granted=[row for row in candidates if row[2]=='granted']
+print('galaxy_day1_persona_candidate_count='+str(len(candidates)))
+print('galaxy_day1_publish_scope_granted_count='+str(len(granted)))
+if not granted:
+    raise SystemExit('galaxy_day1_publish=PUBLISH_SCOPE_UNAVAILABLE')
+preferred=[row for row in granted if row[0]==f'galaxy:threads:persona:{account_id}']
+binding_id,item,_=(preferred[0] if preferred else granted[0])
+username=str(item.get('username') or '')
 
 # Reuse the original governed publisher for a pinned, reviewed second post.
 # The default remains Day 1 for existing callers; day2 requires explicit opt-in.
