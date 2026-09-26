@@ -79,6 +79,7 @@ class ThreadsProviderTransport:
             safe_code = f"http_{int(exc.code)}"
             provider_code = ""
             provider_type = ""
+            provider_subcode = ""
             try:
                 raw = exc.read().decode("utf-8", "replace")
                 body = json.loads(raw)
@@ -86,9 +87,10 @@ class ThreadsProviderTransport:
                 if isinstance(err, dict):
                     provider_code = str(err.get("code") or "")
                     provider_type = str(err.get("type") or "")
+                    provider_subcode = str(err.get("error_subcode") or "")
             except Exception:
                 pass
-            detail = "_".join(part for part in (safe_code, provider_type, provider_code) if part)
+            detail = "_".join(part for part in (safe_code, provider_type, provider_code, ("subcode"+provider_subcode if provider_subcode else "")) if part)
             raise ThreadsProviderError(f"threads_api_unavailable_{detail}") from exc
         except Exception as exc:
             raise ThreadsProviderError("threads_api_unavailable_transport") from exc
@@ -363,7 +365,7 @@ class ThreadsCapability:
             except ThreadsProviderError as exc:
                 if request.operation == "reply":
                     raise ThreadsProviderError("threads_reply_container_create_"+str(exc)) from exc
-                raise
+                raise ThreadsProviderError("threads_post_container_create_"+str(exc)) from exc
             creation_id = str(created.get("id") or "")
             if not creation_id:
                 raise ThreadsProviderError("threads_publish_id_missing")
