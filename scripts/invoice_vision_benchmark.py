@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -49,12 +50,32 @@ Rules:
 - Never infer a monetary value only because numbers happen to satisfy arithmetic.
 Return only the requested JSON structure."""
 
+def fetch_image(image_url: str) -> tuple[bytes, str]:
+    req = urllib.request.Request(
+        image_url,
+        headers={"User-Agent": "Mozilla/5.0 invoice-benchmark/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        data = response.read(12 * 1024 * 1024 + 1)
+        mime = (response.headers.get_content_type() or "image/jpeg").lower()
+    if not data or len(data) > 12 * 1024 * 1024:
+        raise RuntimeError("invalid_image_size")
+    if mime not in {"image/jpeg", "image/png", "image/webp"}:
+        raise RuntimeError("unsupported_image_mime:" + mime)
+    return data, mime
+
+
 def call_gemini(api_key: str, model: str, image_url: str) -> dict[str, Any]:
+    image_bytes, image_mime = fetch_image(image_url)
     body = {
         "model": model,
         "input": [
             {"type": "text", "text": PROMPT},
-            {"type": "image", "uri": image_url, "mime_type": "image/jpeg"}
+            {
+                "type": "image",
+                "data": base64.b64encode(image_bytes).decode("ascii"),
+                "mime_type": image_mime,
+            }
         ],
         "response_format": {
             "type": "text",
@@ -69,16 +90,30 @@ def call_gemini(api_key: str, model: str, image_url: str) -> dict[str, Any]:
         headers={
             "Content-Type": "application/json",
             "x-goog-api-key": api_key,
+            "Api-Revision": "2026-05-20",
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=90) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    text = payload.get("interaction", {}).get("output_text")
+    try:
+        with urllib.request.urlopen(req, timeout=90) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"gemini_http_{exc.code}:{detail[:1200]}") from exc
+
+    text = payload.get("output_text")
     if not text:
-        text = payload.get("output_text")
+        for step in payload.get("steps") or []:
+            if step.get("type") != "model_output":
+                continue
+            for content in step.get("content") or []:
+                if content.get("type") == "text" and content.get("text"):
+                    text = content["text"]
+                    break
+            if text:
+                break
     if not text:
-        raise RuntimeError("missing_output_text")
+        raise RuntimeError("missing_output_text:" + json.dumps(payload, ensure_ascii=False)[:1200])
     return json.loads(text)
 
 def norm(v: Any) -> Any:
