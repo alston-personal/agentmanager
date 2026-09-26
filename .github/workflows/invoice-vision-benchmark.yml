@@ -36,3 +36,31 @@ jobs:
           path: /tmp/invoice-vision-benchmark.json
           if-no-files-found: ignore
           retention-days: 7
+
+
+  rapidocr:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RapidOCR CPU stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/invoice-rapidocr-venv
+          /tmp/invoice-rapidocr-venv/bin/python -m pip install --upgrade pip
+          /tmp/invoice-rapidocr-venv/bin/pip install rapidocr onnxruntime
+      - name: Run RapidOCR public benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/invoice-rapidocr-venv/bin/python scripts/invoice_rapidocr_benchmark.py \
+            --manifest benchmarks/invoice_handwriting/public_cases.json \
+            --out /tmp/invoice-rapidocr-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: invoice-rapidocr-benchmark
+          path: /tmp/invoice-rapidocr-benchmark.json
+          if-no-files-found: ignore
+          retention-days: 7
