@@ -146,3 +146,5 @@ jobs:
 # Owner-requested read-only patrol of Mio public comments on 2026-09-25; no post or reply side effects.
 # 2026-09-25 owner-confirmed reauthorization: run sanitized scope and public keyword search validation.
 # 2026-09-25 11:47 Asia/Taipei owner-requested comment patrol; read only.
+
+# owner-requested rerun 2026-09-26 after duplicate persona binding diagnosis
