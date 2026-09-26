@@ -1,0 +1,38 @@
+name: Invoice Vision Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/invoice-vision-benchmark
+    paths:
+      - 'benchmarks/invoice_handwriting/**'
+      - 'scripts/invoice_vision_benchmark.py'
+      - '.github/workflows/invoice-vision-benchmark.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_INVOICE_MODEL: gemini-3.8-flash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run public handwritten invoice benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/invoice_vision_benchmark.py \
+            --manifest benchmarks/invoice_handwriting/public_cases.json \
+            --out /tmp/invoice-vision-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: invoice-vision-benchmark
+          path: /tmp/invoice-vision-benchmark.json
+          if-no-files-found: ignore
+          retention-days: 7
