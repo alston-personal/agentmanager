@@ -52,6 +52,16 @@ def check_field(field, expected, text):
         return compact(str(expected)) in c
     if field in {"total_amount","amount_before_tax","tax_amount","buyer_tax_id","seller_tax_id"}:
         return digits(str(expected)) in d
+    if field=="invoice_date":
+        y,m,day=[int(x) for x in str(expected).split("-")]
+        roc=y-1911
+        candidates=[
+            f"{roc}{m}{day}",
+            f"{roc:03d}{m:02d}{day:02d}",
+            f"{y}{m}{day}",
+            f"{y:04d}{m:02d}{day:02d}",
+        ]
+        return any(x in d for x in candidates)
     return False
 
 def main():
@@ -71,7 +81,7 @@ def main():
             text=result_text(result)
             checks={}
             for field,expected in case["expected"].items():
-                if field not in {"invoice_number","total_amount","amount_before_tax","tax_amount","buyer_tax_id","seller_tax_id"}:
+                if field not in {"invoice_number","invoice_date","total_amount","amount_before_tax","tax_amount","buyer_tax_id","seller_tax_id"}:
                     continue
                 ok=check_field(field,expected,text)
                 checks[field]={"expected":expected,"ok":ok}
@@ -89,6 +99,7 @@ def main():
         "checked_fields":total,
         "correct_fields":correct,
         "field_recall":(correct/total if total else 0.0),
+        "acceptance_target":0.90,
         "rows":rows
     }
     print("rapidocr_summary="+json.dumps(summary,ensure_ascii=False))
