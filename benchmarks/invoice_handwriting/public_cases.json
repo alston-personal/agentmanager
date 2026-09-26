@@ -1,0 +1,39 @@
+{
+  "schema": "invoice-vision-benchmark/v1",
+  "cases": [
+    {
+      "id": "tw-2part-my04200253",
+      "image_url": "https://pimg.1px.tw/jo3jo6jo3jo6/1569239272-1490380127.jpg",
+      "expected": {
+        "invoice_number": "MY04200253",
+        "total_amount": 50
+      },
+      "source_url": "https://jo3jo6jo3jo6.pixnet.net/blog/posts/9468465818"
+    },
+    {
+      "id": "tw-3part-rp54268249",
+      "image_url": "https://pimg.1px.tw/jo3jo6jo3jo6/1569240260-1990376640.jpg",
+      "expected": {
+        "invoice_number": "RP54268249"
+      },
+      "source_url": "https://jo3jo6jo3jo6.pixnet.net/blog/posts/9468494873"
+    },
+    {
+      "id": "tw-3part-ry33724453",
+      "image_url": "https://custom-images.strikinglycdn.com/res/hrscywv4p/image/upload/c_limit%2Cfl_lossy%2Ch_9000%2Cw_1200%2Cf_auto%2Cq_1/1694858/340680_317995.png",
+      "expected": {
+        "invoice_number": "RY33724453"
+      },
+      "source_url": "https://www.tron-island.com/blog/issue-a-gui-fapiao"
+    },
+    {
+      "id": "tw-triplicate-wikimedia",
+      "image_url": "https://upload.wikimedia.org/wikipedia/commons/f/f8/JCHACST_Keelung_Office_uniform_invoice_20180925_P3.jpg",
+      "expected": {
+        "invoice_date": "2018-09-25",
+        "total_amount": 200
+      },
+      "source_url": "https://commons.wikimedia.org/wiki/File:JCHACST_Keelung_Office_uniform_invoice_20180925_P3.jpg"
+    }
+  ]
+}
