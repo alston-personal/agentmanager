@@ -173,9 +173,11 @@ def main() -> int:
             print(json.dumps(row, ensure_ascii=False))
             rows.append(row)
 
+    error_count=sum(1 for row in rows if row.get("error"))
     summary = {
         "model": args.model,
         "cases": len(rows),
+        "errors": error_count,
         "field_exact_match": (total_correct / total_fields) if total_fields else 0.0,
         "unsafe_pass_cases": unsafe_count,
         "rows": rows,
@@ -183,6 +185,8 @@ def main() -> int:
     print("benchmark_summary=" + json.dumps(summary, ensure_ascii=False))
     if args.out:
         Path(args.out).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    if error_count == len(rows):
+        return 3
     return 1 if unsafe_count else 0
 
 if __name__ == "__main__":
