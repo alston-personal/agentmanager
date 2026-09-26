@@ -66,17 +66,21 @@ for binding_id,item in (store.get('bindings') or {}).items():
     if item.get('product_id')=='galaxy' and item.get('platform')=='threads':
         bindings.append((binding_id,item))
 
-# Multiple credential bindings may be aliases (legacy/persona/viewer) for the same
-# provider account. Treat those as one identity, while still rejecting a truly
-# ambiguous store that contains more than one Threads provider account.
-provider_accounts={str(i.get('provider_account_id') or '') for _,i in bindings if i.get('provider_account_id')}
+# The shared Galaxy vault can contain several Threads personas. Restrict this
+# publisher to Mio's known account handles before evaluating provider identity;
+# another persona (for example a personal viewer/account) must not make Mio
+# publishing look ambiguous.
+mio_bindings=[(b,i) for b,i in bindings
+              if str(i.get('username') or '').lstrip('@').lower() in {'sunlake.milkcat','mio.milkcat'}]
+provider_accounts={str(i.get('provider_account_id') or '') for _,i in mio_bindings if i.get('provider_account_id')}
 if len(provider_accounts)!=1:
-    safe=[{'binding_id':b,'username':i.get('username'),'provider_account_id':i.get('provider_account_id')} for b,i in bindings]
-    print('galaxy_day1_binding_count='+str(len(bindings)))
+    safe=[{'binding_id':b,'username':i.get('username'),'provider_account_id':i.get('provider_account_id')} for b,i in mio_bindings]
+    print('galaxy_day1_binding_count='+str(len(mio_bindings)))
     print('galaxy_day1_bindings='+json.dumps(safe,ensure_ascii=False,separators=(',',':')))
     raise SystemExit(3)
 
 account_id=next(iter(provider_accounts))
+bindings=mio_bindings
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
 
