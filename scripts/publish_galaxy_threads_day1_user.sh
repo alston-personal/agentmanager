@@ -77,8 +77,11 @@ if len(provider_accounts)!=1:
     raise SystemExit(3)
 
 account_id=next(iter(provider_accounts))
-preferred=[(b,i) for b,i in bindings if b==f'galaxy:threads:{account_id}']
-binding_id,item=(preferred[0] if preferred else bindings[0])
+# Prefer the persona binding for the current Mio account. The legacy binding can
+# remain for backward compatibility and the viewer binding is intentionally last.
+persona=[(b,i) for b,i in bindings if b==f'galaxy:threads:persona:{account_id}']
+legacy=[(b,i) for b,i in bindings if b==f'galaxy:threads:{account_id}']
+binding_id,item=(persona[0] if persona else legacy[0] if legacy else bindings[0])
 username=str(item.get('username') or '')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
