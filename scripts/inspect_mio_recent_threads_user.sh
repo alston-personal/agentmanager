@@ -137,14 +137,26 @@ for candidate_bid, candidate_account in verified_matches:
         owned_candidates.append((candidate_bid, candidate_account, candidate_posts, effective_keyword_scope(candidate_account)))
 print("mio_oauth_owned_post_binding_count=" + str(len(owned_candidates)))
 if not owned_candidates:
+    fail("TARGET_MIO_POST_OWNER_UNAVAILABLE")
+
+# Multiple persona bindings can be aliases for the same provider account.
+# Collapse them by provider_account_id and prefer the explicit persona binding.
+by_account = {}
+for row in owned_candidates:
+    candidate_bid, candidate_account, candidate_posts, candidate_scope = row
+    account_id = str(candidate_account.get("provider_account_id") or "")
+    if not account_id:
+        continue
+    previous = by_account.get(account_id)
+    preferred = candidate_bid == f"galaxy:threads:persona:{account_id}"
+    if previous is None or preferred:
+        by_account[account_id] = row
+if len(by_account) != 1:
     fail("TARGET_MIO_POST_OWNER_AMBIGUOUS")
+owned_candidates = list(by_account.values())
 granted_candidates = [row for row in owned_candidates if row[3] == "granted"]
 print("mio_oauth_owned_post_granted_count=" + str(len(granted_candidates)))
-if len(granted_candidates) == 1:
-    bid, account, posts, scope_result = granted_candidates[0]
-else:
-    # Read-only validation only; never choose a write target from this probe.
-    bid, account, posts, scope_result = owned_candidates[-1]
+bid, account, posts, scope_result = (granted_candidates[0] if granted_candidates else owned_candidates[0])
 if not isinstance(posts, dict):
     fail("POSTS_READ_FAILED")
 owned_posts = [p for p in (posts.get("items") or [])
