@@ -7,7 +7,7 @@ import re
 import urllib.request
 from pathlib import Path
 
-from rapidocr import RapidOCR
+from rapidocr import ModelType, RapidOCR
 
 def compact(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", value.upper())
@@ -68,10 +68,14 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--manifest",required=True)
     ap.add_argument("--out",default="")
+    ap.add_argument("--model-size",choices=["small","medium"],default="small")
     args=ap.parse_args()
 
     manifest=json.loads(Path(args.manifest).read_text(encoding="utf-8"))
-    engine=RapidOCR()
+    params={}
+    if args.model_size=="medium":
+        params={"Det.model_type":ModelType.MEDIUM,"Rec.model_type":ModelType.MEDIUM}
+    engine=RapidOCR(params=params) if params else RapidOCR()
     rows=[]
     correct=total=0
     for case in manifest["cases"]:
@@ -95,6 +99,7 @@ def main():
 
     summary={
         "engine":"rapidocr",
+        "model_size":args.model_size,
         "cases":len(rows),
         "checked_fields":total,
         "correct_fields":correct,
