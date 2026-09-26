@@ -1,0 +1,58 @@
+name: Oracle Probe Mio Canva Render
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-probe-mio-canva-render.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve public Canva view to image render
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import html,re,urllib.request,urllib.parse
+          page='https://www.canva.com/d/2FNiut2A-8-vvFL'
+          req=urllib.request.Request(page,headers={'User-Agent':'Mozilla/5.0'})
+          with urllib.request.urlopen(req,timeout=20) as r:
+              body=r.read(2_000_000).decode('utf-8','replace')
+              print('mio_canva_page_status='+str(r.status))
+              print('mio_canva_page_host='+str(urllib.parse.urlparse(r.geturl()).hostname or ''))
+          candidates=[]
+          for pat in (
+              r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+              r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+              r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)',
+              r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
+          ):
+              m=re.search(pat,body,re.I)
+              if m:
+                  candidates.append(html.unescape(m.group(1)))
+          if not candidates:
+              raise SystemExit('mio_canva_render=NO_IMAGE_META')
+          image=candidates[0]
+          parsed=urllib.parse.urlparse(image)
+          print('mio_canva_render_host='+str(parsed.hostname or ''))
+          if parsed.scheme!='https':
+              raise SystemExit('mio_canva_render=NON_HTTPS')
+          req=urllib.request.Request(image,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'})
+          with urllib.request.urlopen(req,timeout=25) as r:
+              data=r.read(8*1024*1024+1)
+              ctype=str(r.headers.get('Content-Type') or '').lower()
+              print('mio_canva_render_status='+str(r.status))
+              print('mio_canva_render_type='+ctype.split(';',1)[0])
+              print('mio_canva_render_bytes='+str(len(data)))
+              if r.status!=200 or not ctype.startswith('image/') or not 30000<=len(data)<=8*1024*1024:
+                  raise SystemExit('mio_canva_render=INVALID_IMAGE')
+          print('mio_canva_render=PASS')
+          PY
