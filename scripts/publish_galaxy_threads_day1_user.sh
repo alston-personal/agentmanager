@@ -65,14 +65,20 @@ for binding_id,item in (store.get('bindings') or {}).items():
     if not isinstance(item,dict): continue
     if item.get('product_id')=='galaxy' and item.get('platform')=='threads':
         bindings.append((binding_id,item))
-if len(bindings)!=1:
+
+# Multiple credential bindings may be aliases (legacy/persona/viewer) for the same
+# provider account. Treat those as one identity, while still rejecting a truly
+# ambiguous store that contains more than one Threads provider account.
+provider_accounts={str(i.get('provider_account_id') or '') for _,i in bindings if i.get('provider_account_id')}
+if len(provider_accounts)!=1:
     safe=[{'binding_id':b,'username':i.get('username'),'provider_account_id':i.get('provider_account_id')} for b,i in bindings]
     print('galaxy_day1_binding_count='+str(len(bindings)))
     print('galaxy_day1_bindings='+json.dumps(safe,ensure_ascii=False,separators=(',',':')))
     raise SystemExit(3)
 
-binding_id,item=bindings[0]
-account_id=str(item.get('provider_account_id') or '')
+account_id=next(iter(provider_accounts))
+preferred=[(b,i) for b,i in bindings if b==f'galaxy:threads:{account_id}']
+binding_id,item=(preferred[0] if preferred else bindings[0])
 username=str(item.get('username') or '')
 if not account_id:
     raise SystemExit('galaxy_day1_publish=ACCOUNT_ID_MISSING')
@@ -82,7 +88,7 @@ if not account_id:
 post_key=os.environ.get('AGENTOS_SOCIAL_POST_KEY','galaxy-experiment-day1-20260918-v1')
 if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}', post_key):
     marker=marker.with_name(post_key+'.json')
-if post_key.startswith('mio-post-') and username.lstrip('@').lower()!='sunlake.milkcat':
+if post_key.startswith('mio-post-') and username.lstrip('@').lower() not in {'sunlake.milkcat','mio.milkcat'}:
     raise SystemExit('mio_day2_publish=ACCOUNT_MISMATCH')
 if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
     import subprocess
