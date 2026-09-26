@@ -1,0 +1,51 @@
+name: Oracle Repair Mio Seaside Asset
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-repair-mio-seaside-asset.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Re-encode seaside JPEG to normal baseline asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMG='personas/mio/approved/assets/mio-seaside-fantasy-20260926-baseline.jpg'
+          test -f "$IMG"
+          python3 - "$IMG" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          try:
+              from PIL import Image
+          except Exception as exc:
+              raise SystemExit('mio_seaside_asset_repair=PIL_UNAVAILABLE') from exc
+          before=p.stat().st_size
+          with Image.open(p) as im:
+              im=im.convert('RGB')
+              im.save(p,'JPEG',quality=92,subsampling=0,optimize=False,progressive=False)
+          after=p.stat().st_size
+          print(f'mio_seaside_asset_before={before}')
+          print(f'mio_seaside_asset_after={after}')
+          assert after >= 30000, f'reencoded_jpeg_still_too_small:{after}'
+          PY
+          git diff -- "$IMG"
+          git config user.name 'AgentOS'
+          git config user.email 'agentos@milkcat.org'
+          git add "$IMG"
+          git commit -m 'fix(mio): restore normal seaside JPEG encoding'
+          git push origin HEAD:core/integration
+          echo 'mio_seaside_asset_repair=PASS'
