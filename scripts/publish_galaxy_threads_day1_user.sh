@@ -155,8 +155,12 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
         from urllib.parse import quote
         import hashlib
         spec=json.loads(manifest.stdout)
+        external_only=False
         if isinstance(spec,dict) and set(spec)=={'image_path','image_alt_text'}:
             ordered=[{'image_path':spec['image_path'],'image_alt_text':spec['image_alt_text']}]
+        elif isinstance(spec,dict) and set(spec)=={'image_url','image_alt_text'}:
+            ordered=[{'image_url':spec['image_url'],'image_alt_text':spec['image_alt_text']}]
+            external_only=True
         elif (isinstance(spec,dict) and set(spec)=={'images'}
               and isinstance(spec['images'],list) and 2<=len(spec['images'])<=20):
             ordered=spec['images']
@@ -165,14 +169,33 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
         hosted_images=[]
         hosted_alts=[]
         for photo in ordered:
-            if not isinstance(photo,dict) or set(photo)!={'image_path','image_alt_text'}:
+            if not isinstance(photo,dict):
+                raise SystemExit('social_publish=INVALID_IMAGE_ITEM')
+            alt=str(photo.get('image_alt_text') or '').strip()
+            if not alt or len(alt)>1000:
+                raise SystemExit('social_publish=IMAGE_ALT_MISSING')
+            if set(photo)=={'image_url','image_alt_text'}:
+                from urllib.parse import urlparse
+                remote_url=str(photo['image_url']).strip()
+                parsed=urlparse(remote_url)
+                if parsed.scheme!='https' or parsed.hostname not in {'export-download.canva.com'}:
+                    raise SystemExit('social_publish=EXTERNAL_IMAGE_HOST_NOT_ALLOWED')
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(remote_url,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'}),timeout=18) as hosted:
+                        remote=hosted.read(8*1024*1024+1)
+                        served_type=str(hosted.headers.get('Content-Type') or '').lower()
+                        if hosted.status!=200 or not (30000<=len(remote)<=8*1024*1024) or not served_type.startswith('image/'):
+                            raise SystemExit('social_publish=EXTERNAL_IMAGE_INVALID')
+                except (OSError,TimeoutError) as exc:
+                    raise SystemExit('social_publish=IMAGE_CDN_UNAVAILABLE') from exc
+                hosted_images.append(remote_url)
+                hosted_alts.append(alt)
+                continue
+            if set(photo)!={'image_path','image_alt_text'}:
                 raise SystemExit('social_publish=INVALID_IMAGE_ITEM')
             rel=str(photo['image_path'])
             if not re.fullmatch(r'personas/mio/approved/assets/[a-z0-9-]{1,64}\.(?:png|jpg|jpeg)',rel):
                 raise SystemExit('social_publish=INVALID_IMAGE_PATH')
-            alt=str(photo['image_alt_text']).strip()
-            if not alt or len(alt)>1000:
-                raise SystemExit('social_publish=IMAGE_ALT_MISSING')
             blob=subprocess.run(['git','-C','/home/ubuntu/agentmanager','show',source+':'+rel],capture_output=True,check=True).stdout
             if not 32<=len(blob)<=8*1024*1024:
                 raise SystemExit('social_publish=INVALID_IMAGE_SIZE')
