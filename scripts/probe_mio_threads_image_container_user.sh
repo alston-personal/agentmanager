@@ -80,13 +80,13 @@ if not token:
     raise SystemExit('mio_image_container_probe=NO_TOKEN')
 print('mio_image_container_probe_binding=' + ('legacy' if bid==f'galaxy:threads:{account}' else 'persona'))
 
-# Exact immutable JPEG that was successfully published by Run 35704642738.
-image_url='https://raw.githubusercontent.com/alston-personal/agentmanager/acb76ec62337d1d8645a3495aeb83284bf221c3b/personas/mio/approved/assets/mio-mountain-squirrel-20260922.jpg'
+# Current full-size baseline JPEG from the failed seaside post.
+image_url='https://raw.githubusercontent.com/alston-personal/agentmanager/8b091433f5773f2452632319852e7030613f7e4f/personas/mio/approved/assets/mio-seaside-fantasy-20260926-baseline.jpg'
 status,doc=safe_post(graph+'/me/threads',token,{
     'media_type':'IMAGE',
     'image_url':image_url,
-    'alt_text':'Known-good historical image container probe.',
-    'text':'Mio image container diagnostic probe — not published.',
+    'alt_text':'Current seaside baseline image container probe.',
+    'text':'Mio seaside image container diagnostic probe — not published.',
 })
 if status!=200:
     raise SystemExit('mio_image_container_probe=CREATE_FAILED')

@@ -31,7 +31,7 @@ jobs:
           test "$(grep -c "threads_publish" scripts/probe_mio_threads_image_container_user.sh || true)" -eq 0
           echo 'mio_image_container_probe_preflight=PASS'
 
-      - name: Probe known-good historical JPEG through ubuntu bootstrap
+      - name: Probe current seaside baseline JPEG through ubuntu bootstrap
         shell: bash
         run: |
           set -euo pipefail
