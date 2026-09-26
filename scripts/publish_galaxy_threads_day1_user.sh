@@ -161,6 +161,9 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
         elif isinstance(spec,dict) and set(spec)=={'image_url','image_alt_text'}:
             ordered=[{'image_url':spec['image_url'],'image_alt_text':spec['image_alt_text']}]
             external_only=True
+        elif isinstance(spec,dict) and set(spec)=={'image_page_url','image_alt_text'}:
+            ordered=[{'image_page_url':spec['image_page_url'],'image_alt_text':spec['image_alt_text']}]
+            external_only=True
         elif (isinstance(spec,dict) and set(spec)=={'images'}
               and isinstance(spec['images'],list) and 2<=len(spec['images'])<=20):
             ordered=spec['images']
@@ -174,6 +177,45 @@ if re.fullmatch(r'mio-post-[a-z0-9-]{1,72}',post_key):
             alt=str(photo.get('image_alt_text') or '').strip()
             if not alt or len(alt)>1000:
                 raise SystemExit('social_publish=IMAGE_ALT_MISSING')
+            if set(photo)=={'image_page_url','image_alt_text'}:
+                from urllib.parse import urlparse
+                import html
+                page_url=str(photo['image_page_url']).strip()
+                parsed=urlparse(page_url)
+                if parsed.scheme!='https' or parsed.hostname!='www.canva.com' or not parsed.path.startswith('/d/'):
+                    raise SystemExit('social_publish=EXTERNAL_IMAGE_PAGE_NOT_ALLOWED')
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(page_url,headers={'User-Agent':'Mozilla/5.0'}),timeout=20) as page:
+                        page_body=page.read(2_000_001)
+                        if page.status!=200 or len(page_body)>2_000_000:
+                            raise SystemExit('social_publish=EXTERNAL_IMAGE_PAGE_INVALID')
+                    body=page_body.decode('utf-8','replace')
+                    candidates=[]
+                    for pat in (
+                        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+                        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+                        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)',
+                        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
+                    ):
+                        m=re.search(pat,body,re.I)
+                        if m:
+                            candidates.append(html.unescape(m.group(1)))
+                    if not candidates:
+                        raise SystemExit('social_publish=EXTERNAL_IMAGE_PAGE_NO_RENDER')
+                    remote_url=candidates[0]
+                    resolved=urlparse(remote_url)
+                    if resolved.scheme!='https' or resolved.hostname not in {'static.canva.com','media.canva.com','export-download.canva.com'}:
+                        raise SystemExit('social_publish=EXTERNAL_IMAGE_RENDER_HOST_NOT_ALLOWED')
+                    with urllib.request.urlopen(urllib.request.Request(remote_url,headers={'User-Agent':'AgentOS-Mio-Media-Preflight/1'}),timeout=25) as hosted:
+                        remote=hosted.read(8*1024*1024+1)
+                        served_type=str(hosted.headers.get('Content-Type') or '').lower()
+                        if hosted.status!=200 or not (30000<=len(remote)<=8*1024*1024) or not served_type.startswith('image/'):
+                            raise SystemExit('social_publish=EXTERNAL_IMAGE_INVALID')
+                except (OSError,TimeoutError) as exc:
+                    raise SystemExit('social_publish=IMAGE_CDN_UNAVAILABLE') from exc
+                hosted_images.append(remote_url)
+                hosted_alts.append(alt)
+                continue
             if set(photo)=={'image_url','image_alt_text'}:
                 from urllib.parse import urlparse
                 remote_url=str(photo['image_url']).strip()

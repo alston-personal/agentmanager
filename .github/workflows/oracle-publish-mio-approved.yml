@@ -39,6 +39,8 @@ jobs:
               photos=[data]
           elif set(data)=={"image_url","image_alt_text"}:
               photos=[data]
+          elif set(data)=={"image_page_url","image_alt_text"}:
+              photos=[data]
           elif set(data)=={"images"} and isinstance(data["images"],list) and 2<=len(data["images"])<=20:
               photos=data["images"]
           else:
@@ -46,6 +48,11 @@ jobs:
           for photo in photos:
               assert isinstance(photo,dict), "mio_image_item_invalid"
               assert 0<len(str(photo.get("image_alt_text") or "").strip())<=1000, "mio_image_alt_missing"
+              if set(photo)=={"image_page_url","image_alt_text"}:
+                  from urllib.parse import urlparse
+                  u=urlparse(str(photo["image_page_url"]))
+                  assert u.scheme=="https" and u.hostname=="www.canva.com" and u.path.startswith("/d/"), "mio_external_image_page_invalid"
+                  continue
               if set(photo)=={"image_url","image_alt_text"}:
                   from urllib.parse import urlparse
                   u=urlparse(str(photo["image_url"]))
