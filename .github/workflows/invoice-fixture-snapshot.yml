@@ -9,7 +9,7 @@ on:
       - '.github/workflows/invoice-fixture-snapshot.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   snapshot:
@@ -47,6 +47,33 @@ jobs:
               else:
                   raise RuntimeError(f"{case['id']}: {last}")
           PY
+      - name: Pin fixture bytes in repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p benchmarks/invoice_handwriting/fixtures
+          cp /tmp/invoice-fixtures/* benchmarks/invoice_handwriting/fixtures/
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path("benchmarks/invoice_handwriting/public_cases.json")
+          m=json.loads(p.read_text())
+          fixture_dir=pathlib.Path("benchmarks/invoice_handwriting/fixtures")
+          for case in m["cases"]:
+              matches=list(fixture_dir.glob(case["id"]+".*"))
+              if len(matches)!=1:
+                  raise RuntimeError(f"fixture match for {case['id']}: {matches}")
+              case["fixture_path"]=str(matches[0])
+          p.write_text(json.dumps(m,ensure_ascii=False,indent=2)+"\n")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/invoice_handwriting/fixtures benchmarks/invoice_handwriting/public_cases.json
+          if git diff --cached --quiet; then
+            echo "fixtures already pinned"
+          else
+            git commit -m "test(invoice): pin public OCR fixture bytes"
+            git push origin HEAD:feat/invoice-template-router
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: invoice-public-fixtures
