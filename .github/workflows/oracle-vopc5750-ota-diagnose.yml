@@ -27,6 +27,9 @@ jobs:
           assert cmd.get('schema')=='agentos.realm-command/v0.1'
           assert cmd.get('action')=='realm.node.ota-diagnose'
           assert cmd.get('node_id')=='vopc5750'
+          for prior in (cmd.get('receipt_task_ids') or []):
+              r=RealmFabricStore().get_receipt(str(prior))
+              print('prior_receipt='+json.dumps(r,ensure_ascii=False,sort_keys=True) if r else 'prior_receipt_missing='+str(prior))
           ps=r'''
           $ErrorActionPreference='Stop'
           $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
