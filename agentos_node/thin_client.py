@@ -96,6 +96,20 @@ class ThinClient:
         surface_inventory = self.surface_inventory()
         caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect', 'node.runtime.converge']
         caps.extend(surface_inventory.get('capabilities') or [])
+
+        # Session bridge capabilities are provider-authorized and must be
+        # advertised only when a configured bridge is actually ready.
+        # This keeps Node discovery aligned with what execute() can really do.
+        for provider in ('antigravity', 'gemini', 'claude-code', 'codex', 'cursor', 'vscode'):
+            try:
+                from agentos_node.session_bridge import describe_bridge
+                descriptor = describe_bridge(provider)
+            except Exception:
+                descriptor = None
+            if descriptor and descriptor.get('ready'):
+                caps.extend(descriptor.get('capabilities') or [])
+                # Receipts are part of the same governed bridge surface.
+                caps.append('agent.session.receipt')
         if self.policy.allowed_executables:
             caps.append('shell.exec')
         if self.policy.readable_roots:
