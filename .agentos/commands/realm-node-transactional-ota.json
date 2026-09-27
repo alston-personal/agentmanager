@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.transactional_ota",
+  "node_id": "vopc5750",
+  "source_commit": "1e6349c0c9148fd28e141360ee408f7ce4445a06",
+  "nonce": "transactional-ota-first-acceptance-20260927"
+}
