@@ -155,8 +155,8 @@ jobs:
           for pid in $(pgrep -f '/usr/bin/python3 fortune_server.py' || true); do
             cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
             cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-            if [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; then
-              echo "terminating_stale_pid=$pid"
+            if { [ "$cwd" = "$WEB" ] && [ "$cmd" = '/usr/bin/python3 fortune_server.py ' ]; } || [ "$cmd" = "/usr/bin/python3 $WEB/fortune_server.py " ]; then
+              echo "terminating_stale_pid=$pid cmd=$cmd"
               kill "$pid" || true
             fi
           done
