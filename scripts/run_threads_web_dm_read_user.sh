@@ -26,6 +26,14 @@ RC=$?
 set -e
 printf '%s
 ' "$OUT" | grep -E '^threads_web_dm_' || true
+echo "threads_web_dm_python_rc=$RC"
+if [ "$RC" -ne 0 ] && ! printf '%s
+' "$OUT" | grep -Eq '^threads_web_dm_(bridge|error_type)='; then
+  SAFE_TYPE="$(printf '%s
+' "$OUT" | sed -nE 's/^([A-Za-z_][A-Za-z0-9_.]*(Error|Exception))(:.*)?$/\1/p' | tail -n 1)"
+  [ -n "$SAFE_TYPE" ] || SAFE_TYPE="unclassified_python_failure"
+  echo "threads_web_dm_error_type=$SAFE_TYPE"
+fi
 
 if printf '%s
 ' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
