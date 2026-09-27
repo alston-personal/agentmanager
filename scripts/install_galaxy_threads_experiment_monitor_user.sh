@@ -223,6 +223,36 @@ Unit=agentos-galaxy-experiment-monitor.service
 WantedBy=timers.target
 EOF
 
+# One-time migration backfill: the first shared Social Post Experiment was
+# published before automatic registration existed. Keep it idempotent and
+# scoped to the verified Mio post receipt.
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+root=Path('/home/ubuntu/agent-data/runtime/social/post-experiments')
+q=root/'queue'; done=root/'completed'
+q.mkdir(parents=True,exist_ok=True); done.mkdir(parents=True,exist_ok=True)
+name='mio-post-20260927-sunday-reflection-v1-18142806262589652.json'
+if not (q/name).exists() and not (done/name).exists():
+    payload={
+      'schema':'agentos.social-post-experiment-registration/v1',
+      'account_username':'mio.milkcat',
+      'post_id':'18142806262589652',
+      'permalink':'https://www.threads.com/@mio.milkcat/post/DdxcN44jx5T',
+      'experiment_id':'mio-post-20260927-sunday-reflection-v1',
+      'published_at':'2026-09-27T01:34:41Z',
+      'next_elapsed_minutes':60,
+      'hypothesis':'short contrast hook can create low-friction discussion',
+      'changed_variables':['text_only','contrast_hook','direct_question'],
+    }
+    p=q/name; tmp=p.with_suffix('.tmp')
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    os.chmod(tmp,0o600); tmp.replace(p); os.chmod(p,0o600)
+    print('social_experiment_backfill=REGISTERED')
+else:
+    print('social_experiment_backfill=ALREADY_PRESENT')
+PY
+
 systemctl --user daemon-reload
 systemctl --user enable --now agentos-galaxy-experiment-monitor.timer >/dev/null
 if ! systemctl --user start agentos-galaxy-experiment-monitor.service; then
