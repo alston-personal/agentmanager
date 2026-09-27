@@ -28,10 +28,16 @@ jobs:
           if (-not (Test-Path (Join-Path $root 'agentos-client.cmd'))) { throw 'launcher missing' }
           if (-not (Test-Path (Join-Path $root 'state\policy.json'))) { throw 'policy missing' }
           & (Join-Path $root 'agentos-client.cmd') --help
-      - name: Verify local capability runtime
+      - name: Verify installed package in isolation
         shell: powershell
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'AgentOS'
           $env:PYTHONPATH = $root
           $env:AGENTOS_CLIENT_HOME = Join-Path $root 'state'
-          python -c "from agentos_node.thin_client import ThinClient,ThinClientPolicy,NodeIdentity; from pathlib import Path; p=ThinClientPolicy(allowed_executables={'python'},readable_roots=(Path(r'$env:RUNNER_TEMP'),)); c=ThinClient(NodeIdentity('test-realm','windows-ci'),p); m=c.capability_manifest(); assert m['platform']=='Windows'; assert 'shell.exec' in m['capabilities']; print('windows_thin_client=PASS')"
+          Push-Location $env:RUNNER_TEMP
+          try {
+            python -c "import agentos_node.thin_client as t; import pathlib; p=pathlib.Path(t.__file__).resolve(); root=pathlib.Path(r'$env:RUNNER_TEMP')/'AgentOS'; assert str(p).lower().startswith(str(root.resolve()).lower()), (p,root); print('installed_import='+str(p))"
+            python -c "from agentos_node.thin_client import ThinClient,ThinClientPolicy,NodeIdentity; from pathlib import Path; p=ThinClientPolicy(allowed_executables={'python'},readable_roots=(Path(r'$env:RUNNER_TEMP'),)); c=ThinClient(NodeIdentity('test-realm','windows-ci'),p); m=c.capability_manifest(); assert m['platform']=='Windows'; assert 'shell.exec' in m['capabilities']; print('windows_thin_client=PASS')"
+          } finally {
+            Pop-Location
+          }
