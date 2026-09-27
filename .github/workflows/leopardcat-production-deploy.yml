@@ -48,11 +48,11 @@ jobs:
             case "$f" in
               website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;;
               website/fortune_server.py)
-      echo "=== unexpected dirty diff: $f ==="
-      git -C "$ROOT" diff -- "$f" || true
-      exit 20
-      ;;
-    *) echo "unexpected_dirty=$f"; exit 20 ;;
+                echo "=== unexpected dirty diff: $f ==="
+                git -C "$ROOT" diff -- "$f" || true
+                exit 20
+                ;;
+              *) echo "unexpected_dirty=$f"; exit 20 ;;
             esac
           done
           echo "dirty_allowed=${#DIRTY[@]}"
