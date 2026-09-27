@@ -14,7 +14,6 @@ from typing import Any
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
-from agentos_node.employee_wake_inbox import deliver_employee_wake
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
 
@@ -190,6 +189,7 @@ class ThinClient:
             elif action == 'agent.employee.wake.deliver':
                 if self.policy.employee_wake_root is None:
                     raise PermissionError('employee_wake_inbox_not_configured')
+                from agentos_node.employee_wake_inbox import deliver_employee_wake
                 result = deliver_employee_wake(
                     task,
                     self.policy.employee_wake_root,
