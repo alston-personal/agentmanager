@@ -14,11 +14,14 @@ SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   for rel in \
     scripts/monitor_galaxy_threads_experiment_user.py \
+    scripts/monitor_social_post_experiment_user.py \
+    scripts/run_social_post_experiment_queue_user.py \
     scripts/sync_sunlake_milkcat_persona_user.py \
     scripts/evolve_mio_persona_ir_user.py \
     scripts/mio_persona_social_loop_user.py \
     scripts/diagnose_mio_threads_search_scope_user.py \
-    agentos_node/persona_life.py; do
+    agentos_node/persona_life.py \
+    agentos_node/social/post_experiment.py; do
     tmp="$(mktemp)"
     git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$tmp"
     install -m 0644 "$tmp" "$REPO/$rel"
@@ -53,6 +56,8 @@ LOG_DIR="$HOME/agent-data/logs"
 LOG="$LOG_DIR/galaxy-experiment-monitor.log"
 
 test -f "$REPO/scripts/monitor_galaxy_threads_experiment_user.py"
+test -f "$REPO/scripts/monitor_social_post_experiment_user.py"
+test -f "$REPO/scripts/run_social_post_experiment_queue_user.py"
 test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
 test -f "$REPO/scripts/evolve_mio_persona_ir_user.py"
 test -f "$REPO/scripts/mio_persona_social_loop_user.py"
@@ -193,6 +198,7 @@ Type=oneshot
 WorkingDirectory=$REPO
 Environment=AGENTOS_MIO_RELAY_ROOT=$MIO_RELAY_ROOT
 ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.py
+ExecStart=/usr/bin/python3 $REPO/scripts/run_social_post_experiment_queue_user.py
 # Order is causal: observe -> persist event -> evolve current self -> decide/reply.
 # If canonical sync/evolution fails, do not answer from stale or isolated context.
 ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $REPO/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
@@ -293,7 +299,7 @@ echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=10m"
 echo "galaxy_experiment_monitor_log=$LOG"
 if [ -f "$LOG" ]; then
-  tail -n 220 "$LOG" | grep -E '^(galaxy_monitor=|galaxy_monitor_reply_count=|galaxy_monitor_new_replies=|persona_git_sync=|persona_git_sync_added=|mio_persona_ir_evolve=|mio_persona_ir_revision=|mio_persona_ir_new_events=|mio_persona_ir_new_growth=|mio_persona_cycle=|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 80 || true
+  tail -n 220 "$LOG" | grep -E '^(social_experiment_queue=|social_experiment_queue_checked=|social_experiment_queue_advanced=|social_experiment_queue_failed=|galaxy_monitor=|galaxy_monitor_reply_count=|galaxy_monitor_new_replies=|persona_git_sync=|persona_git_sync_added=|mio_persona_ir_evolve=|mio_persona_ir_revision=|mio_persona_ir_new_events=|mio_persona_ir_new_growth=|mio_persona_cycle=|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 80 || true
 fi
 python3 - <<'PY'
 import json
