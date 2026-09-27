@@ -1,0 +1,49 @@
+name: Invoice Template OCR Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/invoice-template-router
+    paths:
+      - 'benchmarks/invoice_handwriting/**'
+      - 'scripts/invoice_template_router.py'
+      - '.github/workflows/invoice-template-router-benchmark.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: invoice-template-router-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OCR stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/invoice-template-router-venv
+          /tmp/invoice-template-router-venv/bin/python -m pip install --upgrade pip
+          /tmp/invoice-template-router-venv/bin/pip install rapidocr onnxruntime pillow opencv-python-headless numpy
+      - name: Run template-first benchmark
+        shell: bash
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=20s 330s \
+            /tmp/invoice-template-router-venv/bin/python scripts/invoice_template_router.py \
+              --manifest benchmarks/invoice_handwriting/public_cases.json \
+              --templates benchmarks/invoice_handwriting/templates.json \
+              --out /tmp/invoice-template-router-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: invoice-template-router-benchmark
+          path: /tmp/invoice-template-router-benchmark.json
+          if-no-files-found: ignore
+          retention-days: 7
