@@ -1,0 +1,63 @@
+name: Oracle vopc5750 Transactional OTA
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Immutable candidate commit
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  ota:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/integration
+      - name: Queue staged OTA
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re,time
+          from agent_core.realm_fabric import RealmFabricStore
+          sha='''${{ inputs.source_commit }}'''.strip()
+          if not re.fullmatch(r'[0-9a-f]{40}',sha): raise SystemExit('invalid source commit')
+          url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/windows/transactional_ota.ps1'
+          ps=f"$p=Join-Path $env:TEMP 'agentos-transactional-ota.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -SourceCommit '{sha}'"
+          task_id='ota-stage-vopc5750-'+str(int(time.time()))
+          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':120,'cognition_ids_used':[]})
+          open('/tmp/ota-task','w').write(task_id)
+          print('ota_stage_task='+task_id)
+          PY
+      - name: Wait for staging receipt
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          tid=open('/tmp/ota-task').read().strip()
+          for _ in range(70):
+            r=RealmFabricStore().get_receipt(tid)
+            if r:
+              if r.get('ok') is not True: raise SystemExit(str(r))
+              print('ota_stage_receipt=PASS'); raise SystemExit(0)
+            time.sleep(2)
+          raise SystemExit('ota staging receipt timeout')
+          PY
+      - name: Controller acceptance
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from agent_core.runtime_ota_acceptance import accept_candidate
+          sha='''${{ inputs.source_commit }}'''.strip()
+          r=accept_candidate('vopc5750',sha,timeout_seconds=120)
+          print(r)
+          if not r.get('ok'): raise SystemExit('controller acceptance failed')
+          PY
