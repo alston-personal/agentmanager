@@ -14,7 +14,7 @@ required=[
     'agentos_ota_controller_acceptance=PENDING',
     'AgentOS Thin Client OTA Guard',
     'AgentOS Thin Client OTA Activator',
-    'transactional_ota_activate.ps1',
+    'transactional_ota_activate-',
     'AGENTOS_RUNTIME_PROVENANCE',
     'cannot bootstrap LKG',
     'function Write-JsonAtomic',
