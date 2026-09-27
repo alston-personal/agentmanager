@@ -69,6 +69,7 @@ jobs:
 
           test -d "$DATA_REPO/.git"
           /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh auth setup-git
 
           git -C "$DATA_REPO" fetch origin main
           git -C "$DATA_REPO" checkout main
