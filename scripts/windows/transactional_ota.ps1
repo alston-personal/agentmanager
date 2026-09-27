@@ -22,3 +22,28 @@ $record.status='activating';$record|ConvertTo-Json -Depth 5|Set-Content -Encodin
 Start-ScheduledTask -TaskName $TaskName
 Write-Output 'agentos_ota_stage=ACTIVATING'
 Write-Output ('agentos_ota_candidate='+$SourceCommit)
+
+Start-Sleep -Seconds 12
+$task=Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+$healthy=$false
+if($task -and $task.State -eq 'Running'){$healthy=$true}
+if(-not $healthy){
+  if($previous -and $previous.path){
+    $rollbackLines=@('@echo off','set "PYTHONPATH='+[string]$previous.path+'"','set "AGENTOS_CLIENT_HOME='+$state+'"','python -m agentos_node.client_cli %*')
+    $rollbackNext=Join-Path $InstallRoot 'agentos-client.rollback.cmd'
+    $rollbackLines|Set-Content -Encoding ASCII $rollbackNext
+    Move-Item -Force $rollbackNext $launcher
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Start-ScheduledTask -TaskName $TaskName
+    $previous.status='rollback-restored'
+    $previous|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
+    Write-Output 'agentos_ota_rollback=PASS'
+  }
+  throw 'candidate post-switch health acceptance failed'
+}
+$record.status='active-accepted'
+$record.accepted_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+$record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
+$record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $lkgFile
+Write-Output 'agentos_ota_post_switch=PASS'
+Write-Output 'agentos_ota=PASS'
