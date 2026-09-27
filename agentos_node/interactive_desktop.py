@@ -107,45 +107,41 @@ def screenshot(workspace: Path, *, quality: int = 55) -> dict[str, Any]:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
     workspace = workspace.expanduser().resolve()
     workspace.mkdir(parents=True, exist_ok=True)
-    target = workspace / 'agentos-desktop-current.jpg'
-    quality = max(20, min(int(quality), 85))
-    script = r'''
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$bounds=[System.Windows.Forms.SystemInformation]::VirtualScreen
-$bmp=New-Object System.Drawing.Bitmap $bounds.Width,$bounds.Height
-$g=[System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($bounds.Left,$bounds.Top,0,0,$bmp.Size)
-$enc=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
-$ep=New-Object System.Drawing.Imaging.EncoderParameters 1
-$ep.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality,[long]$env:AGENTOS_JPEG_QUALITY)
-$bmp.Save($env:AGENTOS_SCREENSHOT_PATH,$enc,$ep)
-$g.Dispose(); $bmp.Dispose()
-Write-Output ($bounds.Width.ToString()+','+$bounds.Height.ToString())
-'''
-    env = os.environ.copy()
-    env['AGENTOS_SCREENSHOT_PATH'] = str(target)
-    env['AGENTOS_JPEG_QUALITY'] = str(quality)
-    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=20, env=env, check=False, creationflags=flags)
-    if cp.returncode != 0 or not target.is_file():
-        raise RuntimeError(f'screenshot failed rc={cp.returncode}: {cp.stderr[-2000:]}')
-    raw = target.read_bytes()
-    if len(raw) > 1_500_000:
+    target = workspace / 'agentos-desktop-current.bmp'
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN = 76, 77
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
+    x, y = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN)), int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+    width, height = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)), int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f'invalid virtual screen bounds: {x},{y} {width}x{height}')
+    hdc = user32.GetDC(0)
+    mem = gdi32.CreateCompatibleDC(hdc)
+    bmp = gdi32.CreateCompatibleBitmap(hdc, width, height)
+    old = gdi32.SelectObject(mem, bmp)
+    try:
+        if not gdi32.BitBlt(mem, 0, 0, width, height, hdc, x, y, 0x00CC0020):
+            raise ctypes.WinError()
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_=[('biSize',ctypes.c_uint32),('biWidth',ctypes.c_int32),('biHeight',ctypes.c_int32),('biPlanes',ctypes.c_uint16),('biBitCount',ctypes.c_uint16),('biCompression',ctypes.c_uint32),('biSizeImage',ctypes.c_uint32),('biXPelsPerMeter',ctypes.c_int32),('biYPelsPerMeter',ctypes.c_int32),('biClrUsed',ctypes.c_uint32),('biClrImportant',ctypes.c_uint32)]
+        row=((width*3+3)//4)*4
+        size=row*height
+        buf=ctypes.create_string_buffer(size)
+        bih=BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER),width,height,1,24,0,size,0,0,0,0)
+        if not gdi32.GetDIBits(mem,bmp,0,height,buf,ctypes.byref(bih),0):
+            raise ctypes.WinError()
+        import struct
+        offset=14+40
+        header=b'BM'+struct.pack('<IHHI',offset+size,0,0,offset)
+        dib=struct.pack('<IiiHHIIiiII',40,width,height,1,24,0,size,0,0,0,0)
+        raw=header+dib+buf.raw
+        target.write_bytes(raw)
+    finally:
+        gdi32.SelectObject(mem,old); gdi32.DeleteObject(bmp); gdi32.DeleteDC(mem); user32.ReleaseDC(0,hdc)
+    if len(raw) > 12_000_000:
         raise RuntimeError(f'screenshot exceeds evidence limit: {len(raw)} bytes')
-    dims = (cp.stdout or '').strip().split(',')
-    width = int(dims[-2]) if len(dims) >= 2 else None
-    height = int(dims[-1]) if len(dims) >= 2 else None
-    return {
-        'path': str(target),
-        'mime_type': 'image/jpeg',
-        'bytes': len(raw),
-        'sha256': hashlib.sha256(raw).hexdigest(),
-        'width': width,
-        'height': height,
-        'image_base64': base64.b64encode(raw).decode('ascii'),
-        'session': info,
-    }
+    return {'path':str(target),'mime_type':'image/bmp','bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),'width':width,'height':height,'image_base64':base64.b64encode(raw).decode('ascii'),'session':info}
 
 
 def mouse(task: dict[str, Any]) -> dict[str, Any]:
