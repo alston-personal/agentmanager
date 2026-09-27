@@ -435,7 +435,9 @@ class InvoiceStore:
                       FROM invoices i JOIN documents d ON d.id=i.document_id
                       WHERE i.id=?
                     """, (invoice_id,)).fetchone()
-                    return self._row_payload(done)
+                    payload = self._row_payload(done)
+                    payload["engine"] = extraction.raw["engine"]
+                    return payload
             except Exception:
                 with self.connect() as db:
                     db.execute(
@@ -447,7 +449,9 @@ class InvoiceStore:
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute("""
-              SELECT i.*, d.sha256, d.original_filename
+              SELECT i.*, d.sha256, d.original_filename,
+                     (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
+                      ORDER BY e.created_at DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
               WHERE i.id=?
             """, (invoice_id,)).fetchone()
@@ -500,6 +504,7 @@ class InvoiceStore:
                 "total_amount": row["total_amount"] if "total_amount" in row.keys() else None,
             },
             "confidence": json.loads(row["confidence_json"]) if "confidence_json" in row.keys() and row["confidence_json"] else {},
+            "engine": row["extraction_engine"] if "extraction_engine" in row.keys() and row["extraction_engine"] else None,
             "sha256": row["sha256"] if "sha256" in row.keys() else None,
             "original_filename": row["original_filename"] if "original_filename" in row.keys() else None,
         }
@@ -508,7 +513,9 @@ class InvoiceStore:
         limit = max(1, min(100, limit))
         with self.connect() as db:
             rows = db.execute("""
-              SELECT i.*, d.sha256, d.original_filename
+              SELECT i.*, d.sha256, d.original_filename,
+                     (SELECT e.engine FROM extractions e WHERE e.document_id=i.document_id
+                      ORDER BY e.created_at DESC LIMIT 1) AS extraction_engine
               FROM invoices i JOIN documents d ON d.id=i.document_id
               ORDER BY i.created_at DESC LIMIT ?
             """, (limit,)).fetchall()
