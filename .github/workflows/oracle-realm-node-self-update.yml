@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/realm-node-fabric-readiness
+      - core/integration
     paths:
       - '.agentos/commands/realm-node-self-update.json'
       - '.github/workflows/oracle-realm-node-self-update.yml'
@@ -23,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feature/realm-node-fabric-readiness
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: Normalize Node OTA capability contract
@@ -99,7 +100,7 @@ jobs:
 
           $provenance=[ordered]@{
             schema='agentos.thin-client-runtime/v0.1'
-            source_ref='feature/realm-node-fabric-readiness'
+            source_ref='${{ github.ref_name }}'
             source_commit='REF'
             installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             install_mode='bootstrap-preserve-lifecycle'
