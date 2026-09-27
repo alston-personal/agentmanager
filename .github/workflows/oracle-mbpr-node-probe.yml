@@ -1,0 +1,44 @@
+name: Oracle MBPR Node Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-node-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Queue governed MBPR probe
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-node-probe.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.probe'
+          assert cmd.get('node_id')=='mbpr'
+          tid='probe-mbpr-'+str(int(time.time()))
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',"import platform,socket; print('AGENTOS_MBPR_PROBE_PASS'); print(socket.gethostname()); print(platform.system())"],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          print('probe_task_id='+tid)
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is not True or 'AGENTOS_MBPR_PROBE_PASS' not in out:
+                      raise SystemExit(str(r))
+                  print('mbpr_probe=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr probe receipt timeout')
+          PY
