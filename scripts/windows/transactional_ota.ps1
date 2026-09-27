@@ -10,8 +10,25 @@ foreach($rel in $files){$dest=Join-Path $candidate ($rel -replace '/','\');New-I
 $env:PYTHONPATH=$candidate
 & python -c "import agentos_node.thin_client,agentos_node.interactive_desktop,agentos_node.client_cli; print('candidate_import=PASS')"
 if($LASTEXITCODE -ne 0){Remove-Item -Recurse -Force $candidate;throw 'candidate import validation failed'}
-$previous=$null;if(Test-Path $currentFile){$previous=Get-Content -Raw $currentFile|ConvertFrom-Json}
-if($previous){$previous|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $lkgFile}
+$previous=$null
+if(Test-Path $currentFile){
+  $previous=Get-Content -Raw $currentFile|ConvertFrom-Json
+}else{
+  $legacyId='legacy-'+(Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
+  $legacy=Join-Path $versions $legacyId
+  New-Item -ItemType Directory -Force -Path $legacy|Out-Null
+  $legacyPkg=Join-Path $legacy 'agentos_node'
+  if(-not(Test-Path (Join-Path $InstallRoot 'agentos_node'))){throw 'cannot bootstrap LKG: active agentos_node missing'}
+  Copy-Item -Recurse -Force (Join-Path $InstallRoot 'agentos_node') $legacyPkg
+  $legacyCommit='unknown'
+  $legacyProv=Join-Path $InstallRoot 'runtime-provenance.json'
+  if(Test-Path $legacyProv){
+    try{$legacyCommit=[string]((Get-Content -Raw $legacyProv|ConvertFrom-Json).source_commit)}catch{}
+  }
+  $previous=[ordered]@{schema='agentos.thin-client-runtime/v0.1';source_ref='bootstrap-lkg';source_commit=$legacyCommit;path=$legacy;installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ');status='active-accepted'}
+  $previous|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
+}
+$previous|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $lkgFile
 $launcher=Join-Path $InstallRoot 'agentos-client.cmd';$next=Join-Path $InstallRoot 'agentos-client.next.cmd';$state=Join-Path $InstallRoot 'state'
 $lines=@('@echo off','set "PYTHONPATH='+$candidate+'"','set "AGENTOS_CLIENT_HOME='+$state+'"','python -m agentos_node.client_cli %*')
 $lines|Set-Content -Encoding ASCII $next
