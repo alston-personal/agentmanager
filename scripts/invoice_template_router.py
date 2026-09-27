@@ -99,7 +99,13 @@ def unpack(result) -> tuple[list[str], list[float]]:
     return texts, scores
 
 def _run_ocr(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
-    buf = io.BytesIO(); image.save(buf, format="PNG")
+    # Cap OCR resolution for CPU latency. ROI coordinates are normalized, so this does not affect geometry.
+    w,h=image.size
+    max_side=1800
+    if max(w,h)>max_side:
+        scale=max_side/max(w,h)
+        image=image.resize((max(1,int(w*scale)),max(1,int(h*scale))), Image.Resampling.LANCZOS)
+    buf = io.BytesIO(); image.save(buf, format="PNG", optimize=False)
     texts, scores = unpack(engine(buf.getvalue()))
     text = "\n".join(texts)
     score = sum(scores)/len(scores) if scores else (0.5 if text.strip() else 0.0)
