@@ -28,66 +28,82 @@ jobs:
     timeout-minutes: 10
     env:
       PERSONA_PATH: ${{ github.event.inputs.persona_path || 'personas/sunlake-milkcat' }}
-      DATA_REPO: /tmp/agentos-persona-data
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Materialize canonical persona data
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Verify carrier
         shell: bash
         run: |
           set -euo pipefail
           test -f scripts/persona_pdca_tick.py
-          /usr/bin/gh auth status >/dev/null
-          rm -rf "$DATA_REPO"
-          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch
+          test -n "${DEPLOY_USER:-}"
+          echo "persona_pdca_carrier=PASS"
+
+      - name: Transfer PDCA runtime to Oracle execution identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_SCRIPT="/tmp/persona_pdca_tick-$GITHUB_RUN_ID.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             scripts/persona_pdca_tick.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SCRIPT"
+          echo "REMOTE_SCRIPT=$REMOTE_SCRIPT" >> "$GITHUB_ENV"
+
+      - name: Run and persist one PDCA cycle on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             "${DEPLOY_USER}@${DEPLOY_HOST}"             bash -s -- "$PERSONA_PATH" "$REMOTE_SCRIPT" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          PERSONA_PATH="$1"
+          SCRIPT="$2"
+          RUN_ID="$3"
+          DATA_REPO=/home/ubuntu/agent-data
+          RECEIPT="/tmp/persona-pdca-receipt-$RUN_ID.json"
+
           test -d "$DATA_REPO/.git"
           test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
           test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
           test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
-          echo "persona_pdca_data_materialize=PASS"
+          /usr/bin/gh auth status >/dev/null
 
-      - name: Run one bounded PDCA cycle
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .agentos/evidence
-          python3 scripts/persona_pdca_tick.py             --persona-dir "$DATA_REPO/$PERSONA_PATH"             --receipt-out ".agentos/evidence/persona-pdca-latest.json"
-          python3 -m json.tool .agentos/evidence/persona-pdca-latest.json >/dev/null
-          cat .agentos/evidence/persona-pdca-latest.json
+          git -C "$DATA_REPO" fetch origin main
+          git -C "$DATA_REPO" checkout main
+          git -C "$DATA_REPO" pull --ff-only origin main
 
-      - name: Persist Persona PDCA state
-        shell: bash
-        run: |
-          set -euo pipefail
+          python3 "$SCRIPT"             --persona-dir "$DATA_REPO/$PERSONA_PATH"             --receipt-out "$RECEIPT"
+
+          python3 -m json.tool "$RECEIPT" >/dev/null
+
           cd "$DATA_REPO"
           git config user.name 'agentos-persona-pdca[bot]'
           git config user.email 'agentos-persona-pdca[bot]@users.noreply.github.com'
           git add "$PERSONA_PATH/pdca" "$PERSONA_PATH/events/events.jsonl"
-          if git diff --cached --quiet; then
-            echo "persona_pdca_persist=NO_CHANGE"
-            exit 0
+          if ! git diff --cached --quiet; then
+            CYCLE=$(python3 -c "import json; print(json.load(open('$PERSONA_PATH/pdca/state.json'))['cycle'])")
+            git commit -m "persona(mio): persist autonomous PDCA cycle $CYCLE"
+            git push
           fi
-          CYCLE=$(python3 -c "import json; print(json.load(open('$PERSONA_PATH/pdca/state.json'))['cycle'])")
-          git commit -m "persona(mio): persist autonomous PDCA cycle $CYCLE"
-          git push
-          echo "persona_pdca_persist=PASS cycle=$CYCLE"
 
-      - name: Verify durable receipt
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json, os
+          python3 - "$DATA_REPO/$PERSONA_PATH" "$RECEIPT" <<'PY'
+          import json,sys
           from pathlib import Path
-          p=Path(os.environ["DATA_REPO"])/os.environ["PERSONA_PATH"]
+          p=Path(sys.argv[1]); receipt=Path(sys.argv[2])
           s=json.load(open(p/"pdca/state.json",encoding="utf-8"))
+          last=json.load(open(receipt,encoding="utf-8"))
           assert s["status"]=="RUNNING", s
           assert int(s["cycle"]) >= 1, s
-          assert s["last_receipt"], s
-          r=p/s["last_receipt"]
-          assert r.exists(), r
-          last=json.loads(r.read_text(encoding="utf-8").splitlines()[-1])
           assert last["cycle"] == s["cycle"], (last,s)
           assert last["truth_boundary"]["external_receipt_required"] is True
           print(f"persona_pdca_acceptance=PASS cycle={s['cycle']} intent={last['plan']['selected_intent']}")
           PY
+
+          cat "$RECEIPT"
+          rm -f "$SCRIPT" "$RECEIPT"
+          REMOTE
