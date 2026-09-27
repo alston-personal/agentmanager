@@ -1,0 +1,59 @@
+name: Oracle vopc5750 Runtime Inspect
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/realm-node-runtime-inspect.json'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect fixed Thin Client runtime metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/realm-node-runtime-inspect.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.runtime-inspect'
+          assert cmd.get('node_id')=='vopc5750'
+          ps=r'''
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $task=Get-ScheduledTask -TaskName 'AgentOS Thin Client'
+          $a=$task.Actions|Select-Object -First 1
+          Write-Output ('task_state='+$task.State)
+          Write-Output ('task_execute='+$a.Execute)
+          Write-Output ('task_arguments='+$a.Arguments)
+          Write-Output ('task_workdir='+$a.WorkingDirectory)
+          $launcher=Join-Path $root 'agentos-client.cmd'
+          if(Test-Path $launcher){Write-Output 'launcher_begin';Get-Content $launcher|Select-Object -First 12;Write-Output 'launcher_end'}
+          foreach($name in @('current.json','last-known-good.json','runtime-provenance.json')){
+            $p=Join-Path $root $name
+            if(Test-Path $p){
+              try{$j=Get-Content -Raw $p|ConvertFrom-Json;Write-Output ($name+':status='+[string]$j.status+';source_commit='+[string]$j.source_commit+';path='+[string]$j.path+';rollback_deadline='+[string]$j.rollback_deadline)}catch{Write-Output ($name+':invalid')}
+            }else{Write-Output ($name+':missing')}
+          }
+          '''
+          tid='runtime-inspect-vopc5750-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          print('runtime_inspect_task='+tid)
+          for _ in range(45):
+            r=store.get_receipt(tid)
+            if r:
+              if r.get('ok') is not True: raise SystemExit(str(r))
+              print('runtime_inspect_receipt=PASS')
+              print(str(r.get('stdout') or ''))
+              raise SystemExit(0)
+            time.sleep(2)
+          raise SystemExit('runtime inspect receipt timeout')
+          PY
