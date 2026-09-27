@@ -166,6 +166,11 @@ jobs:
           done
           if ss -ltnp 2>/dev/null | grep -q ':8088'; then
             echo 'port_8088_still_busy=YES'
+            echo '=== port 8088 diagnostics ==='
+            ss -ltnp 2>/dev/null | grep ':8088' || true
+            command -v lsof >/dev/null && lsof -nP -iTCP:8088 -sTCP:LISTEN || true
+            pgrep -af 'fortune_server|8088|leopardcat' || true
+            systemctl --user status leopardcat-tarot.service --no-pager || true
             exit 21
           fi
 
