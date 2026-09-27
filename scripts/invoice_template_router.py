@@ -107,6 +107,13 @@ def unpack(result) -> tuple[list[str], list[float]]:
         scores = [float(x) for x in (obj.get("scores") or obj.get("rec_scores") or [])]
     return texts, scores
 
+def ocr_bytes(engine: RapidOCR, data: bytes) -> tuple[str, float]:
+    result=engine(data)
+    texts,scores=unpack(result)
+    text="\n".join(texts)
+    score=sum(scores)/len(scores) if scores else (0.5 if text.strip() else 0.0)
+    return text,round(score,4)
+
 def _run_ocr(engine: RapidOCR, image: Image.Image, max_side: int = 1800) -> tuple[str, float]:
     # Cap OCR resolution for CPU latency. Full-page evidence can request a larger cap;
     # small ROI recovery keeps the cheaper default.
@@ -451,8 +458,9 @@ def main():
     field_stats={}
     for case in manifest["cases"]:
         try:
-            raw_image=Image.open(io.BytesIO(fetch(case["image_url"]))).convert("RGB")
-            raw_page_text,raw_page_conf=ocr_text(engine,raw_image,max_side=4200)
+            image_bytes=fetch(case["image_url"])
+            raw_page_text,raw_page_conf=ocr_bytes(engine,image_bytes)
+            raw_image=Image.open(io.BytesIO(image_bytes)).convert("RGB")
             image,geometry=normalize_document(raw_image)
             if geometry.get("warped"):
                 normalized_text,normalized_conf=ocr_text(engine,image,max_side=2400)
