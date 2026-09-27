@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 
 WRITE_OPERATIONS = frozenset({"publish", "reply", "disconnect"})
-READ_OPERATIONS = frozenset({"status", "identity.read", "post.read", "replies.read", "public_post.read", "keyword.search", "connect"})
+READ_OPERATIONS = frozenset({"status", "identity.read", "post.read", "post.insights.read", "replies.read", "public_post.read", "keyword.search", "connect"})
 SUPPORTED_OPERATIONS = READ_OPERATIONS | WRITE_OPERATIONS
 FORBIDDEN_RECEIPT_KEYS = frozenset({
     "access_token", "refresh_token", "token", "app_secret", "client_secret",
