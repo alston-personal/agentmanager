@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, io, json, re, urllib.request
+import argparse, io, json, re, time, urllib.error, urllib.request
 from pathlib import Path
 from typing import Any
 from PIL import Image, ImageEnhance, ImageOps
@@ -77,12 +77,20 @@ def normalize_document(image: Image.Image) -> tuple[Image.Image, dict[str, Any]]
     }
 
 def fetch(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0 invoice-template-router/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = r.read(12*1024*1024+1)
-    if not data or len(data) > 12*1024*1024:
-        raise RuntimeError("invalid_image")
-    return data
+    last=None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0 invoice-template-router/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read(12*1024*1024+1)
+            if not data or len(data) > 12*1024*1024:
+                raise RuntimeError("invalid_image")
+            return data
+        except (urllib.error.URLError, ConnectionResetError, TimeoutError, OSError) as exc:
+            last=exc
+            if attempt < 2:
+                time.sleep(1.0 + attempt)
+    raise RuntimeError("image_fetch_failed:"+str(last))
 
 def unpack(result) -> tuple[list[str], list[float]]:
     texts, scores = [], []
@@ -478,10 +486,14 @@ def main():
                 actual["seller_tax_id"]=parse_tax_id(page_text)
                 actual["total_amount"]=parse_money(page_text)
             checks={}
+            supported_fields={"invoice_number","invoice_date","buyer_tax_id","seller_tax_id",
+                              "amount_before_tax","tax_amount","total_amount"}
             for field,expected in case["expected"].items():
-                if field not in actual: continue
+                if field not in supported_fields:
+                    continue
                 got=actual.get(field)
-                ok=str(got).replace(" ","").upper()==str(expected).replace(" ","").upper()
+                ok=(got is not None and
+                    str(got).replace(" ","").upper()==str(expected).replace(" ","").upper())
                 checks[field]={"expected":expected,"actual":got,"ok":ok}
                 total += 1; correct += int(ok)
                 stat=field_stats.setdefault(field,{"correct":0,"total":0})
