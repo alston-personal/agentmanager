@@ -23,3 +23,5 @@ def test_macos_installer_contract():
     assert 'policy-init' in installer
     assert 'join --one' in installer
     assert 'install_macos_node_supervisor' in installer
+
+# trigger macOS contract guard
