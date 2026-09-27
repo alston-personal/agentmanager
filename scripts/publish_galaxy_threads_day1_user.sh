@@ -346,4 +346,31 @@ print('galaxy_day1_publish=PASS')
 print('galaxy_day1_username='+username)
 print('galaxy_day1_object_id='+obj)
 print('galaxy_day1_permalink='+permalink)
+
+# Register every successful governed publish with the shared post-experiment
+# learning loop. This is additive: registration failure must not retroactively
+# turn a provider-confirmed publish into a failed publish.
+try:
+    from datetime import datetime, timezone
+    queue=Path('/home/ubuntu/agent-data/runtime/social/post-experiments/queue')
+    queue.mkdir(parents=True,exist_ok=True); os.chmod(queue,0o700)
+    safe_key=re.sub(r'[^a-z0-9_.-]+','-',post_key.lower()).strip('-') or obj
+    reg=queue/(safe_key+'-'+obj+'.json')
+    payload={
+      'schema':'agentos.social-post-experiment-registration/v1',
+      'account_username':username.lstrip('@'),
+      'post_id':obj,
+      'permalink':permalink,
+      'experiment_id':post_key,
+      'published_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+      'next_elapsed_minutes':60,
+      'hypothesis':'',
+      'changed_variables':[],
+    }
+    tmp=reg.with_suffix('.tmp')
+    tmp.write_text(json.dumps(payload,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    os.chmod(tmp,0o600); tmp.replace(reg); os.chmod(reg,0o600)
+    print('social_experiment_registration=PASS')
+except Exception:
+    print('social_experiment_registration=DEFERRED')
 PY
