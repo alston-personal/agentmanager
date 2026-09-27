@@ -269,28 +269,40 @@ def contextual_invoice_number(text: str) -> str | None:
 
 def contextual_date(text: str) -> str | None:
     s=_norm_ocr_text(text)
-    # Strong date phrases first.
-    patterns=[
-        r"(?:中華民國|民國)?\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日",
-        r"(?:日期[:：]?)?\s*民國\s*(\d{2,3})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})",
+
+    def build(roc: int, mo: int, d: int) -> str | None:
+        # OCR commonly drops the leading 1 from ROC 10x/11x years.
+        if 0 <= roc < 20:
+            roc += 100
+        y=roc+1911
+        if 2000<=y<=2100 and 1<=mo<=12 and 1<=d<=31:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+        return None
+
+    # Prefer the actual invoice/date line; explicitly avoid later approval-date text.
+    primary=[
+        r"(?:發票日期|发票日期|日期)[:：]?\s*(?:中華民國|民國)?\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?",
+        r"(?:發票日期|发票日期|日期)[:：]?\s*(?:中華民國|民國)?\s*(\d{2,3})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})",
     ]
-    for p in patterns:
+    for p in primary:
         m=re.search(p,s)
         if m:
-            roc,mo,d=map(int,m.groups())
-            if 0 <= roc < 20:
-                roc += 100
-            y=roc+1911
-            if 2000<=y<=2100 and 1<=mo<=12 and 1<=d<=31:
-                return f"{y:04d}-{mo:02d}-{d:02d}"
-    candidate=parse_date(s)
-    if candidate:
-        try:
-            y=int(candidate[:4])
-            if 2000<=y<=2100:
-                return candidate
-        except Exception:
-            pass
+            out=build(*map(int,m.groups()))
+            if out:
+                return out
+
+    # Generic ROC date, but remove approval-date phrases first so they cannot win.
+    cleaned=re.sub(r"(?:核准日期|批准日期)[:：]?.{0,24}", "", s)
+    generic=[
+        r"(?:中華民國|民國)\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?",
+        r"(?:中華民國|民國)\s*(\d{2,3})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})",
+    ]
+    for p in generic:
+        m=re.search(p,cleaned)
+        if m:
+            out=build(*map(int,m.groups()))
+            if out:
+                return out
     return None
 
 def amount_candidates(text: str) -> list[int]:
@@ -376,11 +388,11 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
                 if t < 100 or t not in uniq: continue
                 expected_tax=round(a*0.05)
                 tax_ok=abs(b-expected_tax)<=1
-                zero_tax_ok=(b==0)
+                zero_tax_ok=(b==0 and bool(re.search(r"免税|免稅|零税率|零稅率", page_text)))
                 if not (tax_ok or zero_tax_ok):
                     continue
                 freq=nums.count(a)+nums.count(b)+nums.count(t)
-                score=(8 if tax_ok else 2)+min(freq,6)+(2 if a>=100 else 0)
+                score=(20 if tax_ok else 1)+min(freq,6)+(3 if a>=100 else 0)+(2 if t>=1000 else 0)
                 triples.append((score,a,b,t))
         if triples:
             triples.sort(reverse=True)
@@ -395,8 +407,12 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
             derived=[(a,t-a) for a in around if a+round(a*0.05)==t]
             if len(derived)==1:
                 a,b=derived[0]
-                actual.setdefault("amount_before_tax",a)
-                actual.setdefault("tax_amount",b)
+                current_a=actual.get("amount_before_tax")
+                current_b=actual.get("tax_amount")
+                current_ok=(current_a is not None and current_b is not None and int(current_a)+int(current_b)==t)
+                if not current_ok:
+                    actual["amount_before_tax"]=a
+                    actual["tax_amount"]=b
                 evidence["amount_tax_derived"]={"source":"tax_math_from_total","value":[a,b,t],"visual_support":False}
     return actual,evidence
 
@@ -490,8 +506,10 @@ def main():
             min_roi_conf=min(
                 [float(v.get("ocr_confidence",page_conf) or page_conf) for k,v in evidence.items() if k in supported_core and isinstance(v,dict)] or [page_conf]
             )
+            has_nonvisual_derivation=bool(evidence.get("amount_tax_derived",{}).get("visual_support") is False)
             safe_auto_pass=bool(
-                mode=="template" and tconf>=0.5 and core_exact and validations_ok and min_roi_conf>=0.72
+                mode=="template" and tconf>=0.5 and core_exact and validations_ok and
+                min_roi_conf>=0.72 and not has_nonvisual_derivation
             )
             row = {"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
                    "template_confidence":tconf,"page_ocr_confidence":page_conf,
