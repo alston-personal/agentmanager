@@ -183,6 +183,12 @@ def extract_template_invoice(image_bytes: bytes) -> dict[str, Any]:
     engine = RapidOCR()
     text, page_conf = ocr_page(engine, image_bytes)
     doc_type, template_conf = classify(text)
+    # Second-stage structural probe: some handwritten 3-part samples have a badly OCR'd
+    # printed title, while invoice number + 5% subtotal/tax/total remain unambiguous.
+    if not doc_type and normalize_invoice_number(text):
+        subtotal_probe, tax_probe, total_probe, visual_probe = choose_three_part_amounts(text)
+        if visual_probe and subtotal_probe is not None and tax_probe is not None and total_probe is not None:
+            doc_type, template_conf = "three_part_uniform_invoice", 0.65
     if not doc_type:
         return {"matched": False, "engine": "rapidocr-template-v1", "raw_text": text, "page_confidence": page_conf}
 
