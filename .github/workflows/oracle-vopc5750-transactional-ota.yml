@@ -93,8 +93,17 @@ jobs:
           url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool_sha}/scripts/windows/transactional_ota_finalize.ps1'
           ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action accept"
           tid='ota-finalize-vopc5750-'+str(int(time.time()))
-          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          store=RealmFabricStore()
+          store.queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
           print('ota_finalize_task='+tid)
+          for _ in range(60):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  if r.get('ok') is not True or 'agentos_ota_finalize=PASS' not in out: raise SystemExit(str(r))
+                  print('ota_finalize_receipt=PASS'); raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('ota finalize receipt timeout')
           PY
       - name: Roll back rejected candidate
         if: failure()
@@ -108,6 +117,15 @@ jobs:
           url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{tool_sha}/scripts/windows/transactional_ota_finalize.ps1'
           ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action rollback"
           tid='ota-rollback-vopc5750-'+str(int(time.time()))
-          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          store=RealmFabricStore()
+          store.queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
           print('ota_rollback_task='+tid)
+          for _ in range(90):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  if r.get('ok') is not True or 'agentos_ota_rollback=PASS' not in out: raise SystemExit(str(r))
+                  print('ota_rollback_receipt=PASS'); raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('ota rollback receipt timeout')
           PY
