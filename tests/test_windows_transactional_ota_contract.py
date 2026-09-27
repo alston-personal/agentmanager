@@ -13,8 +13,9 @@ required=[
     'awaiting-controller-acceptance',
     'agentos_ota_controller_acceptance=PENDING',
     'AgentOS Thin Client OTA Guard',
-    "Start-Sleep -Seconds 8; Stop-ScheduledTask",
-    "Start-ScheduledTask -TaskName '$TaskName'",
+    'AgentOS Thin Client OTA Activator',
+    'transactional_ota_activate.ps1',
+    'AGENTOS_RUNTIME_PROVENANCE',
     'cannot bootstrap LKG',
     'function Write-JsonAtomic',
 ]
@@ -25,7 +26,7 @@ def test_contract():
     assert s.index('candidate_import=PASS') < s.index('Write-JsonAtomic $record $currentFile')
     assert s.index('Write-JsonAtomic $record $currentFile') < s.index('Move-Item -Force $next $launcher')
     assert s.index('AgentOS Thin Client OTA Guard') < s.index('Move-Item -Force $next $launcher')
-    assert s.index('agentos_ota_controller_acceptance=PENDING') > s.index('Start-Process powershell.exe')
+    assert s.index('agentos_ota_controller_acceptance=PENDING') > s.index('Register-ScheduledTask -TaskName $activatorTask')
     assert "$record.status='active-accepted'" not in s
     assert "status='active-accepted'" in s  # bootstrap LKG only
 
