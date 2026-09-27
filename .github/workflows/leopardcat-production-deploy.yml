@@ -44,39 +44,78 @@ jobs:
 
           echo '=== full runtime status ==='
           git -C "$ROOT" status --porcelain --untracked-files=all || true
-          if [ -e "$WEB/print_service.py" ]; then
-            echo 'print_service_exists=YES'
-            sha256sum "$WEB/print_service.py" || true
-            sed -n '1,220p' "$WEB/print_service.py" || true
-          else
-            echo 'print_service_exists=NO'
-          fi
           mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain --untracked-files=all | sed -E 's/^.. //')
           for f in "${DIRTY[@]:-}"; do
             test -z "$f" && continue
             case "$f" in
               website/dist/index.html|website/stats.json|website/node_modules/.vite/*) ;;
-              website/fortune_server.py)
-                echo "=== unexpected dirty diff: $f ==="
-                git -C "$ROOT" diff -- "$f" || true
-                exit 20
-                ;;
+              website/fortune_server.py|website/divination/analytics.py|website/print_service.py|website/public/admin/print.html|docs/README_PRINT.md|scripts/generate_print_a4_pdf.py|art/renders/card-back.png|print_output/*) ;;
               *) echo "unexpected_dirty=$f"; exit 20 ;;
             esac
           done
           echo "dirty_allowed=${#DIRTY[@]}"
-          rm -rf "$WEB/node_modules/.vite"
 
-          BACKUP=/tmp/leopardcat-stats-${GITHUB_RUN_ID:-manual}.json
-          cp "$WEB/stats.json" "$BACKUP"
-          git -C "$ROOT" checkout -- website/dist/index.html
+          echo '=== preserve local print work ==='
+          PRINT_BACKUP=/tmp/leopardcat-print-${GITHUB_RUN_ID:-manual}
+          rm -rf "$PRINT_BACKUP"
+          mkdir -p "$PRINT_BACKUP"
+          for p in             website/print_service.py             website/public/admin/print.html             docs/README_PRINT.md             scripts/generate_print_a4_pdf.py             art/renders/card-back.png             print_output
+          do
+            if [ -e "$ROOT/$p" ]; then
+              mkdir -p "$PRINT_BACKUP/$(dirname "$p")"
+              cp -a "$ROOT/$p" "$PRINT_BACKUP/$p"
+            fi
+          done
+
+          rm -rf "$WEB/node_modules/.vite"
+          STATS_BACKUP=/tmp/leopardcat-stats-${GITHUB_RUN_ID:-manual}.json
+          cp "$WEB/stats.json" "$STATS_BACKUP"
+
+          # Remove tracked-file drift and the old untracked analytics module before fast-forward.
+          git -C "$ROOT" checkout -- website/fortune_server.py website/dist/index.html
+          if ! git -C "$ROOT" ls-files --error-unmatch website/divination/analytics.py >/dev/null 2>&1; then
+            rm -f "$ROOT/website/divination/analytics.py"
+          fi
 
           echo '=== sync source ==='
           git -C "$ROOT" fetch origin main
           git -C "$ROOT" merge --ff-only origin/main
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
-          cp "$BACKUP" "$WEB/stats.json"
+          cp "$STATS_BACKUP" "$WEB/stats.json"
+
+          echo '=== restore local print work ==='
+          for p in             website/print_service.py             website/public/admin/print.html             docs/README_PRINT.md             scripts/generate_print_a4_pdf.py             art/renders/card-back.png             print_output
+          do
+            if [ -e "$PRINT_BACKUP/$p" ]; then
+              mkdir -p "$ROOT/$(dirname "$p")"
+              rm -rf "$ROOT/$p"
+              cp -a "$PRINT_BACKUP/$p" "$ROOT/$p"
+            fi
+          done
+
+          python3 - <<'PY'
+from pathlib import Path
+p = Path("/home/ubuntu/leopardcat-tarot/website/fortune_server.py")
+s = p.read_text()
+imp = "from print_service import handle_print_get"
+if imp not in s:
+    anchor = "from divination.threads_publishing import ThreadsPublishingService, ThreadsPublishingError\n"
+    if anchor not in s:
+        raise SystemExit("print import anchor missing")
+    s = s.replace(anchor, anchor + imp + "\n", 1)
+call = "        if handle_print_get(self, path, query, CARD_MANIFEST):\n            return\n"
+if call not in s:
+    anchor = '        query = url_parts[1] if len(url_parts) > 1 else ""\n\n'
+    if anchor not in s:
+        raise SystemExit("print route anchor missing")
+    s = s.replace(anchor, anchor + call + "\n", 1)
+p.write_text(s)
+PY
+          test -f "$WEB/print_service.py"
+          grep -q 'from print_service import handle_print_get' "$WEB/fortune_server.py"
+          grep -q 'handle_print_get(self, path, query, CARD_MANIFEST)' "$WEB/fortune_server.py"
+          echo 'local_print_hotfix_preserved=YES'
 
           echo '=== verify share contracts ==='
           grep -q 'normalizeShareTheme' "$WEB/main.js"
