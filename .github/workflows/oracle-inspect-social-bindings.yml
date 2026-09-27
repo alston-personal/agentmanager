@@ -1,0 +1,41 @@
+name: Oracle Inspect Social Bindings
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-inspect-social-bindings.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect secret-free social account bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          CRED="$HOME/.local/state/agentos/social/credentials.json"
+          test -f "$CRED"
+          test "$(stat -c '%a' "$CRED")" = "600"
+          python3 - "$CRED" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=p.get('bindings') or {}
+          print('social_binding_count='+str(len(rows)))
+          for binding_id,item in sorted(rows.items()):
+              if not isinstance(item,dict):
+                  continue
+              print('binding_id='+binding_id)
+              print('product_id='+str(item.get('product_id') or ''))
+              print('platform='+str(item.get('platform') or ''))
+              print('provider_account_id='+str(item.get('provider_account_id') or ''))
+              print('username='+str(item.get('username') or ''))
+              print('auth_profile='+str(item.get('auth_profile') or ''))
+              print('---')
+          PY
+          echo social_binding_inspect=PASS
