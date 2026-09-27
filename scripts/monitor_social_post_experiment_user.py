@@ -67,6 +67,15 @@ def main():
     if s!=200 or replies.get('ok') is not True: raise SystemExit('social_experiment=REPLIES_READ_FAILED')
     reply_items=list((replies.get('result') or {}).get('items') or [])
 
+    insight_metrics={}
+    insight_status='unavailable'
+    is_,insights=post(BASE+'/status',req('post.insights.read',bid,args.post_id),headers)
+    if is_==200 and insights.get('ok') is True:
+        insight_metrics=dict((insights.get('result') or {}).get('metrics') or {})
+        insight_status='pass'
+    else:
+        insight_status=str(insights.get('error_code') or insights.get('error') or is_)
+
     state_dir=Path('/home/ubuntu/agent-data/runtime/social/post-experiments')/args.account.lstrip('@').lower()/args.experiment_id
     state_dir.mkdir(parents=True,exist_ok=True); os.chmod(state_dir,0o700)
     latest=state_dir/'latest.json'; previous={}
@@ -76,7 +85,8 @@ def main():
     snapshot=build_snapshot(experiment_id=args.experiment_id,account_username=args.account.lstrip('@'),post=post_item,replies=reply_items,previous_reply_ids=set(previous.get('reply_ids') or []))
     latest.write_text(json.dumps(snapshot,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); os.chmod(latest,0o600)
     with (state_dir/'snapshots.jsonl').open('a',encoding='utf-8') as fh: fh.write(json.dumps(snapshot,ensure_ascii=False,separators=(',',':'))+'\n')
-    record=learning_record(snapshot,elapsed_minutes=args.elapsed_minutes,hypothesis=args.hypothesis,changed_variables=args.changed_variable)
+    record=learning_record(snapshot,elapsed_minutes=args.elapsed_minutes,observed_metrics=insight_metrics,hypothesis=args.hypothesis,changed_variables=args.changed_variable)
+    record['insights_status']=insight_status
     with (state_dir/'learning.jsonl').open('a',encoding='utf-8') as fh: fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
     nxt=next_observation(CheckpointPolicy(),elapsed_minutes=args.elapsed_minutes,snapshot=snapshot)
     (state_dir/'next.json').write_text(json.dumps(nxt,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
@@ -85,6 +95,9 @@ def main():
     print('social_experiment_post_id='+args.post_id)
     print('social_experiment_new_replies='+str(len(snapshot['new_replies'])))
     print('social_experiment_needs_attention='+str(snapshot['needs_attention']).lower())
+    print('social_experiment_insights_status='+insight_status)
+    if insight_metrics:
+        print('social_experiment_metrics='+json.dumps(insight_metrics,sort_keys=True,separators=(',',':')))
     print('social_experiment_next_elapsed_minutes='+('none' if nxt['next_elapsed_minutes'] is None else str(nxt['next_elapsed_minutes'])))
 
 if __name__=='__main__':
