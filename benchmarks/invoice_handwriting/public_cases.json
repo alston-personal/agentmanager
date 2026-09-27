@@ -10,7 +10,8 @@
         "seller_tax_id": "82328968",
         "total_amount": 50
       },
-      "source_url": "https://jo3jo6jo3jo6.pixnet.net/blog/posts/9468465818"
+      "source_url": "https://jo3jo6jo3jo6.pixnet.net/blog/posts/9468465818",
+      "fixture_path": "benchmarks/invoice_handwriting/fixtures/tw-2part-my04200253.jpg"
     },
     {
       "id": "tw-3part-rp54268249",
@@ -23,7 +24,8 @@
         "tax_amount": 77,
         "total_amount": 1623
       },
-      "source_url": "https://jo3jo6jo3jo6.pixnet.net/blog/posts/9468494873"
+      "source_url": "https://jo3jo6jo3jo6.pixnet.net/blog/posts/9468494873",
+      "fixture_path": "benchmarks/invoice_handwriting/fixtures/tw-3part-rp54268249.jpg"
     },
     {
       "id": "tw-3part-ry33724453",
@@ -34,7 +36,8 @@
         "tax_amount": 10000,
         "total_amount": 210000
       },
-      "source_url": "https://www.tron-island.com/blog/issue-a-gui-fapiao"
+      "source_url": "https://www.tron-island.com/blog/issue-a-gui-fapiao",
+      "fixture_path": "benchmarks/invoice_handwriting/fixtures/tw-3part-ry33724453.png"
     },
     {
       "id": "tw-triplicate-wikimedia",
@@ -45,7 +48,8 @@
         "seller_tax_id": "18300423",
         "total_amount": 200
       },
-      "source_url": "https://commons.wikimedia.org/wiki/File:JCHACST_Keelung_Office_uniform_invoice_20180925_P3.jpg"
+      "source_url": "https://commons.wikimedia.org/wiki/File:JCHACST_Keelung_Office_uniform_invoice_20180925_P3.jpg",
+      "fixture_path": "benchmarks/invoice_handwriting/fixtures/tw-triplicate-wikimedia.jpg"
     }
   ],
   "notes": {
