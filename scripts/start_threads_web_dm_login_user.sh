@@ -63,22 +63,34 @@ Xvfb :97 -screen 0 1280x900x24 -nolisten tcp >"$SESSION/xvfb.log" 2>&1 &
 XPID=$!
 echo "$XPID" >> "$SESSION/pids"
 
-DISPLAY=:97 PYTHONPATH="/home/ubuntu/agentmanager" python3 - <<'PY' >"$SESSION/browser.log" 2>&1 &
-from pathlib import Path
-import time
+# Bootstrap authentication in a normal headed Chromium process. Playwright is
+# intentionally not attached during the human login step; the existing DM bridge
+# reuses this same persistent profile after authentication.
+CHROME=""
+for candidate in chromium chromium-browser google-chrome google-chrome-stable; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    CHROME="$(command -v "$candidate")"
+    break
+  fi
+done
+if [ -z "$CHROME" ]; then
+  CHROME="$(python3 - <<'PY'
 from playwright.sync_api import sync_playwright
-profile=Path("/home/ubuntu/agent-data/runtime/social/threads-web-dm/browser-profile")
 with sync_playwright() as p:
-    ctx=p.chromium.launch_persistent_context(
-        str(profile),
-        headless=False,
-        viewport={"width":1280,"height":900},
-    )
-    page=ctx.pages[0] if ctx.pages else ctx.new_page()
-    page.goto("https://www.threads.com/messages",wait_until="domcontentloaded",timeout=30000)
-    while True:
-        time.sleep(5)
+    print(p.chromium.executable_path)
 PY
+)"
+fi
+if [ ! -x "$CHROME" ]; then
+  echo "threads_web_dm_login_start=BROWSER_UNAVAILABLE"
+  exit 5
+fi
+DISPLAY=:97 "$CHROME" \
+  --user-data-dir="$PROFILE" \
+  --window-size=1280,900 \
+  --no-first-run \
+  --no-default-browser-check \
+  "https://www.threads.com/messages" >"$SESSION/browser.log" 2>&1 &
 BPID=$!
 echo "$BPID" >> "$SESSION/pids"
 
