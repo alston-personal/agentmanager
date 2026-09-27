@@ -91,7 +91,10 @@ jobs:
           git -C "$ROOT" log --oneline --decorate HEAD..origin/main | head -40 || true
           echo '--- graph ---'
           git -C "$ROOT" log --oneline --decorate --graph --all -20 || true
-          git -C "$ROOT" merge --ff-only origin/main
+          if [ "$(git -C "$ROOT" rev-parse HEAD)" != "$TARGET" ]; then
+            git -C "$ROOT" branch -f backup/oracle-pre-direct-entry-e0dcfb6 e0dcfb6129e6b845bc018ca1cd5405346e3baf45
+            git -C "$ROOT" reset --hard origin/main
+          fi
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
           cp "$STATS_BACKUP" "$WEB/stats.json"
