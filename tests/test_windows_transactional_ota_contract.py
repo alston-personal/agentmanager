@@ -21,4 +21,5 @@ def test_contract():
     assert s.index('candidate_import=PASS') < s.index('Move-Item -Force $next $launcher')
     assert s.index('last-known-good.json') < s.index('Move-Item -Force $next $launcher')
     assert s.index('awaiting-controller-acceptance') > s.index('Move-Item -Force $next $launcher')
-    assert 'active-accepted' not in s
+    assert "$record.status='active-accepted'" not in s
+    assert "status='active-accepted'" in s  # bootstrap LKG may be accepted
