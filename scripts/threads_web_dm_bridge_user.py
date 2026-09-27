@@ -105,44 +105,49 @@ def main() -> int:
 
     state=load_state()
     seen=set(str(x) for x in state.get("seen_message_ids") or [])
-    with sync_playwright() as p:
-        browser_type=p.chromium
-        context=browser_type.launch_persistent_context(
-            str(PROFILE),
-            headless=not args.headed,
-            viewport={"width":1280,"height":900},
-        )
-        page=context.pages[0] if context.pages else context.new_page()
-        page.goto(INBOX_URL,wait_until="domcontentloaded",timeout=30000)
-        page.wait_for_timeout(1500)
-        url=page.url
-        if "login" in url or "accountscenter" in url:
-            print("threads_web_dm_bridge=LOGIN_REQUIRED")
-            context.close()
-            return 4
-        if args.login_only:
-            print("threads_web_dm_bridge=SESSION_READY")
-            context.close()
-            return 0
+    try:
+        with sync_playwright() as p:
+            browser_type=p.chromium
+            context=browser_type.launch_persistent_context(
+                str(PROFILE),
+                headless=not args.headed,
+                viewport={"width":1280,"height":900},
+            )
+            page=context.pages[0] if context.pages else context.new_page()
+            page.goto(INBOX_URL,wait_until="domcontentloaded",timeout=30000)
+            page.wait_for_timeout(1500)
+            url=page.url
+            if "login" in url or "accountscenter" in url:
+                print("threads_web_dm_bridge=LOGIN_REQUIRED")
+                context.close()
+                return 4
+            if args.login_only:
+                print("threads_web_dm_bridge=SESSION_READY")
+                context.close()
+                return 0
 
-        events=extract_text(page)
-        # Rebind account without changing extracted evidence.
-        events=[DirectMessageEvent(**{**e.to_dict(),"account_id":args.account}) for e in events]
-        fresh=dedupe_new_events(events,seen)
-        if fresh:
-            with EVENTS.open("a",encoding="utf-8") as fh:
-                for event in fresh:
-                    fh.write(json.dumps(event.to_dict(),ensure_ascii=False,separators=(",",":"))+"\n")
-            os.chmod(EVENTS,0o600)
-        seen.update(e.message_id for e in fresh)
-        state={
-            "schema":"agentos.threads-web-dm-state/v1",
-            "account":args.account,
-            "seen_message_ids":sorted(seen)[-5000:],
-            "last_scan_new_count":len(fresh),
-        }
-        save_state(state)
-        context.close()
+            events=extract_text(page)
+            fresh=dedupe_new_events(events,seen)
+            if fresh:
+                with EVENTS.open("a",encoding="utf-8") as fh:
+                    for event in fresh:
+                        payload=event.to_dict()
+                        payload["account_id"]=args.account
+                        fh.write(json.dumps(payload,ensure_ascii=False,separators=(",",":"))+"\n")
+                os.chmod(EVENTS,0o600)
+            seen.update(e.message_id for e in fresh)
+            state={
+                "schema":"agentos.threads-web-dm-state/v1",
+                "account":args.account,
+                "seen_message_ids":sorted(seen)[-5000:],
+                "last_scan_new_count":len(fresh),
+            }
+            save_state(state)
+            context.close()
+    except Exception as exc:
+        print("threads_web_dm_bridge=ERROR")
+        print("threads_web_dm_error_type="+type(exc).__name__)
+        return 6
 
     print("threads_web_dm_bridge=PASS")
     print("threads_web_dm_new_events="+str(len(fresh)))
