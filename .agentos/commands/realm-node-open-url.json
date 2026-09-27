@@ -2,6 +2,6 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.open_url",
   "node_id": "vopc5750",
-  "url": "https://www.google.com/search?q=agentos",
-  "nonce": "interactive-desktop-browser-control-shell-execute-r4"
+  "url": "https://www.threads.com/messages",
+  "nonce": "threads-dm-vopc5750-open-20260927"
 }
