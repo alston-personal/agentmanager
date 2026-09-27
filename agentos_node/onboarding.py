@@ -199,3 +199,66 @@ def build_join_regression_report(
             'lifecycle_supervisor_ready': lifecycle_ready,
         },
     }
+
+
+MACOS_LAUNCH_AGENT_LABEL = 'org.milkcat.agentos.thin-client'
+
+def macos_node_install_root() -> Path:
+    return Path.home() / 'Library' / 'Application Support' / 'AgentOS'
+
+def macos_launch_agent_path() -> Path:
+    return Path.home() / 'Library' / 'LaunchAgents' / (MACOS_LAUNCH_AGENT_LABEL + '.plist')
+
+def install_macos_node_supervisor(*, install_root: Path | None = None, launcher: Path | None = None) -> dict[str, Any]:
+    if platform.system() != 'Darwin':
+        return _non_windows_lifecycle()
+    root = Path(install_root or macos_node_install_root())
+    client_launcher = Path(launcher or (root / 'agentos-client'))
+    plist = macos_launch_agent_path()
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
+    if not client_launcher.exists():
+        return {'schema':'agentos.node-lifecycle/v0.1','platform':'Darwin','applicable':True,'supervisor_ready':False,'label':MACOS_LAUNCH_AGENT_LABEL,'plist':str(plist),'returncode':2,'stderr':'agentos-client launcher missing'}
+    payload = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{MACOS_LAUNCH_AGENT_LABEL}</string>
+<key>ProgramArguments</key><array><string>{client_launcher}</string><string>run</string></array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>ProcessType</key><string>Background</string>
+<key>StandardOutPath</key><string>{root / 'thin-client.out.log'}</string>
+<key>StandardErrorPath</key><string>{root / 'thin-client.err.log'}</string>
+</dict></plist>
+'''
+    plist.write_text(payload, encoding='utf-8')
+    uid = str(os.getuid())
+    subprocess.run(['launchctl','bootout',f'gui/{uid}',str(plist)],capture_output=True,text=True,check=False)
+    result = subprocess.run(['launchctl','bootstrap',f'gui/{uid}',str(plist)],capture_output=True,text=True,check=False)
+    subprocess.run(['launchctl','kickstart','-k',f'gui/{uid}/{MACOS_LAUNCH_AGENT_LABEL}'],capture_output=True,text=True,check=False)
+    ready = result.returncode == 0
+    return {'schema':'agentos.node-lifecycle/v0.1','platform':'Darwin','applicable':True,'supervisor_ready':ready,'label':MACOS_LAUNCH_AGENT_LABEL,'plist':str(plist),'returncode':result.returncode,'stderr':result.stderr[-2000:]}
+
+def check_macos_node_supervisor() -> dict[str, Any]:
+    if platform.system() != 'Darwin':
+        return _non_windows_lifecycle()
+    uid = str(os.getuid())
+    result = subprocess.run(['launchctl','print',f'gui/{uid}/{MACOS_LAUNCH_AGENT_LABEL}'],capture_output=True,text=True,check=False)
+    ready = result.returncode == 0
+    return {'schema':'agentos.node-lifecycle/v0.1','platform':'Darwin','applicable':True,'supervisor_ready':ready,'label':MACOS_LAUNCH_AGENT_LABEL,'plist':str(macos_launch_agent_path()),'returncode':result.returncode,'stderr':result.stderr[-2000:]}
+
+def install_node_supervisor() -> dict[str, Any]:
+    system = platform.system()
+    if system == 'Windows':
+        return install_windows_node_supervisor()
+    if system == 'Darwin':
+        return install_macos_node_supervisor()
+    return _non_windows_lifecycle()
+
+def check_node_supervisor() -> dict[str, Any]:
+    system = platform.system()
+    if system == 'Windows':
+        return check_windows_node_supervisor()
+    if system == 'Darwin':
+        return check_macos_node_supervisor()
+    return _non_windows_lifecycle()
