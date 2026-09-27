@@ -1,5 +1,5 @@
 {
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.one.runtime.inspect",
-  "nonce": "restart-authority-20260827"
+  "nonce": "atlas-supervisor-live-check-20260927-1458"
 }
