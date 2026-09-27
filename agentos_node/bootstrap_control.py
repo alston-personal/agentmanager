@@ -30,6 +30,7 @@ ACTION_PAUSE_MIO_AUTOREPLY = "agentos.social_threads_mio.pause_autoreply"
 ACTION_DEPLOY_MIO_TELEGRAM = "agentos.mio_telegram.deploy"
 ACTION_PROBE_THREADS_WEB_DM = "agentos.social_threads_web_dm.probe"
 ACTION_READ_THREADS_WEB_DM = "agentos.social_threads_web_dm.read"
+ACTION_PROBE_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_probe"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -49,6 +50,7 @@ ALLOWED_ACTIONS = {
     ACTION_DEPLOY_MIO_TELEGRAM,
     ACTION_PROBE_THREADS_WEB_DM,
     ACTION_READ_THREADS_WEB_DM,
+    ACTION_PROBE_THREADS_WEB_DM_LOGIN,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -124,6 +126,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_DEPLOY_MIO_TELEGRAM,
         ACTION_PROBE_THREADS_WEB_DM,
         ACTION_READ_THREADS_WEB_DM,
+        ACTION_PROBE_THREADS_WEB_DM_LOGIN,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -238,6 +241,8 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/probe_threads_web_dm_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_READ_THREADS_WEB_DM:
         return _run_canonical_script("scripts/run_threads_web_dm_read_user.sh", timeout=180, source_commit=source_commit)
+    if action == ACTION_PROBE_THREADS_WEB_DM_LOGIN:
+        return _run_canonical_script("scripts/probe_threads_web_dm_login_user.sh", timeout=120, source_commit=source_commit)
     raise ValueError("unsupported bootstrap action")
 
 
