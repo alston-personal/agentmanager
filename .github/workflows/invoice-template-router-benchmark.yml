@@ -29,7 +29,7 @@ jobs:
           set -euo pipefail
           python3 -m venv /tmp/invoice-template-router-venv
           /tmp/invoice-template-router-venv/bin/python -m pip install --upgrade pip
-          /tmp/invoice-template-router-venv/bin/pip install rapidocr onnxruntime pillow
+          /tmp/invoice-template-router-venv/bin/pip install rapidocr onnxruntime pillow opencv-python-headless numpy
       - name: Run template-first benchmark
         shell: bash
         run: |
