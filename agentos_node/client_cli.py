@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agentos_node.onboarding import check_windows_node_supervisor, install_windows_node_supervisor
+from agentos_node.onboarding import check_node_supervisor, install_node_supervisor
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy, render_json
 from agentos_node.thin_client_transport import ClientConfig, ThinClientTransport, build_client
 
@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
             on_request=show_request,
             on_status=show_status,
         )
-        lifecycle = install_windows_node_supervisor()
+        lifecycle = install_node_supervisor()
         transport = build_client(config, policy)
         completion = transport.complete_join(before_manifest, lifecycle=lifecycle)
         print(render_json({'ok': bool(completion.get('node_ready')), 'realm_id': config.realm_id, 'node_id': config.node_id, 'config': str(args.config), 'lifecycle': lifecycle, 'completion': completion}))
@@ -198,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == 'bootstrap':
         print(render_json(transport.bootstrap()))
     elif args.command == 'verify':
-        lifecycle = check_windows_node_supervisor()
+        lifecycle = check_node_supervisor()
         readiness = transport.verify_readiness(lifecycle=lifecycle)
         print(render_json({'ok': bool(readiness.get('node_ready')), 'lifecycle': lifecycle, 'readiness': readiness}))
         return 0 if readiness.get('node_ready') else 2
