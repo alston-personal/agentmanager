@@ -6,12 +6,13 @@ import urllib.request
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from invoice_core import InvoiceStore
+from services.invoice_intake.invoice_core import InvoiceStore
+from capabilities.financial_intake import WintonExcelAdapter, canonical_from_invoice_payload
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
@@ -137,3 +138,31 @@ def review(invoice_id: str, body: ReviewBody, request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return {"ok": True, "invoice": result}
+
+
+@app.get("/v1/invoices/{invoice_id}/export/winton")
+def export_winton(invoice_id: str, request: Request):
+    """Export one reviewed invoice through the Winton accounting adapter."""
+    require_user(request)
+    try:
+        payload = store.get_invoice(invoice_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="invoice_not_found")
+
+    document = canonical_from_invoice_payload(payload)
+    adapter = WintonExcelAdapter()
+    if not adapter.can_export(document):
+        raise HTTPException(status_code=409, detail="invoice_review_required_before_export")
+    try:
+        result = adapter.export(document)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{result.filename or "winton-import.csv"}"',
+        "X-Accounting-Adapter": result.adapter_id,
+        "X-Manual-Import-Required": "true" if result.requires_manual_import else "false",
+    }
+    if result.warnings:
+        headers["X-Adapter-Warning"] = result.warnings[0]
+    return Response(content=result.payload, media_type=result.media_type, headers=headers)
