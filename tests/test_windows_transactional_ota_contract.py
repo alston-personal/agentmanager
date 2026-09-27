@@ -35,3 +35,5 @@ def test_finalize_is_atomic_and_supports_new_properties():
     assert 'Add-Member -NotePropertyName rolled_back_at' in finalize
     assert 'Write-JsonAtomic $current $currentFile' in finalize
     assert 'Write-JsonAtomic $lkg $currentFile' in finalize
+
+# revalidate current integration head for transactional OTA
