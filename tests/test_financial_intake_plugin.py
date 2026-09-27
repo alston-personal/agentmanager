@@ -53,6 +53,43 @@ class FinancialIntakePluginTests(unittest.TestCase):
         })
         self.assertTrue(WintonExcelAdapter().can_export(doc))
 
+    def test_batch_export_writes_one_header_and_multiple_rows(self):
+        adapter = WintonExcelAdapter()
+        docs = [
+            canonical_from_invoice_payload({
+                "invoice_id": "batch-1",
+                "status": "reviewed",
+                "fields": {"invoice_number": "AA12345678", "total_amount": 100},
+            }),
+            canonical_from_invoice_payload({
+                "invoice_id": "batch-2",
+                "status": "extracted",
+                "fields": {"invoice_number": "BB87654321", "total_amount": 200},
+            }),
+        ]
+        result = adapter.export_many(docs)
+        rows = list(csv.reader(io.StringIO(result.payload.decode("utf-8-sig"))))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[1][0], "AA12345678")
+        self.assertEqual(rows[2][0], "BB87654321")
+
+    def test_batch_export_is_all_or_nothing(self):
+        adapter = WintonExcelAdapter()
+        docs = [
+            canonical_from_invoice_payload({
+                "invoice_id": "batch-ok",
+                "status": "reviewed",
+                "fields": {"invoice_number": "AA12345678"},
+            }),
+            canonical_from_invoice_payload({
+                "invoice_id": "batch-blocked",
+                "status": "needs_review",
+                "fields": {"invoice_number": "BB87654321"},
+            }),
+        ]
+        with self.assertRaises(ValueError):
+            adapter.export_many(docs)
+
     def test_canonical_model_has_no_winton_specific_fields(self):
         doc = canonical_from_invoice_payload({
             "invoice_id": "inv-3",
