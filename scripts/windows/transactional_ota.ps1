@@ -7,7 +7,7 @@ function Write-JsonAtomic([object]$Value,[string]$Path,[int]$Depth=8){
     $tmp=$Path+'.tmp.'+[guid]::NewGuid().ToString('N')
     try{
       [System.IO.File]::WriteAllText($tmp,$json+[Environment]::NewLine,$enc)
-      if(Test-Path $Path){[System.IO.File]::Replace($tmp,$Path,$null,$true)}else{[System.IO.File]::Move($tmp,$Path)}
+      if(Test-Path $Path){$bak=$Path+'.bak'; Remove-Item -Force $bak -ErrorAction SilentlyContinue; [System.IO.File]::Replace($tmp,$Path,$bak); Remove-Item -Force $bak -ErrorAction SilentlyContinue}else{[System.IO.File]::Move($tmp,$Path)}
       return
     }catch{
       Remove-Item -Force $tmp -ErrorAction SilentlyContinue
