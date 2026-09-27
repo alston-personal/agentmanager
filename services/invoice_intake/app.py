@@ -43,6 +43,10 @@ class ReviewBody(BaseModel):
     fields: dict
 
 
+class WintonBatchBody(BaseModel):
+    invoice_ids: list[str]
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "service": "invoice-intake", "version": VERSION}
@@ -162,6 +166,57 @@ def export_winton(invoice_id: str, request: Request):
         "Content-Disposition": f'attachment; filename="{result.filename or "winton-import.csv"}"',
         "X-Accounting-Adapter": result.adapter_id,
         "X-Manual-Import-Required": "true" if result.requires_manual_import else "false",
+    }
+    if result.warnings:
+        headers["X-Adapter-Warning"] = result.warnings[0]
+    return Response(content=result.payload, media_type=result.media_type, headers=headers)
+
+
+@app.post("/v1/export/winton")
+def export_winton_batch(body: WintonBatchBody, request: Request):
+    """Export multiple completed invoices as one Winton interchange CSV."""
+    require_user(request)
+    invoice_ids = [str(x).strip() for x in body.invoice_ids if str(x).strip()]
+    if not invoice_ids:
+        raise HTTPException(status_code=422, detail="invoice_ids_required")
+    if len(invoice_ids) > 500:
+        raise HTTPException(status_code=422, detail="too_many_invoices")
+
+    documents = []
+    missing = []
+    for invoice_id in invoice_ids:
+        try:
+            payload = store.get_invoice(invoice_id)
+        except KeyError:
+            missing.append(invoice_id)
+            continue
+        documents.append(canonical_from_invoice_payload(payload))
+
+    if missing:
+        raise HTTPException(status_code=404, detail={"missing_invoice_ids": missing})
+
+    adapter = WintonExcelAdapter()
+    blocked = [
+        document.document_id
+        for document in documents
+        if not adapter.can_export(document)
+    ]
+    if blocked:
+        raise HTTPException(
+            status_code=409,
+            detail={"review_required_invoice_ids": blocked},
+        )
+
+    try:
+        result = adapter.export_many(documents)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{result.filename or "winton-import-batch.csv"}"',
+        "X-Accounting-Adapter": result.adapter_id,
+        "X-Manual-Import-Required": "true" if result.requires_manual_import else "false",
+        "X-Exported-Invoice-Count": str(len(documents)),
     }
     if result.warnings:
         headers["X-Adapter-Warning"] = result.warnings[0]
