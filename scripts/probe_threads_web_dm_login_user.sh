@@ -22,6 +22,11 @@ checks={
   "npm": bool(shutil.which("npm")),
   "playwright_python": importlib.util.find_spec("playwright") is not None,
 }
+import subprocess
+try:
+    checks["sudo_noninteractive"] = subprocess.run(["sudo","-n","true"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=5).returncode == 0
+except Exception:
+    checks["sudo_noninteractive"] = False
 novnc_dirs=[
   Path("/usr/share/novnc"),
   Path("/usr/share/noVNC"),
