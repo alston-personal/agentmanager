@@ -2,5 +2,10 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.ota-diagnose",
   "node_id": "vopc5750",
-  "nonce": "ota-runtime-wiring-20260927-2231"
+  "nonce": "ota-stage-receipt-diagnose-20260927-2234",
+  "receipt_task_ids": [
+    "ota-stage-vopc5750-1790518904",
+    "ota-stage-vopc5750-1790519307",
+    "ota-rollback-vopc5750-1790519453"
+  ]
 }
