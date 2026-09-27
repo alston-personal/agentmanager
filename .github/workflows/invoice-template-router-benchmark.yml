@@ -32,12 +32,14 @@ jobs:
           /tmp/invoice-template-router-venv/bin/pip install rapidocr onnxruntime pillow opencv-python-headless numpy
       - name: Run template-first benchmark
         shell: bash
+        timeout-minutes: 6
         run: |
           set -euo pipefail
-          /tmp/invoice-template-router-venv/bin/python scripts/invoice_template_router.py \
-            --manifest benchmarks/invoice_handwriting/public_cases.json \
-            --templates benchmarks/invoice_handwriting/templates.json \
-            --out /tmp/invoice-template-router-benchmark.json
+          timeout --signal=TERM --kill-after=20s 330s \
+            /tmp/invoice-template-router-venv/bin/python scripts/invoice_template_router.py \
+              --manifest benchmarks/invoice_handwriting/public_cases.json \
+              --templates benchmarks/invoice_handwriting/templates.json \
+              --out /tmp/invoice-template-router-benchmark.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
