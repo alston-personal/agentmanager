@@ -58,7 +58,12 @@ jobs:
           for _ in range(70):
             r=RealmFabricStore().get_receipt(tid)
             if r:
-              if r.get('ok') is not True: raise SystemExit(str(r))
+              rc=int(r.get('returncode') if r.get('returncode') is not None else -999)
+              out=str(r.get('stdout') or '')
+              err=str(r.get('stderr') or '')
+              if r.get('ok') is not True or rc != 0 or 'agentos_ota_controller_acceptance=PENDING' not in out:
+                  print({'ok':r.get('ok'),'returncode':rc,'stdout':out[-4000:],'stderr':err[-4000:]})
+                  raise SystemExit('OTA staging subprocess failed')
               print('ota_stage_receipt=PASS'); raise SystemExit(0)
             time.sleep(2)
           raise SystemExit('ota staging receipt timeout')
