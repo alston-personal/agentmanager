@@ -35,7 +35,14 @@ if(-not(Test-Path $lkgFile)){throw 'last-known-good runtime missing'}
 $lkg=Get-Content -Raw $lkgFile|ConvertFrom-Json
 if(-not $lkg.path){throw 'last-known-good path missing'}
 $next=Join-Path $InstallRoot 'agentos-client.rollback.cmd'
-@('@echo off','set "PYTHONPATH='+[string]$lkg.path+'"','set "AGENTOS_CLIENT_HOME='+$state+'"','set "AGENTOS_RUNTIME_PROVENANCE='+(Join-Path ([string]$lkg.path) 'runtime-provenance.json')+'"','python -m agentos_node.client_cli %*')|Set-Content -Encoding ASCII $next
+$rollbackLines=@(
+  '@echo off'
+  ('set "PYTHONPATH={0}"' -f [string]$lkg.path)
+  ('set "AGENTOS_CLIENT_HOME={0}"' -f [string]$state)
+  ('set "AGENTOS_RUNTIME_PROVENANCE={0}"' -f [string](Join-Path ([string]$lkg.path) 'runtime-provenance.json'))
+  'python -m agentos_node.client_cli %*'
+)
+$rollbackLines|Set-Content -Encoding ASCII $next
 Move-Item -Force $next $launcher
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Start-ScheduledTask -TaskName $TaskName
