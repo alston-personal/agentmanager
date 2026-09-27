@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.probe",
   "node_id": "vopc5750",
-  "nonce": "threads-web-dm-live-probe-20260927-2137"
+  "nonce": "post-failed-ota-liveness-20260927"
 }
