@@ -271,8 +271,8 @@ def contextual_date(text: str) -> str | None:
     s=_norm_ocr_text(text)
     # Strong date phrases first.
     patterns=[
-        r"(?:中華民國|民國)?\\s*(\\d{2,3})\\s*年\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日",
-        r"(?:日期[:：]?)?\\s*民國\\s*(\\d{2,3})\\s*[./-]\\s*(\\d{1,2})\\s*[./-]\\s*(\\d{1,2})",
+        r"(?:中華民國|民國)?\s*(\d{2,3})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日",
+        r"(?:日期[:：]?)?\s*民國\s*(\d{2,3})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})",
     ]
     for p in patterns:
         m=re.search(p,s)
@@ -305,17 +305,22 @@ def total_from_lines(text: str) -> int | None:
     lines=[x.strip() for x in (text or "").splitlines()]
     for i,line in enumerate(lines):
         key=re.sub(r"\s+","",_norm_ocr_text(line))
-        if "總計" in key or "总计" in key:
-            local=[]
-            for j in range(i,min(len(lines),i+5)):
-                if re.search(r"TEL|電話",lines[j],re.I):
-                    continue
-                for raw in re.findall(r"\d{1,3}(?:[,.]\d{3})+|\d{1,7}",lines[j]):
-                    v=_parse_amount_token(raw)
-                    if v is not None and v<50_000_000:
-                        local.append(v)
+        next_key=re.sub(r"\s+","",_norm_ocr_text(lines[i+1])) if i+1<len(lines) else ""
+        is_total=("總計" in key or "总计" in key or key in {"總","总"} or
+                  (key in {"總","总"} and next_key in {"計","计"}))
+        if not is_total:
+            continue
+        local=[]
+        start=i+2 if key in {"總","总"} and next_key in {"計","计"} else i+1
+        for j in range(start,min(len(lines),start+6)):
+            if re.search(r"TEL|電話",lines[j],re.I):
+                continue
+            for raw in re.findall(r"\d{1,3}(?:[,.]\d{3})+|\d{1,7}",lines[j]):
+                v=_parse_amount_token(raw)
+                if v is not None and 0 < v < 50_000_000:
+                    local.append(v)
             if local:
-                return local[-1]
+                return local[0]
     return None
 
 def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -332,13 +337,14 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
 
     tax_ids=contextual_tax_ids(page_text)
     if tax_ids:
-        # In standard 3-part forms buyer ID is normally encountered before the seller stamp ID.
-        if document_type=="three_part_uniform_invoice" and len(tax_ids)>=2:
-            actual["buyer_tax_id"]=tax_ids[0]
-            actual["seller_tax_id"]=tax_ids[-1]
-        else:
-            actual["seller_tax_id"]=tax_ids[-1]
-        evidence["tax_id_candidates"]={"source":"page_anchor","values":tax_ids}
+        valid_ids=[v for v in tax_ids if valid_tax_id(v)]
+        # The seller's tax ID is printed/stamped on every invoice. Only assign a buyer ID when
+        # two distinct checksum-valid IDs are visually present; otherwise avoid guessing.
+        if valid_ids:
+            actual["seller_tax_id"]=valid_ids[0]
+            if document_type=="three_part_uniform_invoice" and len(valid_ids)>=2:
+                actual["buyer_tax_id"]=valid_ids[1]
+        evidence["tax_id_candidates"]={"source":"page_anchor","values":tax_ids,"valid":valid_ids}
 
     before=contextual_money(page_text,["銷售額合計","销售额合计","銷售額(A)","销售额(A)"])
     tax=contextual_money(page_text,["營業稅","营业税"])
@@ -363,11 +369,11 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
         uniq=list(dict.fromkeys(nums))
         triples=[]
         for a in uniq:
-            if a <= 0: continue
+            if a < 100: continue
             for b in uniq:
                 if b < 0: continue
                 t=a+b
-                if t not in uniq: continue
+                if t < 100 or t not in uniq: continue
                 expected_tax=round(a*0.05)
                 tax_ok=abs(b-expected_tax)<=1
                 zero_tax_ok=(b==0)
