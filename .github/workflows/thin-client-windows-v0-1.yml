@@ -24,7 +24,7 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'AgentOS'
           $workspace = Join-Path $env:RUNNER_TEMP 'AgentOS-Workspace'
-          & ./scripts/install_thin_client_windows.ps1 -InstallRoot $root -WorkspaceRoot $workspace
+          & ./scripts/install_thin_client_windows.ps1 -InstallRoot $root -WorkspaceRoot $workspace -SourceRef $env:GITHUB_SHA
           if (-not (Test-Path (Join-Path $root 'agentos-client.cmd'))) { throw 'launcher missing' }
           if (-not (Test-Path (Join-Path $root 'state\policy.json'))) { throw 'policy missing' }
           & (Join-Path $root 'agentos-client.cmd') --help
