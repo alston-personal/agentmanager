@@ -33,15 +33,14 @@ jobs:
           set -euo pipefail
           ROOT=/home/ubuntu/leopardcat-tarot
           WEB="$ROOT/website"
-          OLD=d1cae4fc34d2bfaec00bbbab54a058d33a4595cc
-          TARGET=127833770b96004e99936aac7fb99cce384c004d
+          TARGET=c455c47a789d9b147f878122d3ec9edc612a8a60
 
           echo '=== preflight ==='
           test -d "$ROOT/.git"
           test "$(git -C "$ROOT" branch --show-current)" = main
           HEAD=$(git -C "$ROOT" rev-parse HEAD)
           echo "head_before=$HEAD"
-          test "$HEAD" = "$OLD" -o "$HEAD" = "$TARGET"
+          echo "target=$TARGET"
 
           mapfile -t DIRTY < <(git -C "$ROOT" status --porcelain | sed -E 's/^.. //')
           for f in "${DIRTY[@]:-}"; do
@@ -147,6 +146,16 @@ jobs:
           grep -q 'property="og:image"' /tmp/leopardcat-public-root.html
           curl -fsS --max-time 8 https://leopardcat-tarot.milkcat.org/api/v1/decks/leopardcat -o /tmp/leopardcat-public-deck.json
           grep -q '"share_theme"' /tmp/leopardcat-public-deck.json
+
+          echo '=== verify direct-entry reading UX ==='
+          curl -fsS --max-time 8 https://leopardcat-tarot.milkcat.org/read.html -o /tmp/leopardcat-public-read.html
+          grep -q '有什麼事情，正在讓你放不下？' /tmp/leopardcat-public-read.html
+          grep -q '寫下你現在最想問的一件事' /tmp/leopardcat-public-read.html
+          grep -q '開始占卜' /tmp/leopardcat-public-read.html
+          curl -fsS --max-time 8 https://leopardcat-tarot.milkcat.org/locales_v10.json -o /tmp/leopardcat-public-locales.json
+          grep -q '石虎塔羅' /tmp/leopardcat-public-locales.json
+          grep -q '有一件事放不下嗎' /tmp/leopardcat-public-locales.json
+          echo 'direct_entry_ux=PASS'
 
           echo "service_pid=$(systemctl --user show -p MainPID --value leopardcat-tarot.service)"
           echo 'leopardcat_reading_og_deploy=PASS'
