@@ -14,7 +14,7 @@ from .oauth import OAuthStateStore
 
 THREADS_SCOPE_PROFILES = {
     "viewer": ("threads_basic", "threads_read_replies"),
-    "persona": ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies", "threads_keyword_search"),
+    "persona": ("threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies", "threads_keyword_search", "threads_manage_insights"),
 }
 THREADS_SCOPES = THREADS_SCOPE_PROFILES["persona"]
 THREADS_TEXT_LIMIT = 500
@@ -233,6 +233,30 @@ class ThreadsCapability:
                 # grant OAuth permissions. Leave reauthorization to the owner.
                 rows = self.transport.paged("keyword_search", token=token, params=search_params, max_pages=1)
                 return receipt_for(request, started_at=started, ok=True, capability="social.threads.keyword.search", result={"items": [self._safe_media(row) for row in rows], "truncated": len(rows) >= 50}).to_dict()
+            if request.operation == "post.insights.read":
+                object_id = str(request.object_id or "").strip()
+                if not object_id:
+                    return receipt_for(request, started_at=started, ok=False, capability="social.threads.post.insights.read", error_code="thread_object_id_required").to_dict()
+                payload = self.transport.api(
+                    f"{object_id}/insights",
+                    token=token,
+                    params={"metric": "views,likes,replies,reposts,quotes,shares"},
+                )
+                metrics = {}
+                for row in (payload.get("data") or []):
+                    if not isinstance(row, dict):
+                        continue
+                    name = str(row.get("name") or "").strip()
+                    if not name:
+                        continue
+                    value = None
+                    values = row.get("values")
+                    if isinstance(values, list) and values and isinstance(values[-1], dict):
+                        value = values[-1].get("value")
+                    if value is None and isinstance(row.get("total_value"), dict):
+                        value = row["total_value"].get("value")
+                    metrics[name] = value
+                return receipt_for(request, started_at=started, ok=True, capability="social.threads.post.insights.read", platform_object_id=object_id, result={"metrics": metrics}).to_dict()
             if request.operation == "replies.read":
                 object_id = str(request.object_id or "").strip()
                 if not object_id:
@@ -245,7 +269,7 @@ class ThreadsCapability:
 
     def status(self, request: SocialRequest) -> dict[str, Any]:
         request.validate()
-        if request.operation in {"identity.read", "post.read", "replies.read", "keyword.search"}:
+        if request.operation in {"identity.read", "post.read", "post.insights.read", "replies.read", "keyword.search"}:
             return self.read(request)
         if request.operation != "status":
             raise ValueError("status_or_read_operation_required")
