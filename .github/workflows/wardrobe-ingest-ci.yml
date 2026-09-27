@@ -1,0 +1,47 @@
+name: Wardrobe Ingest CI
+
+on:
+  pull_request:
+    paths:
+      - 'dashboard/lib/wardrobe-ingest.ts'
+      - 'dashboard/app/api/wardrobe/**'
+      - '.github/workflows/wardrobe-ingest-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/lib/wardrobe-ingest.ts'
+      - 'dashboard/app/api/wardrobe/**'
+      - '.github/workflows/wardrobe-ingest-ci.yml'
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test real NET product ingestion
+        working-directory: dashboard
+        env:
+          NODE_NO_WARNINGS: 1
+        run: |
+          node --experimental-strip-types --input-type=module <<'NODE'
+          const { resolveRetailProduct } = await import('./lib/wardrobe-ingest.ts');
+          const product = await resolveRetailProduct(
+            new URL('https://www.net-fashion.net/product/736377'),
+            'sunlake-milkcat-ai-001'
+          );
+          if (!product.name.includes('合身坑條圓領上衣')) throw new Error('wrong product name: ' + product.name);
+          if (product.slot !== 'upper_body') throw new Error('wrong slot: ' + product.slot);
+          if (!product.canonicalUrl.includes('net-fashion.net')) throw new Error('wrong canonical URL');
+          if (!product.imageUrl) throw new Error('missing product image');
+          console.log('wardrobe_real_net_ingest=PASS', JSON.stringify({
+            name: product.name,
+            sku: product.sku,
+            slot: product.slot,
+            price: product.price,
+            currency: product.currency,
+          }));
+          NODE
