@@ -1,6 +1,7 @@
 param(
   [string]$InstallRoot = "$env:LOCALAPPDATA\AgentOS",
   [string]$WorkspaceRoot = "$HOME\AgentOS",
+  [string]$SourceRef = "main",
   [switch]$EnableAutostart
 )
 
@@ -11,7 +12,8 @@ $apiHeaders = @{
   'User-Agent' = 'AgentOS-ThinClient-Installer/0.1'
   'Cache-Control' = 'no-cache'
 }
-$head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/main?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+$encodedRef = [uri]::EscapeDataString($SourceRef)
+$head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/$encodedRef?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
 $Ref = [string]$head.sha
 if ($Ref -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve immutable main commit SHA: $Ref" }
 $Base = "https://raw.githubusercontent.com/$Repo/$Ref"
@@ -90,6 +92,7 @@ if ($EnableAutostart) {
 }
 
 Write-Host "AgentOS Thin Client installed: $InstallRoot"
+Write-Host "Source ref: $SourceRef"
 Write-Host "Source commit: $Ref"
 Write-Host "Python: $version"
 Write-Host "Policy workspace: $WorkspaceRoot"
