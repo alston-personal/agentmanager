@@ -1,0 +1,54 @@
+name: Snapshot Invoice Fixtures
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/invoice-template-router
+    paths:
+      - '.github/workflows/invoice-fixture-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download public benchmark fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/invoice-fixtures
+          python3 - <<'PY'
+          import json, pathlib, urllib.request, urllib.parse, time
+          m=json.loads(pathlib.Path("benchmarks/invoice_handwriting/public_cases.json").read_text())
+          out=pathlib.Path("/tmp/invoice-fixtures")
+          for case in m["cases"]:
+              u=case["image_url"]
+              ext=pathlib.Path(urllib.parse.urlparse(u).path).suffix.lower()
+              if ext not in {".jpg",".jpeg",".png",".webp"}:
+                  ext=".img"
+              dest=out/(case["id"]+ext)
+              last=None
+              for n in range(3):
+                  try:
+                      req=urllib.request.Request(u,headers={"User-Agent":"Mozilla/5.0 invoice-fixture-snapshot/1.0"})
+                      with urllib.request.urlopen(req,timeout=30) as r:
+                          data=r.read()
+                      dest.write_bytes(data)
+                      print(case["id"],len(data),dest.name)
+                      break
+                  except Exception as e:
+                      last=e
+                      time.sleep(n+1)
+              else:
+                  raise RuntimeError(f"{case['id']}: {last}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: invoice-public-fixtures
+          path: /tmp/invoice-fixtures
+          retention-days: 7
