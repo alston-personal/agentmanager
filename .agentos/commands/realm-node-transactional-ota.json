@@ -3,5 +3,5 @@
   "action": "realm.node.transactional_ota",
   "node_id": "vopc5750",
   "source_commit": "f2773f4e57c5f569e52874215bb9efafa34da25f",
-  "nonce": "transactional-ota-first-acceptance-v2-20260927"
+  "nonce": "transactional-ota-second-acceptance-20260927-2228"
 }
