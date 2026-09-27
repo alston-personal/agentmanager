@@ -47,3 +47,13 @@ def test_script_is_not_concatenated_or_duplicated():
     assert s.count("agentos_ota_controller_acceptance=PENDING") == 1
     assert s.count("param([Parameter(Mandatory=$true)][string]$SourceCommit") == 1
     assert len(s.splitlines()) < 400
+
+
+def test_launchers_are_single_line_assignments():
+    assert "('set \"PYTHONPATH={0}\"' -f [string]$candidate)" in s
+    assert "('set \"AGENTOS_CLIENT_HOME={0}\"' -f [string]$state)" in s
+    assert "('set \"AGENTOS_RUNTIME_PROVENANCE={0}\"' -f [string](Join-Path $candidate 'runtime-provenance.json'))" in s
+    assert "candidate launcher validation failed: PYTHONPATH" in s
+    assert "candidate launcher validation failed: provenance" in s
+    assert "$lines=@('@echo off','set \"PYTHONPATH='+$candidate" not in s
+    assert "('set \"PYTHONPATH={0}\"' -f [string]$lkg.path)" in finalize
