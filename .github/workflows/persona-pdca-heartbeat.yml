@@ -76,7 +76,7 @@ jobs:
           fi
           CYCLE=$(python3 -c "import json; print(json.load(open('$PERSONA_PATH/pdca/state.json'))['cycle'])")
           git commit -m "persona(mio): persist autonomous PDCA cycle $CYCLE"
-          git push origin main
+          git push
           echo "persona_pdca_persist=PASS cycle=$CYCLE"
 
       - name: Verify durable receipt
