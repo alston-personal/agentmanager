@@ -13,7 +13,7 @@ $apiHeaders = @{
   'Cache-Control' = 'no-cache'
 }
 $encodedRef = [uri]::EscapeDataString($SourceRef)
-$head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/$encodedRef?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+$head = Invoke-RestMethod -UseBasicParsing -Headers $apiHeaders -Uri "https://api.github.com/repos/$Repo/commits/${encodedRef}?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
 $Ref = [string]$head.sha
 if ($Ref -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve immutable main commit SHA: $Ref" }
 $Base = "https://raw.githubusercontent.com/$Repo/$Ref"
