@@ -72,9 +72,24 @@ def parse_invoice_number(text: str):
     m = INV_RE.search(text.upper().replace("O","0"))
     return (m.group(1)+m.group(2)) if m else None
 
+def valid_tax_id(value: str) -> bool:
+    if not re.fullmatch(r"\d{8}", value or ""):
+        return False
+    weights = (1, 2, 1, 2, 1, 2, 4, 1)
+    products = [int(d) * w for d, w in zip(value, weights)]
+    total = sum((x // 10) + (x % 10) for x in products)
+    if total % 10 == 0:
+        return True
+    # Taiwan GUI special case: 7th digit is 7 and alternate carry can validate.
+    if value[6] == "7":
+        alt = total - ((products[6] // 10) + (products[6] % 10)) + 1
+        return alt % 10 == 0
+    return False
+
 def parse_tax_id(text: str):
     vals = DIGIT8_RE.findall(re.sub(r"[^0-9]", " ", text))
-    return vals[0] if vals else None
+    valid = [v for v in vals if valid_tax_id(v)]
+    return valid[0] if valid else (vals[0] if vals else None)
 
 def parse_money(text: str):
     vals = [int(x) for x in MONEY_RE.findall(text.replace(",",""))]
@@ -152,9 +167,20 @@ def main():
                 ok=str(got).replace(" ","").upper()==str(expected).replace(" ","").upper()
                 checks[field]={"expected":expected,"actual":got,"ok":ok}
                 total += 1; correct += int(ok)
+            validation = {
+                "invoice_number_format": bool(re.fullmatch(r"[A-Z]{2}\d{8}", str(actual.get("invoice_number") or ""))),
+                "buyer_tax_id_checksum": (valid_tax_id(str(actual["buyer_tax_id"])) if actual.get("buyer_tax_id") else None),
+                "seller_tax_id_checksum": (valid_tax_id(str(actual["seller_tax_id"])) if actual.get("seller_tax_id") else None),
+            }
+            if all(actual.get(k) is not None for k in ("amount_before_tax","tax_amount","total_amount")):
+                validation["amount_arithmetic"] = (
+                    int(actual["amount_before_tax"]) + int(actual["tax_amount"]) == int(actual["total_amount"])
+                )
+            else:
+                validation["amount_arithmetic"] = None
             rows.append({"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
                          "template_confidence":tconf,"page_ocr_confidence":page_conf,
-                         "actual":actual,"checks":checks,"evidence":evidence})
+                         "actual":actual,"checks":checks,"validation":validation,"evidence":evidence})
         except Exception as exc:
             rows.append({"id":case["id"],"error":type(exc).__name__+":"+str(exc)})
     summary={"engine":"rapidocr-template-router","cases":len(rows),"template_hits":template_hits,
