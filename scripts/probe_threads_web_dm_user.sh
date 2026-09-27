@@ -14,6 +14,19 @@ commands=("chromium","chromium-browser","google-chrome","google-chrome-stable","
 found={name: bool(shutil.which(name)) for name in commands}
 playwright=importlib.util.find_spec("playwright") is not None
 selenium=importlib.util.find_spec("selenium") is not None
+playwright_launch=False
+playwright_launch_error=""
+if playwright:
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser=p.chromium.launch(headless=True)
+            page=browser.new_page()
+            page.set_content("<title>ok</title>")
+            playwright_launch=(page.title()=="ok")
+            browser.close()
+    except Exception as exc:
+        playwright_launch_error=type(exc).__name__
 node=bool(shutil.which("node"))
 npm=bool(shutil.which("npm"))
 profile_candidates=[
@@ -30,6 +43,8 @@ payload={
   "browser_command_available":any(found.values()),
   "browser_commands":found,
   "playwright_python":playwright,
+  "playwright_chromium_launch":playwright_launch,
+  "playwright_chromium_launch_error":playwright_launch_error,
   "selenium_python":selenium,
   "node":node,
   "npm":npm,
@@ -41,6 +56,8 @@ os.chmod(p,0o600)
 print("threads_web_dm_probe=PASS")
 print("threads_web_dm_browser_available="+str(payload["browser_command_available"]).lower())
 print("threads_web_dm_playwright_python="+str(playwright).lower())
+print("threads_web_dm_playwright_chromium_launch="+str(playwright_launch).lower())
+print("threads_web_dm_playwright_chromium_launch_error="+playwright_launch_error)
 print("threads_web_dm_selenium_python="+str(selenium).lower())
 print("threads_web_dm_node="+str(node).lower())
 print("threads_web_dm_npm="+str(npm).lower())
