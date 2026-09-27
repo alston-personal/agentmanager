@@ -26,9 +26,28 @@ A Thin Client must provide:
 6. governed local execution;
 7. artifact references;
 8. execution receipt;
-9. experience/evidence feedback.
+9. experience/evidence feedback;
+10. transactional OTA runtime update with verified rollback.
 
 A Thin Client must not own canonical Realm memory, project state or cognition. Those belong to ONE.
+
+## Transactional OTA contract
+
+A Thin Client OTA update MUST be fail-safe and must not overwrite the last known-good runtime in place.
+
+Required sequence:
+
+1. download the candidate runtime into a separate staging/version directory;
+2. verify source identity, expected commit/version, file manifest and integrity before activation;
+3. run static/import/configuration checks against the staged candidate without replacing the active runtime;
+4. start or probe the candidate sufficiently to prove heartbeat and required baseline capabilities;
+5. retain the current runtime as the last-known-good rollback target;
+6. switch the active runtime atomically only after candidate validation passes;
+7. run post-switch health/readiness acceptance, including heartbeat and governed task receipt;
+8. if activation or post-switch acceptance fails, automatically restore and restart the last-known-good runtime;
+9. emit an OTA receipt recording candidate version, previous version, validation results, activation result and rollback result without secrets.
+
+An OTA operation is successful only after post-switch acceptance passes. A downloaded or copied candidate is not considered deployed. Update failure MUST leave the Node operating on the previous known-good runtime whenever that runtime was healthy before the update.
 
 ## Generic-first capability model
 
