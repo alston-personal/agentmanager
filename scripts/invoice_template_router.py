@@ -33,20 +33,31 @@ def unpack(result) -> tuple[list[str], list[float]]:
         scores = [float(x) for x in (obj.get("scores") or obj.get("rec_scores") or [])]
     return texts, scores
 
+def _run_ocr(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
+    buf = io.BytesIO(); image.save(buf, format="PNG")
+    texts, scores = unpack(engine(buf.getvalue()))
+    text = "\n".join(texts)
+    score = sum(scores)/len(scores) if scores else (0.5 if text.strip() else 0.0)
+    return text, score
+
 def ocr_text(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
-    best_text, best_score = "", 0.0
+    # Fast path first. Only spend extra OCR passes when the first result is weak.
+    base = image.convert("RGB")
+    best_text, best_score = _run_ocr(engine, base)
+    compact_len = len(re.sub(r"\s", "", best_text))
+    if best_score >= 0.78 and compact_len >= 4:
+        return best_text, round(best_score, 4)
+
     variants = [
-        image.convert("RGB"),
         ImageOps.autocontrast(image.convert("L")).convert("RGB"),
         ImageEnhance.Contrast(ImageOps.autocontrast(image.convert("L"))).enhance(1.8).convert("RGB"),
     ]
     for variant in variants:
-        buf = io.BytesIO(); variant.save(buf, format="PNG")
-        texts, scores = unpack(engine(buf.getvalue()))
-        text = "\n".join(texts)
-        score = sum(scores)/len(scores) if scores else (0.5 if text.strip() else 0.0)
-        if len(re.sub(r"\s", "", text)) > len(re.sub(r"\s", "", best_text)) or score > best_score + 0.15:
+        text, score = _run_ocr(engine, variant)
+        if len(re.sub(r"\s", "", text)) > len(re.sub(r"\s", "", best_text)) or score > best_score + 0.12:
             best_text, best_score = text, score
+        if best_score >= 0.82 and len(re.sub(r"\s", "", best_text)) >= 4:
+            break
     return best_text, round(best_score, 4)
 
 def classify(text: str, templates: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, float]:
@@ -178,9 +189,11 @@ def main():
                 )
             else:
                 validation["amount_arithmetic"] = None
-            rows.append({"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
-                         "template_confidence":tconf,"page_ocr_confidence":page_conf,
-                         "actual":actual,"checks":checks,"validation":validation,"evidence":evidence})
+            row = {"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
+                   "template_confidence":tconf,"page_ocr_confidence":page_conf,
+                   "actual":actual,"checks":checks,"validation":validation,"evidence":evidence}
+            print("case_result="+json.dumps(row,ensure_ascii=False), flush=True)
+            rows.append(row)
         except Exception as exc:
             rows.append({"id":case["id"],"error":type(exc).__name__+":"+str(exc)})
     summary={"engine":"rapidocr-template-router","cases":len(rows),"template_hits":template_hits,
