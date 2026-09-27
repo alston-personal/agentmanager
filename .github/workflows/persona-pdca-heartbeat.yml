@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 10
     env:
       PERSONA_PATH: ${{ github.event.inputs.persona_path || 'personas/sunlake-milkcat' }}
-      DATA_REPO: ${{ runner.temp }}/agentos-persona-data
+      DATA_REPO: /tmp/agentos-persona-data
     steps:
       - uses: actions/checkout@v4
 
