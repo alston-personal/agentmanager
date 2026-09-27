@@ -10,6 +10,7 @@ on:
       - 'dashboard/app/admin/usage/**'
       - 'dashboard/app/api/admin/usage/**'
       - 'dashboard/app/api/auth/**'
+      - 'dashboard/app/api/wardrobe/**'
       - 'dashboard/lib/fengshui-admin.ts'
       - 'dashboard/lib/tarot-admin.ts'
       - 'dashboard/lib/auth/**'
