@@ -33,7 +33,22 @@ try:
 except ModuleNotFoundError:
     print("threads_web_dm_import_playwright=MISSING")
 PY
-OUT="$(PYTHONPATH="$REPO" python3 "$REPO/scripts/threads_web_dm_bridge_user.py" --account mio.milkcat 2>&1)"
+OUT="$(PYTHONPATH="$REPO" python3 - "$REPO/scripts/threads_web_dm_bridge_user.py" <<'PY' 2>&1
+import re, runpy, sys
+path=sys.argv[1]
+sys.argv=[path,"--account","mio.milkcat"]
+try:
+    runpy.run_path(path,run_name="__main__")
+except ModuleNotFoundError as exc:
+    name=str(getattr(exc,"name","") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}",name):
+        name="unknown"
+    print("threads_web_dm_bridge=ERROR")
+    print("threads_web_dm_error_type=ModuleNotFoundError")
+    print("threads_web_dm_missing_module="+name)
+    raise SystemExit(7)
+PY
+)"
 RC=$?
 set -e
 printf '%s
