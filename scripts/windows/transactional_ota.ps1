@@ -81,10 +81,14 @@ $record.status='awaiting-controller-acceptance'
 $record.rollback_deadline=(Get-Date).ToUniversalTime().AddMinutes(3).ToString('yyyy-MM-ddTHH:mm:ssZ')
 $guardUrl="https://raw.githubusercontent.com/$Repo/$SourceCommit/scripts/windows/transactional_ota_guard.ps1"
 $finalizeUrl="https://raw.githubusercontent.com/$Repo/$SourceCommit/scripts/windows/transactional_ota_finalize.ps1"
-Invoke-WebRequest -UseBasicParsing -Uri $guardUrl -OutFile (Join-Path $InstallRoot 'transactional_ota_guard.ps1')
-Invoke-WebRequest -UseBasicParsing -Uri $finalizeUrl -OutFile (Join-Path $InstallRoot 'transactional_ota_finalize.ps1')
+$guardPath=Join-Path $InstallRoot ("transactional_ota_guard-"+$SourceCommit+".ps1")
+$finalizePath=Join-Path $InstallRoot ("transactional_ota_finalize-"+$SourceCommit+".ps1")
+Invoke-WebRequest -UseBasicParsing -Uri $guardUrl -OutFile $guardPath
+Invoke-WebRequest -UseBasicParsing -Uri $finalizeUrl -OutFile $finalizePath
+$record|Add-Member -NotePropertyName guard_helper -NotePropertyValue $guardPath -Force
+$record|Add-Member -NotePropertyName finalize_helper -NotePropertyValue $finalizePath -Force
 $guardTask='AgentOS Thin Client OTA Guard'
-$guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -File "'+(Join-Path $InstallRoot 'transactional_ota_guard.ps1')+'"')
+$guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -File "'+$guardPath+'"')
 $guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
 Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Force | Out-Null
 Write-JsonAtomic $record $currentFile
