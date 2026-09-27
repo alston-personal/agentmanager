@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.probe",
   "node_id": "vopc5750",
-  "nonce": "post-third-ota-guard-liveness-1790521873494"
+  "nonce": "post-ota-timeout-liveness-1790549179890"
 }
