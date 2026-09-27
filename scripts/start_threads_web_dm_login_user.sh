@@ -90,7 +90,7 @@ DISPLAY=:97 "$CHROME" \
   --window-size=1280,900 \
   --no-first-run \
   --no-default-browser-check \
-  "https://www.threads.com/messages" >"$SESSION/browser.log" 2>&1 &
+  "https://www.threads.com/login" >"$SESSION/browser.log" 2>&1 &
 BPID=$!
 echo "$BPID" >> "$SESSION/pids"
 
