@@ -98,10 +98,7 @@ jobs:
             sed -i '/^from divination\.threads_publishing import ThreadsPublishingService, ThreadsPublishingError$/a from print_service import handle_print_get' "$WEB/fortune_server.py"
           fi
           if ! grep -q 'handle_print_get(self, path, query, CARD_MANIFEST)' "$WEB/fortune_server.py"; then
-            sed -i '/^[[:space:]]*query = url_parts\[1\] if len(url_parts) > 1 else ""$/a\
-        if handle_print_get(self, path, query, CARD_MANIFEST):\
-            return\
-' "$WEB/fortune_server.py"
+            perl -0pi -e 's/(        query = url_parts\[1\] if len\(url_parts\) > 1 else ""\n\n)/$1        if handle_print_get(self, path, query, CARD_MANIFEST):\n            return\n\n/' "$WEB/fortune_server.py"
           fi
           test -f "$WEB/print_service.py"
           grep -q 'from print_service import handle_print_get' "$WEB/fortune_server.py"
