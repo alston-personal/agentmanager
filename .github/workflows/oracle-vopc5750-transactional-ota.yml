@@ -6,6 +6,11 @@ on:
       source_commit:
         description: Immutable candidate commit
         required: true
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/realm-node-transactional-ota.json'
 
 permissions:
   contents: read
@@ -27,7 +32,14 @@ jobs:
           python3 - <<'PY'
           import re,time
           from agent_core.realm_fabric import RealmFabricStore
+          import json
+          cmd_path='.agentos/commands/realm-node-transactional-ota.json'
           sha='''${{ inputs.source_commit }}'''.strip()
+          if not sha and __import__('os').path.exists(cmd_path):
+              cmd=json.load(open(cmd_path,encoding='utf-8'))
+              if cmd.get('node_id')!='vopc5750' or cmd.get('action')!='realm.node.transactional_ota': raise SystemExit('invalid OTA command')
+              sha=str(cmd.get('source_commit') or '').strip()
+          open('/tmp/ota-source','w').write(sha)
           if not re.fullmatch(r'[0-9a-f]{40}',sha): raise SystemExit('invalid source commit')
           url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/windows/transactional_ota.ps1'
           ps=f"$p=Join-Path $env:TEMP 'agentos-transactional-ota.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -SourceCommit '{sha}'"
@@ -56,7 +68,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from agent_core.runtime_ota_acceptance import accept_candidate
-          sha='''${{ inputs.source_commit }}'''.strip()
+          sha=open('/tmp/ota-source').read().strip()
           r=accept_candidate('vopc5750',sha,timeout_seconds=120)
           print(r)
           if not r.get('ok'): raise SystemExit('controller acceptance failed')
@@ -68,7 +80,7 @@ jobs:
           python3 - <<'PY'
           import time
           from agent_core.realm_fabric import RealmFabricStore
-          sha='''${{ inputs.source_commit }}'''.strip()
+          sha=open('/tmp/ota-source').read().strip()
           url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/windows/transactional_ota_finalize.ps1'
           ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action accept"
           tid='ota-finalize-vopc5750-'+str(int(time.time()))
@@ -82,7 +94,7 @@ jobs:
           python3 - <<'PY'
           import time
           from agent_core.realm_fabric import RealmFabricStore
-          sha='''${{ inputs.source_commit }}'''.strip()
+          sha=open('/tmp/ota-source').read().strip()
           url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/windows/transactional_ota_finalize.ps1'
           ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action rollback"
           tid='ota-rollback-vopc5750-'+str(int(time.time()))
