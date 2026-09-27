@@ -1,0 +1,60 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "document.financial-intake",
+  "display_name": "Financial Document Intake",
+  "semantic_owner": "financial-intake",
+  "version": "0.1.0",
+  "lifecycle": "candidate",
+  "contract": {
+    "inputs": [
+      "document.image",
+      "document.pdf",
+      "document.email-attachment",
+      "document.upload"
+    ],
+    "outputs": [
+      "financial-document.normalized",
+      "financial-document.review-task",
+      "accounting-adapter.payload"
+    ],
+    "side_effects": [
+      "document.archive",
+      "accounting.export"
+    ]
+  },
+  "composition": {
+    "relation": "composes",
+    "capabilities": [
+      "document.classify",
+      "invoice.extract",
+      "receipt.extract",
+      "document.deduplicate",
+      "accounting.validate",
+      "accounting.adapter"
+    ]
+  },
+  "adapters": {
+    "initial_targets": [
+      "winton",
+      "excel",
+      "csv",
+      "generic-api"
+    ],
+    "vendor_lock_in": false,
+    "canonical_model": "financial-document.normalized/v1"
+  },
+  "learning": {
+    "experience_schema": "agentos.capability-experience/v1",
+    "canonical_state_schema": "agentos.capability-state/v1",
+    "reward": "minimize_manual_correction_and_rekeying",
+    "raw_image_learning_default": false,
+    "promotion": "explicit-governance-only"
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true,
+    "requires_adapter_contract_test": true
+  }
+}
