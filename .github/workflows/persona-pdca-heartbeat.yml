@@ -1,0 +1,100 @@
+name: Persona PDCA Heartbeat
+
+on:
+  workflow_dispatch:
+    inputs:
+      persona_path:
+        description: Persona path inside my-agent-data
+        required: false
+        default: personas/sunlake-milkcat
+  schedule:
+    - cron: '17 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/persona_pdca_tick.py'
+      - '.github/workflows/persona-pdca-heartbeat.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: persona-pdca-sunlake-milkcat
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      PERSONA_PATH: ${{ github.event.inputs.persona_path || 'personas/sunlake-milkcat' }}
+      DATA_REPO: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify runtime and data repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/persona_pdca_tick.py
+          test -d "$DATA_REPO/.git"
+          test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
+          test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
+          test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
+          /usr/bin/gh auth status >/dev/null
+          echo "persona_pdca_preflight=PASS"
+
+      - name: Refresh canonical persona data
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/git -C "$DATA_REPO" fetch origin main
+          /usr/bin/git -C "$DATA_REPO" checkout main
+          /usr/bin/git -C "$DATA_REPO" pull --ff-only origin main
+          echo "persona_pdca_data_refresh=PASS"
+
+      - name: Run one bounded PDCA cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agentos/evidence
+          python3 scripts/persona_pdca_tick.py             --persona-dir "$DATA_REPO/$PERSONA_PATH"             --receipt-out ".agentos/evidence/persona-pdca-latest.json"
+          python3 -m json.tool .agentos/evidence/persona-pdca-latest.json >/dev/null
+          cat .agentos/evidence/persona-pdca-latest.json
+
+      - name: Persist Persona PDCA state
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$DATA_REPO"
+          git config user.name 'agentos-persona-pdca[bot]'
+          git config user.email 'agentos-persona-pdca[bot]@users.noreply.github.com'
+          git add "$PERSONA_PATH/pdca" "$PERSONA_PATH/events/events.jsonl"
+          if git diff --cached --quiet; then
+            echo "persona_pdca_persist=NO_CHANGE"
+            exit 0
+          fi
+          CYCLE=$(python3 -c "import json; print(json.load(open('$PERSONA_PATH/pdca/state.json'))['cycle'])")
+          git commit -m "persona(mio): persist autonomous PDCA cycle $CYCLE"
+          git push
+          echo "persona_pdca_persist=PASS cycle=$CYCLE"
+
+      - name: Verify durable receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(os.environ["DATA_REPO"])/os.environ["PERSONA_PATH"]
+          s=json.load(open(p/"pdca/state.json",encoding="utf-8"))
+          assert s["status"]=="RUNNING", s
+          assert int(s["cycle"]) >= 1, s
+          assert s["last_receipt"], s
+          r=p/s["last_receipt"]
+          assert r.exists(), r
+          last=json.loads(r.read_text(encoding="utf-8").splitlines()[-1])
+          assert last["cycle"] == s["cycle"], (last,s)
+          assert last["truth_boundary"]["external_receipt_required"] is True
+          print(f"persona_pdca_acceptance=PASS cycle={s['cycle']} intent={last['plan']['selected_intent']}")
+          PY
