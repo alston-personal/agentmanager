@@ -64,18 +64,18 @@ jobs:
           PERSONA_PATH="$1"
           SCRIPT="$2"
           RUN_ID="$3"
-          DATA_REPO=/home/ubuntu/agent-data
+          DATA_REPO=$(mktemp -d /tmp/persona-agent-data-XXXXXX)
           RECEIPT="/tmp/persona-pdca-receipt-$RUN_ID.json"
+          cleanup() {
+            rm -rf "$DATA_REPO" "$SCRIPT" "$RECEIPT"
+          }
+          trap cleanup EXIT
 
-          test -d "$DATA_REPO/.git"
           /usr/bin/gh auth status >/dev/null
           /usr/bin/gh auth setup-git
+          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch
           git -C "$DATA_REPO" config --unset-all credential.helper || true
           git -C "$DATA_REPO" config credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
-
-          git -C "$DATA_REPO" fetch origin main
-          git -C "$DATA_REPO" checkout main
-          git -C "$DATA_REPO" pull --ff-only origin main
 
           test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
           test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
@@ -109,5 +109,4 @@ jobs:
           PY
 
           cat "$RECEIPT"
-          rm -f "$SCRIPT" "$RECEIPT"
           REMOTE
