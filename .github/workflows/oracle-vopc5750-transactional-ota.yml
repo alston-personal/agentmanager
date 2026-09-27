@@ -61,3 +61,31 @@ jobs:
           print(r)
           if not r.get('ok'): raise SystemExit('controller acceptance failed')
           PY
+      - name: Finalize accepted candidate
+        if: success()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          sha='''${{ inputs.source_commit }}'''.strip()
+          url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/windows/transactional_ota_finalize.ps1'
+          ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action accept"
+          tid='ota-finalize-vopc5750-'+str(int(time.time()))
+          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          print('ota_finalize_task='+tid)
+          PY
+      - name: Roll back rejected candidate
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          sha='''${{ inputs.source_commit }}'''.strip()
+          url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/windows/transactional_ota_finalize.ps1'
+          ps=f"$p=Join-Path $env:TEMP 'agentos-ota-finalize.ps1'; Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $p; & $p -Action rollback"
+          tid='ota-rollback-vopc5750-'+str(int(time.time()))
+          RealmFabricStore().queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          print('ota_rollback_task='+tid)
+          PY
