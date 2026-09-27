@@ -31,6 +31,16 @@ class FakeTransport:
             assert params["q"] == "AI"
             assert params["search_type"] == "RECENT"
             return [{"id":"x1","username":"bob","text":"AI experiment","timestamp":"2026-09-18T00:00:00+0000","permalink":"https://www.threads.com/@bob/post/x1"}]
+        if path == "p1/insights":
+            assert params["metric"] == "views,likes,replies,reposts,quotes,shares"
+            return {"data":[
+                {"name":"views","period":"lifetime","values":[{"value":120}]},
+                {"name":"likes","period":"lifetime","values":[{"value":9}]},
+                {"name":"replies","period":"lifetime","values":[{"value":3}]},
+                {"name":"reposts","period":"lifetime","values":[{"value":1}]},
+                {"name":"quotes","period":"lifetime","values":[{"value":0}]},
+                {"name":"shares","period":"lifetime","values":[{"value":2}]},
+            ]}
         if path == "p1/conversation":
             return [
                 {"id": "r1", "username": "bob", "text": "hello", "timestamp": "2026-09-17T00:10:00+0000", "is_reply": True, "root_post": {"id": "p1"}, "replied_to": {"id": "p1"}},
@@ -100,4 +110,16 @@ def test_keyword_search_is_bounded_and_secret_free():
     assert result["ok"] is True
     assert result["capability"] == "social.threads.keyword.search"
     assert result["result"]["items"][0]["id"] == "x1"
+    assert "secret-token" not in repr(result)
+
+
+def test_post_insights_are_bounded_and_secret_free():
+    cap = ThreadsCapability(FakeVault(), FakeTransport())
+    result = cap.status(request("post.insights.read", "p1"))
+    assert result["ok"] is True
+    assert result["capability"] == "social.threads.post.insights.read"
+    assert result["result"]["metrics"] == {
+        "views": 120, "likes": 9, "replies": 3,
+        "reposts": 1, "quotes": 0, "shares": 2,
+    }
     assert "secret-token" not in repr(result)
