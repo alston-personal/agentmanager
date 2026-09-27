@@ -84,6 +84,9 @@ jobs:
           echo "left_right=$(git -C "$ROOT" rev-list --left-right --count HEAD...origin/main || true)"
           echo '--- local-only commits ---'
           git -C "$ROOT" log --oneline --decorate origin/main..HEAD || true
+          echo '--- local-only commit details ---'
+          git -C "$ROOT" show --stat --summary --oneline HEAD || true
+          git -C "$ROOT" diff --name-status "$(git -C "$ROOT" merge-base HEAD origin/main)"..HEAD || true
           echo '--- remote-only commits ---'
           git -C "$ROOT" log --oneline --decorate HEAD..origin/main | head -40 || true
           echo '--- graph ---'
