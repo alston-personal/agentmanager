@@ -1,5 +1,21 @@
 param([Parameter(Mandatory=$true)][ValidateSet('accept','rollback')][string]$Action,[string]$InstallRoot="$env:LOCALAPPDATA\AgentOS",[string]$TaskName='AgentOS Thin Client')
 $ErrorActionPreference='Stop'
+function Write-JsonAtomic([object]$Value,[string]$Path,[int]$Depth=8){
+  $json=$Value|ConvertTo-Json -Depth $Depth
+  $enc=New-Object System.Text.UTF8Encoding($false)
+  for($i=0;$i -lt 10;$i++){
+    $tmp=$Path+'.tmp.'+[guid]::NewGuid().ToString('N')
+    try{
+      [System.IO.File]::WriteAllText($tmp,$json+[Environment]::NewLine,$enc)
+      if(Test-Path $Path){[System.IO.File]::Replace($tmp,$Path,$null,$true)}else{[System.IO.File]::Move($tmp,$Path)}
+      return
+    }catch{
+      Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+      if($i -eq 9){throw}
+      Start-Sleep -Milliseconds ([Math]::Min(1500,100*($i+1)))
+    }
+  }
+}
 $currentFile=Join-Path $InstallRoot 'current.json'
 $lkgFile=Join-Path $InstallRoot 'last-known-good.json'
 $launcher=Join-Path $InstallRoot 'agentos-client.cmd'
@@ -9,9 +25,9 @@ $current=Get-Content -Raw $currentFile|ConvertFrom-Json
 if($Action -eq 'accept'){
   if($current.status -ne 'awaiting-controller-acceptance'){throw 'runtime is not awaiting acceptance'}
   $current.status='active-accepted'
-  $current.accepted_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-  $current|ConvertTo-Json -Depth 6|Set-Content -Encoding UTF8 $currentFile
-  $current|ConvertTo-Json -Depth 6|Set-Content -Encoding UTF8 $lkgFile
+  $current|Add-Member -NotePropertyName accepted_at -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) -Force
+  Write-JsonAtomic $current $currentFile 8
+  Write-JsonAtomic $current $lkgFile 8
   Write-Output 'agentos_ota_finalize=PASS'
   exit 0
 }
@@ -24,6 +40,6 @@ Move-Item -Force $next $launcher
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Start-ScheduledTask -TaskName $TaskName
 $lkg.status='rollback-restored'
-$lkg.rolled_back_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-$lkg|ConvertTo-Json -Depth 6|Set-Content -Encoding UTF8 $currentFile
+$lkg|Add-Member -NotePropertyName rolled_back_at -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) -Force
+Write-JsonAtomic $lkg $currentFile 8
 Write-Output 'agentos_ota_rollback=PASS'
