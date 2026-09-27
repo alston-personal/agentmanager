@@ -215,6 +215,7 @@ def main():
     templates=json.loads(Path(args.templates).read_text(encoding="utf-8"))["templates"]
     engine=RapidOCR()
     rows=[]; correct=total=template_hits=0
+    field_stats={}
     for case in manifest["cases"]:
         try:
             raw_image=Image.open(io.BytesIO(fetch(case["image_url"]))).convert("RGB")
@@ -244,6 +245,9 @@ def main():
                 ok=str(got).replace(" ","").upper()==str(expected).replace(" ","").upper()
                 checks[field]={"expected":expected,"actual":got,"ok":ok}
                 total += 1; correct += int(ok)
+                stat=field_stats.setdefault(field,{"correct":0,"total":0})
+                stat["total"] += 1
+                stat["correct"] += int(ok)
             validation = {
                 "invoice_number_format": bool(re.fullmatch(r"[A-Z]{2}\d{8}", str(actual.get("invoice_number") or ""))),
                 "buyer_tax_id_checksum": (valid_tax_id(str(actual["buyer_tax_id"])) if actual.get("buyer_tax_id") else None),
@@ -255,16 +259,42 @@ def main():
                 )
             else:
                 validation["amount_arithmetic"] = None
+            core_fields=("invoice_number","invoice_date","buyer_tax_id","seller_tax_id","total_amount")
+            supported_core=[x for x in core_fields if x in case["expected"]]
+            core_exact=all(checks.get(x,{}).get("ok") is True for x in supported_core)
+            validation_values=[v for v in validation.values() if v is not None]
+            validations_ok=all(v is True for v in validation_values)
+            min_roi_conf=min(
+                [float(v.get("ocr_confidence") or 0.0) for k,v in evidence.items() if k in supported_core] or [page_conf]
+            )
+            safe_auto_pass=bool(
+                mode=="template" and tconf>=0.5 and core_exact and validations_ok and min_roi_conf>=0.72
+            )
             row = {"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
                    "template_confidence":tconf,"page_ocr_confidence":page_conf,"geometry":geometry,
-                   "actual":actual,"checks":checks,"validation":validation,"evidence":evidence}
+                   "actual":actual,"checks":checks,"validation":validation,
+                   "safe_auto_pass":safe_auto_pass,"min_core_ocr_confidence":round(min_roi_conf,4),
+                   "evidence":evidence}
             print("case_result="+json.dumps(row,ensure_ascii=False), flush=True)
             rows.append(row)
         except Exception as exc:
             rows.append({"id":case["id"],"error":type(exc).__name__+":"+str(exc)})
+    for stat in field_stats.values():
+        stat["accuracy"]=stat["correct"]/stat["total"] if stat["total"] else 0.0
+    safe_passes=sum(1 for row in rows if row.get("safe_auto_pass"))
+    unsafe_auto_passes=sum(
+        1 for row in rows
+        if row.get("safe_auto_pass") and any(not v.get("ok",False) for v in row.get("checks",{}).values())
+    )
     summary={"engine":"rapidocr-template-router","cases":len(rows),"template_hits":template_hits,
+             "template_hit_rate":template_hits/len(rows) if rows else 0.0,
              "checked_fields":total,"correct_fields":correct,
-             "field_exact_match":correct/total if total else 0.0,"rows":rows}
+             "field_exact_match":correct/total if total else 0.0,
+             "field_stats":field_stats,
+             "safe_auto_passes":safe_passes,
+             "safe_auto_pass_rate":safe_passes/len(rows) if rows else 0.0,
+             "unsafe_auto_passes":unsafe_auto_passes,
+             "rows":rows}
     print("template_router_summary="+json.dumps(summary,ensure_ascii=False))
     if args.out: Path(args.out).write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding="utf-8")
 
