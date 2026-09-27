@@ -74,8 +74,17 @@ if(Test-Path $currentFile){
 }
 Write-JsonAtomic $previous $lkgFile
 $launcher=Join-Path $InstallRoot 'agentos-client.cmd';$next=Join-Path $InstallRoot 'agentos-client.next.cmd';$state=Join-Path $InstallRoot 'state'
-$lines=@('@echo off','set "PYTHONPATH='+$candidate+'"','set "AGENTOS_CLIENT_HOME='+$state+'"','set "AGENTOS_RUNTIME_PROVENANCE='+(Join-Path $candidate 'runtime-provenance.json')+'"','python -m agentos_node.client_cli %*')
+$lines=@(
+  '@echo off'
+  ('set "PYTHONPATH={0}"' -f [string]$candidate)
+  ('set "AGENTOS_CLIENT_HOME={0}"' -f [string]$state)
+  ('set "AGENTOS_RUNTIME_PROVENANCE={0}"' -f [string](Join-Path $candidate 'runtime-provenance.json'))
+  'python -m agentos_node.client_cli %*'
+)
 $lines|Set-Content -Encoding ASCII $next
+$launcherCheck=Get-Content -Raw $next
+if($launcherCheck -notmatch '(?m)^set "PYTHONPATH=[A-Za-z]:\\'){throw 'candidate launcher validation failed: PYTHONPATH'}
+if($launcherCheck -notmatch '(?m)^set "AGENTOS_RUNTIME_PROVENANCE=[A-Za-z]:\\'){throw 'candidate launcher validation failed: provenance'}
 $record=[ordered]@{schema='agentos.thin-client-runtime/v0.1';source_ref='core/integration';source_commit=$SourceCommit;path=$candidate;installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ');status='candidate-validated'}
 Write-JsonAtomic $record (Join-Path $candidate 'runtime-provenance.json')
 $record.status='awaiting-controller-acceptance'
