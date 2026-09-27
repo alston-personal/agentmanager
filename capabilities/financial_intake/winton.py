@@ -55,19 +55,35 @@ class WintonExcelAdapter(AccountingAdapter):
         return not document.review_required and bool(document.fields.get("invoice_number"))
 
     def export(self, document: FinancialDocument) -> AdapterResult:
-        require_review_free(document)
-        fields = dict(document.fields)
+        return self.export_many([document], filename=f"winton-import-{document.document_id or 'document'}.csv")
+
+    def export_many(
+        self,
+        documents: list[FinancialDocument],
+        *,
+        filename: str = "winton-import-batch.csv",
+    ) -> AdapterResult:
+        if not documents:
+            raise ValueError("no financial documents supplied")
+        for document in documents:
+            require_review_free(document)
+            if not document.fields.get("invoice_number"):
+                raise ValueError(f"invoice number required for {document.document_id}")
+
         output = io.StringIO(newline="")
         writer = csv.writer(output, delimiter=self.profile.delimiter)
         keys = [key for key in DEFAULT_COLUMNS if key in self.profile.column_map]
         writer.writerow([self.profile.column_map[key] for key in keys])
-        writer.writerow([fields.get(key, "") for key in keys])
+        for document in documents:
+            fields = dict(document.fields)
+            writer.writerow([fields.get(key, "") for key in keys])
+
         data = "\ufeff" + output.getvalue()
         return AdapterResult(
             adapter_id=self.adapter_id,
             payload=data.encode("utf-8"),
             media_type="text/csv; charset=utf-8",
-            filename=f"winton-import-{document.document_id or 'document'}.csv",
+            filename=filename,
             warnings=(
                 "generic Winton interchange profile; verify against the customer's actual import template",
             ),
