@@ -35,13 +35,23 @@ class FinancialIntakePluginTests(unittest.TestCase):
         self.assertIn("1050", rows[1])
 
     def test_review_required_document_cannot_export(self):
+        for status in ("needs_review", "processing", "error"):
+            with self.subTest(status=status):
+                doc = canonical_from_invoice_payload({
+                    "invoice_id": "inv-2",
+                    "status": status,
+                    "fields": {"invoice_number": "AB12345678"},
+                })
+                with self.assertRaises(ValueError):
+                    WintonExcelAdapter().export(doc)
+
+    def test_extracted_document_can_export(self):
         doc = canonical_from_invoice_payload({
-            "invoice_id": "inv-2",
-            "status": "needs_review",
-            "fields": {"invoice_number": "AB12345678"},
+            "invoice_id": "inv-ready",
+            "status": "extracted",
+            "fields": {"invoice_number": "AB12345678", "total_amount": 1050},
         })
-        with self.assertRaises(ValueError):
-            WintonExcelAdapter().export(doc)
+        self.assertTrue(WintonExcelAdapter().can_export(doc))
 
     def test_canonical_model_has_no_winton_specific_fields(self):
         doc = canonical_from_invoice_payload({
