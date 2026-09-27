@@ -35,29 +35,6 @@ $lines|Set-Content -Encoding ASCII $next
 $record=[ordered]@{schema='agentos.thin-client-runtime/v0.1';source_ref='core/integration';source_commit=$SourceCommit;path=$candidate;installed_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ');status='candidate-validated'}
 $record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 (Join-Path $candidate 'runtime-provenance.json')
 Move-Item -Force $next $launcher
-$record.status='activating';$record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
-Start-ScheduledTask -TaskName $TaskName
-Write-Output 'agentos_ota_stage=ACTIVATING'
-Write-Output ('agentos_ota_candidate='+$SourceCommit)
-
-Start-Sleep -Seconds 12
-$task=Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-$healthy=$false
-if($task -and $task.State -eq 'Running'){$healthy=$true}
-if(-not $healthy){
-  if($previous -and $previous.path){
-    $rollbackLines=@('@echo off','set "PYTHONPATH='+[string]$previous.path+'"','set "AGENTOS_CLIENT_HOME='+$state+'"','python -m agentos_node.client_cli %*')
-    $rollbackNext=Join-Path $InstallRoot 'agentos-client.rollback.cmd'
-    $rollbackLines|Set-Content -Encoding ASCII $rollbackNext
-    Move-Item -Force $rollbackNext $launcher
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Start-ScheduledTask -TaskName $TaskName
-    $previous.status='rollback-restored'
-    $previous|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
-    Write-Output 'agentos_ota_rollback=PASS'
-  }
-  throw 'candidate post-switch health acceptance failed'
-}
 $record.status='awaiting-controller-acceptance'
 $record.rollback_deadline=(Get-Date).ToUniversalTime().AddMinutes(3).ToString('yyyy-MM-ddTHH:mm:ssZ')
 $guardUrl="https://raw.githubusercontent.com/$Repo/$SourceCommit/scripts/windows/transactional_ota_guard.ps1"
@@ -69,5 +46,8 @@ $guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoPr
 $guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
 Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Force | Out-Null
 $record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
-Write-Output 'agentos_ota_local_health=PASS'
+$restart="Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName '$TaskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$TaskName'"
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
+Write-Output 'agentos_ota_stage=ACTIVATING'
+Write-Output ('agentos_ota_candidate='+$SourceCommit)
 Write-Output 'agentos_ota_controller_acceptance=PENDING'
