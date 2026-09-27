@@ -266,11 +266,21 @@ def contextual_date(text: str) -> str | None:
     for p in patterns:
         m=re.search(p,s)
         if m:
-            y,mo,d=map(int,m.groups())
-            y += 1911
-            if 1<=mo<=12 and 1<=d<=31:
+            roc,mo,d=map(int,m.groups())
+            if 0 <= roc < 20:
+                roc += 100
+            y=roc+1911
+            if 2000<=y<=2100 and 1<=mo<=12 and 1<=d<=31:
                 return f"{y:04d}-{mo:02d}-{d:02d}"
-    return parse_date(s)
+    candidate=parse_date(s)
+    if candidate:
+        try:
+            y=int(candidate[:4])
+            if 2000<=y<=2100:
+                return candidate
+        except Exception:
+            pass
+    return None
 
 def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
     actual={}
@@ -301,7 +311,8 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
     if tax is not None: actual["tax_amount"]=tax
     if total is not None: actual["total_amount"]=total
 
-    # If contextual total is obscured, use a unique arithmetic-consistent triple from nearby OCR numbers.
+    # Prefer a tax-arithmetic-consistent triple. This filters phone/tax-id numbers
+    # that OCR often places near amount labels.
     if document_type=="three_part_uniform_invoice":
         nums=[]
         for raw in re.findall(r"(?<!\\d)(\\d{1,3}(?:,\\d{3})+|\\d{1,7})(?!\\d)", page_text):
@@ -309,27 +320,41 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
             except ValueError: continue
             if 0 <= v <= 50_000_000:
                 nums.append(v)
-        triples=[]
         uniq=list(dict.fromkeys(nums))
+        triples=[]
         for a in uniq:
+            if a <= 0: continue
             for b in uniq:
-                if b > max(1000000, a//2+1): continue
+                if b < 0: continue
                 t=a+b
-                if t in uniq and a>0 and t>0:
-                    triples.append((a,b,t))
-        if len(triples)==1:
-            a,b,t=triples[0]
-            actual.setdefault("amount_before_tax",a)
-            actual.setdefault("tax_amount",b)
-            actual.setdefault("total_amount",t)
-            evidence["amount_arithmetic_candidate"]={"source":"page_consistency","value":[a,b,t]}
+                if t not in uniq: continue
+                expected_tax=round(a*0.05)
+                tax_ok=abs(b-expected_tax)<=1
+                zero_tax_ok=(b==0)
+                if not (tax_ok or zero_tax_ok):
+                    continue
+                freq=nums.count(a)+nums.count(b)+nums.count(t)
+                score=(6 if tax_ok else 2)+min(freq,6)+(2 if a>=100 else 0)+(1 if t>=a else 0)
+                triples.append((score,a,b,t))
+        if triples:
+            triples.sort(reverse=True)
+            _,a,b,t=triples[0]
+            actual["amount_before_tax"]=a
+            actual["tax_amount"]=b
+            actual["total_amount"]=t
+            evidence["amount_arithmetic_candidate"]={"source":"page_tax_consistency","value":[a,b,t],"candidates":len(triples)}
     return actual,evidence
 
 def parse_field(name: str, text: str):
     if name == "invoice_number": return parse_invoice_number(text)
     if name in {"buyer_tax_id","seller_tax_id"}: return parse_tax_id(text)
-    if name in {"amount_before_tax","tax_amount","total_amount"}: return parse_money(text)
-    if name == "invoice_date": return parse_date(text)
+    if name == "amount_before_tax":
+        return contextual_money(text,["銷售額合計","销售额合计","銷售額","销售额"]) or parse_money(text)
+    if name == "tax_amount":
+        return contextual_money(text,["營業稅","营业税"]) or parse_money(text)
+    if name == "total_amount":
+        return contextual_money(text,["總計新臺幣","总计新台币","總計","总计"]) or parse_money(text)
+    if name == "invoice_date": return contextual_date(text)
     if name in {"buyer_name","items"}:
         val = " ".join(x.strip() for x in text.splitlines() if x.strip())
         return val[:300] or None
