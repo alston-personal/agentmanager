@@ -12,7 +12,7 @@ if($LASTEXITCODE -ne 0){throw 'candidate git init failed'}
 & git -C $tmpRepo config core.sparseCheckout true
 $infoDir=Join-Path $tmpRepo '.git\info'
 New-Item -ItemType Directory -Force -Path $infoDir|Out-Null
-"agentos_node/"|Set-Content -Encoding ASCII (Join-Path $infoDir 'sparse-checkout')
+@("agentos_node/","agent_core/")|Set-Content -Encoding ASCII (Join-Path $infoDir 'sparse-checkout')
 & git -C $tmpRepo fetch -q --depth 1 --filter=blob:none origin $SourceCommit
 if($LASTEXITCODE -ne 0){throw 'candidate immutable fetch failed'}
 $resolved=(& git -C $tmpRepo rev-parse FETCH_HEAD).Trim()
@@ -20,11 +20,14 @@ if($resolved -ne $SourceCommit){throw 'candidate fetched commit does not match r
 & git -C $tmpRepo checkout -q FETCH_HEAD
 if($LASTEXITCODE -ne 0){throw 'candidate sparse checkout failed'}
 $sourcePkg=Join-Path $tmpRepo 'agentos_node'
+$sourceCore=Join-Path $tmpRepo 'agent_core'
 if(-not(Test-Path $sourcePkg)){throw 'candidate sparse checkout missing agentos_node package'}
+if(-not(Test-Path $sourceCore)){throw 'candidate sparse checkout missing agent_core package'}
 Remove-Item -Recurse -Force $candidate -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $candidate|Out-Null
 Copy-Item -Recurse -Force $sourcePkg (Join-Path $candidate 'agentos_node')
-$manifest=@(Get-ChildItem -LiteralPath (Join-Path $candidate 'agentos_node') -Recurse -File | Sort-Object FullName | ForEach-Object {
+Copy-Item -Recurse -Force $sourceCore (Join-Path $candidate 'agent_core')
+$manifest=@(Get-ChildItem -LiteralPath $candidate -Recurse -File | Sort-Object FullName | ForEach-Object {
   [ordered]@{path=$_.FullName.Substring($candidate.Length+1);sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant();bytes=$_.Length}
 })
 $manifestRecord=[ordered]@{schema='agentos.runtime-package-manifest/v0.1';source_commit=$SourceCommit;files=$manifest}
