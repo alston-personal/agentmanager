@@ -21,6 +21,18 @@ for rel in   agentos_node/social/web_dm.py   scripts/threads_web_dm_bridge_user.
 done
 
 set +e
+PYTHONPATH="$REPO" python3 - <<'PY'
+try:
+    import agentos_node.social.web_dm  # noqa: F401
+    print("threads_web_dm_import_web_dm=PASS")
+except ModuleNotFoundError:
+    print("threads_web_dm_import_web_dm=MISSING")
+try:
+    import playwright  # noqa: F401
+    print("threads_web_dm_import_playwright=PASS")
+except ModuleNotFoundError:
+    print("threads_web_dm_import_playwright=MISSING")
+PY
 OUT="$(PYTHONPATH="$REPO" python3 "$REPO/scripts/threads_web_dm_bridge_user.py" --account mio.milkcat 2>&1)"
 RC=$?
 set -e
