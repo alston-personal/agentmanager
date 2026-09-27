@@ -458,7 +458,13 @@ def main():
     field_stats={}
     for case in manifest["cases"]:
         try:
-            image_bytes=fetch(case["image_url"])
+            fixture_path=case.get("fixture_path")
+            if fixture_path and Path(fixture_path).is_file():
+                image_bytes=Path(fixture_path).read_bytes()
+                fixture_source="repo"
+            else:
+                image_bytes=fetch(case["image_url"])
+                fixture_source="remote"
             raw_page_text,raw_page_conf=ocr_bytes(engine,image_bytes)
             raw_image=Image.open(io.BytesIO(image_bytes)).convert("RGB")
             image,geometry=normalize_document(raw_image)
@@ -532,7 +538,7 @@ def main():
             )
             row = {"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
                    "template_confidence":tconf,"page_ocr_confidence":page_conf,
-                   "normalized_ocr_confidence":normalized_conf,"geometry":geometry,
+                   "normalized_ocr_confidence":normalized_conf,"fixture_source":fixture_source,"geometry":geometry,
                    "actual":actual,"checks":checks,"validation":validation,
                    "safe_auto_pass":safe_auto_pass,"min_core_ocr_confidence":round(min_roi_conf,4),
                    "evidence":evidence}
