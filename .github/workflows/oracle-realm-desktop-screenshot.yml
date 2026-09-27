@@ -6,7 +6,7 @@ on:
       - '.agentos/commands/realm-desktop-screenshot.json'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: oracle-realm-desktop-screenshot
@@ -45,19 +45,19 @@ jobs:
               time.sleep(2)
           assert receipt is not None, f'no receipt for {task_id}'
           assert receipt.get('ok') is True, receipt
+          import base64
+          image=base64.b64decode(str(receipt.pop('image_base64')))
+          Path('/tmp/vopc5750-desktop.bmp').write_bytes(image)
           Path('/tmp/realm-desktop-screenshot.json').write_text(json.dumps(receipt,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
           print('desktop_screenshot=PASS')
           print('task_id='+task_id)
           PY
-      - name: Publish screenshot metadata
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .agentos/evidence
-          cp /tmp/realm-windows-inspect.json .agentos/evidence/realm-desktop-screenshot-current.json
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence/realm-windows-inspect-current.json
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): record desktop screenshot metadata'
-          git push origin HEAD:main
+      - name: Upload private screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vopc5750-desktop-screenshot
+          path: |
+            /tmp/vopc5750-desktop.bmp
+            /tmp/realm-desktop-screenshot.json
+          if-no-files-found: error
+          retention-days: 1
