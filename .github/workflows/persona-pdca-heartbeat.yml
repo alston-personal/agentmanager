@@ -70,6 +70,8 @@ jobs:
           test -d "$DATA_REPO/.git"
           /usr/bin/gh auth status >/dev/null
           /usr/bin/gh auth setup-git
+          git -C "$DATA_REPO" config --unset-all credential.helper || true
+          git -C "$DATA_REPO" config credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
 
           git -C "$DATA_REPO" fetch origin main
           git -C "$DATA_REPO" checkout main
