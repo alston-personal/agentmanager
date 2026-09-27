@@ -91,3 +91,5 @@ jobs:
           print("threads_web_dm_read_state="+state)
           assert state in {"PASS","LOGIN_REQUIRED"},text[-8000:]
           PY
+
+# diagnostic rerun 2026-09-27T13:58+08:00
