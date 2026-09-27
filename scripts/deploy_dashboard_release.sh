@@ -260,7 +260,7 @@ cd "$STAGE"
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 test -f .next/server/app-paths-manifest.json
-node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
+node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route","/api/wardrobe/intake/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
 
 # Promote build output as a new immutable release directory.
 test ! -e "$RELEASE"
@@ -335,6 +335,7 @@ echo "dashboard_runtime_isolation=PASS listener=$NEW_LISTENER pm2_cwd=$NEW_PM2_C
 # Public/auth route acceptance.
 check_route /dashboard/api/auth/session 200
 check_route /dashboard/api/admin/usage 401
+check_route /dashboard/api/wardrobe/intake 401
 check_route /dashboard/admin/usage 307
 check_route /dashboard/ 308
 
@@ -355,29 +356,39 @@ NODE
 
 check_public /dashboard/api/auth/session 200
 check_public /dashboard/api/admin/usage 401
+check_public /dashboard/api/wardrobe/intake 401
 check_public /dashboard/admin/usage 307
 
-# Verify the same Unix identity still has access to private analytics credentials.
+# Verify the Dashboard Unix identity can still read private analytics credentials.
+# Analytics service availability is validated by its own release/verification workflows;
+# an unrelated Tarot 404 must not roll back an otherwise healthy Dashboard release.
 python3 - <<'PY'
-import json, pathlib, stat, urllib.request
+import json, os, pathlib, stat, urllib.error, urllib.request
 home=pathlib.Path('/home/ubuntu')
 checks=[
     ('fengshui', home/'.config/milkcat/fengshui-analytics-token',
-     'http://127.0.0.1:8868/fengshui/api/analytics/summary?days=30', 'x-analytics-token'),
+     'http://127.0.0.1:8868/fengshui/api/analytics/summary?days=30', 'x-analytics-token', True),
     ('tarot', home/'.config/milkcat/leopardcat-analytics-token',
-     'http://127.0.0.1:8088/api/v1/analytics/summary?days=30', 'x-analytics-token'),
+     'http://127.0.0.1:8088/api/v1/analytics/summary?days=30', 'x-analytics-token', False),
 ]
-for name,path,url,header in checks:
-    s=path.lstat()
-    assert stat.S_ISREG(s.st_mode) and not stat.S_ISLNK(s.st_mode)
-    assert s.st_uid==__import__('os').getuid() and (s.st_mode & 0o077)==0
+for name,path,url,header,required_service in checks:
+    meta=path.lstat()
+    assert stat.S_ISREG(meta.st_mode) and not stat.S_ISLNK(meta.st_mode)
+    assert meta.st_uid==os.getuid() and (meta.st_mode & 0o077)==0
     token=path.read_text(encoding='utf8').strip()
     assert len(token)>=32
+    print('dashboard_private_'+name+'_credential_access=PASS')
     req=urllib.request.Request(url,headers={header:token})
-    with urllib.request.urlopen(req,timeout=8) as resp:
-        payload=json.load(resp)
-        assert resp.status==200 and isinstance(payload,dict)
-    print('dashboard_private_'+name+'_summary=PASS')
+    try:
+        with urllib.request.urlopen(req,timeout=8) as resp:
+            payload=json.load(resp)
+            assert resp.status==200 and isinstance(payload,dict)
+        print('dashboard_private_'+name+'_summary=PASS')
+    except urllib.error.HTTPError as error:
+        if not required_service and error.code==404:
+            print('dashboard_private_'+name+'_summary=DEGRADED status=404 owner_workflow_required=1')
+            continue
+        raise
 PY
 
 # Regression proof for the exact old failure mode:
@@ -388,6 +399,7 @@ mv "$LEGACY/.next" "$LEGACY_PROBE"
 LEGACY_NEXT_MOVED=1
 check_public /dashboard/api/auth/session 200
 check_public /dashboard/api/admin/usage 401
+check_public /dashboard/api/wardrobe/intake 401
 check_public /dashboard/admin/usage 307
 mv "$LEGACY_PROBE" "$LEGACY/.next"
 LEGACY_NEXT_MOVED=0
