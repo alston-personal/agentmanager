@@ -27,7 +27,7 @@ class SocialCapabilityRegistry:
 
 
 def _platform_specs(platform: str) -> list[SocialCapabilitySpec]:
-    reads = ("status", "identity.read", "post.read", "replies.read")
+    reads = ("status", "identity.read", "post.read", "post.insights.read", "replies.read")
     writes = ("publish", "reply", "disconnect")
     specs = [SocialCapabilitySpec(f"social.{platform}.{op}", platform, op, False) for op in reads]
     specs.extend(SocialCapabilitySpec(f"social.{platform}.{op}", platform, op, True, False) for op in writes)
@@ -38,6 +38,7 @@ _SPECS: list[SocialCapabilitySpec] = []
 for _platform in ("threads", "facebook", "instagram"):
     _SPECS.extend(_platform_specs(_platform))
 _SPECS.append(SocialCapabilitySpec("social.threads.public_post.read", "threads", "public_post.read", False))
+_SPECS.append(SocialCapabilitySpec("social.threads.keyword.search", "threads", "keyword.search", False))
 _SPECS.append(SocialCapabilitySpec("social.threads.connect", "threads", "connect", False))
 
 default_registry = SocialCapabilityRegistry(tuple(_SPECS))
