@@ -32,7 +32,11 @@ $files = @(
   'agentos_node/thin_client.py',
   'agentos_node/interactive_desktop.py',
   'agentos_node/thin_client_transport.py',
-  'agentos_node/client_cli.py'
+  'agentos_node/client_cli.py',
+  'agentos_node/session_bridge.py',
+  'agentos_node/agent_surfaces.py',
+  'agentos_node/employee_wake_inbox.py',
+  'agentos_node/runtime_provenance.py'
 )
 foreach ($rel in $files) {
   $dest = Join-Path $InstallRoot ($rel -replace '/', '\')
@@ -47,6 +51,11 @@ if ($clientCliText -notmatch "encoding='utf-8-sig'") {
 }
 if (-not (Test-Path (Join-Path $Pkg 'interactive_desktop.py'))) {
   throw "Interactive Desktop Adapter missing (ref=$Ref)"
+}
+foreach ($required in @('session_bridge.py','agent_surfaces.py','employee_wake_inbox.py','runtime_provenance.py')) {
+  if (-not (Test-Path (Join-Path $Pkg $required))) {
+    throw "Thin Client dependency missing: $required (ref=$Ref)"
+  }
 }
 
 $policy = @{
