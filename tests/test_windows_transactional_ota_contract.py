@@ -10,9 +10,11 @@ required=[
     'Move-Item -Force $next $launcher',
     'candidate-validated',
     'awaiting-controller-acceptance',
-    'agentos_ota_local_health=PASS',
     'agentos_ota_controller_acceptance=PENDING',
     'AgentOS Thin Client OTA Guard',
+    "Start-Sleep -Seconds 8; Stop-ScheduledTask",
+    "Start-ScheduledTask -TaskName '$TaskName'",
+    'cannot bootstrap LKG',
 ]
 
 def test_contract():
@@ -21,5 +23,6 @@ def test_contract():
     assert s.index('candidate_import=PASS') < s.index('Move-Item -Force $next $launcher')
     assert s.index('last-known-good.json') < s.index('Move-Item -Force $next $launcher')
     assert s.index('awaiting-controller-acceptance') > s.index('Move-Item -Force $next $launcher')
+    assert s.index('agentos_ota_controller_acceptance=PENDING') > s.index('Start-Process powershell.exe')
     assert "$record.status='active-accepted'" not in s
-    assert "status='active-accepted'" in s  # bootstrap LKG may be accepted
+    assert "status='active-accepted'" in s  # bootstrap LKG only
