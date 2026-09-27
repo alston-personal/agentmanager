@@ -1,0 +1,55 @@
+name: Oracle vopc5750 OTA Diagnose
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/realm-node-ota-diagnose.json'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Thin Client runtime wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/realm-node-ota-diagnose.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.ota-diagnose'
+          assert cmd.get('node_id')=='vopc5750'
+          ps=r'''
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:LOCALAPPDATA 'AgentOS'
+          $task=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction Stop
+          $info=Get-ScheduledTaskInfo -TaskName 'AgentOS Thin Client'
+          $actions=@($task.Actions | ForEach-Object { [ordered]@{Execute=$_.Execute;Arguments=$_.Arguments;WorkingDirectory=$_.WorkingDirectory} })
+          $procs=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python|cmd' -and $_.CommandLine -match 'agentos_node|agentos-client' } | Select-Object ProcessId,Name,CommandLine)
+          $current=$null;$lkg=$null;$prov=$null
+          if(Test-Path (Join-Path $root 'current.json')){$current=Get-Content -Raw (Join-Path $root 'current.json')|ConvertFrom-Json}
+          if(Test-Path (Join-Path $root 'last-known-good.json')){$lkg=Get-Content -Raw (Join-Path $root 'last-known-good.json')|ConvertFrom-Json}
+          if(Test-Path (Join-Path $root 'runtime-provenance.json')){$prov=Get-Content -Raw (Join-Path $root 'runtime-provenance.json')|ConvertFrom-Json}
+          [ordered]@{root=$root;task_state=[string]$task.State;last_result=$info.LastTaskResult;actions=$actions;processes=$procs;current=$current;lkg=$lkg;root_provenance=$prov}|ConvertTo-Json -Depth 8 -Compress
+          '''
+          tid='ota-diagnose-vopc5750-'+str(int(time.time()))
+          fabric=RealmFabricStore()
+          fabric.queue_task('vopc5750',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':r'C:\Users\alston.huang\AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          for _ in range(45):
+              r=fabric.get_receipt(tid)
+              if r:
+                  if r.get('ok') is not True: raise SystemExit(str(r))
+                  print('ota_diagnose=PASS')
+                  print(r.get('stdout') or '')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('diagnose receipt timeout')
+          PY
