@@ -450,6 +450,8 @@ def main():
     ap.add_argument("--manifest",required=True)
     ap.add_argument("--templates",required=True)
     ap.add_argument("--out",default="")
+    ap.add_argument("--min-field-exact-match",type=float,default=0.90)
+    ap.add_argument("--min-template-hit-rate",type=float,default=0.95)
     args=ap.parse_args()
     manifest=json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     templates=json.loads(Path(args.templates).read_text(encoding="utf-8"))["templates"]
@@ -580,8 +582,19 @@ def main():
              "safe_auto_pass_rate":safe_passes/len(rows) if rows else 0.0,
              "unsafe_auto_passes":unsafe_auto_passes,
              "rows":rows}
+    summary["acceptance"]={
+        "min_field_exact_match":args.min_field_exact_match,
+        "min_template_hit_rate":args.min_template_hit_rate,
+        "require_unsafe_auto_passes":0,
+    }
+    passed=(summary["field_exact_match"]>=args.min_field_exact_match and
+            summary["template_hit_rate"]>=args.min_template_hit_rate and
+            summary["unsafe_auto_passes"]==0)
+    summary["acceptance_passed"]=passed
     print("template_router_summary="+json.dumps(summary,ensure_ascii=False))
     if args.out: Path(args.out).write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding="utf-8")
+    if not passed:
+        raise SystemExit(1)
 
 if __name__=="__main__":
     main()
