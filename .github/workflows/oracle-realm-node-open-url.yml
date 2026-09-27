@@ -41,7 +41,7 @@ jobs:
           node_id=str(cmd.get('node_id') or '')
           url=str(cmd.get('url') or '')
           assert node_id == 'vopc5750', 'v0.1 direct-control test pinned to first Windows node'
-          assert url == 'https://www.google.com/search?q=agentos', 'URL is not allowlisted for this acceptance test'
+          assert url in {'https://www.google.com/search?q=agentos','https://www.threads.com/messages'}, 'URL is not allowlisted for this acceptance test'
 
           registry=NodeRegistry().node_map()
           node=next((n for n in registry['nodes'] if n.get('node_id') == node_id), None)
