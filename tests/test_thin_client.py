@@ -57,6 +57,38 @@ class TestThinClient(unittest.TestCase):
             self.assertFalse(receipt['ok'])
             self.assertIn('not allowlisted', receipt['error'])
 
+    def test_manifest_advertises_ready_session_bridge_capabilities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import json
+            import os
+            root = Path(tmp)
+            bridge = root / 'bridge'
+            bridge.mkdir()
+            (bridge / 'bridge.json').write_text(json.dumps({
+                'schema': 'agentos.session-bridge/v0.1',
+                'provider': 'gemini',
+                'ready': True,
+                'operations': ['discover', 'snapshot', 'harvest', 'handoff']
+            }), encoding='utf-8')
+            old = os.environ.get('AGENTOS_GEMINI_BRIDGE')
+            os.environ['AGENTOS_GEMINI_BRIDGE'] = str(bridge)
+            try:
+                client = ThinClient(
+                    NodeIdentity('realm-test', 'client-session-01'),
+                    ThinClientPolicy(readable_roots=(root,)),
+                )
+                caps = client.capability_manifest()['capabilities']
+                self.assertIn('agent.session.discover', caps)
+                self.assertIn('agent.session.inspect', caps)
+                self.assertIn('agent.context.harvest', caps)
+                self.assertIn('agent.session.handoff', caps)
+                self.assertIn('agent.session.receipt', caps)
+            finally:
+                if old is None:
+                    os.environ.pop('AGENTOS_GEMINI_BRIDGE', None)
+                else:
+                    os.environ['AGENTOS_GEMINI_BRIDGE'] = old
+
     def test_uplift_dimensions(self):
         before = BenchmarkMetrics(
             task_success=0.5,
