@@ -28,30 +28,23 @@ jobs:
     timeout-minutes: 10
     env:
       PERSONA_PATH: ${{ github.event.inputs.persona_path || 'personas/sunlake-milkcat' }}
-      DATA_REPO: /home/ubuntu/agent-data
+      DATA_REPO: /tmp/agentos-persona-data
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify runtime and data repository
+      - name: Materialize canonical persona data
         shell: bash
         run: |
           set -euo pipefail
           test -f scripts/persona_pdca_tick.py
+          /usr/bin/gh auth status >/dev/null
+          rm -rf "$DATA_REPO"
+          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch
           test -d "$DATA_REPO/.git"
           test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
           test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
           test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
-          /usr/bin/gh auth status >/dev/null
-          echo "persona_pdca_preflight=PASS"
-
-      - name: Refresh canonical persona data
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/git -C "$DATA_REPO" fetch origin main
-          /usr/bin/git -C "$DATA_REPO" checkout main
-          /usr/bin/git -C "$DATA_REPO" pull --ff-only origin main
-          echo "persona_pdca_data_refresh=PASS"
+          echo "persona_pdca_data_materialize=PASS"
 
       - name: Run one bounded PDCA cycle
         shell: bash
