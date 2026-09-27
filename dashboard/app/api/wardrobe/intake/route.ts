@@ -153,8 +153,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid characterId' }, { status: 400 });
   }
 
-  const records = safeReadRecords().filter((record) => record.characterId === characterId).slice(0, 50);
-  return NextResponse.json({ characterId, records });
+  let records = safeReadRecords().filter((record) => record.characterId === characterId).slice(0, 50);
+
+  // Upgrade legacy intake records automatically on the owner's next wardrobe visit.
+  // Keep the batch intentionally small so GET remains responsive.
+  const legacyPending = records.filter((record) => record.state === 'pending_metadata').slice(0, 2);
+  if (legacyPending.length) {
+    for (const record of legacyPending) {
+      await processRecord(record);
+    }
+    records = safeReadRecords().filter((record) => record.characterId === characterId).slice(0, 50);
+  }
+
+  return NextResponse.json({
+    characterId,
+    records,
+    autoRetried: legacyPending.length,
+  });
 }
 
 export async function POST(request: NextRequest) {
