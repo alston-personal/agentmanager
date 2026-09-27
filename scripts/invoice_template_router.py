@@ -206,43 +206,54 @@ def parse_date(text: str):
 def _norm_ocr_text(text: str) -> str:
     return (text or "").replace("臺","台").replace("稅","税").replace("編","编").replace("號","号")
 
+def _parse_amount_token(raw: str) -> int | None:
+    raw=(raw or "").strip().strip(".-")
+    if not raw:
+        return None
+    if re.fullmatch(r"\d{1,3}(?:[,.]\d{3})+", raw):
+        raw=re.sub(r"[,.]","",raw)
+    else:
+        raw=re.sub(r"[^0-9]","",raw)
+    if not raw:
+        return None
+    try: return int(raw)
+    except ValueError: return None
+
 def contextual_money(text: str, labels: list[str]) -> int | None:
     s=_norm_ocr_text(text)
-    # Allow labels to be split across OCR lines/whitespace.
-    flat=re.sub(r"\\s+", "", s)
+    lines=[x.strip() for x in s.splitlines()]
+    norm_lines=[re.sub(r"\s+","",x) for x in lines]
     for label in labels:
-        key=re.sub(r"\\s+", "", _norm_ocr_text(label))
-        pos=flat.find(key)
-        if pos < 0:
-            continue
-        tail=flat[pos+len(key):pos+len(key)+80]
-        vals=[]
-        for m in re.finditer(r"(?<!\\d)(\\d{1,3}(?:,\\d{3})+|\\d{1,9})(?!\\d)", tail):
-            raw=m.group(1).replace(",","")
-            try:
-                v=int(raw)
-            except ValueError:
+        key=re.sub(r"\s+","",_norm_ocr_text(label))
+        for i in range(len(lines)):
+            window="".join(norm_lines[i:i+6])
+            if key not in window:
                 continue
-            # Phone numbers / tax IDs are not plausible immediate money when 8+ digits.
-            if len(raw) >= 8:
-                continue
-            vals.append(v)
-        if vals:
-            return vals[0]
+            candidates=[]
+            for j in range(i,min(len(lines),i+10)):
+                line=lines[j]
+                if re.search(r"TEL|電話|统一編號|統一編號|统一编號|統一编號", line, re.I):
+                    continue
+                for raw in re.findall(r"\d{1,3}(?:[,.]\d{3})+|\d{1,7}", line):
+                    v=_parse_amount_token(raw)
+                    if v is not None and 0 <= v <= 50_000_000:
+                        candidates.append(v)
+            if candidates:
+                ranked=sorted(candidates,key=lambda v:(candidates.count(v), candidates.index(v)),reverse=True)
+                return ranked[0]
     return None
 
 def contextual_tax_ids(text: str) -> list[str]:
     s=_norm_ocr_text(text)
-    flat=re.sub(r"\\s+", "", s)
+    flat=re.sub(r"\s+", "", s)
     out=[]
-    for m in re.finditer(r"(?:統一|统一)(?:編|编)(?:號|号)[:：]?(.{0,30})", flat):
-        vals=re.findall(r"(?<!\\d)(\\d{8})(?!\\d)", m.group(1))
-        out.extend(vals)
-    # Keep valid candidates first, preserve order and uniqueness.
-    all_vals=re.findall(r"(?<!\\d)(\\d{8})(?!\\d)", flat)
-    for v in all_vals:
-        if v not in out:
-            out.append(v)
+    exact=re.findall(r"(?<!\d)(\d{8})(?!\d)", flat)
+    out.extend(exact)
+    for run in re.findall(r"\d{8,12}", flat):
+        for i in range(0,len(run)-7):
+            v=run[i:i+8]
+            if valid_tax_id(v) and v not in out:
+                out.append(v)
     return sorted(dict.fromkeys(out), key=lambda v: (not valid_tax_id(v), out.index(v)))
 
 def contextual_invoice_number(text: str) -> str | None:
@@ -282,6 +293,31 @@ def contextual_date(text: str) -> str | None:
             pass
     return None
 
+def amount_candidates(text: str) -> list[int]:
+    vals=[]
+    for raw in re.findall(r"(?<!\d)(\d{1,3}(?:[,.]\d{3})+|\d{1,7})(?!\d)", text or ""):
+        v=_parse_amount_token(raw)
+        if v is not None and 0 <= v <= 50_000_000:
+            vals.append(v)
+    return vals
+
+def total_from_lines(text: str) -> int | None:
+    lines=[x.strip() for x in (text or "").splitlines()]
+    for i,line in enumerate(lines):
+        key=re.sub(r"\s+","",_norm_ocr_text(line))
+        if "總計" in key or "总计" in key:
+            local=[]
+            for j in range(i,min(len(lines),i+5)):
+                if re.search(r"TEL|電話",lines[j],re.I):
+                    continue
+                for raw in re.findall(r"\d{1,3}(?:[,.]\d{3})+|\d{1,7}",lines[j]):
+                    v=_parse_amount_token(raw)
+                    if v is not None and v<50_000_000:
+                        local.append(v)
+            if local:
+                return local[-1]
+    return None
+
 def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
     actual={}
     evidence={}
@@ -306,20 +342,24 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
 
     before=contextual_money(page_text,["銷售額合計","销售额合计","銷售額(A)","销售额(A)"])
     tax=contextual_money(page_text,["營業稅","营业税"])
-    total=contextual_money(page_text,["總計新臺幣","总计新台币","總計","总计"])
+    total=total_from_lines(page_text) or contextual_money(page_text,["總計新臺幣","总计新台币","總計","总计"])
+
+    nums=amount_candidates(page_text)
+    if document_type=="two_part_uniform_invoice" and total is None and nums:
+        freq={}
+        for v in nums:
+            if 0 < v < 10_000_000:
+                freq[v]=freq.get(v,0)+1
+        repeated=[(n,v) for v,n in freq.items() if n>=2]
+        if repeated:
+            repeated.sort(reverse=True)
+            total=repeated[0][1]
+
     if before is not None: actual["amount_before_tax"]=before
     if tax is not None: actual["tax_amount"]=tax
     if total is not None: actual["total_amount"]=total
 
-    # Prefer a tax-arithmetic-consistent triple. This filters phone/tax-id numbers
-    # that OCR often places near amount labels.
     if document_type=="three_part_uniform_invoice":
-        nums=[]
-        for raw in re.findall(r"(?<!\\d)(\\d{1,3}(?:,\\d{3})+|\\d{1,7})(?!\\d)", page_text):
-            try: v=int(raw.replace(",",""))
-            except ValueError: continue
-            if 0 <= v <= 50_000_000:
-                nums.append(v)
         uniq=list(dict.fromkeys(nums))
         triples=[]
         for a in uniq:
@@ -334,7 +374,7 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
                 if not (tax_ok or zero_tax_ok):
                     continue
                 freq=nums.count(a)+nums.count(b)+nums.count(t)
-                score=(6 if tax_ok else 2)+min(freq,6)+(2 if a>=100 else 0)+(1 if t>=a else 0)
+                score=(8 if tax_ok else 2)+min(freq,6)+(2 if a>=100 else 0)
                 triples.append((score,a,b,t))
         if triples:
             triples.sort(reverse=True)
@@ -343,6 +383,15 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
             actual["tax_amount"]=b
             actual["total_amount"]=t
             evidence["amount_arithmetic_candidate"]={"source":"page_tax_consistency","value":[a,b,t],"candidates":len(triples)}
+        elif actual.get("total_amount") is not None:
+            t=int(actual["total_amount"])
+            around=range(max(1,int(t/1.05)-3), int(t/1.05)+4)
+            derived=[(a,t-a) for a in around if a+round(a*0.05)==t]
+            if len(derived)==1:
+                a,b=derived[0]
+                actual.setdefault("amount_before_tax",a)
+                actual.setdefault("tax_amount",b)
+                evidence["amount_tax_derived"]={"source":"tax_math_from_total","value":[a,b,t],"visual_support":False}
     return actual,evidence
 
 def parse_field(name: str, text: str):
@@ -374,9 +423,15 @@ def main():
     for case in manifest["cases"]:
         try:
             raw_image=Image.open(io.BytesIO(fetch(case["image_url"]))).convert("RGB")
+            raw_page_text,raw_page_conf=ocr_text(engine,raw_image)
             image,geometry=normalize_document(raw_image)
-            page_text,page_conf=ocr_text(engine,image)
-            template,tconf=classify(page_text,templates)
+            if geometry.get("warped"):
+                normalized_text,normalized_conf=ocr_text(engine,image)
+            else:
+                normalized_text,normalized_conf=raw_page_text,raw_page_conf
+            page_text=raw_page_text
+            page_conf=raw_page_conf
+            template,tconf=classify(raw_page_text+"\n"+normalized_text,templates)
             actual={}; evidence={}
             mode="generic_fallback"
             if template:
@@ -433,7 +488,8 @@ def main():
                 mode=="template" and tconf>=0.5 and core_exact and validations_ok and min_roi_conf>=0.72
             )
             row = {"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
-                   "template_confidence":tconf,"page_ocr_confidence":page_conf,"geometry":geometry,
+                   "template_confidence":tconf,"page_ocr_confidence":page_conf,
+                   "normalized_ocr_confidence":normalized_conf,"geometry":geometry,
                    "actual":actual,"checks":checks,"validation":validation,
                    "safe_auto_pass":safe_auto_pass,"min_core_ocr_confidence":round(min_roi_conf,4),
                    "evidence":evidence}
