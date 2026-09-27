@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.ota-diagnose",
+  "node_id": "vopc5750",
+  "nonce": "ota-runtime-wiring-20260927-2231"
+}
