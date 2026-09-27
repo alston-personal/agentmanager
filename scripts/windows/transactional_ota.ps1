@@ -93,8 +93,18 @@ $guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
 Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Force | Out-Null
 Write-JsonAtomic $record $currentFile
 Move-Item -Force $next $launcher
-$restart="Start-Sleep -Seconds 8; Stop-ScheduledTask -TaskName '$TaskName' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName '$TaskName'"
-Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$restart)
+$activatorTask='AgentOS Thin Client OTA Activator'
+$activatorScript=Join-Path $InstallRoot 'transactional_ota_activate.ps1'
+@(
+  "param([string]`$TaskName='AgentOS Thin Client')",
+  "Stop-ScheduledTask -TaskName `$TaskName -ErrorAction SilentlyContinue",
+  "Start-Sleep -Seconds 2",
+  "Start-ScheduledTask -TaskName `$TaskName",
+  "Write-Output 'agentos_ota_activator=PASS'"
+)|Set-Content -Encoding ASCII $activatorScript
+$activatorAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -File "'+$activatorScript+'" -TaskName "'+$TaskName+'"')
+$activatorTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(10)
+Register-ScheduledTask -TaskName $activatorTask -Action $activatorAction -Trigger $activatorTrigger -Force | Out-Null
 Write-Output 'agentos_ota_stage=ACTIVATING'
 Write-Output ('agentos_ota_candidate='+$SourceCommit)
 Write-Output 'agentos_ota_controller_acceptance=PENDING'
