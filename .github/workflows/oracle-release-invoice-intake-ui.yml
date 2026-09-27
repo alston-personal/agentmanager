@@ -19,7 +19,7 @@ jobs:
   release:
     uses: ./.github/workflows/reusable-studio-static-route-release.yml
     with:
-      source_sha: 782017aee08ab1d732424ebe0cf3e603c8adde24
+      source_sha: 6a7345150e84463fb06ddcb28e2d580a223834b0
       route: invoice-intake
       backup_key: invoice-intake-ui
       receipt_schema: studio-web.invoice-intake-release/v1
@@ -28,6 +28,7 @@ jobs:
         開啟相機連續掃描
         已掃描發票
         匯出給文中
+        匯出已確認給文中
       credit_account: ''
       credit_cost: 0
     secrets:
