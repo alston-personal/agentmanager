@@ -8,3 +8,5 @@ def test_acceptance_module_requires_runtime_commit_and_probe():
     assert "'receipt_ok':ok" in s
 
 # trigger transactional OTA contract guard
+
+# retrigger after CI dependency fix
