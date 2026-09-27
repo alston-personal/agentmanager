@@ -86,7 +86,7 @@ jobs:
           for line in text.splitlines():
               if line.startswith("threads_web_dm_read="):
                   state=line.split("=",1)[1]
-              if line.startswith("threads_web_dm_new_events="):
+              if line.startswith("threads_web_dm_new_events=") or line.startswith("threads_web_dm_error_type="):
                   print(line)
           print("threads_web_dm_read_state="+state)
           assert state in {"PASS","LOGIN_REQUIRED"},text[-8000:]
