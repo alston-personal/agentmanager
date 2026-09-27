@@ -1,0 +1,141 @@
+name: Oracle Publish Oursong Approved Post
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - 'social/oursong/approved/oursong-post-*.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Identify exactly one newly approved post
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git diff --name-only --diff-filter=A "${{ github.event.before }}" "$GITHUB_SHA" -- 'social/oursong/approved/oursong-post-*.txt')
+          test "${#files[@]}" -eq 1 || { echo 'oursong_approved_post=REQUIRE_EXACTLY_ONE_NEW_FILE'; exit 2; }
+          POST_FILE="${files[0]}"
+          POST_KEY="$(basename "$POST_FILE" .txt)"
+          test "$(wc -m < "$POST_FILE")" -le 500
+          [[ "$POST_KEY" =~ ^oursong-post-[a-z0-9-]{1,72}$ ]]
+          printf 'POST_FILE=%s\nPOST_KEY=%s\n' "$POST_FILE" "$POST_KEY" >> "$GITHUB_ENV"
+
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Publish through shared AgentOS Social Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          TEXT_B64="$(base64 -w0 < "$POST_FILE")"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - "$GITHUB_SHA" "$POST_KEY" "$TEXT_B64" <<'PY'
+          import base64, json, sys, urllib.request
+          from pathlib import Path
+
+          source_commit, post_key, text_b64 = sys.argv[1:4]
+          text = base64.b64decode(text_b64).decode("utf-8").strip()
+          assert 0 < len(text) <= 500
+          assert source_commit and len(source_commit) == 40
+
+          env_path = Path("/home/ubuntu/.config/agentos/social-runtime.env")
+          cred_path = Path("/home/ubuntu/.local/state/agentos/social/credentials.json")
+          assert env_path.is_file() and cred_path.is_file()
+
+          env = {}
+          for raw in env_path.read_text(encoding="utf-8").splitlines():
+              raw = raw.strip()
+              if not raw or raw.startswith("#") or "=" not in raw:
+                  continue
+              k,v = raw.split("=",1)
+              env[k]=v
+
+          products = json.loads(env["AGENTOS_SOCIAL_PRODUCTS_JSON"])
+          product_key = str(products["galaxy"]["api_key"])
+          control_token = str(env["AGENTOS_SOCIAL_CONTROL_TOKEN"])
+          assert product_key and control_token
+
+          bindings = json.loads(cred_path.read_text(encoding="utf-8")).get("bindings") or {}
+          matches = [
+              (bid,item) for bid,item in bindings.items()
+              if isinstance(item,dict)
+              and item.get("product_id")=="galaxy"
+              and item.get("platform")=="threads"
+              and item.get("username")=="oursong_alstonhuang"
+              and item.get("auth_profile")=="persona"
+          ]
+          assert len(matches)==1, f"oursong_binding_count={len(matches)}"
+          binding_id,item = matches[0]
+          target_account_id = str(item.get("provider_account_id") or "")
+          assert target_account_id
+
+          request = {
+              "schema":"agentos.social-request/v1",
+              "product_id":"galaxy",
+              "platform":"threads",
+              "operation":"publish",
+              "account_binding_id":binding_id,
+              "target_account_id":target_account_id,
+              "primary_text":text,
+              "write_intent_id":f"{post_key}-{source_commit[:12]}",
+          }
+
+          def post(path,payload,headers):
+              body=json.dumps(payload,ensure_ascii=False,separators=(",",":")).encode("utf-8")
+              req=urllib.request.Request("http://127.0.0.1:8771"+path,data=body,headers={"Content-Type":"application/json",**headers},method="POST")
+              with urllib.request.urlopen(req,timeout=30) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          acceptance = post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control_token})
+          acceptance_id = str(acceptance.get("acceptance_id") or "")
+          assert acceptance_id
+
+          receipt = post("/v1/social/publish",request,{
+              "X-AgentOS-Product-Key":product_key,
+              "X-AgentOS-Acceptance-ID":acceptance_id,
+          })
+          assert receipt.get("schema")=="agentos.social-receipt/v1", receipt
+          assert receipt.get("ok") is True, receipt
+          object_id=str(receipt.get("platform_object_id") or "")
+          assert object_id
+
+          read_req={
+              "schema":"agentos.social-request/v1",
+              "product_id":"galaxy",
+              "platform":"threads",
+              "operation":"post.read",
+              "account_binding_id":binding_id,
+          }
+          readback=post("/v1/social/status",read_req,{"X-AgentOS-Product-Key":product_key})
+          assert readback.get("ok") is True, readback
+          items=((readback.get("result") or {}).get("items") or [])
+          row=next((x for x in items if str(x.get("id") or "")==object_id),None)
+          assert row, "oursong_publish_readback_missing"
+          assert str(row.get("username") or "")=="oursong_alstonhuang", row
+          assert str(row.get("text") or "").strip()==text, row
+          permalink=str(row.get("permalink") or "")
+          assert permalink.startswith("https://www.threads.com/@oursong_alstonhuang/post/"), permalink
+
+          print("oursong_approved_receipt=PASS")
+          print("oursong_publish=PASS")
+          print("oursong_username=oursong_alstonhuang")
+          print("oursong_object_id="+object_id)
+          print("oursong_permalink="+permalink)
+          PY
