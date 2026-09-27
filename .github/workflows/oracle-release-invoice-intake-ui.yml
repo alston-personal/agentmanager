@@ -24,11 +24,9 @@ jobs:
       backup_key: invoice-intake-ui
       receipt_schema: studio-web.invoice-intake-release/v1
       acceptance_anchors: |-
-        發票連續掃描
         查看這張完整辨識結果
         開啟相機連續掃描
         已掃描發票
-        同一張不會再次觸發
       credit_account: ''
       credit_cost: 0
     secrets:
