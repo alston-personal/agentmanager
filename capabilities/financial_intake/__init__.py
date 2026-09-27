@@ -1,0 +1,1 @@
+from .adapter import AdapterResult, FinancialDocument, canonical_from_invoice_payload\nfrom .winton import WintonExcelAdapter, WintonProfile\n\n__all__ = [\"AdapterResult\", \"FinancialDocument\", \"canonical_from_invoice_payload\", \"WintonExcelAdapter\", \"WintonProfile\"]\n
