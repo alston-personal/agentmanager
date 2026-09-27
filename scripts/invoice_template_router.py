@@ -475,7 +475,25 @@ def main():
             page_text=raw_page_text
             page_conf=raw_page_conf
             template,tconf=classify(raw_page_text+"\n"+normalized_text,templates)
+            probe_evidence=None
+            # Second-stage template probe: title OCR can fail on handwriting-heavy scans even when
+            # the printed lower accounting section is clear. Probe that stable area only when the
+            # page already contains a valid invoice number.
+            if template is None and contextual_invoice_number(raw_page_text):
+                three_part=next((x for x in templates if x.get("id")=="tw_uniform_3part"),None)
+                if three_part is not None:
+                    probe_box=[0.05,0.55,0.72,0.91]
+                    probe_text,probe_conf=ocr_text(engine,crop_norm(image,probe_box))
+                    probe_compact=re.sub(r"\s+","",_norm_ocr_text(probe_text))
+                    anchors=["銷售額","销售额","營業税","營業稅","营业税","總計","总计","統一發票專用章","统一發票專用章"]
+                    hits=[a for a in anchors if a in probe_compact]
+                    if len(hits)>=2:
+                        template=three_part
+                        tconf=max(0.55,min(0.8,0.45+0.08*len(hits)))
+                        probe_evidence={"text":probe_text[:800],"ocr_confidence":probe_conf,"anchors":hits}
             actual={}; evidence={}
+            if probe_evidence:
+                evidence["template_probe"]=probe_evidence
             mode="generic_fallback"
             if template:
                 mode="template"
