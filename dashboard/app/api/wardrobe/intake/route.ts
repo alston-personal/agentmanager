@@ -13,7 +13,8 @@ const INTAKE_DIR = path.join(
   'intake'
 );
 
-const MIO_CHARACTER_ID = 'sunlake-milkcat-ai-001';
+const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
+const CHARACTER_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const MAX_URL_LENGTH = 2048;
 const MAX_NOTE_LENGTH = 500;
 
@@ -88,12 +89,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Admin authentication required' }, { status: 401 });
   }
 
+  const requestedCharacterId =
+    request.nextUrl.searchParams.get('characterId')?.trim() || DEFAULT_CHARACTER_ID;
+  if (!CHARACTER_ID_RE.test(requestedCharacterId)) {
+    return NextResponse.json({ error: 'Invalid characterId' }, { status: 400 });
+  }
+
   const records = safeReadRecords()
-    .filter((record) => record.characterId === MIO_CHARACTER_ID)
+    .filter((record) => record.characterId === requestedCharacterId)
     .slice(0, 50);
 
   return NextResponse.json({
-    characterId: MIO_CHARACTER_ID,
+    characterId: requestedCharacterId,
     records,
   });
 }
@@ -115,12 +122,11 @@ export async function POST(request: NextRequest) {
     }
 
     const characterId =
-      typeof body?.characterId === 'string' ? body.characterId.trim() : MIO_CHARACTER_ID;
-    if (characterId !== MIO_CHARACTER_ID) {
-      return NextResponse.json(
-        { error: 'This endpoint currently accepts Mio wardrobe intake only' },
-        { status: 400 }
-      );
+      typeof body?.characterId === 'string' && body.characterId.trim()
+        ? body.characterId.trim()
+        : DEFAULT_CHARACTER_ID;
+    if (!CHARACTER_ID_RE.test(characterId)) {
+      return NextResponse.json({ error: 'Invalid characterId' }, { status: 400 });
     }
 
     const note =
@@ -132,7 +138,7 @@ export async function POST(request: NextRequest) {
 
     const duplicate = safeReadRecords().find(
       (record) =>
-        record.characterId === MIO_CHARACTER_ID &&
+        record.characterId === characterId &&
         record.source.url === sourceUrl.toString() &&
         record.state === 'pending_metadata'
     );
@@ -146,11 +152,12 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const intakeId = `mio-link-${now.replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
+    const safePrefix = characterId === DEFAULT_CHARACTER_ID ? 'mio' : characterId;
+    const intakeId = `${safePrefix}-link-${now.replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
     const record: IntakeRecord = {
       schema: 'agentos.wardrobe-link-intake/v1',
       intakeId,
-      characterId: MIO_CHARACTER_ID,
+      characterId,
       submittedAt: now,
       submittedBy: {
         username: admin.username,
