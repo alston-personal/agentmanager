@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: vopc5750-transactional-ota
+  cancel-in-progress: false
+
 jobs:
   ota:
     runs-on: [self-hosted, Linux, ARM64, oracle]
