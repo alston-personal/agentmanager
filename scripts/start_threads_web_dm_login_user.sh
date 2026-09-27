@@ -12,9 +12,16 @@ SESSION="$ROOT/login-session"
 mkdir -p "$PROFILE" "$SESSION"
 chmod 700 "$ROOT" "$PROFILE" "$SESSION"
 
-# Fixed, bounded dependencies only.
-sudo -n apt-get update -qq
-sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb x11vnc novnc websockify >/dev/null
+# Fixed, bounded dependencies only. Do not run a global apt-get update here:
+# unrelated third-party repositories must not break the disposable Threads login capability.
+missing=()
+for pkg in xvfb x11vnc novnc websockify; do
+  dpkg-query -W -f='\${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  echo "threads_web_dm_login_missing_packages=${missing[*]}"
+  sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}" >/dev/null
+fi
 
 BIN="$HOME/.local/bin"
 mkdir -p "$BIN"
