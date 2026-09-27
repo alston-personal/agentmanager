@@ -113,6 +113,27 @@ function titleTag(html: string): string | null {
   return decodeHtml(match?.[1] || null);
 }
 
+function visibleText(html: string): string {
+  return decodeHtml(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+  ) || '';
+}
+
+function netFallback(html: string) {
+  const text = visibleText(html);
+  const sku = text.match(/商品編號\s*[:：]\s*([A-Za-z0-9-]+)/)?.[1] || null;
+  const priceRaw = text.match(/NT\$?\s*([0-9][0-9,]*)/)?.[1] || null;
+  const price = priceRaw ? Number(priceRaw.replace(/,/g, '')) : null;
+  return {
+    sku,
+    price: Number.isFinite(price) && price && price > 0 ? price : null,
+    currency: priceRaw ? 'TWD' : null,
+  };
+}
+
 function jsonLdObjects(html: string): unknown[] {
   const out: unknown[] = [];
   const re = /<script[^>]+type=[\\"\\\']application\/ld\+json[\\"\\\'][^>]*>([\s\S]*?)<\/script>/gi;
@@ -222,18 +243,19 @@ export async function resolveRetailProduct(sourceUrl: URL, characterId: string):
   const canonicalUrl = new URL(canonical, finalUrl).toString();
   const category = firstString(product?.category);
   const offer = productOffer(product);
+  const fallback = /(^|\.)net-fashion\.net$/i.test(finalUrl.hostname) ? netFallback(html) : { sku: null, price: null, currency: null };
   const imageUrl = productImage(product) || meta(html, 'og:image') || meta(html, 'twitter:image');
   const brand = brandName(product);
   return {
     garmentId: stableGarmentId(characterId, canonicalUrl),
     name,
     brand,
-    sku: firstString(product?.sku) || firstString(product?.productID) || firstString(product?.mpn),
+    sku: firstString(product?.sku) || firstString(product?.productID) || firstString(product?.mpn) || fallback.sku,
     variant: firstString(product?.color),
     category,
     slot: classifySlot([name, category, firstString(product?.description)].filter(Boolean).join(' ')),
-    price: offer.price,
-    currency: offer.currency,
+    price: offer.price ?? fallback.price,
+    currency: offer.currency || fallback.currency,
     imageUrl: imageUrl ? new URL(imageUrl, finalUrl).toString() : null,
     canonicalUrl,
     retailer: brand || retailerName(finalUrl.hostname),

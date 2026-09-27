@@ -12,6 +12,7 @@ const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
 const CHARACTER_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const MAX_URL_LENGTH = 2048;
 const MAX_NOTE_LENGTH = 500;
+const MAX_RETRY_BATCH = 8;
 
 type IntakeRecord = {
   schema: 'agentos.wardrobe-link-intake/v2';
@@ -105,6 +106,44 @@ function safeReadRecords(): IntakeRecord[] {
   }
 }
 
+async function processRecord(record: IntakeRecord) {
+  const sourceUrl = normalizeSourceUrl(record.source.url);
+  if (!sourceUrl) {
+    record.state = 'needs_review';
+    record.error = 'invalid_source_url';
+    record.updatedAt = new Date().toISOString();
+    writeRecord(record);
+    return record;
+  }
+
+  record.updatedAt = new Date().toISOString();
+  record.state = 'fetching';
+  record.error = null;
+  writeRecord(record);
+
+  try {
+    const product = await resolveRetailProduct(sourceUrl, record.characterId);
+    writeCanonicalGarment(
+      AGENT_DATA_ROOT,
+      record.characterId,
+      product,
+      sourceUrl.toString(),
+      record.intakeId,
+      record.note
+    );
+    record.product = product;
+    record.state = 'ready_for_tryon';
+    record.updatedAt = new Date().toISOString();
+    writeRecord(record);
+  } catch (error) {
+    record.state = 'needs_review';
+    record.error = (error instanceof Error ? error.message : 'metadata_fetch_failed').slice(0, 180);
+    record.updatedAt = new Date().toISOString();
+    writeRecord(record);
+  }
+  return record;
+}
+
 export async function GET(request: NextRequest) {
   const admin = getAdmin(request);
   if (!admin) return NextResponse.json({ error: 'Admin authentication required' }, { status: 401 });
@@ -114,8 +153,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid characterId' }, { status: 400 });
   }
 
-  const records = safeReadRecords().filter((record) => record.characterId === characterId).slice(0, 50);
-  return NextResponse.json({ characterId, records });
+  let records = safeReadRecords().filter((record) => record.characterId === characterId).slice(0, 50);
+
+  // Upgrade legacy intake records automatically on the owner's next wardrobe visit.
+  // Keep the batch intentionally small so GET remains responsive.
+  const legacyPending = records.filter((record) => record.state === 'pending_metadata').slice(0, 2);
+  if (legacyPending.length) {
+    for (const record of legacyPending) {
+      await processRecord(record);
+    }
+    records = safeReadRecords().filter((record) => record.characterId === characterId).slice(0, 50);
+  }
+
+  return NextResponse.json({
+    characterId,
+    records,
+    autoRetried: legacyPending.length,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -124,6 +178,39 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const action = typeof body?.action === 'string' ? body.action : 'ingest';
+
+    if (action === 'retry' || action === 'retry_pending') {
+      const characterId =
+        typeof body?.characterId === 'string' && body.characterId.trim()
+          ? body.characterId.trim()
+          : DEFAULT_CHARACTER_ID;
+      if (!CHARACTER_ID_RE.test(characterId)) {
+        return NextResponse.json({ error: 'Invalid characterId' }, { status: 400 });
+      }
+
+      const all = safeReadRecords().filter((record) => record.characterId === characterId);
+      const targets = action === 'retry'
+        ? all.filter((record) => record.intakeId === body?.intakeId)
+        : all.filter((record) => record.state === 'pending_metadata' || record.state === 'needs_review').slice(0, MAX_RETRY_BATCH);
+
+      if (!targets.length) {
+        return NextResponse.json({ success: true, retried: 0, records: [] });
+      }
+
+      const processed: IntakeRecord[] = [];
+      for (const record of targets) {
+        processed.push(await processRecord(record));
+      }
+      return NextResponse.json({
+        success: true,
+        retried: processed.length,
+        ready: processed.filter((record) => record.state === 'ready_for_tryon').length,
+        needsReview: processed.filter((record) => record.state === 'needs_review').length,
+        records: processed,
+      });
+    }
+
     const sourceUrl = normalizeSourceUrl(body?.url);
     if (!sourceUrl) {
       return NextResponse.json({ error: '請貼上有效的 http/https 商品連結' }, { status: 400 });
@@ -146,7 +233,7 @@ export async function POST(request: NextRequest) {
       (record) => record.characterId === characterId && record.source.url === sourceUrl.toString()
     );
     if (existing && existing.state === 'ready_for_tryon') {
-      return NextResponse.json({ success: true, duplicate: true, record: existing });
+      return NextResponse.json({ success: true, duplicate: true, ingested: true, record: existing });
     }
 
     const now = new Date().toISOString();
@@ -171,48 +258,15 @@ export async function POST(request: NextRequest) {
       product: null,
       error: null,
     };
-
-    record.updatedAt = new Date().toISOString();
-    record.state = 'fetching';
-    record.error = null;
     if (note) record.note = note;
-    writeRecord(record);
 
-    try {
-      const product = await resolveRetailProduct(sourceUrl, characterId);
-      writeCanonicalGarment(
-        AGENT_DATA_ROOT,
-        characterId,
-        product,
-        sourceUrl.toString(),
-        record.intakeId,
-        record.note
-      );
-      record.product = product;
-      record.state = 'ready_for_tryon';
-      record.updatedAt = new Date().toISOString();
-      writeRecord(record);
-
-      return NextResponse.json({
-        success: true,
-        duplicate: Boolean(existing),
-        ingested: true,
-        record,
-      }, { status: existing ? 200 : 201 });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'metadata_fetch_failed';
-      record.state = 'needs_review';
-      record.error = reason.slice(0, 180);
-      record.updatedAt = new Date().toISOString();
-      writeRecord(record);
-
-      return NextResponse.json({
-        success: true,
-        duplicate: Boolean(existing),
-        ingested: false,
-        record,
-      }, { status: existing ? 200 : 202 });
-    }
+    const processed = await processRecord(record);
+    return NextResponse.json({
+      success: true,
+      duplicate: Boolean(existing),
+      ingested: processed.state === 'ready_for_tryon',
+      record: processed,
+    }, { status: existing ? 200 : processed.state === 'ready_for_tryon' ? 201 : 202 });
   } catch (error) {
     console.error('Wardrobe intake failed:', error);
     return NextResponse.json({ error: 'Failed to process wardrobe link' }, { status: 500 });
