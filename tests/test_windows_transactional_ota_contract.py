@@ -38,3 +38,12 @@ def test_finalize_is_atomic_and_supports_new_properties():
     assert 'Write-JsonAtomic $lkg $currentFile' in finalize
 
 # revalidate current integration head for transactional OTA
+
+
+def test_script_is_not_concatenated_or_duplicated():
+    assert s.count("SourceCommit must be immutable SHA") == 1
+    assert s.count("ToolCommit must be immutable SHA") == 1
+    assert s.count("AgentOS Thin Client OTA Activator") == 1
+    assert s.count("agentos_ota_controller_acceptance=PENDING") == 1
+    assert s.count("param([Parameter(Mandatory=$true)][string]$SourceCommit") == 1
+    assert len(s.splitlines()) < 400
