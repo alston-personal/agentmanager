@@ -1,0 +1,27 @@
+name: Social Web DM Guard
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/social/web_dm.py'
+      - 'scripts/threads_web_dm_bridge_user.py'
+      - 'tests/test_social_web_dm.py'
+      - '.github/workflows/social-web-dm-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python -m py_compile agentos_node/social/web_dm.py scripts/threads_web_dm_bridge_user.py
+      - name: Test DM event contract
+        run: python -m unittest -v tests.test_social_web_dm
