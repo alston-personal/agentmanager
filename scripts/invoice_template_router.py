@@ -107,10 +107,10 @@ def unpack(result) -> tuple[list[str], list[float]]:
         scores = [float(x) for x in (obj.get("scores") or obj.get("rec_scores") or [])]
     return texts, scores
 
-def _run_ocr(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
-    # Cap OCR resolution for CPU latency. ROI coordinates are normalized, so this does not affect geometry.
+def _run_ocr(engine: RapidOCR, image: Image.Image, max_side: int = 1800) -> tuple[str, float]:
+    # Cap OCR resolution for CPU latency. Full-page evidence can request a larger cap;
+    # small ROI recovery keeps the cheaper default.
     w,h=image.size
-    max_side=1800
     if max(w,h)>max_side:
         scale=max_side/max(w,h)
         image=image.resize((max(1,int(w*scale)),max(1,int(h*scale))), Image.Resampling.LANCZOS)
@@ -120,10 +120,10 @@ def _run_ocr(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
     score = sum(scores)/len(scores) if scores else (0.5 if text.strip() else 0.0)
     return text, score
 
-def ocr_text(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
+def ocr_text(engine: RapidOCR, image: Image.Image, max_side: int = 1800) -> tuple[str, float]:
     # Fast path first. Only spend extra OCR passes when the first result is weak.
     base = image.convert("RGB")
-    best_text, best_score = _run_ocr(engine, base)
+    best_text, best_score = _run_ocr(engine, base, max_side=max_side)
     compact_len = len(re.sub(r"\s", "", best_text))
     if best_score >= 0.78 and compact_len >= 4:
         return best_text, round(best_score, 4)
@@ -133,7 +133,7 @@ def ocr_text(engine: RapidOCR, image: Image.Image) -> tuple[str, float]:
         ImageEnhance.Contrast(ImageOps.autocontrast(image.convert("L"))).enhance(1.8).convert("RGB"),
     ]
     for variant in variants:
-        text, score = _run_ocr(engine, variant)
+        text, score = _run_ocr(engine, variant, max_side=max_side)
         if len(re.sub(r"\s", "", text)) > len(re.sub(r"\s", "", best_text)) or score > best_score + 0.12:
             best_text, best_score = text, score
         if best_score >= 0.82 and len(re.sub(r"\s", "", best_text)) >= 4:
@@ -396,11 +396,10 @@ def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[st
                 if t < 100 or t not in uniq: continue
                 expected_tax=round(a*0.05)
                 tax_ok=abs(b-expected_tax)<=1
-                zero_tax_ok=(b==0 and bool(re.search(r"免税|免稅|零税率|零稅率", page_text)))
-                if not (tax_ok or zero_tax_ok):
+                if not tax_ok:
                     continue
                 freq=nums.count(a)+nums.count(b)+nums.count(t)
-                score=(20 if tax_ok else 1)+min(freq,6)+(3 if a>=100 else 0)+(2 if t>=1000 else 0)
+                score=20+min(freq,6)+(3 if a>=100 else 0)+(2 if t>=1000 else 0)
                 triples.append((score,a,b,t))
         if triples:
             triples.sort(reverse=True)
@@ -453,10 +452,10 @@ def main():
     for case in manifest["cases"]:
         try:
             raw_image=Image.open(io.BytesIO(fetch(case["image_url"]))).convert("RGB")
-            raw_page_text,raw_page_conf=ocr_text(engine,raw_image)
+            raw_page_text,raw_page_conf=ocr_text(engine,raw_image,max_side=4200)
             image,geometry=normalize_document(raw_image)
             if geometry.get("warped"):
-                normalized_text,normalized_conf=ocr_text(engine,image)
+                normalized_text,normalized_conf=ocr_text(engine,image,max_side=2400)
             else:
                 normalized_text,normalized_conf=raw_page_text,raw_page_conf
             page_text=raw_page_text
