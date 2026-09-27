@@ -5,11 +5,76 @@ from pathlib import Path
 from typing import Any
 from PIL import Image, ImageEnhance, ImageOps
 from rapidocr import RapidOCR
+import cv2
+import numpy as np
 
 INV_RE = re.compile(r"([A-Z]{2})\s*[- ]?\s*(\d{8})")
 DIGIT8_RE = re.compile(r"(?<!\d)(\d{8})(?!\d)")
 MONEY_RE = re.compile(r"(?<!\d)(\d{1,9})(?!\d)")
 DATE_RE = re.compile(r"(?:(\d{2,4})\s*[年/.-]\s*)?(\d{1,2})\s*[月/.-]\s*(\d{1,2})\s*日?")
+
+
+def _order_points(pts: np.ndarray) -> np.ndarray:
+    pts = pts.astype("float32")
+    s = pts.sum(axis=1)
+    d = np.diff(pts, axis=1).reshape(-1)
+    return np.array([
+        pts[np.argmin(s)],
+        pts[np.argmin(d)],
+        pts[np.argmax(s)],
+        pts[np.argmax(d)],
+    ], dtype="float32")
+
+def normalize_document(image: Image.Image) -> tuple[Image.Image, dict[str, Any]]:
+    """Detect the largest quadrilateral and perspective-warp it to a flat document."""
+    rgb = np.array(image.convert("RGB"))
+    h, w = rgb.shape[:2]
+    scale = min(1.0, 1400.0 / max(h, w))
+    work = cv2.resize(rgb, (int(w*scale), int(h*scale))) if scale < 1.0 else rgb.copy()
+    gray = cv2.cvtColor(work, cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (5,5), 0)
+    edges = cv2.Canny(gray, 45, 140)
+    edges = cv2.dilate(edges, np.ones((3,3), np.uint8), iterations=1)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    img_area = work.shape[0] * work.shape[1]
+    best = None
+    best_area = 0.0
+    for cnt in sorted(contours, key=cv2.contourArea, reverse=True)[:30]:
+        area = cv2.contourArea(cnt)
+        if area < img_area * 0.18:
+            break
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+        if len(approx) == 4 and cv2.isContourConvex(approx) and area > best_area:
+            best = approx.reshape(4,2)
+            best_area = area
+    if best is None:
+        return image.convert("RGB"), {"warped": False, "reason": "no_document_quad"}
+
+    best = best / scale
+    rect = _order_points(best)
+    tl,tr,br,bl = rect
+    width = int(max(np.linalg.norm(br-bl), np.linalg.norm(tr-tl)))
+    height = int(max(np.linalg.norm(tr-br), np.linalg.norm(tl-bl)))
+    if width < 200 or height < 200:
+        return image.convert("RGB"), {"warped": False, "reason": "quad_too_small"}
+    dst = np.array([[0,0],[width-1,0],[width-1,height-1],[0,height-1]], dtype="float32")
+    m = cv2.getPerspectiveTransform(rect, dst)
+    warped = cv2.warpPerspective(rgb, m, (width,height), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+    # Most Taiwan handwritten invoices/receipts are landscape; normalize accidental 90-degree capture.
+    if warped.shape[0] > warped.shape[1] * 1.35:
+        warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
+        rotated = True
+    else:
+        rotated = False
+    coverage = float(best_area / (img_area / (scale*scale))) if scale else 0.0
+    return Image.fromarray(warped), {
+        "warped": True,
+        "rotated_90": rotated,
+        "coverage": round(max(0.0, min(1.0, coverage)), 4),
+        "size": [int(warped.shape[1]), int(warped.shape[0])],
+    }
 
 def fetch(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0 invoice-template-router/1.0"})
@@ -152,7 +217,8 @@ def main():
     rows=[]; correct=total=template_hits=0
     for case in manifest["cases"]:
         try:
-            image=Image.open(io.BytesIO(fetch(case["image_url"]))).convert("RGB")
+            raw_image=Image.open(io.BytesIO(fetch(case["image_url"]))).convert("RGB")
+            image,geometry=normalize_document(raw_image)
             page_text,page_conf=ocr_text(engine,image)
             template,tconf=classify(page_text,templates)
             actual={}; evidence={}
@@ -190,7 +256,7 @@ def main():
             else:
                 validation["amount_arithmetic"] = None
             row = {"id":case["id"],"mode":mode,"template_id":template["id"] if template else None,
-                   "template_confidence":tconf,"page_ocr_confidence":page_conf,
+                   "template_confidence":tconf,"page_ocr_confidence":page_conf,"geometry":geometry,
                    "actual":actual,"checks":checks,"validation":validation,"evidence":evidence}
             print("case_result="+json.dumps(row,ensure_ascii=False), flush=True)
             rows.append(row)
