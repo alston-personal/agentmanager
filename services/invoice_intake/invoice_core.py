@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageEnhance, ImageOps
+from template_ocr import extract_template_invoice
 
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 
@@ -137,74 +138,119 @@ class Extraction:
 
 
 def extract_invoice(image_bytes: bytes) -> Extraction:
+    """Template-first production extraction with legacy Tesseract fallback.
+
+    Known Taiwan invoice/receipt layouts use RapidOCR + semantic validation first.
+    Tesseract only fills fields that remain unresolved; it never overwrites a
+    higher-confidence template result.
+    """
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.exif_transpose(image).convert("RGB")
     if image.height > image.width * 1.08:
         image = image.rotate(90, expand=True)
 
+    rapid = extract_template_invoice(image_bytes)
+    fields = {
+        "invoice_number": None,
+        "invoice_date": None,
+        "vendor_name": None,
+        "seller_tax_id": None,
+        "amount_before_tax": None,
+        "tax_amount": None,
+        "total_amount": None,
+    }
+    confidence = {k: 0.0 for k in fields}
+    raw: dict[str, Any] = {
+        "engine": "rapidocr-template-v1+tesseract-fallback",
+        "template": rapid,
+        "fallback_used": [],
+        "image_size": list(image.size),
+    }
+
+    if rapid.get("matched"):
+        for key, value in (rapid.get("fields") or {}).items():
+            if key in fields and value not in (None, ""):
+                fields[key] = value
+                confidence[key] = float((rapid.get("confidence") or {}).get(key) or 0.0)
+
+    # Legacy crops remain as a recovery path only.
     invoice_crop = crop_rel(image, (0.12, 0.02, 0.43, 0.22))
     date_crop = crop_rel(image, (0.43, 0.11, 0.79, 0.30))
     amount_crop = crop_rel(image, (0.46, 0.31, 0.73, 0.86))
     stamp_crop = crop_rel(image, (0.66, 0.58, 0.96, 0.96))
 
-    invoice_texts = [
-        ocr_image(invoice_crop, psm=7, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
-        ocr_image(invoice_crop, psm=6, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
-        ocr_image(invoice_crop, psm=11, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
-    ]
-    invoice_number = next((normalize_invoice_number(x) for x in invoice_texts if normalize_invoice_number(x)), None)
+    if not fields["invoice_number"]:
+        invoice_texts = [
+            ocr_image(invoice_crop, psm=7, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+            ocr_image(invoice_crop, psm=6, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+            ocr_image(invoice_crop, psm=11, whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+        ]
+        value = next((normalize_invoice_number(x) for x in invoice_texts if normalize_invoice_number(x)), None)
+        if value:
+            fields["invoice_number"] = value
+            confidence["invoice_number"] = 0.95
+        raw["invoice_texts"] = invoice_texts
+        raw["fallback_used"].append("invoice_number")
 
-    date_texts = [
-        ocr_image(date_crop, psm=6, whitelist="0123456789/-"),
-        ocr_image(date_crop, psm=11, whitelist="0123456789/-"),
-    ]
-    invoice_date = next((normalize_roc_date(x) for x in date_texts if normalize_roc_date(x)), None)
+    if not fields["invoice_date"]:
+        date_texts = [
+            ocr_image(date_crop, psm=6, whitelist="0123456789/-"),
+            ocr_image(date_crop, psm=11, whitelist="0123456789/-"),
+        ]
+        value = next((normalize_roc_date(x) for x in date_texts if normalize_roc_date(x)), None)
+        if value:
+            fields["invoice_date"] = value
+            confidence["invoice_date"] = 0.90
+        raw["date_texts"] = date_texts
+        raw["fallback_used"].append("invoice_date")
 
-    amount_texts = [
-        ocr_image(amount_crop, psm=6, whitelist="0123456789,.-"),
-        ocr_image(amount_crop, psm=11, whitelist="0123456789,.-"),
-        ocr_image(amount_crop, psm=12, whitelist="0123456789,.-"),
-    ]
-    subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
+    if any(fields[k] is None for k in ("amount_before_tax", "tax_amount", "total_amount")):
+        amount_texts = [
+            ocr_image(amount_crop, psm=6, whitelist="0123456789,.-"),
+            ocr_image(amount_crop, psm=11, whitelist="0123456789,.-"),
+            ocr_image(amount_crop, psm=12, whitelist="0123456789,.-"),
+        ]
+        subtotal, tax, total, amount_conf = choose_amounts(amount_texts)
+        fallback_amounts = {
+            "amount_before_tax": subtotal,
+            "tax_amount": tax,
+            "total_amount": total,
+        }
+        for key, value in fallback_amounts.items():
+            if fields[key] is None and value is not None:
+                fields[key] = value
+                confidence[key] = amount_conf
+        raw["amount_texts"] = amount_texts
+        raw["fallback_used"].append("amounts")
 
-    stamp_text = ocr_image(stamp_crop, psm=11, whitelist="0123456789")
-    tax_ids = re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text))
-    seller_tax_id = tax_ids[0] if tax_ids else None
+    if not fields["seller_tax_id"]:
+        stamp_text = ocr_image(stamp_crop, psm=11, whitelist="0123456789")
+        tax_ids = re.findall(r"(?<!\d)\d{8}(?!\d)", re.sub(r"\s+", "", stamp_text))
+        if tax_ids:
+            fields["seller_tax_id"] = tax_ids[0]
+            confidence["seller_tax_id"] = 0.72
+        raw["stamp_text"] = stamp_text
+        raw["fallback_used"].append("seller_tax_id")
 
-    confidence = {
-        "invoice_number": 0.95 if invoice_number else 0.0,
-        "invoice_date": 0.90 if invoice_date else 0.0,
-        "amount_before_tax": amount_conf if subtotal is not None else 0.0,
-        "tax_amount": amount_conf if tax is not None else 0.0,
-        "total_amount": amount_conf if total is not None else 0.0,
-        "seller_tax_id": 0.72 if seller_tax_id else 0.0,
-        "vendor_name": 0.0,
-    }
-    fields = {
-        "invoice_number": invoice_number,
-        "invoice_date": invoice_date,
-        "vendor_name": None,
-        "seller_tax_id": seller_tax_id,
-        "amount_before_tax": subtotal,
-        "tax_amount": tax,
-        "total_amount": total,
-    }
-    review_required = any(fields.get(k) in (None, "") for k in ESSENTIAL_FIELDS) or any(
-        confidence.get(k, 0.0) < 0.80 for k in ESSENTIAL_FIELDS
+    # A mathematically derived 5% split is useful for assistance but is not enough
+    # by itself for unattended posting; keep that case in review.
+    derived_amounts = bool(
+        rapid.get("matched")
+        and rapid.get("document_type") == "three_part_uniform_invoice"
+        and rapid.get("total_amount") is None
+        and rapid.get("visual_amounts") is False
     )
-    return Extraction(
-        fields=fields,
-        confidence=confidence,
-        raw={
-            "engine": "tesseract-layout-v1",
-            "invoice_texts": invoice_texts,
-            "date_texts": date_texts,
-            "amount_texts": amount_texts,
-            "stamp_text": stamp_text,
-            "image_size": list(image.size),
-        },
-        review_required=review_required,
+    # Current template extractor exposes visual_amounts explicitly; if false while
+    # all three amounts are present, they may include a tax-derived split.
+    if rapid.get("matched") and rapid.get("document_type") == "three_part_uniform_invoice":
+        derived_amounts = not bool(rapid.get("visual_amounts"))
+
+    review_required = (
+        any(fields.get(k) in (None, "") for k in ESSENTIAL_FIELDS)
+        or any(confidence.get(k, 0.0) < 0.80 for k in ESSENTIAL_FIELDS)
+        or derived_amounts
     )
+    return Extraction(fields=fields, confidence=confidence, raw=raw, review_required=review_required)
 
 
 class InvoiceStore:

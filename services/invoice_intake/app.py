@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from invoice_core import InvoiceStore
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 DATA_ROOT = Path(os.environ.get("INVOICE_DATA_ROOT", "/home/ubuntu/agent-data/invoice-intake"))
 MAX_UPLOAD = 12 * 1024 * 1024
 DASHBOARD_SESSION = os.environ.get("DASHBOARD_SESSION_URL", "http://127.0.0.1:3000/dashboard/api/auth/session")
@@ -54,7 +54,7 @@ def status(request: Request):
         "ok": True,
         "service": "invoice-intake",
         "version": VERSION,
-        "ocr_engine": "tesseract-layout-v2-async",
+        "ocr_engine": "rapidocr-template-v1+tesseract-fallback",
         "authenticated": bool(session.get("loggedIn")),
         "role": session.get("role") if session.get("loggedIn") else None,
         "continuous_scan": True,

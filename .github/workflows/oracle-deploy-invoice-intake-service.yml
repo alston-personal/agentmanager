@@ -27,9 +27,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate invoice service Python syntax
+      - name: Validate invoice service
         run: |
-          python3 -m py_compile services/invoice_intake/app.py services/invoice_intake/invoice_core.py
+          python3 -m venv /tmp/invoice-intake-validate
+          /tmp/invoice-intake-validate/bin/pip install --disable-pip-version-check -q -r services/invoice_intake/requirements.txt
+          /tmp/invoice-intake-validate/bin/python -m py_compile \
+            services/invoice_intake/app.py \
+            services/invoice_intake/invoice_core.py \
+            services/invoice_intake/template_ocr.py
+          PYTHONPATH=services/invoice_intake /tmp/invoice-intake-validate/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          from template_ocr import extract_template_invoice
+
+          manifest=json.loads(Path('benchmarks/invoice_handwriting/public_cases.json').read_text())
+          checked=correct=matched=0
+          for case in manifest['cases']:
+              p=Path(case['fixture_path'])
+              out=extract_template_invoice(p.read_bytes())
+              matched += int(bool(out.get('matched')))
+              fields=out.get('fields') or {}
+              for key,expected in case['expected'].items():
+                  if key not in {'invoice_number','invoice_date','seller_tax_id','amount_before_tax','tax_amount','total_amount'}:
+                      continue
+                  checked += 1
+                  got=fields.get(key)
+                  ok=str(got).replace(' ','').upper()==str(expected).replace(' ','').upper()
+                  correct += int(ok)
+                  print(f'prod_fixture={case["id"]} field={key} ok={ok} got={got} expected={expected}')
+          recall=correct/checked if checked else 0
+          print(f'prod_template_match={matched}/{len(manifest["cases"])}')
+          print(f'prod_field_recall={correct}/{checked}={recall:.4f}')
+          assert matched == len(manifest['cases'])
+          assert recall >= 0.90
+          PY
           echo 'invoice_intake_python_syntax=PASS'
 
   deploy:
