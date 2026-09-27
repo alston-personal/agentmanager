@@ -1,0 +1,49 @@
+{
+  "schema": "tw-invoice-template-router/v1",
+  "templates": [
+    {
+      "id": "tw_uniform_2part",
+      "document_type": "two_part_uniform_invoice",
+      "anchors_any": ["二聯式", "統一發票", "收執聯"],
+      "anchors_not": ["營業稅", "銷售額"],
+      "regions": {
+        "invoice_number": [0.52, 0.02, 0.98, 0.20],
+        "invoice_date": [0.46, 0.14, 0.98, 0.31],
+        "buyer_name": [0.03, 0.18, 0.63, 0.34],
+        "items": [0.02, 0.30, 0.98, 0.73],
+        "total_amount": [0.48, 0.67, 0.98, 0.91],
+        "seller_tax_id": [0.02, 0.72, 0.55, 0.99]
+      }
+    },
+    {
+      "id": "tw_uniform_3part",
+      "document_type": "three_part_uniform_invoice",
+      "anchors_any": ["三聯式", "統一發票", "扣抵聯", "收執聯"],
+      "anchors_required_groups": [["銷售額", "稅額"], ["統一編號", "買受人"]],
+      "regions": {
+        "invoice_number": [0.50, 0.01, 0.99, 0.18],
+        "invoice_date": [0.45, 0.12, 0.99, 0.29],
+        "buyer_name": [0.02, 0.17, 0.63, 0.31],
+        "buyer_tax_id": [0.52, 0.17, 0.99, 0.33],
+        "items": [0.02, 0.30, 0.98, 0.69],
+        "amount_before_tax": [0.50, 0.62, 0.99, 0.78],
+        "tax_amount": [0.50, 0.70, 0.99, 0.84],
+        "total_amount": [0.46, 0.78, 0.99, 0.94],
+        "seller_tax_id": [0.01, 0.72, 0.55, 0.99]
+      }
+    },
+    {
+      "id": "tw_exempt_receipt",
+      "document_type": "exempt_uniform_invoice_receipt",
+      "anchors_any": ["免用統一發票", "收據", "銀貨兩訖"],
+      "anchors_required_groups": [["品名", "數量", "單價"], ["合計", "新臺幣"]],
+      "regions": {
+        "invoice_date": [0.42, 0.02, 0.99, 0.24],
+        "buyer_name": [0.02, 0.08, 0.66, 0.28],
+        "seller_tax_id": [0.60, 0.02, 0.99, 0.28],
+        "items": [0.02, 0.25, 0.98, 0.76],
+        "total_amount": [0.02, 0.70, 0.78, 0.96]
+      }
+    }
+  ]
+}
