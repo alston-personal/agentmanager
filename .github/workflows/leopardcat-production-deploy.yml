@@ -79,6 +79,15 @@ jobs:
 
           echo '=== sync source ==='
           git -C "$ROOT" fetch origin main
+          echo '=== divergence diagnostics ==='
+          echo "merge_base=$(git -C "$ROOT" merge-base HEAD origin/main || true)"
+          echo "left_right=$(git -C "$ROOT" rev-list --left-right --count HEAD...origin/main || true)"
+          echo '--- local-only commits ---'
+          git -C "$ROOT" log --oneline --decorate origin/main..HEAD || true
+          echo '--- remote-only commits ---'
+          git -C "$ROOT" log --oneline --decorate HEAD..origin/main | head -40 || true
+          echo '--- graph ---'
+          git -C "$ROOT" log --oneline --decorate --graph --all -20 || true
           git -C "$ROOT" merge --ff-only origin/main
           test "$(git -C "$ROOT" rev-parse HEAD)" = "$TARGET"
           echo "head_after=$(git -C "$ROOT" rev-parse HEAD)"
