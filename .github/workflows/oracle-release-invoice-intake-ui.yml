@@ -28,7 +28,7 @@ jobs:
         查看這張完整辨識結果
         開啟相機連續掃描
         已掃描發票
-        same-document
+        同一張不會再次觸發
       credit_account: ''
       credit_cost: 0
     secrets:
