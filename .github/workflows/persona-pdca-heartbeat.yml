@@ -68,14 +68,15 @@ jobs:
           RECEIPT="/tmp/persona-pdca-receipt-$RUN_ID.json"
 
           test -d "$DATA_REPO/.git"
-          test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
-          test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
-          test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
           /usr/bin/gh auth status >/dev/null
 
           git -C "$DATA_REPO" fetch origin main
           git -C "$DATA_REPO" checkout main
           git -C "$DATA_REPO" pull --ff-only origin main
+
+          test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
+          test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
+          test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
           python3 "$SCRIPT"             --persona-dir "$DATA_REPO/$PERSONA_PATH"             --receipt-out "$RECEIPT"
 
