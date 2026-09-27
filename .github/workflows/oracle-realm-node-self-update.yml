@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/realm-node-fabric-readiness
-      - core/integration
     paths:
       - '.agentos/commands/realm-node-self-update.json'
       - '.github/workflows/oracle-realm-node-self-update.yml'
