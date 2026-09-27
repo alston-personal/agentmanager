@@ -43,6 +43,14 @@ if(-not $healthy){
 }
 $record.status='awaiting-controller-acceptance'
 $record.rollback_deadline=(Get-Date).ToUniversalTime().AddMinutes(3).ToString('yyyy-MM-ddTHH:mm:ssZ')
+$guardUrl="https://raw.githubusercontent.com/$Repo/$SourceCommit/scripts/windows/transactional_ota_guard.ps1"
+$finalizeUrl="https://raw.githubusercontent.com/$Repo/$SourceCommit/scripts/windows/transactional_ota_finalize.ps1"
+Invoke-WebRequest -UseBasicParsing -Uri $guardUrl -OutFile (Join-Path $InstallRoot 'transactional_ota_guard.ps1')
+Invoke-WebRequest -UseBasicParsing -Uri $finalizeUrl -OutFile (Join-Path $InstallRoot 'transactional_ota_finalize.ps1')
+$guardTask='AgentOS Thin Client OTA Guard'
+$guardAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -File "'+(Join-Path $InstallRoot 'transactional_ota_guard.ps1')+'"')
+$guardTrigger=New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(4)
+Register-ScheduledTask -TaskName $guardTask -Action $guardAction -Trigger $guardTrigger -Force | Out-Null
 $record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
 Write-Output 'agentos_ota_local_health=PASS'
 Write-Output 'agentos_ota_controller_acceptance=PENDING'
