@@ -94,6 +94,7 @@ def unpack(result) -> tuple[list[str], list[float]]:
     elif hasattr(result, "to_json"):
         obj = result.to_json()
         if isinstance(obj, str): obj = json.loads(obj)
+        obj = obj or {}
         texts = [str(x) for x in (obj.get("txts") or obj.get("texts") or obj.get("rec_texts") or [])]
         scores = [float(x) for x in (obj.get("scores") or obj.get("rec_scores") or [])]
     return texts, scores
@@ -201,6 +202,129 @@ def parse_date(text: str):
         return f"{y:04d}-{mo:02d}-{d:02d}"
     return None
 
+
+def _norm_ocr_text(text: str) -> str:
+    return (text or "").replace("臺","台").replace("稅","税").replace("編","编").replace("號","号")
+
+def contextual_money(text: str, labels: list[str]) -> int | None:
+    s=_norm_ocr_text(text)
+    # Allow labels to be split across OCR lines/whitespace.
+    flat=re.sub(r"\\s+", "", s)
+    for label in labels:
+        key=re.sub(r"\\s+", "", _norm_ocr_text(label))
+        pos=flat.find(key)
+        if pos < 0:
+            continue
+        tail=flat[pos+len(key):pos+len(key)+80]
+        vals=[]
+        for m in re.finditer(r"(?<!\\d)(\\d{1,3}(?:,\\d{3})+|\\d{1,9})(?!\\d)", tail):
+            raw=m.group(1).replace(",","")
+            try:
+                v=int(raw)
+            except ValueError:
+                continue
+            # Phone numbers / tax IDs are not plausible immediate money when 8+ digits.
+            if len(raw) >= 8:
+                continue
+            vals.append(v)
+        if vals:
+            return vals[0]
+    return None
+
+def contextual_tax_ids(text: str) -> list[str]:
+    s=_norm_ocr_text(text)
+    flat=re.sub(r"\\s+", "", s)
+    out=[]
+    for m in re.finditer(r"(?:統一|统一)(?:編|编)(?:號|号)[:：]?(.{0,30})", flat):
+        vals=re.findall(r"(?<!\\d)(\\d{8})(?!\\d)", m.group(1))
+        out.extend(vals)
+    # Keep valid candidates first, preserve order and uniqueness.
+    all_vals=re.findall(r"(?<!\\d)(\\d{8})(?!\\d)", flat)
+    for v in all_vals:
+        if v not in out:
+            out.append(v)
+    return sorted(dict.fromkeys(out), key=lambda v: (not valid_tax_id(v), out.index(v)))
+
+def contextual_invoice_number(text: str) -> str | None:
+    s=(text or "").upper()
+    # Exact token first.
+    m=INV_RE.search(s)
+    if m:
+        return m.group(1)+m.group(2)
+    # OCR often inserts punctuation/newlines between every character.
+    compact=re.sub(r"[^A-Z0-9]", "", s)
+    candidates=re.findall(r"[A-Z]{2}\\d{8}", compact)
+    return candidates[0] if candidates else None
+
+def contextual_date(text: str) -> str | None:
+    s=_norm_ocr_text(text)
+    # Strong date phrases first.
+    patterns=[
+        r"(?:中華民國|民國)?\\s*(\\d{2,3})\\s*年\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日",
+        r"(?:日期[:：]?)?\\s*民國\\s*(\\d{2,3})\\s*[./-]\\s*(\\d{1,2})\\s*[./-]\\s*(\\d{1,2})",
+    ]
+    for p in patterns:
+        m=re.search(p,s)
+        if m:
+            y,mo,d=map(int,m.groups())
+            y += 1911
+            if 1<=mo<=12 and 1<=d<=31:
+                return f"{y:04d}-{mo:02d}-{d:02d}"
+    return parse_date(s)
+
+def extract_template_fields(page_text: str, document_type: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    actual={}
+    evidence={}
+    inv=contextual_invoice_number(page_text)
+    if inv:
+        actual["invoice_number"]=inv
+        evidence["invoice_number"]={"source":"page_anchor","value":inv}
+    dt=contextual_date(page_text)
+    if dt:
+        actual["invoice_date"]=dt
+        evidence["invoice_date"]={"source":"page_anchor","value":dt}
+
+    tax_ids=contextual_tax_ids(page_text)
+    if tax_ids:
+        # In standard 3-part forms buyer ID is normally encountered before the seller stamp ID.
+        if document_type=="three_part_uniform_invoice" and len(tax_ids)>=2:
+            actual["buyer_tax_id"]=tax_ids[0]
+            actual["seller_tax_id"]=tax_ids[-1]
+        else:
+            actual["seller_tax_id"]=tax_ids[-1]
+        evidence["tax_id_candidates"]={"source":"page_anchor","values":tax_ids}
+
+    before=contextual_money(page_text,["銷售額合計","销售额合计","銷售額(A)","销售额(A)"])
+    tax=contextual_money(page_text,["營業稅","营业税"])
+    total=contextual_money(page_text,["總計新臺幣","总计新台币","總計","总计"])
+    if before is not None: actual["amount_before_tax"]=before
+    if tax is not None: actual["tax_amount"]=tax
+    if total is not None: actual["total_amount"]=total
+
+    # If contextual total is obscured, use a unique arithmetic-consistent triple from nearby OCR numbers.
+    if document_type=="three_part_uniform_invoice":
+        nums=[]
+        for raw in re.findall(r"(?<!\\d)(\\d{1,3}(?:,\\d{3})+|\\d{1,7})(?!\\d)", page_text):
+            try: v=int(raw.replace(",",""))
+            except ValueError: continue
+            if 0 <= v <= 50_000_000:
+                nums.append(v)
+        triples=[]
+        uniq=list(dict.fromkeys(nums))
+        for a in uniq:
+            for b in uniq:
+                if b > max(1000000, a//2+1): continue
+                t=a+b
+                if t in uniq and a>0 and t>0:
+                    triples.append((a,b,t))
+        if len(triples)==1:
+            a,b,t=triples[0]
+            actual.setdefault("amount_before_tax",a)
+            actual.setdefault("tax_amount",b)
+            actual.setdefault("total_amount",t)
+            evidence["amount_arithmetic_candidate"]={"source":"page_consistency","value":[a,b,t]}
+    return actual,evidence
+
 def parse_field(name: str, text: str):
     if name == "invoice_number": return parse_invoice_number(text)
     if name in {"buyer_tax_id","seller_tax_id"}: return parse_tax_id(text)
@@ -234,11 +358,18 @@ def main():
                 mode="template"
                 template_hits += 1
                 actual["document_type"]=template["document_type"]
+                anchored,anchor_evidence=extract_template_fields(page_text,template["document_type"])
+                actual.update(anchored)
+                evidence.update(anchor_evidence)
+                # ROI is now a secondary recovery path only. It must never overwrite an anchor-derived value.
                 for field,box in template["regions"].items():
+                    if field in actual and actual.get(field) is not None:
+                        continue
                     text,conf=ocr_text(engine,crop_norm(image,box))
                     value=parse_field(field,text)
-                    evidence[field]={"text":text[:500],"ocr_confidence":conf,"value":value}
-                    if field != "items": actual[field]=value
+                    evidence[field]={"source":"roi_fallback","text":text[:500],"ocr_confidence":conf,"value":value}
+                    if field != "items" and value is not None:
+                        actual[field]=value
             else:
                 actual["invoice_number"]=parse_invoice_number(page_text)
                 actual["invoice_date"]=parse_date(page_text)
@@ -271,7 +402,7 @@ def main():
             validation_values=[v for v in validation.values() if v is not None]
             validations_ok=all(v is True for v in validation_values)
             min_roi_conf=min(
-                [float(v.get("ocr_confidence") or 0.0) for k,v in evidence.items() if k in supported_core] or [page_conf]
+                [float(v.get("ocr_confidence",page_conf) or page_conf) for k,v in evidence.items() if k in supported_core and isinstance(v,dict)] or [page_conf]
             )
             safe_auto_pass=bool(
                 mode=="template" and tconf>=0.5 and core_exact and validations_ok and min_roi_conf>=0.72
