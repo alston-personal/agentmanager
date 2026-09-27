@@ -1,0 +1,30 @@
+name: Social Post Experiment Guard
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/social/post_experiment.py'
+      - 'scripts/monitor_social_post_experiment_user.py'
+      - 'tests/test_social_post_experiment.py'
+      - 'docs/SOCIAL_POST_EXPERIMENT_CAPABILITY.md'
+      - '.github/workflows/social-post-experiment-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile capability
+        run: |
+          python -m py_compile agentos_node/social/post_experiment.py
+          python -m py_compile scripts/monitor_social_post_experiment_user.py
+      - name: Run focused tests
+        run: python -m unittest -v tests.test_social_post_experiment
