@@ -41,9 +41,8 @@ if(-not $healthy){
   }
   throw 'candidate post-switch health acceptance failed'
 }
-$record.status='active-accepted'
-$record.accepted_at=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+$record.status='awaiting-controller-acceptance'
+$record.rollback_deadline=(Get-Date).ToUniversalTime().AddMinutes(3).ToString('yyyy-MM-ddTHH:mm:ssZ')
 $record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $currentFile
-$record|ConvertTo-Json -Depth 5|Set-Content -Encoding UTF8 $lkgFile
-Write-Output 'agentos_ota_post_switch=PASS'
-Write-Output 'agentos_ota=PASS'
+Write-Output 'agentos_ota_local_health=PASS'
+Write-Output 'agentos_ota_controller_acceptance=PENDING'
