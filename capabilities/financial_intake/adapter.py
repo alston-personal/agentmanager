@@ -65,5 +65,8 @@ def canonical_from_invoice_payload(payload: Mapping[str, Any]) -> FinancialDocum
             "original_filename": payload.get("original_filename"),
         },
         validation=dict(payload.get("validation") or {}),
-        review_required=bool(payload.get("status") == "needs_review" or payload.get("review_required")),
+        review_required=bool(
+            payload.get("review_required")
+            or str(payload.get("status") or "").lower() not in {"accepted", "reviewed", "extracted", "ready", "complete"}
+        ),
     )

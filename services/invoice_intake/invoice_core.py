@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageEnhance, ImageOps
-from template_ocr import extract_template_invoice
+from services.invoice_intake.template_ocr import extract_template_invoice
 
 ESSENTIAL_FIELDS = ("invoice_number", "invoice_date", "amount_before_tax", "total_amount")
 

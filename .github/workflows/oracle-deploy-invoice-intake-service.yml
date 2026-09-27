@@ -6,12 +6,14 @@ on:
     branches: [main]
     paths:
       - 'services/invoice_intake/**'
+      - 'capabilities/financial_intake/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
   push:
     branches: [main]
     paths:
       - 'services/invoice_intake/**'
+      - 'capabilities/financial_intake/**'
       - 'scripts/deploy_invoice_intake_nginx.py'
       - '.github/workflows/oracle-deploy-invoice-intake-service.yml'
 
@@ -34,11 +36,14 @@ jobs:
           /tmp/invoice-intake-validate/bin/python -m py_compile \
             services/invoice_intake/app.py \
             services/invoice_intake/invoice_core.py \
-            services/invoice_intake/template_ocr.py
-          PYTHONPATH=services/invoice_intake /tmp/invoice-intake-validate/bin/python - <<'PY'
+            services/invoice_intake/template_ocr.py \
+            capabilities/financial_intake/adapter.py \
+            capabilities/financial_intake/winton.py
+          PYTHONPATH=. /tmp/invoice-intake-validate/bin/python - <<'PY'
           import json
           from pathlib import Path
-          from template_ocr import extract_template_invoice
+          from services.invoice_intake.template_ocr import extract_template_invoice
+          from capabilities.financial_intake import WintonExcelAdapter, canonical_from_invoice_payload
 
           manifest=json.loads(Path('benchmarks/invoice_handwriting/public_cases.json').read_text())
           checked=correct=matched=0
@@ -60,6 +65,25 @@ jobs:
           print(f'prod_field_recall={correct}/{checked}={recall:.4f}')
           assert matched == len(manifest['cases'])
           assert recall >= 0.90
+
+          doc=canonical_from_invoice_payload({
+              "invoice_id":"ci-export",
+              "status":"accepted",
+              "fields":{
+                  "invoice_number":"AB12345678",
+                  "invoice_date":"2026-09-28",
+                  "seller_tax_id":"12345678",
+                  "vendor_name":"測試商號",
+                  "amount_before_tax":1000,
+                  "tax_amount":50,
+                  "total_amount":1050,
+              },
+              "confidence":{"invoice_number":0.99,"total_amount":0.99},
+          })
+          exported=WintonExcelAdapter().export(doc)
+          assert exported.adapter_id == "accounting.adapter.winton"
+          assert b"AB12345678" in exported.payload
+          print("invoice_winton_adapter_contract=PASS")
           PY
           echo 'invoice_intake_python_syntax=PASS'
 
@@ -87,7 +111,10 @@ jobs:
           set -euo pipefail
           test -n "${DEPLOY_USER:-}"
 
-          tar -C services/invoice_intake -czf - . | \
+          tar -czf - \
+            services/invoice_intake \
+            capabilities/__init__.py \
+            capabilities/financial_intake | \
             ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               'set -euo pipefail; BASE=/home/ubuntu/invoice-intake-service; rm -rf "$BASE/app-new"; mkdir -p "$BASE/app-new"; tar -C "$BASE/app-new" -xzf -'
 
@@ -127,7 +154,7 @@ jobs:
             python3 -m venv "$BASE/.venv"
           fi
 
-          "$BASE/.venv/bin/pip" install --disable-pip-version-check -q -r "$BASE/app-new/requirements.txt"
+          "$BASE/.venv/bin/pip" install --disable-pip-version-check -q -r "$BASE/app-new/services/invoice_intake/requirements.txt"
           rm -rf "$BASE/app"
           mv "$BASE/app-new" "$BASE/app"
 
@@ -139,9 +166,10 @@ jobs:
           [Service]
           Type=simple
           WorkingDirectory=/home/ubuntu/invoice-intake-service/app
+          Environment=PYTHONPATH=/home/ubuntu/invoice-intake-service/app
           Environment=INVOICE_DATA_ROOT=/home/ubuntu/agent-data/invoice-intake
           Environment=DASHBOARD_SESSION_URL=http://127.0.0.1:3000/dashboard/api/auth/session
-          ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 18767
+          ExecStart=/home/ubuntu/invoice-intake-service/.venv/bin/uvicorn services.invoice_intake.app:app --host 127.0.0.1 --port 18767
           Restart=on-failure
           RestartSec=2
 
