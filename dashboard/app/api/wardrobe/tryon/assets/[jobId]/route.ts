@@ -34,10 +34,18 @@ export async function GET(
     return NextResponse.json({ error: 'Render asset not found' }, { status: 404 });
   }
   const data = fs.readFileSync(file);
+  const contentType =
+    data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP'
+      ? 'image/webp'
+      : data.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))
+        ? 'image/png'
+        : data[0] === 0xff && data[1] === 0xd8
+          ? 'image/jpeg'
+          : 'application/octet-stream';
   return new NextResponse(data, {
     status: 200,
     headers: {
-      'Content-Type': 'image/webp',
+      'Content-Type': contentType,
       'Cache-Control': 'private, max-age=31536000, immutable',
     },
   });
