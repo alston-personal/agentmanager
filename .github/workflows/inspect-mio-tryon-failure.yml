@@ -1,0 +1,35 @@
+name: Inspect Mio Try-On Failure
+
+on:
+  push:
+    branches: [ops/inspect-mio-tryon-failure]
+    paths:
+      - '.github/workflows/inspect-mio-tryon-failure.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect runtime garments and try-on prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          echo "ROOT=$ROOT"
+          echo "garment_files:"
+          find "$ROOT/garments" -maxdepth 2 -type f -name '*.json' -printf '%p\n' 2>/dev/null | sort || true
+          echo "required_ids:"
+          for id in net-43774-002 net-32235-711 net-40832-002 net-40793-003; do
+            echo "== $id =="
+            grep -Rsl --include='*.json' "\"$id\"" "$ROOT/garments" 2>/dev/null || true
+          done
+          echo "runtime_jobs:"
+          find "$ROOT/render_jobs/runtime" -maxdepth 1 -type f -name '*.json' -printf '%f\n' 2>/dev/null | tail -n 20 || true
+          echo "current_outfit:"
+          cat "$ROOT/current_outfits/sunlake-milkcat-ai-001.json" 2>/dev/null || true
+          echo "INSPECT_TRYON_FAILURE=PASS"
