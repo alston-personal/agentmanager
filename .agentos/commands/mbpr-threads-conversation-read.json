@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.threads-conversation-read",
+  "node_id": "mbpr",
+  "username": "0__0.ayoub",
+  "nonce": "threads-conversation-1790576249847"
+}
