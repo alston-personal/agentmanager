@@ -37,6 +37,7 @@ jobs:
                       print('threads_native_read=ERROR')
                       raise SystemExit(2)
                   digest=hashlib.sha256(out.encode()).hexdigest()[:16]
+                  open('/tmp/threads-native-read.json','w',encoding='utf-8').write(out)
                   print('threads_native_read=PASS')
                   print('threads_native_read_receipt='+tid)
                   print('threads_native_read_digest='+digest)
@@ -45,3 +46,12 @@ jobs:
               time.sleep(2)
           raise SystemExit('threads native read timeout')
           PY
+
+      - name: Upload private Threads read artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threads-native-read
+          path: /tmp/threads-native-read.json
+          retention-days: 1
+          if-no-files-found: error
