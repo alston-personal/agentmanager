@@ -303,7 +303,10 @@ find_dashboard_npm_pid() {
 restart_dashboard() {
   local before groups old_npm new_npm own_pgid
   before=$(find_dashboard_runtime)
-  [ -n "$before" ] || { echo "ERROR: no dashboard runtime found" >&2; return 4; }
+  if [ -z "$before" ]; then
+    echo "social_gateway_dashboard_restart=SKIPPED_NO_RUNTIME"
+    return 0
+  fi
   old_npm=$(printf '%s\n' "$before" | awk -F '\t' '$4 ~ /^npm start/ {print $1}')
   [ "$(printf '%s\n' "$old_npm" | sed '/^$/d' | wc -l)" -eq 1 ] || {
     echo "ERROR: expected exactly one dashboard npm start, got: $old_npm" >&2; return 4;
