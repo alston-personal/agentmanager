@@ -1,0 +1,60 @@
+name: Oracle Start Oursong Insights Reauth
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-start-oursong-insights-reauth.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Create one-time Threads persona reauthorization handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,urllib.request
+          from pathlib import Path
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          payload={
+            'schema':'agentos.social-request/v1',
+            'product_id':'galaxy',
+            'platform':'threads',
+            'operation':'connect',
+            'auth_profile':'persona',
+            'return_to':'/threads-galaxy/'
+          }
+          req=urllib.request.Request(
+            'http://127.0.0.1:8771/v1/social/connect',
+            data=json.dumps(payload,separators=(',',':')).encode(),
+            headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},
+            method='POST'
+          )
+          with urllib.request.urlopen(req,timeout=20) as r:
+              body=json.load(r)
+          url=str(body.get('browser_start_url') or '')
+          assert url.startswith('https://studio.milkcat.org/dashboard/api/social/v1/social/oauth/threads/start?ticket=')
+          print('oursong_reauth=READY')
+          print('oursong_reauth_url='+url)
+          print('oursong_reauth_expires_in='+str(body.get('expires_in') or ''))
+          PY
