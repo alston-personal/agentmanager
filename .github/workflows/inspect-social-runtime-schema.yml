@@ -22,37 +22,18 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect sanitized Social API schema
+      - name: Inspect sanitized Social runtime implementation
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          python3 - <<'PY'
-          import json, urllib.request
-          try:
-              with urllib.request.urlopen("http://127.0.0.1:8771/openapi.json", timeout=5) as r:
-                  d=json.loads(r.read())
-          except Exception as e:
-              print(json.dumps({"error":"openapi_unavailable","detail":repr(e)}))
-              raise SystemExit(0)
-          keep={}
-          for p in ["/v1/social/status","/v1/social/reply","/v1/social/publish","/v1/social/connect"]:
-              if p not in d.get("paths",{}):
-                  continue
-              keep[p]={}
-              for method,spec in d["paths"][p].items():
-                  if not isinstance(spec,dict):
-                      continue
-                  rb=spec.get("requestBody",{})
-                  schema=((rb.get("content") or {}).get("application/json") or {}).get("schema")
-                  keep[p][method]={"summary":spec.get("summary"),"schema":schema}
-          comps={}
-          for n,s in (d.get("components",{}).get("schemas",{}) or {}).items():
-              if any(k in n.lower() for k in ["social","reply","publish","status","request"]):
-                  comps[n]={
-                      "required":s.get("required",[]),
-                      "properties":sorted((s.get("properties") or {}).keys())
-                  }
-          print(json.dumps({"paths":keep,"schemas":comps},ensure_ascii=False,indent=2))
-          PY
+          set -euo pipefail
+          echo '=== listener ==='
+          ss -ltnp 2>/dev/null | grep ':8771 ' || true
+          echo '=== candidate processes ==='
+          ps -eo pid,user,args | grep -E '[8]771|[s]ocial.*runtime|[s]ocial.*service|[u]vicorn|[g]unicorn' | head -30 || true
+          echo '=== route definitions ==='
+          grep -Rsn --exclude='*.map' --exclude='*.min.js' --exclude-dir=node_modules --exclude-dir=.git             -E '/v1/social/(reply|publish|status|connect)|social/reply|social/publish'             /home/ubuntu /opt /srv 2>/dev/null | head -120 || true
+          echo '=== service manifests ==='
+          find /home/ubuntu /opt /srv -maxdepth 6 -type f \( -name 'package.json' -o -name 'pyproject.toml' -o -name 'requirements.txt' -o -name 'compose.yaml' \)             -print 2>/dev/null | grep -Ei 'social|agentos' | head -80 || true
           REMOTE
