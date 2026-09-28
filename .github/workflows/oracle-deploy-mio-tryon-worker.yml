@@ -44,9 +44,17 @@ jobs:
             bash -s -- "$REMOTE_SCRIPT" <<'REMOTE'
           set -euo pipefail
           REMOTE_SCRIPT="$1"
-          install -d -m 700 "$HOME/.local/bin" "$HOME/.config/systemd/user"
+          install -d -m 700 "$HOME/.local/bin" "$HOME/.local/share" "$HOME/.config/systemd/user"
           install -m 755 "$REMOTE_SCRIPT" "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
           rm -f "$REMOTE_SCRIPT"
+
+          VENV="$HOME/.local/share/mio-tryon-venv"
+          if [ ! -x "$VENV/bin/python" ]; then
+            python3 -m venv "$VENV"
+          fi
+          "$VENV/bin/python" -m pip install --quiet --upgrade pip
+          "$VENV/bin/python" -m pip install --quiet --upgrade "gradio_client>=1.13,<3"
+          "$VENV/bin/python" -c 'from gradio_client import Client, handle_file; print("gradio_client_import=PASS")'
 
           cat > "$HOME/.config/systemd/user/agentos-mio-tryon-render-worker.service" <<'UNIT'
           [Unit]
@@ -60,7 +68,7 @@ jobs:
           Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
           Environment=AGENTOS_TRYON_POLL_SECONDS=2
           Environment=PYTHONUNBUFFERED=1
-          ExecStart=/usr/bin/python3 /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          ExecStart=/home/ubuntu/.local/share/mio-tryon-venv/bin/python /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
           Restart=on-failure
           RestartSec=5
 
