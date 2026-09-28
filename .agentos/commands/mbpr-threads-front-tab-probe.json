@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.threads-front-tab-probe",
+  "node_id": "mbpr",
+  "nonce": "threads-front-1790567894629"
+}
