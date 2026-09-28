@@ -552,7 +552,11 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                     ANY_ITEM_SUPPORTED[layer],
                     seed_base + index,
                 )
-                provider = "omnitry-gradio-client"
+                provider = (
+                    "qwen-image-2.1-reference-edit"
+                    if provider_space == QWEN_EDIT_SPACE_ID
+                    else "omnitry-gradio-client"
+                )
 
             rendered_layers.append(layer)
             provider_outputs.append(
