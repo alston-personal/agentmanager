@@ -569,11 +569,14 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             )
         except Exception as exc:
             pending_layers.append(layer)
+            error_message = f"{type(exc).__name__}: {exc}"
+            if len(error_message) > 900:
+                error_message = error_message[:300] + " ... [tail] ... " + error_message[-580:]
             warnings.append(
                 {
                     "layer": layer,
                     "code": "layer_renderer_failed",
-                    "message": f"{type(exc).__name__}: {exc}"[:500],
+                    "message": error_message,
                 }
             )
 
@@ -582,7 +585,10 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             f"{row.get('layer')}:{row.get('message') or row.get('code')}"
             for row in warnings
         )
-        raise RuntimeError(f"No selected layer could be rendered: {detail}"[:900])
+        failure = f"No selected layer could be rendered: {detail}"
+        if len(failure) > 1600:
+            failure = failure[:500] + " ... [tail] ... " + failure[-1080:]
+        raise RuntimeError(failure)
 
     copy_output(person_url, target)
     cache_key = None
