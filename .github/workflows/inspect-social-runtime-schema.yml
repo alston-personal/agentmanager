@@ -22,33 +22,19 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read exact Social request contract and safe bindings
+      - name: Read exact Social write governance
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
           ROOT=/home/ubuntu/.local/share/agentos/social-runtime/agentos_node/social
-          echo '=== request contract ==='
-          sed -n '1,100p' "$ROOT/contracts.py"
-          echo '=== safe binding inventory ==='
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          p=Path("/home/ubuntu/.local/state/agentos/social/credentials.json")
-          d=json.loads(p.read_text()) if p.exists() else {}
-          rows=[]
-          def walk(x,path=""):
-              if isinstance(x,dict):
-                  if any(k in x for k in ("binding_id","account_binding_id","provider_account_id","username","platform")):
-                      safe={k:x.get(k) for k in ("binding_id","account_binding_id","provider_account_id","username","platform","created_at","updated_at") if k in x}
-                      if safe: rows.append({"path":path,"value":safe})
-                  for k,v in x.items():
-                      if not any(s in k.lower() for s in ("token","secret","key","credential")):
-                          walk(v,path+"/"+str(k))
-              elif isinstance(x,list):
-                  for i,v in enumerate(x): walk(v,path+f"/{i}")
-          walk(d)
-          print(json.dumps(rows,ensure_ascii=False,indent=2))
-          PY
+          echo '=== governance.py ==='
+          sed -n '1,180p' "$ROOT/governance.py"
+          echo '=== runtime_storage.py acceptance ==='
+          sed -n '120,210p' "$ROOT/runtime_storage.py"
+          echo '=== runtime_http.py request/write routes ==='
+          sed -n '430,620p' "$ROOT/runtime_http.py"
+          echo '=== provider reply implementation ==='
+          grep -Rsn --include='*.py' -E 'def .*reply|reply_to_id|target_account_id' "$ROOT" 2>/dev/null | head -100 || true
           REMOTE
