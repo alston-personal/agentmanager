@@ -123,6 +123,7 @@ def execute_client_runtime_converge(task: dict[str, Any]) -> dict[str, Any]:
         if not current or current.get('status')!='awaiting-controller-acceptance' or current.get('source_commit')!=commit:
             raise RuntimeError('candidate is not awaiting acceptance')
         current['status']='active-accepted'; current['accepted_at']=_utc()
+        current.pop('rollback_deadline',None)
         _write_json(current_path,current); _write_json(lkg_path,current)
         return {'runtime_converge':{'status':'accepted','source_commit':commit}}
 
