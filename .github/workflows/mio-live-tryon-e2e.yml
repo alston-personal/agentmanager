@@ -1,0 +1,101 @@
+name: Mio Live Try-On E2E
+
+on:
+  push:
+    branches: [ops/mio-live-tryon-e2e]
+    paths:
+      - '.github/workflows/mio-live-tryon-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Submit real production job and require image
+        shell: bash
+        run: |
+          set -euo pipefail
+          JOB_ID="mio-live-e2e-$GITHUB_RUN_ID"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$JOB_ID" <<'REMOTE'
+          set -euo pipefail
+          JOB_ID="$1"
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          JOB="$ROOT/render_jobs/runtime/$JOB_ID.json"
+          ASSET="$ROOT/render_assets/$JOB_ID.webp"
+          mkdir -p "$ROOT/render_jobs/runtime" "$ROOT/render_assets"
+          rm -f "$JOB" "$ASSET"
+
+          python3 - "$JOB" "$JOB_ID" <<'PY'
+          import json, pathlib, sys
+          from datetime import datetime, timezone
+          path=pathlib.Path(sys.argv[1]); job_id=sys.argv[2]
+          now=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+          job={
+            "schema":"agentos.tryon-render-job/v1",
+            "jobId":job_id,
+            "characterId":"sunlake-milkcat-ai-001",
+            "characterVersion":"mio-body-v1",
+            "view":"front","pose":"neutral_standing","status":"queued",
+            "requestedAt":now,"startedAt":None,"completedAt":None,"failedAt":None,"supersededBy":None,
+            "input":{
+              "baseBodyAsset":"/personas/mio/mio-avatar.webp",
+              "layerOrder":["upper_main"],
+              "selectedLayers":{
+                "upper_main":{
+                  "garmentId":"net-43774-002",
+                  "name":"合身坑條圓領上衣",
+                  "layer":"upper_main",
+                  "sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"
+                }
+              }
+            },
+            "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
+            "error":None
+          }
+          path.write_text(json.dumps(job,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          path.chmod(0o600)
+          PY
+
+          for i in $(seq 1 120); do
+            STATE=$(python3 - "$JOB" <<'PY'
+          import json,sys
+          print(json.load(open(sys.argv[1],encoding='utf-8')).get('status'))
+          PY
+          )
+            echo "live_tryon_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              test -s "$ASSET"
+              BYTES=$(wc -c < "$ASSET")
+              test "$BYTES" -gt 1000
+              python3 - "$JOB" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d["output"]["asset"].startswith("/dashboard/api/wardrobe/tryon/assets/")
+          assert d["output"].get("provider")=="idm-vton-gradio-client"
+          print("live_tryon_provider="+d["output"]["provider"])
+          print("live_tryon_asset="+d["output"]["asset"])
+          PY
+              echo "MIO_LIVE_TRYON_E2E=PASS bytes=$BYTES"
+              exit 0
+            fi
+            if [ "$STATE" = failed ]; then
+              cat "$JOB"
+              exit 1
+            fi
+            sleep 2
+          done
+          cat "$JOB" || true
+          exit 1
+          REMOTE
