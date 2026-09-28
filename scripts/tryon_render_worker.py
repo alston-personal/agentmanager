@@ -5,14 +5,16 @@ import json
 import os
 import time
 import shutil
+import tempfile
 import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from gradio_client import Client, handle_file
+
 SCHEMA = "agentos.tryon-render-job/v1"
-SPACE_BASE = os.environ.get("AGENTOS_TRYON_SPACE_BASE", "https://sm4ll-vton-sm4ll-vton-demo.hf.space")
+SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "sm4ll-VTON/sm4ll-VTON-Demo")
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
@@ -23,9 +25,9 @@ BASE_BODY_URL = os.environ.get(
 )
 
 SUPPORTED = {
-    "upper_inner": "top",
-    "upper_main": "top",
-    "upper_outer": "top",
+    "upper_inner": "dress",
+    "upper_main": "dress",
+    "upper_outer": "dress",
     "onepiece": "dress",
     "shoes": "footwear",
 }
@@ -53,93 +55,87 @@ def atomic_write(path: Path, payload: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def http_json(url: str, payload: dict[str, Any], timeout: int = 60) -> dict[str, Any]:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read()
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:4000]
-        raise RuntimeError(f"HTTP {exc.code} from VTON provider: {detail}") from exc
-    value = json.loads(body.decode("utf-8"))
-    if not isinstance(value, dict):
-        raise RuntimeError("VTON provider returned non-object JSON")
-    return value
+_CLIENT: Client | None = None
 
 
-def file_data(url: str) -> dict[str, Any]:
-    return {
-        "path": url,
-        "url": url,
-        "orig_name": url.rsplit("/", 1)[-1].split("?", 1)[0] or "image",
-        "meta": {"_type": "gradio.FileData"},
-    }
+def client() -> Client:
+    global _CLIENT
+    if _CLIENT is None:
+        _CLIENT = Client(
+            SPACE_ID,
+            download_files=True,
+            verbose=False,
+            httpx_kwargs={"timeout": 240.0},
+        )
+    return _CLIENT
 
 
-def sm4ll_try_on(person_url: str, garment_url: str, workflow: str, timeout: int = 300) -> str:
-    queued = http_json(
-        f"{SPACE_BASE}/gradio_api/call/generate",
-        {"data": [file_data(person_url), file_data(garment_url), workflow, None]},
-        timeout=30,
-    )
-    event_id = queued.get("event_id")
-    if not isinstance(event_id, str) or not event_id:
-        raise RuntimeError(f"SM4LL VTON returned no event_id: {queued}")
-
-    req = urllib.request.Request(
-        f"{SPACE_BASE}/gradio_api/call/generate/{event_id}",
-        headers={"Accept": "text/event-stream"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            event = None
-            for raw in resp:
-                line = raw.decode("utf-8", "replace").strip()
-                if not line:
-                    continue
-                if line.startswith("event:"):
-                    event = line.split(":", 1)[1].strip()
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                payload = line.split(":", 1)[1].strip()
-                if event == "error":
-                    raise RuntimeError(f"SM4LL VTON queue error: {payload[:2000]}")
-                if event == "complete":
-                    value = json.loads(payload)
-                    candidate: Any = value
-                    if isinstance(candidate, list) and candidate:
-                        candidate = candidate[0]
-                    if isinstance(candidate, dict):
-                        candidate = candidate.get("url") or candidate.get("path")
-                    if not isinstance(candidate, str) or not candidate.startswith(("http://", "https://")):
-                        raise RuntimeError(f"SM4LL VTON returned no output URL: {value!r}")
-                    return candidate
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:4000]
-        raise RuntimeError(f"HTTP {exc.code} from SM4LL VTON queue: {detail}") from exc
-    raise RuntimeError("SM4LL VTON queue closed without complete event")
-
-
-def download_output(url: str, target: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.2"})
-    with urllib.request.urlopen(req, timeout=90) as resp:
+def download_input(url: str, suffix: str) -> Path:
+    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.3"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
         content_type = (resp.headers.get("Content-Type") or "").lower()
         if "image" not in content_type:
-            raise RuntimeError(f"provider output is not image content: {content_type}")
+            raise RuntimeError(f"input is not image content: {content_type}")
         data = resp.read()
     if len(data) < 1000:
-        raise RuntimeError("provider output image is unexpectedly small")
+        raise RuntimeError("input image is unexpectedly small")
+    fd, name = tempfile.mkstemp(prefix="mio-vton-", suffix=suffix)
+    os.close(fd)
+    path = Path(name)
+    path.write_bytes(data)
+    return path
+
+
+def output_path(result: Any) -> Path:
+    candidate: Any = result
+    if isinstance(candidate, (list, tuple)) and candidate:
+        candidate = candidate[0]
+    if isinstance(candidate, dict):
+        candidate = candidate.get("path") or candidate.get("url")
+    if not isinstance(candidate, str) or not candidate:
+        raise RuntimeError(f"SM4LL VTON returned no output path: {result!r}")
+    path = Path(candidate)
+    if not path.exists() or path.stat().st_size < 1000:
+        raise RuntimeError(f"SM4LL VTON output missing or too small: {candidate}")
+    return path
+
+
+def sm4ll_try_on(person_source: str, garment_url: str, workflow: str) -> str:
+    temp_inputs: list[Path] = []
+    try:
+        if person_source.startswith(("http://", "https://")):
+            person_path = download_input(person_source, ".webp")
+            temp_inputs.append(person_path)
+        else:
+            person_path = Path(person_source)
+            if not person_path.exists():
+                raise RuntimeError(f"person input missing: {person_source}")
+
+        garment_path = download_input(garment_url, ".jpg")
+        temp_inputs.append(garment_path)
+
+        result = client().predict(
+            handle_file(str(person_path)),
+            handle_file(str(garment_path)),
+            workflow,
+            api_name="/generate",
+        )
+        return str(output_path(result))
+    finally:
+        for path in temp_inputs:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def copy_output(source: str, target: Path) -> None:
+    path = Path(source)
+    if not path.exists() or path.stat().st_size < 1000:
+        raise RuntimeError("provider output image is missing or unexpectedly small")
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_bytes(data)
+    shutil.copyfile(path, tmp)
     os.chmod(tmp, 0o600)
     tmp.replace(target)
 
@@ -195,7 +191,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         provider_outputs.append(person_url)
 
     target = ASSET_DIR / f"{job['jobId']}.webp"
-    download_output(person_url, target)
+    copy_output(person_url, target)
 
     job["status"] = "ready"
     job["completedAt"] = utc_now()
@@ -205,8 +201,8 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         "previewAsset": public_asset_path(job["jobId"]),
         "width": None,
         "height": None,
-        "provider": "sm4ll-vton-public-demo",
-        "providerSpace": SPACE_BASE,
+        "provider": "sm4ll-vton-gradio-client",
+        "providerSpace": SPACE_ID,
         "providerOutputs": provider_outputs,
         "renderedLayers": supported_layers,
     }
