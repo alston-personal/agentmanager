@@ -19,6 +19,7 @@ if printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
     scripts/sync_sunlake_milkcat_persona_user.py \
     scripts/evolve_mio_persona_ir_user.py \
     scripts/mio_persona_social_loop_user.py \
+    scripts/sync_mio_pdca_social_outcome_user.py \
     scripts/diagnose_mio_threads_search_scope_user.py \
     agentos_node/persona_life.py \
     agentos_node/social/post_experiment.py; do
@@ -61,6 +62,7 @@ test -f "$REPO/scripts/run_social_post_experiment_queue_user.py"
 test -f "$REPO/scripts/sync_sunlake_milkcat_persona_user.py"
 test -f "$REPO/scripts/evolve_mio_persona_ir_user.py"
 test -f "$REPO/scripts/mio_persona_social_loop_user.py"
+test -f "$REPO/scripts/sync_mio_pdca_social_outcome_user.py"
 mkdir -p "$UNIT_DIR" "$LOG_DIR"
 
 # Diagnose the real ubuntu-owned relay executor; do not expose binary paths,
@@ -201,7 +203,7 @@ ExecStart=/usr/bin/python3 $REPO/scripts/monitor_galaxy_threads_experiment_user.
 ExecStart=/usr/bin/python3 $REPO/scripts/run_social_post_experiment_queue_user.py
 # Order is causal: observe -> persist event -> evolve current self -> decide/reply.
 # If canonical sync/evolution fails, do not answer from stale or isolated context.
-ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $REPO/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
+ExecStartPost=/bin/sh -c '/usr/bin/python3 $REPO/scripts/sync_sunlake_milkcat_persona_user.py && /usr/bin/python3 $REPO/scripts/evolve_mio_persona_ir_user.py && /usr/bin/python3 $REPO/scripts/mio_persona_social_loop_user.py && /usr/bin/python3 $REPO/scripts/sync_mio_pdca_social_outcome_user.py || { echo mio_persona_cycle=DEFERRED; exit 0; }'
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 
@@ -329,7 +331,7 @@ echo "galaxy_experiment_monitor_install=PASS"
 echo "galaxy_experiment_monitor_interval=10m"
 echo "galaxy_experiment_monitor_log=$LOG"
 if [ -f "$LOG" ]; then
-  tail -n 220 "$LOG" | grep -E '^(social_experiment_queue=|social_experiment_queue_checked=|social_experiment_queue_advanced=|social_experiment_queue_failed=|galaxy_monitor=|galaxy_monitor_reply_count=|galaxy_monitor_new_replies=|persona_git_sync=|persona_git_sync_added=|mio_persona_ir_evolve=|mio_persona_ir_revision=|mio_persona_ir_new_events=|mio_persona_ir_new_growth=|mio_persona_cycle=|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 80 || true
+  tail -n 220 "$LOG" | grep -E '^(social_experiment_queue=|social_experiment_queue_checked=|social_experiment_queue_advanced=|social_experiment_queue_failed=|galaxy_monitor=|galaxy_monitor_reply_count=|galaxy_monitor_new_replies=|persona_git_sync=|persona_git_sync_added=|mio_persona_ir_evolve=|mio_persona_ir_revision=|mio_persona_ir_new_events=|mio_persona_ir_new_growth=|mio_persona_cycle=|mio_social_loop=|mio_social_decision=|mio_social_publish=|mio_social_pdca_authority=|mio_pdca_social_outcome=|mio_pdca_outcome_sync=|mio_pdca_outcome_status=|mio_pdca_outcome_result=|mio_social_pending=|mio_social_new_external=|mio_social_outbound=|mio_social_outbound_today=|mio_life_event=|mio_energy=)' | tail -n 80 || true
 fi
 python3 - <<'PY'
 import json

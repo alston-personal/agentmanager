@@ -67,6 +67,47 @@ class MioSocialContractTests(unittest.TestCase):
         with patch.object(mio,"post",return_value=(503,{"ok":False})):
             self.assertEqual(mio.verify_reply_readback("key","binding","root","reader-100","回覆內容","our-200"),("unavailable",""))
 
+    def test_pdca_reply_review_authority_is_narrow_and_policy_gated(self):
+        docs={
+            'pdca/config.json': {'schema':'agentos.persona-pdca-config/v1','enabled':True},
+            'pdca/state.json': {
+                'schema':'agentos.persona-pdca-state/v1','status':'RUNNING','cycle':3,
+                'last_ir_id':'mio-ir-test',
+                'pending_external_actions':[{
+                    'capability':'social.reply.review','status':'candidate'
+                }]
+            },
+        }
+        persona={'autonomy':{'public_conversation':'autonomous_with_policy'}}
+        with patch.object(mio,'canonical_persona_json',side_effect=lambda rel: docs.get(rel,{})):
+            authority=mio.pdca_reply_review_authority(persona)
+        self.assertEqual(authority['action_id'],'mio-pdca-c3-social-reply-review')
+        self.assertEqual(authority['cycle'],3)
+        with patch.object(mio,'canonical_persona_json',side_effect=lambda rel: docs.get(rel,{})):
+            self.assertIsNone(mio.pdca_reply_review_authority(
+                {'autonomy':{'public_conversation':'guarded'}}
+            ))
+
+    def test_pdca_tag_scopes_write_intent_to_cycle_and_reply(self):
+        authority={'action_id':'mio-pdca-c3-social-reply-review','cycle':3,
+                   'capability':'social.reply.review'}
+        tagged=mio.pdca_tag_action({'status':'scheduled'},authority,'reply-123')
+        self.assertEqual(tagged['pdca_action_id'],authority['action_id'])
+        self.assertEqual(tagged['pdca_cycle'],3)
+        self.assertEqual(tagged['write_intent_id'],'mio-pdca-c3-reply-reply-123')
+
+    def test_pdca_outcome_is_secret_free_and_bounded(self):
+        authority={'action_id':'mio-pdca-c3-social-reply-review','cycle':3,
+                   'capability':'social.reply.review'}
+        with patch.object(mio,'save_json') as save:
+            mio.emit_pdca_outcome(authority,status='completed',
+                                  result='reviewed_no_reply',reviewed_count=2)
+        payload=save.call_args.args[1]
+        self.assertEqual(payload['status'],'completed')
+        self.assertEqual(payload['result'],'reviewed_no_reply')
+        self.assertNotIn('text',payload)
+        self.assertNotIn('access_token',json.dumps(payload))
+
 
 if __name__=="__main__":
     unittest.main()
