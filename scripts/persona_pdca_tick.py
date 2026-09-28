@@ -142,14 +142,19 @@ def main():
     pending=list(state.get("pending_external_actions",[]))
     external=None
     if selected=="review_social_feedback" and observed:
-        external={"capability":"social.reply.review","status":"candidate",
+        external={"action_id":f"mio-pdca-c{cycle}-social-reply-review","cycle":cycle,
+                  "capability":"social.reply.review","status":"candidate",
                   "reason":f"{observed} newly observed replies since last PDCA cursor",
                   "policy":"public_conversation=autonomous_with_policy","requires_real_adapter_receipt":True}
     elif selected=="content_ideation" and energy_after>=30:
-        external={"capability":"social.post.consider","status":"candidate",
+        external={"action_id":f"mio-pdca-c{cycle}-social-post-consider","cycle":cycle,
+                  "capability":"social.post.consider","status":"candidate",
                   "reason":"active creative window with sufficient energy",
                   "policy":"routine_posts=autonomous_with_policy","requires_real_adapter_receipt":True}
-    if external and not any(x.get("capability")==external["capability"] and x.get("status")=="candidate" for x in pending[-8:]):
+    if external and not any(
+        x.get("capability")==external["capability"] and x.get("status") in ("candidate","in_progress")
+        for x in pending[-12:] if isinstance(x,dict)
+    ):
         pending.append(external); pending=pending[-12:]
 
     noop=selected in ("sleep","rest","observe") and not unseen
