@@ -49,5 +49,5 @@ os.chmod(out,0o600)
 
 print('threads_web_dm_login_probe=PASS')
 print('threads_web_dm_login_mode=oracle_gui_worker')
-print('threads_web_dm_session_state='+state)
+print('threads_web_dm_login_session_state='+state)
 PY
