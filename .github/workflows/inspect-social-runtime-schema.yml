@@ -22,19 +22,33 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read sanitized Social runtime contract
+      - name: Read exact Social request contract and safe bindings
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
           ROOT=/home/ubuntu/.local/share/agentos/social-runtime/agentos_node/social
-          echo '=== contracts.py ==='
-          sed -n '1,110p' "$ROOT/contracts.py"
-          echo '=== governance.py ==='
-          sed -n '1,110p' "$ROOT/governance.py"
-          echo '=== runtime_http.py request parsing/routes ==='
-          sed -n '420,560p' "$ROOT/runtime_http.py"
-          echo '=== runtime_storage.py acceptance ==='
-          sed -n '120,195p' "$ROOT/runtime_storage.py"
+          echo '=== request contract ==='
+          sed -n '1,100p' "$ROOT/contracts.py"
+          echo '=== safe binding inventory ==='
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("/home/ubuntu/.local/state/agentos/social/credentials.json")
+          d=json.loads(p.read_text()) if p.exists() else {}
+          rows=[]
+          def walk(x,path=""):
+              if isinstance(x,dict):
+                  if any(k in x for k in ("binding_id","account_binding_id","provider_account_id","username","platform")):
+                      safe={k:x.get(k) for k in ("binding_id","account_binding_id","provider_account_id","username","platform","created_at","updated_at") if k in x}
+                      if safe: rows.append({"path":path,"value":safe})
+                  for k,v in x.items():
+                      if not any(s in k.lower() for s in ("token","secret","key","credential")):
+                          walk(v,path+"/"+str(k))
+              elif isinstance(x,list):
+                  for i,v in enumerate(x): walk(v,path+f"/{i}")
+          walk(d)
+          print(json.dumps(rows,ensure_ascii=False,indent=2))
+          PY
           REMOTE
