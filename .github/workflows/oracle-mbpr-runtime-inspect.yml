@@ -1,0 +1,43 @@
+name: Oracle MBPR Runtime Inspect
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-runtime-inspect.json'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect fixed MBPR runtime metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-runtime-inspect.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.runtime-inspect'
+          assert cmd.get('node_id')=='mbpr'
+          code="from pathlib import Path; import json,subprocess,os; root=Path.home()/'Library'/'Application Support'/'AgentOS'; out={'launcher_exists':(root/'agentos-client').exists(),'current':None,'lkg':None,'plist':(Path.home()/'Library'/'LaunchAgents'/'org.milkcat.agentos.thin-client.plist').exists(),'venv_python':(root/'venv'/'bin'/'python').exists()}; [out.__setitem__(k,json.loads(p.read_text())) for k,p in [('current',root/'current.json'),('lkg',root/'last-known-good.json')] if p.exists()]; print(json.dumps(out,sort_keys=True))"
+          tid='runtime-inspect-mbpr-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]})
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  print(r.get('stdout') or '')
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      raise SystemExit(str(r))
+                  print('mbpr_runtime_inspect=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr runtime inspect timeout')
+          PY
