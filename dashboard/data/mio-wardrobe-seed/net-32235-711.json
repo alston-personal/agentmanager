@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.garment/v1",
+  "garmentId": "net-32235-711",
+  "characterId": "sunlake-milkcat-ai-001",
+  "name": "綁帶後鬆緊打褶寬褲",
+  "retailer": "NET",
+  "brand": "NET",
+  "sku": "32235",
+  "variant": "711 丈青",
+  "category": "lower_body",
+  "slot": "lower_main",
+  "layer": "lower_main",
+  "price": 459,
+  "currency": "TWD",
+  "source": {
+    "canonicalUrl": "https://www.net-fashion.net/product/686662",
+    "imageUrl": "https://s-net.wimg.tw//act/32235-711-1024-01.jpg?v=32570",
+    "extractedAt": "2026-09-27T00:00:00+08:00"
+  },
+  "acquisition": {
+    "state": "want_to_try",
+    "owned": false,
+    "worn": false
+  },
+  "tryOn": {
+    "state": "ready_for_tryon",
+    "asset": null
+  }
+}
