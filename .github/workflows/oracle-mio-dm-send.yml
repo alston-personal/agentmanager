@@ -29,11 +29,11 @@ jobs:
           status=str(c.get('status') or 'pending')
           assert status in ('pending','human_assisted_completed')
           print('mio_dm_send_command=PASS:'+status)
-          if status=='human_assisted_completed':
-              open('/tmp/mio-dm-send-skip','w').write('1')
+          with open(__import__('os').environ['GITHUB_ENV'],'a',encoding='utf-8') as e:
+              e.write('MIO_DM_SKIP='+('1' if status=='human_assisted_completed' else '0')+'\n')
           PY
       - name: Download validated decision artifact
-        if: ${{ hashFiles('/tmp/mio-dm-send-skip') == '' }}
+        if: ${{ env.MIO_DM_SKIP != '1' }}
         uses: actions/download-artifact@v4
         with:
           name: mio-dm-decision
