@@ -266,3 +266,71 @@ def test_any_item_transient_failure_retries_same_provider(monkeypatch, tmp_path)
     assert rendered == str(output)
     assert provider == "pbgo/OmniTry"
     assert calls["count"] == 3
+
+
+def test_any_item_falls_back_to_qwen_reference_edit(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    person = tmp_path / "person.webp"
+    item = tmp_path / "item.jpg"
+    output = tmp_path / "qwen-output.webp"
+    person.write_bytes(b"p" * 2000)
+    item.write_bytes(b"i" * 2000)
+    output.write_bytes(b"o" * 2000)
+
+    monkeypatch.setattr(worker, "ANY_ITEM_SPACE_IDS", ["broken/OmniTry"])
+    monkeypatch.setattr(worker, "download_input", lambda url, suffix: person if "person" in url else item)
+
+    class Broken:
+        def predict(self, *args, **kwargs):
+            raise RuntimeError("CONFIG_ERROR")
+
+    monkeypatch.setattr(worker, "any_item_client", lambda space_id: Broken())
+    monkeypatch.setattr(
+        worker,
+        "qwen_reference_try_on",
+        lambda *args, **kwargs: (str(output), worker.QWEN_EDIT_SPACE_ID),
+    )
+
+    rendered, provider = worker.omni_try_on(
+        "https://example.com/person.webp",
+        "https://example.com/item.jpg",
+        "shoe",
+        123,
+    )
+    assert rendered == str(output)
+    assert provider == worker.QWEN_EDIT_SPACE_ID
+
+
+def test_qwen_reference_edit_uses_two_images_and_two_stage_api(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    person = tmp_path / "person.webp"
+    item = tmp_path / "item.jpg"
+    output = tmp_path / "qwen-output.webp"
+    person.write_bytes(b"p" * 2000)
+    item.write_bytes(b"i" * 2000)
+    output.write_bytes(b"o" * 2000)
+
+    calls = []
+
+    class FakeQwen:
+        def predict(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            if kwargs.get("api_name") == "/prepare_request":
+                assert args[0] == [str(person), str(item)]
+                return ("placeholder", 321, "rewritten", {"request": "state"})
+            if kwargs.get("api_name") == "/generate_request":
+                assert args[0] == {"request": "state"}
+                return str(output)
+            raise AssertionError(kwargs)
+
+    monkeypatch.setattr(worker, "qwen_edit_client", lambda: FakeQwen())
+
+    rendered, provider = worker.qwen_reference_try_on(
+        str(person),
+        str(item),
+        "shoe",
+        123,
+    )
+    assert rendered == str(output)
+    assert provider == worker.QWEN_EDIT_SPACE_ID
+    assert [call[1]["api_name"] for call in calls] == ["/prepare_request", "/generate_request"]
