@@ -22,6 +22,11 @@ env -u GH_TOKEN -u GITHUB_TOKEN gh run download "$RUN_ID"   -R alston-personal/a
 
 test -f "$TMP/artifact/threads-native-read.json"
 
+# Refresh canonical private persona data so relationship context is current.
+env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
+  -C "$HOME/agent-data" fetch https://github.com/alston-personal/my-agent-data.git \
+  '+refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1 || true
+
 python3 - "$TMP/artifact/threads-native-read.json" "$USERNAME" > "$TMP/dm.json" <<'PY'
 import json,sys
 doc=json.load(open(sys.argv[1],encoding='utf-8'))
@@ -38,13 +43,36 @@ for x in lines[i+1:i+6]:
         break
 if not preview:
     raise SystemExit('target DM preview empty')
+relation={}
+rel_path=f'personas/sunlake-milkcat/relationships/threads/{user}.json'
+try:
+    import subprocess
+    r=subprocess.run(
+        ['git','-C','/home/ubuntu/agent-data','show','origin/main:'+rel_path],
+        text=True,capture_output=True,timeout=4,check=False
+    )
+    if r.returncode==0 and r.stdout:
+        relation=json.loads(r.stdout)
+except Exception:
+    relation={}
+relationship_status=str(relation.get('relationship_stage') or 'unknown_new_interaction')
+relationship_context={
+    'relationship_stage':relationship_status,
+    'familiarity':relation.get('familiarity'),
+    'trust_level':relation.get('trust_level'),
+    'interaction_counts':relation.get('interaction_counts') or {},
+    'known_topics':relation.get('known_topics') or [],
+    'last_inbound':relation.get('last_inbound'),
+    'last_outbound':relation.get('last_outbound'),
+}
 print(json.dumps({
     'platform':'threads',
     'account':'mio.milkcat',
     'sender':user,
     'message':preview,
     'context_scope':'inbox_preview',
-    'relationship_status':'unknown_new_interaction',
+    'relationship_status':relationship_status,
+    'relationship_context':relationship_context,
 },ensure_ascii=False))
 PY
 
