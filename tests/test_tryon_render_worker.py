@@ -1,0 +1,159 @@
+import importlib.util
+import json
+import sys
+import types
+from pathlib import Path
+
+
+def load_worker(monkeypatch, tmp_path):
+    fake_gradio = types.ModuleType("gradio_client")
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_gradio.Client = FakeClient
+    fake_gradio.handle_file = lambda value: value
+    monkeypatch.setitem(sys.modules, "gradio_client", fake_gradio)
+    monkeypatch.setenv("AGENT_DATA_ROOT", str(tmp_path))
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "tryon_render_worker.py"
+    spec = importlib.util.spec_from_file_location("tryon_render_worker_test_target", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+class FakeResponse:
+    def __init__(self, body: bytes, content_type: str, url: str):
+        self._body = body
+        self._url = url
+        self.headers = types.SimpleNamespace(
+            get=lambda key, default=None: content_type if key.lower() == "content-type" else default,
+            get_content_charset=lambda: "utf-8",
+        )
+
+    def read(self, limit=-1):
+        return self._body if limit < 0 else self._body[:limit]
+
+    def geturl(self):
+        return self._url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_resolve_product_page_og_image(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    html = b'<html><head><meta property="og:image" content="/assets/shoe.jpg"></head></html>'
+
+    monkeypatch.setattr(
+        worker.urllib.request,
+        "urlopen",
+        lambda req, timeout=45: FakeResponse(html, "text/html; charset=utf-8", "https://shop.example/p/123"),
+    )
+
+    assert worker.resolve_input_image_url("https://shop.example/p/123") == "https://shop.example/assets/shoe.jpg"
+
+
+def test_partial_render_keeps_failed_bag_pending(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    person = tmp_path / "person.webp"
+    person.write_bytes(b"x" * 2000)
+
+    monkeypatch.setattr(worker, "BASE_BODY_URL", str(person))
+    monkeypatch.setattr(worker, "idm_try_on", lambda *args, **kwargs: str(person))
+
+    def fail_any_item(*args, **kwargs):
+        raise RuntimeError("provider temporarily unavailable")
+
+    monkeypatch.setattr(worker, "omni_try_on", fail_any_item)
+
+    job = {
+        "schema": worker.SCHEMA,
+        "jobId": "partial-job",
+        "characterId": "sunlake-milkcat-ai-001",
+        "characterVersion": "mio-body-v1",
+        "view": "front",
+        "pose": "neutral_standing",
+        "status": "queued",
+        "requestedAt": "2026-09-28T00:00:00Z",
+        "startedAt": None,
+        "completedAt": None,
+        "failedAt": None,
+        "supersededBy": None,
+        "input": {
+            "selectedLayers": {
+                "upper_main": {
+                    "garmentId": "top-1",
+                    "name": "top",
+                    "sourceImageUrl": "https://example.com/top.jpg",
+                },
+                "bag": {
+                    "garmentId": "bag-1",
+                    "name": "bag",
+                    "sourceImageUrl": "https://example.com/bag.jpg",
+                },
+            }
+        },
+        "output": {"asset": None, "previewAsset": None, "width": None, "height": None},
+        "error": None,
+    }
+    job_path = worker.JOB_DIR / "partial-job.json"
+    worker.atomic_write(job_path, job)
+    worker.process_job(job_path, job)
+
+    saved = json.loads(job_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "ready"
+    assert saved["output"]["renderedLayers"] == ["upper_main"]
+    assert saved["output"]["pendingLayers"] == ["bag"]
+    assert saved["output"]["warnings"][0]["layer"] == "bag"
+    assert (worker.ASSET_DIR / "partial-job.webp").exists()
+
+
+def test_any_item_only_job_can_render_bag(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    person = tmp_path / "person.webp"
+    person.write_bytes(b"x" * 2000)
+
+    monkeypatch.setattr(worker, "BASE_BODY_URL", str(person))
+    monkeypatch.setattr(worker, "omni_try_on", lambda *args, **kwargs: str(person))
+
+    job = {
+        "schema": worker.SCHEMA,
+        "jobId": "bag-job",
+        "characterId": "sunlake-milkcat-ai-001",
+        "characterVersion": "mio-body-v1",
+        "view": "front",
+        "pose": "neutral_standing",
+        "status": "queued",
+        "requestedAt": "2026-09-28T00:00:00Z",
+        "startedAt": None,
+        "completedAt": None,
+        "failedAt": None,
+        "supersededBy": None,
+        "input": {
+            "selectedLayers": {
+                "bag": {
+                    "garmentId": "bag-1",
+                    "name": "bag",
+                    "sourceImageUrl": "https://example.com/bag.jpg",
+                }
+            }
+        },
+        "output": {"asset": None, "previewAsset": None, "width": None, "height": None},
+        "error": None,
+    }
+    job_path = worker.JOB_DIR / "bag-job.json"
+    worker.atomic_write(job_path, job)
+    worker.process_job(job_path, job)
+
+    saved = json.loads(job_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "ready"
+    assert saved["output"]["renderedLayers"] == ["bag"]
+    assert saved["output"]["pendingLayers"] == []
+    assert saved["output"]["provider"] == "hybrid-vton"
