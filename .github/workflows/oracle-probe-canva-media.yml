@@ -1,0 +1,37 @@
+name: Oracle Probe Canva Media URL
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-probe-canva-media.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Probe original and enlarged Canva URLs
+        shell: bash
+        env:
+          THUMB_URL: 'https://media.canva.com/v2/image-resize/format:JPG/height:200/quality:75/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38/watermark:F/width:160?csig=AAAAAAAAAAAAAAAAAAAAAJ5aFI5VEQ-zL4X5g9SVzMDSYmwF32SrHqoPgu1Tp9cz&exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc&x-canva-quality=thumbnail'
+          HI_URL: 'https://media.canva.com/v2/image-resize/format:JPG/height:1402/quality:90/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38/watermark:F/width:1122?csig=AAAAAAAAAAAAAAAAAAAAAJ5aFI5VEQ-zL4X5g9SVzMDSYmwF32SrHqoPgu1Tp9cz&exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc&x-canva-quality=preview'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, urllib.request
+          for label,key in [('thumb','THUMB_URL'),('hi','HI_URL')]:
+              u=os.environ[key]
+              try:
+                  req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      data=r.read()
+                      print(f'{label}_status={r.status}')
+                      print(f'{label}_bytes={len(data)}')
+                      print(f'{label}_type={r.headers.get("content-type","")}')
+              except Exception as e:
+                  print(f'{label}_error={type(e).__name__}')
+          PY
