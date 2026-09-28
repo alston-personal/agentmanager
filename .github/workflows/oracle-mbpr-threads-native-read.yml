@@ -34,7 +34,17 @@ jobs:
               if r:
                   out=str(r.get('stdout') or '')
                   if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                      if 'javascript from apple events' in err:
+                          kind='CHROME_JS_FROM_APPLE_EVENTS_DISABLED'
+                      elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
+                          kind='AUTOMATION_PERMISSION'
+                      elif 'timeout' in err or 'timed out' in err:
+                          kind='TIMEOUT'
+                      else:
+                          kind='OTHER'
                       print('threads_native_read=ERROR')
+                      print('threads_native_read_error_type='+kind)
                       raise SystemExit(2)
                   digest=hashlib.sha256(out.encode()).hexdigest()[:16]
                   open('/tmp/threads-native-read.json','w',encoding='utf-8').write(out)
