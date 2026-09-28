@@ -32,6 +32,7 @@ ACTION_PROBE_THREADS_WEB_DM = "agentos.social_threads_web_dm.probe"
 ACTION_READ_THREADS_WEB_DM = "agentos.social_threads_web_dm.read"
 ACTION_PROBE_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_probe"
 ACTION_START_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_start"
+ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -53,6 +54,7 @@ ALLOWED_ACTIONS = {
     ACTION_READ_THREADS_WEB_DM,
     ACTION_PROBE_THREADS_WEB_DM_LOGIN,
     ACTION_START_THREADS_WEB_DM_LOGIN,
+    ACTION_RUN_MIO_DM_DECISION,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -103,10 +105,23 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
     params = payload.get("params") or {}
     if not isinstance(params, dict):
         raise ValueError("params must be an object")
-    unknown = set(params) - ({"source_commit", "post_key"} if action == ACTION_PUBLISH_MIO_APPROVED else {"source_commit"})
+    if action == ACTION_PUBLISH_MIO_APPROVED:
+        allowed_params={"source_commit","post_key"}
+    elif action == ACTION_RUN_MIO_DM_DECISION:
+        allowed_params={"source_commit","source_run_id","username"}
+    else:
+        allowed_params={"source_commit"}
+    unknown = set(params) - allowed_params
     post_key = str(params.get("post_key") or "")
     if action == ACTION_PUBLISH_MIO_APPROVED and not re.fullmatch(r"mio-post-[a-z0-9-]{1,72}", post_key):
         raise ValueError("invalid approved Mio post_key")
+    if action == ACTION_RUN_MIO_DM_DECISION:
+        source_run_id=str(params.get("source_run_id") or "")
+        username=str(params.get("username") or "")
+        if not re.fullmatch(r"[0-9]{1,20}",source_run_id):
+            raise ValueError("invalid source_run_id")
+        if username != "0__0.ayoub":
+            raise ValueError("unsupported DM username")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -130,6 +145,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_READ_THREADS_WEB_DM,
         ACTION_PROBE_THREADS_WEB_DM_LOGIN,
         ACTION_START_THREADS_WEB_DM_LOGIN,
+        ACTION_RUN_MIO_DM_DECISION,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -197,7 +213,7 @@ def _run_canonical_script(
         tmp.unlink(missing_ok=True)
 
 
-def _execute(action: str, source_commit: str | None, post_key: str | None = None) -> dict[str, Any]:
+def _execute(action: str, source_commit: str | None, post_key: str | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
     if action == ACTION_REPAIR_TRANSPORT:
         env_extra = {"AGENTOS_ACTION_SPOOL_PREPROVISIONED": "1"}
         if source_commit:
@@ -248,6 +264,17 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script("scripts/probe_threads_web_dm_login_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_START_THREADS_WEB_DM_LOGIN:
         return _run_canonical_script("scripts/start_threads_web_dm_login_user.sh", timeout=300, source_commit=source_commit)
+    if action == ACTION_RUN_MIO_DM_DECISION:
+        params=params or {}
+        return _run_canonical_script(
+            "scripts/run_mio_dm_decision_user.sh",
+            timeout=240,
+            source_commit=source_commit,
+            env_extra={
+                "AGENTOS_DM_SOURCE_RUN_ID":str(params.get("source_run_id") or ""),
+                "AGENTOS_DM_USERNAME":str(params.get("username") or ""),
+            },
+        )
     raise ValueError("unsupported bootstrap action")
 
 
@@ -274,7 +301,7 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
         if receipt_path.exists():
             source.unlink(missing_ok=True)
             return json.loads(receipt_path.read_text(encoding="utf-8"))
-        result = _execute(action, source_commit, post_key)
+        result = _execute(action, source_commit, post_key, payload.get("params") or {})
         receipt: dict[str, Any] = {
             "schema": RECEIPT_SCHEMA,
             "request_id": request_id,
