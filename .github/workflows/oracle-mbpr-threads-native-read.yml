@@ -35,7 +35,7 @@ jobs:
                   out=str(r.get('stdout') or '')
                   if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
                       err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
-                      if 'javascript from apple events' in err:
+                      if ('javascript' in err and ('apple' in err or 'execute' in err or 'turned off' in err or 'disabled' in err)):
                           kind='CHROME_JS_FROM_APPLE_EVENTS_DISABLED'
                       elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
                           kind='AUTOMATION_PERMISSION'
