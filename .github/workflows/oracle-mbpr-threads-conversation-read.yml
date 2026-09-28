@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json,time,hashlib
+          import json,time
           from agent_core.realm_fabric import RealmFabricStore
           cmd=json.load(open('.agentos/commands/mbpr-threads-conversation-read.json',encoding='utf-8'))
           assert cmd.get('node_id')=='mbpr'
@@ -28,19 +28,22 @@ jobs:
           assert username=='0__0.ayoub'
           tid='mbpr-threads-conversation-read-'+str(int(time.time()))
           py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
-          js_click="(()=>{const els=[...document.querySelectorAll('a,button,div[role=button]')];const e=els.find(x=>(x.innerText||'').trim().includes('0__0.ayoub'));if(!e)return 'NOT_FOUND';e.click();return 'CLICKED';})()"
+          js_click="(()=>{const els=[...document.querySelectorAll('a,button,div[role=button]')];const e=els.find(x=>(x.innerText||'').includes('0__0.ayoub'));if(!e)return 'NOT_FOUND';e.click();return 'CLICKED';})()"
           js_read="(()=>{const m=document.querySelector('main');const s=(m?m.innerText:document.body.innerText)||'';return s.slice(0,20000);})()"
           import json as _j
-          script=f'''tell application "Google Chrome"
-set t to active tab of front window
-set u to URL of t
-if u does not start with "https://www.threads.com/messages" and u does not start with "https://threads.com/messages" then error "not_messages"
-set r to execute t javascript {_j.dumps(js_click)}
-delay 2
-set bodyText to execute t javascript {_j.dumps(js_read)}
-return (r & linefeed & bodyText)
-end tell'''
-          code="import subprocess,json; s="+repr(script)+"; p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=20); print(p.stdout,end=''); raise SystemExit(p.returncode)"
+          lines=[
+            'tell application "Google Chrome"',
+            'set t to active tab of front window',
+            'set u to URL of t',
+            'if u does not start with "https://www.threads.com/messages" and u does not start with "https://threads.com/messages" then error "not_messages"',
+            'set r to execute t javascript '+_j.dumps(js_click),
+            'delay 2',
+            'set bodyText to execute t javascript '+_j.dumps(js_read),
+            'return (r & linefeed & bodyText)',
+            'end tell',
+          ]
+          script='\n'.join(lines)
+          code="import subprocess; s="+repr(script)+"; p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=20); print(p.stdout,end=''); raise SystemExit(p.returncode)"
           task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]}
           store=RealmFabricStore(); store.queue_task('mbpr',task)
           for _ in range(45):
