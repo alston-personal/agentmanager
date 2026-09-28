@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import inspect
 import time
 import shutil
 import tempfile
@@ -106,8 +107,11 @@ def any_item_client(space_id: str) -> Client:
             "httpx_kwargs": {"timeout": 360.0},
         }
         if HF_TOKEN:
-            # gradio_client >= 2 uses token; deployed range is <3.
-            client_kwargs["token"] = HF_TOKEN
+            params = inspect.signature(Client).parameters
+            if "token" in params:
+                client_kwargs["token"] = HF_TOKEN
+            elif "hf_token" in params:
+                client_kwargs["hf_token"] = HF_TOKEN
         cached = Client(space_id, **client_kwargs)
         _ANY_ITEM_CLIENTS[space_id] = cached
     return cached
