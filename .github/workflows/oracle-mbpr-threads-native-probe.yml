@@ -34,8 +34,21 @@ jobs:
               if r:
                   out=str(r.get('stdout') or '')
                   if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                      if 'not authorized' in err or 'not permitted' in err or '-1743' in err:
+                          kind='AUTOMATION_PERMISSION'
+                      elif 'not allowed javascript from apple events' in err or 'apple events' in err and 'javascript' in err:
+                          kind='CHROME_APPLE_EVENTS_JS_DISABLED'
+                      elif 'application isn' in err and 'running' in err:
+                          kind='CHROME_NOT_RUNNING'
+                      elif 'timed out' in err or 'timeout' in err:
+                          kind='TIMEOUT'
+                      elif 'syntax error' in err or 'execution error' in err:
+                          kind='APPLESCRIPT_ERROR'
+                      else:
+                          kind='OTHER'
                       print('threads_native_probe=ERROR')
-                      print('error_type='+str(r.get('error') or 'shell_exec_failed').split(':',1)[0])
+                      print('error_type='+kind)
                       raise SystemExit(2)
                   count=0
                   for line in out.splitlines():
