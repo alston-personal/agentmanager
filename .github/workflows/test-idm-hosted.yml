@@ -46,7 +46,7 @@ jobs:
                   except Exception as e:
                       print("VIEW_API_ERR",type(e).__name__,str(e))
                   result=c.predict(
-                      dict={
+                      {
                           "background": handle_file(person),
                           "layers": [],
                           "composite": None,
