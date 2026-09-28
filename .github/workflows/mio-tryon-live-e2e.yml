@@ -1,0 +1,102 @@
+name: Mio Try-On Live E2E
+
+on:
+  push:
+    branches: [ops/mio-tryon-live-e2e]
+    paths:
+      - '.github/workflows/mio-tryon-live-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Exercise live Dashboard API -> worker -> asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          test -d "$LIVE"
+          test -f /home/ubuntu/.config/milkcat/dashboard.env.local
+          test -f /home/ubuntu/.config/milkcat/admin-identities
+
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const fs=require('node:fs');
+          const jwt=require('jsonwebtoken');
+          const env=fs.readFileSync('/home/ubuntu/.config/milkcat/dashboard.env.local','utf8')
+            .split(/\r?\n/).filter(Boolean).filter(x=>!x.trim().startsWith('#'))
+            .reduce((a,line)=>{const i=line.indexOf('='); if(i>0)a[line.slice(0,i).trim()]=line.slice(i+1).trim().replace(/^['"]|['"]$/g,''); return a;},{});
+          if(!env.JWT_SECRET) throw Error('JWT_SECRET missing');
+          const ids=fs.readFileSync('/home/ubuntu/.config/milkcat/admin-identities','utf8')
+            .split(/[\r\n,]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+          let payload={username:'register@milkcat.org',provider:'google',subject:'live-e2e'};
+          const uname=ids.find(x=>x.startsWith('google:username:'));
+          if(uname) payload={username:uname.slice('google:username:'.length),provider:'google',subject:'live-e2e'};
+          else {
+            const ps=ids.find(x=>x.includes(':') && !x.includes(':username:'));
+            if(ps){ const [provider,...rest]=ps.split(':'); payload={username:'register@milkcat.org',provider,subject:rest.join(':')}; }
+          }
+          payload.exp=Math.floor(Date.now()/1000)+600;
+          process.stdout.write(jwt.sign(payload,env.JWT_SECRET));
+          NODE
+          )"
+          test -n "$TOKEN"
+
+          BASE=https://studio.milkcat.org
+          BODY='{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"upper_main":"net-43774-002"}}'
+          RESP="$(curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 \
+            -H "Cookie: auth_token=$TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY" \
+            "$BASE/dashboard/api/wardrobe/tryon/render")"
+          JOB_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["jobId"])' <<<"$RESP")"
+          test -n "$JOB_ID"
+          echo "live_e2e_job_id=$JOB_ID"
+
+          READY=0
+          for i in $(seq 1 120); do
+            JOB="$(curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 \
+              -H "Cookie: auth_token=$TOKEN" \
+              "$BASE/dashboard/api/wardrobe/tryon/jobs/$JOB_ID")"
+            STATE="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' <<<"$JOB")"
+            echo "live_e2e_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              ASSET="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("output",{}).get("asset",""))' <<<"$JOB")"
+              test -n "$ASSET"
+              READY=1
+              break
+            fi
+            if [ "$STATE" = failed ]; then
+              python3 -c 'import json,sys; d=json.load(sys.stdin); print("live_e2e_error="+str(d.get("error")))' <<<"$JOB"
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$READY" -eq 1
+
+          HDR="$(mktemp)"; OUT="$(mktemp)"
+          trap 'rm -f "$HDR" "$OUT"' EXIT
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 \
+            -D "$HDR" -o "$OUT" \
+            -H "Cookie: auth_token=$TOKEN"             "$BASE$ASSET"
+          BYTES="$(wc -c < "$OUT")"
+          test "$BYTES" -gt 1000
+          grep -Eiq '^content-type: image/(webp|png|jpeg)' "$HDR"
+          echo "MIO_TRYON_LIVE_E2E=PASS bytes=$BYTES asset=$ASSET"
+          REMOTE
