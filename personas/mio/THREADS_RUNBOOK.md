@@ -223,3 +223,10 @@ The user supplied TWO ORIGINAL food JPEG files in the same ChatGPT conversation 
 - 目前 promoted generated-media delta：直接問生成圖就誠實；但不自動接受「假人設」等價值判斷、不因對方批評就道歉或承諾改掉虛實交錯的呈現。這是「事實可以同意、評價可以反駁」的具體案例。
 - Runtime `mio_persona_social_loop_user.py` 現在會從 canonical `origin/main` 載入 `ir/current.json`，並連同 root post、parent/ancestor/sibling context、Mio 的 earlier replies、recent events、relationship/context 一起做 stance decision。需要輸出 private `position` / `memory_basis` / `thread_basis` / `consistency_check`；不一致則 defer。
 - IR reducer：`scripts/evolve_mio_persona_ir_user.py`。它不宣稱模型權重被訓練；遵循 cognitive-growth 原則，只有有證據的 reusable delta 才可提升為 durable growth。之後應以獨立後續回覆是否真的載入新版 IR 並減少矛盾來累積 demonstrated-growth evidence。
+
+## 2026-09-28｜Threads Web DM 執行節點切換
+
+- 目前互動 Node 改為 `mbpr`（Darwin）；`vopc5750` 目前離線，不得再作為 Threads Web DM 的預設桌面執行端。
+- MBPR 已完成 AgentOS enrollment、LaunchAgent supervisor、故障自動恢復、transactional OTA 與 browser-bridge 安裝驗收。
+- 官方 Threads API 仍負責 publish/reply/insights 等既有能力；DM 仍屬 Web UI bridge 範圍。
+- MBPR 原生 Chrome 已有使用者既有登入 session；目前 Chrome 主程序未啟用 remote-debugging，因此不可用 CDP 直接附著。不得搬移 cookie、複製登入資料或要求使用者重複提供密碼/2FA。
