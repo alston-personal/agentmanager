@@ -19,6 +19,7 @@ MIO_AGY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
 AGY_SELECTED=os.environ.get('AGENTOS_MIO_RELAY_ROOT','')==str(MIO_AGY_ROOT)
 DECISION_PENDING=STATE_DIR/('agy-decision-pending.json' if AGY_SELECTED else 'decision-pending.json')
 RELAY_PROBE=STATE_DIR/('agy-relay-probe-v2.json' if AGY_SELECTED else 'relay-probe.json')
+PDCA_OUTCOME=STATE_DIR/'pdca-outcome.json'
 HISTORY=LATEST.with_name('history.jsonl')
 PERSONA_DATA_REPO=Path('/home/ubuntu/agent-data')
 PERSONA_ROOT=PERSONA_DATA_REPO/'personas/sunlake-milkcat'
@@ -146,6 +147,68 @@ def canonical_persona_json(rel):
         return json.loads(canonical_persona_text(rel) or '{}')
     except (ValueError,TypeError):
         return {}
+
+def pdca_reply_review_authority(persona_state):
+    """Resolve one narrow canonical PDCA authority for reviewing inbound replies."""
+    config=canonical_persona_json('pdca/config.json')
+    state=canonical_persona_json('pdca/state.json')
+    if config.get('schema')!='agentos.persona-pdca-config/v1' or config.get('enabled') is not True:
+        return None
+    if state.get('schema')!='agentos.persona-pdca-state/v1' or state.get('status')!='RUNNING':
+        return None
+    autonomy=(persona_state.get('autonomy') or {}).get('public_conversation')
+    if autonomy!='autonomous_with_policy':
+        return None
+    cycle=int(state.get('cycle') or 0)
+    if cycle<1:
+        return None
+    for item in reversed(state.get('pending_external_actions') or []):
+        if not isinstance(item,dict):
+            continue
+        if item.get('capability')!='social.reply.review':
+            continue
+        if item.get('status') not in ('candidate','in_progress'):
+            continue
+        action_id=str(item.get('action_id') or f'mio-pdca-c{cycle}-social-reply-review')
+        return {
+            'action_id':action_id,
+            'cycle':cycle,
+            'capability':'social.reply.review',
+            'source_ir_id':str(state.get('last_ir_id') or ''),
+        }
+    return None
+
+def pdca_tag_action(action, authority, reply_id):
+    if not authority:
+        return action
+    tagged=dict(action)
+    tagged['pdca_action_id']=authority['action_id']
+    tagged['pdca_cycle']=authority['cycle']
+    tagged['write_intent_id']=f"mio-pdca-c{authority['cycle']}-reply-{reply_id}"
+    return tagged
+
+def emit_pdca_outcome(authority, *, status, result, reviewed_count=0, platform_object_id=''):
+    if not authority:
+        return
+    allowed_status={'in_progress','completed','deferred'}
+    if status not in allowed_status:
+        raise ValueError('pdca_social_outcome_status_invalid')
+    payload={
+        'schema':'agentos.persona-pdca-social-outcome/v1',
+        'persona_id':'sunlake-milkcat-ai-001',
+        'action_id':authority['action_id'],
+        'cycle':authority['cycle'],
+        'capability':authority['capability'],
+        'observed_at':iso(utc_now()),
+        'status':status,
+        'result':str(result)[:80],
+        'reviewed_count':max(0,int(reviewed_count)),
+    }
+    if platform_object_id:
+        payload['platform_object_id']=str(platform_object_id)
+    save_json(PDCA_OUTCOME,payload)
+    print('mio_pdca_social_outcome='+status+':'+str(result)[:60])
+
 
 def persona_context():
     files={}
@@ -414,7 +477,7 @@ def verify_reply_readback(product_key,binding_id,root_id,reply_id,reply_text,obj
 
 
 def publish(item,product_key,control_token,binding_id,account_id):
-    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':'mio-auto-'+item['reply_id']+'-v1'}
+    request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':binding_id,'target_account_id':account_id,'primary_text':item['text'],'reply_to_id':item['reply_id'],'write_intent_id':str(item.get('write_intent_id') or ('mio-auto-'+item['reply_id']+'-v1'))}
     status,issued=post('http://127.0.0.1:8771/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
     if status!=201 or not issued.get('acceptance_id'):return False,'acceptance_failed'
     status,receipt=post(BASE+'/reply',request,{'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':str(issued['acceptance_id'])})
@@ -467,11 +530,16 @@ def relay_probe_once():
 
 def main():
     if os.geteuid()!=1001:raise SystemExit('mio_social_loop=WRONG_USER')
-    # Fail closed until owner-reviewed public-reply policy is installed.
-    # Background monitor still reads comments; model or social write must not run.
-    if os.environ.get('MIO_SOCIAL_AUTO_REPLY_ALLOWED', '') != 'owner_explicitly_enabled':
+    persona_state=canonical_persona_json('persona_state.json') or load_json(PERSONA_ROOT/'persona_state.json',{})
+    pdca_authority=pdca_reply_review_authority(persona_state)
+    legacy_auto_reply_allowed=os.environ.get('MIO_SOCIAL_AUTO_REPLY_ALLOWED', '') == 'owner_explicitly_enabled'
+    # Legacy global auto-reply remains fail-closed. A canonical PDCA intent can
+    # grant only the narrower inbound reply-review path, never proactive search.
+    if not legacy_auto_reply_allowed and not pdca_authority:
         print('mio_social_loop=OWNER_REVIEW_REQUIRED')
         return
+    if pdca_authority:
+        print('mio_social_pdca_authority=PASS:cycle='+str(pdca_authority['cycle']))
     STATE_DIR.mkdir(parents=True,exist_ok=True); os.chmod(STATE_DIR,0o700)
     latest=load_json(LATEST,{})
     pending_path=STATE_DIR/'pending.json'; decisions_path=STATE_DIR/'decisions.jsonl'
@@ -482,9 +550,10 @@ def main():
     last_discovery_at=state.get('last_discovery_at')
     product_key,control,bid,binding=auth()
     now=utc_now()
+    pdca_review_state='not_started'
+    pdca_reviewed_count=0
     try: relay_probe_once()
     except Exception as exc: print('mio_social_decision=RELAY_PROBE_ERROR:'+type(exc).__name__)
-    persona_state=load_json(PERSONA_ROOT/'persona_state.json',{})
     energy_config=persona_state.get('energy') or {
       'policy_version':'mio-energy-v1','capacity':100,'current':72,'floor':0,
       'recovery':{'awake_points_per_hour':3,'rest_points_per_hour':7,'sleep_points_per_hour':12,'cap_at_capacity':True},
@@ -617,6 +686,8 @@ def main():
         new_external.append(row)
 
     if new_external:
+        if pdca_authority:
+            pdca_review_state='reviewing'
         try:
             read_cost=float((energy_config.get('action_costs') or {}).get('read_thread',1))
             spend(LIFE_STATE,energy_config,read_cost,reason='read_new_threads_replies',meta={'count':len(new_external)},temporal=temporal_config)
@@ -661,13 +732,13 @@ def main():
                     est=float(costs.get('long_reply' if len(str(d.get('text') or ''))>180 else 'short_reply',5 if len(str(d.get('text') or ''))>180 else 3))
                     if phase in ('sleep','rest'):
                         wake=next_awake_at(now,temporal_config)
-                        action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(wake+timedelta(minutes=8)),'status':'scheduled','attempts':0,'estimated_energy_cost':est};items.append(action)
+                        action=pdca_tag_action({**record,'text':str(d['text']).strip(),'scheduled_at':iso(wake+timedelta(minutes=8)),'status':'scheduled','attempts':0,'estimated_energy_cost':est},pdca_authority,rid);items.append(action)
                         record['status']='scheduled_after_'+phase
                         record['scheduled_at']=action['scheduled_at']
                         print('mio_social_decision=SCHEDULED_AFTER_'+phase.upper()+':'+rid)
                     elif can_spend(LIFE_STATE,energy_config,est,reserve=5,temporal=temporal_config):
                         delay=max(8,min(720,int(d.get('delay_minutes') or 30)));scheduled=now+timedelta(minutes=delay)
-                        action={**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0,'estimated_energy_cost':est};items.append(action);record['scheduled_at']=action['scheduled_at']
+                        action=pdca_tag_action({**record,'text':str(d['text']).strip(),'scheduled_at':iso(scheduled),'status':'scheduled','attempts':0,'estimated_energy_cost':est},pdca_authority,rid);items.append(action);record['scheduled_at']=action['scheduled_at']
                         print('mio_social_decision=SCHEDULED:'+rid+':'+str(delay)+'m')
                     else:
                         record['status']='no_reply';record['reason_category']='low_energy'
@@ -676,14 +747,22 @@ def main():
                     record['status']='no_reply';print('mio_social_decision=NO_REPLY:'+rid)
                 with decisions_path.open('a',encoding='utf-8') as fh:fh.write(json.dumps(record,ensure_ascii=False,separators=(',',':'))+'\n')
             if decisions_path.is_file(): os.chmod(decisions_path,0o600)
+            if pdca_authority:
+                pdca_reviewed_count=len(expected.intersection(by_id))
+                tagged=[x for x in items if x.get('pdca_action_id')==pdca_authority['action_id']]
+                pdca_review_state='scheduled' if tagged else 'reviewed_no_reply'
         except TimeoutError as exc:
+            if pdca_authority: pdca_review_state='deferred'
             print('mio_social_decision=WAITING:'+str(exc)[:80])
         except Exception as exc:
+            if pdca_authority: pdca_review_state='deferred'
             print('mio_social_decision=DEFERRED:'+type(exc).__name__+':'+str(exc)[:170])
 
     # A previous decision can become inapplicable after a human-assisted reply
     # or timestamp cleanup. It is decision-only: discard its pointer rather
     # than ever publishing an answer to an ineligible or already answered reply.
+    if pdca_authority and not new_external:
+        pdca_review_state='reviewed_no_eligible'
     if not new_external and DECISION_PENDING.is_file():
         DECISION_PENDING.unlink(missing_ok=True)
         print('mio_social_decision=DISCARDED_NO_ELIGIBLE_REPLIES')
@@ -700,7 +779,7 @@ def main():
     today_outbound=sum(1 for x in outbound_history if str(x.get('local_date') or '')==today_local and x.get('status') in ('scheduled','sent'))
     active_hour=datetime.now(LOCAL_TZ).hour
     proactive_cost=float((energy_config.get('action_costs') or {}).get('proactive_reply',6))
-    if discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and phase=='awake' and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15,temporal=temporal_config):
+    if legacy_auto_reply_allowed and discovery_due and today_outbound < 3 and 8 <= active_hour < 24 and phase=='awake' and can_spend(LIFE_STATE,energy_config,proactive_cost,reserve=15,temporal=temporal_config):
         # Discovery topics come from Mio's canonical current IR instead of a
         # fixed growth-hacking keyword list. The search only supplies candidates;
         # decide_outbound() still independently decides whether Mio actually
@@ -771,7 +850,7 @@ def main():
 
     kept=[]
     for x in items:
-        if x.get('status') in ('scheduled','failed'):kept.append(x);continue
+        if x.get('status') in ('scheduled','verification_pending','failed'):kept.append(x);continue
         if x.get('completed_at'):
             try:
                 completed=datetime.fromisoformat(str(x['completed_at']).replace('Z','+00:00'))
@@ -783,6 +862,34 @@ def main():
         cid=str(row.get('candidate_id') or '')
         if cid in status_by_candidate: row['status']=status_by_candidate[cid]
     outbound_history=outbound_history[-500:]
+    if pdca_authority:
+        tagged=[x for x in items if x.get('pdca_action_id')==pdca_authority['action_id']]
+        sent=next((x for x in tagged if x.get('status')=='sent'),None)
+        verifying=next((x for x in tagged if x.get('status')=='verification_pending'),None)
+        scheduled=next((x for x in tagged if x.get('status')=='scheduled'),None)
+        failed=next((x for x in tagged if x.get('status')=='failed'),None)
+        if sent:
+            emit_pdca_outcome(pdca_authority,status='completed',result='verified_reply',
+                              reviewed_count=max(pdca_reviewed_count,1),
+                              platform_object_id=str(sent.get('platform_object_id') or ''))
+        elif verifying:
+            emit_pdca_outcome(pdca_authority,status='in_progress',result='verification_pending',
+                              reviewed_count=max(pdca_reviewed_count,1))
+        elif scheduled:
+            emit_pdca_outcome(pdca_authority,status='in_progress',result='reply_scheduled',
+                              reviewed_count=max(pdca_reviewed_count,1))
+        elif failed:
+            emit_pdca_outcome(pdca_authority,status='deferred',result='reply_failed',
+                              reviewed_count=max(pdca_reviewed_count,1))
+        elif pdca_review_state=='reviewed_no_reply':
+            emit_pdca_outcome(pdca_authority,status='completed',result='reviewed_no_reply',
+                              reviewed_count=pdca_reviewed_count)
+        elif pdca_review_state=='reviewed_no_eligible':
+            emit_pdca_outcome(pdca_authority,status='completed',result='reviewed_no_eligible',
+                              reviewed_count=0)
+        else:
+            emit_pdca_outcome(pdca_authority,status='deferred',result='review_deferred',
+                              reviewed_count=pdca_reviewed_count)
     save_json(pending_path,{'schema':'agentos.persona-social-queue/v1','updated_at':iso(now),'items':kept,'processed_reply_ids':sorted(processed)[-2000:],'seen_outbound_ids':sorted(seen_outbound)[-5000:],'outbound_history':outbound_history,'last_discovery_at':last_discovery_at})
     print('mio_social_loop=PASS')
     print('mio_social_pending='+str(sum(1 for x in kept if x.get('status')=='scheduled')))
