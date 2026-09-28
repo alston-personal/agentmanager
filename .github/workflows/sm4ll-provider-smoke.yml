@@ -1,4 +1,5 @@
 name: SM4LL Provider Smoke
+# retest: explicit null mask argument
 
 on:
   push:
