@@ -1,0 +1,41 @@
+name: Oracle MBPR Vision Toolchain Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-vision-toolchain-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Swift and Vision availability
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-vision-toolchain-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-vision-toolchain-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          code="import subprocess,tempfile,os; v=subprocess.run(['/usr/bin/xcrun','swift','--version'],text=True,capture_output=True,timeout=20); src=tempfile.mktemp(suffix='.swift'); open(src,'w').write('import Vision\nprint(\"VISION_IMPORT_PASS\")\n'); c=subprocess.run(['/usr/bin/xcrun','swift',src],text=True,capture_output=True,timeout=60); print('SWIFT_RC='+str(v.returncode)); print('VISION_IMPORT_RC='+str(c.returncode)); print('VISION_IMPORT_PASS='+('true' if 'VISION_IMPORT_PASS' in c.stdout else 'false')); e=c.stderr.lower(); kind='none' if c.returncode==0 else ('sdk' if 'sdk' in e or 'framework' in e else 'compiler' if 'error:' in e else 'other'); print('VISION_IMPORT_ERROR='+kind); os.unlink(src)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':80,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  print(str(r.get('stdout') or ''))
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('vision_toolchain_probe=PASS'); raise SystemExit(0)
+                  print('vision_toolchain_probe=ERROR'); raise SystemExit(2)
+              time.sleep(2)
+          raise SystemExit('vision toolchain probe timeout')
+          PY
