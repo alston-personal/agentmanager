@@ -1,0 +1,48 @@
+name: Inspect Live Mio Wardrobe
+
+on:
+  push:
+    branches: [ops/inspect-live-mio-wardrobe]
+    paths:
+      - '.github/workflows/inspect-live-mio-wardrobe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Inspect production wardrobe
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=https://studio.milkcat.org
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1 "$BASE/personas/mio/wardrobe/?_=$GITHUB_RUN_ID" -o "$TMP/local"
+          curl -fsS "$BASE/personas/mio/wardrobe/?_=$GITHUB_RUN_ID" -o "$TMP/public"
+
+          echo "LOCAL_SHA256=$(sha256sum "$TMP/local" | awk '{print $1}')"
+          echo "PUBLIC_SHA256=$(sha256sum "$TMP/public" | awk '{print $1}')"
+          echo "LOCAL_BYTES=$(wc -c < "$TMP/local")"
+          echo "PUBLIC_BYTES=$(wc -c < "$TMP/public")"
+
+          for marker in             'MIO DRESS-UP STUDIO'             '中性技術基準身形'             '完整試穿結果'             '✓ 已選入搭配'             '✓ 已套用試穿圖'             'REAL GARMENT WARDROBE · V2 FOUNDATION'; do
+            printf 'LOCAL_MARKER[%s]=' "$marker"
+            grep -Fq "$marker" "$TMP/local" && echo yes || echo no
+            printf 'PUBLIC_MARKER[%s]=' "$marker"
+            grep -Fq "$marker" "$TMP/public" && echo yes || echo no
+          done
+
+          curl -kfsS --resolve studio.milkcat.org:443:127.0.0.1             "$BASE/personas/mio/tryon/cache/net-43774-002__net-32235-711__net-40832-002__net-40793-003.webp?_=$GITHUB_RUN_ID"             -o "$TMP/local-cache"
+          curl -fsS             "$BASE/personas/mio/tryon/cache/net-43774-002__net-32235-711__net-40832-002__net-40793-003.webp?_=$GITHUB_RUN_ID"             -o "$TMP/public-cache"
+
+          echo "LOCAL_CACHE_BYTES=$(wc -c < "$TMP/local-cache")"
+          echo "PUBLIC_CACHE_BYTES=$(wc -c < "$TMP/public-cache")"
+          echo "LOCAL_CACHE_SHA256=$(sha256sum "$TMP/local-cache" | awk '{print $1}')"
+          echo "PUBLIC_CACHE_SHA256=$(sha256sum "$TMP/public-cache" | awk '{print $1}')"
+
+          echo "LIVE_MIO_INSPECT=PASS"
