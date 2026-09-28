@@ -26,9 +26,14 @@ jobs:
           assert c.get('schema')=='agentos.mio-dm-send-command/v1'
           assert c.get('target')=='0__0.ayoub'
           assert int(c.get('decision_run_id') or 0)==36388810340
-          print('mio_dm_send_command=PASS')
+          status=str(c.get('status') or 'pending')
+          assert status in ('pending','human_assisted_completed')
+          print('mio_dm_send_command=PASS:'+status)
+          if status=='human_assisted_completed':
+              open('/tmp/mio-dm-send-skip','w').write('1')
           PY
       - name: Download validated decision artifact
+        if: ${{ hashFiles('/tmp/mio-dm-send-skip') == '' }}
         uses: actions/download-artifact@v4
         with:
           name: mio-dm-decision
@@ -37,6 +42,7 @@ jobs:
           repository: alston-personal/agentmanager
           run-id: 36388810340
       - name: Send governed Threads DM and verify readback
+        if: ${{ hashFiles('/tmp/mio-dm-send-skip') == '' }}
         shell: bash
         env:
           MIO_DM_DECISION_PATH: /tmp/mio-dm-decision/mio-dm-decision.json
