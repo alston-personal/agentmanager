@@ -36,7 +36,7 @@ jobs:
           d=json.load(open('/tmp/mio-dm-decision/mio-dm-decision.json',encoding='utf-8'))
           text=str(d.get('text') or '')
           assert text
-          js=f"""(()=>{{const q={json.dumps(text)};const body=(document.querySelector('main')?.innerText||document.body.innerText||'');const bodyCount=body.split(q).length-1;const exact=[...document.querySelectorAll('body *')].filter(e=>((e.innerText||'').trim()===q));const minimal=exact.filter(e=>![...e.children].some(c=>((c.innerText||'').trim()===q)));const edits=[...document.querySelectorAll('textarea,[contenteditable="true"]')].filter(e=>(((e.value||e.innerText||'').trim())===q));return JSON.stringify({{bodyCount,exactCount:exact.length,minimalExactCount:minimal.length,editorExactCount:edits.length,url:location.href}});}})()"""
+          js=f"""(()=>{{const q={json.dumps(text)};const body=(document.querySelector('main')?.innerText||document.body.innerText||'');const bodyCount=body.split(q).length-1;const exact=[...document.querySelectorAll('body *')].filter(e=>((e.innerText||'').trim()===q));const minimalExact=exact.filter(e=>![...e.children].some(c=>((c.innerText||'').trim()===q)));const incl=[...document.querySelectorAll('body *')].filter(e=>(e.innerText||'').includes(q));const minimalIncl=incl.filter(e=>![...e.children].some(c=>(c.innerText||'').includes(q)));const visible=minimalIncl.filter(e=>{{const r=e.getBoundingClientRect();const s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}});const tops=visible.map(e=>Math.round(e.getBoundingClientRect().top)).sort((a,b)=>a-b);const edits=[...document.querySelectorAll('textarea,[contenteditable="true"]')].filter(e=>(((e.value||e.innerText||'').trim())===q));return JSON.stringify({{bodyCount,exactCount:exact.length,minimalExactCount:minimalExact.length,minimalIncludeCount:minimalIncl.length,visibleIncludeCount:visible.length,visibleTops:tops,editorExactCount:edits.length,url:location.href}});}})()"""
           osa='''on run argv
           set jsCode to item 1 of argv
           tell application "Google Chrome"
@@ -55,7 +55,7 @@ jobs:
                       raise SystemExit('mio_dm_post_send_inspect=ERROR')
                   out=str(r.get('stdout') or '').strip()
                   obj=json.loads(out)
-                  safe={k:obj.get(k) for k in ('bodyCount','exactCount','minimalExactCount','editorExactCount')}
+                  safe={k:obj.get(k) for k in ('bodyCount','exactCount','minimalExactCount','minimalIncludeCount','visibleIncludeCount','visibleTops','editorExactCount')}
                   print('mio_dm_post_send_inspect=PASS')
                   print('mio_dm_post_send_counts='+json.dumps(safe,separators=(',',':')))
                   raise SystemExit(0)
