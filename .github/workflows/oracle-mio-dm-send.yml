@@ -1,0 +1,45 @@
+name: Oracle Mio DM Send
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mio-dm-send.json'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  send:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate send command
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          c=json.load(open('.agentos/commands/mio-dm-send.json',encoding='utf-8'))
+          assert c.get('schema')=='agentos.mio-dm-send-command/v1'
+          assert c.get('target')=='0__0.ayoub'
+          assert int(c.get('decision_run_id') or 0)==36388810340
+          print('mio_dm_send_command=PASS')
+          PY
+      - name: Download validated decision artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mio-dm-decision
+          path: /tmp/mio-dm-decision
+          github-token: ${{ github.token }}
+          repository: alston-personal/agentmanager
+          run-id: 36388810340
+      - name: Send governed Threads DM and verify readback
+        shell: bash
+        env:
+          MIO_DM_DECISION_PATH: /tmp/mio-dm-decision/mio-dm-decision.json
+          MIO_DM_TARGET: 0__0.ayoub
+        run: |
+          python3 scripts/send_mio_threads_dm_from_decision.py
