@@ -80,7 +80,8 @@ jobs:
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
           test -S "$XDG_RUNTIME_DIR/bus"
           systemctl --user daemon-reload
-          systemctl --user enable --now agentos-mio-tryon-render-worker.service
+          systemctl --user enable agentos-mio-tryon-render-worker.service
+          systemctl --user restart agentos-mio-tryon-render-worker.service
           sleep 2
           systemctl --user is-active agentos-mio-tryon-render-worker.service
           systemctl --user --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
