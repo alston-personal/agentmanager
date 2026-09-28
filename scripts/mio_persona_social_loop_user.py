@@ -226,7 +226,8 @@ def persona_context():
     for raw in raw_events.splitlines()[-40:]:
         try:
             item=json.loads(raw)
-            if isinstance(item,dict): events.append(item)
+            if isinstance(item,dict) and str(item.get('visibility') or 'public')!='private':
+                events.append(item)
         except Exception: pass
 
     # A reply must never be based on a self-model older than the canonical
