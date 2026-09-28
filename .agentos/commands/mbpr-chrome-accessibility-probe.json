@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.chrome-accessibility-probe",
+  "node_id": "mbpr",
+  "nonce": "chrome-ax-1790568068409"
+}
