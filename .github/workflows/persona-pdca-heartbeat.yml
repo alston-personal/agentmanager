@@ -13,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_pdca_tick.py'
+      - 'scripts/persona_social_executor.py'
       - 'scripts/run_persona_pdca_heartbeat_user.sh'
       - 'scripts/install_persona_pdca_timer_user.sh'
       - '.github/workflows/persona-pdca-heartbeat.yml'
@@ -46,6 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f scripts/persona_pdca_tick.py
+          test -f scripts/persona_social_executor.py
           test -n "${DEPLOY_USER:-}"
           echo "persona_pdca_carrier=PASS"
 
@@ -54,22 +56,26 @@ jobs:
         run: |
           set -euo pipefail
           REMOTE_SCRIPT="/tmp/persona_pdca_tick-$GITHUB_RUN_ID.py"
-          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             scripts/persona_pdca_tick.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SCRIPT"
+          REMOTE_SOCIAL_EXECUTOR="/tmp/persona_social_executor-$GITHUB_RUN_ID.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_pdca_tick.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SCRIPT"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new scripts/persona_social_executor.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SOCIAL_EXECUTOR"
           echo "REMOTE_SCRIPT=$REMOTE_SCRIPT" >> "$GITHUB_ENV"
+          echo "REMOTE_SOCIAL_EXECUTOR=$REMOTE_SOCIAL_EXECUTOR" >> "$GITHUB_ENV"
 
       - name: Run and persist one PDCA cycle on Oracle
         shell: bash
         run: |
           set -euo pipefail
-          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             "${DEPLOY_USER}@${DEPLOY_HOST}"             bash -s -- "$PERSONA_PATH" "$REMOTE_SCRIPT" "$GITHUB_RUN_ID" <<'REMOTE'
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new             "${DEPLOY_USER}@${DEPLOY_HOST}"             bash -s -- "$PERSONA_PATH" "$REMOTE_SCRIPT" "$REMOTE_SOCIAL_EXECUTOR" "$GITHUB_RUN_ID" <<'REMOTE'
           set -euo pipefail
           PERSONA_PATH="$1"
           SCRIPT="$2"
-          RUN_ID="$3"
+          SOCIAL_EXECUTOR="$3"
+          RUN_ID="$4"
           DATA_REPO=$(mktemp -d /tmp/persona-agent-data-XXXXXX)
           RECEIPT="/tmp/persona-pdca-receipt-$RUN_ID.json"
           cleanup() {
-            rm -rf "$DATA_REPO" "$SCRIPT" "$RECEIPT"
+            rm -rf "$DATA_REPO" "$SCRIPT" "$SOCIAL_EXECUTOR" "$RECEIPT"
           }
           trap cleanup EXIT
 
@@ -83,9 +89,12 @@ jobs:
           test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
           test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
-          python3 "$SCRIPT"             --persona-dir "$DATA_REPO/$PERSONA_PATH"             --receipt-out "$RECEIPT"
-
+          python3 "$SCRIPT" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT"
           python3 -m json.tool "$RECEIPT" >/dev/null
+          SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"
+          mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
+          python3 "$SOCIAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
+          python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
 
           cd "$DATA_REPO"
           git config user.name 'agentos-persona-pdca[bot]'
@@ -119,16 +128,19 @@ jobs:
           set -euo pipefail
           REMOTE_TICK="/tmp/persona_pdca_tick-install-$GITHUB_RUN_ID.py"
           REMOTE_RUNNER="/tmp/run_persona_pdca_heartbeat-$GITHUB_RUN_ID.sh"
+          REMOTE_SOCIAL_EXECUTOR="/tmp/persona_social_executor-install-$GITHUB_RUN_ID.py"
           REMOTE_INSTALLER="/tmp/install_persona_pdca_timer-$GITHUB_RUN_ID.sh"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             scripts/persona_pdca_tick.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_TICK"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             scripts/run_persona_pdca_heartbeat_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_RUNNER"
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/persona_social_executor.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SOCIAL_EXECUTOR"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             scripts/install_persona_pdca_timer_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_INSTALLER"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER"
+            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_INSTALLER"
+            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INSTALLER"

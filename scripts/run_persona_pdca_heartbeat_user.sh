@@ -4,6 +4,7 @@ set -euo pipefail
 [ "$(id -u)" = "1001" ] || { echo "persona_pdca_runtime=WRONG_USER"; exit 2; }
 PERSONA_PATH="${PERSONA_PATH:-personas/sunlake-milkcat}"
 TICK="${AGENTOS_PERSONA_PDCA_TICK:-$HOME/.local/lib/agentos/persona_pdca_tick.py}"
+SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_social_executor.py}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
@@ -13,6 +14,7 @@ if ! flock -n 9; then
 fi
 
 test -f "$TICK"
+test -f "$SOCIAL_EXECUTOR"
 command -v gh >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth status >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null
@@ -32,6 +34,10 @@ test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
 python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT"
 python3 -m json.tool "$RECEIPT" >/dev/null
+SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"
+mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
+python3 "$SOCIAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
+python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
 
 cd "$DATA_REPO"
 git config user.name 'agentos-persona-pdca[bot]'
