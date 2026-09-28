@@ -1,0 +1,48 @@
+name: Kolors VTON Provider Smoke
+
+on:
+  push:
+    branches: [ops/sm4ll-provider-smoke]
+    paths:
+      - '.github/workflows/kolors-provider-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Test Mio and NET garment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/kolors-vton
+          /tmp/kolors-vton/bin/python -m pip install --quiet --upgrade pip "gradio_client>=1.13,<3"
+          curl -fsSL "https://studio.milkcat.org/personas/mio/mio-avatar.webp" -o /tmp/mio.webp
+          curl -fsSL "https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570" -o /tmp/garment.jpg
+          /tmp/kolors-vton/bin/python - <<'PY'
+          from gradio_client import Client, handle_file
+          import pathlib, shutil
+          client = Client("Kwai-Kolors/Kolors-Virtual-Try-On", download_files=True, verbose=False)
+          result = client.predict(
+              handle_file("/tmp/mio.webp"),
+              handle_file("/tmp/garment.jpg"),
+              0,
+              False,
+              api_name="/tryon",
+          )
+          print("kolors_result_type=", type(result).__name__)
+          print("kolors_result=", repr(result)[:1000])
+          candidate = result[0] if isinstance(result, (list, tuple)) else result
+          if isinstance(candidate, dict):
+              candidate = candidate.get("path") or candidate.get("url")
+          if not isinstance(candidate, str):
+              raise SystemExit("no output image path")
+          path = pathlib.Path(candidate)
+          if not path.exists() or path.stat().st_size < 1000:
+              raise SystemExit(f"invalid output: {candidate}")
+          shutil.copyfile(path, "/tmp/kolors-result.webp")
+          print("KOLORS_VTON_SMOKE=PASS bytes=", pathlib.Path("/tmp/kolors-result.webp").stat().st_size)
+          PY
