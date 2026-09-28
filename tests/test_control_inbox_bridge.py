@@ -211,6 +211,37 @@ def test_duplicate_command_id_dispatches_once_even_with_two_comments(tmp_path: P
     assert len(github.results) == 1
 
 
+def test_queued_command_is_followed_to_late_receipt_without_redispatch(tmp_path: Path):
+    command = _command(command_id='late-receipt')
+    github = FakeGitHub([_comment(109, command)])
+    one = FakeOne(receipt=None)
+    bridge = ControlInboxBridge(_config(tmp_path), github=github, one=one)
+
+    assert bridge.process_once() == 1
+    assert len(one.dispatched) == 1
+    assert github.results[-1]['status'] == 'queued'
+
+    one._receipt = {
+        'schema': 'agentos.node-receipt/v0.1',
+        'node_id': 'node-a',
+        'task_id': _task_id(command['command_id']),
+        'action': 'agent.surface.inspect',
+        'ok': True,
+        'surface_inventory': {
+            'schema': 'agentos.surface-inventory/v0.1',
+            'surface_count': 0,
+            'providers': [],
+            'capabilities': [],
+            'surfaces': [],
+        },
+    }
+
+    assert bridge.process_once() == 0
+    assert len(one.dispatched) == 1
+    assert github.results[-1]['status'] == 'completed'
+    assert github.results[-1]['task_id'] == _task_id(command['command_id'])
+
+
 def test_restart_after_claim_reports_unknown_and_never_redispatches(tmp_path: Path):
     command = _command(command_id='interrupted')
     github = FakeGitHub([])
