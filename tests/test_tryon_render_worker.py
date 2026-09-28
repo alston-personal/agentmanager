@@ -301,27 +301,26 @@ def test_any_item_falls_back_to_qwen_reference_edit(monkeypatch, tmp_path):
     assert provider == worker.QWEN_EDIT_SPACE_ID
 
 
-def test_qwen_reference_edit_uses_two_images_and_two_stage_api(monkeypatch, tmp_path):
+def test_qwen_reference_edit_uses_reference_board_workflow(monkeypatch, tmp_path):
     worker = load_worker(monkeypatch, tmp_path)
+    from PIL import Image
+
     person = tmp_path / "person.webp"
     item = tmp_path / "item.jpg"
     output = tmp_path / "qwen-output.webp"
-    person.write_bytes(b"p" * 2000)
-    item.write_bytes(b"i" * 2000)
-    output.write_bytes(b"o" * 2000)
+    Image.new("RGB", (500, 900), "white").save(person, "WEBP")
+    Image.new("RGB", (400, 400), "white").save(item, "JPEG")
+    output.write_bytes(b"q" * 2000)
 
     calls = []
 
     class FakeQwen:
         def predict(self, *args, **kwargs):
             calls.append((args, kwargs))
-            if kwargs.get("api_name") == "/prepare_request":
-                assert args[0] == [str(person), str(item)]
-                return ("placeholder", 321, "rewritten", {"request": "state"})
-            if kwargs.get("api_name") == "/generate_request":
-                assert args[0] == {"request": "state"}
-                return str(output)
-            raise AssertionError(kwargs)
+            assert kwargs.get("api_name") == "/rewritten_instruction"
+            assert len(args) == 2
+            assert "canonical subject" in args[1]
+            return ("rewritten instruction", str(output))
 
     monkeypatch.setattr(worker, "qwen_edit_client", lambda: FakeQwen())
 
@@ -333,4 +332,22 @@ def test_qwen_reference_edit_uses_two_images_and_two_stage_api(monkeypatch, tmp_
     )
     assert rendered == str(output)
     assert provider == worker.QWEN_EDIT_SPACE_ID
-    assert [call[1]["api_name"] for call in calls] == ["/prepare_request", "/generate_request"]
+    assert len(calls) == 1
+
+
+def test_build_reference_board_is_valid_image(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    from PIL import Image
+
+    person = tmp_path / "person.png"
+    item = tmp_path / "item.png"
+    Image.new("RGB", (400, 800), "white").save(person)
+    Image.new("RGB", (300, 300), "white").save(item)
+
+    board = worker.build_reference_board(person, item)
+    try:
+        image = Image.open(board)
+        assert image.size == (1536, 1536)
+        assert image.mode == "RGB"
+    finally:
+        board.unlink(missing_ok=True)

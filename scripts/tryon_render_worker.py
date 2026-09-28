@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from gradio_client import Client, handle_file
+from PIL import Image, ImageOps
 
 SCHEMA = "agentos.tryon-render-job/v1"
 SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "yisol/IDM-VTON")
@@ -85,7 +86,10 @@ def atomic_write(path: Path, payload: dict[str, Any]) -> None:
 _CLIENT: Client | None = None
 _ANY_ITEM_CLIENTS: dict[str, Client] = {}
 _QWEN_EDIT_CLIENT: Client | None = None
-QWEN_EDIT_SPACE_ID = os.environ.get("AGENTOS_TRYON_QWEN_EDIT_SPACE_ID", "Qwen/Qwen-Image-2.1")
+QWEN_EDIT_SPACE_ID = os.environ.get(
+    "AGENTOS_TRYON_QWEN_EDIT_SPACE_ID",
+    "Qwen/Qwen-Image-2.1-workflow",
+)
 
 
 def client() -> Client:
@@ -243,6 +247,44 @@ def idm_try_on(person_source: str, garment_url: str, description: str, seed: int
                 pass
 
 
+def build_reference_board(person_path: Path, object_path: Path) -> Path:
+    person = Image.open(person_path).convert("RGB")
+    product = Image.open(object_path).convert("RGB")
+
+    board_w, board_h = 1536, 1536
+    person_box = (80, 80, 1000, 1456)
+    product_box = (1060, 420, 1496, 1116)
+
+    board = Image.new("RGB", (board_w, board_h), "white")
+    person_fit = ImageOps.contain(
+        person,
+        (person_box[2] - person_box[0], person_box[3] - person_box[1]),
+        method=Image.Resampling.LANCZOS,
+    )
+    product_fit = ImageOps.contain(
+        product,
+        (product_box[2] - product_box[0], product_box[3] - product_box[1]),
+        method=Image.Resampling.LANCZOS,
+    )
+
+    person_xy = (
+        person_box[0] + (person_box[2] - person_box[0] - person_fit.width) // 2,
+        person_box[1] + (person_box[3] - person_box[1] - person_fit.height) // 2,
+    )
+    product_xy = (
+        product_box[0] + (product_box[2] - product_box[0] - product_fit.width) // 2,
+        product_box[1] + (product_box[3] - product_box[1] - product_fit.height) // 2,
+    )
+    board.paste(person_fit, person_xy)
+    board.paste(product_fit, product_xy)
+
+    fd, name = tempfile.mkstemp(prefix="mio-reference-board-", suffix=".jpg")
+    os.close(fd)
+    path = Path(name)
+    board.save(path, format="JPEG", quality=95)
+    return path
+
+
 def qwen_reference_try_on(
     person_source: str,
     object_url: str,
@@ -268,44 +310,28 @@ def qwen_reference_try_on(
             if not object_path.exists():
                 raise RuntimeError(f"object input missing: {object_url}")
 
+        board_path = build_reference_board(person_path, object_path)
+        temp_inputs.append(board_path)
+
         target = "shoes" if object_class == "shoe" else object_class
         instruction = (
-            "Image 1 is the canonical full-body person and Image 2 is the exact product reference. "
-            f"Edit Image 1 so the person is naturally wearing the exact {target} shown in Image 2. "
-            "Preserve the person's face, identity, hair, body proportions, pose, all other clothing, "
-            "hands, background, framing, and lighting. Change only the requested wearable item. "
-            "Keep the full body visible and preserve the product's color, shape, material, and design. "
-            "Return one photorealistic edited full-body image, not a collage and not a comparison."
+            "The large full-body person on the left is the canonical subject. "
+            "The isolated product on the right is a reference item only and must not remain as a separate object. "
+            f"Create one final full-body image of the left person naturally wearing the exact {target} from the right reference. "
+            "Preserve the person's face, identity, hair, body proportions, pose, all other clothing, hands, background style, "
+            "framing, and lighting. Change only the requested wearable item. Preserve the product's exact color, shape, material, "
+            "and design. Remove the reference-board layout and the separate product. Output only one photorealistic full-body person."
         )
 
-        cli = qwen_edit_client()
-        prepared = cli.predict(
-            [handle_file(str(person_path)), handle_file(str(object_path))],
+        result = qwen_edit_client().predict(
+            handle_file(str(board_path)),
             instruction,
-            False,
-            False,
-            "speed",
-            int(seed),
-            False,
-            api_name="/prepare_request",
+            api_name="/rewritten_instruction",
         )
-        if not isinstance(prepared, (list, tuple)) or len(prepared) < 4:
-            raise RuntimeError(f"Qwen prepare_request returned unexpected result: {prepared!r}")
-        actual_seed = int(prepared[1])
-        request_state = prepared[3]
-        result = cli.predict(
-            request_state,
-            instruction,
-            False,
-            False,
-            "",
-            actual_seed,
-            1024,
-            768,
-            "collage, split screen, duplicate person, extra shoes, altered face, changed clothes",
-            api_name="/generate_request",
-        )
-        return str(output_path(result)), QWEN_EDIT_SPACE_ID
+        if not isinstance(result, (list, tuple)) or len(result) < 2:
+            raise RuntimeError(f"Qwen workflow returned unexpected result: {result!r}")
+        edited = result[1]
+        return str(output_path(edited)), QWEN_EDIT_SPACE_ID
     except Exception:
         _QWEN_EDIT_CLIENT = None
         raise
@@ -315,7 +341,6 @@ def qwen_reference_try_on(
                 path.unlink()
             except FileNotFoundError:
                 pass
-
 
 def omni_try_on(
     person_source: str,
@@ -445,7 +470,7 @@ def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
         "characterVersion": job.get("characterVersion"),
         "view": job.get("view", "front"),
         "pose": job.get("pose", "neutral_standing"),
-        "renderer": "idm-vton+omnitry-fallback/v3" if uses_any_item else "idm-vton-gradio-client/v1",
+        "renderer": "idm-vton+any-item-fallback/v4" if uses_any_item else "idm-vton-gradio-client/v1",
         "layers": [
             {
                 "layer": layer,

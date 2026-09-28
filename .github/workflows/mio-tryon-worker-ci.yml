@@ -26,6 +26,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install test dependency
-        run: python -m pip install --disable-pip-version-check pytest
+        run: python -m pip install --disable-pip-version-check pytest "Pillow>=10,<13"
       - name: Run try-on worker tests
         run: python -m pytest -q tests/test_tryon_render_worker.py
