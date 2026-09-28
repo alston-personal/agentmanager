@@ -2,5 +2,8 @@
   "schema": "agentos.mio-dm-send-command/v1",
   "target": "0__0.ayoub",
   "decision_run_id": 36388810340,
-  "nonce": "mio-dm-send-markers-1790581457873"
+  "nonce": "mio-dm-human-assisted-complete-1790582646186",
+  "status": "human_assisted_completed",
+  "completed_by": "human",
+  "completed_reason": "owner removed duplicated draft and pressed send after automation prepared the text"
 }
