@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.garment/v1",
+  "garmentId": "net-40685-003",
+  "characterId": "sunlake-milkcat-ai-001",
+  "name": "帆布水桶繡字兩用包(附掛飾)",
+  "retailer": "NET",
+  "brand": "NET",
+  "sku": "40685",
+  "variant": "003 米白",
+  "category": "bag",
+  "slot": "bag",
+  "layer": "bag",
+  "price": 359,
+  "currency": "TWD",
+  "source": {
+    "canonicalUrl": "https://www.net-fashion.net/product/731602",
+    "imageUrl": "https://s-net.wimg.tw//act/40685-003-1024-011.jpg?v=32570",
+    "extractedAt": "2026-09-28T00:00:00+08:00"
+  },
+  "acquisition": {
+    "state": "want_to_try",
+    "owned": false,
+    "worn": false
+  },
+  "tryOn": {
+    "state": "ready_for_tryon",
+    "asset": null
+  }
+}
