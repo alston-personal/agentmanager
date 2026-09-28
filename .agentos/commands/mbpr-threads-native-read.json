@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.threads-native-read",
   "node_id": "mbpr",
-  "nonce": "threads-native-read-1790575803091"
+  "nonce": "threads-native-read-classify-1790575861108"
 }
