@@ -1,0 +1,49 @@
+name: Oracle MBPR Supervisor Verify
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-supervisor-verify.json'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify MBPR LaunchAgent and autonomous recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-supervisor-verify.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          store=RealmFabricStore()
+          tid='mbpr-supervisor-'+str(int(time.time()))
+          code="""import subprocess,os,time,platform,json
+uid=str(os.getuid())
+label='org.milkcat.agentos.thin-client'
+p=subprocess.run(['launchctl','print',f'gui/{uid}/{label}'],text=True,capture_output=True)
+print('launchagent_rc='+str(p.returncode))
+print('launchagent_present='+('true' if p.returncode==0 else 'false'))
+print('platform='+platform.system())
+"""
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]})
+          for _ in range(45):
+            r=store.get_receipt(tid)
+            if r:
+              out=str(r.get('stdout') or '')
+              print(out)
+              assert r.get('ok') is True,r
+              assert 'launchagent_present=true' in out,r
+              print('mbpr_supervisor=PASS')
+              raise SystemExit(0)
+            time.sleep(2)
+          raise SystemExit('mbpr supervisor receipt timeout')
+          PY
