@@ -1,0 +1,41 @@
+name: Oracle MBPR Open Automation Settings
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-open-automation-settings.json'
+permissions:
+  contents: read
+jobs:
+  open:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open macOS Automation privacy settings on MBPR
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-open-automation-settings.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-open-automation-settings-'+str(int(time.time()))
+          code="import subprocess; r=subprocess.run(['open','x-apple.systempreferences:com.apple.preference.security?Privacy_Automation']); print('OPEN_AUTOMATION_SETTINGS_PASS' if r.returncode==0 else 'OPEN_AUTOMATION_SETTINGS_FAIL'); raise SystemExit(r.returncode)"
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]})
+          for _ in range(30):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is True and 'OPEN_AUTOMATION_SETTINGS_PASS' in out:
+                      print('mbpr_open_automation_settings=PASS'); raise SystemExit(0)
+                  raise SystemExit(str(r))
+              time.sleep(2)
+          raise SystemExit('open Automation settings timeout')
+          PY
