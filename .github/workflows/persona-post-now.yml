@@ -1,0 +1,45 @@
+name: Persona Owner Post Nudge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requests/mio-post-now.json'
+      - 'scripts/run_persona_post_nudge_user.sh'
+      - '.github/workflows/persona-post-now.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: persona-post-nudge-mio
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Transfer and run owner nudge on Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/run_persona_post_nudge_user.sh
+          REMOTE="/tmp/run_persona_post_nudge-$GITHUB_RUN_ID.sh"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/run_persona_post_nudge_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" bash "$REMOTE"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" rm -f "$REMOTE"
