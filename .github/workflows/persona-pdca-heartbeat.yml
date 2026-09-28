@@ -145,24 +145,6 @@ jobs:
           cat "$RECEIPT"
           REMOTE
 
-      - name: Refresh current Mio public activity snapshot
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
-          set -euo pipefail
-          DATA_REPO=$(mktemp -d /tmp/mio-public-snapshot-XXXXXX)
-          cleanup(){ rm -rf "$DATA_REPO"; }
-          trap cleanup EXIT
-          /usr/bin/gh auth status >/dev/null
-          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch >/dev/null
-          PUBLISHER=/home/ubuntu/.local/lib/agentos/publish_mio_public_activity.py
-          test -f "$PUBLISHER"
-          python3 "$PUBLISHER"             --persona-dir "$DATA_REPO/personas/sunlake-milkcat"             --output /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
-          python3 -m json.tool /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json >/dev/null
-          echo "mio_public_activity_snapshot=PASS"
-          REMOTE
-
       - name: Install local Persona PDCA timer
         shell: bash
         run: |
@@ -199,3 +181,21 @@ jobs:
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_INSTALLER"
+
+      - name: Refresh current Mio public activity snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          DATA_REPO=$(mktemp -d /tmp/mio-public-snapshot-XXXXXX)
+          cleanup(){ rm -rf "$DATA_REPO"; }
+          trap cleanup EXIT
+          /usr/bin/gh auth status >/dev/null
+          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch >/dev/null
+          PUBLISHER=/home/ubuntu/.local/lib/agentos/publish_mio_public_activity.py
+          test -f "$PUBLISHER"
+          python3 "$PUBLISHER"             --persona-dir "$DATA_REPO/personas/sunlake-milkcat"             --output /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
+          python3 -m json.tool /home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json >/dev/null
+          echo "mio_public_activity_snapshot=PASS"
+          REMOTE
