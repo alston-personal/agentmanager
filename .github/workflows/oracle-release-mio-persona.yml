@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 12
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: b8c7baa0defc87cb406283398a4ee64b62d818ec
+      SOURCE_SHA: ee7f73f80b566f9f5aabc00931c733efcaee096c
       LIVE_ROOT: /home/ubuntu/zeus-writer/website/dist
       ROUTE_PATH: personas/mio
       BACKUP_KEY: mio-persona
@@ -118,6 +118,8 @@ jobs:
           grep -Fq '收進衣櫃' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '儲存這套搭配' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq 'MIO DRESS-UP STUDIO' "$ROUTE_DIR/wardrobe/index.html"
+          test -s "$PUBLISH_ROOT/personas/mio/tryon/cache/net-43774-002__net-32235-711__net-40832-002__net-40793-003.webp"
+          grep -Fq '完整試穿結果' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '外罩／外套' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '主上衣' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '上身內搭' "$ROUTE_DIR/wardrobe/index.html"
@@ -161,6 +163,7 @@ jobs:
           grep -Fq '貼一個連結，先收進澪的衣櫃' "$TMP/live-wardrobe"
           grep -Fq '收進衣櫃' "$TMP/live-wardrobe"
           grep -Fq 'MIO DRESS-UP STUDIO' "$TMP/live-wardrobe"
+          grep -Fq '完整試穿結果' "$TMP/live-wardrobe"
           grep -Fq '外罩／外套' "$TMP/live-wardrobe"
           grep -Fq '主上衣' "$TMP/live-wardrobe"
           grep -Fq '上身內搭' "$TMP/live-wardrobe"
