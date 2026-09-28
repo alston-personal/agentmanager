@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 import time
 import shutil
 import tempfile
@@ -19,6 +20,7 @@ DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
 ASSET_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_assets"
+CACHE_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_cache"
 BASE_BODY_URL = os.environ.get(
     "AGENTOS_MIO_BASE_BODY_URL",
     "https://studio.milkcat.org/personas/mio/mio-avatar.webp",
@@ -172,6 +174,63 @@ def public_asset_path(job_id: str) -> str:
     return f"/dashboard/api/wardrobe/tryon/assets/{job_id}"
 
 
+def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
+    selected = job.get("input", {}).get("selectedLayers", {})
+    signature = {
+        "schema": "agentos.tryon-cache/v1",
+        "characterId": job.get("characterId"),
+        "characterVersion": job.get("characterVersion"),
+        "view": job.get("view", "front"),
+        "pose": job.get("pose", "neutral_standing"),
+        "renderer": "idm-vton-gradio-client/v1",
+        "layers": [
+            {
+                "layer": layer,
+                "garmentId": (selected.get(layer) or {}).get("garmentId"),
+            }
+            for layer in rendered_layers
+        ],
+    }
+    raw = json.dumps(signature, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def cache_path(key: str) -> Path:
+    return CACHE_DIR / f"{key}.webp"
+
+
+def restore_cached_render(job: dict[str, Any], rendered_layers: list[str], target: Path) -> bool:
+    key = outfit_cache_key(job, rendered_layers)
+    cached = cache_path(key)
+    if not cached.exists() or cached.stat().st_size < 1000:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(cached, target)
+    os.chmod(target, 0o600)
+    job["output"] = {
+        "asset": public_asset_path(job["jobId"]),
+        "previewAsset": public_asset_path(job["jobId"]),
+        "width": None,
+        "height": None,
+        "provider": "real-render-cache",
+        "cacheKey": key,
+        "renderedLayers": rendered_layers,
+    }
+    return True
+
+
+def persist_render_cache(job: dict[str, Any], rendered_layers: list[str], source: Path) -> str:
+    key = outfit_cache_key(job, rendered_layers)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = cache_path(key)
+    if not cached.exists():
+        tmp = cached.with_suffix(".webp.tmp")
+        shutil.copyfile(source, tmp)
+        os.chmod(tmp, 0o600)
+        tmp.replace(cached)
+    return key
+
+
 def process_job(path: Path, job: dict[str, Any]) -> None:
     job["status"] = "rendering"
     job["startedAt"] = utc_now()
@@ -187,6 +246,15 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     if not supported_layers:
         raise RuntimeError("No renderable clothing layers selected yet")
 
+    target = ASSET_DIR / f"{job['jobId']}.webp"
+    if restore_cached_render(job, supported_layers, target):
+        job["status"] = "ready"
+        job["completedAt"] = utc_now()
+        job["failedAt"] = None
+        atomic_write(path, job)
+        update_current(job)
+        return
+
     # Each pass uses the previous output as the new person image.
     person_url = BASE_BODY_URL
     seed_base = abs(hash(job["jobId"])) % 100000
@@ -201,8 +269,8 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         person_url = idm_try_on(person_url, garment_url, description, seed_base + index)
         provider_outputs.append(person_url)
 
-    target = ASSET_DIR / f"{job['jobId']}.webp"
     copy_output(person_url, target)
+    cache_key = persist_render_cache(job, supported_layers, target)
 
     job["status"] = "ready"
     job["completedAt"] = utc_now()

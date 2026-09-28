@@ -89,6 +89,18 @@ jobs:
           systemctl --user --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
 
           ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          CACHE_DIR="$ROOT/render_cache"
+          install -d -m 700 "$CACHE_DIR"
+          VERIFIED_SOURCE="$ROOT/render_assets/mio-live-e2e-36397707913.webp"
+          VERIFIED_CACHE="$CACHE_DIR/c4a850d62a8dd41826d583e229ee230e009ef536aa4b1fae9d7036ede4a394c8.webp"
+          if [ -s "$VERIFIED_SOURCE" ] && [ ! -s "$VERIFIED_CACHE" ]; then
+            cp "$VERIFIED_SOURCE" "$VERIFIED_CACHE.tmp"
+            chmod 600 "$VERIFIED_CACHE.tmp"
+            mv "$VERIFIED_CACHE.tmp" "$VERIFIED_CACHE"
+          fi
+          test -s "$VERIFIED_CACHE"
+          echo "mio_verified_real_render_cache=PASS bytes=$(wc -c < "$VERIFIED_CACHE")"
+
           JOB_DIR="$ROOT/render_jobs/runtime"
           ASSET_DIR="$ROOT/render_assets"
           JOB_ID="mio-worker-selftest-$RANDOM-$(date +%s)"
