@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.probe",
   "node_id": "mbpr",
-  "nonce": "mbpr-first-probe"
+  "nonce": "mbpr-live-probe-20260929-0742"
 }
