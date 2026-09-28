@@ -1,5 +1,5 @@
 {
   "schema": "agentos.gui-threads-probe/v1",
   "target": "oracle-gui-worker",
-  "nonce": "oracle-gui-threads-1790603405792"
+  "nonce": "oracle-gui-threads-retry-1790603458557"
 }
