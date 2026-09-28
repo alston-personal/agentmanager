@@ -28,7 +28,7 @@ export async function GET(
     'projects',
     'dressup-simulator',
     'render_assets',
-    jobId + '.png'
+    jobId + '.webp'
   );
   if (!fs.existsSync(file)) {
     return NextResponse.json({ error: 'Render asset not found' }, { status: 404 });
@@ -37,7 +37,7 @@ export async function GET(
   return new NextResponse(data, {
     status: 200,
     headers: {
-      'Content-Type': 'image/png',
+      'Content-Type': 'image/webp',
       'Cache-Control': 'private, max-age=31536000, immutable',
     },
   });
