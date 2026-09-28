@@ -1,5 +1,5 @@
 name: Oracle Inspect Oursong Insights
-# rerun: 2026-09-28T22:39+08:00
+# rerun: 2026-09-28T22:41+08:00
 
 on:
   push:
@@ -58,7 +58,7 @@ jobs:
                 'timestamp':str(p.get('timestamp') or ''),
                 'permalink':str(p.get('permalink') or ''),
                 'media_type':str(p.get('media_type') or ''),
-                'metrics':((ins.get('result') or {}).get('metrics') if ins.get('ok') is True else {'error':ins.get('error_code')}),
+                'metrics':((ins.get('result') or {}).get('metrics') if ins.get('ok') is True else {'error':ins.get('error_code'),'detail':ins.get('result')}),
                 'reply_count':len(((reps.get('result') or {}).get('items') or [])) if reps.get('ok') is True else None,
               })
           print('oursong_insights=PASS')
