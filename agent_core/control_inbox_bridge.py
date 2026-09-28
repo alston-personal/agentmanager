@@ -472,6 +472,22 @@ class ControlInboxBridge:
                 result = self._result(command, status='unknown', error='bridge_interrupted_after_claim')
                 self._terminal(state, command_id, result, posted=False)
                 entry = state['commands'][command_id]
+            elif entry.get('phase') == 'queued':
+                # Dispatch already happened and the task id is durable. Keep polling
+                # for a late receipt without ever redispatching the privileged action.
+                command = entry.get('command') if isinstance(entry.get('command'), dict) else {'command_id': command_id}
+                task_id = str(entry.get('task_id') or '')
+                if task_id:
+                    try:
+                        receipt = self.one.receipt(task_id)
+                    except OneControllerError:
+                        receipt = None
+                    except Exception:
+                        receipt = None
+                    if receipt is not None:
+                        result = self._result(command, status='completed', task_id=task_id, receipt=receipt)
+                        self._terminal(state, command_id, result, posted=False)
+                        entry = state['commands'][command_id]
             if entry.get('phase') == 'terminal' and not entry.get('posted'):
                 result = entry.get('result')
                 if isinstance(result, dict):
@@ -544,6 +560,15 @@ class ControlInboxBridge:
                         time.sleep(1)
                     status = 'completed' if receipt is not None else 'queued'
                     result = self._result(command, status=status, task_id=task_id, receipt=receipt)
+                    if receipt is None:
+                        state['commands'][command_id] = {
+                            'phase': 'queued',
+                            'command': command,
+                            'task_id': task_id,
+                            'queued_at': _iso(),
+                            'posted_queued': False,
+                        }
+                        self._save_state(state)
             except OneControllerError as exc:
                 result = self._result(command, status='error', error=str(exc))
             except Exception:
@@ -551,10 +576,16 @@ class ControlInboxBridge:
                 # can contain headers, paths, args or backend payloads.
                 result = self._result(command, status='error', error='bridge_internal_error')
 
-            self._terminal(state, command_id, result, posted=False)
-            self.github.post_result(result)
-            state['commands'][command_id]['posted'] = True
-            self._save_state(state)
+            if result.get('status') == 'queued' and state['commands'].get(command_id, {}).get('phase') == 'queued':
+                self.github.post_result(result)
+                state['commands'][command_id]['posted_queued'] = True
+                state['commands'][command_id]['updated_at'] = _iso()
+                self._save_state(state)
+            else:
+                self._terminal(state, command_id, result, posted=False)
+                self.github.post_result(result)
+                state['commands'][command_id]['posted'] = True
+                self._save_state(state)
             handled += 1
         return handled
 
