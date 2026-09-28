@@ -24,19 +24,7 @@ jobs:
           from agent_core.realm_fabric import RealmFabricStore
           cmd=json.load(open('.agentos/commands/mbpr-browser-readiness.json',encoding='utf-8'))
           assert cmd.get('node_id')=='mbpr'
-          code="""from pathlib import Path
-import importlib.util,json
-home=Path.home()
-apps=Path('/Applications')
-result={
- 'launchagent_plist':(home/'Library/LaunchAgents/org.milkcat.agentos.thin-client.plist').exists(),
- 'playwright_python':importlib.util.find_spec('playwright') is not None,
- 'chrome':(apps/'Google Chrome.app').exists(),
- 'chromium':(apps/'Chromium.app').exists(),
- 'safari':(apps/'Safari.app').exists(),
-}
-print(json.dumps(result,sort_keys=True))
-"""
+          code="from pathlib import Path; import importlib.util,json; home=Path.home(); apps=Path('/Applications'); result={'launchagent_plist':(home/'Library/LaunchAgents/org.milkcat.agentos.thin-client.plist').exists(),'playwright_python':importlib.util.find_spec('playwright') is not None,'chrome':(apps/'Google Chrome.app').exists(),'chromium':(apps/'Chromium.app').exists(),'safari':(apps/'Safari.app').exists()}; print(json.dumps(result,sort_keys=True))"
           tid='browser-ready-mbpr-'+str(int(time.time()))
           store=RealmFabricStore()
           store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]})
