@@ -17,14 +17,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json,time,urllib.request
-          from pathlib import Path
-          root=Path('/home/ubuntu/.local/share/agentos/gui-worker')
-          py=root/'venv/bin/python'
-          assert py.is_file(),py
-          PY
-          sudo -n -u ubuntu /home/ubuntu/.local/share/agentos/gui-worker/venv/bin/python - <<'PY'
+          sudo -n -H -u ubuntu /bin/bash -lc '
+          test -x "$HOME/.local/share/agentos/gui-worker/venv/bin/python"
+          exec "$HOME/.local/share/agentos/gui-worker/venv/bin/python" - <<'"'"'PY'"'"'
           import json
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
@@ -43,3 +38,4 @@ jobs:
               print('oracle_gui_browser_pages='+str(len(ctx.pages)))
               print('oracle_gui_browser_title='+title)
           PY
+          '
