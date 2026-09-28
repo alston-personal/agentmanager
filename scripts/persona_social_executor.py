@@ -49,10 +49,13 @@ def main():
     root=Path(args.persona_dir)
     state=json.load(open(root/"pdca/state.json",encoding="utf-8"))
     pending=list(state.get("pending_external_actions") or [])
-    target=next((x for x in pending if x.get("status")=="candidate" and x.get("capability")=="social.reply.review"),None)
+    target=next((x for x in pending if x.get("status")=="candidate" and x.get("capability") in (
+        "social.reply.review","social.reply.send","social.post.publish"
+    )),None)
     now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
+        Path(args.receipt_out).parent.mkdir(parents=True,exist_ok=True)
         Path(args.receipt_out).write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
         print(json.dumps(result,ensure_ascii=False)); return 0
 
@@ -67,6 +70,64 @@ def main():
 
     base={"schema":"agentos.social-request/v1","product_id":product,"platform":"threads","account_binding_id":binding_id}
     headers={"X-AgentOS-Product-Key":product_key}
+    capability=target.get("capability")
+
+    if capability in ("social.reply.send","social.post.publish"):
+        text=str(target.get("primary_text") or "").strip()
+        action_id=str(target.get("action_id") or "").strip()
+        if not text or not action_id:
+            raise SystemExit("social_write_intent_incomplete")
+        request={
+          **base,
+          "operation":"reply" if capability=="social.reply.send" else "publish",
+          "target_account_id":str(binding.get("provider_account_id") or ""),
+          "primary_text":text,
+          "write_intent_id":action_id,
+        }
+        if capability=="social.reply.send":
+            reply_to=str(target.get("reply_to_id") or "").strip()
+            if not reply_to: raise SystemExit("social_reply_target_required")
+            request["reply_to_id"]=reply_to
+        control=str(env.get("AGENTOS_SOCIAL_CONTROL_TOKEN") or "")
+        if not control: raise SystemExit("social_control_token_missing")
+        ac,accepted=post("/internal/v1/social/acceptances",request,{"X-AgentOS-Control-Token":control})
+        acceptance_id=str(accepted.get("acceptance_id") or "")
+        if ac not in (200,201) or not acceptance_id:
+            raise SystemExit("social_acceptance_failed:"+str(accepted.get("error") or ac))
+        endpoint="/v1/social/reply" if capability=="social.reply.send" else "/v1/social/publish"
+        wc,wr=post(endpoint,request,{**headers,"X-AgentOS-Acceptance-ID":acceptance_id})
+        if wc!=200 or wr.get("ok") is False:
+            raise SystemExit("social_write_failed:"+str(wr.get("error") or wc))
+        receipt={
+          "schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"EXECUTED",
+          "timestamp":now,"persona_username":args.username,"capability":capability,
+          "account_binding_id":binding_id,"action_id":action_id,
+          "write_performed":True,"provider_receipt":wr
+        }
+        out=Path(args.receipt_out); out.parent.mkdir(parents=True,exist_ok=True)
+        out.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+        events_path=root/"events/events.jsonl"
+        result=wr.get("result") or {}
+        object_id=str(result.get("id") or result.get("object_id") or "")
+        with open(events_path,"a",encoding="utf-8") as fh:
+            fh.write(json.dumps({
+              "id":("threads:reply:" if capability=="social.reply.send" else "threads:post:")+(object_id or action_id),
+              "type":"reply.sent" if capability=="social.reply.send" else "post.sent",
+              "timestamp":now,"source":"agentos_shared_social_capability",
+              "source_object_id":object_id or None,"actor":state.get("persona_id"),
+              "text":text,"pdca_action_id":action_id,"pdca_external_receipt":str(out.relative_to(root))
+            },ensure_ascii=False,separators=(",",":"))+"\n")
+        for x in pending:
+            if x is target:
+                x["status"]="completed"; x["executed_at"]=now
+                x["receipt_ref"]=str(out.relative_to(root)); x["provider_object_id"]=object_id or None
+        state["pending_external_actions"]=pending[-12:]
+        state["last_social_receipt"]=str(out.relative_to(root))
+        tmp=root/"pdca/state.json.tmp"
+        tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+        os.replace(tmp,root/"pdca/state.json")
+        print(json.dumps(receipt,ensure_ascii=False)); return 0
+
     sc,posts_r=post("/v1/social/status",{**base,"operation":"post.read"},headers)
     if sc!=200 or posts_r.get("ok") is False:
         raise SystemExit("post_read_failed:"+str(posts_r.get("error") or sc))
