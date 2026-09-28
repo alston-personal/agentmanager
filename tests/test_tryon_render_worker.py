@@ -157,3 +157,22 @@ def test_any_item_only_job_can_render_bag(monkeypatch, tmp_path):
     assert saved["output"]["renderedLayers"] == ["bag"]
     assert saved["output"]["pendingLayers"] == []
     assert saved["output"]["provider"] == "hybrid-vton"
+
+
+def test_clothing_only_cache_key_remains_compatible(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    job = {
+        "characterId": "sunlake-milkcat-ai-001",
+        "characterVersion": "mio-body-v1",
+        "view": "front",
+        "pose": "neutral_standing",
+        "input": {
+            "selectedLayers": {
+                "upper_main": {"garmentId": "net-43774-002"}
+            }
+        },
+    }
+    assert (
+        worker.outfit_cache_key(job, ["upper_main"])
+        == "c4a850d62a8dd41826d583e229ee230e009ef536aa4b1fae9d7036ede4a394c8"
+    )
