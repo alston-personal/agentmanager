@@ -18,23 +18,33 @@ def main() -> int:
     js_click=f"""(()=>{{const els=[...document.querySelectorAll('a,button,div[role=button]')];const e=els.find(x=>(x.innerText||'').includes({json.dumps(target)}));if(!e)return 'NOT_FOUND';e.click();return 'CLICKED';}})()"""
     js_send=f"""(()=>{{const box=document.querySelector('textarea,[contenteditable="true"]');if(!box)return 'NO_BOX';box.focus();if(box.tagName==='TEXTAREA'){{const s=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;s.call(box,{json.dumps(text)});box.dispatchEvent(new Event('input',{{bubbles:true}}));}}else{{document.execCommand('selectAll',false,null);document.execCommand('insertText',false,{json.dumps(text)});box.dispatchEvent(new InputEvent('input',{{bubbles:true,inputType:'insertText',data:{json.dumps(text)}}}));}}const buttons=[...document.querySelectorAll('button,[role=button]')];const send=buttons.find(x=>/^(Send|傳送)$/i.test((x.innerText||x.getAttribute('aria-label')||'').trim()));if(send){{send.click();return 'SENT_BUTTON';}}box.dispatchEvent(new KeyboardEvent('keydown',{{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}}));box.dispatchEvent(new KeyboardEvent('keypress',{{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}}));box.dispatchEvent(new KeyboardEvent('keyup',{{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}}));return 'SENT_ENTER';}})()"""
     js_verify=f"""(()=>{{const t=(document.querySelector('main')?.innerText||document.body.innerText||'');return t.includes({json.dumps(text)})?'FOUND':'MISSING';}})()"""
-    osa='\n'.join([
-        'tell application "Google Chrome"',
-        'activate',
-        'set t to active tab of front window',
-        'set u to URL of t',
-        'if u does not start with "https://www.threads.com/messages" and u does not start with "https://threads.com/messages" then set URL of t to "https://www.threads.com/messages"',
-        'delay 2',
-        'set r1 to execute t javascript '+json.dumps(js_click),
-        'delay 2',
-        'set r2 to execute t javascript '+json.dumps(js_send),
-        'delay 3',
-        'set r3 to execute t javascript '+json.dumps(js_verify),
-        'return (r1 & linefeed & r2 & linefeed & r3)',
-        'end tell',
-    ])
+    osa='''on run argv
+set jsClick to item 1 of argv
+set jsVerify to item 2 of argv
+set jsSend to item 3 of argv
+tell application "Google Chrome"
+activate
+set t to active tab of front window
+set u to URL of t
+if u does not start with "https://www.threads.com/messages" and u does not start with "https://threads.com/messages" then
+set URL of t to "https://www.threads.com/messages"
+delay 2
+end if
+set r1 to execute t javascript jsClick
+delay 2
+set beforeSend to execute t javascript jsVerify
+if beforeSend is "FOUND" then
+return (r1 & linefeed & "ALREADY_FOUND" & linefeed & "FOUND")
+end if
+set r2 to execute t javascript jsSend
+delay 3
+set r3 to execute t javascript jsVerify
+return (r1 & linefeed & r2 & linefeed & r3)
+end tell
+end run'''
     code=("import subprocess; s="+repr(osa)+"; "
-          +"p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=30); "
+          +"args=['/usr/bin/osascript','-e',s,'--',"+repr(js_click)+","+repr(js_verify)+","+repr(js_send)+"]; "
+          +"p=subprocess.run(args,text=True,capture_output=True,timeout=30); "
           +"print('OSA_RC='+str(p.returncode)); "
           +"print(p.stdout,end=''); "
           +"e=(p.stderr or '').replace("+repr(target)+",'[target]').replace("+repr(text)+",'[reply]'); "
