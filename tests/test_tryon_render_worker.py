@@ -231,3 +231,38 @@ def test_any_item_client_passes_hf_token(monkeypatch, tmp_path):
     assert isinstance(client, TokenClient)
     assert captured["source"] == "pbgo/OmniTry"
     assert captured["token"] == "hf_test_token"
+
+
+def test_any_item_transient_failure_retries_same_provider(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    person = tmp_path / "person.webp"
+    item = tmp_path / "item.jpg"
+    output = tmp_path / "output.webp"
+    person.write_bytes(b"p" * 2000)
+    item.write_bytes(b"i" * 2000)
+    output.write_bytes(b"o" * 2000)
+
+    monkeypatch.setattr(worker, "ANY_ITEM_SPACE_IDS", ["pbgo/OmniTry"])
+    monkeypatch.setattr(worker, "download_input", lambda url, suffix: person if "person" in url else item)
+    monkeypatch.setattr(worker.time, "sleep", lambda seconds: None)
+
+    calls = {"count": 0}
+
+    class FlakyClient:
+        def predict(self, *args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise RuntimeError("502 Bad Gateway")
+            return str(output)
+
+    monkeypatch.setattr(worker, "any_item_client", lambda space_id: FlakyClient())
+
+    rendered, provider = worker.omni_try_on(
+        "https://example.com/person.webp",
+        "https://example.com/item.jpg",
+        "shoe",
+        123,
+    )
+    assert rendered == str(output)
+    assert provider == "pbgo/OmniTry"
+    assert calls["count"] == 3
