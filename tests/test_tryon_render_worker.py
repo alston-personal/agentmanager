@@ -310,7 +310,7 @@ def test_qwen_reference_edit_uses_reference_board_workflow(monkeypatch, tmp_path
     output = tmp_path / "qwen-output.webp"
     Image.new("RGB", (500, 900), "white").save(person, "WEBP")
     Image.new("RGB", (400, 400), "white").save(item, "JPEG")
-    Image.new("RGB", (500, 900), "white").save(output, "WEBP")
+    output.write_bytes(b"q" * 2000)
 
     calls = []
 
