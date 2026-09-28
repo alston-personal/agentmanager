@@ -111,7 +111,7 @@ class _ImageMetaParser(HTMLParser):
             return
         row = {str(k).lower(): (v or "") for k, v in attrs}
         prop = row.get("property") or row.get("name")
-        if prop.lower() in {"og:image", "twitter:image", "twitter:image:src"} and row.get("content"):
+        if prop and prop.lower() in {"og:image", "twitter:image", "twitter:image:src"} and row.get("content"):
             self.image_url = row["content"].strip()
 
 
@@ -163,10 +163,10 @@ def output_path(result: Any) -> Path:
     if isinstance(candidate, dict):
         candidate = candidate.get("path") or candidate.get("url")
     if not isinstance(candidate, str) or not candidate:
-        raise RuntimeError(f"IDM-VTON returned no output path: {result!r}")
+        raise RuntimeError(f"try-on provider returned no output path: {result!r}")
     path = Path(candidate)
     if not path.exists() or path.stat().st_size < 1000:
-        raise RuntimeError(f"IDM-VTON output missing or too small: {candidate}")
+        raise RuntimeError(f"try-on provider output missing or too small: {candidate}")
     return path
 
 
