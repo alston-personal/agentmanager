@@ -84,6 +84,8 @@ def atomic_write(path: Path, payload: dict[str, Any]) -> None:
 
 _CLIENT: Client | None = None
 _ANY_ITEM_CLIENTS: dict[str, Client] = {}
+_QWEN_EDIT_CLIENT: Client | None = None
+QWEN_EDIT_SPACE_ID = os.environ.get("AGENTOS_TRYON_QWEN_EDIT_SPACE_ID", "Qwen/Qwen-Image-2.1")
 
 
 def client() -> Client:
@@ -115,6 +117,24 @@ def any_item_client(space_id: str) -> Client:
         cached = Client(space_id, **client_kwargs)
         _ANY_ITEM_CLIENTS[space_id] = cached
     return cached
+
+
+def qwen_edit_client() -> Client:
+    global _QWEN_EDIT_CLIENT
+    if _QWEN_EDIT_CLIENT is None:
+        client_kwargs = {
+            "download_files": True,
+            "verbose": False,
+            "httpx_kwargs": {"timeout": 420.0},
+        }
+        if HF_TOKEN:
+            params = inspect.signature(Client).parameters
+            if "token" in params:
+                client_kwargs["token"] = HF_TOKEN
+            elif "hf_token" in params:
+                client_kwargs["hf_token"] = HF_TOKEN
+        _QWEN_EDIT_CLIENT = Client(QWEN_EDIT_SPACE_ID, **client_kwargs)
+    return _QWEN_EDIT_CLIENT
 
 
 class _ImageMetaParser(HTMLParser):
@@ -223,6 +243,80 @@ def idm_try_on(person_source: str, garment_url: str, description: str, seed: int
                 pass
 
 
+def qwen_reference_try_on(
+    person_source: str,
+    object_url: str,
+    object_class: str,
+    seed: int,
+) -> tuple[str, str]:
+    temp_inputs: list[Path] = []
+    global _QWEN_EDIT_CLIENT
+    try:
+        if person_source.startswith(("http://", "https://")):
+            person_path = download_input(person_source, ".webp")
+            temp_inputs.append(person_path)
+        else:
+            person_path = Path(person_source)
+            if not person_path.exists():
+                raise RuntimeError(f"person input missing: {person_source}")
+
+        if object_url.startswith(("http://", "https://")):
+            object_path = download_input(object_url, ".jpg")
+            temp_inputs.append(object_path)
+        else:
+            object_path = Path(object_url)
+            if not object_path.exists():
+                raise RuntimeError(f"object input missing: {object_url}")
+
+        target = "shoes" if object_class == "shoe" else object_class
+        instruction = (
+            "Image 1 is the canonical full-body person and Image 2 is the exact product reference. "
+            f"Edit Image 1 so the person is naturally wearing the exact {target} shown in Image 2. "
+            "Preserve the person's face, identity, hair, body proportions, pose, all other clothing, "
+            "hands, background, framing, and lighting. Change only the requested wearable item. "
+            "Keep the full body visible and preserve the product's color, shape, material, and design. "
+            "Return one photorealistic edited full-body image, not a collage and not a comparison."
+        )
+
+        cli = qwen_edit_client()
+        prepared = cli.predict(
+            [handle_file(str(person_path)), handle_file(str(object_path))],
+            instruction,
+            False,
+            False,
+            "speed",
+            int(seed),
+            False,
+            api_name="/prepare_request",
+        )
+        if not isinstance(prepared, (list, tuple)) or len(prepared) < 4:
+            raise RuntimeError(f"Qwen prepare_request returned unexpected result: {prepared!r}")
+        actual_seed = int(prepared[1])
+        request_state = prepared[3]
+        result = cli.predict(
+            request_state,
+            instruction,
+            False,
+            False,
+            "",
+            actual_seed,
+            1024,
+            768,
+            "collage, split screen, duplicate person, extra shoes, altered face, changed clothes",
+            api_name="/generate_request",
+        )
+        return str(output_path(result)), QWEN_EDIT_SPACE_ID
+    except Exception:
+        _QWEN_EDIT_CLIENT = None
+        raise
+    finally:
+        for path in temp_inputs:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def omni_try_on(
     person_source: str,
     object_url: str,
@@ -275,6 +369,16 @@ def omni_try_on(
                     if not transient or attempt >= 3:
                         break
                     time.sleep(4 * attempt)
+
+        try:
+            return qwen_reference_try_on(
+                str(person_path),
+                str(object_path),
+                object_class,
+                int(seed),
+            )
+        except Exception as exc:
+            errors.append(f"{QWEN_EDIT_SPACE_ID}={type(exc).__name__}:{exc}"[:700])
 
         detail = " | ".join(errors)
         quota_exhausted = any(
@@ -448,7 +552,11 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                     ANY_ITEM_SUPPORTED[layer],
                     seed_base + index,
                 )
-                provider = "omnitry-gradio-client"
+                provider = (
+                    "qwen-image-2.1-reference-edit"
+                    if provider_space == QWEN_EDIT_SPACE_ID
+                    else "omnitry-gradio-client"
+                )
 
             rendered_layers.append(layer)
             provider_outputs.append(
