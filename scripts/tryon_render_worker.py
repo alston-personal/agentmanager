@@ -60,8 +60,12 @@ def http_json(url: str, payload: dict[str, Any], timeout: int = 180) -> dict[str
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:4000]
+        raise RuntimeError(f"HTTP {exc.code} from VTON provider: {detail}") from exc
     value = json.loads(body.decode("utf-8"))
     if not isinstance(value, dict):
         raise RuntimeError("VTON provider returned non-object JSON")
