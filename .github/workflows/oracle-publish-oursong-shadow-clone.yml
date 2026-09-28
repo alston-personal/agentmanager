@@ -29,12 +29,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          IMAGE_URL_B64="$(printf '%s' "$IMAGE_URL" | base64 -w0)"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            python3 - "$GITHUB_SHA" "$TEXT_B64" "$IMAGE_URL" <<'PY'
+            python3 - "$GITHUB_SHA" "$TEXT_B64" "$IMAGE_URL_B64" <<'PY'
           import base64,json,sys,urllib.request
           from pathlib import Path
-          source_commit,text_b64,image_url=sys.argv[1:4]
+          source_commit,text_b64,image_url_b64=sys.argv[1:4]
           text=base64.b64decode(text_b64).decode('utf-8')
+          image_url=base64.b64decode(image_url_b64).decode('utf-8')
           env={}
           for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
               raw=raw.strip()
