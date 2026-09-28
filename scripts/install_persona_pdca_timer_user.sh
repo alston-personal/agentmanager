@@ -10,6 +10,7 @@ SOURCE_REPLY_INTENT_GENERATOR="${5:-}"
 SOURCE_PUBLIC_ACTIVITY_PUBLISHER="${6:-}"
 SOURCE_POST_INTENT_GENERATOR="${7:-}"
 SOURCE_SOCIAL_RUNNER="${8:-}"
+SOURCE_GROWTH_METRICS="${9:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
@@ -18,6 +19,7 @@ test -f "$SOURCE_REPLY_INTENT_GENERATOR"
 test -f "$SOURCE_PUBLIC_ACTIVITY_PUBLISHER"
 test -f "$SOURCE_POST_INTENT_GENERATOR"
 test -f "$SOURCE_SOCIAL_RUNNER"
+test -f "$SOURCE_GROWTH_METRICS"
 
 LIB="$HOME/.local/lib/agentos"
 BIN="$HOME/.local/bin"
@@ -29,6 +31,7 @@ install -m 0755 "$SOURCE_INTERNAL_EXECUTOR" "$LIB/persona_internal_activity_exec
 install -m 0755 "$SOURCE_REPLY_INTENT_GENERATOR" "$LIB/persona_reply_intent_generator.py"
 install -m 0755 "$SOURCE_PUBLIC_ACTIVITY_PUBLISHER" "$LIB/publish_mio_public_activity.py"
 install -m 0755 "$SOURCE_POST_INTENT_GENERATOR" "$LIB/persona_post_intent_generator.py"
+install -m 0755 "$SOURCE_GROWTH_METRICS" "$LIB/persona_growth_metrics_collector.py"
 install -m 0755 "$SOURCE_RUNNER" "$BIN/agentos-persona-pdca-heartbeat"
 install -m 0755 "$SOURCE_SOCIAL_RUNNER" "$BIN/agentos-persona-social-actions"
 
@@ -81,6 +84,7 @@ Wants=network-online.target
 Type=oneshot
 Environment=PERSONA_PATH=personas/sunlake-milkcat
 Environment=AGENTOS_PERSONA_SOCIAL_EXECUTOR=$LIB/persona_social_executor.py
+Environment=AGENTOS_PERSONA_GROWTH_METRICS=$LIB/persona_growth_metrics_collector.py
 ExecStart=$BIN/agentos-persona-social-actions
 NoNewPrivileges=true
 EOF
