@@ -12,36 +12,41 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - name: Probe Social target-account contract safely
+      - name: Discover explicit target-account field safely
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, urllib.request, urllib.error
+          import json, urllib.request, urllib.error, concurrent.futures
           URL="https://studio.milkcat.org/dashboard/api/social/v1/social/reply"
           base={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply","write_intent_id":"pdca-safe-probe"}
-          variants={
-              "binding":{"account_binding_id":"probe"},
-              "object":{"object_id":"probe"},
-              "reply_to":{"reply_to_id":"probe"},
-              "binding_object":{"account_binding_id":"probe","object_id":"probe"},
-              "binding_reply_to":{"account_binding_id":"probe","reply_to_id":"probe"},
-              "binding_object_reply_to":{"account_binding_id":"probe","object_id":"probe","reply_to_id":"probe"}
+          candidates={
+            "target_account_id":"probe","target_account_binding_id":"probe","target_binding_id":"probe",
+            "account_id":"probe","binding_id":"probe","provider_account_id":"probe",
+            "target_provider_account_id":"probe","target_username":"probe","username":"probe",
+            "account_username":"probe","target_account":"probe","account":"probe",
+            "target_identity":"probe","identity_id":"probe","actor_account_id":"probe",
+            "expected_account_id":"probe","expected_username":"probe","as_account_id":"probe",
+            "write_account_id":"probe","source_account_id":"probe","profile_id":"probe"
           }
-          out={}
-          for name,extra in variants.items():
-              p=dict(base); p.update(extra)
+          def probe(item):
+              k,v=item
+              p=dict(base); p[k]=v
               req=urllib.request.Request(URL,data=json.dumps(p).encode(),headers={"content-type":"application/json","accept":"application/json"},method="POST")
               try:
                   with urllib.request.urlopen(req,timeout=8) as r:
-                      status=r.status; body=r.read().decode("utf-8","replace")[:1200]
+                      status=r.status; body=r.read().decode("utf-8","replace")[:800]
               except urllib.error.HTTPError as e:
-                  status=e.code; body=e.read().decode("utf-8","replace")[:1200]
+                  status=e.code; body=e.read().decode("utf-8","replace")[:800]
               except Exception as e:
                   status="error"; body=repr(e)
-              out[name]={"status":status,"body":body}
+              return k,{"status":status,"body":body}
+          out={}
+          with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+              for k,res in ex.map(probe,candidates.items()):
+                  out[k]=res
           print(json.dumps(out,ensure_ascii=False,indent=2))
           PY
