@@ -33,7 +33,9 @@ jobs:
           print('oracle_gui_threads_cdp=PASS')
           PY
           ROOT=/home/ubuntu/.local/share/agentos/gui-worker
-          PYTHONPATH="$ROOT/venv/lib/python3.10/site-packages" /usr/bin/python3 - <<'PY'
+          SITE="$(find "$ROOT/venv/lib" -maxdepth 2 -type d -name site-packages | head -n 1)"
+          test -n "$SITE"
+          PYTHONPATH="$SITE" /usr/bin/python3 - <<'PY'
           import json,time
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
