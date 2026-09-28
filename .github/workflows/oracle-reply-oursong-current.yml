@@ -1,0 +1,66 @@
+name: Oracle Reply Oursong Current Comments
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-reply-oursong-current.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reply:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Reply and verify readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,urllib.request
+          from pathlib import Path
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          control_token=str(env['AGENTOS_SOCIAL_CONTROL_TOKEN'])
+          bindings=json.loads(Path('/home/ubuntu/.local/state/agentos/social/credentials.json').read_text(encoding='utf-8')).get('bindings') or {}
+          matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
+          assert len(matches)==1
+          bid,row=matches[0]; account_id=str(row.get('provider_account_id') or ''); assert account_id
+          root_id='17984133108087131'
+          actions=[
+            ('18191861362398240','我也比較接近這個想法。牌如果能把原本沒注意到的角度翻出來，就已經很有用了。','oursong-reply-20260928-st019023-v1'),
+            ('18116166170086014','因為衛生紙抽完只會剩紙芯，塔羅至少還能順便讓自己多想兩分鐘。','oursong-reply-20260928-a0968410696p-v1'),
+          ]
+          def post(path,payload,headers):
+              req=urllib.request.Request('http://127.0.0.1:8771'+path,data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode(),headers={'Content-Type':'application/json',**headers},method='POST')
+              with urllib.request.urlopen(req,timeout=30) as r: return json.load(r)
+          for reply_to,text,intent in actions:
+              request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'reply','account_binding_id':bid,'target_account_id':account_id,'primary_text':text,'reply_to_id':reply_to,'write_intent_id':intent}
+              acc=post('/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
+              aid=str(acc.get('acceptance_id') or ''); assert aid
+              receipt=post('/v1/social/reply',request,{'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':aid})
+              assert receipt.get('ok') is True, receipt
+              oid=str(receipt.get('platform_object_id') or ''); assert oid
+              read_req={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'replies.read','account_binding_id':bid,'object_id':root_id}
+              rb=post('/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key})
+              assert rb.get('ok') is True
+              items=(rb.get('result') or {}).get('items') or []
+              hit=next((x for x in items if str(x.get('id') or '')==oid and str(x.get('text') or '').strip()==text),None)
+              assert hit, 'oursong_reply_readback_missing'
+              print('oursong_reply=PASS:'+reply_to+':'+oid)
+          PY
