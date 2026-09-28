@@ -50,11 +50,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          REMOTE_PUBLISHER="/tmp/publish_mio_public_activity-$GITHUB_RUN_ID.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/publish_mio_public_activity.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_PUBLISHER"
           test -n "${DEPLOY_USER:-}"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE_PATH" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" <<'REMOTE'
+            bash -s -- "$SOURCE_REPOSITORY" "$SOURCE_SHA" "$ROUTE_PATH" "$BACKUP_KEY" "$RECEIPT_SCHEMA" "$GITHUB_RUN_ID" "$REMOTE_PUBLISHER" <<'REMOTE'
           set -euo pipefail
-          REPO="$1"; SOURCE_SHA="$2"; ROUTE_PATH="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"
+          REPO="$1"; SOURCE_SHA="$2"; ROUTE_PATH="$3"; BACKUP_KEY="$4"; RECEIPT_SCHEMA="$5"; RUN_ID="$6"; PUBLISHER="$7"
           LIVE=/home/ubuntu/zeus-writer/website/dist
           TMP=$(mktemp -d /tmp/mio-persona-release-XXXXXX)
           SRC="$TMP/studio-web"
@@ -64,7 +67,7 @@ jobs:
           DEPLOYED=0
 
           cleanup() {
-            rm -rf "$TMP" "$NEW_ROUTE" 2>/dev/null || true
+            rm -rf "$TMP" "$NEW_ROUTE" "$PUBLISHER" 2>/dev/null || true
           }
           rollback() {
             if [ "$DEPLOYED" = 1 ]; then
@@ -96,6 +99,14 @@ jobs:
           cd "$SRC"
           npm install --no-package-lock --ignore-scripts
           npm run build
+
+          DATA_REPO="$TMP/agent-data"
+          /usr/bin/gh repo clone alston-personal/my-agent-data "$DATA_REPO" -- --branch main --single-branch >/dev/null
+          python3 "$PUBLISHER" \
+            --persona-dir "$DATA_REPO/personas/sunlake-milkcat" \
+            --output "$ROUTE_DIR/activity.json"
+          python3 -m json.tool "$ROUTE_DIR/activity.json" >/dev/null
+          grep -Fq 'milkcat.persona-public-activity/v1' "$ROUTE_DIR/activity.json"
 
           test -f "$ROUTE_DIR/index.html"
           test -f "$ROUTE_DIR/wardrobe/index.html"
@@ -142,9 +153,6 @@ jobs:
           fi
 
           cp -a "$ROUTE_DIR" "$NEW_ROUTE"
-          if [ -s "$LIVE/$ROUTE_PATH/activity.json" ]; then
-            cp "$LIVE/$ROUTE_PATH/activity.json" "$NEW_ROUTE/activity.json"
-          fi
           find "$NEW_ROUTE" -type d -exec chmod 0755 {} +
           find "$NEW_ROUTE" -type f -exec chmod 0644 {} +
           rm -rf "$LIVE/$ROUTE_PATH"
