@@ -2,6 +2,6 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.threads-web-dm.install",
   "node_id": "mbpr",
-  "source_commit": "26d840802846d4334048b40efab0743511165340",
-  "nonce": "mbpr-threads-install-1790555965359"
+  "source_commit": "c4002fa4b27f4aed338ee9d4494d2d9f1932286d",
+  "nonce": "mbpr-browser-bridge-refresh-1790558220651"
 }
