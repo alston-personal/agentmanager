@@ -19,16 +19,36 @@ jobs:
   deploy:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install worker and system service
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install worker as ubuntu user service
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n install -d -m 755 -o ubuntu -g ubuntu /home/ubuntu/.local/bin
-          sudo -n install -m 755 -o ubuntu -g ubuntu scripts/tryon_render_worker.py /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          test -n "${DEPLOY_USER:-}"
+          REMOTE_SCRIPT="/tmp/agentos-mio-tryon-render-worker-$GITHUB_RUN_ID.py"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/tryon_render_worker.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SCRIPT"
 
-          cat > /tmp/agentos-mio-tryon-render-worker.service <<'UNIT'
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$REMOTE_SCRIPT" <<'REMOTE'
+          set -euo pipefail
+          REMOTE_SCRIPT="$1"
+          install -d -m 700 "$HOME/.local/bin" "$HOME/.config/systemd/user"
+          install -m 755 "$REMOTE_SCRIPT" "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
+          rm -f "$REMOTE_SCRIPT"
+
+          cat > "$HOME/.config/systemd/user/agentos-mio-tryon-render-worker.service" <<'UNIT'
           [Unit]
           Description=AgentOS Mio Outfit Try-On Render Worker
           After=network-online.target
@@ -36,8 +56,6 @@ jobs:
 
           [Service]
           Type=simple
-          User=ubuntu
-          Group=ubuntu
           Environment=HOME=/home/ubuntu
           Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
           Environment=AGENTOS_TRYON_POLL_SECONDS=2
@@ -47,12 +65,15 @@ jobs:
           RestartSec=5
 
           [Install]
-          WantedBy=multi-user.target
+          WantedBy=default.target
           UNIT
 
-          sudo -n install -m 644 /tmp/agentos-mio-tryon-render-worker.service /etc/systemd/system/agentos-mio-tryon-render-worker.service
-          sudo -n systemctl daemon-reload
-          sudo -n systemctl enable --now agentos-mio-tryon-render-worker.service
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          test -S "$XDG_RUNTIME_DIR/bus"
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-mio-tryon-render-worker.service
           sleep 2
-          sudo -n systemctl is-active agentos-mio-tryon-render-worker.service
-          sudo -n systemctl --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
+          systemctl --user is-active agentos-mio-tryon-render-worker.service
+          systemctl --user --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
+          REMOTE
