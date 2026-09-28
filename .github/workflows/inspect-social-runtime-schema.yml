@@ -26,32 +26,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" 'python3 - <<"PY"
-import json, urllib.request
-urls=["http://127.0.0.1:8771/openapi.json","http://127.0.0.1:8771/docs"]
-for u in urls:
-    try:
-        with urllib.request.urlopen(u, timeout=3) as r:
-            body=r.read()
-        if u.endswith("openapi.json"):
-            d=json.loads(body)
-            keep={}
-            for p in ["/v1/social/status","/v1/social/reply","/v1/social/publish","/v1/social/connect"]:
-                if p in d.get("paths",{}):
-                    op=d["paths"][p]
-                    keep[p]={}
-                    for method,spec in op.items():
-                        if not isinstance(spec,dict): continue
-                        rb=spec.get("requestBody",{})
-                        schema=((rb.get("content") or {}).get("application/json") or {}).get("schema")
-                        keep[p][method]={"summary":spec.get("summary"),"schema":schema}
-            comps={}
-            for n,s in (d.get("components",{}).get("schemas",{}) or {}).items():
-                if any(k in n.lower() for k in ["social","reply","publish","status","request"]):
-                    comps[n]={"required":s.get("required",[]),"properties":sorted((s.get("properties") or {}).keys())}
-            print(json.dumps({"paths":keep,"schemas":comps},ensure_ascii=False,indent=2))
-            raise SystemExit(0)
-    except Exception as e:
-        last=repr(e)
-print(json.dumps({"error":"openapi_unavailable","detail":last}))
-PY'
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          python3 - <<'PY'
+          import json, urllib.request
+          try:
+              with urllib.request.urlopen("http://127.0.0.1:8771/openapi.json", timeout=5) as r:
+                  d=json.loads(r.read())
+          except Exception as e:
+              print(json.dumps({"error":"openapi_unavailable","detail":repr(e)}))
+              raise SystemExit(0)
+          keep={}
+          for p in ["/v1/social/status","/v1/social/reply","/v1/social/publish","/v1/social/connect"]:
+              if p not in d.get("paths",{}):
+                  continue
+              keep[p]={}
+              for method,spec in d["paths"][p].items():
+                  if not isinstance(spec,dict):
+                      continue
+                  rb=spec.get("requestBody",{})
+                  schema=((rb.get("content") or {}).get("application/json") or {}).get("schema")
+                  keep[p][method]={"summary":spec.get("summary"),"schema":schema}
+          comps={}
+          for n,s in (d.get("components",{}).get("schemas",{}) or {}).items():
+              if any(k in n.lower() for k in ["social","reply","publish","status","request"]):
+                  comps[n]={
+                      "required":s.get("required",[]),
+                      "properties":sorted((s.get("properties") or {}).keys())
+                  }
+          print(json.dumps({"paths":keep,"schemas":comps},ensure_ascii=False,indent=2))
+          PY
+          REMOTE
