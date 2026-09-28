@@ -9,9 +9,11 @@ on:
       - 'agentos_node/thin_client.py'
       - 'agentos_node/client_runtime_converge.py'
       - 'scripts/install_thin_client_macos.sh'
+      - 'scripts/bootstrap_macos_transactional_runtime.py'
       - 'tests/test_macos_node_installer_contract.py'
       - 'tests/test_macos_node_capabilities.py'
       - 'tests/test_macos_client_runtime_converge.py'
+      - 'tests/test_macos_transactional_bootstrap.py'
       - '.github/workflows/macos-node-contract-guard.yml'
 permissions:
   contents: read
@@ -24,4 +26,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -q pytest
-      - run: python -m pytest -q tests/test_macos_node_installer_contract.py tests/test_macos_node_capabilities.py tests/test_macos_client_runtime_converge.py
+      - run: python -m pytest -q tests/test_macos_node_installer_contract.py tests/test_macos_node_capabilities.py tests/test_macos_client_runtime_converge.py tests/test_macos_transactional_bootstrap.py
