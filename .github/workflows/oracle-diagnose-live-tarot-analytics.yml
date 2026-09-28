@@ -29,8 +29,10 @@ jobs:
           PORT="${DEPLOY_PORT:-22}"
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
           set -euo pipefail
-          sudo -n systemctl is-active --quiet milkcat-leopardcat-analytics.service
-          echo 'tarot_service=active'
+          service_state=$(sudo -n systemctl is-active milkcat-leopardcat-analytics.service 2>/dev/null || true)
+          echo "tarot_service_state=${service_state:-unknown}"
+          echo 'tarot_listener_8088:'
+          ss -ltnp 'sport = :8088' || true
 
           sudo -n -u ubuntu python3 - <<'PY'
           import json, os, pathlib, sqlite3, stat, urllib.request
@@ -56,16 +58,19 @@ jobs:
 
           token=token_file.read_text(encoding='utf8').strip()
           url='http://127.0.0.1:8088/api/v1/analytics/summary?days=30'
-          req=urllib.request.Request(url,headers={'X-Analytics-Token':token})
-          with urllib.request.urlopen(req,timeout=8) as response:
-              payload=json.load(response)
-              assert response.status==200
-          print('tarot_api_total_readings='+str(payload.get('total_readings')))
-          print('tarot_api_by_date='+json.dumps(payload.get('by_date') or {},sort_keys=True))
-          print('tarot_api_by_draw_mode='+json.dumps(payload.get('by_draw_mode') or {},sort_keys=True))
-          print('tarot_api_spread_draw_mode_keys='+','.join(sorted((payload.get('by_spread_draw_mode') or {}).keys())))
-          assert payload.get('total_readings')==total, 'tarot_api_db_count_mismatch'
-          print('tarot_api_db_consistency=PASS')
+          try:
+              req=urllib.request.Request(url,headers={'X-Analytics-Token':token})
+              with urllib.request.urlopen(req,timeout=8) as response:
+                  payload=json.load(response)
+                  print('tarot_api_http_status='+str(response.status))
+              print('tarot_api_total_readings='+str(payload.get('total_readings')))
+              print('tarot_api_by_date='+json.dumps(payload.get('by_date') or {},sort_keys=True))
+              print('tarot_api_by_draw_mode='+json.dumps(payload.get('by_draw_mode') or {},sort_keys=True))
+              print('tarot_api_spread_draw_mode_keys='+','.join(sorted((payload.get('by_spread_draw_mode') or {}).keys())))
+              print('tarot_api_db_consistency='+('PASS' if payload.get('total_readings')==total else 'FAIL'))
+          except Exception as exc:
+              print('tarot_api_http_status=UNAVAILABLE')
+              print('tarot_api_error_type='+type(exc).__name__)
           PY
 
           # Verify Dashboard process and private credential accessibility without browser auth.
@@ -76,11 +81,15 @@ jobs:
           sudo -n -u ubuntu python3 - <<'PY'
           import json, pathlib, urllib.request
           token=pathlib.Path('/home/ubuntu/.config/milkcat/leopardcat-analytics-token').read_text().strip()
-          req=urllib.request.Request('http://127.0.0.1:8088/api/v1/analytics/summary?days=30',headers={'X-Analytics-Token':token})
-          with urllib.request.urlopen(req,timeout=8) as response:
-              payload=json.load(response)
-          print('dashboard_identity_tarot_total_readings='+str(payload.get('total_readings')))
-          print('dashboard_identity_tarot_read=PASS')
+          try:
+              req=urllib.request.Request('http://127.0.0.1:8088/api/v1/analytics/summary?days=30',headers={'X-Analytics-Token':token})
+              with urllib.request.urlopen(req,timeout=8) as response:
+                  payload=json.load(response)
+              print('dashboard_identity_tarot_total_readings='+str(payload.get('total_readings')))
+              print('dashboard_identity_tarot_read=PASS')
+          except Exception as exc:
+              print('dashboard_identity_tarot_read=FAIL')
+              print('dashboard_identity_tarot_error_type='+type(exc).__name__)
           PY
 
           for route in /dashboard/api/auth/session /dashboard/api/admin/usage /dashboard/admin/usage; do
