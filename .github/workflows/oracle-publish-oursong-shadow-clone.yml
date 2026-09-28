@@ -1,0 +1,81 @@
+name: Oracle Publish Oursong Shadow Clone Meme
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-publish-oursong-shadow-clone.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      IMAGE_URL: 'https://export-download.canva.com/aaeafa14-b9c1-452b-afb7-d20b965141d8/0/0001-3989580665096247899.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQYCGKMUH5AO7UJ26%2F20260928%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260928T043816Z&X-Amz-Expires=24595&X-Amz-Signature=b2b23e070bcb3f5acc52478ec8f0e78c8eed01638a5f7a1fa80353efc132ea82&X-Amz-SignedHeaders=host%3Bx-amz-expected-bucket-owner&response-expires=Mon%2C%2028%20Sep%202026%2011%3A28%3A11%20GMT'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Publish image meme and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEXT_B64="$(printf '%s' '世界上最遙遠的距離，
+就是黃偉哲到底在哪裡。
+
+影分身之術不是忍術，
+是行程表。
+
+昨天新加坡，今天清晨台南孔廟。
+我開始懷疑本體根本不存在。' | base64 -w0)"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            python3 - "$GITHUB_SHA" "$TEXT_B64" "$IMAGE_URL" <<'PY'
+          import base64,json,sys,urllib.request
+          from pathlib import Path
+          source_commit,text_b64,image_url=sys.argv[1:4]
+          text=base64.b64decode(text_b64).decode('utf-8')
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          control_token=str(env['AGENTOS_SOCIAL_CONTROL_TOKEN'])
+          bindings=json.loads(Path('/home/ubuntu/.local/state/agentos/social/credentials.json').read_text(encoding='utf-8')).get('bindings') or {}
+          matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
+          assert len(matches)==1
+          bid,row=matches[0]; account_id=str(row.get('provider_account_id') or ''); assert account_id
+          # Verify source image is fetchable at useful size before giving Meta the URL.
+          req=urllib.request.Request(image_url,headers={'User-Agent':'Mozilla/5.0'})
+          with urllib.request.urlopen(req,timeout=25) as r:
+              blob=r.read()
+              assert r.status==200 and len(blob)>200000 and str(r.headers.get('content-type') or '').startswith('image/')
+              print('oursong_media_source=PASS:'+str(len(blob)))
+          request={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'publish','account_binding_id':bid,'target_account_id':account_id,'primary_text':text,'image_url':image_url,'image_alt_text':'黃偉哲近期公開行程的影分身之術漫畫梗圖','write_intent_id':'oursong-shadow-clone-'+source_commit[:12]}
+          def post(path,payload,headers):
+              q=urllib.request.Request('http://127.0.0.1:8771'+path,data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode(),headers={'Content-Type':'application/json',**headers},method='POST')
+              with urllib.request.urlopen(q,timeout=40) as r: return json.load(r)
+          acc=post('/internal/v1/social/acceptances',request,{'X-AgentOS-Control-Token':control_token})
+          aid=str(acc.get('acceptance_id') or ''); assert aid
+          receipt=post('/v1/social/publish',request,{'X-AgentOS-Product-Key':product_key,'X-AgentOS-Acceptance-ID':aid})
+          assert receipt.get('ok') is True, receipt
+          oid=str(receipt.get('platform_object_id') or ''); assert oid
+          read_req={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'post.read','account_binding_id':bid}
+          rb=post('/v1/social/status',read_req,{'X-AgentOS-Product-Key':product_key}); assert rb.get('ok') is True
+          items=(rb.get('result') or {}).get('items') or []
+          hit=next((x for x in items if str(x.get('id') or '')==oid),None); assert hit
+          assert str(hit.get('text') or '').strip()==text.strip()
+          assert str(hit.get('media_type') or '').upper()=='IMAGE', hit
+          permalink=str(hit.get('permalink') or ''); assert permalink.startswith('https://www.threads.com/@oursong_alstonhuang/post/')
+          print('oursong_shadow_clone_publish=PASS')
+          print('oursong_object_id='+oid)
+          print('oursong_permalink='+permalink)
+          PY
