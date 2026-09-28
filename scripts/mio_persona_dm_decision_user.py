@@ -12,6 +12,7 @@ RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
 def deterministic_ir_fallback(dm: dict, context: dict, relay_status: str) -> dict:
     message=str(dm.get('message') or '').strip()
     relation=str(dm.get('relationship_status') or 'unknown')
+    relationship_context=dm.get('relationship_context') if isinstance(dm.get('relationship_context'),dict) else {}
     ir=context.get('current_ir') or {}
     invariants=ir.get('invariants') or {}
     current=ir.get('current_self') or {}
@@ -26,7 +27,11 @@ def deterministic_ir_fallback(dm: dict, context: dict, relay_status: str) -> dic
             'position':'uncertain',
             'reason_category':'question',
             'memory_basis':'Current IR forbids false autobiography; it does contain evidence-backed interest in walking, scenery, and a recent sea-side theme.',
-            'relationship_basis':'No prior relationship record found; treat as a new/unknown interaction and keep the reply light.',
+            'relationship_basis':(
+                'No prior relationship record found; treat as a new/unknown interaction and keep the reply light.'
+                if relation in ('unknown','unknown_new_interaction','')
+                else 'Existing relationship stage '+relation+'; preserve continuity without assuming greater intimacy than recorded.'
+            ),
             'consistency_check':'pass',
             'decision_source':'deterministic_ir_fallback',
             'relay_status':relay_status,
