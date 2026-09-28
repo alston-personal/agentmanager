@@ -121,7 +121,7 @@ def test_any_item_only_job_can_render_bag(monkeypatch, tmp_path):
     person.write_bytes(b"x" * 2000)
 
     monkeypatch.setattr(worker, "BASE_BODY_URL", str(person))
-    monkeypatch.setattr(worker, "omni_try_on", lambda *args, **kwargs: str(person))
+    monkeypatch.setattr(worker, "omni_try_on", lambda *args, **kwargs: (str(person), "pbgo/OmniTry"))
 
     job = {
         "schema": worker.SCHEMA,
@@ -176,3 +176,39 @@ def test_clothing_only_cache_key_remains_compatible(monkeypatch, tmp_path):
         worker.outfit_cache_key(job, ["upper_main"])
         == "c4a850d62a8dd41826d583e229ee230e009ef536aa4b1fae9d7036ede4a394c8"
     )
+
+
+def test_any_item_provider_fallback(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    person = tmp_path / "person.webp"
+    item = tmp_path / "item.jpg"
+    output = tmp_path / "output.webp"
+    person.write_bytes(b"p" * 2000)
+    item.write_bytes(b"i" * 2000)
+    output.write_bytes(b"o" * 2000)
+
+    monkeypatch.setattr(worker, "ANY_ITEM_SPACE_IDS", ["broken/OmniTry", "pbgo/OmniTry"])
+    monkeypatch.setattr(worker, "download_input", lambda url, suffix: person if "person" in url else item)
+
+    class FakeBroken:
+        def predict(self, *args, **kwargs):
+            raise RuntimeError("configuration error")
+
+    class FakeWorking:
+        def predict(self, *args, **kwargs):
+            return str(output)
+
+    monkeypatch.setattr(
+        worker,
+        "any_item_client",
+        lambda space_id: FakeBroken() if space_id.startswith("broken/") else FakeWorking(),
+    )
+
+    rendered, provider = worker.omni_try_on(
+        "https://example.com/person.webp",
+        "https://example.com/item.jpg",
+        "shoe",
+        123,
+    )
+    assert rendered == str(output)
+    assert provider == "pbgo/OmniTry"
