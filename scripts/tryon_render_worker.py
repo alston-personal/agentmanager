@@ -260,8 +260,13 @@ def qwen_reference_try_on(
             if not person_path.exists():
                 raise RuntimeError(f"person input missing: {person_source}")
 
-        object_path = download_input(object_url, ".jpg")
-        temp_inputs.append(object_path)
+        if object_url.startswith(("http://", "https://")):
+            object_path = download_input(object_url, ".jpg")
+            temp_inputs.append(object_path)
+        else:
+            object_path = Path(object_url)
+            if not object_path.exists():
+                raise RuntimeError(f"object input missing: {object_url}")
 
         target = "shoes" if object_class == "shoe" else object_class
         instruction = (
