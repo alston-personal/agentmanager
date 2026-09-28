@@ -1,0 +1,29 @@
+name: Oracle Probe Canva Media Variants
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/oracle-probe-canva-media-variants.yml']
+permissions: {contents: read}
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Probe variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import urllib.request,urllib.error
+          urls=[["no_csig","https://media.canva.com/v2/image-resize/format:JPG/height:1402/quality:90/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38/watermark:F/width:1122?exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc"],["same_csig_noquality","https://media.canva.com/v2/image-resize/format:JPG/height:1402/quality:90/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38/watermark:F/width:1122?csig=AAAAAAAAAAAAAAAAAAAAAJ5aFI5VEQ-zL4X5g9SVzMDSYmwF32SrHqoPgu1Tp9cz&exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc"],["origpath_hiwidth","https://media.canva.com/v2/image-resize/format:JPG/height:200/quality:75/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38/watermark:F/width:1122?csig=AAAAAAAAAAAAAAAAAAAAAJ5aFI5VEQ-zL4X5g9SVzMDSYmwF32SrHqoPgu1Tp9cz&exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc"],["origpath_hiheight","https://media.canva.com/v2/image-resize/format:JPG/height:1402/quality:75/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38/watermark:F/width:160?csig=AAAAAAAAAAAAAAAAAAAAAJ5aFI5VEQ-zL4X5g9SVzMDSYmwF32SrHqoPgu1Tp9cz&exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc"],["noresize","https://media.canva.com/v2/image-resize/uri:ifs%3A%2F%2FM%2F0c71b199-06f9-4a47-8ffd-6d39a209fe38?exp=1790605760&osig=AAAAAAAAAAAAAAAAAAAAAIVLR4jwIWTujNBpcBmucJ0WHKMps1fmAs5SsevpyE7C&signer=media-rpc"]]
+          for label,u in urls:
+              try:
+                  req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+                  with urllib.request.urlopen(req,timeout=20) as r:
+                      b=r.read()
+                      print(f'{label}=PASS:{r.status}:{len(b)}:{r.headers.get("content-type","")}')
+              except urllib.error.HTTPError as e:
+                  print(f'{label}=HTTP_{e.code}')
+              except Exception as e:
+                  print(f'{label}={type(e).__name__}')
+          PY
