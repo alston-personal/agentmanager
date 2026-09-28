@@ -1,0 +1,106 @@
+name: Oracle Recover Tarot Analytics Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-recover-tarot-analytics-service.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-leopardcat-tarot
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Restart managed Tarot analytics service and prove DB/API consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          SERVICE=milkcat-leopardcat-analytics.service
+          DB=/home/ubuntu/leopardcat-tarot/website/data/analytics.sqlite3
+          TOKEN=/home/ubuntu/.config/milkcat/leopardcat-analytics-token
+
+          echo "tarot_service_before=$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)"
+          echo "tarot_service_enabled=$(sudo -n systemctl is-enabled "$SERVICE" 2>/dev/null || true)"
+          sudo -n systemctl show "$SERVICE" -p FragmentPath -p WorkingDirectory -p ExecMainStatus -p Result --no-pager || true
+
+          test -f "$DB"
+          test -f "$TOKEN"
+
+          # Restart only the already-governed analytics service. No code/config mutation.
+          if ! sudo -n systemctl restart "$SERVICE"; then
+            echo 'tarot_service_restart=FAIL'
+            sudo -n systemctl status "$SERVICE" --no-pager -n 30 || true
+            sudo -n journalctl -u "$SERVICE" -n 80 --no-pager || true
+            exit 1
+          fi
+
+          for _ in $(seq 1 20); do
+            state=$(sudo -n systemctl is-active "$SERVICE" 2>/dev/null || true)
+            if [ "$state" = active ]; then
+              break
+            fi
+            sleep 1
+          done
+          test "$(sudo -n systemctl is-active "$SERVICE")" = active
+          echo 'tarot_service_restart=PASS state=active'
+
+          sudo -n -u ubuntu python3 - <<'PY'
+          import json, pathlib, sqlite3, urllib.request
+          db=pathlib.Path('/home/ubuntu/leopardcat-tarot/website/data/analytics.sqlite3')
+          token=pathlib.Path('/home/ubuntu/.config/milkcat/leopardcat-analytics-token').read_text().strip()
+          with sqlite3.connect(db) as conn:
+              total=conn.execute('select count(*) from reading_analytics').fetchone()[0]
+              latest=conn.execute('select max(occurred_date) from reading_analytics').fetchone()[0]
+          req=urllib.request.Request(
+              'http://127.0.0.1:8088/api/v1/analytics/summary?days=30',
+              headers={'X-Analytics-Token': token},
+          )
+          with urllib.request.urlopen(req,timeout=8) as response:
+              payload=json.load(response)
+              assert response.status==200
+          assert payload.get('total_readings') == total, (payload.get('total_readings'), total)
+          assert isinstance(payload.get('by_spread_draw_mode'), dict)
+          print('tarot_recovery_db_total='+str(total))
+          print('tarot_recovery_db_latest_date='+str(latest or 'NONE'))
+          print('tarot_recovery_api_total='+str(payload.get('total_readings')))
+          print('tarot_recovery_api_db_consistency=PASS')
+          PY
+
+          # Dashboard's service account must be able to read the same protected aggregate.
+          sudo -n -u ubuntu python3 - <<'PY'
+          import json, pathlib, urllib.request
+          token=pathlib.Path('/home/ubuntu/.config/milkcat/leopardcat-analytics-token').read_text().strip()
+          req=urllib.request.Request(
+              'http://127.0.0.1:8088/api/v1/analytics/summary?days=30',
+              headers={'X-Analytics-Token': token},
+          )
+          with urllib.request.urlopen(req,timeout=8) as response:
+              payload=json.load(response)
+          assert isinstance(payload.get('total_readings'), int)
+          print('dashboard_identity_tarot_read=PASS total='+str(payload['total_readings']))
+          PY
+
+          code=$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:3000/dashboard/admin/usage)
+          test "$code" = 307
+          echo 'dashboard_tarot_page_route=PASS status=307'
+          echo 'tarot_analytics_recovery=PASS'
+          REMOTE
