@@ -60,7 +60,28 @@ Required schema:
         receipt=client.receipt(cap['capsule_id'])
         if receipt:
             if not receipt.get('ok'):
-                raise RuntimeError('mio_dm_decision_executor_failed')
+                provider=str(receipt.get('provider') or 'unknown')[:24]
+                code=str(receipt.get('returncode') if receipt.get('returncode') is not None else 'none')[:12]
+                timed_out=str(bool(receipt.get('timed_out'))).lower()
+                err=str(receipt.get('error') or '')
+                low=err.lower()
+                if 'no authorized local antigravity executor' in low:
+                    category='executor_not_found'
+                elif 'workspace unavailable' in low:
+                    category='workspace_unavailable'
+                elif 'permission' in low:
+                    category='permission_denied'
+                elif 'quota' in low or 'rate' in low:
+                    category='quota_or_rate'
+                elif 'login' in low or 'auth' in low:
+                    category='auth'
+                else:
+                    category='other'
+                etype='none'
+                import re
+                m=re.match(r'^([A-Za-z][A-Za-z0-9_]{0,50}(?:Error|Exception)):',err)
+                if m: etype=m.group(1)
+                raise RuntimeError('mio_dm_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+etype)
             raw=str(receipt.get('stdout') or '')
             decoder=json.JSONDecoder()
             for i,ch in enumerate(raw):
