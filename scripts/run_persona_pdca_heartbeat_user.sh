@@ -34,7 +34,7 @@ test -f "$DATA_REPO/$PERSONA_PATH/persona_state.json"
 test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
 test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
-python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT"
+python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger oracle_local_timer
 python3 -m json.tool "$RECEIPT" >/dev/null
 python3 "$INTERNAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
 SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"
