@@ -1,0 +1,66 @@
+name: Oracle MBPR Threads Conversation Read
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-threads-conversation-read.json'
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open requested Threads conversation and read visible content
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time,hashlib
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-threads-conversation-read.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          username=str(cmd.get('username') or '')
+          assert username=='0__0.ayoub'
+          tid='mbpr-threads-conversation-read-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          js_click="(()=>{const els=[...document.querySelectorAll('a,button,div[role=button]')];const e=els.find(x=>(x.innerText||'').trim().includes('0__0.ayoub'));if(!e)return 'NOT_FOUND';e.click();return 'CLICKED';})()"
+          js_read="(()=>{const m=document.querySelector('main');const s=(m?m.innerText:document.body.innerText)||'';return s.slice(0,20000);})()"
+          import json as _j
+          script=f'''tell application "Google Chrome"
+set t to active tab of front window
+set u to URL of t
+if u does not start with "https://www.threads.com/messages" and u does not start with "https://threads.com/messages" then error "not_messages"
+set r to execute t javascript {_j.dumps(js_click)}
+delay 2
+set bodyText to execute t javascript {_j.dumps(js_read)}
+return (r & linefeed & bodyText)
+end tell'''
+          code="import subprocess,json; s="+repr(script)+"; p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=20); print(p.stdout,end=''); raise SystemExit(p.returncode)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0 or not out:
+                      print('threads_conversation_read=ERROR'); raise SystemExit(2)
+                  open('/tmp/threads-conversation-read.txt','w',encoding='utf-8').write(out)
+                  print('threads_conversation_read=PASS')
+                  print('threads_conversation_read_receipt='+tid)
+                  print('threads_conversation_read_bytes='+str(len(out.encode())))
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('threads conversation read timeout')
+          PY
+      - name: Upload private conversation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: threads-conversation-read
+          path: /tmp/threads-conversation-read.txt
+          retention-days: 1
+          if-no-files-found: error
