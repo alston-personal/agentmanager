@@ -276,13 +276,14 @@ def public_asset_path(job_id: str) -> str:
 
 def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
     selected = job.get("input", {}).get("selectedLayers", {})
+    uses_any_item = any(layer in ANY_ITEM_SUPPORTED for layer in rendered_layers)
     signature = {
         "schema": "agentos.tryon-cache/v1",
         "characterId": job.get("characterId"),
         "characterVersion": job.get("characterVersion"),
         "view": job.get("view", "front"),
         "pose": job.get("pose", "neutral_standing"),
-        "renderer": "idm-vton+omnitry/v2",
+        "renderer": "idm-vton+omnitry/v2" if uses_any_item else "idm-vton-gradio-client/v1",
         "layers": [
             {
                 "layer": layer,
