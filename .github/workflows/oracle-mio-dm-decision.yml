@@ -1,0 +1,91 @@
+name: Oracle Mio DM Decision
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mio-dm-decision.json'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  decide:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+      GH_TOKEN: ${{ github.token }}
+      AGENTOS_MIO_RELAY_ROOT: /home/ubuntu/agent-data/runtime/mio-antigravity-relay
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build private DM input from prior successful read
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import io,json,os,urllib.request,zipfile
+          cmd=json.load(open('.agentos/commands/mio-dm-decision.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.mio-dm-decision-command/v1'
+          assert cmd.get('username')=='0__0.ayoub'
+          run_id=int(cmd['source_run_id'])
+          token=os.environ['GH_TOKEN']
+          base='https://api.github.com/repos/alston-personal/agentmanager'
+          req=urllib.request.Request(
+              f'{base}/actions/runs/{run_id}/artifacts',
+              headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
+          )
+          with urllib.request.urlopen(req,timeout=20) as r:
+              listing=json.load(r)
+          art=next(a for a in listing.get('artifacts',[]) if a.get('name')=='threads-native-read' and not a.get('expired'))
+          req=urllib.request.Request(
+              f'{base}/actions/artifacts/{art["id"]}/zip',
+              headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
+          )
+          with urllib.request.urlopen(req,timeout=30) as r:
+              blob=r.read()
+          z=zipfile.ZipFile(io.BytesIO(blob))
+          payload=json.loads(z.read('threads-native-read.json').decode('utf-8'))
+          lines=[x.strip() for x in str(payload.get('visible_text') or '').splitlines()]
+          user=cmd['username']
+          try: i=lines.index(user)
+          except ValueError: raise SystemExit('target DM preview not found')
+          preview=''
+          for x in lines[i+1:i+6]:
+              if x and x!='·' and not x.endswith('天') and not x.endswith('小時') and not x.endswith('分鐘'):
+                  preview=x; break
+          if not preview: raise SystemExit('target DM preview empty')
+          dm={
+              'platform':'threads',
+              'account':'mio.milkcat',
+              'sender':user,
+              'message':preview,
+              'context_scope':'inbox_preview',
+              'relationship_status':'unknown_new_interaction',
+          }
+          open('/tmp/mio-dm-input.json','w',encoding='utf-8').write(json.dumps(dm,ensure_ascii=False))
+          print('mio_dm_input=PASS')
+          print('mio_dm_input_sender='+user)
+          PY
+      - name: Decide with Mio current Persona IR
+        shell: bash
+        run: |
+          python3 scripts/mio_persona_dm_decision_user.py < /tmp/mio-dm-input.json > /tmp/mio-dm-decision.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/mio-dm-decision.json',encoding='utf-8'))
+          assert d.get('decision') in ('reply','no_reply')
+          if d.get('decision')=='reply':
+              assert isinstance(d.get('text'),str) and d['text'].strip()
+          else:
+              assert d.get('text') in (None,'')
+          print('mio_dm_decision=PASS:'+d['decision'])
+          print('mio_dm_decision_text_chars='+str(len(d.get('text') or '')))
+          print('mio_dm_decision_consistency='+str(d.get('consistency_check') or ''))
+          PY
+      - name: Upload private DM decision artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-dm-decision
+          path: /tmp/mio-dm-decision.json
+          retention-days: 1
+          if-no-files-found: error
