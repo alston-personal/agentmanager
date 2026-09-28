@@ -1,0 +1,55 @@
+name: Oracle Diagnose Mio Qwen Space API
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-diagnose-mio-qwen-space.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Diagnose Qwen Gradio API from Oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          PY="$HOME/.local/share/mio-tryon-venv/bin/python"
+          "$PY" - <<'PY'
+          from gradio_client import Client
+          import traceback
+          spaces=["Qwen/Qwen-Image-2.1","Qwen/Qwen-Image-2.1-workflow"]
+          for space in spaces:
+              print(f"===SPACE {space}===")
+              try:
+                  c=Client(space, download_files=True, verbose=False, httpx_kwargs={"timeout":60.0})
+                  print("client_init=PASS")
+                  try:
+                      info=c.view_api(return_format="dict")
+                      print("view_api=PASS")
+                      print(info)
+                  except TypeError:
+                      info=c.view_api()
+                      print("view_api=PASS")
+                      print(info)
+              except Exception as exc:
+                  print(f"client_init=FAIL type={type(exc).__name__} message={exc}")
+                  traceback.print_exc(limit=2)
+          PY
+          REMOTE
