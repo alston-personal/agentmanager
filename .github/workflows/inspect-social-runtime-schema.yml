@@ -22,19 +22,57 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read exact Social write governance
+      - name: Read Mio recent Threads conversations safely
         shell: bash
         run: |
           set -euo pipefail
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
           set -euo pipefail
-          ROOT=/home/ubuntu/.local/share/agentos/social-runtime/agentos_node/social
-          echo '=== governance.py ==='
-          sed -n '1,180p' "$ROOT/governance.py"
-          echo '=== runtime_storage.py acceptance ==='
-          sed -n '120,210p' "$ROOT/runtime_storage.py"
-          echo '=== runtime_http.py request/write routes ==='
-          sed -n '430,620p' "$ROOT/runtime_http.py"
-          echo '=== provider reply implementation ==='
-          grep -Rsn --include='*.py' -E 'def .*reply|reply_to_id|target_account_id' "$ROOT" 2>/dev/null | head -100 || true
+          python3 - <<'PY'
+          import json, urllib.request
+          from pathlib import Path
+
+          env={}
+          for line in Path("/home/ubuntu/.config/agentos/social-runtime.env").read_text().splitlines():
+              if not line or line.lstrip().startswith("#") or "=" not in line: continue
+              k,v=line.split("=",1); env[k]=v.strip().strip("'").strip('"')
+          registry=json.loads(env["AGENTOS_SOCIAL_PRODUCTS_JSON"])
+          key=registry["galaxy"]["api_key"]
+          binding="galaxy:threads:persona:28875580788721778"
+          account="28875580788721778"
+
+          def post(payload):
+              req=urllib.request.Request("http://127.0.0.1:8771/v1/social/status",
+                  data=json.dumps(payload).encode(),
+                  headers={"content-type":"application/json","accept":"application/json","X-AgentOS-Product-Key":key},
+                  method="POST")
+              with urllib.request.urlopen(req,timeout=15) as r:
+                  return json.loads(r.read())
+
+          base={"schema":"agentos.social-request/v1","product_id":"galaxy","platform":"threads",
+                "account_binding_id":binding}
+          ident=post({**base,"operation":"identity.read"})
+          posts=post({**base,"operation":"post.read"})
+          items=(posts.get("result") or {}).get("items") or []
+          out={"identity":(ident.get("result") or {}).get("identity"),"posts":[]}
+          for p in items[:12]:
+              if not p.get("id"): continue
+              try:
+                  rr=post({**base,"operation":"replies.read","object_id":str(p["id"])})
+                  replies=(rr.get("result") or {}).get("items") or []
+              except Exception:
+                  replies=[]
+              out["posts"].append({
+                  "id":p.get("id"),"text":p.get("text"),"timestamp":p.get("timestamp"),
+                  "permalink":p.get("permalink"),
+                  "replies":[{
+                      "id":x.get("id"),"username":x.get("username"),"text":x.get("text"),
+                      "timestamp":x.get("timestamp"),
+                      "replied_to_id":(x.get("replied_to") or {}).get("id"),
+                      "permalink":x.get("permalink")
+                  } for x in replies[-40:]]
+              })
+          print(json.dumps(out,ensure_ascii=False,indent=2))
+          print("social_runtime_keys_present="+",".join(sorted(k for k in env if "CONTROL" in k or "PRODUCT" in k or "SOCIAL" in k)))
+          PY
           REMOTE
