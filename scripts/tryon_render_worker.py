@@ -4,14 +4,17 @@ from __future__ import annotations
 import json
 import os
 import time
+import tempfile
+import shutil
 import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from gradio_client import Client, handle_file
+
 SCHEMA = "agentos.tryon-render-job/v1"
-SPACE_BASE = os.environ.get("AGENTOS_TRYON_SPACE_BASE", "https://fashn-ai-fashn-vton-1-5.hf.space")
+SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "merve/fashn-vton-1.5")
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
@@ -52,109 +55,96 @@ def atomic_write(path: Path, payload: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def http_json(url: str, payload: dict[str, Any], timeout: int = 180) -> dict[str, Any]:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read()
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:4000]
-        raise RuntimeError(f"HTTP {exc.code} from VTON provider: {detail}") from exc
-    value = json.loads(body.decode("utf-8"))
-    if not isinstance(value, dict):
-        raise RuntimeError("VTON provider returned non-object JSON")
-    return value
-
-def gradio_queue_call(api_name: str, data_values: list[Any], timeout: int = 300) -> Any:
-    queued = http_json(
-        f"{SPACE_BASE}/gradio_api/call/{api_name}",
-        {"data": data_values},
-        timeout=30,
-    )
-    event_id = queued.get("event_id")
-    if not isinstance(event_id, str) or not event_id:
-        raise RuntimeError(f"Gradio queue returned no event_id: {queued}")
-
-    url = f"{SPACE_BASE}/gradio_api/call/{api_name}/{event_id}"
-    req = urllib.request.Request(url, headers={"Accept": "text/event-stream"}, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            event = None
-            for raw in resp:
-                line = raw.decode("utf-8", "replace").strip()
-                if not line:
-                    continue
-                if line.startswith("event:"):
-                    event = line.split(":", 1)[1].strip()
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                payload = line.split(":", 1)[1].strip()
-                if event == "error":
-                    raise RuntimeError(f"Gradio queue error: {payload[:2000]}")
-                if event == "complete":
-                    value = json.loads(payload)
-                    return value
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:4000]
-        raise RuntimeError(f"HTTP {exc.code} from Gradio queue: {detail}") from exc
-    raise RuntimeError("Gradio queue closed without complete event")
+_CLIENT: Client | None = None
 
 
+def client() -> Client:
+    global _CLIENT
+    if _CLIENT is None:
+        token = os.environ.get("HF_TOKEN") or None
+        _CLIENT = Client(
+            SPACE_ID,
+            token=token,
+            download_files=True,
+            verbose=False,
+            httpx_kwargs={"timeout": 180.0},
+        )
+    return _CLIENT
 
-def download(url: str, target: Path, timeout: int = 60) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+
+def download_input(url: str, suffix: str = ".img") -> Path:
+    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.1"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
         content_type = (resp.headers.get("Content-Type") or "").lower()
         if "image" not in content_type:
-            raise RuntimeError(f"provider output is not image content: {content_type}")
+            raise RuntimeError(f"input is not image content: {content_type}")
         data = resp.read()
     if len(data) < 1000:
-        raise RuntimeError("provider output image is unexpectedly small")
+        raise RuntimeError("input image is unexpectedly small")
+    fd, name = tempfile.mkstemp(prefix="mio-vton-", suffix=suffix)
+    os.close(fd)
+    path = Path(name)
+    path.write_bytes(data)
+    return path
+
+
+def output_path(result: Any) -> Path:
+    candidate: Any = result
+    if isinstance(candidate, (list, tuple)) and candidate:
+        candidate = candidate[0]
+    if isinstance(candidate, dict):
+        candidate = candidate.get("path") or candidate.get("url")
+    if not isinstance(candidate, str) or not candidate:
+        raise RuntimeError(f"VTON provider returned no output path: {result!r}")
+    path = Path(candidate)
+    if not path.exists() or path.stat().st_size < 1000:
+        raise RuntimeError(f"VTON provider output missing or too small: {candidate}")
+    return path
+
+
+def try_on(person_source: str, garment_url: str, category: str, seed: int) -> str:
+    temp_inputs: list[Path] = []
+    try:
+        if person_source.startswith(("http://", "https://")):
+            person_path = download_input(person_source, ".webp")
+            temp_inputs.append(person_path)
+        else:
+            person_path = Path(person_source)
+            if not person_path.exists():
+                raise RuntimeError(f"person input missing: {person_source}")
+
+        garment_path = download_input(garment_url, ".jpg")
+        temp_inputs.append(garment_path)
+
+        result = client().predict(
+            person_image=handle_file(str(person_path)),
+            garment_image=handle_file(str(garment_path)),
+            category=category,
+            garment_photo_type="model",
+            num_timesteps=30,
+            guidance_scale=1.5,
+            seed=int(seed),
+            segmentation_free=True,
+            api_name="/try_on",
+        )
+        return str(output_path(result))
+    finally:
+        for path in temp_inputs:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def copy_output(source: str, target: Path) -> None:
+    path = Path(source)
+    if not path.exists() or path.stat().st_size < 1000:
+        raise RuntimeError("provider output image is missing or unexpectedly small")
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_bytes(data)
+    shutil.copyfile(path, tmp)
     os.chmod(tmp, 0o600)
     tmp.replace(target)
-
-
-def image_data(url: str) -> dict[str, Any]:
-    return {
-        "path": url,
-        "url": url,
-        "orig_name": url.rsplit("/", 1)[-1].split("?", 1)[0] or "image",
-        "meta": {"_type": "gradio.FileData"},
-    }
-
-
-def try_on(person_url: str, garment_url: str, category: str, seed: int) -> str:
-    result = gradio_queue_call(
-        "try_on",
-        [
-            image_data(person_url),
-            image_data(garment_url),
-            category,
-            "model",
-            30,
-            1.5,
-            seed,
-            True,
-        ],
-        timeout=300,
-    )
-    out = result[0] if isinstance(result, list) and result and isinstance(result[0], dict) else None
-    if not isinstance(out, dict):
-        raise RuntimeError(f"VTON provider returned no output object: {result}")
-    url = out.get("url")
-    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-        raise RuntimeError("VTON provider returned no output URL")
-    return url
 
 
 def current_outfit_path(character_id: str) -> Path:
@@ -200,17 +190,17 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     # practical MVP for tops/bottoms while preserving the same Mio base body.
     person_url = BASE_BODY_URL
     seed_base = abs(hash(job["jobId"])) % 100000
-    provider_urls: list[str] = []
+    provider_outputs: list[str] = []
     for index, layer in enumerate(supported_layers):
         item = selected[layer]
         garment_url = item.get("sourceImageUrl") if isinstance(item, dict) else None
         if not isinstance(garment_url, str) or not garment_url.startswith(("http://", "https://")):
             raise RuntimeError(f"Missing source image for {layer}")
         person_url = try_on(person_url, garment_url, SUPPORTED[layer], seed_base + index)
-        provider_urls.append(person_url)
+        provider_outputs.append(person_url)
 
     target = ASSET_DIR / f"{job['jobId']}.webp"
-    download(person_url, target)
+    copy_output(person_url, target)
 
     job["status"] = "ready"
     job["completedAt"] = utc_now()
@@ -220,8 +210,9 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         "previewAsset": public_asset_path(job["jobId"]),
         "width": None,
         "height": None,
-        "provider": "fashn-vton-1.5-hf-space",
-        "providerUrls": provider_urls,
+        "provider": "fashn-vton-1.5-gradio-client",
+        "providerSpace": SPACE_ID,
+        "providerOutputs": provider_outputs,
         "renderedLayers": supported_layers,
     }
     atomic_write(path, job)
