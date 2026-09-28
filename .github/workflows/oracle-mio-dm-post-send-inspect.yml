@@ -1,0 +1,64 @@
+name: Oracle Mio DM Post Send Inspect
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mio-dm-post-send-inspect.json'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download validated decision artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mio-dm-decision
+          path: /tmp/mio-dm-decision
+          github-token: ${{ github.token }}
+          repository: alston-personal/agentmanager
+          run-id: 36388810340
+      - name: Inspect exact-text counts without sending
+        shell: bash
+        env:
+          MIO_DM_DECISION_PATH: /tmp/mio-dm-decision/mio-dm-decision.json
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          d=json.load(open('/tmp/mio-dm-decision/mio-dm-decision.json',encoding='utf-8'))
+          text=str(d.get('text') or '')
+          assert text
+          js=f"""(()=>{{const q={json.dumps(text)};const body=(document.querySelector('main')?.innerText||document.body.innerText||'');const bodyCount=body.split(q).length-1;const exact=[...document.querySelectorAll('body *')].filter(e=>((e.innerText||'').trim()===q));const minimal=exact.filter(e=>![...e.children].some(c=>((c.innerText||'').trim()===q)));const edits=[...document.querySelectorAll('textarea,[contenteditable="true"]')].filter(e=>(((e.value||e.innerText||'').trim())===q));return JSON.stringify({{bodyCount,exactCount:exact.length,minimalExactCount:minimal.length,editorExactCount:edits.length,url:location.href}});}})()"""
+          osa='''on run argv
+          set jsCode to item 1 of argv
+          tell application "Google Chrome"
+          set t to active tab of front window
+          return execute t javascript jsCode
+          end tell
+          end run'''
+          code=("import subprocess; p=subprocess.run(['/usr/bin/osascript','-e',"+repr(osa)+",'--',"+repr(js)+"],text=True,capture_output=True,timeout=15); print(p.stdout,end=''); raise SystemExit(p.returncode)")
+          tid='mio-dm-post-send-inspect-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':25,'cognition_ids_used':[]})
+          for _ in range(35):
+              r=store.get_receipt(tid)
+              if r:
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      raise SystemExit('mio_dm_post_send_inspect=ERROR')
+                  out=str(r.get('stdout') or '').strip()
+                  obj=json.loads(out)
+                  safe={k:obj.get(k) for k in ('bodyCount','exactCount','minimalExactCount','editorExactCount')}
+                  print('mio_dm_post_send_inspect=PASS')
+                  print('mio_dm_post_send_counts='+json.dumps(safe,separators=(',',':')))
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mio_dm_post_send_inspect=TIMEOUT')
+          PY
