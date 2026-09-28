@@ -36,19 +36,38 @@ jobs:
           SITE="$(find "$ROOT/venv/lib" -maxdepth 2 -type d -name site-packages | head -n 1)"
           test -n "$SITE"
           PYTHONPATH="$SITE" /usr/bin/python3 - <<'PY'
-          import json,time
+          import time
           from playwright.sync_api import sync_playwright
-          with sync_playwright() as p:
-              b=p.chromium.connect_over_cdp('http://127.0.0.1:9222')
-              ctx=b.contexts[0]
-              page=ctx.pages[0] if ctx.pages else ctx.new_page()
-              page.goto('https://www.threads.com/messages',wait_until='domcontentloaded',timeout=30000)
-              time.sleep(2)
-              u=page.url
-              title=page.title()
-              login=('login' in u.lower() or 'accountscenter' in u.lower())
-              restricted=('restrict' in page.locator('body').inner_text().lower() or 'try again later' in page.locator('body').inner_text().lower())
-              print('oracle_gui_threads_login_required='+str(login).lower())
-              print('oracle_gui_threads_restricted='+str(restricted).lower())
-              print('oracle_gui_threads_messages_url='+str('/messages' in u))
+          try:
+              with sync_playwright() as p:
+                  b=p.chromium.connect_over_cdp('http://127.0.0.1:9222')
+                  ctx=b.contexts[0]
+                  page=ctx.pages[0] if ctx.pages else ctx.new_page()
+                  page.goto('https://www.threads.com/messages',wait_until='domcontentloaded',timeout=30000)
+                  time.sleep(2)
+                  u=page.url
+                  body=(page.locator('body').inner_text() or '').lower()
+                  login=('login' in u.lower() or 'accountscenter' in u.lower())
+                  restricted=('restrict' in body or 'try again later' in body)
+                  print('oracle_gui_threads_login_required='+str(login).lower())
+                  print('oracle_gui_threads_restricted='+str(restricted).lower())
+                  print('oracle_gui_threads_messages_url='+str('/messages' in u))
+          except Exception as e:
+              msg=str(e)
+              low=msg.lower()
+              if 'connect_over_cdp' in low or 'websocket' in low:
+                  kind='CDP_ATTACH'
+              elif 'goto' in low or 'navigation' in low:
+                  kind='NAVIGATION'
+              elif 'ssl' in low or 'tls' in low or 'certificate' in low:
+                  kind='TLS'
+              elif 'permission' in low:
+                  kind='PERMISSION'
+              else:
+                  kind=type(e).__name__
+              safe=' '.join(msg.split())[:500]
+              print('oracle_gui_threads_probe=ERROR')
+              print('oracle_gui_threads_error_type='+kind)
+              print('oracle_gui_threads_error_safe='+safe)
+              raise
           PY
