@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.surface.inspect",
+  "node_id": "mbpr",
+  "nonce": "mbpr-surface-1790555100869"
+}
