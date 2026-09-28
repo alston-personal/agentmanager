@@ -154,6 +154,7 @@ jobs:
           REMOTE_SOCIAL_EXECUTOR="/tmp/persona_social_executor-install-$GITHUB_RUN_ID.py"
           REMOTE_INTERNAL_EXECUTOR="/tmp/persona_internal_activity_executor-install-$GITHUB_RUN_ID.py"
           REMOTE_REPLY_INTENT_GENERATOR="/tmp/persona_reply_intent_generator-install-$GITHUB_RUN_ID.py"
+          REMOTE_PUBLIC_ACTIVITY_PUBLISHER="/tmp/publish_mio_public_activity-install-$GITHUB_RUN_ID.py"
           REMOTE_POST_INTENT_GENERATOR="/tmp/persona_post_intent_generator-install-$GITHUB_RUN_ID.py"
           REMOTE_SOCIAL_RUNNER="/tmp/run_persona_social_actions-$GITHUB_RUN_ID.sh"
           REMOTE_INSTALLER="/tmp/install_persona_pdca_timer-$GITHUB_RUN_ID.sh"
@@ -180,7 +181,7 @@ jobs:
             bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_SOCIAL_RUNNER"
           ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_INSTALLER"
+            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_SOCIAL_RUNNER" "$REMOTE_SOCIAL_EXECUTOR" "$REMOTE_INTERNAL_EXECUTOR" "$REMOTE_REPLY_INTENT_GENERATOR" "$REMOTE_PUBLIC_ACTIVITY_PUBLISHER" "$REMOTE_POST_INTENT_GENERATOR" "$REMOTE_INSTALLER"
 
       - name: Refresh current Mio public activity snapshot
         shell: bash
