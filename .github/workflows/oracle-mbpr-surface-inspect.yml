@@ -1,0 +1,41 @@
+name: Oracle MBPR Surface Inspect
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-surface-inspect.json'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect governed surfaces
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-surface-inspect.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.surface.inspect'
+          assert cmd.get('node_id')=='mbpr'
+          tid='surface-mbpr-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'agent.surface.inspect','cognition_ids_used':[]})
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  print(json.dumps(r,ensure_ascii=False,sort_keys=True))
+                  assert r.get('ok') is True,r
+                  print('mbpr_surface_inspect=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr surface receipt timeout')
+          PY
