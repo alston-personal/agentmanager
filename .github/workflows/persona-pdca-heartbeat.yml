@@ -7,8 +7,6 @@ on:
         description: Persona path inside my-agent-data
         required: false
         default: personas/sunlake-milkcat
-  schedule:
-    - cron: '17 * * * *'
   push:
     branches: [main]
     paths:
@@ -54,6 +52,7 @@ jobs:
           echo "persona_pdca_carrier=PASS"
 
       - name: Transfer PDCA runtime to Oracle execution identity
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -68,6 +67,7 @@ jobs:
           echo "REMOTE_INTERNAL_EXECUTOR=$REMOTE_INTERNAL_EXECUTOR" >> "$GITHUB_ENV"
 
       - name: Run and persist one PDCA cycle on Oracle
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -95,7 +95,7 @@ jobs:
           test -f "$DATA_REPO/$PERSONA_PATH/ir/current.json"
           test -f "$DATA_REPO/$PERSONA_PATH/pdca/config.json"
 
-          python3 "$SCRIPT" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT"
+          python3 "$SCRIPT" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT" --trigger workflow_dispatch
           python3 -m json.tool "$RECEIPT" >/dev/null
           python3 "$INTERNAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
           SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"

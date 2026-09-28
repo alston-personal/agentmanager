@@ -64,6 +64,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--persona-dir", required=True)
     ap.add_argument("--receipt-out")
+    ap.add_argument("--trigger",default="unspecified")
     args=ap.parse_args()
     root=Path(args.persona_dir)
     persona=load_json(root/"persona_state.json")
@@ -165,7 +166,7 @@ def main():
 
     receipt={"schema":"agentos.persona-pdca-receipt/v1","persona_id":cfg.get("persona_id"),
              "cycle":cycle,"tick_at":now_utc.isoformat().replace("+00:00","Z"),
-             "local_time":now_local.isoformat(),"phase":phase,"ir_id":ir.get("ir_id"),"seed":seed,
+             "local_time":now_local.isoformat(),"phase":phase,"ir_id":ir.get("ir_id"),"seed":seed,"trigger":args.trigger,
              "plan":{"energy":round(energy,2),"unseen_events":len(unseen),"event_counts":counts,
                      "candidates":[{"intent":n,"weight":w} for n,w in candidates],"selected_intent":selected},
              "do":do,
@@ -185,7 +186,7 @@ def main():
     with open(events_path,"a",encoding="utf-8") as f:
         f.write(json.dumps({"id":f"pdca-{now_local:%Y%m%d-%H%M%S}-c{cycle}","type":"pdca.cycle",
                             "timestamp":receipt["tick_at"],"summary":f"PDCA cycle {cycle}: {selected} during {phase}",
-                            "source":"persona_pdca_runtime","receipt_ref":str(receipts.relative_to(root)),
+                            "source":"persona_pdca_runtime","trigger":args.trigger,"receipt_ref":str(receipts.relative_to(root)),
                             "external_action_completed":False},ensure_ascii=False,separators=(",",":"))+"\n")
 
     state.update({"cycle":cycle,"last_tick_at":receipt["tick_at"],
