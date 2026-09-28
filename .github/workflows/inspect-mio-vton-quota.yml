@@ -1,0 +1,47 @@
+name: Inspect Mio VTON Quota Inputs
+
+on:
+  push:
+    branches: [ops/inspect-hf-token-and-cache]
+    paths:
+      - '.github/workflows/inspect-mio-vton-quota.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect token presence and successful real asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "HF_ENV_PRESENT=$([ -n "${HF_TOKEN:-}" ] && echo yes || echo no)"
+          for f in             "$HOME/.cache/huggingface/token"             "$HOME/.huggingface/token"             "$HOME/.config/huggingface/token"; do
+            if [ -s "$f" ]; then
+              echo "HF_TOKEN_FILE_PRESENT=$f"
+            fi
+          done
+          ASSET=/home/ubuntu/agent-data/projects/dressup-simulator/render_assets/mio-live-e2e-36397707913.webp
+          if [ -s "$ASSET" ]; then
+            echo "REAL_ASSET_PRESENT=yes"
+            echo "REAL_ASSET_BYTES=$(wc -c < "$ASSET")"
+            echo "REAL_ASSET_SHA256=$(sha256sum "$ASSET" | awk '{print $1}')"
+          else
+            echo "REAL_ASSET_PRESENT=no"
+          fi
+          echo "SERVICE_ENV:"
+          systemctl --user show agentos-mio-tryon-render-worker.service -p Environment --value | tr ' ' '\n' | cut -d= -f1 | grep -E 'HF_TOKEN|AGENTOS_TRYON' || true
+          REMOTE
