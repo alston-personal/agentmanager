@@ -1,0 +1,53 @@
+name: Oracle Deploy Mio Try-On Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/tryon_render_worker.py'
+      - '.github/workflows/oracle-deploy-mio-tryon-worker.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-mio-tryon-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install worker and systemd user service
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.local/bin" "$HOME/.config/systemd/user"
+          install -m 755 scripts/tryon_render_worker.py "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
+
+          cat > "$HOME/.config/systemd/user/agentos-mio-tryon-render-worker.service" <<'UNIT'
+          [Unit]
+          Description=AgentOS Mio Outfit Try-On Render Worker
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          Environment=AGENTOS_TRYON_POLL_SECONDS=2
+          Environment=PYTHONUNBUFFERED=1
+          ExecStart=/usr/bin/python3 /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=default.target
+          UNIT
+
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-mio-tryon-render-worker.service
+          sleep 2
+          systemctl --user is-active agentos-mio-tryon-render-worker.service
+          systemctl --user --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
