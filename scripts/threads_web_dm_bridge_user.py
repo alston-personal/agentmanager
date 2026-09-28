@@ -12,7 +12,7 @@ from typing import Any
 
 from agentos_node.social.web_dm import DirectMessageEvent, dedupe_new_events
 
-ROOT=Path("/home/ubuntu/agent-data/runtime/social/threads-web-dm")
+ROOT=Path(os.environ.get("AGENTOS_THREADS_WEB_DM_ROOT") or (Path.home()/".local"/"share"/"agentos"/"social"/"threads-web-dm"))
 PROFILE=ROOT/"browser-profile"
 STATE=ROOT/"state.json"
 EVENTS=ROOT/"events.jsonl"
@@ -93,6 +93,7 @@ def main() -> int:
     ap.add_argument("--account",default="mio.milkcat")
     ap.add_argument("--headed",action="store_true")
     ap.add_argument("--login-only",action="store_true")
+    ap.add_argument("--channel",default=os.environ.get("AGENTOS_WEB_DM_BROWSER_CHANNEL") or ("chrome" if sys.platform=="darwin" else None))
     args=ap.parse_args()
 
     ROOT.mkdir(parents=True,exist_ok=True); PROFILE.mkdir(parents=True,exist_ok=True)
@@ -108,11 +109,10 @@ def main() -> int:
     try:
         with sync_playwright() as p:
             browser_type=p.chromium
-            context=browser_type.launch_persistent_context(
-                str(PROFILE),
-                headless=not args.headed,
-                viewport={"width":1280,"height":900},
-            )
+            launch_args={"headless":not args.headed,"viewport":{"width":1280,"height":900}}
+            if args.channel:
+                launch_args["channel"]=args.channel
+            context=browser_type.launch_persistent_context(str(PROFILE),**launch_args)
             page=context.pages[0] if context.pages else context.new_page()
             page.goto(INBOX_URL,wait_until="domcontentloaded",timeout=30000)
             page.wait_for_timeout(1500)
