@@ -118,6 +118,7 @@ def sm4ll_try_on(person_source: str, garment_url: str, workflow: str) -> str:
             handle_file(str(person_path)),
             handle_file(str(garment_path)),
             workflow,
+            None,
             api_name="/generate",
         )
         return str(output_path(result))
