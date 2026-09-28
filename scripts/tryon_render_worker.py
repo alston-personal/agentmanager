@@ -104,7 +104,7 @@ def try_on(person_url: str, garment_url: str, category: str, seed: int) -> str:
         "seed": seed,
         "segmentation_free": True,
     }
-    response = http_json(f"{SPACE_BASE}/run/try_on", payload, timeout=240)
+    response = http_json(f"{SPACE_BASE}/gradio_api/run/try_on", payload, timeout=240)
     out = response.get("output")
     if not isinstance(out, dict):
         raise RuntimeError("VTON provider returned no output object")
