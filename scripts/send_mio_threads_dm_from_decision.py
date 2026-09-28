@@ -80,7 +80,11 @@ end run'''
                 raise SystemExit(1)
             lines=[x.strip() for x in out.splitlines() if x.strip()]
             if 'FOUND' not in lines:
-                raise SystemExit('mio_dm_send=UNVERIFIED')
+                allowed={'CLICKED','NOT_FOUND','NO_BOX','SENT_BUTTON','SENT_ENTER','FOUND','MISSING','ALREADY_FOUND'}
+                markers=[x for x in lines if x in allowed]
+                print('mio_dm_send=UNVERIFIED')
+                print('mio_dm_send_markers='+','.join(markers))
+                raise SystemExit(1)
             print('mio_dm_send=PASS')
             print('mio_dm_send_target='+target)
             print('mio_dm_send_readback=PASS')
