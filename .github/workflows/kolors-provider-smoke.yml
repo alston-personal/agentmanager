@@ -26,6 +26,7 @@ jobs:
           from gradio_client import Client, handle_file
           import pathlib, shutil
           client = Client("Kwai-Kolors/Kolors-Virtual-Try-On", download_files=True, verbose=False)
+          print("KOLORS_API=", client.view_api(return_format="dict"))
           result = client.predict(
               handle_file("/tmp/mio.webp"),
               handle_file("/tmp/garment.jpg"),
