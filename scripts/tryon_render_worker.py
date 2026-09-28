@@ -99,17 +99,22 @@ def image_data(url: str) -> dict[str, Any]:
 
 def try_on(person_url: str, garment_url: str, category: str, seed: int) -> str:
     payload = {
-        "person_image": image_data(person_url),
-        "garment_image": image_data(garment_url),
-        "category": category,
-        "garment_photo_type": "model",
-        "num_timesteps": 30,
-        "guidance_scale": 1.5,
-        "seed": seed,
-        "segmentation_free": True,
+        "data": [
+            image_data(person_url),
+            image_data(garment_url),
+            category,
+            "model",
+            30,
+            1.5,
+            seed,
+            True,
+        ]
     }
     response = http_json(f"{SPACE_BASE}/gradio_api/run/try_on", payload, timeout=240)
     out = response.get("output")
+    if not isinstance(out, dict):
+        data = response.get("data")
+        out = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else None
     if not isinstance(out, dict):
         raise RuntimeError("VTON provider returned no output object")
     url = out.get("url")
