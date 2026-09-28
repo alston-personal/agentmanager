@@ -1,0 +1,84 @@
+name: Oracle Inspect Oursong Threads
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-inspect-oursong-threads.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read recent posts replies and safe discovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,re,urllib.request,urllib.error
+          from pathlib import Path
+          from datetime import datetime,timezone,timedelta
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          bindings=json.loads(Path('/home/ubuntu/.local/state/agentos/social/credentials.json').read_text(encoding='utf-8')).get('bindings') or {}
+          matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
+          assert len(matches)==1, f'oursong_binding_count={len(matches)}'
+          bid,_=matches[0]
+          def read(op,object_id=None,query=None):
+              p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':op,'account_binding_id':bid}
+              if object_id: p['object_id']=object_id
+              if query: p.update({'query':query,'search_type':'RECENT','search_mode':'KEYWORD'})
+              req=urllib.request.Request('http://127.0.0.1:8771/v1/social/status',data=json.dumps(p,ensure_ascii=False,separators=(',',':')).encode(),headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r: return json.load(r)
+              except urllib.error.HTTPError as e:
+                  return {'ok':False,'error_code':'http_'+str(e.code)}
+          posts=read('post.read')
+          assert posts.get('ok') is True, posts
+          items=(posts.get('result') or {}).get('items') or []
+          owned=[]
+          replies=[]
+          cutoff=datetime.now(timezone.utc)-timedelta(hours=72)
+          for p in items[:12]:
+              if not isinstance(p,dict): continue
+              pid=str(p.get('id') or '')
+              if not re.fullmatch(r'[0-9]{10,25}',pid): continue
+              owned.append({'id':pid,'text':str(p.get('text') or '')[:180],'timestamp':str(p.get('timestamp') or '')[:40],'permalink':str(p.get('permalink') or '')[:150],'has_replies':bool(p.get('has_replies'))})
+              rr=read('replies.read',pid)
+              if rr.get('ok') is not True: continue
+              for row in (rr.get('result') or {}).get('items') or []:
+                  if not isinstance(row,dict): continue
+                  rid=str(row.get('id') or '')
+                  if not re.fullmatch(r'[0-9]{10,25}',rid): continue
+                  replies.append({'id':rid,'root_post_id':pid,'username':str(row.get('username') or '')[:80].lstrip('@'),'text':str(row.get('text') or '')[:350],'timestamp':str(row.get('timestamp') or '')[:50],'replied_to_id':str((row.get('replied_to') or {}).get('id') or ''),'is_reply_owned_by_me':bool(row.get('is_reply_owned_by_me')),'permalink':str(row.get('permalink') or '')[:150]})
+          discovery=read('keyword.search',query='塔羅')
+          candidates=[]
+          if discovery.get('ok') is True:
+              for row in (discovery.get('result') or {}).get('items') or []:
+                  if not isinstance(row,dict): continue
+                  if str(row.get('username') or '').lstrip('@').lower()=='oursong_alstonhuang': continue
+                  candidates.append({'id':str(row.get('id') or ''),'username':str(row.get('username') or '')[:80].lstrip('@'),'text':str(row.get('text') or '')[:400],'timestamp':str(row.get('timestamp') or '')[:50],'permalink':str(row.get('permalink') or '')[:150]})
+                  if len(candidates)>=8: break
+          print('oursong_patrol=PASS')
+          print('oursong_posts='+json.dumps(owned,ensure_ascii=False,separators=(',',':')))
+          print('oursong_replies='+json.dumps(replies[-40:],ensure_ascii=False,separators=(',',':')))
+          print('oursong_discovery='+json.dumps(candidates,ensure_ascii=False,separators=(',',':')))
+          print('oursong_discovery_status='+('PASS' if discovery.get('ok') is True else str(discovery.get('error_code') or 'FAILED')))
+          PY
