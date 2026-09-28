@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.runtime-inspect",
   "node_id": "mbpr",
-  "nonce": "mbpr-runtime-post-accept-1790562289732"
+  "nonce": "mbpr-runtime-final-1790562749511"
 }
