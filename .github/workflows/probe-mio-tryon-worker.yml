@@ -5,6 +5,7 @@ on:
     branches: [feat/mio-tryon-worker]
     paths:
       - '.github/workflows/probe-mio-tryon-worker.yml'
+      - 'scripts/tryon_render_worker.py'
 
 permissions:
   contents: read
