@@ -1,0 +1,40 @@
+name: Oracle MBPR Chrome Session Inspect
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-chrome-session-inspect.json'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: ${{ github.workspace }}/.tmp-agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect existing Chrome tabs on MBPR
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-chrome-session-inspect.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='chrome-session-inspect-mbpr-'+str(int(time.time()))
+          code="import subprocess,json; sc='tell application \"Google Chrome\" to get {title, URL} of every tab of every window'; p=subprocess.run(['osascript','-e',sc],text=True,capture_output=True,timeout=15); print('rc='+str(p.returncode)); print('out='+json.dumps(p.stdout[-12000:])); print('err='+json.dumps(p.stderr[-2000:])); raise SystemExit(p.returncode)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  print(json.dumps(r,ensure_ascii=False,sort_keys=True))
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('mbpr_chrome_session_inspect=PASS'); raise SystemExit(0)
+                  raise SystemExit('chrome session inspect failed')
+              time.sleep(2)
+          raise SystemExit('chrome session inspect receipt timeout')
+          PY
