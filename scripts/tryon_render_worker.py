@@ -209,7 +209,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         person_url = try_on(person_url, garment_url, SUPPORTED[layer], seed_base + index)
         provider_urls.append(person_url)
 
-    target = ASSET_DIR / f"{job['jobId']}.png"
+    target = ASSET_DIR / f"{job['jobId']}.webp"
     download(person_url, target)
 
     job["status"] = "ready"
@@ -218,8 +218,8 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     job["output"] = {
         "asset": public_asset_path(job["jobId"]),
         "previewAsset": public_asset_path(job["jobId"]),
-        "width": 576,
-        "height": 864,
+        "width": None,
+        "height": None,
         "provider": "fashn-vton-1.5-hf-space",
         "providerUrls": provider_urls,
         "renderedLayers": supported_layers,
