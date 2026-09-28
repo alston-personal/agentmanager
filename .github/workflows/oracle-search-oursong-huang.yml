@@ -1,0 +1,71 @@
+name: Oracle Search Oursong Huang Threads
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-search-oursong-huang.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  search:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Search relevant Threads discussions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,urllib.request
+          from pathlib import Path
+
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          bindings=json.loads(Path('/home/ubuntu/.local/state/agentos/social/credentials.json').read_text(encoding='utf-8')).get('bindings') or {}
+          matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
+          assert len(matches)==1
+          bid,_=matches[0]
+
+          def read(query):
+              p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'keyword.search','account_binding_id':bid,'query':query,'search_type':'RECENT','search_mode':'KEYWORD'}
+              req=urllib.request.Request('http://127.0.0.1:8771/v1/social/status',data=json.dumps(p,ensure_ascii=False,separators=(',',':')).encode(),headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},method='POST')
+              with urllib.request.urlopen(req,timeout=25) as r: return json.load(r)
+
+          out=[]
+          seen=set()
+          for q in ['黃偉哲','黃偉哲 新加坡','黃偉哲 台南','黃偉哲 熊本']:
+              res=read(q)
+              if res.get('ok') is not True:
+                  print('query_failed='+q+':'+str(res.get('error_code') or 'unknown'))
+                  continue
+              for row in (res.get('result') or {}).get('items') or []:
+                  if not isinstance(row,dict): continue
+                  oid=str(row.get('id') or '')
+                  if not oid or oid in seen: continue
+                  seen.add(oid)
+                  out.append({
+                    'id':oid,
+                    'username':str(row.get('username') or '').lstrip('@')[:80],
+                    'text':str(row.get('text') or '')[:500],
+                    'timestamp':str(row.get('timestamp') or '')[:50],
+                    'permalink':str(row.get('permalink') or '')[:180],
+                  })
+          print('oursong_huang_search=PASS')
+          print('oursong_huang_results='+json.dumps(out[:30],ensure_ascii=False,separators=(',',':')))
+          PY
