@@ -22,10 +22,18 @@ if ! sudo -n true >/dev/null 2>&1; then
   exit 3
 fi
 
-sudo -n apt-get update -y >/dev/null
-sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  xvfb openbox x11vnc novnc websockify dbus-x11 \
-  python3-venv python3-pip fonts-noto-cjk >/dev/null
+APT_SOURCES="$ROOT/ubuntu.sources.list"
+. /etc/os-release
+CODENAME="${VERSION_CODENAME:-jammy}"
+cat > "$APT_SOURCES" <<EOF
+deb http://ports.ubuntu.com/ubuntu-ports $CODENAME main universe multiverse restricted
+deb http://ports.ubuntu.com/ubuntu-ports $CODENAME-updates main universe multiverse restricted
+deb http://ports.ubuntu.com/ubuntu-ports $CODENAME-security main universe multiverse restricted
+EOF
+sudo -n apt-get -o Dir::Etc::sourcelist="$APT_SOURCES" -o Dir::Etc::sourceparts="-" update -y >/dev/null
+sudo -n DEBIAN_FRONTEND=noninteractive apt-get \
+  -o Dir::Etc::sourcelist="$APT_SOURCES" -o Dir::Etc::sourceparts="-" \
+  install -y xvfb openbox x11vnc novnc websockify dbus-x11 python3-venv python3-pip fonts-noto-cjk >/dev/null
 
 VENV="$ROOT/venv"
 if [ ! -x "$VENV/bin/python" ]; then
