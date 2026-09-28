@@ -15,30 +15,27 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - name: Probe Social acceptance gate safely
+      - name: Probe Social write operation names safely
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json, urllib.request, urllib.error
           BASE="https://studio.milkcat.org/dashboard/api/social"
-          def post(path,payload,headers=None):
-              hs={"content-type":"application/json","accept":"application/json"}
-              hs.update(headers or {})
-              req=urllib.request.Request(BASE+path,data=json.dumps(payload).encode(),headers=hs,method="POST")
+          def post(path,operation):
+              payload={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":operation}
+              req=urllib.request.Request(BASE+path,data=json.dumps(payload).encode(),headers={"content-type":"application/json","accept":"application/json"},method="POST")
               try:
                   with urllib.request.urlopen(req,timeout=8) as r:
-                      return {"status":r.status,"body":r.read().decode("utf-8","replace")[:1800]}
+                      return {"status":r.status,"body":r.read().decode("utf-8","replace")[:1000]}
               except urllib.error.HTTPError as e:
-                  return {"status":e.code,"body":e.read().decode("utf-8","replace")[:1800]}
+                  return {"status":e.code,"body":e.read().decode("utf-8","replace")[:1000]}
               except Exception as e:
                   return {"status":"error","body":repr(e)}
-          reply={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply"}
-          publish={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"publish"}
-          probes={
-              "reply_no_acceptance":post("/v1/social/reply",reply),
-              "reply_acceptance":post("/v1/social/reply",reply,{"x-agentos-acceptance-id":"pdca-safe-schema-probe"}),
-              "publish_acceptance":post("/v1/social/publish",publish,{"x-agentos-acceptance-id":"pdca-safe-schema-probe"})
-          }
-          print(json.dumps(probes,ensure_ascii=False,indent=2))
+          ops=["reply","reply.create","reply.send","reply.write","write.reply","comment.reply","publish","publish.create","publish.send","publish.write","post.publish","post.create"]
+          out={}
+          for op in ops:
+              path="/v1/social/publish" if ("publish" in op or op=="post.create") else "/v1/social/reply"
+              out[op]=post(path,op)
+          print(json.dumps(out,ensure_ascii=False,indent=2))
           PY
