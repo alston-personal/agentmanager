@@ -1,0 +1,25 @@
+name: Probe FASHN VTON Space
+
+on:
+  push:
+    branches: [ops/probe-fashn-vton]
+    paths:
+      - '.github/workflows/probe-fashn-vton.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Probe public Gradio API
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://fashn-ai-fashn-vton-1-5.hf.space'
+          echo "OPENAPI_BEGIN"
+          curl -fsSL --max-time 30 "$BASE/gradio_api/openapi.json" | head -c 20000
+          echo
+          echo "OPENAPI_END"
