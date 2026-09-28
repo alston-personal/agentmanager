@@ -21,14 +21,14 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Install worker and systemd user service
+      - name: Install worker and system service
         shell: bash
         run: |
           set -euo pipefail
-          install -d -m 700 "$HOME/.local/bin" "$HOME/.config/systemd/user"
-          install -m 755 scripts/tryon_render_worker.py "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
+          sudo -n install -d -m 755 -o ubuntu -g ubuntu /home/ubuntu/.local/bin
+          sudo -n install -m 755 -o ubuntu -g ubuntu scripts/tryon_render_worker.py /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
 
-          cat > "$HOME/.config/systemd/user/agentos-mio-tryon-render-worker.service" <<'UNIT'
+          cat > /tmp/agentos-mio-tryon-render-worker.service <<'UNIT'
           [Unit]
           Description=AgentOS Mio Outfit Try-On Render Worker
           After=network-online.target
@@ -36,6 +36,9 @@ jobs:
 
           [Service]
           Type=simple
+          User=ubuntu
+          Group=ubuntu
+          Environment=HOME=/home/ubuntu
           Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
           Environment=AGENTOS_TRYON_POLL_SECONDS=2
           Environment=PYTHONUNBUFFERED=1
@@ -44,11 +47,12 @@ jobs:
           RestartSec=5
 
           [Install]
-          WantedBy=default.target
+          WantedBy=multi-user.target
           UNIT
 
-          systemctl --user daemon-reload
-          systemctl --user enable --now agentos-mio-tryon-render-worker.service
+          sudo -n install -m 644 /tmp/agentos-mio-tryon-render-worker.service /etc/systemd/system/agentos-mio-tryon-render-worker.service
+          sudo -n systemctl daemon-reload
+          sudo -n systemctl enable --now agentos-mio-tryon-render-worker.service
           sleep 2
-          systemctl --user is-active agentos-mio-tryon-render-worker.service
-          systemctl --user --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
+          sudo -n systemctl is-active agentos-mio-tryon-render-worker.service
+          sudo -n systemctl --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
