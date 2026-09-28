@@ -11,8 +11,8 @@ POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
-if ! flock -n 9; then
-  echo "persona_pdca_runtime=BUSY"
+if ! flock -w 120 9; then
+  echo "persona_pdca_runtime=LOCK_TIMEOUT"
   exit 0
 fi
 
