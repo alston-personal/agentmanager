@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import inspect
 import time
 import shutil
 import tempfile
@@ -26,6 +27,7 @@ ANY_ITEM_SPACE_IDS = [
     ).split(",")
     if value.strip()
 ]
+HF_TOKEN = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN") or "").strip() or None
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
@@ -99,12 +101,18 @@ def client() -> Client:
 def any_item_client(space_id: str) -> Client:
     cached = _ANY_ITEM_CLIENTS.get(space_id)
     if cached is None:
-        cached = Client(
-            space_id,
-            download_files=True,
-            verbose=False,
-            httpx_kwargs={"timeout": 360.0},
-        )
+        client_kwargs = {
+            "download_files": True,
+            "verbose": False,
+            "httpx_kwargs": {"timeout": 360.0},
+        }
+        if HF_TOKEN:
+            params = inspect.signature(Client).parameters
+            if "token" in params:
+                client_kwargs["token"] = HF_TOKEN
+            elif "hf_token" in params:
+                client_kwargs["hf_token"] = HF_TOKEN
+        cached = Client(space_id, **client_kwargs)
         _ANY_ITEM_CLIENTS[space_id] = cached
     return cached
 
@@ -251,9 +259,19 @@ def omni_try_on(
                 errors.append(f"{space_id}={type(exc).__name__}:{exc}"[:400])
                 _ANY_ITEM_CLIENTS.pop(space_id, None)
 
-        raise RuntimeError(
-            "all any-item providers failed: " + " | ".join(errors)
+        detail = " | ".join(errors)
+        quota_exhausted = any(
+            marker in detail.lower()
+            for marker in (
+                "zerogpu runs limit",
+                "exceeded your zerogpu",
+                "quota",
+                "rate limit",
+            )
         )
+        code = "any_item_provider_quota_exhausted" if quota_exhausted else "any_item_provider_failed"
+        auth_hint = " (HF_TOKEN not configured)" if quota_exhausted and not HF_TOKEN else ""
+        raise RuntimeError(f"{code}{auth_hint}: {detail}")
     finally:
         for path in temp_inputs:
             try:

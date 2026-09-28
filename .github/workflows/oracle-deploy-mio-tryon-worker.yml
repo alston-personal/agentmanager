@@ -23,6 +23,7 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN || secrets.HUGGINGFACE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,10 +41,16 @@ jobs:
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             scripts/tryon_render_worker.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SCRIPT"
 
+          HF_TOKEN_B64="$(printf '%s' "${HF_TOKEN:-}" | base64 -w0)"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$REMOTE_SCRIPT" <<'REMOTE'
+            bash -s -- "$REMOTE_SCRIPT" "$HF_TOKEN_B64" <<'REMOTE'
           set -euo pipefail
           REMOTE_SCRIPT="$1"
+          HF_TOKEN_B64="${2:-}"
+          HF_TOKEN_VALUE=""
+          if [ -n "$HF_TOKEN_B64" ]; then
+            HF_TOKEN_VALUE="$(printf '%s' "$HF_TOKEN_B64" | base64 -d)"
+          fi
           install -d -m 700 "$HOME/.local/bin" "$HOME/.local/share" "$HOME/.config/systemd/user"
           install -m 755 "$REMOTE_SCRIPT" "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
           rm -f "$REMOTE_SCRIPT"
@@ -70,6 +77,7 @@ jobs:
           Environment=AGENT_DATA_ROOT=/home/ubuntu/agent-data
           Environment=AGENTOS_TRYON_POLL_SECONDS=2
           Environment=PYTHONUNBUFFERED=1
+          EnvironmentFile=-/home/ubuntu/.config/agentos/mio-tryon.env
           ExecStart=/home/ubuntu/.local/share/mio-tryon-venv/bin/python /home/ubuntu/.local/bin/agentos-mio-tryon-render-worker.py
           Restart=on-failure
           RestartSec=5
@@ -77,6 +85,14 @@ jobs:
           [Install]
           WantedBy=default.target
           UNIT
+
+          install -d -m 700 "$HOME/.config/agentos"
+          if [ -n "$HF_TOKEN_VALUE" ]; then
+            umask 077
+            printf 'HF_TOKEN=%s\n' "$HF_TOKEN_VALUE" > "$HOME/.config/agentos/mio-tryon.env"
+          else
+            rm -f "$HOME/.config/agentos/mio-tryon.env"
+          fi
 
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"

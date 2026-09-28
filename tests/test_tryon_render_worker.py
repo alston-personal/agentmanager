@@ -212,3 +212,22 @@ def test_any_item_provider_fallback(monkeypatch, tmp_path):
     )
     assert rendered == str(output)
     assert provider == "pbgo/OmniTry"
+
+
+def test_any_item_client_passes_hf_token(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    worker._ANY_ITEM_CLIENTS.clear()
+    worker.HF_TOKEN = "hf_test_token"
+    captured = {}
+
+    class TokenClient:
+        def __init__(self, source, token=None, **kwargs):
+            captured["source"] = source
+            captured["token"] = token
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(worker, "Client", TokenClient)
+    client = worker.any_item_client("pbgo/OmniTry")
+    assert isinstance(client, TokenClient)
+    assert captured["source"] == "pbgo/OmniTry"
+    assert captured["token"] == "hf_test_token"
