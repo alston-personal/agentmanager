@@ -260,7 +260,7 @@ cd "$STAGE"
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 test -f .next/server/app-paths-manifest.json
-node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route","/api/wardrobe/intake/route","/api/wardrobe/catalog/route","/api/wardrobe/tryon/render/route","/api/wardrobe/tryon/jobs/[jobId]/route","/api/wardrobe/tryon/retry/route","/api/wardrobe/outfit/current/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
+node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route","/api/wardrobe/intake/route","/api/wardrobe/catalog/route","/api/wardrobe/tryon/render/route","/api/wardrobe/tryon/jobs/[jobId]/route","/api/wardrobe/tryon/retry/route","/api/wardrobe/tryon/assets/[jobId]/route","/api/wardrobe/outfit/current/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
 
 # Promote build output as a new immutable release directory.
 test ! -e "$RELEASE"
@@ -338,6 +338,7 @@ check_route /dashboard/api/admin/usage 401
 check_route /dashboard/api/wardrobe/intake 401
 check_route /dashboard/api/wardrobe/catalog 200
 check_route /dashboard/api/wardrobe/tryon/render 405
+check_route /dashboard/api/wardrobe/tryon/assets/missing-probe 401
 check_route /dashboard/api/wardrobe/outfit/current 401
 check_route /dashboard/admin/usage 307
 check_route /dashboard/ 308
@@ -362,6 +363,7 @@ check_public /dashboard/api/admin/usage 401
 check_public /dashboard/api/wardrobe/intake 401
 check_public /dashboard/api/wardrobe/catalog 200
 check_public /dashboard/api/wardrobe/tryon/render 405
+check_public /dashboard/api/wardrobe/tryon/assets/missing-probe 401
 check_public /dashboard/api/wardrobe/outfit/current 401
 check_public /dashboard/admin/usage 307
 
