@@ -1,0 +1,34 @@
+name: Oracle Run Mio PDCA Outcome Sync Once
+
+on:
+  push:
+    branches: [core/run-pdca-outcome-sync-once]
+    paths:
+      - '.github/workflows/oracle-run-mio-pdca-outcome-sync-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run installed PDCA outcome sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          test "$(id -u)" = "1001"
+          test -f /home/ubuntu/agentmanager/scripts/sync_mio_pdca_social_outcome_user.py
+          python3 /home/ubuntu/agentmanager/scripts/sync_mio_pdca_social_outcome_user.py
+          REMOTE
