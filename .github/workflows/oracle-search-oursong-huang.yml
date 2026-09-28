@@ -49,7 +49,7 @@ jobs:
 
           out=[]
           seen=set()
-          for q in ['黃偉哲','黃偉哲 新加坡','黃偉哲 台南','黃偉哲 熊本']:
+          for q in ['黃偉哲','新加坡 文旦','孔廟 秋祭','熊本 台南','四鯤鯓','市長 新加坡 台南']:
               res=read(q)
               if res.get('ok') is not True:
                   print('query_failed='+q+':'+str(res.get('error_code') or 'unknown'))
@@ -58,6 +58,7 @@ jobs:
                   if not isinstance(row,dict): continue
                   oid=str(row.get('id') or '')
                   if not oid or oid in seen: continue
+                  if str(row.get('username') or '').lstrip('@').lower()=='oursong_alstonhuang': continue
                   seen.add(oid)
                   out.append({
                     'id':oid,
