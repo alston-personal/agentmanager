@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 12
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 013f3df3a3d401d097a617ec50402292634412ef
+      SOURCE_SHA: ff29a9de1d795d1af228094585ea915f3b06c7f5
       LIVE_ROOT: /home/ubuntu/zeus-writer/website/dist
       ROUTE_PATH: personas/mio
       BACKUP_KEY: mio-persona
@@ -131,8 +131,8 @@ jobs:
           grep -Fq '收進衣櫃' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '儲存這套搭配' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq 'MIO DRESS-UP STUDIO' "$ROUTE_DIR/wardrobe/index.html"
-          test -s "$SRC/dist/personas/mio/tryon/cache/net-43774-002__net-32235-711__net-40832-002__net-40793-003.webp"
-          grep -Fq '完整試穿結果' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '/dashboard/api/wardrobe/tryon/render' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '目前顯示：AI 試穿結果' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '外罩／外套' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '主上衣' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '上身內搭' "$ROUTE_DIR/wardrobe/index.html"
@@ -165,8 +165,6 @@ jobs:
             "https://studio.milkcat.org/personas/mio/wardrobe/" -o "$TMP/live-wardrobe"
           curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
             "https://studio.milkcat.org/personas/mio/mio-avatar.webp" -o "$TMP/live-avatar"
-          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1 \
-            "https://studio.milkcat.org/personas/mio/tryon/cache/net-43774-002__net-32235-711__net-40832-002__net-40793-003.webp" -o "$TMP/live-outfit-cache"
 
           grep -Fq '@mio.milkcat' "$TMP/live-profile"
           grep -Fq '她記住的幾件事' "$TMP/live-profile"
@@ -180,7 +178,8 @@ jobs:
           grep -Fq '貼一個連結，先收進澪的衣櫃' "$TMP/live-wardrobe"
           grep -Fq '收進衣櫃' "$TMP/live-wardrobe"
           grep -Fq 'MIO DRESS-UP STUDIO' "$TMP/live-wardrobe"
-          grep -Fq '完整試穿結果' "$TMP/live-wardrobe"
+          grep -Fq '/dashboard/api/wardrobe/tryon/render' "$TMP/live-wardrobe"
+          grep -Fq '目前顯示：AI 試穿結果' "$TMP/live-wardrobe"
           grep -Fq '外罩／外套' "$TMP/live-wardrobe"
           grep -Fq '主上衣' "$TMP/live-wardrobe"
           grep -Fq '上身內搭' "$TMP/live-wardrobe"
@@ -189,7 +188,6 @@ jobs:
           ! grep -Fq '2D OUTFIT SIMULATOR MVP' "$TMP/live-wardrobe"
           ! grep -Fq 'mannequin.svg' "$TMP/live-wardrobe"
           test -s "$TMP/live-avatar"
-          test -s "$TMP/live-outfit-cache"
           echo "local_nginx_mio_persona_acceptance=PASS"
 
           printf '%s\n' \
@@ -212,14 +210,12 @@ jobs:
           PROFILE=/tmp/mio-profile-$GITHUB_RUN_ID
           WARDROBE=/tmp/mio-wardrobe-$GITHUB_RUN_ID
           AVATAR=/tmp/mio-avatar-$GITHUB_RUN_ID.webp
-          OUTFIT_CACHE=/tmp/mio-outfit-cache-$GITHUB_RUN_ID.webp
 
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/?_=$GITHUB_RUN_ID" -o "$PROFILE"
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/wardrobe/?_=$GITHUB_RUN_ID" -o "$WARDROBE"
           ACTIVITY=/tmp/mio-activity-$GITHUB_RUN_ID.json
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/mio-avatar.webp?_=$GITHUB_RUN_ID" -o "$AVATAR"
           curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/activity.json?_=$GITHUB_RUN_ID" -o "$ACTIVITY"
-          curl -fsS --retry 8 --retry-delay 2 --retry-all-errors "$BASE/personas/mio/tryon/cache/net-43774-002__net-32235-711__net-40832-002__net-40793-003.webp?_=$GITHUB_RUN_ID" -o "$OUTFIT_CACHE"
 
           grep -Fq '@mio.milkcat' "$PROFILE"
           grep -Fq '最近在意什麼' "$PROFILE"
@@ -237,6 +233,8 @@ jobs:
           grep -Fq '貼一個連結，先收進澪的衣櫃' "$WARDROBE"
           grep -Fq '收進衣櫃' "$WARDROBE"
           grep -Fq 'MIO DRESS-UP STUDIO' "$WARDROBE"
+          grep -Fq '/dashboard/api/wardrobe/tryon/render' "$WARDROBE"
+          grep -Fq '目前顯示：AI 試穿結果' "$WARDROBE"
           grep -Fq '外罩／外套' "$WARDROBE"
           grep -Fq '主上衣' "$WARDROBE"
           grep -Fq '上身內搭' "$WARDROBE"
@@ -245,7 +243,6 @@ jobs:
           ! grep -Fq '2D OUTFIT SIMULATOR MVP' "$WARDROBE"
           ! grep -Fq 'mannequin.svg' "$WARDROBE"
           test -s "$AVATAR"
-          test -s "$OUTFIT_CACHE"
           echo "public_mio_persona_acceptance=PASS"
 
       - name: Roll back after public acceptance failure
