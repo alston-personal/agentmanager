@@ -1,0 +1,98 @@
+name: Oracle MBPR Transactional OTA
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-transactional-ota.json'
+permissions:
+  contents: read
+jobs:
+  ota:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 7
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage candidate
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,re,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-transactional-ota.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.transactional-ota'
+          assert cmd.get('node_id')=='mbpr'
+          sha=str(cmd.get('source_commit') or '')
+          assert re.fullmatch(r'[0-9a-f]{40}',sha)
+          open('/tmp/mbpr-ota-sha','w').write(sha)
+          tid='mbpr-ota-stage-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'node.runtime.converge','phase':'stage','source_commit':sha,'cognition_ids_used':[]})
+          for _ in range(70):
+              r=store.get_receipt(tid)
+              if r:
+                  status=((r.get('runtime_converge') or {}).get('status'))
+                  if r.get('ok') is not True or status!='awaiting-controller-acceptance':
+                      raise SystemExit(str(r))
+                  print('mbpr_ota_stage=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr OTA stage timeout')
+          PY
+      - name: Wait for candidate heartbeat
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import time
+          from agent_core.node_registry import NodeRegistry
+          sha=open('/tmp/mbpr-ota-sha').read().strip()
+          deadline=time.time()+120
+          while time.time()<deadline:
+              node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='mbpr'),None)
+              runtime=(node or {}).get('runtime') or {}
+              if node and node.get('status')=='online' and runtime.get('source_commit')==sha:
+                  print('mbpr_ota_candidate_heartbeat=PASS')
+                  raise SystemExit(0)
+              time.sleep(3)
+          raise SystemExit('mbpr OTA candidate heartbeat timeout')
+          PY
+      - name: Probe candidate
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          tid='mbpr-ota-probe-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'process.inspect','query':'agentos_node','limit':20,'cognition_ids_used':[]})
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  if r.get('ok') is not True: raise SystemExit(str(r))
+                  print('mbpr_ota_probe=PASS'); raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr OTA probe timeout')
+          PY
+      - name: Accept candidate
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import time
+          from agent_core.realm_fabric import RealmFabricStore
+          sha=open('/tmp/mbpr-ota-sha').read().strip()
+          tid='mbpr-ota-accept-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'node.runtime.converge','phase':'accept','source_commit':sha,'cognition_ids_used':[]})
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  status=((r.get('runtime_converge') or {}).get('status'))
+                  if r.get('ok') is not True or status!='accepted': raise SystemExit(str(r))
+                  print('mbpr_ota_accept=PASS'); raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr OTA accept timeout')
+          PY
