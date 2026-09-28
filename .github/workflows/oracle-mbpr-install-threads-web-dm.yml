@@ -26,21 +26,7 @@ jobs:
           assert cmd.get('node_id')=='mbpr'
           sha=str(cmd.get('source_commit') or '')
           assert len(sha)==40
-          code=f"""from pathlib import Path
-import subprocess,venv,urllib.request,os
-root=Path.home()/'Library'/'Application Support'/'AgentOS'/'browser-bridge'
-venv_dir=root/'venv'
-root.mkdir(parents=True,exist_ok=True)
-if not (venv_dir/'bin'/'python').exists():
-    venv.EnvBuilder(with_pip=True).create(venv_dir)
-py=str(venv_dir/'bin'/'python')
-subprocess.run([py,'-m','pip','install','-q','--upgrade','pip'],check=True,timeout=120)
-subprocess.run([py,'-m','pip','install','-q','--upgrade','git+https://github.com/alston-personal/agentmanager.git@{sha}','playwright'],check=True,timeout=240)
-bridge=root/'threads_web_dm_bridge_user.py'
-urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/threads_web_dm_bridge_user.py',bridge)
-os.chmod(bridge,0o700)
-print('threads_web_dm_install=PASS')
-"""
+          code="import urllib.request,runpy,tempfile,sys; p=tempfile.mktemp(suffix='.py'); urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/install_threads_web_dm_macos.py',p); sys.argv=[p,'--source-commit',sha]; runpy.run_path(p,run_name='__main__')"
           tid='install-threads-web-dm-mbpr-'+str(int(time.time()))
           store=RealmFabricStore()
           store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':120,'cognition_ids_used':[]})
