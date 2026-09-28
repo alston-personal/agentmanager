@@ -53,8 +53,8 @@ jobs:
             python3 -m venv "$VENV"
           fi
           "$VENV/bin/python" -m pip install --quiet --upgrade pip
-          "$VENV/bin/python" -m pip install --quiet --upgrade "gradio_client>=1.13,<3"
-          "$VENV/bin/python" -c 'from gradio_client import Client, handle_file; print("gradio_client_import=PASS")'
+          "$VENV/bin/python" -m py_compile "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
+          echo "tryon_worker_compile=PASS"
 
           cat > "$HOME/.config/systemd/user/agentos-mio-tryon-render-worker.service" <<'UNIT'
           [Unit]
@@ -108,10 +108,9 @@ jobs:
             "requestedAt":now,"startedAt":None,"completedAt":None,"failedAt":None,"supersededBy":None,
             "input":{
               "baseBodyAsset":"/personas/mio/mio-avatar.webp",
-              "layerOrder":["upper_main","lower_main"],
+              "layerOrder":["upper_main"],
               "selectedLayers":{
-                "upper_main":{"garmentId":"net-43774-002","name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"},
-                "lower_main":{"garmentId":"net-32235-711","name":"navy pants","layer":"lower_main","sourceImageUrl":"https://s-net.wimg.tw//act/32235-711-1024-01.jpg?v=32570"}
+                "upper_main":{"garmentId":"net-43774-002","name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"}
               }
             },
             "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
