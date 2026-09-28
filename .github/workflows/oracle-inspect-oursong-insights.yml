@@ -1,0 +1,65 @@
+name: Oracle Inspect Oursong Insights
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-inspect-oursong-insights.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start governed SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read recent Oursong post insights and replies
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" python3 - <<'PY'
+          import json,urllib.request
+          from pathlib import Path
+          env={}
+          for raw in Path('/home/ubuntu/.config/agentos/social-runtime.env').read_text(encoding='utf-8').splitlines():
+              raw=raw.strip()
+              if raw and not raw.startswith('#') and '=' in raw:
+                  k,v=raw.split('=',1); env[k]=v.strip().strip('"').strip("'")
+          product_key=str(json.loads(env['AGENTOS_SOCIAL_PRODUCTS_JSON'])['galaxy']['api_key'])
+          bindings=json.loads(Path('/home/ubuntu/.local/state/agentos/social/credentials.json').read_text(encoding='utf-8')).get('bindings') or {}
+          matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
+          assert len(matches)==1
+          bid,_=matches[0]
+          def post(payload):
+              q=urllib.request.Request('http://127.0.0.1:8771/v1/social/status',data=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode(),headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},method='POST')
+              with urllib.request.urlopen(q,timeout=30) as r: return json.load(r)
+          posts=post({'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'post.read','account_binding_id':bid})
+          assert posts.get('ok') is True, posts
+          out=[]
+          for p in ((posts.get('result') or {}).get('items') or [])[:8]:
+              oid=str(p.get('id') or '')
+              if not oid: continue
+              ins=post({'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'post.insights.read','account_binding_id':bid,'object_id':oid})
+              reps=post({'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'replies.read','account_binding_id':bid,'object_id':oid})
+              out.append({
+                'id':oid,
+                'text':str(p.get('text') or '')[:180],
+                'timestamp':str(p.get('timestamp') or ''),
+                'permalink':str(p.get('permalink') or ''),
+                'media_type':str(p.get('media_type') or ''),
+                'metrics':((ins.get('result') or {}).get('metrics') if ins.get('ok') is True else {'error':ins.get('error_code')}),
+                'reply_count':len(((reps.get('result') or {}).get('items') or [])) if reps.get('ok') is True else None,
+              })
+          print('oursong_insights=PASS')
+          print('oursong_recent='+json.dumps(out,ensure_ascii=False,separators=(',',':')))
+          PY
