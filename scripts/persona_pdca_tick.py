@@ -111,6 +111,25 @@ def main():
     posted=counts.get("post.sent",0)+counts.get("post.published",0)
     wardrobe=counts.get("wardrobe.window_shopping",0)
 
+    growth=cfg.get("growth_mode",{}) if isinstance(cfg.get("growth_mode"),dict) else {}
+    today=now_local.date()
+    todays_posts=[]
+    for e in events:
+        if e.get("type") not in ("post.sent","post.published"): continue
+        ts=event_ts(e)
+        if not ts: continue
+        if ts.astimezone(tz).date()==today:
+            todays_posts.append(ts.astimezone(timezone.utc))
+    todays_posts.sort()
+    last_post_ts=todays_posts[-1] if todays_posts else None
+    post_gap_min=((now_utc-last_post_ts).total_seconds()/60.0) if last_post_ts else None
+    target=int(growth.get("daily_post_target",1))
+    max_posts=int(growth.get("daily_post_max",2))
+    min_gap=int(growth.get("minimum_post_gap_minutes",240))
+    growth_enabled=bool(growth.get("enabled")) and growth.get("phase")=="reach_first"
+    gap_ok=(post_gap_min is None or post_gap_min>=min_gap)
+    under_max=len(todays_posts)<max_posts
+
     if phase=="sleep": candidates=[("sleep",1.0)]
     elif phase=="rest": candidates=[("rest",1.0)]
     else:
@@ -118,8 +137,14 @@ def main():
         if observed: candidates.append(("review_social_feedback",min(3.0,1.2+observed*0.25)))
         if phase in ("morning_warmup","high_focus") and energy>=35:
             candidates += [("wardrobe_plan",1.15 if wardrobe==0 else 0.55),("reflect",1.0)]
-        if phase in ("high_focus","afternoon","creative_social","late") and energy>=40:
-            candidates.append(("content_ideation",1.3 if posted==0 else 0.75))
+        if phase in ("high_focus","afternoon","social","creative_social","late") and energy>=40:
+            base_content=1.3 if posted==0 else 0.75
+            if growth_enabled and under_max and gap_ok:
+                if len(todays_posts)<target:
+                    base_content=max(base_content,2.2 if phase=="creative_social" else 1.65)
+                elif phase=="creative_social":
+                    base_content=max(base_content,1.15)
+            candidates.append(("content_ideation",base_content))
         if state.get("consecutive_noops",0)>=2 and energy>=30:
             candidates.append(("reflect",1.4))
     if energy<15 and phase not in ("sleep","rest"):
@@ -147,10 +172,10 @@ def main():
                   "capability":"social.reply.review","status":"candidate",
                   "reason":f"{observed} newly observed replies since last PDCA cursor",
                   "policy":"public_conversation=autonomous_with_policy","requires_real_adapter_receipt":True}
-    elif selected=="content_ideation" and energy_after>=30:
+    elif selected=="content_ideation" and energy_after>=30 and (not growth_enabled or (under_max and gap_ok)):
         external={"action_id":f"mio-pdca-c{cycle}-social-post-consider","cycle":cycle,
                   "capability":"social.post.consider","status":"candidate",
-                  "reason":"active creative window with sufficient energy",
+                  "reason":("reach_first growth experiment: post target not met" if growth_enabled and len(todays_posts)<target else "active creative window with sufficient energy"),
                   "policy":"routine_posts=autonomous_with_policy","requires_real_adapter_receipt":True}
     if external and not any(
         x.get("capability")==external["capability"] and x.get("status") in ("candidate","in_progress")
@@ -168,6 +193,7 @@ def main():
              "cycle":cycle,"tick_at":now_utc.isoformat().replace("+00:00","Z"),
              "local_time":now_local.isoformat(),"phase":phase,"ir_id":ir.get("ir_id"),"seed":seed,"trigger":args.trigger,
              "plan":{"energy":round(energy,2),"unseen_events":len(unseen),"event_counts":counts,
+                     "growth":{"enabled":growth_enabled,"posts_today":len(todays_posts),"target":target,"max":max_posts,"gap_minutes":round(post_gap_min,1) if post_gap_min is not None else None,"gap_ok":gap_ok},
                      "candidates":[{"intent":n,"weight":w} for n,w in candidates],"selected_intent":selected},
              "do":do,
              "check":{"internal_action_verified":True,"external_action_completed":False,
