@@ -1,0 +1,51 @@
+name: IDM VTON Provider Smoke
+
+on:
+  push:
+    branches: [ops/sm4ll-provider-smoke]
+    paths:
+      - '.github/workflows/idm-provider-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Test Mio and NET garment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/idm-vton
+          /tmp/idm-vton/bin/python -m pip install --quiet --upgrade pip "gradio_client>=1.13,<3"
+          curl -fsSL "https://studio.milkcat.org/personas/mio/mio-avatar.webp" -o /tmp/mio.webp
+          curl -fsSL "https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570" -o /tmp/garment.jpg
+          /tmp/idm-vton/bin/python - <<'PY'
+          from gradio_client import Client, handle_file
+          import pathlib, shutil
+          client = Client("yisol/IDM-VTON", download_files=True, verbose=False, httpx_kwargs={"timeout": 240.0})
+          print("IDM_API=", client.view_api(return_format="dict"))
+          result = client.predict(
+              dict={"background": handle_file("/tmp/mio.webp"), "layers": [], "composite": None},
+              handle_file("/tmp/garment.jpg"),
+              "white ribbed fitted round-neck top",
+              True,
+              False,
+              20,
+              42,
+              api_name="/tryon",
+          )
+          print("idm_result=", repr(result)[:1000])
+          candidate = result[0] if isinstance(result, (list, tuple)) and result else result
+          if isinstance(candidate, dict):
+              candidate = candidate.get("path") or candidate.get("url")
+          if not isinstance(candidate, str):
+              raise SystemExit("no output image path")
+          path = pathlib.Path(candidate)
+          if not path.exists() or path.stat().st_size < 1000:
+              raise SystemExit(f"invalid output: {candidate}")
+          shutil.copyfile(path, "/tmp/idm-result.webp")
+          print("IDM_VTON_SMOKE=PASS bytes=", pathlib.Path("/tmp/idm-result.webp").stat().st_size)
+          PY
