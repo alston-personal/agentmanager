@@ -13,6 +13,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/persona_pdca_tick.py'
+      - 'scripts/run_persona_pdca_heartbeat_user.sh'
+      - 'scripts/install_persona_pdca_timer_user.sh'
       - '.github/workflows/persona-pdca-heartbeat.yml'
 
 permissions:
@@ -110,3 +112,23 @@ jobs:
 
           cat "$RECEIPT"
           REMOTE
+
+      - name: Install local Persona PDCA timer
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE_TICK="/tmp/persona_pdca_tick-install-$GITHUB_RUN_ID.py"
+          REMOTE_RUNNER="/tmp/run_persona_pdca_heartbeat-$GITHUB_RUN_ID.sh"
+          REMOTE_INSTALLER="/tmp/install_persona_pdca_timer-$GITHUB_RUN_ID.sh"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/persona_pdca_tick.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_TICK"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/run_persona_pdca_heartbeat_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_RUNNER"
+          scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            scripts/install_persona_pdca_timer_user.sh "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_INSTALLER"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash "$REMOTE_INSTALLER" "$REMOTE_TICK" "$REMOTE_RUNNER"
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            rm -f "$REMOTE_TICK" "$REMOTE_RUNNER" "$REMOTE_INSTALLER"
