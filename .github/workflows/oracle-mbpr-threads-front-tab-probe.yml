@@ -35,7 +35,20 @@ jobs:
                   out=str(r.get('stdout') or '')
                   print(out)
                   if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
-                      raise SystemExit(str(r.get('error') or 'front tab probe failed'))
+                      err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                      if 'no window' in err or 'invalid index' in err:
+                          kind='NO_WINDOW'
+                      elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
+                          kind='AUTOMATION_PERMISSION'
+                      elif 'timed out' in err or 'timeout' in err:
+                          kind='TIMEOUT'
+                      elif 'execution error' in err or 'syntax error' in err:
+                          kind='APPLESCRIPT_ERROR'
+                      else:
+                          kind='OTHER'
+                      print('threads_front_tab_probe=ERROR')
+                      print('error_type='+kind)
+                      raise SystemExit(2)
                   ok='FRONT_IS_THREADS_MESSAGES=true' in out
                   print('threads_front_tab_probe=' + ('PASS' if ok else 'NOT_MESSAGES'))
                   raise SystemExit(0 if ok else 4)
