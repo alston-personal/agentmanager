@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.garment/v1",
+  "garmentId": "net-43774-002",
+  "characterId": "sunlake-milkcat-ai-001",
+  "name": "合身坑條圓領上衣",
+  "retailer": "NET",
+  "brand": "NET",
+  "sku": "43774",
+  "variant": "002 白色",
+  "category": "upper_body",
+  "slot": "upper_main",
+  "layer": "upper_main",
+  "price": 259,
+  "currency": "TWD",
+  "source": {
+    "canonicalUrl": "https://www.net-fashion.net/product/736366",
+    "imageUrl": "https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570",
+    "extractedAt": "2026-09-28T00:00:00+08:00"
+  },
+  "acquisition": {
+    "state": "want_to_try",
+    "owned": false,
+    "worn": false
+  },
+  "tryOn": {
+    "state": "ready_for_tryon",
+    "asset": null
+  }
+}

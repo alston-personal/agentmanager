@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.garment/v1",
+  "garmentId": "net-42761-201",
+  "characterId": "sunlake-milkcat-ai-001",
+  "name": "方領合身短版上衣",
+  "retailer": "NET",
+  "brand": "NET",
+  "sku": "42761",
+  "variant": "201 棕色",
+  "category": "upper_body",
+  "slot": "upper_main",
+  "layer": "upper_main",
+  "price": 239,
+  "currency": "TWD",
+  "source": {
+    "canonicalUrl": "https://www.net-fashion.net/product/729345",
+    "imageUrl": "https://s-net.wimg.tw//act/42761-201-1024-02.jpg?v=32570",
+    "extractedAt": "2026-09-28T00:00:00+08:00"
+  },
+  "acquisition": {
+    "state": "want_to_try",
+    "owned": false,
+    "worn": false
+  },
+  "tryOn": {
+    "state": "ready_for_tryon",
+    "asset": null
+  }
+}

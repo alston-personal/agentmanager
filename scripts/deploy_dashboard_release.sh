@@ -262,6 +262,23 @@ npm run build
 test -f .next/server/app-paths-manifest.json
 node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route","/api/wardrobe/intake/route","/api/wardrobe/catalog/route","/api/wardrobe/tryon/render/route","/api/wardrobe/tryon/jobs/[jobId]/route","/api/wardrobe/tryon/retry/route","/api/wardrobe/tryon/assets/[jobId]/route","/api/wardrobe/outfit/current/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
 
+# Seed the source-backed Mio garments required by the try-on validator.
+# These files are service-owned runtime prerequisites; imported/user garments remain separate.
+SEED_SRC="$STAGE/data/mio-wardrobe-seed"
+SEED_ROOT="/home/ubuntu/agent-data/projects/dressup-simulator/garments/seeded"
+SEED_TMP="$SEED_ROOT.tmp-$RUN_ID"
+test -d "$SEED_SRC"
+rm -rf "$SEED_TMP"
+install -d -m 0750 "$SEED_TMP"
+cp "$SEED_SRC"/*.json "$SEED_TMP"/
+for required in net-43774-002 net-32235-711 net-40832-002 net-40793-003; do
+  test -s "$SEED_TMP/$required.json"
+done
+rm -rf "$SEED_ROOT.prev-$RUN_ID"
+if [ -d "$SEED_ROOT" ]; then mv "$SEED_ROOT" "$SEED_ROOT.prev-$RUN_ID"; fi
+mv "$SEED_TMP" "$SEED_ROOT"
+echo "dashboard_mio_wardrobe_seed=PASS count=$(find "$SEED_ROOT" -maxdepth 1 -type f -name '*.json' | wc -l)"
+
 # Promote build output as a new immutable release directory.
 test ! -e "$RELEASE"
 mv "$STAGE" "$RELEASE"
