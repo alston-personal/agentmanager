@@ -8,6 +8,6 @@ def test_process_inspect_is_executable_not_manifest_only():
 
 def test_macos_open_url_is_advertised_and_bounded():
     assert "elif platform.system() == 'Darwin':" in s
-    assert "caps.append('desktop.open_url')" in s
+    assert "caps.extend(['desktop.open_url', 'node.runtime.converge'])" in s
     assert "parsed.scheme not in {'http','https'}" in s
     assert "subprocess.run(['open', url]" in s
