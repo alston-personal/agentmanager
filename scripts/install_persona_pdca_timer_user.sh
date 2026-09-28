@@ -5,9 +5,11 @@ set -euo pipefail
 SOURCE_TICK="${1:-}"
 SOURCE_RUNNER="${2:-}"
 SOURCE_SOCIAL_EXECUTOR="${3:-}"
+SOURCE_INTERNAL_EXECUTOR="${4:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
+test -f "$SOURCE_INTERNAL_EXECUTOR"
 
 LIB="$HOME/.local/lib/agentos"
 BIN="$HOME/.local/bin"
@@ -15,6 +17,7 @@ UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 mkdir -p "$LIB" "$BIN" "$UNIT_DIR"
 install -m 0755 "$SOURCE_TICK" "$LIB/persona_pdca_tick.py"
 install -m 0755 "$SOURCE_SOCIAL_EXECUTOR" "$LIB/persona_social_executor.py"
+install -m 0755 "$SOURCE_INTERNAL_EXECUTOR" "$LIB/persona_internal_activity_executor.py"
 install -m 0755 "$SOURCE_RUNNER" "$BIN/agentos-persona-pdca-heartbeat"
 
 SERVICE="$UNIT_DIR/agentos-persona-pdca-heartbeat.service"
@@ -31,6 +34,7 @@ Type=oneshot
 Environment=PERSONA_PATH=personas/sunlake-milkcat
 Environment=AGENTOS_PERSONA_PDCA_TICK=$LIB/persona_pdca_tick.py
 Environment=AGENTOS_PERSONA_SOCIAL_EXECUTOR=$LIB/persona_social_executor.py
+Environment=AGENTOS_PERSONA_INTERNAL_EXECUTOR=$LIB/persona_internal_activity_executor.py
 ExecStart=$BIN/agentos-persona-pdca-heartbeat
 NoNewPrivileges=true
 EOF
