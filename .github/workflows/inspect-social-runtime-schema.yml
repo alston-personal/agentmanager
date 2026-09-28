@@ -11,42 +11,63 @@ permissions:
 
 jobs:
   inspect:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 4
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Discover explicit target-account field safely
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Social runtime contract without secrets
         shell: bash
         run: |
           set -euo pipefail
+          ssh -p "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== product registry summary ==='
           python3 - <<'PY'
-          import json, urllib.request, urllib.error, concurrent.futures
-          URL="https://studio.milkcat.org/dashboard/api/social/v1/social/reply"
-          base={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply","write_intent_id":"pdca-safe-probe"}
-          candidates={
-            "target_account_id":"probe","target_account_binding_id":"probe","target_binding_id":"probe",
-            "account_id":"probe","binding_id":"probe","provider_account_id":"probe",
-            "target_provider_account_id":"probe","target_username":"probe","username":"probe",
-            "account_username":"probe","target_account":"probe","account":"probe",
-            "target_identity":"probe","identity_id":"probe","actor_account_id":"probe",
-            "expected_account_id":"probe","expected_username":"probe","as_account_id":"probe",
-            "write_account_id":"probe","source_account_id":"probe","profile_id":"probe"
-          }
-          def probe(item):
-              k,v=item
-              p=dict(base); p[k]=v
-              req=urllib.request.Request(URL,data=json.dumps(p).encode(),headers={"content-type":"application/json","accept":"application/json"},method="POST")
-              try:
-                  with urllib.request.urlopen(req,timeout=8) as r:
-                      status=r.status; body=r.read().decode("utf-8","replace")[:800]
-              except urllib.error.HTTPError as e:
-                  status=e.code; body=e.read().decode("utf-8","replace")[:800]
-              except Exception as e:
-                  status="error"; body=repr(e)
-              return k,{"status":status,"body":body}
-          out={}
-          with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-              for k,res in ex.map(probe,candidates.items()):
-                  out[k]=res
-          print(json.dumps(out,ensure_ascii=False,indent=2))
+          import json
+          from pathlib import Path
+          p=Path("/home/ubuntu/.config/agentos/social-runtime.env")
+          if not p.exists():
+              print("social_runtime_env=ABSENT")
+              raise SystemExit
+          vals={}
+          for line in p.read_text().splitlines():
+              if "=" not in line or line.lstrip().startswith("#"):
+                  continue
+              k,v=line.split("=",1); vals[k]=v.strip()
+          raw=vals.get("AGENTOS_SOCIAL_PRODUCTS_JSON","")
+          if len(raw)>=2 and raw[0] in "'\"" and raw[-1]==raw[0]:
+              raw=raw[1:-1]
+          try:
+              products=json.loads(raw)
+          except Exception as e:
+              print("product_registry_parse=FAIL",type(e).__name__)
+              products={}
+          safe={}
+          for pid,cfg in products.items():
+              if not isinstance(cfg,dict): continue
+              safe[pid]={k:v for k,v in cfg.items() if k not in {"api_key","secret","token","client_secret"} and not any(x in k.lower() for x in ["key","secret","token"])}
+          print(json.dumps({"product_ids":sorted(products.keys()),"safe_config":safe},ensure_ascii=False,indent=2))
+          print("env_keys="+json.dumps(sorted(k for k in vals if "SOCIAL" in k or "THREADS" in k or "BIND" in k)))
           PY
+
+          echo '=== listener process ==='
+          PIDS=$(fuser 8771/tcp 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' | head -5 || true)
+          for pid in $PIDS; do
+            echo "pid=$pid"
+            echo "cwd=$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
+            printf 'cmd='; tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | sed -E 's/(token|secret|key)=[^ ]+/\1=REDACTED/Ig' || true; echo
+          done
+
+          echo '=== exact contract source hits ==='
+          for root in $(for pid in $PIDS; do readlink -f /proc/$pid/cwd 2>/dev/null || true; done | sort -u); do
+            test -d "$root" || continue
+            grep -Rsn --include='*.py' --include='*.js' --include='*.ts'               -E 'explicit_write_intent_required|explicit_target_account_required|write_intent_id' "$root" 2>/dev/null | head -80 || true
+          done
+          REMOTE
