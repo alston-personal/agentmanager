@@ -28,7 +28,7 @@ jobs:
           client = Client("yisol/IDM-VTON", download_files=True, verbose=False, httpx_kwargs={"timeout": 240.0})
           print("IDM_API=", client.view_api(return_format="dict"))
           result = client.predict(
-              dict={"background": handle_file("/tmp/mio.webp"), "layers": [], "composite": None},
+              {"background": handle_file("/tmp/mio.webp"), "layers": [], "composite": None},
               handle_file("/tmp/garment.jpg"),
               "white ribbed fitted round-neck top",
               True,
