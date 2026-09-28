@@ -33,7 +33,13 @@ def main() -> int:
         'return (r1 & linefeed & r2 & linefeed & r3)',
         'end tell',
     ])
-    code="import subprocess; s="+repr(osa)+"; p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=30); print(p.stdout,end=''); raise SystemExit(p.returncode)"
+    code=("import subprocess; s="+repr(osa)+"; "
+          +"p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=30); "
+          +"print('OSA_RC='+str(p.returncode)); "
+          +"print(p.stdout,end=''); "
+          +"e=(p.stderr or '').replace("+repr(target)+",'[target]').replace("+repr(text)+",'[reply]'); "
+          +"print('OSA_ERR='+e[-600:]); "
+          +"raise SystemExit(p.returncode)")
     tid='mio-dm-send-'+str(int(time.time()))
     store=RealmFabricStore()
     store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':40,'cognition_ids_used':[]})
@@ -42,7 +48,7 @@ def main() -> int:
         if r:
             out=str(r.get('stdout') or '')
             if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
-                err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                err=(str(r.get('stdout') or '')+' '+str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
                 if 'javascript' in err and ('apple' in err or 'execute' in err or 'disabled' in err):
                     kind='CHROME_JS_DISABLED'
                 elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
