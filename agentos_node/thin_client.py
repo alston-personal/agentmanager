@@ -122,6 +122,8 @@ class ThinClient:
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
                 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
             ])
+        elif platform.system() == 'Darwin':
+            caps.append('desktop.open_url')
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -197,6 +199,8 @@ class ThinClient:
                 )
             elif action == 'agent.surface.inspect':
                 result = {'surface_inventory': self.surface_inventory()}
+            elif action == 'process.inspect':
+                result = self._inspect_processes(task)
             elif action == 'agent.session.discover':
                 result = {'session_index': self._session_bridge(task).discover()}
             elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
@@ -223,7 +227,18 @@ class ThinClient:
             elif action == 'desktop.windows.inspect':
                 result = interactive_desktop.inspect_windows()
             elif action == 'desktop.open_url':
-                result = interactive_desktop.open_url(str(task.get('url') or ''))
+                url = str(task.get('url') or '')
+                if platform.system() == 'Darwin':
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url)
+                    if parsed.scheme not in {'http','https'} or not parsed.netloc:
+                        raise ValueError('desktop.open_url requires an http(s) URL')
+                    p = subprocess.run(['open', url], capture_output=True, text=True, timeout=15, check=False)
+                    if p.returncode != 0:
+                        raise RuntimeError((p.stderr or p.stdout or 'open failed')[-1000:])
+                    result = {'opened': True, 'url': url}
+                else:
+                    result = interactive_desktop.open_url(url)
             elif action == 'desktop.screenshot':
                 workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
                 result = interactive_desktop.screenshot(workspace, quality=int(task.get('quality') or 55))
@@ -239,6 +254,21 @@ class ThinClient:
             receipt['error'] = f'{type(exc).__name__}: {exc}'
         receipt['completed_at'] = _utc_now()
         return receipt
+
+    def _inspect_processes(self, task: dict[str, Any]) -> dict[str, Any]:
+        query = str(task.get('query') or '').strip().lower()
+        limit = max(1, min(int(task.get('limit') or 50), 200))
+        if platform.system() == 'Windows':
+            argv = ['powershell.exe','-NoProfile','-NonInteractive','-Command','Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress']
+        else:
+            argv = ['ps','-axo','pid=,ppid=,comm=,args=']
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=15, check=False)
+        if p.returncode != 0:
+            raise RuntimeError((p.stderr or 'process inspection failed')[-1000:])
+        lines = [line for line in p.stdout.splitlines() if line.strip()]
+        if query:
+            lines = [line for line in lines if query in line.lower()]
+        return {'processes': lines[:limit], 'count': min(len(lines), limit), 'truncated': len(lines) > limit}
 
     def _exec_shell(self, task: dict[str, Any]) -> dict[str, Any]:
         executable = str(task.get('executable') or '')
