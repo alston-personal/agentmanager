@@ -58,6 +58,11 @@ jobs:
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
           systemctl --user is-active agentos-mio-tryon-render-worker.service
+          if [ -s "$HOME/.config/agentos/mio-tryon.env" ]; then
+            echo "mio_any_item_hf_token_configured=yes"
+          else
+            echo "mio_any_item_hf_token_configured=no"
+          fi
 
           ROOT="$HOME/agent-data/projects/dressup-simulator"
           JOB_DIR="$ROOT/render_jobs/runtime"
