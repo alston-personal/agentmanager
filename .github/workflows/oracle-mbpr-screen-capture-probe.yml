@@ -1,0 +1,45 @@
+name: Oracle MBPR Screen Capture Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-screen-capture-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe local screen capture without exporting image
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-screen-capture-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-screen-capture-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          code="import subprocess,time,os,tempfile; subprocess.run(['open','-a','Google Chrome','https://www.threads.com/messages'],check=False); time.sleep(3); p=tempfile.mktemp(suffix='.png'); r=subprocess.run(['/usr/sbin/screencapture','-x',p],text=True,capture_output=True,timeout=15); size=os.path.getsize(p) if os.path.exists(p) else 0; print('SCREENSHOT_RC='+str(r.returncode)); print('SCREENSHOT_BYTES='+str(size)); os.unlink(p) if os.path.exists(p) else None; raise SystemExit(0 if r.returncode==0 and size>1000 else 2)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':25,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                  if 'not authorized' in err or 'not permitted' in err or 'screen recording' in err:
+                      print('screen_capture_probe=PERMISSION_REQUIRED'); raise SystemExit(4)
+                  print(out)
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('screen_capture_probe=PASS'); raise SystemExit(0)
+                  print('screen_capture_probe=ERROR'); raise SystemExit(2)
+              time.sleep(2)
+          raise SystemExit('screen capture probe timeout')
+          PY
