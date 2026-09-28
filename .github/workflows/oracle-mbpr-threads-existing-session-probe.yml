@@ -1,0 +1,48 @@
+name: Oracle MBPR Threads Existing Session Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-threads-existing-session-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run fixed existing-session reader
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-threads-existing-session-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          sha=str(cmd.get('source_commit') or '')
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
+          root='/Users/tengweihuang/Library/Application Support/AgentOS/browser-bridge'
+          code=("import sys,runpy,urllib.request,tempfile; "
+                "sys.path.insert(0,"+repr(root+"/site-packages")+"); "
+                "p=tempfile.mktemp(suffix='.py'); "
+                "urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/threads_existing_chrome_reader.py',p); "
+                "sys.argv=[p]; runpy.run_path(p,run_name='__main__')")
+          tid='threads-existing-session-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  print(json.dumps(r,ensure_ascii=False,sort_keys=True))
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('mbpr_threads_existing_session_probe=PASS')
+                      raise SystemExit(0)
+                  raise SystemExit('fixed existing-session reader failed')
+              time.sleep(2)
+          raise SystemExit('fixed existing-session reader timeout')
+          PY
