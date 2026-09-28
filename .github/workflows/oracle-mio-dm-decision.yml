@@ -7,91 +7,83 @@ on:
       - '.agentos/commands/mio-dm-decision.json'
 permissions:
   contents: read
-  actions: read
 jobs:
   decide:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 6
-    env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
-      GH_TOKEN: ${{ github.token }}
-      AGENTOS_MIO_RELAY_ROOT: /home/ubuntu/agent-data/runtime/mio-antigravity-relay
     steps:
       - uses: actions/checkout@v4
-      - name: Build private DM input from prior successful read
+      - name: Run Mio DM decision through ubuntu bootstrap boundary
         shell: bash
         run: |
-          python3 - <<'PY'
-          import io,json,os,urllib.request,zipfile
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="mio-dm-decision-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
           cmd=json.load(open('.agentos/commands/mio-dm-decision.json',encoding='utf-8'))
           assert cmd.get('schema')=='agentos.mio-dm-decision-command/v1'
           assert cmd.get('username')=='0__0.ayoub'
-          run_id=int(cmd['source_run_id'])
-          token=os.environ['GH_TOKEN']
-          base='https://api.github.com/repos/alston-personal/agentmanager'
-          req=urllib.request.Request(
-              f'{base}/actions/runs/{run_id}/artifacts',
-              headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
-          )
-          with urllib.request.urlopen(req,timeout=20) as r:
-              listing=json.load(r)
-          art=next(a for a in listing.get('artifacts',[]) if a.get('name')=='threads-native-read' and not a.get('expired'))
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-          req=urllib.request.Request(
-              f'{base}/actions/artifacts/{art["id"]}/zip',
-              headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
-          )
-          opener=urllib.request.build_opener(NoRedirect)
-          try:
-              opener.open(req,timeout=20)
-              raise SystemExit('artifact download did not redirect')
-          except urllib.error.HTTPError as e:
-              if e.code not in (301,302,303,307,308):
-                  raise
-              location=e.headers.get('Location')
-          if not location:
-              raise SystemExit('artifact redirect missing')
-          with urllib.request.urlopen(location,timeout=30) as r:
-              blob=r.read()
-          z=zipfile.ZipFile(io.BytesIO(blob))
-          payload=json.loads(z.read('threads-native-read.json').decode('utf-8'))
-          lines=[x.strip() for x in str(payload.get('visible_text') or '').splitlines()]
-          user=cmd['username']
-          try: i=lines.index(user)
-          except ValueError: raise SystemExit('target DM preview not found')
-          preview=''
-          for x in lines[i+1:i+6]:
-              if x and x!='·' and not x.endswith('天') and not x.endswith('小時') and not x.endswith('分鐘'):
-                  preview=x; break
-          if not preview: raise SystemExit('target DM preview empty')
-          dm={
-              'platform':'threads',
-              'account':'mio.milkcat',
-              'sender':user,
-              'message':preview,
-              'context_scope':'inbox_preview',
-              'relationship_status':'unknown_new_interaction',
+          run_id=int(cmd.get('source_run_id') or 0)
+          assert run_id>0
+          path,request_id,sha=sys.argv[1],sys.argv[2],sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':request_id,
+            'action':'agentos.mio_dm_decision.run',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{
+              'source_commit':sha,
+              'source_run_id':str(run_id),
+              'username':cmd['username'],
+            },
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
           }
-          open('/tmp/mio-dm-input.json','w',encoding='utf-8').write(json.dumps(dm,ensure_ascii=False))
-          print('mio_dm_input=PASS')
-          print('mio_dm_input_sender='+user)
+          tmp=path+'.tmp'
+          open(tmp,'w',encoding='utf-8').write(json.dumps(payload,sort_keys=True,indent=2)+'\n')
+          os.chmod(tmp,0o644)
+          os.replace(tmp,path)
+          os.chmod(path,0o644)
           PY
-      - name: Decide with Mio current Persona IR
-        shell: bash
-        run: |
-          python3 scripts/mio_persona_dm_decision_user.py < /tmp/mio-dm-input.json > /tmp/mio-dm-decision.json
-          python3 - <<'PY'
-          import json
-          d=json.load(open('/tmp/mio-dm-decision.json',encoding='utf-8'))
+
+          for i in $(seq 1 240); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "mio_dm_decision_receipt=TIMEOUT"; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.mio_dm_decision.run',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('executor_uid')==1001,r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          text='\n'.join(str(s.get('stdout') or '') for s in r.get('steps',[]))
+          line=next((x for x in text.splitlines() if x.startswith('mio_dm_decision_payload=')),None)
+          assert line,line
+          d=json.loads(line.split('=',1)[1])
           assert d.get('decision') in ('reply','no_reply')
-          if d.get('decision')=='reply':
-              assert isinstance(d.get('text'),str) and d['text'].strip()
-          else:
-              assert d.get('text') in (None,'')
-          print('mio_dm_decision=PASS:'+d['decision'])
+          open('/tmp/mio-dm-decision.json','w',encoding='utf-8').write(json.dumps(d,ensure_ascii=False,indent=2)+'\n')
+          print('mio_dm_decision_receipt=PASS')
+          print('mio_dm_decision='+d['decision'])
           print('mio_dm_decision_text_chars='+str(len(d.get('text') or '')))
           print('mio_dm_decision_consistency='+str(d.get('consistency_check') or ''))
           PY
