@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.threads-web-dm.probe",
+  "node_id": "mbpr",
+  "nonce": "mbpr-threads-probe-1790556126156"
+}
