@@ -18,7 +18,14 @@ from gradio_client import Client, handle_file
 
 SCHEMA = "agentos.tryon-render-job/v1"
 SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "yisol/IDM-VTON")
-ANY_ITEM_SPACE_ID = os.environ.get("AGENTOS_TRYON_ANY_ITEM_SPACE_ID", "Kunbyte/OmniTry")
+ANY_ITEM_SPACE_IDS = [
+    value.strip()
+    for value in os.environ.get(
+        "AGENTOS_TRYON_ANY_ITEM_SPACE_IDS",
+        "pbgo/OmniTry,Kunbyte/OmniTry",
+    ).split(",")
+    if value.strip()
+]
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
@@ -74,7 +81,7 @@ def atomic_write(path: Path, payload: dict[str, Any]) -> None:
 
 
 _CLIENT: Client | None = None
-_ANY_ITEM_CLIENT: Client | None = None
+_ANY_ITEM_CLIENTS: dict[str, Client] = {}
 
 
 def client() -> Client:
@@ -89,16 +96,17 @@ def client() -> Client:
     return _CLIENT
 
 
-def any_item_client() -> Client:
-    global _ANY_ITEM_CLIENT
-    if _ANY_ITEM_CLIENT is None:
-        _ANY_ITEM_CLIENT = Client(
-            ANY_ITEM_SPACE_ID,
+def any_item_client(space_id: str) -> Client:
+    cached = _ANY_ITEM_CLIENTS.get(space_id)
+    if cached is None:
+        cached = Client(
+            space_id,
             download_files=True,
             verbose=False,
             httpx_kwargs={"timeout": 360.0},
         )
-    return _ANY_ITEM_CLIENT
+        _ANY_ITEM_CLIENTS[space_id] = cached
+    return cached
 
 
 class _ImageMetaParser(HTMLParser):
@@ -207,8 +215,14 @@ def idm_try_on(person_source: str, garment_url: str, description: str, seed: int
                 pass
 
 
-def omni_try_on(person_source: str, object_url: str, object_class: str, seed: int) -> str:
+def omni_try_on(
+    person_source: str,
+    object_url: str,
+    object_class: str,
+    seed: int,
+) -> tuple[str, str]:
     temp_inputs: list[Path] = []
+    errors: list[str] = []
     try:
         if person_source.startswith(("http://", "https://")):
             person_path = download_input(person_source, ".webp")
@@ -221,16 +235,25 @@ def omni_try_on(person_source: str, object_url: str, object_class: str, seed: in
         object_path = download_input(object_url, ".jpg")
         temp_inputs.append(object_path)
 
-        result = any_item_client().predict(
-            handle_file(str(person_path)),
-            handle_file(str(object_path)),
-            object_class,
-            20,
-            30,
-            int(seed),
-            api_name="/generate",
+        for space_id in ANY_ITEM_SPACE_IDS:
+            try:
+                result = any_item_client(space_id).predict(
+                    handle_file(str(person_path)),
+                    handle_file(str(object_path)),
+                    object_class,
+                    20,
+                    30,
+                    int(seed),
+                    api_name="/generate",
+                )
+                return str(output_path(result)), space_id
+            except Exception as exc:
+                errors.append(f"{space_id}={type(exc).__name__}:{exc}"[:400])
+                _ANY_ITEM_CLIENTS.pop(space_id, None)
+
+        raise RuntimeError(
+            "all any-item providers failed: " + " | ".join(errors)
         )
-        return str(output_path(result))
     finally:
         for path in temp_inputs:
             try:
@@ -283,7 +306,7 @@ def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
         "characterVersion": job.get("characterVersion"),
         "view": job.get("view", "front"),
         "pose": job.get("pose", "neutral_standing"),
-        "renderer": "idm-vton+omnitry/v2" if uses_any_item else "idm-vton-gradio-client/v1",
+        "renderer": "idm-vton+omnitry-fallback/v3" if uses_any_item else "idm-vton-gradio-client/v1",
         "layers": [
             {
                 "layer": layer,
@@ -384,14 +407,13 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
                 provider = "idm-vton-gradio-client"
                 provider_space = SPACE_ID
             else:
-                person_url = omni_try_on(
+                person_url, provider_space = omni_try_on(
                     person_url,
                     source_url,
                     ANY_ITEM_SUPPORTED[layer],
                     seed_base + index,
                 )
                 provider = "omnitry-gradio-client"
-                provider_space = ANY_ITEM_SPACE_ID
 
             rendered_layers.append(layer)
             provider_outputs.append(
