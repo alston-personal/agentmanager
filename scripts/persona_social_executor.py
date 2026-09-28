@@ -49,10 +49,16 @@ def main():
     root=Path(args.persona_dir)
     state=json.load(open(root/"pdca/state.json",encoding="utf-8"))
     pending=list(state.get("pending_external_actions") or [])
-    target=next((x for x in pending if x.get("status")=="candidate" and x.get("capability") in (
+    now_dt=datetime.now(timezone.utc)
+    def due(x):
+        nb=str(x.get("not_before") or "")
+        if not nb: return True
+        try: return datetime.fromisoformat(nb.replace("Z","+00:00")) <= now_dt
+        except Exception: return False
+    target=next((x for x in pending if x.get("status")=="candidate" and due(x) and x.get("capability") in (
         "social.reply.review","social.reply.send","social.post.publish"
     )),None)
-    now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+    now=now_dt.isoformat().replace("+00:00","Z")
     if not target:
         result={"schema":"agentos.persona-social-executor-receipt/v1","ok":True,"status":"NO_ACTION","timestamp":now}
         Path(args.receipt_out).parent.mkdir(parents=True,exist_ok=True)
