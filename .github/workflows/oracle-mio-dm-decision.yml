@@ -37,11 +37,24 @@ jobs:
           with urllib.request.urlopen(req,timeout=20) as r:
               listing=json.load(r)
           art=next(a for a in listing.get('artifacts',[]) if a.get('name')=='threads-native-read' and not a.get('expired'))
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
           req=urllib.request.Request(
               f'{base}/actions/artifacts/{art["id"]}/zip',
               headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
           )
-          with urllib.request.urlopen(req,timeout=30) as r:
+          opener=urllib.request.build_opener(NoRedirect)
+          try:
+              opener.open(req,timeout=20)
+              raise SystemExit('artifact download did not redirect')
+          except urllib.error.HTTPError as e:
+              if e.code not in (301,302,303,307,308):
+                  raise
+              location=e.headers.get('Location')
+          if not location:
+              raise SystemExit('artifact redirect missing')
+          with urllib.request.urlopen(location,timeout=30) as r:
               blob=r.read()
           z=zipfile.ZipFile(io.BytesIO(blob))
           payload=json.loads(z.read('threads-native-read.json').decode('utf-8'))
