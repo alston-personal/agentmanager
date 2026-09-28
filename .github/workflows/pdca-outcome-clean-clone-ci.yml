@@ -1,0 +1,20 @@
+name: PDCA Outcome Clean Clone CI
+on:
+  push:
+    branches: [core/pdca-social-outcome-clean-clone]
+    paths:
+      - 'scripts/sync_mio_pdca_social_outcome_user.py'
+      - '.github/workflows/pdca-outcome-clean-clone-ci.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/sync_mio_pdca_social_outcome_user.py
+          grep -Fq "gh repo clone" scripts/sync_mio_pdca_social_outcome_user.py
+          ! grep -Fq "git worktree" scripts/sync_mio_pdca_social_outcome_user.py
+          echo pdca_outcome_clean_clone=PASS
