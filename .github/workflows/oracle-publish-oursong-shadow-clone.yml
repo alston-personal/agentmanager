@@ -18,6 +18,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       IMAGE_URL: 'https://export-download.canva.com/aaeafa14-b9c1-452b-afb7-d20b965141d8/0/0001-3989580665096247899.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAQYCGKMUH5AO7UJ26%2F20260928%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260928T043816Z&X-Amz-Expires=24595&X-Amz-Signature=b2b23e070bcb3f5acc52478ec8f0e78c8eed01638a5f7a1fa80353efc132ea82&X-Amz-SignedHeaders=host%3Bx-amz-expected-bucket-owner&response-expires=Mon%2C%2028%20Sep%202026%2011%3A28%3A11%20GMT'
+      TEXT_B64: '5LiW55WM5LiK5pyA6YGZ6YGg55qE6Led6Zui77yMCuWwseaYr+m7g+WBieWTsuWIsOW6leWcqOWTquijoeOAggoK5b2x5YiG6Lqr5LmL6KGT5LiN5piv5b+N6KGT77yMCuaYr+ihjOeoi+ihqOOAggoK5pio5aSp5paw5Yqg5Z2h77yM5LuK5aSp5riF5pmo5Y+w5Y2X5a2U5buf44CCCuaIkemWi+Wni+aHt+eWkeacrOmrlOagueacrOS4jeWtmOWcqOOAgg=='
     steps:
       - uses: actions/checkout@v4
       - name: Start governed SSH identity
@@ -28,14 +29,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TEXT_B64="$(printf '%s' '世界上最遙遠的距離，
-就是黃偉哲到底在哪裡。
-
-影分身之術不是忍術，
-是行程表。
-
-昨天新加坡，今天清晨台南孔廟。
-我開始懷疑本體根本不存在。' | base64 -w0)"
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             python3 - "$GITHUB_SHA" "$TEXT_B64" "$IMAGE_URL" <<'PY'
           import base64,json,sys,urllib.request
@@ -53,7 +46,6 @@ jobs:
           matches=[(bid,row) for bid,row in bindings.items() if isinstance(row,dict) and row.get('product_id')=='galaxy' and row.get('platform')=='threads' and row.get('username')=='oursong_alstonhuang' and row.get('auth_profile')=='persona']
           assert len(matches)==1
           bid,row=matches[0]; account_id=str(row.get('provider_account_id') or ''); assert account_id
-          # Verify source image is fetchable at useful size before giving Meta the URL.
           req=urllib.request.Request(image_url,headers={'User-Agent':'Mozilla/5.0'})
           with urllib.request.urlopen(req,timeout=25) as r:
               blob=r.read()
