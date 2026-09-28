@@ -93,7 +93,7 @@ class ThinClient:
     def capability_manifest(self) -> dict[str, Any]:
         tools = self.discover_tools()
         surface_inventory = self.surface_inventory()
-        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect', 'node.runtime.converge']
+        caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
         caps.extend(surface_inventory.get('capabilities') or [])
 
         # Session bridge capabilities are provider-authorized and must be
@@ -123,7 +123,7 @@ class ThinClient:
                 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
             ])
         elif platform.system() == 'Darwin':
-            caps.append('desktop.open_url')
+            caps.extend(['desktop.open_url', 'node.runtime.converge'])
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -201,6 +201,9 @@ class ThinClient:
                 result = {'surface_inventory': self.surface_inventory()}
             elif action == 'process.inspect':
                 result = self._inspect_processes(task)
+            elif action == 'node.runtime.converge':
+                from agentos_node.client_runtime_converge import execute_client_runtime_converge
+                result = execute_client_runtime_converge(task)
             elif action == 'agent.session.discover':
                 result = {'session_index': self._session_bridge(task).discover()}
             elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
