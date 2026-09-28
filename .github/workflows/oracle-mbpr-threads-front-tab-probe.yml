@@ -1,0 +1,44 @@
+name: Oracle MBPR Threads Front Tab Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-threads-front-tab-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open Threads and inspect only front Chrome tab
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-threads-front-tab-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-threads-front-tab-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          code="import subprocess,time; subprocess.run(['open','-a','Google Chrome','https://www.threads.com/messages'],check=False); time.sleep(2); p=subprocess.run(['/usr/bin/osascript','-e','tell application \"Google Chrome\" to return URL of active tab of front window'],text=True,capture_output=True,timeout=8); u=p.stdout.strip(); print('FRONT_IS_THREADS_MESSAGES='+('true' if u.startswith('https://www.threads.com/messages') or u.startswith('https://threads.com/messages') else 'false')); raise SystemExit(p.returncode)"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(35):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      raise SystemExit(str(r.get('error') or 'front tab probe failed'))
+                  ok='FRONT_IS_THREADS_MESSAGES=true' in out
+                  print('threads_front_tab_probe=' + ('PASS' if ok else 'NOT_MESSAGES'))
+                  raise SystemExit(0 if ok else 4)
+              time.sleep(2)
+          raise SystemExit('front tab probe timeout')
+          PY
