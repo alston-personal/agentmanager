@@ -61,7 +61,7 @@ def main() -> int:
                     kind='NOT_MESSAGES_TAB'
                 else:
                     kind='OTHER'
-                safe=(str(r.get('stderr') or '')+' '+str(r.get('error') or ''))
+                safe=(str(r.get('stdout') or '')+' '+str(r.get('stderr') or '')+' '+str(r.get('error') or ''))
                 safe=safe.replace(target,'[target]').replace(text,'[reply]')
                 safe=' '.join(safe.split())[-600:]
                 print('mio_dm_send=ERROR')
