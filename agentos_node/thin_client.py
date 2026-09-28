@@ -11,11 +11,36 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import urllib.request
+import socket
 
 from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
+
+
+def _linux_gui_worker_capabilities() -> list[str]:
+    if platform.system() != 'Linux':
+        return []
+    root = Path.home() / '.local' / 'share' / 'agentos' / 'gui-worker'
+    cap = root / 'capability.json'
+    if not cap.is_file():
+        return []
+    try:
+        doc=json.loads(cap.read_text(encoding='utf-8'))
+        if doc.get('schema')!='agentos.gui-worker/v1':
+            return []
+        with urllib.request.urlopen('http://127.0.0.1:9222/json/version',timeout=1.5) as r:
+            cdp=json.load(r)
+        if not cdp.get('webSocketDebuggerUrl'):
+            return []
+        s=socket.create_connection(('127.0.0.1',6080),timeout=1.5)
+        s.close()
+    except Exception:
+        return []
+    allowed={'browser.gui','browser.cdp','browser.persistent_profile','desktop.remote_view'}
+    return sorted(allowed.intersection(set(doc.get('capabilities') or [])))
 
 
 def _utc_now() -> str:
@@ -124,6 +149,8 @@ class ThinClient:
             ])
         elif platform.system() == 'Darwin':
             caps.extend(['desktop.open_url', 'node.runtime.converge'])
+        elif platform.system() == 'Linux':
+            caps.extend(_linux_gui_worker_capabilities())
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
