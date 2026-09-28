@@ -1,0 +1,51 @@
+name: Oracle MBPR Existing Chrome Threads Inspect
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-existing-chrome-threads-inspect.json'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: ${{ github.workspace }}/.tmp-agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect existing Threads tab
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-existing-chrome-threads-inspect.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          sha=str(cmd.get('source_commit') or '')
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
+          root='/Users/tengweihuang/Library/Application Support/AgentOS/browser-bridge'
+          code=("import sys,runpy,urllib.request,tempfile; "
+                "sys.path.insert(0,"+repr(root+"/site-packages")+"); "
+                "p=tempfile.mktemp(suffix='.py'); "
+                "urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/threads_existing_chrome_reader.py',p); "
+                "sys.argv=[p]; runpy.run_path(p,run_name='__main__')")
+          tid='threads-existing-inspect-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]})
+          for _ in range(45):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  err=str(r.get('stderr') or '')
+                  print(out)
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('mbpr_existing_threads_inspect=PASS')
+                      raise SystemExit(0)
+                  print(err[-2000:])
+                  raise SystemExit('existing Chrome Threads inspect failed')
+              time.sleep(2)
+          raise SystemExit('existing Chrome Threads inspect timeout')
+          PY
