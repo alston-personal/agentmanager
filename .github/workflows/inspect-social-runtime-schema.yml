@@ -15,34 +15,30 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - name: Probe Social write-intent validation safely
+      - name: Probe Social acceptance gate safely
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json, urllib.request, urllib.error
           BASE="https://studio.milkcat.org/dashboard/api/social"
-          def post(path,payload):
-              req=urllib.request.Request(BASE+path,data=json.dumps(payload).encode(),headers={"content-type":"application/json","accept":"application/json"},method="POST")
+          def post(path,payload,headers=None):
+              hs={"content-type":"application/json","accept":"application/json"}
+              hs.update(headers or {})
+              req=urllib.request.Request(BASE+path,data=json.dumps(payload).encode(),headers=hs,method="POST")
               try:
                   with urllib.request.urlopen(req,timeout=8) as r:
-                      return {"status":r.status,"body":r.read().decode("utf-8","replace")[:1600]}
+                      return {"status":r.status,"body":r.read().decode("utf-8","replace")[:1800]}
               except urllib.error.HTTPError as e:
-                  return {"status":e.code,"body":e.read().decode("utf-8","replace")[:1600]}
+                  return {"status":e.code,"body":e.read().decode("utf-8","replace")[:1800]}
               except Exception as e:
                   return {"status":"error","body":repr(e)}
-          base={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply"}
-          probes={}
-          variants={
-              "write_intent": {"write_intent":True},
-              "explicit_write_intent": {"explicit_write_intent":True},
-              "allow_write": {"allow_write":True},
-              "confirm_write": {"confirm_write":True},
-              "intent_write": {"intent":"write"},
-              "operation_reply_write_intent": {"write_intent":"explicit"}
+          reply={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply"}
+          publish={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"publish"}
+          probes={
+              "reply_no_acceptance":post("/v1/social/reply",reply),
+              "reply_acceptance":post("/v1/social/reply",reply,{"x-agentos-acceptance-id":"pdca-safe-schema-probe"}),
+              "publish_acceptance":post("/v1/social/publish",publish,{"x-agentos-acceptance-id":"pdca-safe-schema-probe"})
           }
-          for name,extra in variants.items():
-              p=dict(base); p.update(extra)
-              probes[name]=post("/v1/social/reply",p)
           print(json.dumps(probes,ensure_ascii=False,indent=2))
           PY
