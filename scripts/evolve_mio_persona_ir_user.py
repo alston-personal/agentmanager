@@ -112,7 +112,10 @@ def main() -> int:
 
     try:
         current = json.loads(show_text(ref, IR_REL))
-        events = parse_events(show_text(ref, EVENTS_REL))
+        events = [
+            row for row in parse_events(show_text(ref, EVENTS_REL))
+            if str(row.get("visibility") or "public") != "private"
+        ]
     except (RuntimeError, ValueError, TypeError):
         print("mio_persona_ir_evolve=CANONICAL_INPUT_UNAVAILABLE")
         return 5
