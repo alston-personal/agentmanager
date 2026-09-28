@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.process-inspect",
+  "node_id": "mbpr",
+  "query": "Google Chrome",
+  "nonce": "mbpr-chrome-process-1790562665237"
+}
