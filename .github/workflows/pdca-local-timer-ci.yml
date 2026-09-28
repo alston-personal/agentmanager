@@ -1,0 +1,34 @@
+name: PDCA Local Timer Isolated CI
+
+on:
+  push:
+    branches: [fix/persona-pdca-local-timer]
+    paths:
+      - 'scripts/persona_pdca_tick.py'
+      - 'scripts/run_persona_pdca_heartbeat_user.sh'
+      - 'scripts/install_persona_pdca_timer_user.sh'
+      - '.github/workflows/persona-pdca-heartbeat.yml'
+      - '.github/workflows/pdca-local-timer-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/persona_pdca_tick.py
+          bash -n scripts/run_persona_pdca_heartbeat_user.sh
+          bash -n scripts/install_persona_pdca_timer_user.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('.github/workflows/persona-pdca-heartbeat.yml').read_text()
+          assert 'Install local Persona PDCA timer' in text
+          assert 'run_persona_pdca_heartbeat_user.sh' in text
+          assert 'install_persona_pdca_timer_user.sh' in text
+          assert "cron: '17 * * * *'" in text
+          print('pdca_local_timer_static=PASS')
+          PY
