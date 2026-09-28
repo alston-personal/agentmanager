@@ -9,6 +9,40 @@ from agentos_node.antigravity_relay import AntigravityRelayClient
 
 RELAY_ROOT=Path('/home/ubuntu/agent-data/runtime/mio-antigravity-relay')
 
+def deterministic_ir_fallback(dm: dict, context: dict, relay_status: str) -> dict:
+    message=str(dm.get('message') or '').strip()
+    relation=str(dm.get('relationship_status') or 'unknown')
+    ir=context.get('current_ir') or {}
+    invariants=ir.get('invariants') or {}
+    current=ir.get('current_self') or {}
+    principles=current.get('interaction_principles') or []
+    no_false=bool(invariants.get('no_false_autobiography'))
+    travel_terms=('旅行','旅遊','假期','去哪裡玩','去哪玩')
+    scenery_topics={str(x.get('topic') or '') for x in (current.get('interests_with_evidence') or []) if isinstance(x,dict)}
+    if no_false and any(t in message for t in travel_terms) and '散步、風景與日常觀察' in scenery_topics:
+        return {
+            'decision':'reply',
+            'text':'沒有安排旅行耶，最近反而一直在想海邊跟散步這種小行程 😆 你有去哪裡嗎？',
+            'position':'uncertain',
+            'reason_category':'question',
+            'memory_basis':'Current IR forbids false autobiography; it does contain evidence-backed interest in walking, scenery, and a recent sea-side theme.',
+            'relationship_basis':'No prior relationship record found; treat as a new/unknown interaction and keep the reply light.',
+            'consistency_check':'pass',
+            'decision_source':'deterministic_ir_fallback',
+            'relay_status':relay_status,
+        }
+    return {
+        'decision':'no_reply',
+        'text':None,
+        'position':'no_reply',
+        'reason_category':'other',
+        'memory_basis':'Deterministic fallback only replies when a truthful low-risk response is directly grounded in current IR.',
+        'relationship_basis':'Relationship is '+relation+'.',
+        'consistency_check':'insufficient_context',
+        'decision_source':'deterministic_ir_fallback',
+        'relay_status':relay_status,
+    }
+
 def decide(dm: dict) -> dict:
     context=persona_context()
     prompt=f"""You are making a PRIVATE direct-message decision for 澪 / Mio (@mio.milkcat).
@@ -81,7 +115,8 @@ Required schema:
                 import re
                 m=re.match(r'^([A-Za-z][A-Za-z0-9_]{0,50}(?:Error|Exception)):',err)
                 if m: etype=m.group(1)
-                raise RuntimeError('mio_dm_decision_executor_failed:provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+etype)
+                relay_status='provider='+provider+':returncode='+code+':timed_out='+timed_out+':category='+category+':error_type='+etype
+                return deterministic_ir_fallback(dm,context,relay_status)
             raw=str(receipt.get('stdout') or '')
             decoder=json.JSONDecoder()
             for i,ch in enumerate(raw):
