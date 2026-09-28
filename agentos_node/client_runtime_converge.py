@@ -43,6 +43,18 @@ def _kick(label: str) -> None:
     uid=str(os.getuid())
     subprocess.run(['launchctl','kickstart','-k',f'gui/{uid}/{label}'],capture_output=True,text=True,timeout=15,check=False)
 
+def _deferred_kick(label: str, delay_seconds: int = 5) -> None:
+    uid=str(os.getuid())
+    command=f'sleep {max(1,int(delay_seconds))}; /bin/launchctl kickstart -k gui/{uid}/{label}'
+    subprocess.Popen(
+        ['/bin/sh','-c',command],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+
 def _stable_launcher(root: Path) -> Path:
     path=root/'agentos-client'
     body='''#!/bin/bash
@@ -119,7 +131,7 @@ def execute_client_runtime_converge(task: dict[str, Any]) -> dict[str, Any]:
         if not lkg: raise RuntimeError('last-known-good missing')
         _write_json(current_path,lkg)
         _write_json(_prov_path(),{'schema':'agentos.thin-client-runtime/v0.1','source_ref':lkg.get('source_ref'),'source_commit':lkg.get('source_commit'),'status':'rollback-restored'})
-        _kick(LABEL)
+        _deferred_kick(LABEL)
         return {'runtime_converge':{'status':'rolled-back','source_commit':lkg.get('source_commit')}}
 
     versions=root/'versions'; candidate=versions/commit; py=candidate/'venv'/'bin'/'python'
@@ -141,5 +153,5 @@ def execute_client_runtime_converge(task: dict[str, Any]) -> dict[str, Any]:
     pending={'schema':SCHEMA,'source_ref':SOURCE_REF,'source_commit':commit,'python':str(py),'status':'awaiting-controller-acceptance','installed_at':_utc(),'rollback_deadline':(datetime.now(timezone.utc)+timedelta(minutes=3)).replace(microsecond=0).isoformat().replace('+00:00','Z')}
     _write_json(current_path,pending)
     _write_json(_prov_path(),{'schema':'agentos.thin-client-runtime/v0.1','source_ref':SOURCE_REF,'source_commit':commit,'status':'activating'})
-    _kick(LABEL)
+    _deferred_kick(LABEL)
     return {'runtime_converge':{'status':'awaiting-controller-acceptance','source_commit':commit,'previous_commit':current.get('source_commit')}}
