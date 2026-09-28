@@ -33,6 +33,7 @@ ACTION_READ_THREADS_WEB_DM = "agentos.social_threads_web_dm.read"
 ACTION_PROBE_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_probe"
 ACTION_START_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_start"
 ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
+ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -55,6 +56,7 @@ ALLOWED_ACTIONS = {
     ACTION_PROBE_THREADS_WEB_DM_LOGIN,
     ACTION_START_THREADS_WEB_DM_LOGIN,
     ACTION_RUN_MIO_DM_DECISION,
+    ACTION_INSTALL_GUI_WORKER,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -146,6 +148,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_PROBE_THREADS_WEB_DM_LOGIN,
         ACTION_START_THREADS_WEB_DM_LOGIN,
         ACTION_RUN_MIO_DM_DECISION,
+        ACTION_INSTALL_GUI_WORKER,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -274,6 +277,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
                 "AGENTOS_DM_SOURCE_RUN_ID":str(params.get("source_run_id") or ""),
                 "AGENTOS_DM_USERNAME":str(params.get("username") or ""),
             },
+        )
+    if action == ACTION_INSTALL_GUI_WORKER:
+        return _run_canonical_script(
+            "scripts/install_oracle_gui_worker_user.sh",
+            timeout=1200,
+            source_commit=source_commit,
         )
     raise ValueError("unsupported bootstrap action")
 
