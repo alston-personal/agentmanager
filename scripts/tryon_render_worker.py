@@ -14,7 +14,7 @@ from typing import Any
 from gradio_client import Client, handle_file
 
 SCHEMA = "agentos.tryon-render-job/v1"
-SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "sm4ll-VTON/sm4ll-VTON-Demo")
+SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "yisol/IDM-VTON")
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
@@ -25,14 +25,14 @@ BASE_BODY_URL = os.environ.get(
 )
 
 SUPPORTED = {
-    "upper_inner": "dress",
-    "upper_main": "dress",
-    "upper_outer": "dress",
-    "onepiece": "dress",
-    "shoes": "footwear",
+    "upper_inner": "upper garment",
+    "upper_main": "upper garment",
+    "upper_outer": "outerwear",
+    "lower_main": "lower garment",
+    "onepiece": "one-piece garment",
 }
 
-ORDER = ["upper_inner", "upper_main", "onepiece", "upper_outer", "shoes"]
+ORDER = ["upper_inner", "upper_main", "lower_main", "onepiece", "upper_outer"]
 
 
 def utc_now() -> str:
@@ -71,7 +71,7 @@ def client() -> Client:
 
 
 def download_input(url: str, suffix: str) -> Path:
-    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.3"})
+    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.4"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         content_type = (resp.headers.get("Content-Type") or "").lower()
         if "image" not in content_type:
@@ -93,14 +93,14 @@ def output_path(result: Any) -> Path:
     if isinstance(candidate, dict):
         candidate = candidate.get("path") or candidate.get("url")
     if not isinstance(candidate, str) or not candidate:
-        raise RuntimeError(f"SM4LL VTON returned no output path: {result!r}")
+        raise RuntimeError(f"IDM-VTON returned no output path: {result!r}")
     path = Path(candidate)
     if not path.exists() or path.stat().st_size < 1000:
-        raise RuntimeError(f"SM4LL VTON output missing or too small: {candidate}")
+        raise RuntimeError(f"IDM-VTON output missing or too small: {candidate}")
     return path
 
 
-def sm4ll_try_on(person_source: str, garment_url: str, workflow: str) -> str:
+def idm_try_on(person_source: str, garment_url: str, description: str, seed: int) -> str:
     temp_inputs: list[Path] = []
     try:
         if person_source.startswith(("http://", "https://")):
@@ -115,11 +115,18 @@ def sm4ll_try_on(person_source: str, garment_url: str, workflow: str) -> str:
         temp_inputs.append(garment_path)
 
         result = client().predict(
-            handle_file(str(person_path)),
+            {
+                "background": handle_file(str(person_path)),
+                "layers": [],
+                "composite": None,
+            },
             handle_file(str(garment_path)),
-            workflow,
-            None,
-            api_name="/generate",
+            description,
+            True,
+            False,
+            20,
+            int(seed),
+            api_name="/tryon",
         )
         return str(output_path(result))
     finally:
@@ -182,13 +189,16 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
 
     # Each pass uses the previous output as the new person image.
     person_url = BASE_BODY_URL
+    seed_base = abs(hash(job["jobId"])) % 100000
     provider_outputs: list[str] = []
-    for layer in supported_layers:
+    for index, layer in enumerate(supported_layers):
         item = selected[layer]
         garment_url = item.get("sourceImageUrl") if isinstance(item, dict) else None
         if not isinstance(garment_url, str) or not garment_url.startswith(("http://", "https://")):
             raise RuntimeError(f"Missing source image for {layer}")
-        person_url = sm4ll_try_on(person_url, garment_url, SUPPORTED[layer])
+        garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
+        description = f"{garment_name}; {SUPPORTED[layer]}"
+        person_url = idm_try_on(person_url, garment_url, description, seed_base + index)
         provider_outputs.append(person_url)
 
     target = ASSET_DIR / f"{job['jobId']}.webp"
@@ -202,7 +212,7 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         "previewAsset": public_asset_path(job["jobId"]),
         "width": None,
         "height": None,
-        "provider": "sm4ll-vton-gradio-client",
+        "provider": "idm-vton-gradio-client",
         "providerSpace": SPACE_ID,
         "providerOutputs": provider_outputs,
         "renderedLayers": supported_layers,
