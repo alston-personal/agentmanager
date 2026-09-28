@@ -1,0 +1,57 @@
+name: Test SM4LL VTON Hosted
+
+on:
+  push:
+    branches: [ops/test-sm4ll-hosted]
+    paths:
+      - '.github/workflows/test-sm4ll-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install client
+        run: python -m pip install --quiet "gradio_client>=1.13,<3"
+      - name: Call public SM4LL VTON
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import urllib.request, tempfile, os
+          from pathlib import Path
+          from gradio_client import Client, handle_file
+
+          def dl(url, suffix):
+              req=urllib.request.Request(url,headers={"User-Agent":"AgentOS-SM4LL-Test/1.0"})
+              with urllib.request.urlopen(req,timeout=60) as r:
+                  data=r.read()
+                  print("download",url,"bytes",len(data),"type",r.headers.get("Content-Type"))
+              fd,name=tempfile.mkstemp(suffix=suffix); os.close(fd)
+              Path(name).write_bytes(data)
+              return name
+
+          person=dl("https://studio.milkcat.org/personas/mio/mio-avatar.webp",".webp")
+          garment=dl("https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570",".jpg")
+          c=Client("sm4ll-VTON/sm4ll-VTON-Demo", download_files=True, verbose=True, httpx_kwargs={"timeout":240.0})
+          print(c.view_api(return_format="dict"))
+          for args in [
+              (handle_file(person), handle_file(garment), "dress", None),
+              (handle_file(person), handle_file(garment), "top", None),
+          ]:
+              try:
+                  print("TRY",args[2])
+                  out=c.predict(*args, api_name="/generate")
+                  print("OUTPUT",out)
+                  p=Path(out[0] if isinstance(out,(list,tuple)) else out)
+                  print("EXISTS",p.exists(),"SIZE",p.stat().st_size if p.exists() else None)
+                  if p.exists() and p.stat().st_size>1000:
+                      print("SM4LL_HOSTED=PASS workflow="+args[2])
+                      raise SystemExit(0)
+              except Exception as e:
+                  print("ERR",type(e).__name__,str(e))
+          raise SystemExit(1)
+          PY
