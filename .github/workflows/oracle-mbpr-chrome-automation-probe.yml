@@ -1,0 +1,45 @@
+name: Oracle MBPR Chrome Automation Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-chrome-automation-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Chrome Automation permission without reading page content
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-chrome-automation-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-chrome-automation-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          code="import subprocess; p=subprocess.run(['/usr/bin/osascript','-e','tell application \"Google Chrome\" to return running'],text=True,capture_output=True,timeout=8); print('CHROME_AUTOMATION_RC='+str(p.returncode)); print('CHROME_AUTOMATION_STDOUT='+('true' if 'true' in p.stdout.lower() else 'other')); print('CHROME_AUTOMATION_ERR=' + ('permission' if ('not authorized' in p.stderr.lower() or 'not permitted' in p.stderr.lower() or '-1743' in p.stderr) else 'other'))"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':15,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(30):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                  if 'timeout' in err or 'timed out' in err:
+                      print('chrome_automation_probe=TIMEOUT'); raise SystemExit(4)
+                  print(out)
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('chrome_automation_probe=PASS'); raise SystemExit(0)
+                  print('chrome_automation_probe=ERROR'); raise SystemExit(2)
+              time.sleep(2)
+          raise SystemExit('chrome automation probe receipt timeout')
+          PY
