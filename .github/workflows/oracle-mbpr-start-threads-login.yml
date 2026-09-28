@@ -27,20 +27,20 @@ jobs:
           tid='threads-login-mbpr-'+str(int(time.time()))
           py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
           runner='/Users/tengweihuang/Library/Application Support/AgentOS/browser-bridge/bridge-runner.py'
-          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':[runner,'--account','mio.milkcat','--login-only','--headed','--wait-for-login-seconds','100','--channel','chrome'],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':115,'cognition_ids_used':[]}
+          code=("import subprocess; subprocess.Popen(["+
+                repr(py)+","+repr(runner)+",'--account','mio.milkcat','--login-only','--headed','--wait-for-login-seconds','900','--channel','chrome'], "+
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True); print('THREADS_LOGIN_WINDOW_STARTED')")
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':20,'cognition_ids_used':[]}
           store=RealmFabricStore(); store.queue_task('mbpr',task)
-          print('threads_login_task='+tid)
-          for _ in range(65):
+          for _ in range(30):
               r=store.get_receipt(tid)
               if r:
                   out=str(r.get('stdout') or '')
                   print(out)
-                  rc=int(r.get('returncode') if r.get('returncode') is not None else -999)
-                  if 'threads_web_dm_bridge=SESSION_READY' in out and rc==0:
-                      print('mbpr_threads_login=PASS'); raise SystemExit(0)
-                  if 'threads_web_dm_bridge=LOGIN_REQUIRED' in out:
-                      print('mbpr_threads_login=STILL_REQUIRED'); raise SystemExit(4)
+                  if r.get('ok') is True and 'THREADS_LOGIN_WINDOW_STARTED' in out:
+                      print('mbpr_threads_login_window=STARTED')
+                      raise SystemExit(0)
                   print(str(r)); raise SystemExit(2)
               time.sleep(2)
-          raise SystemExit('MBPR Threads login receipt timeout')
+          raise SystemExit('MBPR Threads login launcher timeout')
           PY
