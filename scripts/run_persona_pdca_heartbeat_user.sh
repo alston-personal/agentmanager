@@ -47,6 +47,7 @@ SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT
 mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
 python3 "$SOCIAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
 python3 -m json.tool "$SOCIAL_RECEIPT" >/dev/null
+python3 "$PUBLIC_ACTIVITY_PUBLISHER" --persona-dir "$DATA_REPO/$PERSONA_PATH" --output "$PUBLIC_ACTIVITY_OUTPUT"
 
 cd "$DATA_REPO"
 git config user.name 'agentos-persona-pdca[bot]'
