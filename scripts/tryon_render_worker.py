@@ -71,6 +71,42 @@ def http_json(url: str, payload: dict[str, Any], timeout: int = 180) -> dict[str
         raise RuntimeError("VTON provider returned non-object JSON")
     return value
 
+def gradio_queue_call(api_name: str, data_values: list[Any], timeout: int = 300) -> Any:
+    queued = http_json(
+        f"{SPACE_BASE}/gradio_api/call/{api_name}",
+        {"data": data_values},
+        timeout=30,
+    )
+    event_id = queued.get("event_id")
+    if not isinstance(event_id, str) or not event_id:
+        raise RuntimeError(f"Gradio queue returned no event_id: {queued}")
+
+    url = f"{SPACE_BASE}/gradio_api/call/{api_name}/{event_id}"
+    req = urllib.request.Request(url, headers={"Accept": "text/event-stream"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            event = None
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    event = line.split(":", 1)[1].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                payload = line.split(":", 1)[1].strip()
+                if event == "error":
+                    raise RuntimeError(f"Gradio queue error: {payload[:2000]}")
+                if event == "complete":
+                    value = json.loads(payload)
+                    return value
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:4000]
+        raise RuntimeError(f"HTTP {exc.code} from Gradio queue: {detail}") from exc
+    raise RuntimeError("Gradio queue closed without complete event")
+
+
 
 def download(url: str, target: Path, timeout: int = 60) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.0"})
@@ -98,8 +134,9 @@ def image_data(url: str) -> dict[str, Any]:
 
 
 def try_on(person_url: str, garment_url: str, category: str, seed: int) -> str:
-    payload = {
-        "data": [
+    result = gradio_queue_call(
+        "try_on",
+        [
             image_data(person_url),
             image_data(garment_url),
             category,
@@ -108,15 +145,12 @@ def try_on(person_url: str, garment_url: str, category: str, seed: int) -> str:
             1.5,
             seed,
             True,
-        ]
-    }
-    response = http_json(f"{SPACE_BASE}/gradio_api/run/try_on", payload, timeout=240)
-    out = response.get("output")
+        ],
+        timeout=300,
+    )
+    out = result[0] if isinstance(result, list) and result and isinstance(result[0], dict) else None
     if not isinstance(out, dict):
-        data = response.get("data")
-        out = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else None
-    if not isinstance(out, dict):
-        raise RuntimeError("VTON provider returned no output object")
+        raise RuntimeError(f"VTON provider returned no output object: {result}")
     url = out.get("url")
     if not isinstance(url, str) or not url.startswith(("http://", "https://")):
         raise RuntimeError("VTON provider returned no output URL")
