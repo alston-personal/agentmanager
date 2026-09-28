@@ -132,3 +132,9 @@ Evidence must prove the exact layer claimed:
 - an Employee wake receipt proves delivery/terminal state, not permission to retry an ambiguous external effect.
 
 This layered rule prevents topology and capability growth from silently becoming privilege growth.
+
+## 2026-09-28｜目前主要互動 Node
+
+- `mbpr`：Darwin client，已加入 `realm-alston`；LaunchAgent supervisor 實機 recovery proof PASS；transactional client runtime 已完成 bootstrap 與後續正式 OTA 驗收。
+- `vopc5750`：保留為歷史 Windows Node，但目前 heartbeat stale/offline；不得把需要即時互動的桌面／瀏覽器工作預設路由到此節點。
+- 對互動型工作，先以 Node Registry freshness + capability receipt 選擇目前可用 Node；不得只因 workflow 歷史上 hard-code 過 `vopc5750` 就視為預設執行端。
