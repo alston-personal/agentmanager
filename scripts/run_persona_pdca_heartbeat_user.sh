@@ -7,6 +7,7 @@ TICK="${AGENTOS_PERSONA_PDCA_TICK:-$HOME/.local/lib/agentos/persona_pdca_tick.py
 SOCIAL_EXECUTOR="${AGENTOS_PERSONA_SOCIAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_social_executor.py}"
 INTERNAL_EXECUTOR="${AGENTOS_PERSONA_INTERNAL_EXECUTOR:-$HOME/.local/lib/agentos/persona_internal_activity_executor.py}"
 REPLY_INTENT_GENERATOR="${AGENTOS_PERSONA_REPLY_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_reply_intent_generator.py}"
+POST_INTENT_GENERATOR="${AGENTOS_PERSONA_POST_INTENT_GENERATOR:-$HOME/.local/lib/agentos/persona_post_intent_generator.py}"
 LOCK=/tmp/agentos-persona-pdca-heartbeat.lock
 
 exec 9>"$LOCK"
@@ -19,6 +20,7 @@ test -f "$TICK"
 test -f "$SOCIAL_EXECUTOR"
 test -f "$INTERNAL_EXECUTOR"
 test -f "$REPLY_INTENT_GENERATOR"
+test -f "$POST_INTENT_GENERATOR"
 command -v gh >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth status >/dev/null
 env -u GH_TOKEN -u GITHUB_TOKEN gh auth setup-git >/dev/null
@@ -40,6 +42,7 @@ python3 "$TICK" --persona-dir "$DATA_REPO/$PERSONA_PATH" --receipt-out "$RECEIPT
 python3 -m json.tool "$RECEIPT" >/dev/null
 python3 "$INTERNAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
 python3 "$REPLY_INTENT_GENERATOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
+python3 "$POST_INTENT_GENERATOR" --persona-dir "$DATA_REPO/$PERSONA_PATH"
 SOCIAL_RECEIPT="$DATA_REPO/$PERSONA_PATH/pdca/social_receipts/$(date -u +%Y%m%dT%H%M%SZ).json"
 mkdir -p "$(dirname "$SOCIAL_RECEIPT")"
 python3 "$SOCIAL_EXECUTOR" --persona-dir "$DATA_REPO/$PERSONA_PATH" --username mio.milkcat --receipt-out "$SOCIAL_RECEIPT"
