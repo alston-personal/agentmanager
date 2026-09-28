@@ -94,6 +94,7 @@ def main() -> int:
     ap.add_argument("--headed",action="store_true")
     ap.add_argument("--login-only",action="store_true")
     ap.add_argument("--channel",default=os.environ.get("AGENTOS_WEB_DM_BROWSER_CHANNEL") or ("chrome" if sys.platform=="darwin" else None))
+    ap.add_argument("--wait-for-login-seconds",type=int,default=0)
     args=ap.parse_args()
 
     ROOT.mkdir(parents=True,exist_ok=True); PROFILE.mkdir(parents=True,exist_ok=True)
@@ -118,9 +119,22 @@ def main() -> int:
             page.wait_for_timeout(1500)
             url=page.url
             if "login" in url or "accountscenter" in url:
-                print("threads_web_dm_bridge=LOGIN_REQUIRED")
-                context.close()
-                return 4
+                if args.headed and args.wait_for_login_seconds > 0:
+                    remaining=max(0,args.wait_for_login_seconds)
+                    while remaining > 0:
+                        page.wait_for_timeout(1000)
+                        remaining-=1
+                        url=page.url
+                        if "login" not in url and "accountscenter" not in url:
+                            break
+                    if "login" in url or "accountscenter" in url:
+                        print("threads_web_dm_bridge=LOGIN_REQUIRED")
+                        context.close()
+                        return 4
+                else:
+                    print("threads_web_dm_bridge=LOGIN_REQUIRED")
+                    context.close()
+                    return 4
             if args.login_only:
                 print("threads_web_dm_bridge=SESSION_READY")
                 context.close()
