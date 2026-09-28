@@ -22,7 +22,7 @@ def deterministic_ir_fallback(dm: dict, context: dict, relay_status: str) -> dic
     if no_false and any(t in message for t in travel_terms) and '散步、風景與日常觀察' in scenery_topics:
         return {
             'decision':'reply',
-            'text':'沒有安排旅行耶，最近反而一直在想海邊跟散步這種小行程 😆 你有去哪裡嗎？',
+            'text':'沒有安排旅行耶，最近反而一直在想海邊跟散步這種小行程。你有去哪裡嗎？',
             'position':'uncertain',
             'reason_category':'question',
             'memory_basis':'Current IR forbids false autobiography; it does contain evidence-backed interest in walking, scenery, and a recent sea-side theme.',
