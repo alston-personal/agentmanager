@@ -6,8 +6,10 @@ on:
     paths:
       - 'agentos_node/onboarding.py'
       - 'agentos_node/client_cli.py'
+      - 'agentos_node/thin_client.py'
       - 'scripts/install_thin_client_macos.sh'
       - 'tests/test_macos_node_installer_contract.py'
+      - 'tests/test_macos_node_capabilities.py'
       - '.github/workflows/macos-node-contract-guard.yml'
 permissions:
   contents: read
@@ -20,4 +22,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -q pytest
-      - run: python -m pytest -q tests/test_macos_node_installer_contract.py
+      - run: python -m pytest -q tests/test_macos_node_installer_contract.py tests/test_macos_node_capabilities.py
