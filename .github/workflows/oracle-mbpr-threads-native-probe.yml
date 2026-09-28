@@ -1,0 +1,49 @@
+name: Oracle MBPR Threads Native Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-threads-native-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe native Threads session without logging content
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-threads-native-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-threads-native-probe-'+str(int(time.time()))
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
+          code="from agentos_node.macos_chrome_threads import inspect_threads_tabs; r=inspect_threads_tabs(); print('THREADS_NATIVE_COUNT='+str(int(r.get('count') or 0)))"
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':25,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(40):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      print('threads_native_probe=ERROR')
+                      print('error_type='+str(r.get('error') or 'shell_exec_failed').split(':',1)[0])
+                      raise SystemExit(2)
+                  count=0
+                  for line in out.splitlines():
+                      if line.startswith('THREADS_NATIVE_COUNT='):
+                          count=int(line.split('=',1)[1])
+                  print('threads_native_probe=PASS')
+                  print('threads_native_count='+str(count))
+                  raise SystemExit(0 if count>0 else 4)
+              time.sleep(2)
+          raise SystemExit('threads native probe timeout')
+          PY
