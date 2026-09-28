@@ -42,7 +42,22 @@ def main() -> int:
         if r:
             out=str(r.get('stdout') or '')
             if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
-                raise SystemExit('mio_dm_send=ERROR')
+                err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
+                if 'javascript' in err and ('apple' in err or 'execute' in err or 'disabled' in err):
+                    kind='CHROME_JS_DISABLED'
+                elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
+                    kind='AUTOMATION_PERMISSION'
+                elif 'syntax error' in err or 'execution error' in err:
+                    kind='APPLESCRIPT_ERROR'
+                elif 'timeout' in err or 'timed out' in err:
+                    kind='TIMEOUT'
+                elif 'not_messages' in err:
+                    kind='NOT_MESSAGES_TAB'
+                else:
+                    kind='OTHER'
+                print('mio_dm_send=ERROR')
+                print('mio_dm_send_error_type='+kind)
+                raise SystemExit(1)
             lines=[x.strip() for x in out.splitlines() if x.strip()]
             if 'FOUND' not in lines:
                 raise SystemExit('mio_dm_send=UNVERIFIED')
