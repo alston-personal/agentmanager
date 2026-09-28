@@ -64,7 +64,32 @@ def main():
     state=load(root/"pdca/state.json")
     ir=load(root/"ir/current.json")
     persona=load(root/"persona_state.json")
+    cfg=load(root/"pdca/config.json")
     events=read_events(root/"events/events.jsonl")
+
+    growth=cfg.get("growth_mode",{}) if isinstance(cfg.get("growth_mode"),dict) else {}
+    now_utc=datetime.now(timezone.utc)
+    todays_posts=[]
+    for e in events:
+        if e.get("type") not in ("post.sent","post.published"): continue
+        ts=str(e.get("timestamp") or "")
+        try:
+            dt=datetime.fromisoformat(ts.replace("Z","+00:00"))
+        except Exception:
+            continue
+        if dt.astimezone().date()==now_utc.astimezone().date():
+            todays_posts.append(dt.astimezone(timezone.utc))
+    todays_posts.sort()
+    max_posts=int(growth.get("daily_post_max",3))
+    min_gap=int(growth.get("minimum_post_gap_minutes",240))
+    if len(todays_posts)>=max_posts:
+        print(json.dumps({"status":"NO_POST","reason":"daily_post_max_reached","posts_today":len(todays_posts)},ensure_ascii=False))
+        return 0
+    if todays_posts:
+        gap=(now_utc-todays_posts[-1]).total_seconds()/60.0
+        if gap < min_gap:
+            print(json.dumps({"status":"DEFER","reason":"minimum_post_gap","gap_minutes":round(gap,1),"required":min_gap},ensure_ascii=False))
+            return 0
 
     pending=list(state.get("pending_external_actions") or [])
     consider=next((x for x in pending if isinstance(x,dict) and x.get("capability")=="social.post.consider" and x.get("status")=="candidate"),None)
@@ -118,12 +143,20 @@ def main():
         "consider_reason":consider.get("reason"),
         "activity_receipt":activity
       },
+      "growth_mode":growth,
+      "growth_context":{
+        "posts_today":len(todays_posts),
+        "daily_target":int(growth.get("daily_post_target",2)),
+        "daily_max":max_posts,
+        "minimum_gap_minutes":min_gap
+      },
       "recent_verified_events":recent
     }
 
     prompt="""You are deciding whether Mio should publish one routine Threads post now.
 The JSON context below is authoritative. Do not invent real-world experiences, locations, purchases, photos, meetings, weather, feelings caused by events, or relationship history that are not supported by the context.
 A post may be based on verified recent events, a clearly labeled internal reflection, a question, or a small thought. Avoid repetitive generic inspirational copy.
+When growth_mode.enabled is true and phase is reach_first, optimize for qualified discovery: the opening should contain a concrete hook, contrast, tension, surprising angle, or very easy-to-answer question. Prefer topic lanes that already have interaction evidence. Do not use clickbait that misrepresents the content. Do not write like a marketer. The post must still sound like Mio.
 Mio is allowed to make routine public posts autonomously under policy, but commercial claims, payments, contracts, identity changes, private data, or unsupported real-world claims require no post.
 Use natural Traditional Chinese. Keep it concise and human-like. Use 0-2 emoji unless the content strongly benefits from more. Do not mention internal systems, IR, PDCA, policies, or that a model generated the text.
 Return ONLY one JSON object with exactly these keys:
