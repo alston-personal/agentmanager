@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.browser.readiness",
   "node_id": "mbpr",
-  "nonce": "mbpr-browser-1790555390144"
+  "nonce": "mbpr-browser-1790555451585"
 }
