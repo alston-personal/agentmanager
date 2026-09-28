@@ -7,8 +7,9 @@ SOURCE_RUNNER="${2:-}"
 SOURCE_SOCIAL_EXECUTOR="${3:-}"
 SOURCE_INTERNAL_EXECUTOR="${4:-}"
 SOURCE_REPLY_INTENT_GENERATOR="${5:-}"
-SOURCE_POST_INTENT_GENERATOR="${6:-}"
-SOURCE_SOCIAL_RUNNER="${7:-}"
+SOURCE_PUBLIC_ACTIVITY_PUBLISHER="${6:-}"
+SOURCE_POST_INTENT_GENERATOR="${7:-}"
+SOURCE_SOCIAL_RUNNER="${8:-}"
 test -f "$SOURCE_TICK"
 test -f "$SOURCE_RUNNER"
 test -f "$SOURCE_SOCIAL_EXECUTOR"
@@ -49,6 +50,8 @@ Environment=AGENTOS_PERSONA_PDCA_TICK=$LIB/persona_pdca_tick.py
 Environment=AGENTOS_PERSONA_SOCIAL_EXECUTOR=$LIB/persona_social_executor.py
 Environment=AGENTOS_PERSONA_INTERNAL_EXECUTOR=$LIB/persona_internal_activity_executor.py
 Environment=AGENTOS_PERSONA_REPLY_INTENT_GENERATOR=$LIB/persona_reply_intent_generator.py
+Environment=AGENTOS_MIO_PUBLIC_ACTIVITY_PUBLISHER=$LIB/publish_mio_public_activity.py
+Environment=AGENTOS_MIO_PUBLIC_ACTIVITY_OUTPUT=/home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json
 Environment=AGENTOS_PERSONA_POST_INTENT_GENERATOR=$LIB/persona_post_intent_generator.py
 ExecStart=$BIN/agentos-persona-pdca-heartbeat
 NoNewPrivileges=true
