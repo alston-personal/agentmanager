@@ -1,0 +1,52 @@
+name: Oracle GUI Threads Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/oracle-gui-threads-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe Threads on Oracle GUI Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, time
+          from pathlib import Path
+          ws=None
+          for _ in range(20):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:9222/json/version',timeout=2) as r:
+                      d=json.load(r)
+                  ws=d['webSocketDebuggerUrl']
+                  break
+              except Exception:
+                  time.sleep(1)
+          assert ws,'CDP unavailable'
+          print('oracle_gui_threads_cdp=PASS')
+          PY
+          ROOT=/home/ubuntu/.local/share/agentos/gui-worker
+          "$ROOT/venv/bin/python" - <<'PY'
+          import json,time
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              b=p.chromium.connect_over_cdp('http://127.0.0.1:9222')
+              ctx=b.contexts[0]
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              page.goto('https://www.threads.com/messages',wait_until='domcontentloaded',timeout=30000)
+              time.sleep(2)
+              u=page.url
+              title=page.title()
+              login=('login' in u.lower() or 'accountscenter' in u.lower())
+              restricted=('restrict' in page.locator('body').inner_text().lower() or 'try again later' in page.locator('body').inner_text().lower())
+              print('oracle_gui_threads_login_required='+str(login).lower())
+              print('oracle_gui_threads_restricted='+str(restricted).lower())
+              print('oracle_gui_threads_messages_url='+str('/messages' in u))
+          PY
