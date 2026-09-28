@@ -1,0 +1,82 @@
+name: SM4LL Provider Smoke
+
+on:
+  push:
+    branches: [ops/sm4ll-provider-smoke]
+    paths:
+      - '.github/workflows/sm4ll-provider-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Mio + NET garment through SM4LL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv /tmp/mio-vton-venv
+          /tmp/mio-vton-venv/bin/python -m pip install --quiet --upgrade pip
+          /tmp/mio-vton-venv/bin/python -m pip install --quiet "gradio_client>=1.13,<3"
+
+          export AGENT_DATA_ROOT=/tmp/mio-agent-data
+          export AGENTOS_TRYON_ONCE=1
+          ROOT="$AGENT_DATA_ROOT/projects/dressup-simulator"
+          mkdir -p "$ROOT/render_jobs/runtime" "$ROOT/render_assets"
+          JOB_ID="sm4ll-provider-smoke-$GITHUB_RUN_ID"
+
+          python3 - "$ROOT/render_jobs/runtime/$JOB_ID.json" "$JOB_ID" <<'PY'
+          import json, pathlib, sys
+          from datetime import datetime, timezone
+          path=pathlib.Path(sys.argv[1]); job_id=sys.argv[2]
+          now=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+          job={
+            "schema":"agentos.tryon-render-job/v1",
+            "jobId":job_id,
+            "characterId":"sunlake-milkcat-ai-001",
+            "characterVersion":"mio-body-v1",
+            "view":"front",
+            "pose":"neutral_standing",
+            "status":"queued",
+            "requestedAt":now,
+            "startedAt":None,
+            "completedAt":None,
+            "failedAt":None,
+            "supersededBy":None,
+            "input":{
+              "baseBodyAsset":"/personas/mio/mio-avatar.webp",
+              "layerOrder":["upper_main"],
+              "selectedLayers":{
+                "upper_main":{
+                  "garmentId":"net-43774-002",
+                  "name":"white top",
+                  "layer":"upper_main",
+                  "sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"
+                }
+              }
+            },
+            "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
+            "error":None
+          }
+          path.write_text(json.dumps(job,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          PY
+
+          /tmp/mio-vton-venv/bin/python scripts/tryon_render_worker.py
+
+          cat "$ROOT/render_jobs/runtime/$JOB_ID.json"
+          STATE=$(python3 - "$ROOT/render_jobs/runtime/$JOB_ID.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(d.get('status'))
+          PY
+          )
+          test "$STATE" = ready
+          test -s "$ROOT/render_assets/$JOB_ID.webp"
+          BYTES=$(wc -c < "$ROOT/render_assets/$JOB_ID.webp")
+          test "$BYTES" -gt 1000
+          echo "SM4LL_PROVIDER_SMOKE=PASS bytes=$BYTES"
