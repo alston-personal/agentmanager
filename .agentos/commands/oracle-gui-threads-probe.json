@@ -1,5 +1,5 @@
 {
   "schema": "agentos.gui-threads-probe/v1",
   "target": "oracle-gui-worker",
-  "nonce": "oracle-gui-threads-diag-1790603572175"
+  "nonce": "oracle-gui-threads-native-cdp-1790603644232"
 }
