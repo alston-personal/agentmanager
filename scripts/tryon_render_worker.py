@@ -8,6 +8,8 @@ import time
 import shutil
 import tempfile
 import urllib.request
+import urllib.parse
+from html.parser import HTMLParser
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,7 @@ from gradio_client import Client, handle_file
 
 SCHEMA = "agentos.tryon-render-job/v1"
 SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "yisol/IDM-VTON")
+ANY_ITEM_SPACE_ID = os.environ.get("AGENTOS_TRYON_ANY_ITEM_SPACE_ID", "Kunbyte/OmniTry")
 DATA_ROOT = Path(os.environ.get("AGENT_DATA_ROOT", str(Path.home() / "agent-data"))).expanduser()
 JOB_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_jobs" / "runtime"
 CURRENT_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "current_outfits"
@@ -26,7 +29,7 @@ BASE_BODY_URL = os.environ.get(
     "https://studio.milkcat.org/personas/mio/mio-avatar.webp",
 )
 
-SUPPORTED = {
+CLOTHING_SUPPORTED = {
     "upper_inner": "upper garment",
     "upper_main": "upper garment",
     "upper_outer": "outerwear",
@@ -34,7 +37,20 @@ SUPPORTED = {
     "onepiece": "one-piece garment",
 }
 
-ORDER = ["upper_inner", "upper_main", "lower_main", "onepiece", "upper_outer"]
+ANY_ITEM_SUPPORTED = {
+    "shoes": "shoe",
+    "bag": "bag",
+}
+
+ORDER = [
+    "upper_inner",
+    "upper_main",
+    "lower_main",
+    "onepiece",
+    "upper_outer",
+    "shoes",
+    "bag",
+]
 
 
 def utc_now() -> str:
@@ -58,6 +74,7 @@ def atomic_write(path: Path, payload: dict[str, Any]) -> None:
 
 
 _CLIENT: Client | None = None
+_ANY_ITEM_CLIENT: Client | None = None
 
 
 def client() -> Client:
@@ -72,12 +89,63 @@ def client() -> Client:
     return _CLIENT
 
 
+def any_item_client() -> Client:
+    global _ANY_ITEM_CLIENT
+    if _ANY_ITEM_CLIENT is None:
+        _ANY_ITEM_CLIENT = Client(
+            ANY_ITEM_SPACE_ID,
+            download_files=True,
+            verbose=False,
+            httpx_kwargs={"timeout": 360.0},
+        )
+    return _ANY_ITEM_CLIENT
+
+
+class _ImageMetaParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.image_url: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.image_url or tag.lower() != "meta":
+            return
+        row = {str(k).lower(): (v or "") for k, v in attrs}
+        prop = row.get("property") or row.get("name")
+        if prop and prop.lower() in {"og:image", "twitter:image", "twitter:image:src"} and row.get("content"):
+            self.image_url = row["content"].strip()
+
+
+def resolve_input_image_url(url: str) -> str:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 AgentOS-Mio-TryOn/1.5",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        content_type = (resp.headers.get("Content-Type") or "").lower()
+        final_url = resp.geturl()
+        if "image" in content_type:
+            return final_url
+        if "html" not in content_type:
+            raise RuntimeError(f"input URL is neither image nor HTML: {content_type}")
+        body = resp.read(2_000_000).decode(resp.headers.get_content_charset() or "utf-8", "replace")
+
+    parser = _ImageMetaParser()
+    parser.feed(body)
+    if not parser.image_url:
+        raise RuntimeError("product page has no og:image/twitter:image")
+    return urllib.parse.urljoin(final_url, parser.image_url)
+
+
 def download_input(url: str, suffix: str) -> Path:
-    req = urllib.request.Request(url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.4"})
+    image_url = resolve_input_image_url(url)
+    req = urllib.request.Request(image_url, headers={"User-Agent": "AgentOS-Mio-TryOn/1.5"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         content_type = (resp.headers.get("Content-Type") or "").lower()
         if "image" not in content_type:
-            raise RuntimeError(f"input is not image content: {content_type}")
+            raise RuntimeError(f"resolved input is not image content: {content_type}")
         data = resp.read()
     if len(data) < 1000:
         raise RuntimeError("input image is unexpectedly small")
@@ -95,10 +163,10 @@ def output_path(result: Any) -> Path:
     if isinstance(candidate, dict):
         candidate = candidate.get("path") or candidate.get("url")
     if not isinstance(candidate, str) or not candidate:
-        raise RuntimeError(f"IDM-VTON returned no output path: {result!r}")
+        raise RuntimeError(f"try-on provider returned no output path: {result!r}")
     path = Path(candidate)
     if not path.exists() or path.stat().st_size < 1000:
-        raise RuntimeError(f"IDM-VTON output missing or too small: {candidate}")
+        raise RuntimeError(f"try-on provider output missing or too small: {candidate}")
     return path
 
 
@@ -129,6 +197,38 @@ def idm_try_on(person_source: str, garment_url: str, description: str, seed: int
             20,
             int(seed),
             api_name="/tryon",
+        )
+        return str(output_path(result))
+    finally:
+        for path in temp_inputs:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def omni_try_on(person_source: str, object_url: str, object_class: str, seed: int) -> str:
+    temp_inputs: list[Path] = []
+    try:
+        if person_source.startswith(("http://", "https://")):
+            person_path = download_input(person_source, ".webp")
+            temp_inputs.append(person_path)
+        else:
+            person_path = Path(person_source)
+            if not person_path.exists():
+                raise RuntimeError(f"person input missing: {person_source}")
+
+        object_path = download_input(object_url, ".jpg")
+        temp_inputs.append(object_path)
+
+        result = any_item_client().predict(
+            handle_file(str(person_path)),
+            handle_file(str(object_path)),
+            object_class,
+            20,
+            30,
+            int(seed),
+            api_name="/generate",
         )
         return str(output_path(result))
     finally:
@@ -176,13 +276,14 @@ def public_asset_path(job_id: str) -> str:
 
 def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
     selected = job.get("input", {}).get("selectedLayers", {})
+    uses_any_item = any(layer in ANY_ITEM_SUPPORTED for layer in rendered_layers)
     signature = {
         "schema": "agentos.tryon-cache/v1",
         "characterId": job.get("characterId"),
         "characterVersion": job.get("characterVersion"),
         "view": job.get("view", "front"),
         "pose": job.get("pose", "neutral_standing"),
-        "renderer": "idm-vton-gradio-client/v1",
+        "renderer": "idm-vton+omnitry/v2" if uses_any_item else "idm-vton-gradio-client/v1",
         "layers": [
             {
                 "layer": layer,
@@ -242,12 +343,16 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     if not isinstance(selected, dict):
         raise RuntimeError("selectedLayers missing")
 
-    supported_layers = [layer for layer in ORDER if layer in selected and layer in SUPPORTED]
-    if not supported_layers:
-        raise RuntimeError("No renderable clothing layers selected yet")
+    target_layers = [
+        layer
+        for layer in ORDER
+        if layer in selected and (layer in CLOTHING_SUPPORTED or layer in ANY_ITEM_SUPPORTED)
+    ]
+    if not target_layers:
+        raise RuntimeError("No renderable wardrobe layers selected yet")
 
     target = ASSET_DIR / f"{job['jobId']}.webp"
-    if restore_cached_render(job, supported_layers, target):
+    if restore_cached_render(job, target_layers, target):
         job["status"] = "ready"
         job["completedAt"] = utc_now()
         job["failedAt"] = None
@@ -255,22 +360,69 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         update_current(job)
         return
 
-    # Each pass uses the previous output as the new person image.
+    # Each successful pass uses the previous output as the next person image.
     person_url = BASE_BODY_URL
     seed_base = abs(hash(job["jobId"])) % 100000
-    provider_outputs: list[str] = []
-    for index, layer in enumerate(supported_layers):
+    provider_outputs: list[dict[str, Any]] = []
+    rendered_layers: list[str] = []
+    pending_layers: list[str] = []
+    warnings: list[dict[str, str]] = []
+
+    for index, layer in enumerate(target_layers):
         item = selected[layer]
-        garment_url = item.get("sourceImageUrl") if isinstance(item, dict) else None
-        if not isinstance(garment_url, str) or not garment_url.startswith(("http://", "https://")):
-            raise RuntimeError(f"Missing source image for {layer}")
-        garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
-        description = f"{garment_name}; {SUPPORTED[layer]}"
-        person_url = idm_try_on(person_url, garment_url, description, seed_base + index)
-        provider_outputs.append(person_url)
+        source_url = item.get("sourceImageUrl") if isinstance(item, dict) else None
+        if not isinstance(source_url, str) or not source_url.startswith(("http://", "https://")):
+            pending_layers.append(layer)
+            warnings.append({"layer": layer, "code": "missing_source_image"})
+            continue
+
+        try:
+            if layer in CLOTHING_SUPPORTED:
+                garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
+                description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}"
+                person_url = idm_try_on(person_url, source_url, description, seed_base + index)
+                provider = "idm-vton-gradio-client"
+                provider_space = SPACE_ID
+            else:
+                person_url = omni_try_on(
+                    person_url,
+                    source_url,
+                    ANY_ITEM_SUPPORTED[layer],
+                    seed_base + index,
+                )
+                provider = "omnitry-gradio-client"
+                provider_space = ANY_ITEM_SPACE_ID
+
+            rendered_layers.append(layer)
+            provider_outputs.append(
+                {
+                    "layer": layer,
+                    "provider": provider,
+                    "providerSpace": provider_space,
+                    "output": person_url,
+                }
+            )
+        except Exception as exc:
+            pending_layers.append(layer)
+            warnings.append(
+                {
+                    "layer": layer,
+                    "code": "layer_renderer_failed",
+                    "message": f"{type(exc).__name__}: {exc}"[:500],
+                }
+            )
+
+    if not rendered_layers:
+        detail = "; ".join(
+            f"{row.get('layer')}:{row.get('message') or row.get('code')}"
+            for row in warnings
+        )
+        raise RuntimeError(f"No selected layer could be rendered: {detail}"[:900])
 
     copy_output(person_url, target)
-    cache_key = persist_render_cache(job, supported_layers, target)
+    cache_key = None
+    if not pending_layers:
+        cache_key = persist_render_cache(job, target_layers, target)
 
     job["status"] = "ready"
     job["completedAt"] = utc_now()
@@ -280,10 +432,12 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         "previewAsset": public_asset_path(job["jobId"]),
         "width": None,
         "height": None,
-        "provider": "idm-vton-gradio-client",
-        "providerSpace": SPACE_ID,
+        "provider": "hybrid-vton",
         "providerOutputs": provider_outputs,
-        "renderedLayers": supported_layers,
+        "renderedLayers": rendered_layers,
+        "pendingLayers": pending_layers,
+        "warnings": warnings,
+        "cacheKey": cache_key,
     }
     atomic_write(path, job)
     update_current(job)

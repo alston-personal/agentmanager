@@ -60,6 +60,12 @@ export type TryOnJob = {
     previewAsset: string | null;
     width: number | null;
     height: number | null;
+    provider?: string;
+    providerOutputs?: unknown[];
+    renderedLayers?: string[];
+    pendingLayers?: string[];
+    warnings?: Array<{ layer?: string; code: string; message?: string }>;
+    cacheKey?: string | null;
   };
   error: null | { code: string; message: string };
 };
