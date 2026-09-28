@@ -15,42 +15,34 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - name: Probe Social API validation without side effects
+      - name: Probe Social write-intent validation safely
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json, urllib.request, urllib.error
-
           BASE="https://studio.milkcat.org/dashboard/api/social"
-          def request(path,payload=None):
-              data=None if payload is None else json.dumps(payload).encode()
-              req=urllib.request.Request(
-                  BASE+path,
-                  data=data,
-                  headers={"content-type":"application/json","accept":"application/json"},
-                  method="GET" if payload is None else "POST",
-              )
+          def post(path,payload):
+              req=urllib.request.Request(BASE+path,data=json.dumps(payload).encode(),headers={"content-type":"application/json","accept":"application/json"},method="POST")
               try:
                   with urllib.request.urlopen(req,timeout=8) as r:
-                      body=r.read().decode("utf-8","replace")
-                      return {"status":r.status,"body":body[:1600]}
+                      return {"status":r.status,"body":r.read().decode("utf-8","replace")[:1600]}
               except urllib.error.HTTPError as e:
                   return {"status":e.code,"body":e.read().decode("utf-8","replace")[:1600]}
               except Exception as e:
                   return {"status":"error","body":repr(e)}
-
-          probes={
-              "health":request("/healthz"),
-              "status_empty":request("/v1/social/status",{}),
-              "reply_empty":request("/v1/social/reply",{}),
-              "publish_empty":request("/v1/social/publish",{}),
-              "reply_shape":request("/v1/social/reply",{
-                  "schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply"
-              }),
-              "publish_shape":request("/v1/social/publish",{
-                  "schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"publish"
-              })
+          base={"schema":"agentos.social-request/v1","product_id":"invalid-probe","platform":"threads","operation":"reply"}
+          probes={}
+          variants={
+              "write_intent": {"write_intent":True},
+              "explicit_write_intent": {"explicit_write_intent":True},
+              "allow_write": {"allow_write":True},
+              "confirm_write": {"confirm_write":True},
+              "intent_write": {"intent":"write"},
+              "operation_reply_write_intent": {"write_intent":"explicit"}
           }
+          for name,extra in variants.items():
+              p=dict(base); p.update(extra)
+              probes[name]=post("/v1/social/reply",p)
           print(json.dumps(probes,ensure_ascii=False,indent=2))
           PY
