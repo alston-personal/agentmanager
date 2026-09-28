@@ -244,20 +244,37 @@ def omni_try_on(
         temp_inputs.append(object_path)
 
         for space_id in ANY_ITEM_SPACE_IDS:
-            try:
-                result = any_item_client(space_id).predict(
-                    handle_file(str(person_path)),
-                    handle_file(str(object_path)),
-                    object_class,
-                    20,
-                    30,
-                    int(seed),
-                    api_name="/generate",
-                )
-                return str(output_path(result)), space_id
-            except Exception as exc:
-                errors.append(f"{space_id}={type(exc).__name__}:{exc}"[:400])
-                _ANY_ITEM_CLIENTS.pop(space_id, None)
+            for attempt in range(1, 4):
+                try:
+                    result = any_item_client(space_id).predict(
+                        handle_file(str(person_path)),
+                        handle_file(str(object_path)),
+                        object_class,
+                        20,
+                        30,
+                        int(seed),
+                        api_name="/generate",
+                    )
+                    return str(output_path(result)), space_id
+                except Exception as exc:
+                    message = f"{type(exc).__name__}:{exc}"
+                    transient = any(
+                        marker in message.lower()
+                        for marker in (
+                            "502 bad gateway",
+                            "503 service unavailable",
+                            "504 gateway timeout",
+                            "connection reset",
+                            "temporarily unavailable",
+                        )
+                    )
+                    errors.append(
+                        f"{space_id}[attempt={attempt}]={message}"[:500]
+                    )
+                    _ANY_ITEM_CLIENTS.pop(space_id, None)
+                    if not transient or attempt >= 3:
+                        break
+                    time.sleep(4 * attempt)
 
         detail = " | ".join(errors)
         quota_exhausted = any(
