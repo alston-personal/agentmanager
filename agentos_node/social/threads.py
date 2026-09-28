@@ -237,26 +237,31 @@ class ThreadsCapability:
                 object_id = str(request.object_id or "").strip()
                 if not object_id:
                     return receipt_for(request, started_at=started, ok=False, capability="social.threads.post.insights.read", error_code="thread_object_id_required").to_dict()
-                payload = self.transport.api(
-                    f"{object_id}/insights",
-                    token=token,
-                    params={"metric": "views,likes,replies,reposts,quotes,shares"},
-                )
                 metrics = {}
-                for row in (payload.get("data") or []):
-                    if not isinstance(row, dict):
-                        continue
-                    name = str(row.get("name") or "").strip()
-                    if not name:
-                        continue
-                    value = None
-                    values = row.get("values")
-                    if isinstance(values, list) and values and isinstance(values[-1], dict):
-                        value = values[-1].get("value")
-                    if value is None and isinstance(row.get("total_value"), dict):
-                        value = row["total_value"].get("value")
-                    metrics[name] = value
-                return receipt_for(request, started_at=started, ok=True, capability="social.threads.post.insights.read", platform_object_id=object_id, result={"metrics": metrics}).to_dict()
+                errors = {}
+                for metric in ("views", "likes", "replies", "reposts", "quotes", "shares"):
+                    try:
+                        payload = self.transport.api(
+                            f"{object_id}/insights",
+                            token=token,
+                            params={"metric": metric},
+                        )
+                        value = None
+                        for row in (payload.get("data") or []):
+                            if not isinstance(row, dict) or str(row.get("name") or "").strip() != metric:
+                                continue
+                            values = row.get("values")
+                            if isinstance(values, list) and values and isinstance(values[-1], dict):
+                                value = values[-1].get("value")
+                            if value is None and isinstance(row.get("total_value"), dict):
+                                value = row["total_value"].get("value")
+                        metrics[metric] = value
+                    except ThreadsProviderError as exc:
+                        errors[metric] = str(exc)
+                if not metrics:
+                    first_error = next(iter(errors.values()), "threads_insights_unavailable")
+                    return receipt_for(request, started_at=started, ok=False, capability="social.threads.post.insights.read", platform_object_id=object_id, error_code=first_error, result={"metric_errors": errors}).to_dict()
+                return receipt_for(request, started_at=started, ok=True, capability="social.threads.post.insights.read", platform_object_id=object_id, result={"metrics": metrics, "metric_errors": errors}).to_dict()
             if request.operation == "replies.read":
                 object_id = str(request.object_id or "").strip()
                 if not object_id:
