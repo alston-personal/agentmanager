@@ -123,7 +123,7 @@ class ThinClient:
                 'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
             ])
         elif platform.system() == 'Darwin':
-            caps.extend(['desktop.open_url', 'node.runtime.converge', 'social.threads.web_dm.session.inspect', 'social.threads.web_dm.read'])
+            caps.extend(['desktop.open_url', 'node.runtime.converge'])
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
