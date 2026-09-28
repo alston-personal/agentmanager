@@ -76,4 +76,68 @@ jobs:
           sleep 2
           systemctl --user is-active agentos-mio-tryon-render-worker.service
           systemctl --user --no-pager --full status agentos-mio-tryon-render-worker.service | head -n 30
+
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          JOB_DIR="$ROOT/render_jobs/runtime"
+          ASSET_DIR="$ROOT/render_assets"
+          JOB_ID="mio-worker-selftest-$RANDOM-$(date +%s)"
+          JOB="$JOB_DIR/$JOB_ID.json"
+          ASSET="$ASSET_DIR/$JOB_ID.webp"
+          mkdir -p "$JOB_DIR" "$ASSET_DIR"
+
+          python3 - "$JOB" "$JOB_ID" <<'PY'
+          import json, pathlib, sys
+          from datetime import datetime, timezone
+          path=pathlib.Path(sys.argv[1]); job_id=sys.argv[2]
+          now=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+          job={
+            "schema":"agentos.tryon-render-job/v1",
+            "jobId":job_id,
+            "characterId":"sunlake-milkcat-ai-001",
+            "characterVersion":"mio-body-v1",
+            "view":"front","pose":"neutral_standing","status":"queued",
+            "requestedAt":now,"startedAt":None,"completedAt":None,"failedAt":None,"supersededBy":None,
+            "input":{
+              "baseBodyAsset":"/personas/mio/mio-avatar.webp",
+              "layerOrder":["upper_main","lower_main"],
+              "selectedLayers":{
+                "upper_main":{"garmentId":"net-43774-002","name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"},
+                "lower_main":{"garmentId":"net-32235-711","name":"navy pants","layer":"lower_main","sourceImageUrl":"https://s-net.wimg.tw//act/32235-711-1024-01.jpg?v=32570"}
+              }
+            },
+            "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
+            "error":None
+          }
+          path.write_text(json.dumps(job,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          path.chmod(0o600)
+          PY
+
+          SELFTEST_OK=0
+          for i in $(seq 1 120); do
+            STATE=$(python3 - "$JOB" <<'PY'
+          import json,sys
+          try:
+              print(json.load(open(sys.argv[1],encoding='utf-8')).get('status','missing'))
+          except Exception:
+              print('missing')
+          PY
+          )
+            echo "tryon_worker_selftest_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              test -s "$ASSET"
+              BYTES=$(wc -c < "$ASSET")
+              test "$BYTES" -gt 1000
+              echo "mio_tryon_worker_selftest=PASS bytes=$BYTES"
+              SELFTEST_OK=1
+              break
+            fi
+            if [ "$STATE" = failed ]; then
+              cat "$JOB"
+              journalctl --user -u agentos-mio-tryon-render-worker.service -n 80 --no-pager || true
+              break
+            fi
+            sleep 2
+          done
+          test "$SELFTEST_OK" -eq 1
+          rm -f "$JOB" "$ASSET"
           REMOTE
