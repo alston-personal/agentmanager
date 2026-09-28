@@ -1,0 +1,29 @@
+{
+  "schema": "agentos.garment/v1",
+  "garmentId": "net-40832-002",
+  "characterId": "sunlake-milkcat-ai-001",
+  "name": "防潑水帆布鞋",
+  "retailer": "NET",
+  "brand": "NET",
+  "sku": "40832",
+  "variant": "002 白色",
+  "category": "shoes",
+  "slot": "shoes",
+  "layer": "shoes",
+  "price": 399,
+  "currency": "TWD",
+  "source": {
+    "canonicalUrl": "https://m.net-fashion.net/product/735479",
+    "imageUrl": "https://m.net-fashion.net/product/735479",
+    "extractedAt": "2026-09-28T00:00:00+08:00"
+  },
+  "acquisition": {
+    "state": "want_to_try",
+    "owned": false,
+    "worn": false
+  },
+  "tryOn": {
+    "state": "ready_for_tryon",
+    "asset": null
+  }
+}
