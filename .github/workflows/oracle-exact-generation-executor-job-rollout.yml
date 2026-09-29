@@ -142,6 +142,7 @@ jobs:
           PY
 
       - name: Submit through ONE and collect bounded executor receipt
+        if: steps.changes.outputs.typesafe != 'true'
         shell: bash
         run: |
           set -euo pipefail
