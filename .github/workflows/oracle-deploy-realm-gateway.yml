@@ -2,6 +2,7 @@ name: Oracle Deploy Realm Gateway
 
 on:
   push:
+    branches: [diag/recover-realm-gateway-postreboot]
     paths:
       - 'dashboard/app/api/agentos/**'
       - 'scripts/deploy_realm_gateway_user.sh'
