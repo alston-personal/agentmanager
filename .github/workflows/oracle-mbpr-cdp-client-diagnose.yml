@@ -1,0 +1,39 @@
+name: Oracle MBPR CDP Client Diagnose
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.agentos/commands/mbpr-cdp-client-diagnose.json']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect MBPR CDP client modules
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-cdp-client-diagnose.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          code="import importlib.util,json; mods={m:(importlib.util.find_spec(m) is not None) for m in ['websocket','websockets','playwright','pychrome']}; print(json.dumps(mods,sort_keys=True))"
+          tid='mbpr-cdp-client-diag-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':15,'cognition_ids_used':[]})
+          for _ in range(30):
+              r=store.get_receipt(tid)
+              if r:
+                  print(r.get('stdout') or '')
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      raise SystemExit(2)
+                  print('mbpr_cdp_client_diagnose=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr cdp client diagnose timeout')
+          PY
