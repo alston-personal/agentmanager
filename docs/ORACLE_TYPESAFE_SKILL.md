@@ -27,7 +27,7 @@ Generic command, argv, executable, cwd, path, environment, token, credential, se
 The installer uses one installation method only:
 
 ```bash
-npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes
+npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --copy --yes
 ```
 
 Expected file-level result:
