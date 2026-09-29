@@ -28,6 +28,9 @@ if [ -z "$SOURCE_COMMIT" ]; then
   SOURCE_COMMIT="$(git -C "$REPO" rev-parse "$REF")"
 fi
 [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source commit" >&2; exit 2; }
+if ! git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}" 2>/dev/null; then
+  git -C "$REPO" fetch origin "$SOURCE_COMMIT"
+fi
 git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 
 RUNTIME="$ROOT/runtime/$SOURCE_COMMIT"
