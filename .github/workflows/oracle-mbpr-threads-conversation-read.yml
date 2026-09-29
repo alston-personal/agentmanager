@@ -26,51 +26,32 @@ jobs:
           assert cmd.get('node_id')=='mbpr'
           username=str(cmd.get('username') or '')
           assert username=='0__0.ayoub'
+          sha=str(cmd.get('source_commit') or '')
+          assert len(sha)==40
           tid='mbpr-threads-conversation-read-'+str(int(time.time()))
-          py='/Users/tengweihuang/Library/Application Support/AgentOS/versions/18be78bbc0ccc94189f821e66da09ed4d41b268d/venv/bin/python'
-          js_click="(()=>{const els=[...document.querySelectorAll('a,button,div[role=button]')];const e=els.find(x=>(x.innerText||'').includes('0__0.ayoub'));if(!e)return 'NOT_FOUND';e.click();return 'CLICKED';})()"
-          js_read="(()=>{const m=document.querySelector('main');const s=(m?m.innerText:document.body.innerText)||'';return s.slice(0,20000);})()"
-          import json as _j
-          lines=[
-            'tell application "Google Chrome"',
-            'set t to active tab of front window',
-            'set u to URL of t',
-            'if u does not start with "https://www.threads.com/messages" and u does not start with "https://threads.com/messages" then error "not_messages"',
-            'set r to execute t javascript '+_j.dumps(js_click),
-            'delay 2',
-            'set bodyText to execute t javascript '+_j.dumps(js_read),
-            'return (r & linefeed & bodyText)',
-            'end tell',
-          ]
-          script='\n'.join(lines)
-          code="import subprocess; s="+repr(script)+"; p=subprocess.run(['/usr/bin/osascript','-e',s],text=True,capture_output=True,timeout=20); print(p.stdout,end=''); raise SystemExit(p.returncode)"
-          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]}
+          code=("import json,runpy,sys,tempfile,urllib.request; "
+                "p=tempfile.mktemp(suffix='.py'); "
+                "urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/threads_existing_chrome_reader.py',p); "
+                "sys.argv=[p,'--read','--conversation',"+repr(username)+",'--max-chars','20000']; "
+                "runpy.run_path(p,run_name='__main__')")
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':30,'cognition_ids_used':[]}
           store=RealmFabricStore(); store.queue_task('mbpr',task)
           for _ in range(45):
               r=store.get_receipt(tid)
               if r:
                   out=str(r.get('stdout') or '')
                   if r.get('ok') is not True or int(r.get('returncode') or 0)!=0 or not out:
-                      err=(str(r.get('stderr') or '')+' '+str(r.get('error') or '')).lower()
-                      if 'not_messages' in err:
-                          kind='NOT_MESSAGES_TAB'
-                      elif 'javascript' in err and ('apple' in err or 'execute' in err or 'disabled' in err):
-                          kind='CHROME_JS_DISABLED'
-                      elif 'syntax error' in err or 'execution error' in err:
-                          kind='APPLESCRIPT_ERROR'
-                      elif 'not authorized' in err or 'not permitted' in err or '-1743' in err:
-                          kind='AUTOMATION_PERMISSION'
-                      elif 'timeout' in err or 'timed out' in err:
-                          kind='TIMEOUT'
-                      else:
-                          kind='OTHER'
                       print('threads_conversation_read=ERROR')
-                      print('threads_conversation_read_error_type='+kind)
                       raise SystemExit(2)
-                  open('/tmp/threads-conversation-read.txt','w',encoding='utf-8').write(out)
+                  obj=json.loads(out)
+                  if not obj.get('found'):
+                      print('threads_conversation_read=NOT_FOUND')
+                      raise SystemExit(3)
+                  open('/tmp/threads-conversation-read.txt','w',encoding='utf-8').write(json.dumps(obj,ensure_ascii=False))
                   print('threads_conversation_read=PASS')
                   print('threads_conversation_read_receipt='+tid)
                   print('threads_conversation_read_bytes='+str(len(out.encode())))
+                  print('threads_conversation_transport='+str(obj.get('transport') or 'unknown'))
                   raise SystemExit(0)
               time.sleep(2)
           raise SystemExit('threads conversation read timeout')
