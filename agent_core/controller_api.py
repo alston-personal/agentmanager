@@ -18,6 +18,8 @@ CONTROLLER_ACTION_CAPABILITY = {
     'desktop.screenshot': 'desktop.screenshot',
     'desktop.open_url': 'desktop.open_url',
     'node.runtime.converge': 'shell.exec',
+    'node.ssh.inspect': 'node.ssh.inspect',
+    'node.ssh.recover': 'node.ssh.recover',
 }
 
 
