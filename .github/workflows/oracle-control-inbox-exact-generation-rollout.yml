@@ -23,6 +23,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: oracle-control-inbox-exact-generation-rollout
+  cancel-in-progress: true
+
 jobs:
   reconcile:
     runs-on: [self-hosted, Linux, ARM64, oracle]
