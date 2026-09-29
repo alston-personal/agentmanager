@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --name-only HEAD^ HEAD | grep -Eq '^(agent_core/executor_job_contract.py|agentos_node/executor_job_adapter.py|agentos_node/executor_job_action_relay.py|agentos_node/typesafe_skill_install_provider.py|scripts/install_oracle_typesafe_skill.sh)$'; then
+          if git diff --name-only HEAD^ HEAD | grep -Eq '^(\.github/workflows/oracle-exact-generation-executor-job-rollout.yml|agent_core/executor_job_contract.py|agentos_node/executor_job_adapter.py|agentos_node/executor_job_action_relay.py|agentos_node/typesafe_skill_install_provider.py|scripts/install_oracle_typesafe_skill.sh)$'; then
             echo 'typesafe=true' >> "$GITHUB_OUTPUT"
           else
             echo 'typesafe=false' >> "$GITHUB_OUTPUT"
