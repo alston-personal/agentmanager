@@ -33,6 +33,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: oracle-exact-generation-executor-job-rollout
+  cancel-in-progress: true
+
 jobs:
   rollout:
     runs-on: [self-hosted, Linux, ARM64, oracle]
