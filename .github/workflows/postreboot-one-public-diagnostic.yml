@@ -1,0 +1,28 @@
+name: Post-Reboot Public ONE Diagnostic
+
+on:
+  push:
+    branches: [diag/postreboot-one-public]
+    paths:
+      - '.github/workflows/postreboot-one-public-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe public ONE gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://studio.milkcat.org/dashboard/api/agentos'
+          for path in /v1/health '/v1/tasks?node_id=mbpr' '/v1/bootstrap?node_id=mbpr'; do
+            echo "=== $path ==="
+            code=$(curl -sS -D /tmp/h -o /tmp/b -w '%{http_code}' --max-time 8 "$BASE$path" || true)
+            echo "http=$code"
+            grep -i '^x-agentos-realm-gateway:' /tmp/h || true
+            head -c 800 /tmp/b; echo
+          done
