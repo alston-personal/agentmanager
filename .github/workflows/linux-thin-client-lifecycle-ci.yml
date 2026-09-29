@@ -299,4 +299,38 @@ jobs:
           echo "=== control inbox bridge ==="
           systemctl --user --no-pager --full status agentos-control-inbox.service || true
           journalctl --user -u agentos-control-inbox.service -n 100 --no-pager || true
+          echo "=== control inbox safe config ==="
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path.home()/'.config/agentos/control-inbox.env'
+          safe={'AGENTOS_CONTROL_ALLOWED_ACTIONS','AGENTOS_CONTROL_STATE','AGENTOS_CONTROL_ISSUE','AGENTOS_CONTROL_REPOSITORY','AGENTOS_CONTROL_ONE_URL','AGENT_DATA_ROOT'}
+          if p.exists():
+              for line in p.read_text().splitlines():
+                  if '=' not in line: continue
+                  k,v=line.split('=',1)
+                  if k in safe:
+                      print(f'{k}={v}')
+          PY
+          echo "=== control inbox state summary ==="
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          candidates=[
+              Path.home()/ 'agent-data/runtime/control-inbox/state.json',
+              Path('/home/ubuntu/agent-data/runtime/control-inbox/state.json'),
+          ]
+          p=next((x for x in candidates if x.exists()),None)
+          print('state_path='+str(p) if p else 'state_path=missing')
+          if p:
+              d=json.loads(p.read_text())
+              ids=d.get('processed_comment_ids') or []
+              print('processed_count='+str(len(ids)))
+              print('processed_max='+str(max(ids) if ids else None))
+              for cid in [
+                  'chatgpt-oracle-exec-ssh-inspect-20260929T141100Z',
+                  'chatgpt-oracle-exec-ssh-inspect-20260929T141230Z',
+              ]:
+                  e=(d.get('commands') or {}).get(cid)
+                  print(cid+'='+json.dumps(e,ensure_ascii=False,sort_keys=True))
+          PY
           REMOTE
