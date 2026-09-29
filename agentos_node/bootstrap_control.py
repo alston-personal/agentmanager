@@ -126,8 +126,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         username=str(params.get("username") or "")
         if not re.fullmatch(r"[0-9]{1,20}",source_run_id):
             raise ValueError("invalid source_run_id")
-        if username != "0__0.ayoub":
-            raise ValueError("unsupported DM username")
+        if not re.fullmatch(r"[A-Za-z0-9._]{1,64}", username):
+            raise ValueError("invalid DM username")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
