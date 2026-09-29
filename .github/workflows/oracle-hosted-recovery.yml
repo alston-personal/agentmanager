@@ -80,3 +80,83 @@ jobs:
           "$TMP"
           rm -f "$TMP"
           REMOTE
+
+      - name: Enroll Oracle execution node into ONE
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/install_thin_client_linux_oracle.sh
+          LOG=/tmp/oracle-exec-enrollment.log
+
+          git -C "$REPO" fetch origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/install_thin_client_linux_oracle.sh" > "$TMP"
+          chmod 700 "$TMP"
+
+          if [ -s "$HOME/.agentos-oracle-exec/client.json" ]; then
+            echo "oracle_exec_enrollment=already_configured"
+            export AGENTOS_CLIENT_HOME="$HOME/.agentos-oracle-exec"
+            "$HOME/.local/share/AgentOS/agentos-client" health
+            "$HOME/.local/share/AgentOS/agentos-client" once
+          else
+            rm -f "$LOG"
+            AGENTOS_ONE_URL='https://studio.milkcat.org/dashboard/api/agentos'             AGENTOS_NODE_ID='oracle-exec'               nohup "$TMP" "$CORE_SHA" >"$LOG" 2>&1 </dev/null &
+            PID=$!
+
+            CODE=""
+            for i in $(seq 1 120); do
+              CODE="$(sed -n 's/^Code: //p' "$LOG" | tail -n 1)"
+              [ -n "$CODE" ] && break
+              if ! kill -0 "$PID" 2>/dev/null; then
+                cat "$LOG"
+                exit 4
+              fi
+              sleep 1
+            done
+            printf '%s' "$CODE" | grep -Eq '^[A-Z2-9]{4}-[A-Z2-9]{4} || {
+              echo "oracle_exec_enrollment=code_missing"
+              cat "$LOG"
+              exit 5
+            }
+
+            AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$REPO"               python3 -m agent_core.realm_cli approve --code "$CODE" >/tmp/oracle-exec-approval.json
+
+            for i in $(seq 1 120); do
+              if ! kill -0 "$PID" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            if kill -0 "$PID" 2>/dev/null; then
+              echo "oracle_exec_enrollment=installer_timeout"
+              kill "$PID" 2>/dev/null || true
+              exit 6
+            fi
+            wait "$PID"
+            echo "oracle_exec_enrollment=approved"
+          fi
+
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user is-enabled agentos-thin-client.service
+          systemctl --user is-active agentos-thin-client.service
+          export AGENTOS_CLIENT_HOME="$HOME/.agentos-oracle-exec"
+          "$HOME/.local/share/AgentOS/agentos-client" manifest >/tmp/oracle-exec-manifest.json
+          python3 - /tmp/oracle-exec-manifest.json <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert d.get('node_id')=='oracle-exec',d
+          caps=set(d.get('capabilities') or [])
+          assert 'node.ssh.inspect' in caps,caps
+          assert 'node.ssh.recover' in caps,caps
+          assert 'shell.exec' in caps,caps
+          print('oracle_exec_manifest=PASS')
+          print('oracle_exec_node_id='+str(d.get('node_id')))
+          print('oracle_exec_ssh_maintenance=PASS')
+          PY
+          "$HOME/.local/share/AgentOS/agentos-client" once >/tmp/oracle-exec-once.json
+          echo "oracle_exec_heartbeat=PASS"
+          rm -f "$TMP"
+          REMOTE
