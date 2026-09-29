@@ -44,8 +44,13 @@ def test_bootstrap_reconcile_is_fixed_exact_generation_action():
     assert 'env_extra={"AGENTOS_REF": "core/integration"}' in section
     assert 'source_commit=source_commit' in section
     assert 'arbitrary_shell' in text
-    # Only the one guarded approved-post action permits an additional post_key.
-    assert 'unknown = set(params) - ({"source_commit", "post_key"} if action == ACTION_PUBLISH_MIO_APPROVED else {"source_commit"})' in text
+    # Bootstrap params remain action-specific and deny unknown fields. Mio approved-post
+    # and bounded DM decision are the only current actions with extra typed params.
+    assert 'if action == ACTION_PUBLISH_MIO_APPROVED:' in text
+    assert 'allowed_params={"source_commit","post_key"}' in text
+    assert 'elif action == ACTION_RUN_MIO_DM_DECISION:' in text
+    assert 'allowed_params={"source_commit","source_run_id","username"}' in text
+    assert 'unknown = set(params) - allowed_params' in text
     assert 'ACTION_DEPLOY_MIO_TELEGRAM = "agentos.mio_telegram.deploy"' in text
     assert 'ACTION_DEPLOY_MIO_TELEGRAM,' in text.split('exact_actions = {', 1)[1]
     mio_section = text.split('if action == ACTION_DEPLOY_MIO_TELEGRAM:', 1)[1].split('raise ValueError("unsupported bootstrap action")', 1)[0]
