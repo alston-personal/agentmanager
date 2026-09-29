@@ -1,0 +1,43 @@
+name: Linux Thin Client Lifecycle CI
+
+on:
+  pull_request:
+    paths:
+      - 'agentos_node/onboarding.py'
+      - 'scripts/install_thin_client_linux_oracle.sh'
+      - 'tests/test_node_onboarding_lifecycle.py'
+      - '.github/workflows/linux-thin-client-lifecycle-ci.yml'
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'agentos_node/onboarding.py'
+      - 'scripts/install_thin_client_linux_oracle.sh'
+      - 'tests/test_node_onboarding_lifecycle.py'
+      - '.github/workflows/linux-thin-client-lifecycle-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Compile lifecycle modules
+        run: python -m py_compile agentos_node/onboarding.py agentos_node/client_cli.py agentos_node/thin_client.py agentos_node/thin_client_transport.py
+      - name: Run Oracle execution-node regressions
+        run: >-
+          python -m pytest -q
+          tests/test_node_onboarding_lifecycle.py
+          tests/test_thin_client.py
+          tests/test_oracle_ssh_emergency_actions.py
+          tests/test_control_inbox_bridge.py
+      - name: Validate Oracle installer shell syntax
+        run: bash -n scripts/install_thin_client_linux_oracle.sh
