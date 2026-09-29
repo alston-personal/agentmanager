@@ -37,6 +37,9 @@ def test_typesafe_request_has_no_caller_supplied_execution_fields():
 def test_typesafe_installer_uses_single_npx_method_and_copy_mode():
     root = Path(__file__).resolve().parents[1]
     text = (root / "scripts/install_oracle_typesafe_skill.sh").read_text(encoding="utf-8")
-    command = "npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes --copy"
+    command = "npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --yes --copy"
     assert text.count("npx --yes skills add") == 1
     assert command in text
+    assert "--global" not in text
+    assert 'project_root="/home/ubuntu/agentmanager"' in text
+    assert 'skill_file="$project_root/.agents/skills/typesafe-ai/SKILL.md"' in text
