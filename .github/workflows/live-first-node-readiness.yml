@@ -119,3 +119,94 @@ jobs:
           done
           echo 'node_v01_governed_receipt=TIMEOUT' >&2
           exit 1
+
+  oracle-exec-install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Oracle execution node through governed bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          REQUEST_ID="oracle-exec-install-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
+          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 120); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS" -a -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          path,request_id,sha=sys.argv[1],sys.argv[2],sys.argv[3]
+          payload={
+            'schema':'agentos.bootstrap-request/v1',
+            'request_id':request_id,
+            'action':'agentos.oracle_exec.install',
+            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
+            'params':{'source_commit':sha},
+            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
+          }
+          tmp=path+'.tmp'
+          open(tmp,'w',encoding='utf-8').write(json.dumps(payload,sort_keys=True,indent=2)+'\n')
+          os.chmod(tmp,0o644); os.replace(tmp,path); os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 420); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT" || { echo "oracle_exec_receipt=TIMEOUT"; exit 3; }
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8')); expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.oracle_exec.install',r
+          assert r.get('executor_user')=='ubuntu',r
+          assert r.get('source_commit')==expected,r
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          assert r.get('ok') is True,text[-12000:]
+          assert 'agentos_oracle_exec_install=PASS' in text,text[-12000:]
+          assert 'agentos_node_id=oracle-exec' in text,text[-12000:]
+          print('oracle_exec_install=PASS')
+          PY
+
+      - name: Verify Oracle execution node in Realm registry
+        shell: bash
+        env:
+          AGENT_DATA_ROOT: /home/ubuntu/agent-data
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if python3 - <<'PY'
+          from agent_core.node_registry import NodeRegistry
+          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='oracle-exec'),None)
+          if not node:
+              raise SystemExit(1)
+          effective=str(node.get('effective_status') or node.get('status') or '')
+          caps=set(node.get('capabilities') or [])
+          if effective!='online':
+              raise SystemExit(2)
+          if not {'node.ssh.inspect','node.ssh.recover'}.issubset(caps):
+              raise SystemExit(3)
+          print('oracle_exec_registry=PASS')
+          print('oracle_exec_status='+effective)
+          print('oracle_exec_ssh_caps=PASS')
+          PY
+            then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
