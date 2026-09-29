@@ -7,23 +7,54 @@ if [[ "$(id -un)" != "ubuntu" || "$HOME" != "/home/ubuntu" ]]; then
   exit 2
 fi
 
-for command in node npx git sha256sum date; do
-  command -v "$command" >/dev/null 2>&1 || { echo "ERROR: missing prerequisite: $command" >&2; exit 3; }
-done
-
 data_root="${AGENT_DATA_ROOT:-$HOME/agent-data}"
 test -d "$data_root" || { echo "ERROR: AgentOS data root missing: $data_root" >&2; exit 4; }
+receipt_dir="$data_root/runtime/skills/typesafe-ai"
+failure_file="$receipt_dir/install-failure.json"
+mkdir -p "$receipt_dir"
 
+write_failure() {
+  local stage="$1" code="$2"
+  printf '{"schema":"agentos.skill-install-failure/v1","skill":"typesafe-ai","stage":"%s","exit_code":%s,"credential_exposed":false}\n' "$stage" "$code" > "$failure_file.tmp"
+  chmod 0600 "$failure_file.tmp"
+  mv -f "$failure_file.tmp" "$failure_file"
+}
+
+for command in node npx git sha256sum date python3; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    write_failure "missing_$command" 3
+    echo "ERROR: missing prerequisite: $command" >&2
+    exit 3
+  fi
+done
+
+npm_cache="$receipt_dir/npm-cache"
+mkdir -p "$npm_cache"
+chmod 0700 "$npm_cache"
+export npm_config_cache="$npm_cache"
+
+set +e
 npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes
+install_rc=$?
+set -e
+if [[ "$install_rc" -ne 0 ]]; then
+  write_failure "npx_install" "$install_rc"
+  echo "ERROR: TypeSafe skills CLI install failed" >&2
+  exit "$install_rc"
+fi
 
 skill_file="$HOME/.gemini/antigravity/skills/typesafe-ai/SKILL.md"
-test -s "$skill_file"
-grep -Fxq "name: typesafe-ai" "$skill_file"
+if [[ ! -s "$skill_file" ]]; then
+  write_failure "skill_file_missing" 5
+  exit 5
+fi
+if ! grep -Fxq "name: typesafe-ai" "$skill_file"; then
+  write_failure "skill_identity_mismatch" 6
+  exit 6
+fi
 
 hash="$(sha256sum "$skill_file" | awk '{print $1}')"
 installed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-receipt_dir="$data_root/runtime/skills/typesafe-ai"
-mkdir -p "$receipt_dir"
 python3 - "$receipt_dir/install-receipt.json" "$installed_at" "$hash" <<'PY'
 import json, os, sys
 from pathlib import Path
@@ -46,6 +77,7 @@ tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="u
 os.chmod(tmp, 0o600)
 tmp.replace(path)
 PY
+rm -f "$failure_file"
 
 echo "TYPE_SAFE_SKILL=FILE_VERIFIED"
 echo "TYPE_SAFE_SKILL_SHA256=$hash"
