@@ -31,6 +31,11 @@ COMMON_RECEIPT_FIELDS = (
     'schema', 'node_id', 'task_id', 'action', 'ok', 'realm_id',
     'received_at', 'started_at', 'completed_at', 'status', 'state',
 )
+SSH_MAINTENANCE_RECEIPT_FIELDS = (
+    'ssh_service_active', 'ssh_service_state', 'port22_listening',
+    'ssh_service_active_before', 'port22_listening_before',
+    'restart_returncode', 'recovered',
+)
 EXECUTOR_JOB_RECEIPT_FIELDS = (
     'job_id', 'job_type', 'project_id', 'executor_class', 'capability',
     'executor_available', 'routable', 'authorized', 'successful',
@@ -130,6 +135,13 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
             safe = _safe_scalar(receipt.get(key))
             if safe is not None or receipt.get(key) is None:
                 projected[key] = safe
+
+    if action in {'node.ssh.inspect', 'node.ssh.recover'}:
+        for key in SSH_MAINTENANCE_RECEIPT_FIELDS:
+            if key in receipt:
+                safe = _safe_scalar(receipt.get(key))
+                if safe is not None or receipt.get(key) is None:
+                    projected[key] = safe
 
     if action == 'agent.surface.inspect':
         inventory = _project_surface_inventory(receipt.get('surface_inventory'))
