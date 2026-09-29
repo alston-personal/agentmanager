@@ -36,6 +36,7 @@ ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
 ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
+ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -61,6 +62,7 @@ ALLOWED_ACTIONS = {
     ACTION_INSTALL_GUI_WORKER,
     ACTION_SMOKE_GUI_WORKER,
     ACTION_DEPLOY_MIO_TRYON,
+    ACTION_INSTALL_ORACLE_EXEC,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -155,6 +157,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_INSTALL_GUI_WORKER,
         ACTION_SMOKE_GUI_WORKER,
         ACTION_DEPLOY_MIO_TRYON,
+        ACTION_INSTALL_ORACLE_EXEC,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -299,6 +302,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_DEPLOY_MIO_TRYON:
         return _run_canonical_script(
             "scripts/deploy_mio_tryon_worker_user.sh",
+            timeout=420,
+            source_commit=source_commit,
+        )
+    if action == ACTION_INSTALL_ORACLE_EXEC:
+        return _run_canonical_script(
+            "scripts/install_thin_client_linux_oracle.sh",
             timeout=420,
             source_commit=source_commit,
         )
