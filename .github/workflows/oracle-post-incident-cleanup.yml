@@ -1,0 +1,77 @@
+name: Oracle Post-Incident Cleanup
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-post-incident-cleanup.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Clean stale installers and apply GUI resource guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+
+          python3 - <<'PY'
+          import os,signal
+          needles=(
+              '/home/ubuntu/.local/share/AgentOS/venv/bin/python -m pip install -q --upgrade git+https://github.com/alston-personal/agentmanager.git@',
+              '/home/ubuntu/.local/share/AgentOS/venv/lib/python3.10/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py get_requires_for_build_wheel',
+          )
+          killed=[]
+          for entry in os.scandir('/proc'):
+              if not entry.name.isdigit():
+                  continue
+              try:
+                  raw=open(f'/proc/{entry.name}/cmdline','rb').read().replace(b'\0',b' ').decode()
+              except OSError:
+                  continue
+              if any(n in raw for n in needles):
+                  try:
+                      os.kill(int(entry.name), signal.SIGTERM)
+                      killed.append(entry.name)
+                  except ProcessLookupError:
+                      pass
+          print('stale_installer_killed='+(','.join(killed) if killed else 'none'))
+          PY
+
+          install -d -m 755 "$HOME/.config/systemd/user/agentos-gui-browser.service.d"
+          cat > "$HOME/.config/systemd/user/agentos-gui-browser.service.d/40-resource-guard.conf" <<'EOF'
+          [Service]
+          MemoryHigh=25%
+          MemoryMax=35%
+          TasksMax=512
+          CPUQuota=200%
+          OOMPolicy=stop
+          EOF
+
+          systemctl --user daemon-reload
+          systemctl --user restart agentos-gui-browser.service
+          sleep 2
+          systemctl --user is-active agentos-gui-browser.service
+          systemctl --user show agentos-gui-browser.service             -p MemoryHigh -p MemoryMax -p TasksMax -p CPUQuotaPerSecUSec -p OOMPolicy
+
+          test "$(systemctl --user is-active agentos-thin-client.service)" = active
+          echo "oracle_post_incident_cleanup=PASS"
+          REMOTE
