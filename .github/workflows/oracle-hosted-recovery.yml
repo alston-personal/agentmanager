@@ -82,6 +82,7 @@ jobs:
           REMOTE
 
       - name: Enroll Oracle execution node into ONE
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
