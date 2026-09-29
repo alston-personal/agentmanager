@@ -1,3 +1,4 @@
+# post-reboot HF recovery trigger 2026-09-29
 #!/usr/bin/env python3
 from __future__ import annotations
 
