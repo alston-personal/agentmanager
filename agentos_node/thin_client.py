@@ -119,6 +119,8 @@ class ThinClient:
         tools = self.discover_tools()
         surface_inventory = self.surface_inventory()
         caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
+        if platform.system() == 'Linux':
+            caps.extend(['node.ssh.inspect', 'node.ssh.recover'])
         caps.extend(surface_inventory.get('capabilities') or [])
 
         # Session bridge capabilities are provider-authorized and must be
@@ -228,6 +230,10 @@ class ThinClient:
                 result = {'surface_inventory': self.surface_inventory()}
             elif action == 'process.inspect':
                 result = self._inspect_processes(task)
+            elif action == 'node.ssh.inspect':
+                result = self._inspect_ssh()
+            elif action == 'node.ssh.recover':
+                result = self._recover_ssh()
             elif action == 'node.runtime.converge':
                 from agentos_node.client_runtime_converge import execute_client_runtime_converge
                 result = execute_client_runtime_converge(task)
@@ -284,6 +290,47 @@ class ThinClient:
             receipt['error'] = f'{type(exc).__name__}: {exc}'
         receipt['completed_at'] = _utc_now()
         return receipt
+
+    def _inspect_ssh(self) -> dict[str, Any]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.ssh.inspect is Linux-only')
+        status = subprocess.run(
+            ['systemctl', 'is-active', 'ssh'],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        listeners = subprocess.run(
+            ['ss', '-lnt'],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        port22 = any(
+            line.split()[3].endswith(':22')
+            for line in listeners.stdout.splitlines()
+            if len(line.split()) >= 4
+        )
+        return {
+            'ssh_service_active': status.returncode == 0 and status.stdout.strip() == 'active',
+            'ssh_service_state': status.stdout.strip()[:64] or 'unknown',
+            'port22_listening': port22,
+        }
+
+    def _recover_ssh(self) -> dict[str, Any]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.ssh.recover is Linux-only')
+        before = self._inspect_ssh()
+        restart = subprocess.run(
+            ['systemctl', 'restart', 'ssh'],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        after = self._inspect_ssh()
+        return {
+            'restart_returncode': restart.returncode,
+            'ssh_service_active_before': before['ssh_service_active'],
+            'port22_listening_before': before['port22_listening'],
+            'ssh_service_active': after['ssh_service_active'],
+            'ssh_service_state': after['ssh_service_state'],
+            'port22_listening': after['port22_listening'],
+            'recovered': restart.returncode == 0 and after['ssh_service_active'] and after['port22_listening'],
+        }
 
     def _inspect_processes(self, task: dict[str, Any]) -> dict[str, Any]:
         query = str(task.get('query') or '').strip().lower()
