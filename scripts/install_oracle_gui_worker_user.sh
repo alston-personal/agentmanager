@@ -114,6 +114,12 @@ Environment=XDG_RUNTIME_DIR=/run/user/1001
 ExecStart=$BIN/start-browser.sh
 Restart=always
 RestartSec=3
+# Browser work is expendable; it must never be able to consume the whole VM.
+MemoryHigh=25%
+MemoryMax=35%
+TasksMax=512
+CPUQuota=200%
+OOMPolicy=stop
 
 [Install]
 WantedBy=default.target
