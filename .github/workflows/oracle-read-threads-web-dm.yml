@@ -91,8 +91,41 @@ jobs:
               if line.startswith("threads_web_dm_new_events=") or line.startswith("threads_web_dm_error_type="):
                   print(line)
           print("threads_web_dm_read_state="+state)
+          status={
+              "read_state":state,
+              "new_events":None,
+              "inbound_events":None,
+              "autonomous":None,
+              "decision":None,
+              "send":None,
+              "readback":None,
+              "pending":None,
+          }
+          for line in text.splitlines():
+              pairs={
+                  "threads_web_dm_new_events=":"new_events",
+                  "threads_web_dm_inbound_events=":"inbound_events",
+                  "mio_dm_autonomous=":"autonomous",
+                  "mio_dm_autonomous_decision=":"decision",
+                  "mio_dm_send=":"send",
+                  "mio_dm_send_readback=":"readback",
+                  "mio_dm_autonomous_pending=":"pending",
+              }
+              for prefix,key in pairs.items():
+                  if line.startswith(prefix):
+                      status[key]=line.split("=",1)[1][:80]
+          open("/tmp/mio-dm-e2e-status.json","w",encoding="utf-8").write(json.dumps(status,indent=2)+"\n")
           assert state in {"PASS","LOGIN_REQUIRED"},text[-8000:]
           PY
+
+      - name: Upload sanitized Mio DM E2E status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-dm-e2e-status
+          path: /tmp/mio-dm-e2e-status.json
+          retention-days: 1
+          if-no-files-found: warn
 
 # diagnostic rerun 2026-09-27T13:58+08:00
 # owner-requested live acceptance rerun 2026-09-29T08:37+08:00
