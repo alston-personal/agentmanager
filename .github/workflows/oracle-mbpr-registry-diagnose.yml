@@ -1,0 +1,43 @@
+name: Oracle MBPR Registry Diagnose
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-mbpr-registry-diagnose.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect MBPR registry state without dispatch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          node_map=NodeRegistry().node_map()
+          node=next((n for n in node_map.get('nodes',[]) if n.get('node_id')=='mbpr'),None)
+          if not node:
+              raise SystemExit('mbpr_registry=MISSING')
+          safe={
+              'node_id':node.get('node_id'),
+              'status':node.get('status'),
+              'reported_status':node.get('reported_status'),
+              'effective_status':node.get('effective_status'),
+              'heartbeat_age_seconds':node.get('heartbeat_age_seconds'),
+              'last_heartbeat_at':node.get('last_heartbeat_at') or node.get('last_heartbeat'),
+              'platform':node.get('platform'),
+              'capabilities':node.get('capabilities'),
+          }
+          print(json.dumps(safe,ensure_ascii=False,sort_keys=True))
+          print('mbpr_registry_status='+str(safe.get('effective_status') or safe.get('status')))
+          print('mbpr_heartbeat_age_seconds='+str(safe.get('heartbeat_age_seconds')))
+          PY
