@@ -247,12 +247,90 @@ def check_macos_node_supervisor() -> dict[str, Any]:
     ready = result.returncode == 0
     return {'schema':'agentos.node-lifecycle/v0.1','platform':'Darwin','applicable':True,'supervisor_ready':ready,'label':MACOS_LAUNCH_AGENT_LABEL,'plist':str(macos_launch_agent_path()),'returncode':result.returncode,'stderr':result.stderr[-2000:]}
 
+
+LINUX_THIN_CLIENT_UNIT = 'agentos-thin-client.service'
+
+def linux_node_install_root() -> Path:
+    return Path.home() / '.local' / 'share' / 'AgentOS'
+
+def linux_systemd_user_dir() -> Path:
+    return Path.home() / '.config' / 'systemd' / 'user'
+
+def linux_thin_client_unit_path() -> Path:
+    return linux_systemd_user_dir() / LINUX_THIN_CLIENT_UNIT
+
+def install_linux_node_supervisor(*, install_root: Path | None = None, launcher: Path | None = None) -> dict[str, Any]:
+    if platform.system() != 'Linux':
+        return _non_windows_lifecycle()
+    root = Path(install_root or linux_node_install_root())
+    client_launcher = Path(launcher or (root / 'agentos-client'))
+    unit = linux_thin_client_unit_path()
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
+    if not client_launcher.exists():
+        return {
+            'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
+            'supervisor_ready':False,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
+            'returncode':2,'stderr':'agentos-client launcher missing',
+        }
+    payload = f'''[Unit]
+Description=AgentOS Thin Client Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={root}
+ExecStart={client_launcher} run
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
+'''
+    unit.write_text(payload, encoding='utf-8')
+    subprocess.run(['systemctl','--user','daemon-reload'],capture_output=True,text=True,check=False)
+    result = subprocess.run(
+        ['systemctl','--user','enable','--now',LINUX_THIN_CLIENT_UNIT],
+        capture_output=True,text=True,timeout=20,check=False,
+    )
+    probe = subprocess.run(
+        ['systemctl','--user','is-active',LINUX_THIN_CLIENT_UNIT],
+        capture_output=True,text=True,timeout=10,check=False,
+    )
+    ready = result.returncode == 0 and probe.returncode == 0 and probe.stdout.strip() == 'active'
+    return {
+        'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
+        'supervisor_ready':ready,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
+        'returncode':result.returncode,'stderr':(result.stderr + '\n' + probe.stderr)[-2000:],
+    }
+
+def check_linux_node_supervisor() -> dict[str, Any]:
+    if platform.system() != 'Linux':
+        return _non_windows_lifecycle()
+    unit = linux_thin_client_unit_path()
+    result = subprocess.run(
+        ['systemctl','--user','is-active',LINUX_THIN_CLIENT_UNIT],
+        capture_output=True,text=True,timeout=10,check=False,
+    )
+    ready = unit.exists() and result.returncode == 0 and result.stdout.strip() == 'active'
+    return {
+        'schema':'agentos.node-lifecycle/v0.1','platform':'Linux','applicable':True,
+        'supervisor_ready':ready,'unit':LINUX_THIN_CLIENT_UNIT,'unit_path':str(unit),
+        'returncode':result.returncode,'stderr':result.stderr[-2000:],
+    }
+
 def install_node_supervisor() -> dict[str, Any]:
     system = platform.system()
     if system == 'Windows':
         return install_windows_node_supervisor()
     if system == 'Darwin':
         return install_macos_node_supervisor()
+    if system == 'Linux':
+        return install_linux_node_supervisor()
     return _non_windows_lifecycle()
 
 def check_node_supervisor() -> dict[str, Any]:
@@ -261,4 +339,6 @@ def check_node_supervisor() -> dict[str, Any]:
         return check_windows_node_supervisor()
     if system == 'Darwin':
         return check_macos_node_supervisor()
+    if system == 'Linux':
+        return check_linux_node_supervisor()
     return _non_windows_lifecycle()
