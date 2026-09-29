@@ -4,25 +4,49 @@ set -euo pipefail
 REF="${1:-core/integration}"
 ONE_URL="${AGENTOS_ONE_URL:-http://127.0.0.1:8780}"
 NODE_ID="${AGENTOS_NODE_ID:-oracle-exec}"
+SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
+REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 ROOT="$HOME/.local/share/AgentOS"
-VENV="$ROOT/venv"
 STATE="$HOME/.agentos-oracle-exec"
 WORKSPACE="$HOME/AgentOS"
 LAUNCHER="$ROOT/agentos-client"
+LOCK="$ROOT/install.lock"
 
 command -v python3 >/dev/null || { echo "python3 is required"; exit 2; }
 command -v git >/dev/null || { echo "git is required"; exit 2; }
 command -v systemctl >/dev/null || { echo "systemctl is required"; exit 2; }
+command -v flock >/dev/null || { echo "flock is required"; exit 2; }
 
 mkdir -p "$ROOT" "$STATE" "$WORKSPACE"
-python3 -m venv "$VENV"
-"$VENV/bin/python" -m pip install -q --upgrade pip
-"$VENV/bin/python" -m pip install -q --upgrade "git+https://github.com/alston-personal/agentmanager.git@$REF"
+exec 9>"$LOCK"
+flock -n 9 || { echo "agentos_oracle_exec_install=ALREADY_RUNNING"; exit 0; }
+
+# Retire stale pre-snapshot installers from the earlier pip-based generation.
+pkill -f "$HOME/.local/share/AgentOS/venv/bin/python -m pip install -q --upgrade git+https://github.com/alston-personal/agentmanager.git@" 2>/dev/null || true
+
+if [ -z "$SOURCE_COMMIT" ]; then
+  SOURCE_COMMIT="$(git -C "$REPO" rev-parse "$REF")"
+fi
+[[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source commit" >&2; exit 2; }
+git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+
+RUNTIME="$ROOT/runtime/$SOURCE_COMMIT"
+if [ ! -f "$RUNTIME/agentos_node/client_cli.py" ]; then
+  TMP="$ROOT/runtime/.staging-$SOURCE_COMMIT-$"
+  rm -rf "$TMP"
+  mkdir -p "$TMP"
+  git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node agent_core | tar -x -C "$TMP"
+  python3 -m py_compile "$TMP/agentos_node/client_cli.py" "$TMP/agentos_node/thin_client.py" "$TMP/agentos_node/thin_client_transport.py"
+  mkdir -p "$ROOT/runtime"
+  mv "$TMP" "$RUNTIME"
+fi
+ln -sfn "$RUNTIME" "$ROOT/current"
 
 cat > "$LAUNCHER" <<EOF
 #!/bin/bash
 export AGENTOS_CLIENT_HOME="$STATE"
-exec "$VENV/bin/agentos-client" "\$@"
+export PYTHONPATH="$ROOT/current"
+exec /usr/bin/python3 -m agentos_node.client_cli "\$@"
 EOF
 chmod 700 "$LAUNCHER"
 
@@ -42,7 +66,7 @@ fi
 
 if [ ! -f "$STATE/client.json" ]; then
   if curl -fsS --max-time 3 "$ONE_URL/v1/health" >/dev/null 2>&1; then
-    INVITE_JSON="$(AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -m agent_core.realm_cli invite --minutes 10 --label oracle-exec-bootstrap)"
+    INVITE_JSON="$(AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$ROOT/current" python3 -m agent_core.realm_cli invite --minutes 10 --label oracle-exec-bootstrap)"
     INVITE_ID="$(printf '%s' "$INVITE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["invite_id"])')"
     INVITE_CODE="$(printf '%s' "$INVITE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["code"])')"
     "$LAUNCHER" enroll --one "$ONE_URL" --invite-id "$INVITE_ID" --code "$INVITE_CODE" --node-id "$NODE_ID" >/dev/null
@@ -55,7 +79,7 @@ if [ ! -f "$STATE/client.json" ]; then
   fi
 fi
 
-"$VENV/bin/python" - <<'PY'
+PYTHONPATH="$ROOT/current" /usr/bin/python3 - <<'PY'
 from agentos_node.onboarding import install_linux_node_supervisor
 import json
 r=install_linux_node_supervisor()
