@@ -297,6 +297,6 @@ jobs:
           print(json.dumps(node,ensure_ascii=False,indent=2))
           PY
           echo "=== control inbox bridge ==="
-          systemctl --user --no-pager --full status agentos-control-inbox-bridge.service || true
-          journalctl --user -u agentos-control-inbox-bridge.service -n 100 --no-pager || true
+          systemctl --user --no-pager --full status agentos-control-inbox.service || true
+          journalctl --user -u agentos-control-inbox.service -n 100 --no-pager || true
           REMOTE
