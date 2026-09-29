@@ -317,11 +317,11 @@ jobs:
           ps -eo pid,ppid,etime,user,cmd | grep -E 'AgentOS/venv/bin/python -m pip install|pyproject_hooks.*get_requires_for_build_wheel' | grep -v grep || true
 
           echo "=== previous boot OOM/kernel evidence ==="
-          journalctl -k -b -1 --no-pager 2>/dev/null | grep -Ei 'oom|out of memory|killed process|memory cgroup|segfault|panic|hung task' | tail -n 120 || true
+          timeout 12s journalctl -k -b -1 --no-pager 2>/dev/null | grep -Ei 'oom|out of memory|killed process|memory cgroup|segfault|panic|hung task' | tail -n 120 || true
           echo "=== previous boot warnings ==="
-          journalctl -b -1 -p warning..alert --no-pager 2>/dev/null | tail -n 160 || true
+          timeout 12s journalctl -b -1 -p warning..alert --no-pager 2>/dev/null | tail -n 160 || true
           echo "=== previous boot GUI browser ==="
-          journalctl --user -u agentos-gui-browser.service -b -1 --no-pager 2>/dev/null | tail -n 120 || true
+          timeout 12s journalctl --user -u agentos-gui-browser.service -b -1 --no-pager 2>/dev/null | tail -n 120 || true
 
           echo "=== control inbox state summary ==="
           python3 - <<'PY'
