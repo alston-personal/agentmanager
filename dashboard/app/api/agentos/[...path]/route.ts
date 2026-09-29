@@ -1,3 +1,4 @@
+// post-reboot recovery trigger 2026-09-29; no functional change
 import { NextRequest } from "next/server";
 
 const UPSTREAM = "http://127.0.0.1:8780";
