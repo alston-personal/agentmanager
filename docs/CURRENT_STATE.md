@@ -28,6 +28,8 @@ This goal is broader than memory retrieval. AgentOS treats durable project/worki
 | Pinned project POC candidate deployment | Implemented for LayoutLib candidate path | `.github/workflows/oracle-release-layoutlab-v08-dev.yml` | release-lane static acceptance + public POC acceptance after dispatch |
 | Node registry / capability discovery | Implemented + tested | `agent_core/node_registry.py`, `scripts/agentos_node.py` | `tests/test_agentos_node.py`, `tests/test_node_registry_v01.py` |
 | Web static index render capability | Implemented candidate + tested | `capabilities/web_static_index/`, `scripts/web_static_index.py`, `agent_core/capability_manifest_adapter.py` | `tests/test_web_static_index.py`, `tests/test_capability_manifest_adapter.py` |
+| Google Colab remote compute provider | Declared integration candidate | `capabilities/colab_compute/capability-manifest.json`, `docs/COLAB_GPU_PROVIDER.md` | live Oracle preflight/session/output receipt required |
+| MiniMax H3 video generation via Colab | Declared integration candidate | `capabilities/minimax_h3_colab/capability-manifest.json`, upstream `killkli/minimax-h3-colab-skill` | pinned upstream install + end-to-end MP4 receipt required |
 | Governance responsibility resolution | Implemented + tested | `agent_core/governance_directory.py` | `tests/test_governance_directory.py`, governance audit workflow/evidence |
 | Resource registry / world-state lookup | Implemented + tested | `agent_core/resource_registry.py` | `tests/test_resource_registry.py` |
 | Realm / cross-node fabric | Implemented slices + tested | `agent_core/realm_fabric.py`, `agent_core/realm_server.py`, `agent_core/realm_cli.py` | `tests/test_realm_fabric.py`, `.agentos/commands/` |
