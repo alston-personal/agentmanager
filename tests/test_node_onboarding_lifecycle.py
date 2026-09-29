@@ -60,3 +60,46 @@ def test_node_ready_requires_supervisor_when_lifecycle_is_supplied():
     )
     assert ready['node_ready'] is True
     assert ready['checks']['lifecycle_supervisor_ready'] is True
+
+
+def test_linux_supervisor_install_contract(monkeypatch, tmp_path):
+    import agentos_node.onboarding as onboarding
+
+    launcher = tmp_path / "agentos-client"
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+    unit = tmp_path / "agentos-thin-client.service"
+
+    monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(onboarding, "linux_thin_client_unit_path", lambda: unit)
+
+    calls = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["systemctl", "--user", "is-active"]:
+            return Result(0, "active\n", "")
+        return Result(0, "", "")
+
+    monkeypatch.setattr(onboarding.subprocess, "run", fake_run)
+    result = onboarding.install_linux_node_supervisor(install_root=tmp_path, launcher=launcher)
+
+    assert result["supervisor_ready"] is True
+    assert unit.exists()
+    text = unit.read_text(encoding="utf-8")
+    assert "ExecStart=" + str(launcher) + " run" in text
+    assert "Restart=always" in text
+    assert ["systemctl", "--user", "enable", "--now", "agentos-thin-client.service"] in calls
+
+
+def test_linux_supervisor_selected_by_generic_installer(monkeypatch):
+    import agentos_node.onboarding as onboarding
+
+    monkeypatch.setattr(onboarding.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(onboarding, "install_linux_node_supervisor", lambda: {"supervisor_ready": True, "platform": "Linux"})
+    assert onboarding.install_node_supervisor()["platform"] == "Linux"
