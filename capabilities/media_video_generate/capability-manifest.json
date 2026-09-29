@@ -1,0 +1,38 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "media.video.generate",
+  "display_name": "Media Video Generation Router",
+  "semantic_owner": "media-generation",
+  "version": "0.1.0",
+  "lifecycle": "declared",
+  "contract": {
+    "input_schema": "agentos.media-video-job/v1",
+    "inputs": ["prompt", "duration", "optional reference images", "quality/cost/continuity preferences"],
+    "outputs": ["video/mp4", "agentos.media-generation-receipt/v1"],
+    "side_effects": ["delegates generation to a governed provider", "may consume external provider quota or credits"]
+  },
+  "invocation": {
+    "kind": "capability-router",
+    "provider_capabilities": [
+      "capability://media.video.generate.minimax-h3"
+    ]
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://media.video.router",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "provider_selection_must_be_explicit_or_policy_driven": true,
+    "provider_quota_and_availability_must_be_checked_at_runtime": true,
+    "reference_image_requirements_must_be_validated_before_dispatch": true,
+    "fallback_must_not_silently_change_cost_or_quality_class": true,
+    "provider_receipt_must_be_preserved": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}
