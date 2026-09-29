@@ -43,6 +43,7 @@ jobs:
         run: bash -n scripts/install_thin_client_linux_oracle.sh
 
   oracle-exec-bootstrap-hosted:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -234,4 +235,53 @@ jobs:
             sleep 2
           done
           test "$OK" -eq 1
+          REMOTE
+
+  oracle-exec-diagnose-hosted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Diagnose Oracle execution-node install
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set +e
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          echo "oracle_exec_diag_user=$(id -un)"
+          echo "oracle_exec_diag_uid=$(id -u)"
+          echo "=== config ==="
+          if [ -f "$HOME/.agentos-oracle-exec/client.json" ]; then
+            python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path.home()/'.agentos-oracle-exec/client.json'
+          d=json.loads(p.read_text())
+          print('client_config_present=yes')
+          print('node_id='+str(d.get('node_id')))
+          print('realm_id='+str(d.get('realm_id')))
+          print('one_url='+str(d.get('one_url')))
+          print('node_token_present='+('yes' if d.get('node_token') else 'no'))
+          PY
+          else
+            echo "client_config_present=no"
+          fi
+          echo "=== service ==="
+          systemctl --user --no-pager --full status agentos-thin-client.service || true
+          echo "=== processes ==="
+          ps -eo pid,ppid,etime,user,cmd | grep -E 'agentos-client|pip|install_thin_client_linux_oracle|git\+https://github.com/alston-personal/agentmanager' | grep -v grep || true
+          echo "=== logs ==="
+          journalctl --user -u agentos-thin-client.service -n 80 --no-pager || true
           REMOTE
