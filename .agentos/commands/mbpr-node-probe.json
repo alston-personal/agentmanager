@@ -1,6 +1,7 @@
 {
   "schema": "agentos.realm-command/v0.1",
-  "action": "realm.node.probe",
+  "action": "realm.node.fixed-social-probe",
   "node_id": "mbpr",
-  "nonce": "mbpr-live-probe-20260929-0742"
+  "source_commit": "03c98e90c59588962280dd1ffd3deda8bdc940f2",
+  "nonce": "mbpr-fixed-social-probe-20260929-2009"
 }
