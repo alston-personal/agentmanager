@@ -25,6 +25,7 @@ _SAFE_PROVIDER_RESULT_FIELDS = (
     "hydrated_score",
     "uplift",
     "hydration_receipt_ok",
+    "install_receipt_ok",
     "classification",
 )
 _PROVIDER_STATE_FIELDS = (

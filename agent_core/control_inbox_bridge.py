@@ -41,6 +41,7 @@ EXECUTOR_JOB_RECEIPT_FIELDS = (
     'executor_available', 'routable', 'authorized', 'successful',
     'credential_exposed', 'classification', 'experiment_id', 'verdict',
     'baseline_score', 'hydrated_score', 'uplift', 'hydration_receipt_ok',
+    'install_receipt_ok',
 )
 
 

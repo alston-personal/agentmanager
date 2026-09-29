@@ -70,6 +70,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="issue://117",
         read_only=True,
     ),
+    "typesafe.skill.install": JobTypeSpec(
+        job_type="typesafe.skill.install",
+        capability="agentos.skill.install.typesafe",
+        authority="oracle-user-skill-install",
+        executor_class="oracle-antigravity-skill-installer",
+        project_id="agentos-core",
+        workload_ref="skill://typesafe-ai",
+        read_only=False,
+    ),
 }
 
 
@@ -130,8 +139,8 @@ def validate_executor_job_id(job_id: str) -> str:
     return value
 
 
-def canonical_experience_regression_request() -> dict[str, str]:
-    spec = JOB_TYPES["experience.regression"]
+def _canonical_request(job_type: str) -> dict[str, str]:
+    spec = JOB_TYPES[job_type]
     return {
         "schema": EXECUTOR_JOB_SCHEMA,
         "job_type": spec.job_type,
@@ -140,6 +149,14 @@ def canonical_experience_regression_request() -> dict[str, str]:
         "workload_ref": spec.workload_ref,
         "authority": spec.authority,
     }
+
+
+def canonical_experience_regression_request() -> dict[str, str]:
+    return _canonical_request("experience.regression")
+
+
+def canonical_typesafe_skill_install_request() -> dict[str, str]:
+    return _canonical_request("typesafe.skill.install")
 
 
 def project_executor_job_submission(
@@ -205,6 +222,7 @@ def project_executor_job_receipt(
             "hydrated_score",
             "uplift",
             "hydration_receipt_ok",
+            "install_receipt_ok",
             "classification",
         ):
             value = result.get(key)

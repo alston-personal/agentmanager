@@ -4,6 +4,7 @@ from agent_core.executor_job_contract import (
     EXECUTOR_JOB_RECEIPT_SCHEMA,
     ExecutorJobContractError,
     canonical_experience_regression_request,
+    canonical_typesafe_skill_install_request,
     project_executor_job_receipt,
     validate_executor_job,
 )
@@ -98,3 +99,28 @@ def test_receipt_keeps_availability_routing_authority_and_success_independent():
     assert receipt["credential_exposed"] is False
     assert "stdout" not in receipt
     assert "credential" not in receipt
+
+
+def test_canonical_typesafe_skill_install_is_exact_and_mutating_but_bounded():
+    request = canonical_typesafe_skill_install_request()
+    spec = validate_executor_job(request)
+    assert spec.job_type == "typesafe.skill.install"
+    assert spec.capability == "agentos.skill.install.typesafe"
+    assert spec.executor_class == "oracle-antigravity-skill-installer"
+    assert spec.project_id == "agentos-core"
+    assert spec.workload_ref == "skill://typesafe-ai"
+    assert spec.authority == "oracle-user-skill-install"
+    assert spec.read_only is False
+
+
+@pytest.mark.parametrize("field,value", [
+    ("command", "npx anything"),
+    ("argv", ["npx", "skills"]),
+    ("path", "/tmp/other"),
+    ("env", {"HOME": "/tmp"}),
+])
+def test_typesafe_job_cannot_override_fixed_installer(field, value):
+    request = canonical_typesafe_skill_install_request()
+    request[field] = value
+    with pytest.raises(ExecutorJobContractError):
+        validate_executor_job(request)
