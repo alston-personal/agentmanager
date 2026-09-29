@@ -128,6 +128,29 @@ jobs:
           ROOT="$HOME/agent-data/projects/dressup-simulator"
           JOB_DIR="$ROOT/render_jobs/runtime"
           ASSET_DIR="$ROOT/render_assets"
+          python3 - "$ROOT/render_cache" <<'PY'
+          import hashlib,json,pathlib,sys
+          cache_dir=pathlib.Path(sys.argv[1])
+          signature={
+            "schema":"agentos.tryon-cache/v1",
+            "characterId":"sunlake-milkcat-ai-001",
+            "characterVersion":"mio-body-v1",
+            "view":"front",
+            "pose":"neutral_standing",
+            "renderer":"idm-vton+any-item-fallback/v4",
+            "layers":[{"layer":"shoes","garmentId":"net-40832-002"}],
+          }
+          raw=json.dumps(signature,sort_keys=True,separators=(",",":")).encode("utf-8")
+          key=hashlib.sha256(raw).hexdigest()
+          p=cache_dir/(key+".webp")
+          if p.exists():
+              p.unlink()
+              print("mio_any_item_cache_bypass=REMOVED")
+          else:
+              print("mio_any_item_cache_bypass=MISS")
+          print("mio_any_item_cache_key="+key)
+          PY
+
           JOB_ID="mio-shoe-live-e2e-$RUN_ID"
           JOB="$JOB_DIR/$JOB_ID.json"
           ASSET="$ASSET_DIR/$JOB_ID.webp"
