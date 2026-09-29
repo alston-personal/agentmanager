@@ -44,7 +44,7 @@ Oracle TypeSafe installation is a governed bounded executor job, not a remote-sh
 - Canonical job type: `typesafe.skill.install`.
 - Route: ONE controller → `oracle-core-node` → existing ubuntu Action Relay → fixed source-controlled provider.
 - The caller cannot supply command, argv, path, env, credential, source repository, skill name, or target agent.
-- The only install method is the fixed `npx skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes` command in `scripts/install_oracle_typesafe_skill.sh`.
+- The only install method is the fixed `npx skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --copy --yes` command in `scripts/install_oracle_typesafe_skill.sh`.
 - File-level success writes a sanitized receipt to `$AGENT_DATA_ROOT/runtime/skills/typesafe-ai/install-receipt.json`.
 - File installation does **not** prove that a fresh Antigravity IDE session loaded the skill, and it does not prove `agy`, Codex, or Claude loaded it. Those executor claims require separate evidence.
 - For TypeSafe-relevant project work, read the installed `SKILL.md` and current TypeSafe docs before implementing API/SDK integrations. The Skill is instructions, not an API credential or AgentOS authority grant.
