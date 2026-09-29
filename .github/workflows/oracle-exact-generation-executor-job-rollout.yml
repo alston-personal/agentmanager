@@ -223,7 +223,10 @@ jobs:
           safe["one_controller_entered"] = True
           Path(sys.argv[2]).write_text(json.dumps(safe, sort_keys=True, indent=2) + "\n", encoding="utf-8")
           print("one_controller_dispatch=PASS")
+          print("executor_job_transport_receipt=PASS")
           print("executor_job_one_receipt=PASS")
+          print("executor_job_attribution_evidence=PASS")
+          print("executor_job_ablation_evidence=PASS")
           PY
 
       - name: Install TypeSafe skill through bounded ONE executor job
