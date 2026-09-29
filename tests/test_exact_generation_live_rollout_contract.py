@@ -60,6 +60,14 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         submit_section = text.split('Submit through ONE and collect bounded executor receipt', 1)[1]
         self.assertNotIn('dispatcher.submit(', submit_section)
 
+    def test_typesafe_acceptance_does_not_wait_for_experience_regression(self):
+        text = _text(WORKFLOW)
+        section = text.split('Submit through ONE and collect bounded executor receipt', 1)[1]
+        before_shell = section.split('shell: bash', 1)[0]
+        self.assertIn("if: steps.changes.outputs.typesafe != 'true'", before_shell)
+        self.assertIn("if: ${{ always() && steps.changes.outputs.typesafe == 'true' }}", text)
+        self.assertIn("cancel-in-progress: true", text)
+
     def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
         text = _text(WORKFLOW)
         self.assertIn('canonical_experience_regression_request', text)
