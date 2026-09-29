@@ -49,6 +49,12 @@ Oracle TypeSafe installation is a governed bounded executor job, not a remote-sh
 - File installation does **not** prove that a fresh Antigravity IDE session loaded the skill, and it does not prove `agy`, Codex, or Claude loaded it. Those executor claims require separate evidence.
 - For TypeSafe-relevant project work, read the installed `SKILL.md` and current TypeSafe docs before implementing API/SDK integrations. The Skill is instructions, not an API credential or AgentOS authority grant.
 
+## Oracle TypeSafe bounded installation
+
+TypeSafe on Oracle is installed through the governed bounded executor job `typesafe.skill.install`, not through generic shell authority. The canonical request is fixed to `agentos-core`, `oracle-antigravity-skill-installer`, `skill://typesafe-ai`, and `oracle-user-skill-install`. The Node-local provider may execute only `scripts/install_oracle_typesafe_skill.sh`, whose sole vendor installation command is `npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes`.
+
+Installation success proves only the Oracle `ubuntu` global Antigravity Skill file and its sanitized `agentos.skill-install-receipt/v1`. It does not prove a fresh IDE session loaded the Skill, and it does not imply `agy`, Claude, or Codex loaded it. Those remain separate executor-specific acceptance claims.
+
 ## OpenAI Codex IDE extension ONE bootstrap
 
 The OpenAI Codex IDE extension is a **separate extension/client** from the Gemini/Antigravity extension. Do not expect Codex to trigger `~/.gemini/config/hooks.json`, and do not use a retained Gemini PreInvocation attestation as evidence that a Codex thread was hydrated.
