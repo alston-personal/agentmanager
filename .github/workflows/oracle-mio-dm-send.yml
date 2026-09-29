@@ -7,7 +7,8 @@ on:
       - '.agentos/commands/mio-dm-send.json'
 permissions:
   contents: read
-  actions: read
+  actions: write
+  issues: write
 jobs:
   send:
     runs-on: [self-hosted, Linux, ARM64, oracle]
@@ -21,16 +22,20 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json
+          import json,os,re
           c=json.load(open('.agentos/commands/mio-dm-send.json',encoding='utf-8'))
           assert c.get('schema')=='agentos.mio-dm-send-command/v1'
-          assert c.get('target')=='0__0.ayoub'
-          assert int(c.get('decision_run_id') or 0)==36388810340
+          target=str(c.get('target') or '').strip().lstrip('@')
+          assert re.fullmatch(r'[A-Za-z0-9._]{1,64}',target),'invalid_target'
+          decision_run_id=int(c.get('decision_run_id') or 0)
+          assert decision_run_id>0
           status=str(c.get('status') or 'pending')
           assert status in ('pending','human_assisted_completed')
           print('mio_dm_send_command=PASS:'+status)
-          with open(__import__('os').environ['GITHUB_ENV'],'a',encoding='utf-8') as e:
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as e:
               e.write('MIO_DM_SKIP='+('1' if status=='human_assisted_completed' else '0')+'\n')
+              e.write('MIO_DM_TARGET='+target+'\n')
+              e.write('MIO_DM_DECISION_RUN_ID='+str(decision_run_id)+'\n')
           PY
       - name: Download validated decision artifact
         if: ${{ env.MIO_DM_SKIP != '1' }}
@@ -40,12 +45,19 @@ jobs:
           path: /tmp/mio-dm-decision
           github-token: ${{ github.token }}
           repository: alston-personal/agentmanager
-          run-id: 36388810340
+          run-id: ${{ env.MIO_DM_DECISION_RUN_ID }}
       - name: Send governed Threads DM and verify readback
-        if: ${{ hashFiles('/tmp/mio-dm-send-skip') == '' }}
+        if: ${{ env.MIO_DM_SKIP != '1' }}
         shell: bash
         env:
           MIO_DM_DECISION_PATH: /tmp/mio-dm-decision/mio-dm-decision.json
-          MIO_DM_TARGET: 0__0.ayoub
+          MIO_DM_TARGET: ${{ env.MIO_DM_TARGET }}
         run: |
           python3 scripts/send_mio_threads_dm_from_decision.py
+
+      - name: Route Mio social incident
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/route_mio_social_incident.py
