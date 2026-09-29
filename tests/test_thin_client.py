@@ -132,7 +132,7 @@ class TestThinClient(unittest.TestCase):
                     self.stderr = stderr
             if argv[-3:] == ['systemctl', 'is-active', 'ssh']:
                 return Result(0, 'active\n', '')
-            if argv[-2:] == ['-lnt']:
+            if argv[-2:] == ['ss', '-lnt']:
                 return Result(0, 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n', '')
             if argv[-3:] == ['systemctl', 'restart', 'ssh']:
                 return Result(0, '', '')
