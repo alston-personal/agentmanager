@@ -1,0 +1,51 @@
+name: Oracle Core Runtime Converge Now
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/oracle-core-runtime-converge-now.yml']
+permissions:
+  contents: read
+jobs:
+  converge:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit exact Oracle Core runtime converge
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,os
+          from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.controller_service import ControllerService
+          sha=os.environ['GITHUB_SHA']
+          c=ControllerService(RealmFabricStore())
+          req={
+            'schema':'agentos.controller-dispatch/v0.1',
+            'node_id':'oracle-core-node',
+            'action':'node.runtime.converge',
+            'task_id':'mio-social-repair-'+str(int(time.time())),
+            'payload':{},
+            'repository':'alston-personal/agentmanager',
+            'source_ref':'core/integration',
+            'source_commit':sha,
+          }
+          out=c.dispatch(req)
+          print('runtime_converge_submission='+json.dumps(out,sort_keys=True))
+          tid=out['task_id']
+          disp=c._runtime_dispatcher()
+          for _ in range(120):
+            r=disp.inspect(tid)
+            if r:
+              print('runtime_converge_receipt='+json.dumps(r,sort_keys=True))
+              if r.get('ok') is True:
+                print('mio_social_runtime_repair=PASS')
+                raise SystemExit(0)
+              raise SystemExit(2)
+            time.sleep(2)
+          raise SystemExit('runtime converge timeout')
+          PY
