@@ -41,10 +41,12 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
         self.assertNotIn('HEAD:main', text)
         self.assertNotIn('origin/main', text)
 
-    def test_rollout_scopes_cross_owner_git_trust_without_global_mutation(self):
+    def test_rollout_respects_cross_owner_runtime_boundary(self):
         text = _text(WORKFLOW)
-        self.assertIn('git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD', text)
+        self.assertNotIn('git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD', text)
         self.assertNotIn('git config --global --add safe.directory', text)
+        self.assertNotIn('/home/ubuntu/agent-data/runtime/action-relay', text)
+        self.assertIn('/v1/controller/receipts/$JOB_ID', text)
 
     def test_live_submission_enters_one_controller_before_action_relay(self):
         text = _text(WORKFLOW)
@@ -61,8 +63,10 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
     def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
         text = _text(WORKFLOW)
         self.assertIn('canonical_experience_regression_request', text)
-        self.assertIn('ActionRelayExecutorJobDispatcher', text)
-        self.assertIn('dispatcher.inspect(job_id)', text)
+        self.assertNotIn('ActionRelayExecutorJobDispatcher', text)
+        self.assertNotIn('dispatcher.inspect(job_id)', text)
+        self.assertIn('/v1/controller/receipts/$JOB_ID', text)
+        self.assertIn('receipt = observed.get("receipt")', text)
         self.assertIn('credential_exposed', text)
         self.assertIn('executor_job_transport_receipt=PASS', text)
         self.assertIn('actions/upload-artifact@v4', text)
