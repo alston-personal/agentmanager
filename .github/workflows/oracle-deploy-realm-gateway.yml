@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: oracle-realm-gateway-deploy
+  group: oracle-realm-gateway-deploy-postreboot-20260929
   cancel-in-progress: false
 
 jobs:
