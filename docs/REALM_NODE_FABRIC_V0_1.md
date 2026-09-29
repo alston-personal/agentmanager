@@ -66,16 +66,16 @@ Tool-specific semantic adapters are optional. For example, detecting Unity does 
 
 ONE never sends an unrestricted shell string. A task capsule describes executable, argv, cwd, timeout and path scope. The Thin Client performs local validation before execution and emits a receipt. Capability discovery, authorization and execution are separate decisions.
 
-## Oracle canonical identity
+## Oracle identities
 
-The existing Oracle deployment is canonicalized as one Core Node, not re-enrolled as a duplicate client:
+Oracle has two deliberately distinct AgentOS identities:
 
-- role: `core`
-- node id: `core-oracle-01`
-- GitHub self-hosted runner: Core GitHub adapter / bootstrap ingress
-- ubuntu and agentos-node: executor identities inside the same Core Node
+- `oracle-core-node` — the ONE Core identity. It owns Realm/control-plane responsibilities and must not be treated as a generic shell executor.
+- `oracle-exec` — the native Linux Thin Client execution identity introduced by #600. It joins the Realm through normal Node transport, emits heartbeat, pulls governed tasks, and returns receipts independently of SSH and the GitHub self-hosted runner.
 
-Future client Nodes should not require GitHub Actions runners or GitHub credentials.
+The GitHub self-hosted runner remains an adapter/bootstrap ingress, not the execution Node transport itself. Linux OS users such as `ubuntu` and `agentos-node` are executor/runtime accounts, not Node identities.
+
+This separation is required so a failure of SSH or the GitHub runner does not remove the controller's ability to diagnose and recover Oracle through bounded semantic maintenance actions.
 
 ## Before/After ONE benchmark
 
