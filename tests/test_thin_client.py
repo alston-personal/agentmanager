@@ -114,5 +114,50 @@ class TestThinClient(unittest.TestCase):
         self.assertGreater(report['uplift']['task_success'], 0)
 
 
+    def test_linux_ssh_inspect_and_recover_are_bounded(self):
+        import os
+        import platform
+        from unittest import mock
+
+        client = ThinClient(
+            NodeIdentity('realm-test', 'oracle-exec'),
+            ThinClientPolicy(),
+        )
+
+        def fake_run(argv, **kwargs):
+            class Result:
+                def __init__(self, returncode=0, stdout="", stderr=""):
+                    self.returncode = returncode
+                    self.stdout = stdout
+                    self.stderr = stderr
+            if argv[-3:] == ['systemctl', 'is-active', 'ssh']:
+                return Result(0, 'active\n', '')
+            if argv[-2:] == ['-lnt']:
+                return Result(0, 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n', '')
+            if argv[-3:] == ['systemctl', 'restart', 'ssh']:
+                return Result(0, '', '')
+            raise AssertionError(argv)
+
+        with mock.patch.object(platform, 'system', return_value='Linux'), \
+             mock.patch.object(os, 'geteuid', return_value=1000), \
+             mock.patch('agentos_node.thin_client.subprocess.run', side_effect=fake_run):
+            inspect = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 'ssh-inspect',
+                'action': 'node.ssh.inspect',
+            })
+            self.assertTrue(inspect['ok'])
+            self.assertTrue(inspect['ssh_service_active'])
+            self.assertTrue(inspect['port22_listening'])
+
+            recover = client.execute({
+                'schema': 'agentos.node-task/v0.1',
+                'task_id': 'ssh-recover',
+                'action': 'node.ssh.recover',
+            })
+            self.assertTrue(recover['ok'])
+            self.assertTrue(recover['recovered'])
+
+
 if __name__ == '__main__':
     unittest.main()
