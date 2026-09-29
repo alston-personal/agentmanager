@@ -60,6 +60,7 @@ jobs:
                 'media_type':str(p.get('media_type') or ''),
                 'metrics':((ins.get('result') or {}).get('metrics') if ins.get('ok') is True else {'error':ins.get('error_code'),'detail':ins.get('result')}),
                 'reply_count':len(((reps.get('result') or {}).get('items') or [])) if reps.get('ok') is True else None,
+                'reply_items':[((lambda x:{'id':str(x.get('id') or ''),'username':str(x.get('username') or ''),'text':str(x.get('text') or '')[:500],'timestamp':str(x.get('timestamp') or ''),'permalink':str(x.get('permalink') or '')})(x)) for x in (((reps.get('result') or {}).get('items') or []) if reps.get('ok') is True else [])],
               })
           print('oursong_insights=PASS')
           print('oursong_recent='+json.dumps(out,ensure_ascii=False,separators=(',',':')))
