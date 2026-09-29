@@ -51,3 +51,7 @@ memory.local-backup-*/
 scratch/
 # IDE / Claude local settings
 .claude/
+
+# Runtime-installed project Agent Skills
+.agents/skills/typesafe-ai/
+skills-lock.json

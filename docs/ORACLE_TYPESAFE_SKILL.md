@@ -27,17 +27,18 @@ Generic command, argv, executable, cwd, path, environment, token, credential, se
 The installer uses one installation method only:
 
 ```bash
-npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes
+cd /home/ubuntu/agentmanager
+npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --yes --copy
 ```
 
 Expected file-level result:
 
 ```text
-/home/ubuntu/.gemini/antigravity/skills/typesafe-ai/SKILL.md
+/home/ubuntu/agentmanager/.agents/skills/typesafe-ai/SKILL.md
 /home/ubuntu/agent-data/runtime/skills/typesafe-ai/install-receipt.json
 ```
 
-The receipt records a SHA-256 and `file_verified=true`. `fresh_session_loaded` and `agy_loaded` remain unknown until independently observed.
+The receipt records `scope=oracle-agentos-project`, a SHA-256, and `file_verified=true`. This deliberately uses Antigravity's project skill path and avoids the current skills CLI global-install path bug for universal agents. `fresh_session_loaded` and `agy_loaded` remain unknown until independently observed.
 
 ## Acceptance boundary
 
