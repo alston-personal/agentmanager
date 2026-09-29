@@ -1,0 +1,39 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "compute.colab.execute",
+  "display_name": "Google Colab Compute Provider",
+  "semantic_owner": "colab-compute",
+  "version": "0.1.0",
+  "lifecycle": "declared",
+  "contract": {
+    "input_schema": "agentos.colab-job/v1",
+    "inputs": ["job manifest", "local input artifacts", "runtime requirements"],
+    "outputs": ["downloaded output artifacts", "agentos.colab-execution-receipt/v1"],
+    "side_effects": ["uploads approved artifacts to Google Colab", "consumes Colab compute units", "creates or reuses a Colab runtime session"]
+  },
+  "invocation": {
+    "kind": "external-cli-provider",
+    "required_cli": "google-colab-cli",
+    "preflight": "colab --auth=oauth2 usage",
+    "runtime_owner": "node://oracle"
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://compute.colab",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "quota_must_be_queried_at_runtime": true,
+    "gpu_allocation_is_not_guaranteed_by_quota": true,
+    "oauth_credentials_must_not_enter_prompts_manifests_or_logs": true,
+    "upload_requires_explicit_job_artifacts": true,
+    "preserve_completed_outputs_on_partial_failure": true,
+    "provider_specific_models_must_compose_over_this_capability": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}
