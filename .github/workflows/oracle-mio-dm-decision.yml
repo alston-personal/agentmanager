@@ -7,6 +7,8 @@ on:
       - '.agentos/commands/mio-dm-decision.json'
 permissions:
   contents: read
+  actions: write
+  issues: write
 jobs:
   decide:
     runs-on: [self-hosted, Linux, ARM64, oracle]
@@ -37,11 +39,12 @@ jobs:
           test -d "$RECEIPTS"
 
           python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json,os,sys
+          import json,os,sys,re
           from datetime import datetime,timezone
           cmd=json.load(open('.agentos/commands/mio-dm-decision.json',encoding='utf-8'))
           assert cmd.get('schema')=='agentos.mio-dm-decision-command/v1'
-          assert cmd.get('username')=='0__0.ayoub'
+          username=str(cmd.get('username') or '').strip().lstrip('@')
+          assert re.fullmatch(r'[A-Za-z0-9._]{1,64}',username),'invalid_username'
           run_id=int(cmd.get('source_run_id') or 0)
           assert run_id>0
           path,request_id,sha=sys.argv[1],sys.argv[2],sys.argv[3]
@@ -53,7 +56,7 @@ jobs:
             'params':{
               'source_commit':sha,
               'source_run_id':str(run_id),
-              'username':cmd['username'],
+              'username':username,
             },
             'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
           }
@@ -94,3 +97,10 @@ jobs:
           path: /tmp/mio-dm-decision.json
           retention-days: 1
           if-no-files-found: error
+
+      - name: Route Mio social incident
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/route_mio_social_incident.py
