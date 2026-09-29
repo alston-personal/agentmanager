@@ -37,6 +37,18 @@ The Gemini-side `agentos-one` MCP server remains an explicit live-query surface 
 
 If the active selector, Canonical IR head, or generation fence is unavailable/malformed/stale, fail closed with `ONE_IR_HEAD_UNRESOLVED`; do not reconstruct current state from local evidence.
 
+## Oracle TypeSafe skill
+
+Oracle TypeSafe installation is a governed bounded executor job, not a remote-shell exception.
+
+- Canonical job type: `typesafe.skill.install`.
+- Route: ONE controller → `oracle-core-node` → existing ubuntu Action Relay → fixed source-controlled provider.
+- The caller cannot supply command, argv, path, env, credential, source repository, skill name, or target agent.
+- The only install method is the fixed `npx skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes` command in `scripts/install_oracle_typesafe_skill.sh`.
+- File-level success writes a sanitized receipt to `$AGENT_DATA_ROOT/runtime/skills/typesafe-ai/install-receipt.json`.
+- File installation does **not** prove that a fresh Antigravity IDE session loaded the skill, and it does not prove `agy`, Codex, or Claude loaded it. Those executor claims require separate evidence.
+- For TypeSafe-relevant project work, read the installed `SKILL.md` and current TypeSafe docs before implementing API/SDK integrations. The Skill is instructions, not an API credential or AgentOS authority grant.
+
 ## OpenAI Codex IDE extension ONE bootstrap
 
 The OpenAI Codex IDE extension is a **separate extension/client** from the Gemini/Antigravity extension. Do not expect Codex to trigger `~/.gemini/config/hooks.json`, and do not use a retained Gemini PreInvocation attestation as evidence that a Codex thread was hydrated.
