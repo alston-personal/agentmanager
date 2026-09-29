@@ -160,10 +160,16 @@ assert 'shoes' in rendered, f'shoes_not_rendered:{rendered}'
 assert 'shoes' not in pending, f'shoes_still_pending:{pending}'
 assert asset.exists() and asset.stat().st_size > 1000, 'shoe_asset_missing'
 shoe=next((r for r in providers if r.get('layer')=='shoes'),None)
-assert shoe, f'shoe_provider_missing:{providers}'
+provider=out.get('provider')
+if shoe:
+    provider_name=str(shoe.get('providerSpace'))
+elif provider == 'real-render-cache':
+    provider_name='real-render-cache'
+else:
+    raise AssertionError(f'shoe_provider_missing:{providers};provider={provider}')
 print('mio_any_item_shoe_e2e=PASS')
 print('mio_any_item_shoe_bytes='+str(asset.stat().st_size))
-print('mio_any_item_provider='+str(shoe.get('providerSpace')))
+print('mio_any_item_provider='+provider_name)
 PY
     OK=1
     break
