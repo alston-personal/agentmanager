@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  actions: write
+  issues: write
 
 jobs:
   read:
@@ -94,3 +96,9 @@ jobs:
 
 # diagnostic rerun 2026-09-27T13:58+08:00
 # owner-requested live acceptance rerun 2026-09-29T08:37+08:00
+      - name: Route Mio social incident
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/route_mio_social_incident.py
