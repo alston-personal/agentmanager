@@ -18,16 +18,24 @@ printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-env -u GH_TOKEN -u GITHUB_TOKEN gh run download "$RUN_ID"   -R alston-personal/agentmanager   -n threads-native-read   -D "$TMP/artifact" >/dev/null
+mkdir -p "$TMP/artifact"
+if env -u GH_TOKEN -u GITHUB_TOKEN gh run download "$RUN_ID" -R alston-personal/agentmanager -n threads-conversation-read -D "$TMP/artifact" >/dev/null 2>&1; then
+  DM_ARTIFACT="$TMP/artifact/threads-conversation-read.txt"
+elif env -u GH_TOKEN -u GITHUB_TOKEN gh run download "$RUN_ID" -R alston-personal/agentmanager -n threads-native-read -D "$TMP/artifact" >/dev/null 2>&1; then
+  DM_ARTIFACT="$TMP/artifact/threads-native-read.json"
+else
+  echo "no supported DM artifact found for run $RUN_ID" >&2
+  exit 3
+fi
 
-test -f "$TMP/artifact/threads-native-read.json"
+test -f "$DM_ARTIFACT"
 
 # Refresh canonical private persona data so relationship context is current.
 env -u GH_TOKEN -u GITHUB_TOKEN git -c 'credential.helper=!gh auth git-credential' \
   -C "$HOME/agent-data" fetch https://github.com/alston-personal/my-agent-data.git \
   '+refs/heads/main:refs/remotes/origin/main' >/dev/null 2>&1 || true
 
-python3 - "$TMP/artifact/threads-native-read.json" "$USERNAME" > "$TMP/dm.json" <<'PY'
+python3 - "$DM_ARTIFACT" "$USERNAME" > "$TMP/dm.json" <<'PY'
 import json,sys
 doc=json.load(open(sys.argv[1],encoding='utf-8'))
 user=sys.argv[2]
