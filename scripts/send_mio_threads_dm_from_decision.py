@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import json, os, time
+import json, os, re, time
 from agent_core.realm_fabric import RealmFabricStore
 
 def main() -> int:
     decision_path=os.environ['MIO_DM_DECISION_PATH']
     target=os.environ.get('MIO_DM_TARGET','')
-    if target!='0__0.ayoub':
-        raise SystemExit('unexpected DM target')
+    target=target.strip().lstrip('@')
+    if not re.fullmatch(r'[A-Za-z0-9._]{1,64}',target):
+        raise SystemExit('invalid DM target')
     d=json.load(open(decision_path,encoding='utf-8'))
     if d.get('decision')!='reply':
         raise SystemExit('decision is not reply')
