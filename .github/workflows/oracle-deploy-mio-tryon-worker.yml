@@ -3,7 +3,7 @@ name: Oracle Deploy Mio Try-On Worker
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [fix/oracle-postreboot-mio-hf-recovery]
     paths:
       - 'scripts/tryon_render_worker.py'
       - '.github/workflows/oracle-deploy-mio-tryon-worker.yml'
@@ -23,7 +23,6 @@ jobs:
       DEPLOY_HOST: 127.0.0.1
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
-      HF_TOKEN: ${{ secrets.HF_TOKEN || secrets.HUGGINGFACE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,16 +40,22 @@ jobs:
           scp -P "${DEPLOY_SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             scripts/tryon_render_worker.py "${DEPLOY_USER}@${DEPLOY_HOST}:$REMOTE_SCRIPT"
 
-          HF_TOKEN_B64="$(printf '%s' "${HF_TOKEN:-}" | base64 -w0)"
+          HF_TOKEN_B64=""
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
             bash -s -- "$REMOTE_SCRIPT" "$HF_TOKEN_B64" <<'REMOTE'
           set -euo pipefail
           REMOTE_SCRIPT="$1"
           HF_TOKEN_B64="${2:-}"
           HF_TOKEN_VALUE=""
-          if [ -n "$HF_TOKEN_B64" ]; then
+          LOCAL_ENV="/home/ubuntu/agentmanager/.env"
+          if [ -f "$LOCAL_ENV" ]; then
+            HF_TOKEN_VALUE="$(sed -n 's/^HF_TOKEN=//p' "$LOCAL_ENV" | tail -n 1)"
+          fi
+          if [ -z "$HF_TOKEN_VALUE" ] && [ -n "$HF_TOKEN_B64" ]; then
             HF_TOKEN_VALUE="$(printf '%s' "$HF_TOKEN_B64" | base64 -d)"
           fi
+          test -n "$HF_TOKEN_VALUE" || { echo "HF_TOKEN missing from $LOCAL_ENV and workflow secret"; exit 22; }
+          echo "mio_hf_token_source=oracle_local_env"
           install -d -m 700 "$HOME/.local/bin" "$HOME/.local/share" "$HOME/.config/systemd/user"
           install -m 755 "$REMOTE_SCRIPT" "$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
           rm -f "$REMOTE_SCRIPT"
