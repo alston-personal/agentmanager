@@ -41,3 +41,39 @@ jobs:
           tests/test_control_inbox_bridge.py
       - name: Validate Oracle installer shell syntax
         run: bash -n scripts/install_thin_client_linux_oracle.sh
+
+  oracle-exec-bootstrap-hosted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install Oracle execution node without self-hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ORACLE_USER:-}"
+          PORT="${ORACLE_PORT:-22}"
+          REMOTE=/tmp/install-thin-client-linux-oracle-${GITHUB_RUN_ID}.sh
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new             scripts/install_thin_client_linux_oracle.sh "${ORACLE_USER}@${ORACLE_HOST}:$REMOTE"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}"             bash -s -- "$REMOTE" <<'REMOTE'
+          set -euo pipefail
+          REMOTE="$1"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          test -S "$XDG_RUNTIME_DIR/bus"
+          chmod 700 "$REMOTE"
+          "$REMOTE" core/integration
+          systemctl --user is-active agentos-thin-client.service
+          /home/ubuntu/.local/share/AgentOS/agentos-client manifest |             python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["node_id"]=="oracle-exec"; assert "node.ssh.inspect" in d["capabilities"]; assert "node.ssh.recover" in d["capabilities"]; print("oracle_exec_manifest=PASS")'
+          rm -f "$REMOTE"
+          REMOTE
