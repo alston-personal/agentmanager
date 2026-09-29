@@ -41,6 +41,7 @@ The repository currently contains working, tested slices of that architecture:
 - **Platform abstraction** — Linux, Windows, and macOS runtime/service drivers.
 - **Evidence-first operation** — `.agentos/evidence/` records acceptance and live-control-plane results rather than relying only on prose claims.
 - **Reusable Studio static-route release carrier** — a canonical `workflow_call` owns pinned-source build, narrow route replacement, rollback, local/public acceptance, and receipts; Milkcat World is the first real consumer. The capability is currently `extracted-first-consumer`, not yet broadly proven (`.github/workflows/reusable-studio-static-route-release.yml`, `.agent/governance/studio_release_capabilities.yaml`, `docs/asset-registry/studio-static-route-release.yaml`).
+- **Colab GPU provider integration candidate** — Google Colab is modeled as a governed external compute provider (`capability://compute.colab.execute`), with MiniMax H3 as the first composed media consumer (`capability://media.video.generate.minimax-h3`). Both remain `declared` until Oracle has a pinned upstream installation and live execution receipt (`capabilities/colab_compute/`, `capabilities/minimax_h3_colab/`, `docs/COLAB_GPU_PROVIDER.md`).
 
 The Reuse Before Build and Credits entries above are intentionally marked **v0.1 candidate** until branch CI and integration acceptance prove them in a real Milkcat execution path. They do not yet claim production billing, fiat value, transferability, or on-chain settlement.
 
