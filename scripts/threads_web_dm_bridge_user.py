@@ -17,7 +17,8 @@ PROFILE=ROOT/"browser-profile"
 STATE=ROOT/"state.json"
 EVENTS=ROOT/"events.jsonl"
 INBOX_URL="https://www.threads.com/messages"
-
+USERNAME_RE=re.compile(r"^[A-Za-z0-9._]{1,64}$")
+AGE_RE=re.compile(r"^(?:\d+[smhdw]|\d+\s*(?:秒|分|分鐘|小時|天|週)|昨天|Yesterday)$",re.I)
 
 def load_state() -> dict[str, Any]:
     try:
@@ -26,7 +27,6 @@ def load_state() -> dict[str, Any]:
     except (FileNotFoundError,ValueError):
         return {}
 
-
 def save_state(value: dict[str, Any]) -> None:
     ROOT.mkdir(parents=True,exist_ok=True)
     os.chmod(ROOT,0o700)
@@ -34,17 +34,30 @@ def save_state(value: dict[str, Any]) -> None:
     tmp.write_text(json.dumps(value,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     os.chmod(tmp,0o600); tmp.replace(STATE); os.chmod(STATE,0o600)
 
-
 def stable_id(*parts: str) -> str:
     raw="\x1f".join(str(p or "") for p in parts).encode()
     return hashlib.sha256(raw).hexdigest()[:32]
 
+def parse_row(text:str) -> tuple[str|None,str|None,str]:
+    lines=[x.strip() for x in str(text or "").splitlines() if x.strip()]
+    username=next((x.lstrip("@") for x in lines if USERNAME_RE.fullmatch(x.lstrip("@"))),None)
+    filtered=[x for x in lines if x not in {"·","訊息","Messages","收件匣","Inbox"} and not AGE_RE.fullmatch(x)]
+    if username:
+        filtered=[x for x in filtered if x.lstrip("@")!=username]
+    preview=filtered[-1] if filtered else None
+    direction="unknown"
+    if preview:
+        low=preview.lower()
+        if low.startswith("you sent") or preview.startswith("你傳送了") or preview.startswith("你已傳送"):
+            direction="outbound"
+        elif username:
+            direction="inbound"
+    return username,preview,direction
 
 def extract_text(page) -> list[DirectMessageEvent]:
-    # Web UI fallback: use visible conversation list/message regions only.
-    # Never inspect cookies/localStorage and never serialize DOM wholesale.
     rows=page.locator('[role="main"] [role="link"], [role="main"] a').all()
     events=[]
+    seen_conversations=set()
     for row in rows[:100]:
         try:
             text=(row.inner_text(timeout=500) or "").strip()
@@ -54,39 +67,25 @@ def extract_text(page) -> list[DirectMessageEvent]:
         if not text or "/messages" not in href:
             continue
         conversation_id=stable_id(href)
-        # The list row itself is evidence that a conversation exists. Message
-        # bodies are read after opening each conversation below.
-        try:
-            row.click(timeout=1200)
-            page.wait_for_timeout(500)
-        except Exception:
+        if conversation_id in seen_conversations:
             continue
-        message_nodes=page.locator('[role="main"] [dir="auto"]')
-        count=min(message_nodes.count(),120)
-        for i in range(count):
-            try:
-                body=(message_nodes.nth(i).inner_text(timeout=300) or "").strip()
-            except Exception:
-                continue
-            if not body or len(body)>12000:
-                continue
-            # Avoid obvious navigation labels and duplicate container text.
-            if body in {"Messages","Requests","New message","Search"}:
-                continue
-            mid=stable_id(conversation_id,body,str(i))
-            events.append(DirectMessageEvent(
-                platform="threads",
-                account_id="mio.milkcat",
-                conversation_id=conversation_id,
-                message_id=mid,
-                actor_id=None,
-                actor_username=None,
-                text=body,
-                timestamp=None,
-                direction="unknown",
-            ))
+        seen_conversations.add(conversation_id)
+        username,preview,direction=parse_row(text)
+        if not username or not preview or direction=="unknown":
+            continue
+        mid=stable_id(conversation_id,username,preview,direction)
+        events.append(DirectMessageEvent(
+            platform="threads",
+            account_id="mio.milkcat",
+            conversation_id=conversation_id,
+            message_id=mid,
+            actor_id=None,
+            actor_username=username,
+            text=preview,
+            timestamp=None,
+            direction=direction,
+        ))
     return events
-
 
 def main() -> int:
     ap=argparse.ArgumentParser()
@@ -109,11 +108,10 @@ def main() -> int:
     seen=set(str(x) for x in state.get("seen_message_ids") or [])
     try:
         with sync_playwright() as p:
-            browser_type=p.chromium
             launch_args={"headless":not args.headed,"viewport":{"width":1280,"height":900}}
             if args.channel:
                 launch_args["channel"]=args.channel
-            context=browser_type.launch_persistent_context(str(PROFILE),**launch_args)
+            context=p.chromium.launch_persistent_context(str(PROFILE),**launch_args)
             page=context.pages[0] if context.pages else context.new_page()
             page.goto(INBOX_URL,wait_until="domcontentloaded",timeout=30000)
             page.wait_for_timeout(1500)
@@ -129,16 +127,13 @@ def main() -> int:
                             break
                     if "login" in url or "accountscenter" in url:
                         print("threads_web_dm_bridge=LOGIN_REQUIRED")
-                        context.close()
-                        return 4
+                        context.close(); return 4
                 else:
                     print("threads_web_dm_bridge=LOGIN_REQUIRED")
-                    context.close()
-                    return 4
+                    context.close(); return 4
             if args.login_only:
                 print("threads_web_dm_bridge=SESSION_READY")
-                context.close()
-                return 0
+                context.close(); return 0
 
             events=extract_text(page)
             fresh=dedupe_new_events(events,seen)
@@ -165,8 +160,8 @@ def main() -> int:
 
     print("threads_web_dm_bridge=PASS")
     print("threads_web_dm_new_events="+str(len(fresh)))
+    print("threads_web_dm_inbound_events="+str(sum(1 for x in fresh if x.direction=="inbound")))
     return 0
-
 
 if __name__=="__main__":
     raise SystemExit(main())
