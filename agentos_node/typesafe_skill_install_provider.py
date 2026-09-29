@@ -16,6 +16,7 @@ EXECUTOR_CLASS = "oracle-antigravity-skill-installer"
 EXPECTED_HOME = Path("/home/ubuntu")
 DATA_ROOT = EXPECTED_HOME / "agent-data"
 RECEIPT_FILE = DATA_ROOT / "runtime/skills/typesafe-ai/install-receipt.json"
+FAILURE_FILE = DATA_ROOT / "runtime/skills/typesafe-ai/install-failure.json"
 
 
 def _runtime_root() -> Path:
@@ -64,7 +65,7 @@ def run_typesafe_skill_install(request: Mapping[str, Any], *, runtime_root: str 
             env={
                 "HOME": str(EXPECTED_HOME),
                 "USER": "ubuntu",
-                "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                "PATH": os.environ.get("PATH", "") + ":/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin",
                 "AGENT_DATA_ROOT": str(DATA_ROOT),
             },
         )
@@ -74,7 +75,21 @@ def run_typesafe_skill_install(request: Mapping[str, Any], *, runtime_root: str 
         return _failure("TYPESAFE_SKILL_INSTALL_LAUNCH_ERROR")
 
     if proc.returncode != 0:
-        return _failure("TYPESAFE_SKILL_INSTALL_COMMAND_FAILED")
+        classification = "TYPESAFE_SKILL_INSTALL_COMMAND_FAILED"
+        try:
+            failure = json.loads(FAILURE_FILE.read_text(encoding="utf-8"))
+            stage = str(failure.get("stage") or "")
+            if stage.startswith("missing_"):
+                classification = "TYPESAFE_SKILL_PREREQUISITE_MISSING"
+            elif stage == "npx_install":
+                classification = "TYPESAFE_SKILL_NPX_INSTALL_FAILED"
+            elif stage == "skill_file_missing":
+                classification = "TYPESAFE_SKILL_FILE_UNVERIFIED"
+            elif stage == "skill_identity_mismatch":
+                classification = "TYPESAFE_SKILL_IDENTITY_UNVERIFIED"
+        except (OSError, json.JSONDecodeError):
+            pass
+        return _failure(classification)
     if not RECEIPT_FILE.is_file() or RECEIPT_FILE.is_symlink():
         return _failure("TYPESAFE_SKILL_INSTALL_RECEIPT_MISSING")
 
