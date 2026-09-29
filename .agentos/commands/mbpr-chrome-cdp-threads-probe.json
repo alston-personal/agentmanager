@@ -2,5 +2,5 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.chrome-cdp-threads.probe",
   "node_id": "mbpr",
-  "nonce": "mbpr-chrome-cdp-threads-20260929-2007"
+  "nonce": "mbpr-chrome-cdp-threads-20260929-2016"
 }
