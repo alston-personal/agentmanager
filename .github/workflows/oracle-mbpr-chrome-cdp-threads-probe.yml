@@ -1,0 +1,62 @@
+name: Oracle MBPR Chrome CDP Threads Probe
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/mbpr-chrome-cdp-threads-probe.json'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe MBPR Chrome CDP Threads tabs
+        shell: bash
+        run: |
+          export PYTHONPATH="$PWD"
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-chrome-cdp-threads-probe.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          tid='mbpr-chrome-cdp-threads-'+str(int(time.time()))
+          code=r'''import json,urllib.request
+          def get(url):
+              with urllib.request.urlopen(url,timeout=3) as r:
+                  return json.load(r)
+          try:
+              version=get("http://127.0.0.1:9222/json/version")
+              tabs=get("http://127.0.0.1:9222/json/list")
+              print("CDP_VERSION_OK="+("true" if bool(version.get("webSocketDebuggerUrl")) else "false"))
+              threads=[]
+              for t in tabs:
+                  u=str(t.get("url") or "")
+                  if "threads.com" in u:
+                      kind=("messages" if "/messages" in u else ("login" if "login" in u or "accounts" in u else "threads_other"))
+                      threads.append({"kind":kind,"url":u})
+              print("THREADS_TAB_COUNT="+str(len(threads)))
+              print("THREADS_KINDS="+",".join(sorted(x["kind"] for x in threads)))
+          except Exception as e:
+              print("CDP_ERROR="+type(e).__name__)
+              raise
+          '''
+          task={'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':'python3','argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':15,'cognition_ids_used':[]}
+          store=RealmFabricStore(); store.queue_task('mbpr',task)
+          for _ in range(35):
+              r=store.get_receipt(tid)
+              if r:
+                  out=str(r.get('stdout') or '')
+                  print(out)
+                  if r.get('ok') is not True or int(r.get('returncode') or 0)!=0:
+                      print(str(r.get('stderr') or '')[-2000:])
+                      raise SystemExit(2)
+                  print('mbpr_chrome_cdp_threads_probe=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('mbpr chrome cdp threads probe timeout')
+          PY
