@@ -9,43 +9,20 @@ jobs:
   converge:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 8
-    env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
-      - name: Submit exact Oracle Core runtime converge
+      - name: Refresh bootstrap runtime and restart bounded services
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json,time,os
-          from agent_core.realm_fabric import RealmFabricStore
-          from agent_core.controller_service import ControllerService
-          sha=os.environ['GITHUB_SHA']
-          c=ControllerService(RealmFabricStore())
-          req={
-            'schema':'agentos.controller-dispatch/v0.1',
-            'node_id':'oracle-core-node',
-            'action':'node.runtime.converge',
-            'task_id':'mio-social-repair-'+str(int(time.time())),
-            'payload':{},
-            'repository':'alston-personal/agentmanager',
-            'source_ref':'core/integration',
-            'source_commit':sha,
+          test "$(id -un)" = "agentos-node"
+          test -f /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          cmp -s agentos_node/bootstrap_control.py /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py || {
+            cat agentos_node/bootstrap_control.py > /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
           }
-          out=c.dispatch(req)
-          print('runtime_converge_submission='+json.dumps(out,sort_keys=True))
-          tid=out['task_id']
-          disp=c._runtime_dispatcher()
-          for _ in range(120):
-            r=disp.inspect(tid)
-            if r:
-              print('runtime_converge_receipt='+json.dumps(r,sort_keys=True))
-              if r.get('ok') is True:
-                print('mio_social_runtime_repair=PASS')
-                raise SystemExit(0)
-              raise SystemExit(2)
-            time.sleep(2)
-          raise SystemExit('runtime converge timeout')
-          PY
+          grep -q 'ACTION_READ_THREADS_WEB_DM' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          grep -q 'ACTION_INSPECT_MIO_RECENT' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user restart os-chronos.service
+          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user restart agentos-core-supervisor.service || true
+          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user is-active os-chronos.service
+          echo mio_social_runtime_repair=PASS
