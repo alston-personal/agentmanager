@@ -68,14 +68,15 @@ jobs:
           PORT="${ORACLE_PORT:-22}"
           REMOTE=/tmp/install-thin-client-linux-oracle-${GITHUB_RUN_ID}.sh
           scp -P "$PORT" -o StrictHostKeyChecking=accept-new             scripts/install_thin_client_linux_oracle.sh "${ORACLE_USER}@${ORACLE_HOST}:$REMOTE"
-          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}"             bash -s -- "$REMOTE" <<'REMOTE'
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}"             bash -s -- "$REMOTE" "$GITHUB_SHA" <<'REMOTE'
           set -euo pipefail
           REMOTE="$1"
+          SOURCE_SHA="$2"
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
           test -S "$XDG_RUNTIME_DIR/bus"
           chmod 700 "$REMOTE"
-          "$REMOTE" core/integration
+          AGENTOS_SOURCE_COMMIT="$SOURCE_SHA" AGENTOS_REPO=/home/ubuntu/agentmanager "$REMOTE" core/integration
           systemctl --user is-active agentos-thin-client.service
           /home/ubuntu/.local/share/AgentOS/agentos-client manifest |             python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["node_id"]=="oracle-exec"; assert "node.ssh.inspect" in d["capabilities"]; assert "node.ssh.recover" in d["capabilities"]; print("oracle_exec_manifest=PASS")'
           rm -f "$REMOTE"
