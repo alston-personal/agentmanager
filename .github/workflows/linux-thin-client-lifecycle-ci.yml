@@ -43,7 +43,9 @@ jobs:
         run: bash -n scripts/install_thin_client_linux_oracle.sh
 
   oracle-exec-bootstrap-hosted:
-    if: false
+    concurrency:
+      group: oracle-exec-bootstrap-hosted
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
