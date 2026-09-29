@@ -8,7 +8,9 @@ if [[ "$(id -un)" != "ubuntu" || "$HOME" != "/home/ubuntu" ]]; then
 fi
 
 data_root="${AGENT_DATA_ROOT:-$HOME/agent-data}"
+project_root="/home/ubuntu/agentmanager"
 test -d "$data_root" || { echo "ERROR: AgentOS data root missing: $data_root" >&2; exit 4; }
+test -d "$project_root/.git" || { echo "ERROR: AgentOS project root missing: $project_root" >&2; exit 4; }
 receipt_dir="$data_root/runtime/skills/typesafe-ai"
 failure_file="$receipt_dir/install-failure.json"
 mkdir -p "$receipt_dir"
@@ -34,7 +36,10 @@ chmod 0700 "$npm_cache"
 export npm_config_cache="$npm_cache"
 
 set +e
-npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes --copy
+(
+  cd "$project_root"
+  npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --yes --copy
+)
 install_rc=$?
 set -e
 if [[ "$install_rc" -ne 0 ]]; then
@@ -43,7 +48,7 @@ if [[ "$install_rc" -ne 0 ]]; then
   exit "$install_rc"
 fi
 
-skill_file="$HOME/.gemini/antigravity/skills/typesafe-ai/SKILL.md"
+skill_file="$project_root/.agents/skills/typesafe-ai/SKILL.md"
 if [[ ! -s "$skill_file" ]]; then
   write_failure "skill_file_missing" 5
   exit 5
@@ -63,7 +68,7 @@ payload = {
     "schema": "agentos.skill-install-receipt/v1",
     "skill": "typesafe-ai",
     "agent": "antigravity",
-    "scope": "oracle-ubuntu-global",
+    "scope": "oracle-agentos-project",
     "installation_method": "npx-skills-add",
     "installed_at": sys.argv[2],
     "skill_sha256": sys.argv[3],
@@ -81,6 +86,7 @@ rm -f "$failure_file"
 
 echo "TYPE_SAFE_SKILL=FILE_VERIFIED"
 echo "TYPE_SAFE_SKILL_SHA256=$hash"
+echo "TYPE_SAFE_SKILL_SCOPE=oracle-agentos-project"
 echo "TYPE_SAFE_SKILL_RECEIPT=$receipt_dir/install-receipt.json"
 echo "TYPE_SAFE_SESSION_LOAD=UNVERIFIED"
 echo "TYPE_SAFE_AGY_LOAD=UNVERIFIED"
