@@ -43,10 +43,10 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
 
     def test_rollout_respects_cross_owner_runtime_boundary(self):
         text = _text(WORKFLOW)
+        self.assertNotIn('/home/ubuntu/.local/share/agentos/action-runtime', text)
         self.assertNotIn('git -c safe.directory="$RUNTIME" -C "$RUNTIME" rev-parse HEAD', text)
         self.assertNotIn('git config --global --add safe.directory', text)
-        self.assertNotIn('/home/ubuntu/agent-data/runtime/action-relay', text)
-        self.assertIn('/v1/controller/receipts/$JOB_ID', text)
+        self.assertIn('ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay', text)
 
     def test_live_submission_enters_one_controller_before_action_relay(self):
         text = _text(WORKFLOW)
@@ -63,10 +63,10 @@ class ExactGenerationLiveRolloutContractTests(unittest.TestCase):
     def test_rollout_records_bounded_executor_job_receipt_without_requiring_workload_success(self):
         text = _text(WORKFLOW)
         self.assertIn('canonical_experience_regression_request', text)
-        self.assertNotIn('ActionRelayExecutorJobDispatcher', text)
-        self.assertNotIn('dispatcher.inspect(job_id)', text)
-        self.assertIn('/v1/controller/receipts/$JOB_ID', text)
-        self.assertIn('receipt = observed.get("receipt")', text)
+        self.assertIn('ActionRelayExecutorJobDispatcher', text)
+        self.assertIn('ActionRelayExecutorJobDispatcher(root).inspect(job_id)', text)
+        self.assertIn('ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay', text)
+        self.assertNotIn('/v1/controller/receipts/$JOB_ID', text)
         self.assertIn('credential_exposed', text)
         self.assertIn('executor_job_transport_receipt=PASS', text)
         self.assertIn('actions/upload-artifact@v4', text)
