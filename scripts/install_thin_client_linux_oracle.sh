@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REF="${1:-core/integration}"
-ONE_URL="${AGENTOS_ONE_URL:-https://studio.milkcat.org/dashboard/api/agentos}"
+ONE_URL="${AGENTOS_ONE_URL:-http://127.0.0.1:8780}"
 NODE_ID="${AGENTOS_NODE_ID:-oracle-exec}"
 ROOT="$HOME/.local/share/AgentOS"
 VENV="$ROOT/venv"
@@ -41,9 +41,18 @@ EOF
 fi
 
 if [ ! -f "$STATE/client.json" ]; then
-  echo "agentos_oracle_exec_install=ENROLLMENT_REQUIRED"
-  echo "agentos_node_id=$NODE_ID"
-  exec "$LAUNCHER" join --one "$ONE_URL" --node-id "$NODE_ID" --timeout-seconds 900
+  if curl -fsS --max-time 3 "$ONE_URL/v1/health" >/dev/null 2>&1; then
+    INVITE_JSON="$(AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -m agent_core.realm_cli invite --minutes 10 --label oracle-exec-bootstrap)"
+    INVITE_ID="$(printf '%s' "$INVITE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["invite_id"])')"
+    INVITE_CODE="$(printf '%s' "$INVITE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["code"])')"
+    "$LAUNCHER" enroll --one "$ONE_URL" --invite-id "$INVITE_ID" --code "$INVITE_CODE" --node-id "$NODE_ID" >/dev/null
+    unset INVITE_JSON INVITE_ID INVITE_CODE
+    echo "agentos_oracle_exec_enrollment=LOCAL_INVITE_PASS"
+  else
+    echo "agentos_oracle_exec_install=ENROLLMENT_REQUIRED"
+    echo "agentos_node_id=$NODE_ID"
+    exec "$LAUNCHER" join --one "$ONE_URL" --node-id "$NODE_ID" --timeout-seconds 900
+  fi
 fi
 
 "$VENV/bin/python" - <<'PY'
