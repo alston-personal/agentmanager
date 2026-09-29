@@ -7,7 +7,7 @@ on:
       - 'dashboard/app/api/agentos/**'
       - 'scripts/deploy_realm_gateway_user.sh'
       - 'agentos_node/bootstrap_control.py'
-      - '.github/workflows/oracle-deploy-realm-gateway.yml'
+      - '.github/workflows/oracle-deploy-realm-gateway-postreboot.yml'
   workflow_dispatch:
 
 permissions:
