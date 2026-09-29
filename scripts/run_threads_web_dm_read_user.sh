@@ -13,7 +13,7 @@ if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
   exit 2
 fi
 
-for rel in   agentos_node/social/web_dm.py   scripts/threads_web_dm_bridge_user.py; do
+for rel in   agentos_node/social/web_dm.py   scripts/threads_web_dm_bridge_user.py   scripts/mio_threads_dm_autonomous_user.py   scripts/mio_persona_dm_decision_user.py   scripts/mio_persona_social_loop_user.py   scripts/send_mio_threads_dm_from_decision.py; do
   tmp="$(mktemp)"
   git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$tmp"
   install -D -m 0644 "$tmp" "$REPO/$rel"
@@ -23,12 +23,12 @@ done
 set +e
 PYTHONPATH="$REPO" python3 - <<'PY'
 try:
-    import agentos_node.social.web_dm  # noqa: F401
+    import agentos_node.social.web_dm
     print("threads_web_dm_import_web_dm=PASS")
 except ModuleNotFoundError:
     print("threads_web_dm_import_web_dm=MISSING")
 try:
-    import playwright  # noqa: F401
+    import playwright
     print("threads_web_dm_import_playwright=PASS")
 except ModuleNotFoundError:
     print("threads_web_dm_import_playwright=MISSING")
@@ -51,29 +51,28 @@ PY
 )"
 RC=$?
 set -e
-printf '%s
-' "$OUT" | grep -E '^threads_web_dm_' || true
+printf '%s\n' "$OUT" | grep -E '^threads_web_dm_' || true
 echo "threads_web_dm_python_rc=$RC"
-if [ "$RC" -ne 0 ] && ! printf '%s
-' "$OUT" | grep -Eq '^threads_web_dm_(bridge|error_type)='; then
-  SAFE_TYPE="$(printf '%s
-' "$OUT" | sed -nE 's/^([A-Za-z_][A-Za-z0-9_.]*(Error|Exception))(:.*)?$/\1/p' | tail -n 1)"
-  [ -n "$SAFE_TYPE" ] || SAFE_TYPE="unclassified_python_failure"
-  echo "threads_web_dm_error_type=$SAFE_TYPE"
-fi
 
-if printf '%s
-' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
+if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PASS'; then
+  set +e
+  AUTO_OUT="$(PYTHONPATH="$REPO" python3 "$REPO/scripts/mio_threads_dm_autonomous_user.py" 2>&1)"
+  AUTO_RC=$?
+  set -e
+  printf '%s\n' "$AUTO_OUT" | grep -E '^mio_dm_(autonomous|send)' || true
+  if [ "$AUTO_RC" -ne 0 ]; then
+    echo "threads_web_dm_autonomous=FAIL"
+    exit "$AUTO_RC"
+  fi
+  echo "threads_web_dm_autonomous=PASS"
   echo "threads_web_dm_read=PASS"
   exit 0
 fi
-if printf '%s
-' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
+if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=LOGIN_REQUIRED'; then
   echo "threads_web_dm_read=LOGIN_REQUIRED"
   exit 0
 fi
-if printf '%s
-' "$OUT" | grep -Fq 'threads_web_dm_bridge=PLAYWRIGHT_UNAVAILABLE'; then
+if printf '%s\n' "$OUT" | grep -Fq 'threads_web_dm_bridge=PLAYWRIGHT_UNAVAILABLE'; then
   echo "threads_web_dm_read=PLAYWRIGHT_UNAVAILABLE"
   exit 5
 fi
