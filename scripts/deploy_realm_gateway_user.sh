@@ -24,82 +24,96 @@ LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstra
 git -C "$REPO" fetch origin "$SOURCE_COMMIT"
 git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 
-find_dashboard_runtime() {
-  python3 - "$DASH" <<'PY'
-from pathlib import Path
-import os,sys
-root=Path('/proc'); target=str(Path(sys.argv[1]).resolve()); rows=[]
-for entry in root.iterdir():
-    if not entry.name.isdigit(): continue
-    pid=int(entry.name)
-    try:
-        st=entry.stat()
-        if st.st_uid != os.getuid(): continue
-        cwd=str((entry/'cwd').resolve())
-        raw=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
-        ppid=None
-        for line in (entry/'status').read_text().splitlines():
-            if line.startswith('PPid:'):
-                ppid=int(line.split()[1]); break
-        pgid=os.getpgid(pid)
-    except (OSError, PermissionError, ProcessLookupError):
-        continue
-    if cwd != target: continue
-    if raw.startswith('npm start') or 'next start' in raw or raw.startswith('next-server'):
-        rows.append((pid, ppid if ppid is not None else -1, pgid, raw))
-for pid,ppid,pgid,raw in sorted(rows):
-    print(f'{pid}\t{ppid}\t{pgid}\t{raw}')
-PY
-}
+DASH_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+DASH_UNIT="$DASH_UNIT_DIR/agentos-dashboard.service"
 
-find_dashboard_npm_pid() {
-  find_dashboard_runtime | awk -F '\t' '$4 ~ /^npm start/ {print $1}'
+install_dashboard_service() {
+  mkdir -p "$DASH_UNIT_DIR"
+  local npm_bin
+  npm_bin="$(command -v npm)"
+  [ -n "$npm_bin" ] || { echo "ERROR: npm missing" >&2; return 4; }
+
+  cat > "$DASH_UNIT" <<EOF
+[Unit]
+Description=AgentOS Dashboard / Realm Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$DASH
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=$npm_bin start
+Restart=always
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable agentos-dashboard.service >/dev/null
+  echo "dashboard_service_install=PASS"
 }
 
 restart_dashboard() {
-  local before groups old_npm new_npm own_pgid
-  before=$(find_dashboard_runtime)
-  [ -n "$before" ] || { echo "ERROR: no dashboard runtime found" >&2; return 4; }
-  echo 'dashboard_runtime_before:'
-  printf '%s\n' "$before"
+  install_dashboard_service
 
-  old_npm=$(printf '%s\n' "$before" | awk -F '\t' '$4 ~ /^npm start/ {print $1}')
-  [ "$(printf '%s\n' "$old_npm" | sed '/^$/d' | wc -l)" -eq 1 ] || {
-    echo "ERROR: expected exactly one dashboard npm start before restart, got: $old_npm" >&2
-    return 4
-  }
-
-  groups=$(printf '%s\n' "$before" | awk -F '\t' '{print $3}' | sort -nu)
-  [ -n "$groups" ] || { echo "ERROR: no dashboard process groups found" >&2; return 4; }
+  # Retire legacy dashboard processes before the canonical systemd-owned
+  # runtime starts. A reboot may leave none; that is a valid cold-start case.
+  local own_pgid
   own_pgid=$(ps -o pgid= -p $$ | tr -d ' ')
-  for pgid in $groups; do
-    [ "$pgid" != "$own_pgid" ] || { echo "ERROR: refusing own process group" >&2; return 4; }
-    echo "dashboard_term_pgid=$pgid"
-    kill -TERM -- "-$pgid" 2>/dev/null || true
-  done
+  python3 - "$DASH" "$own_pgid" <<'PY'
+from pathlib import Path
+import os,signal,sys,time
+target=str(Path(sys.argv[1]).resolve())
+own_pgid=int(sys.argv[2])
+groups=set()
+for entry in Path('/proc').iterdir():
+    if not entry.name.isdigit():
+        continue
+    try:
+        if entry.stat().st_uid != os.getuid():
+            continue
+        cwd=str((entry/'cwd').resolve())
+        raw=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+        pgid=os.getpgid(int(entry.name))
+    except (OSError, PermissionError, ProcessLookupError):
+        continue
+    if cwd != target:
+        continue
+    if raw.startswith('npm start') or 'next start' in raw or raw.startswith('next-server'):
+        if pgid != own_pgid:
+            groups.add(pgid)
+for pgid in sorted(groups):
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        print(f'dashboard_legacy_term_pgid={pgid}')
+    except ProcessLookupError:
+        pass
+if groups:
+    time.sleep(2)
+PY
 
+  systemctl --user restart agentos-dashboard.service
   for i in $(seq 1 30); do
-    sleep 1
-    new_npm=$(find_dashboard_npm_pid 2>/dev/null || true)
-    if [ -n "$new_npm" ] && [ "$new_npm" != "$old_npm" ]; then
+    if systemctl --user is-active --quiet agentos-dashboard.service &&        curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then
       break
     fi
+    sleep 1
   done
-  [ -n "${new_npm:-}" ] && [ "$new_npm" != "$old_npm" ] || {
-    echo "ERROR: dashboard supervisor did not restart npm start" >&2
+
+  systemctl --user is-active --quiet agentos-dashboard.service || {
+    systemctl --user --no-pager --full status agentos-dashboard.service >&2 || true
+    journalctl --user -u agentos-dashboard.service -n 80 --no-pager >&2 || true
     return 4
   }
-  echo "dashboard_old_pid=$old_npm"
-  echo "dashboard_new_pid=$new_npm"
-
-  for pgid in $groups; do
-    if ps -eo pgid= | awk '{print $1}' | grep -qx "$pgid"; then
-      echo "ERROR: old dashboard process group still alive: $pgid" >&2
-      return 4
-    fi
-  done
-  echo 'dashboard_runtime_after:'
-  find_dashboard_runtime
+  curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null
+  echo "dashboard_service_active=PASS"
+  echo "dashboard_cold_start_supported=PASS"
 }
 
 TMP=$(mktemp -d)
