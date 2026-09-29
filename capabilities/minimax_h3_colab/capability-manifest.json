@@ -1,0 +1,44 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "media.video.generate.minimax-h3",
+  "display_name": "MiniMax H3 Colab Video Generator",
+  "semantic_owner": "media-generation",
+  "version": "0.1.0",
+  "lifecycle": "declared",
+  "contract": {
+    "input_schema": "agentos.minimax-h3-video-job/v1",
+    "inputs": ["1-9 reference images", "UTF-8 prompt", "duration 4-15 seconds"],
+    "outputs": ["video/mp4", "agentos.media-generation-receipt/v1"],
+    "side_effects": ["uploads approved references and prompt to Colab", "consumes Colab compute units"]
+  },
+  "invocation": {
+    "kind": "external-skill",
+    "upstream_repository": "killkli/minimax-h3-colab-skill",
+    "upstream_skill": "minimax-h3-colab",
+    "entrypoint": "python3 scripts/runner.py batch",
+    "runtime_owner": "node://oracle",
+    "depends_on": ["capability://compute.colab.execute"]
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://media.minimax-h3.colab",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "reference_image_count_min": 1,
+    "reference_image_count_max": 9,
+    "duration_seconds_min": 4,
+    "duration_seconds_max": 15,
+    "keep_reference_order_stable": true,
+    "batch_jobs_should_reuse_one_live_session": true,
+    "do_not_blindly_retry_timed_out_remote_execution": true,
+    "quota_and_gpu_preflight_required": true,
+    "upstream_is_external_and_must_be_version_pinned_before_verified_status": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true
+  }
+}
