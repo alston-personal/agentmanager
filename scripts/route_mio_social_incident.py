@@ -21,14 +21,21 @@ url=cp.stdout.strip()
 issue_no=url.rstrip("/").split("/")[-1]
 print("mio_incident_issue="+issue_no)
 if attempt == 1:
-    subprocess.run(
-        ["gh","workflow","run","mio-social-incident-repair.yml","--repo",repo,
-         "--ref","core/integration",
-         "-f","source_run_id="+run_id,
-         "-f","source_workflow="+workflow[:80],
-         "-f","incident_issue="+issue_no],
-        check=True,
+    check=subprocess.run(
+        ["gh","workflow","view","mio-social-incident-repair.yml","--repo",repo],
+        text=True,capture_output=True,check=False,
     )
-    print("mio_incident_repair_dispatch=PASS")
+    if check.returncode == 0:
+        subprocess.run(
+            ["gh","workflow","run","mio-social-incident-repair.yml","--repo",repo,
+             "--ref","core/integration",
+             "-f","source_run_id="+run_id,
+             "-f","source_workflow="+workflow[:80],
+             "-f","incident_issue="+issue_no],
+            check=True,
+        )
+        print("mio_incident_repair_dispatch=PASS")
+    else:
+        print("mio_incident_repair_dispatch=SKIPPED_WORKFLOW_MISSING")
 else:
     print("mio_incident_repair_dispatch=ESCALATED_NO_RETRY")
