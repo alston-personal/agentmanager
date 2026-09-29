@@ -43,6 +43,7 @@ jobs:
         run: bash -n scripts/install_thin_client_linux_oracle.sh
 
   oracle-exec-bootstrap-hosted:
+    if: false
     concurrency:
       group: oracle-exec-bootstrap-hosted
       cancel-in-progress: true
@@ -83,6 +84,7 @@ jobs:
           REMOTE
 
   mio-hf-token-recovery-hosted:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -287,4 +289,14 @@ jobs:
           ps -eo pid,ppid,etime,user,cmd | grep -E 'agentos-client|pip|install_thin_client_linux_oracle|git\+https://github.com/alston-personal/agentmanager' | grep -v grep || true
           echo "=== logs ==="
           journalctl --user -u agentos-thin-client.service -n 80 --no-pager || true
+          echo "=== registry ==="
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='oracle-exec'),None)
+          print(json.dumps(node,ensure_ascii=False,indent=2))
+          PY
+          echo "=== control inbox bridge ==="
+          systemctl --user --no-pager --full status agentos-control-inbox-bridge.service || true
+          journalctl --user -u agentos-control-inbox-bridge.service -n 100 --no-pager || true
           REMOTE
