@@ -317,8 +317,11 @@ class ThinClient:
         if platform.system() != 'Linux':
             raise RuntimeError('node.ssh.recover is Linux-only')
         before = self._inspect_ssh()
+        restart_argv = ['systemctl', 'restart', 'ssh']
+        if hasattr(os, 'geteuid') and os.geteuid() != 0:
+            restart_argv = ['sudo', '-n', *restart_argv]
         restart = subprocess.run(
-            ['systemctl', 'restart', 'ssh'],
+            restart_argv,
             capture_output=True, text=True, timeout=20, check=False,
         )
         after = self._inspect_ssh()
