@@ -32,3 +32,11 @@ def test_typesafe_request_has_no_caller_supplied_execution_fields():
     assert "argv" not in request
     assert "path" not in request
     assert "env" not in request
+
+
+def test_typesafe_installer_uses_single_npx_method_and_copy_mode():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "scripts/install_oracle_typesafe_skill.sh").read_text(encoding="utf-8")
+    command = "npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes --copy"
+    assert text.count("npx --yes skills add") == 1
+    assert command in text
