@@ -1,0 +1,56 @@
+name: Mio Social Incident Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        required: true
+        type: string
+      source_workflow:
+        required: true
+        type: string
+      incident_issue:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/integration
+
+      - name: Reconcile known Mio social bootstrap drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp -s agentos_node/bootstrap_control.py /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py ||             cat agentos_node/bootstrap_control.py > /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          grep -q 'ACTION_READ_THREADS_WEB_DM' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          grep -q 'ACTION_INSPECT_MIO_RECENT' /home/ubuntu/agentmanager/agentos_node/bootstrap_control.py
+          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user restart os-chronos.service
+          sudo -n -u ubuntu env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user is-active os-chronos.service
+          echo mio_social_incident_repair=PASS
+
+      - name: Re-run failed source workflow jobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run rerun "${{ inputs.source_run_id }}" --failed --repo "${{ github.repository }}"
+          echo mio_source_rerun_dispatched=PASS
+
+      - name: Comment incident
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ inputs.incident_issue }}"             --repo "${{ github.repository }}"             --body "Bounded repair executed. Source run ${{ inputs.source_run_id }} was queued for failed-job re-run. Keep open until a PASS receipt is observed."
