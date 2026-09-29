@@ -3,5 +3,6 @@
   "action": "realm.node.threads-conversation-read",
   "node_id": "mbpr",
   "username": "0__0.ayoub",
-  "nonce": "threads-conversation-read-20260929-2017"
+  "source_commit": "0b450976a3cbe8460a9d2a29bcbafd281f5aaf40",
+  "nonce": "threads-conversation-read-cdp-20260929-2022"
 }
