@@ -63,3 +63,20 @@ jobs:
           systemctl --user --no-pager --plain status agentos-gui-display.service agentos-gui-window-manager.service agentos-gui-browser.service agentos-gui-vnc.service agentos-gui-novnc.service 2>&1 | tail -n 120 || true
           echo "oracle_hosted_recovery=PASS"
           REMOTE
+
+      - name: Deploy Mio try-on worker from exact Core generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/deploy_mio_tryon_worker_user.sh
+          git -C "$REPO" fetch origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/deploy_mio_tryon_worker_user.sh" > "$TMP"
+          chmod 700 "$TMP"
+          "$TMP"
+          rm -f "$TMP"
+          REMOTE
