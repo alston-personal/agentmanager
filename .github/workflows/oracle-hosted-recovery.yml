@@ -1,0 +1,65 @@
+name: Oracle Hosted Recovery
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-hosted-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Recover Oracle self-hosted runner and collect post-reboot evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "oracle_recovery_host=$(hostname)"
+          echo "oracle_recovery_user=$(id -un)"
+
+          mapfile -t UNITS < <(systemctl list-unit-files 'actions.runner.*.service' --no-legend 2>/dev/null | awk '{print $1}' | sed '/^$/d')
+          if [ "${#UNITS[@]}" -gt 0 ]; then
+            for unit in "${UNITS[@]}"; do
+              sudo -n systemctl enable --now "$unit"
+              sudo -n systemctl is-active "$unit"
+              echo "oracle_runner_unit=$unit"
+            done
+          else
+            test -x /home/agentos-node/runner/run.sh
+            if ! pgrep -u agentos-node -f 'Runner.Listener|Runner.Worker|/home/agentos-node/runner/run.sh' >/dev/null; then
+              sudo -n -u agentos-node bash -lc 'cd /home/agentos-node/runner && nohup ./run.sh > runner-recovery.log 2>&1 </dev/null &'
+              sleep 3
+            fi
+            pgrep -u agentos-node -af 'Runner.Listener|Runner.Worker|/home/agentos-node/runner/run.sh' || true
+            echo "oracle_runner_fallback=started"
+          fi
+
+          echo "=== previous boot oom ==="
+          sudo -n journalctl -k -b -1 --no-pager 2>/dev/null | grep -Ei 'out of memory|oom|killed process' | tail -n 80 || true
+          echo "=== previous boot warnings ==="
+          sudo -n journalctl -b -1 -p warning..alert --no-pager 2>/dev/null | tail -n 120 || true
+          echo "=== current memory ==="
+          free -h || true
+          swapon --show || true
+          echo "=== gui worker services ==="
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user --no-pager --plain status agentos-gui-display.service agentos-gui-window-manager.service agentos-gui-browser.service agentos-gui-vnc.service agentos-gui-novnc.service 2>&1 | tail -n 120 || true
+          echo "oracle_hosted_recovery=PASS"
+          REMOTE
