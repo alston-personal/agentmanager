@@ -34,7 +34,7 @@ chmod 0700 "$npm_cache"
 export npm_config_cache="$npm_cache"
 
 set +e
-npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --yes
+npx --yes skills add typesafe-ai/skills --skill typesafe-ai --agent antigravity --global --copy --yes
 install_rc=$?
 set -e
 if [[ "$install_rc" -ne 0 ]]; then
