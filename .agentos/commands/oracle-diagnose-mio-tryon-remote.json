@@ -1,7 +1,7 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "verify imported coarse-slot production try-on after dashboard fix",
-  "requested_at": "2026-09-30T08:12:30Z",
-  "nonce": "coarse-slot-acceptance-081230"
+  "purpose": "verify lower_main+shoes cache prefix survives bag provider quota",
+  "requested_at": "2026-09-30T08:13:30Z",
+  "nonce": "prefix-cache-acceptance-081330"
 }
