@@ -1,0 +1,233 @@
+name: Oracle Refresh Colab OAuth via GUI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-refresh-colab-oauth-gui.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-colab-oauth-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Reauthorize Colab CLI through persistent Oracle Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_PORT:-22}"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "${GITHUB_RUN_ID}" <<'REMOTE'
+          set -euo pipefail
+          RUN_ID="$1"
+          export PATH="/home/ubuntu/.local/bin:$PATH"
+          command -v colab >/dev/null
+
+          # If an existing credential works, preserve it and finish without touching the browser.
+          if timeout 25s colab --auth=adc usage >/dev/null 2>&1; then
+            echo "colab_gui_oauth_refresh=SKIP_ADC_READY"
+            exit 0
+          fi
+          if timeout 25s colab --auth=oauth2 usage </dev/null >/dev/null 2>&1; then
+            echo "colab_gui_oauth_refresh=SKIP_OAUTH_READY"
+            exit 0
+          fi
+
+          GUI_ROOT=/home/ubuntu/.local/share/agentos/gui-worker
+          GUI_PY="$GUI_ROOT/venv/bin/python"
+          test -x "$GUI_PY"
+          "$GUI_PY" -c 'import playwright; print("gui_playwright=PASS")'
+
+          COLAB_BIN="$(command -v colab)"
+          COLAB_PY="$(head -n 1 "$COLAB_BIN" | sed -n 's/^#!//p')"
+          test -x "$COLAB_PY"
+          "$COLAB_PY" -c 'import colab_cli, google_auth_oauthlib; print("colab_oauth_runtime=PASS")'
+
+          WORK="$(mktemp -d /tmp/agentos-colab-oauth-XXXXXXXX)"
+          chmod 700 "$WORK"
+          AUTH_URL_FILE="$WORK/auth_url"
+          CODE_FILE="$WORK/code"
+          AUTH_LOG="$WORK/auth.log"
+          AUTH_HELPER="$WORK/auth_helper.py"
+          BROWSER_HELPER="$WORK/browser_helper.py"
+          cleanup() { rm -rf "$WORK"; }
+          trap cleanup EXIT
+
+          cat > "$AUTH_HELPER" <<'PY'
+          import json, os, sys, time
+          from importlib import resources
+          from pathlib import Path
+          from google_auth_oauthlib.flow import InstalledAppFlow
+          from colab_cli.auth import PUBLIC_SCOPES, REMOTE_REDIRECT_URI
+
+          auth_url_file=Path(sys.argv[1])
+          code_file=Path(sys.argv[2])
+          token_path=Path.home()/".config"/"colab-cli"/"token.json"
+
+          config_path=Path.home()/".colab-cli-oauth-config.json"
+          if config_path.is_file():
+              client_config=json.loads(config_path.read_text(encoding="utf-8"))
+          else:
+              resource=resources.files("colab_cli").joinpath("oauth_config.json")
+              client_config=json.loads(resource.read_text(encoding="utf-8"))
+
+          flow=InstalledAppFlow.from_client_config(client_config, PUBLIC_SCOPES)
+          flow.redirect_uri=REMOTE_REDIRECT_URI
+          auth_url,_=flow.authorization_url(prompt="consent", token_usage="remote", access_type="offline")
+          tmp=auth_url_file.with_suffix(".tmp")
+          tmp.write_text(auth_url,encoding="utf-8")
+          os.chmod(tmp,0o600); tmp.replace(auth_url_file); os.chmod(auth_url_file,0o600)
+
+          deadline=time.time()+240
+          while time.time()<deadline:
+              if code_file.is_file() and code_file.stat().st_size:
+                  code=code_file.read_text(encoding="utf-8").strip()
+                  break
+              time.sleep(0.5)
+          else:
+              raise TimeoutError("authorization code was not captured")
+
+          flow.fetch_token(code=code)
+          creds=flow.credentials
+          if not creds or not creds.valid:
+              raise RuntimeError("OAuth credential exchange did not produce valid credentials")
+
+          token_path.parent.mkdir(parents=True,exist_ok=True)
+          t=token_path.with_suffix(".tmp")
+          t.write_text(creds.to_json(),encoding="utf-8")
+          os.chmod(t,0o600); t.replace(token_path); os.chmod(token_path,0o600)
+          print("colab_oauth_token_saved=PASS")
+          PY
+          chmod 700 "$AUTH_HELPER"
+
+          cat > "$BROWSER_HELPER" <<'PY'
+          import json, re, sys, time, urllib.request
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          auth_url=Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+          code_path=Path(sys.argv[2])
+
+          with urllib.request.urlopen("http://127.0.0.1:9222/json/version",timeout=3) as r:
+              meta=json.load(r)
+          assert meta.get("webSocketDebuggerUrl"), "Chrome CDP is unavailable"
+
+          labels=[
+              re.compile(r"^(Continue|Allow|Next)$",re.I),
+              re.compile(r"^(繼續|允許|同意|下一步)$"),
+          ]
+
+          def capture_code(page):
+              if "sdk.cloud.google.com/applicationdefaultauthcode.html" not in page.url:
+                  return False
+              values=[]
+              for selector in ("textarea","input","code"):
+                  for node in page.locator(selector).all():
+                      try:
+                          v=node.input_value(timeout=300) if selector in ("textarea","input") else node.inner_text(timeout=300)
+                      except Exception:
+                          continue
+                      if v: values.append(v.strip())
+              try:
+                  values.append(page.locator("body").inner_text(timeout=1000))
+              except Exception:
+                  pass
+              for value in values:
+                  for candidate in re.findall(r"[A-Za-z0-9_\-/.]{20,}", value or ""):
+                      if candidate.startswith(("http","www","accounts","applicationdefault")):
+                          continue
+                      code_path.write_text(candidate,encoding="utf-8")
+                      code_path.chmod(0o600)
+                      return True
+              return False
+
+          with sync_playwright() as p:
+              browser=p.chromium.connect_over_cdp("http://127.0.0.1:9222")
+              assert browser.contexts
+              ctx=browser.contexts[0]
+              page=ctx.pages[0] if ctx.pages else ctx.new_page()
+              page.goto(auth_url,wait_until="domcontentloaded",timeout=30000)
+
+              for _ in range(16):
+                  if capture_code(page):
+                      print("colab_gui_oauth_code_capture=PASS")
+                      break
+
+                  # Never type credentials or bypass MFA. Existing signed-in browser state only.
+                  if page.locator('input[type="password"]').count() or "/signin/" in page.url.lower():
+                      raise RuntimeError("interactive_google_login_required")
+
+                  identifiers=page.locator("[data-identifier]")
+                  if identifiers.count()>1:
+                      raise RuntimeError("multiple_google_accounts_require_user_choice")
+                  if identifiers.count()==1 and identifiers.first.is_visible():
+                      identifiers.first.click()
+                      page.wait_for_timeout(1200)
+                      continue
+
+                  clicked=False
+                  for pattern in labels:
+                      for role in ("button","link"):
+                          try:
+                              loc=page.get_by_role(role,name=pattern)
+                              if loc.count() and loc.first.is_visible():
+                                  loc.first.click()
+                                  page.wait_for_timeout(1400)
+                                  clicked=True
+                                  break
+                          except Exception:
+                              pass
+                      if clicked: break
+                  if not clicked:
+                      page.wait_for_timeout(1200)
+              else:
+                  raise RuntimeError("oauth_consent_did_not_reach_code_page")
+
+              if not code_path.is_file():
+                  if not capture_code(page):
+                      raise RuntimeError("authorization_code_not_found")
+          PY
+          chmod 700 "$BROWSER_HELPER"
+
+          "$COLAB_PY" "$AUTH_HELPER" "$AUTH_URL_FILE" "$CODE_FILE" >"$AUTH_LOG" 2>&1 &
+          AUTH_PID=$!
+
+          for i in $(seq 1 60); do
+            [ -s "$AUTH_URL_FILE" ] && break
+            kill -0 "$AUTH_PID" 2>/dev/null || { cat "$AUTH_LOG" >&2; exit 41; }
+            sleep 0.5
+          done
+          test -s "$AUTH_URL_FILE"
+
+          set +e
+          "$GUI_PY" "$BROWSER_HELPER" "$AUTH_URL_FILE" "$CODE_FILE"
+          BROWSER_RC=$?
+          set -e
+          if [ "$BROWSER_RC" -ne 0 ]; then
+            kill "$AUTH_PID" 2>/dev/null || true
+            wait "$AUTH_PID" 2>/dev/null || true
+            echo "colab_gui_oauth_refresh=GUI_INTERACTION_REQUIRED" >&2
+            exit "$BROWSER_RC"
+          fi
+
+          wait "$AUTH_PID"
+          grep -Fq "colab_oauth_token_saved=PASS" "$AUTH_LOG"
+          timeout 30s colab --auth=oauth2 usage >/dev/null
+          echo "colab_gui_oauth_refresh=PASS"
+          REMOTE
