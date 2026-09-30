@@ -28,6 +28,7 @@ CURRENT_LISTENER=""
 CANARY_PID=""
 SWITCHED=0
 PM2_REPLACED=0
+PM2_TARGET_PRESENT=0
 LEGACY_NEXT_MOVED=0
 LEGACY_PROBE="$LEGACY/.next.runtime-isolation-probe-$RUN_ID"
 
@@ -89,6 +90,9 @@ pm2_safe_preflight() {
 import json,sys
 apps=json.load(open(sys.argv[1],encoding='utf8'))
 rows=[a for a in apps if a.get('name')==sys.argv[2]]
+if len(rows)==0:
+    print('dashboard_pm2_target_count=0 recovery=listener_adoption')
+    raise SystemExit(3)
 assert len(rows)==1, f'dashboard_pm2_target_count={len(rows)}'
 app=rows[0]; env=app.get('pm2_env') or {}
 script=str(env.get('pm_exec_path') or '')
@@ -102,7 +106,6 @@ print('dashboard_pm2_preflight=PASS name='+str(app.get('name'))+' cwd='+cwd+' sc
 print(cwd)
 PY
 }
-
 check_route() {
   local route="$1" expected="$2"
   local code=""
@@ -210,14 +213,31 @@ fi
 test -f "$PM2_CLI"
 
 # Read the actual existing runtime before any mutation.
-pm2_safe_preflight > "$TMP/pm2-preflight.txt"
-cat "$TMP/pm2-preflight.txt"
-CURRENT_CWD="$(tail -n 1 "$TMP/pm2-preflight.txt")"
-test -d "$CURRENT_CWD"
 CURRENT_LISTENER="$(listener_pid)"
+set +e
+pm2_safe_preflight > "$TMP/pm2-preflight.txt" 2>&1
+PM2_PREFLIGHT_RC=$?
+set -e
+cat "$TMP/pm2-preflight.txt"
+if [ "$PM2_PREFLIGHT_RC" -eq 0 ]; then
+  PM2_TARGET_PRESENT=1
+  CURRENT_CWD="$(tail -n 1 "$TMP/pm2-preflight.txt")"
+elif [ "$PM2_PREFLIGHT_RC" -eq 3 ]; then
+  PM2_TARGET_PRESENT=0
+  CURRENT_CWD="$(readlink -f "/proc/$CURRENT_LISTENER/cwd")"
+  case "$CURRENT_CWD" in
+    /home/ubuntu/agent-data/releases/dashboard/apps/*) ;;
+    *) echo "dashboard_unmanaged_listener_cwd_unexpected=$CURRENT_CWD"; exit 2 ;;
+  esac
+  echo "dashboard_runtime_recovery=ADOPT_VERIFIED_LISTENER cwd=$CURRENT_CWD"
+else
+  echo "dashboard_pm2_preflight=FAILED rc=$PM2_PREFLIGHT_RC"
+  exit "$PM2_PREFLIGHT_RC"
+fi
+test -d "$CURRENT_CWD"
 assert_dashboard_listener "$CURRENT_LISTENER" "$CURRENT_CWD"
 curl --noproxy '*' -fsS --connect-timeout 3 --max-time 10   http://127.0.0.1:3000/dashboard/api/auth/session -o /dev/null
-echo "dashboard_runtime_preflight=PASS listener=$CURRENT_LISTENER"
+echo "dashboard_runtime_preflight=PASS listener=$CURRENT_LISTENER pm2_managed=$PM2_TARGET_PRESENT"
 
 PREV_LIVE="$(readlink -f "$LIVE" 2>/dev/null || true)"
 
@@ -318,7 +338,9 @@ test "$(readlink -f "$LIVE")" = "$RELEASE"
 echo "dashboard_live_pointer=PASS release=$RELEASE"
 
 # Stop exactly the verified old Dashboard process. Its Next child may outlive PM2 stop.
-node "$PM2_CLI" stop "$APP_NAME" >/dev/null
+if [ "$PM2_TARGET_PRESENT" -eq 1 ]; then
+  node "$PM2_CLI" stop "$APP_NAME" >/dev/null
+fi
 remaining="$(listener_pid || true)"
 if [ -n "$remaining" ]; then
   test "$remaining" = "$CURRENT_LISTENER" || {
@@ -332,7 +354,9 @@ if [ -n "$remaining" ]; then
   kill -TERM "$remaining"
 fi
 wait_port_clear || { echo 'dashboard_old_listener_stop=FAILED'; exit 1; }
-node "$PM2_CLI" delete "$APP_NAME" >/dev/null
+if [ "$PM2_TARGET_PRESENT" -eq 1 ]; then
+  node "$PM2_CLI" delete "$APP_NAME" >/dev/null
+fi
 PM2_REPLACED=1
 
 # Recreate the app against the immutable release, not the shared checkout.
