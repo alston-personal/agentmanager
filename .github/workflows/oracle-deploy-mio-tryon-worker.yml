@@ -87,12 +87,52 @@ jobs:
           UNIT
 
           install -d -m 700 "$HOME/.config/agentos"
-          if [ -n "$HF_TOKEN_VALUE" ]; then
-            umask 077
-            printf 'HF_TOKEN=%s\n' "$HF_TOKEN_VALUE" > "$HOME/.config/agentos/mio-tryon.env"
-          else
-            rm -f "$HOME/.config/agentos/mio-tryon.env"
+
+          # Never erase a working Oracle-local token merely because the Actions
+          # secret is unset. Resolve credentials in explicit precedence order:
+          # Actions secret -> existing worker env -> agentmanager dotenv -> home dotenv.
+          if [ -z "$HF_TOKEN_VALUE" ]; then
+            HF_TOKEN_VALUE="$(python3 - <<'PY'
+          from pathlib import Path
+
+          candidates = [
+              Path.home() / ".config" / "agentos" / "mio-tryon.env",
+              Path("/home/ubuntu/agentmanager/.env"),
+              Path.home() / ".env",
+          ]
+          keys = {"HF_TOKEN", "HUGGINGFACE_TOKEN"}
+          for path in candidates:
+              if not path.is_file():
+                  continue
+              for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  if line.startswith("export "):
+                      line = line[7:].strip()
+                  if "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  if key.strip() not in keys:
+                      continue
+                  value = value.strip().strip('"').strip("'")
+                  if value:
+                      print(value)
+                      raise SystemExit(0)
+          PY
+            )"
           fi
+
+          if [ -z "$HF_TOKEN_VALUE" ]; then
+            echo "mio_tryon_hf_token=MISSING" >&2
+            echo "Refusing to replace the worker runtime without a usable HF token." >&2
+            exit 23
+          fi
+
+          umask 077
+          printf 'HF_TOKEN=%s\n' "$HF_TOKEN_VALUE" > "$HOME/.config/agentos/mio-tryon.env"
+          chmod 600 "$HOME/.config/agentos/mio-tryon.env"
+          echo "mio_tryon_hf_token=CONFIGURED"
 
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"

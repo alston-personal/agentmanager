@@ -45,12 +45,19 @@ jobs:
           # The deploy workflow runs independently. Wait until this mainline generation
           # is actually installed before probing it.
           INSTALLED=0
+          TOKEN_ENV="$HOME/.config/agentos/mio-tryon.env"
           for i in $(seq 1 90); do
-            if [ -s "$WORKER" ] && grep -Fq 'inference_provider_reference_try_on' "$WORKER"; then
+            TOKEN_READY=0
+            if [ -s "$TOKEN_ENV" ] && grep -Eq '^(HF_TOKEN|HUGGINGFACE_TOKEN)=.+' "$TOKEN_ENV"; then
+              TOKEN_READY=1
+            fi
+            if [ -s "$WORKER" ] \
+              && grep -Fq 'inference_provider_reference_try_on' "$WORKER" \
+              && [ "$TOKEN_READY" -eq 1 ]; then
               INSTALLED=1
               break
             fi
-            echo "mio_any_item_waiting_for_worker poll=$i"
+            echo "mio_any_item_waiting_for_worker_and_token poll=$i"
             sleep 2
           done
           test "$INSTALLED" -eq 1
@@ -58,11 +65,7 @@ jobs:
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
           systemctl --user is-active agentos-mio-tryon-render-worker.service
-          if [ -s "$HOME/.config/agentos/mio-tryon.env" ]; then
-            echo "mio_any_item_hf_token_configured=yes"
-          else
-            echo "mio_any_item_hf_token_configured=no"
-          fi
+          echo "mio_any_item_hf_token_configured=yes"
 
           ROOT="$HOME/agent-data/projects/dressup-simulator"
           JOB_DIR="$ROOT/render_jobs/runtime"
