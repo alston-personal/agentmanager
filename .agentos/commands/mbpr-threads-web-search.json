@@ -1,0 +1,8 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.threads-existing.search",
+  "node_id": "mbpr",
+  "source_commit": "e57ddd836a0945ebd7fd64c9904d25f05791d510",
+  "query": "貓",
+  "nonce": "threads-web-search-20260930-1312"
+}
