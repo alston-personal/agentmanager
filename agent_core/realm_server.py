@@ -190,6 +190,10 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 self._authorize_controller()
                 self._send(200, {'ok': True, 'node_map': self.controller.nodes()})
                 return
+            if parsed.path == '/v1/controller/scheduler':
+                self._authorize_controller()
+                self._send(200, {'ok': True, 'runner_pool': self.controller.scheduler()})
+                return
             rollout_prefix = '/v1/controller/runtime/rollouts/'
             if parsed.path.startswith(rollout_prefix):
                 self._authorize_controller()
