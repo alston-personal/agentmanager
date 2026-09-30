@@ -166,7 +166,7 @@ def _incident(*, request_id: str, action: str, policy: ActionPolicy, failure_cla
     if detail:
         payload["detail"] = str(detail)[:240]
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", request_id)[:100] or "unknown"
-    path = root / f"{safe}-{int(time.time())}.json"
+    path = root / f"{safe}-{failure_class}-{int(time.time())}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
