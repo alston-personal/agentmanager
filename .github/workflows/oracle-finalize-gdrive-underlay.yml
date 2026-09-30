@@ -12,7 +12,7 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20
     env:
       ORACLE_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
@@ -41,8 +41,13 @@ jobs:
             test -f "$local_file"
             local_size="$(stat -c %s "$local_file")"
             remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
-            echo "verify=$name local=$local_size remote=$remote_size"
+            echo "verify_size=$name local=$local_size remote=$remote_size"
             test "$remote_size" = "$local_size"
+            local_md5="$(md5sum "$local_file" | awk '{print $1}')"
+            remote_md5="$(timeout 60 rclone md5sum "$DEST/$name" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+            test -n "$remote_md5"
+            test "$remote_md5" = "$local_md5"
+            echo "verify_md5=$name PASS"
           done
 
           mountpoint -q /mnt/agentos-gdrive
@@ -61,8 +66,19 @@ jobs:
 
           ln -s /mnt/agentos-gdrive "$HOME/gdrive"
           test -L "$HOME/gdrive"
-          mountpoint -q "$(readlink -f "$HOME/gdrive")"
+          mountpoint -q /mnt/agentos-gdrive
+          cat > "$HOME/backup_agentos_guarded.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if ! mountpoint -q /mnt/agentos-gdrive; then
+            echo "$(date -Is) backup_refused=gdrive_not_mounted" >&2
+            exit 42
+          fi
+          exec "$HOME/backup_agentos.sh"
+          SH
+          chmod 700 "$HOME/backup_agentos_guarded.sh"
           echo 'legacy_gdrive_symlink=PASS'
+          echo 'backup_mount_guard_final=PASS'
           df -h /
           echo 'gdrive_underlay_finalize=PASS'
           REMOTE
