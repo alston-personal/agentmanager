@@ -1,0 +1,103 @@
+name: Oracle Install Mio Observer Timer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-install-mio-observer-timer.yml'
+      - 'scripts/install_mio_observer_timer_user.sh'
+      - 'agentos_node/bootstrap_control.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-mio-observer-timer
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/integration
+
+      - name: Install timer through bounded bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          ID="mio-observer-timer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$ID.request.json"
+          RECEIPT="$RECEIPTS/$ID.json"
+
+          python3 -m py_compile agentos_node/bootstrap_control.py
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          python3 - "$REQUEST" "$ID" "$SOURCE_COMMIT" <<'PY'
+          import json, os, sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          payload={
+            "schema":"agentos.bootstrap-request/v1",
+            "request_id":sys.argv[2],
+            "action":"agentos.mio_observer.timer.install",
+            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
+            "params":{"source_commit":sys.argv[3]},
+            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
+          }
+          tmp=path.with_suffix(path.suffix+".tmp")
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          os.chmod(tmp,0o644)
+          tmp.replace(path)
+          os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 240); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
+          test -f "$RECEIPT"
+
+          python3 - "$RECEIPT" "$SOURCE_COMMIT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.mio_observer.timer.install",r
+          assert r.get("executor_user")=="ubuntu",r
+          assert r.get("executor_uid")==1001,r
+          assert r.get("source_commit")==sys.argv[2],r
+          assert r.get("ok") is True,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          for marker in ("mio_observer_timer=active","mio_observer_timer_interval=5m","mio_observer_timer_install=PASS"):
+            assert marker in text,(marker,text[-12000:])
+          print("mio_observer_timer_install_receipt=PASS")
+          PY
+
+      - name: Verify production freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/activity.json > "$RUNNER_TEMP/activity.json"
+          python3 - "$RUNNER_TEMP/activity.json" <<'PY'
+          import json,sys
+          from datetime import datetime,timezone
+          d=json.load(open(sys.argv[1],encoding="utf-8"))
+          ts=datetime.fromisoformat(str(d["updated_at"]).replace("Z","+00:00")).astimezone(timezone.utc)
+          age=(datetime.now(timezone.utc)-ts).total_seconds()
+          assert -60 <= age <= 900, age
+          print("mio_observer_timer_production_freshness=PASS")
+          PY
