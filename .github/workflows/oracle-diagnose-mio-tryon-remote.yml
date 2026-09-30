@@ -116,5 +116,69 @@ jobs:
               print('mio_remote_create_non_json='+raw[:500].replace('\n',' '))
           PY
           rm -f "$BODY"
+
+          echo '=== imported coarse-slot production acceptance ==='
+          IMPORTED="$(python3 - "$ROOT/garments/imported" <<'PY'
+          import json,pathlib,sys
+          mapping={
+              'upper_body':'upper_main',
+              'outerwear':'upper_outer',
+              'lower_body':'lower_main',
+              'dress':'onepiece',
+              'shoes':'shoes',
+              'bag':'bag',
+              'accessories':'accessory_1',
+          }
+          d=pathlib.Path(sys.argv[1])
+          rows=[]
+          for p in d.glob('*.json'):
+              try:j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:continue
+              raw=str(j.get('layer') or j.get('slot') or '')
+              if raw in mapping and raw != mapping[raw] and j.get('garmentId'):
+                  rows.append((p.stat().st_mtime,str(j['garmentId']),mapping[raw],raw))
+          if rows:
+              _,gid,layer,raw=sorted(rows,reverse=True)[0]
+              print(gid+'\t'+layer+'\t'+raw)
+          PY
+          )"
+          if [ -n "$IMPORTED" ]; then
+            IFS=
+\t' read -r IMPORTED_ID IMPORTED_LAYER IMPORTED_RAW <<< "$IMPORTED"
+            echo "mio_imported_probe_raw_slot=$IMPORTED_RAW"
+            echo "mio_imported_probe_layer=$IMPORTED_LAYER"
+            BODY=/tmp/mio-imported-create-$.json
+            PAYLOAD="$(python3 - "$IMPORTED_ID" "$IMPORTED_LAYER" <<'PY'
+          import json,sys
+          print(json.dumps({
+            'characterId':'sunlake-milkcat-ai-001',
+            'view':'front',
+            'pose':'neutral_standing',
+            'selectedLayers':{sys.argv[2]:sys.argv[1]},
+          },separators=(',',':')))
+          PY
+            )"
+            code="$(curl --noproxy '*' -k -sS -o "$BODY" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+              -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN" \
+              --data "$PAYLOAD" \
+              https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render || true)"
+            echo "mio_imported_probe_http=$code"
+            python3 - "$BODY" <<'PY'
+          import json,sys,pathlib
+          p=pathlib.Path(sys.argv[1]); raw=p.read_text(encoding='utf-8',errors='replace') if p.exists() else ''
+          try:
+              j=json.loads(raw)
+              print('mio_imported_probe_error='+str(j.get('error') or ''))
+              print('mio_imported_probe_job='+str(j.get('jobId') or ''))
+          except Exception:
+              print('mio_imported_probe_non_json='+raw[:300].replace('\n',' '))
+          PY
+            test "$code" = 201
+            rm -f "$BODY"
+            echo 'mio_imported_coarse_slot_acceptance=PASS'
+          else
+            echo 'mio_imported_coarse_slot_acceptance=SKIP no_legacy_coarse_slot_record'
+          fi
+
           unset TOKEN
           REMOTE
