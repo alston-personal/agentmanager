@@ -599,11 +599,35 @@ def cache_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.webp"
 
 
-def restore_cached_render(job: dict[str, Any], rendered_layers: list[str], target: Path) -> bool:
+def cached_render(job: dict[str, Any], rendered_layers: list[str]) -> tuple[str, Path] | None:
     key = outfit_cache_key(job, rendered_layers)
     cached = cache_path(key)
     if not cached.exists() or cached.stat().st_size < 1000:
+        return None
+    return key, cached
+
+
+def longest_cached_prefix(
+    job: dict[str, Any],
+    target_layers: list[str],
+) -> tuple[list[str], str | None, Path | None]:
+    # Only reuse a prefix of the canonical render order. Reusing an arbitrary
+    # subset could bake layers in the wrong order and make later passes lie
+    # about the visual result.
+    for end in range(len(target_layers) - 1, 0, -1):
+        prefix = target_layers[:end]
+        hit = cached_render(job, prefix)
+        if hit is not None:
+            key, cached = hit
+            return prefix, key, cached
+    return [], None, None
+
+
+def restore_cached_render(job: dict[str, Any], rendered_layers: list[str], target: Path) -> bool:
+    hit = cached_render(job, rendered_layers)
+    if hit is None:
         return False
+    key, cached = hit
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(cached, target)
     os.chmod(target, 0o600)
@@ -660,6 +684,9 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
         return
 
     # Each successful pass uses the previous output as the next person image.
+    # If an earlier outfit is an exact prefix of this new one, reuse its real
+    # cached render and only compute the newly added layers. This is especially
+    # important for quota-bound any-item providers such as shoes and bags.
     person_url = BASE_BODY_URL
     seed_base = abs(hash(job["jobId"])) % 100000
     provider_outputs: list[dict[str, Any]] = []
@@ -667,7 +694,22 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     pending_layers: list[str] = []
     warnings: list[dict[str, str]] = []
 
-    for index, layer in enumerate(target_layers):
+    prefix_layers, prefix_cache_key, prefix_cache_path = longest_cached_prefix(job, target_layers)
+    start_index = 0
+    if prefix_cache_path is not None:
+        person_url = str(prefix_cache_path)
+        rendered_layers.extend(prefix_layers)
+        start_index = len(prefix_layers)
+        provider_outputs.append(
+            {
+                "layer": "+".join(prefix_layers),
+                "provider": "real-render-cache-prefix",
+                "providerSpace": "local-cache",
+                "output": str(prefix_cache_path),
+            }
+        )
+
+    for index, layer in enumerate(target_layers[start_index:], start=start_index):
         item = selected[layer]
         source_url = item.get("sourceImageUrl") if isinstance(item, dict) else None
         if not isinstance(source_url, str) or not source_url.startswith(("http://", "https://")):
@@ -751,17 +793,19 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
     job["status"] = "ready"
     job["completedAt"] = utc_now()
     job["failedAt"] = None
+    only_prefix_reused = bool(prefix_layers) and rendered_layers == prefix_layers
     job["output"] = {
         "asset": public_asset_path(job["jobId"]),
         "previewAsset": public_asset_path(job["jobId"]),
         "width": None,
         "height": None,
-        "provider": "hybrid-vton",
+        "provider": "real-render-cache-prefix" if only_prefix_reused else "hybrid-vton",
         "providerOutputs": provider_outputs,
         "renderedLayers": rendered_layers,
         "pendingLayers": pending_layers,
         "warnings": warnings,
         "cacheKey": cache_key,
+        "prefixCacheKey": prefix_cache_key,
     }
     atomic_write(path, job)
     update_current(job)
