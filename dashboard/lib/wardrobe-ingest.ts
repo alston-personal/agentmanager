@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { normalizeWardrobeLayer } from './wardrobe-layers.mjs';
 
 export type IntakeState = 'pending_metadata' | 'fetching' | 'ready_for_tryon' | 'needs_review';
 
@@ -285,6 +286,7 @@ export function writeCanonicalGarment(
     variant: product.variant,
     category: product.category,
     slot: product.slot,
+    layer: normalizeWardrobeLayer(product.slot),
     price: product.price,
     currency: product.currency,
     source: {
