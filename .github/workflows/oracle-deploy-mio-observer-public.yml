@@ -74,3 +74,5 @@ jobs:
           curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/activity.json |
             python3 -m json.tool >/dev/null
           echo "mio_observer_public_acceptance=PASS"
+
+# AgentOS scheduler acceptance rerun after hosted-ingress JSON fix
