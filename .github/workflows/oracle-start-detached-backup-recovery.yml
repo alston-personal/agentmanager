@@ -1,0 +1,83 @@
+name: Oracle Start Detached Backup Recovery
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-start-detached-backup-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install and start detached recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
+
+          cat > "$HOME/.local/bin/preserve_gdrive_underlay.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SRC="$HOME/gdrive/backups"
+          DEST="gdrive:backups/recovered-oracle-underlay-20261001"
+
+          while pgrep -af 'rclone copyto .*recovered-oracle-underlay-20261001' >/dev/null; do
+            echo "$(date -Is) waiting_for_existing_copy=yes"
+            sleep 20
+          done
+
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            file="$SRC/$name"
+            test -f "$file"
+            size="$(stat -c %s "$file")"
+            remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            if [ "$remote_size" = "$size" ]; then
+              echo "$(date -Is) preserve_already_verified=$name size=$size"
+              continue
+            fi
+            echo "$(date -Is) preserve_copy_start=$name size=$size"
+            rclone copyto "$file" "$DEST/$name" --transfers 1 --checkers 4 --retries 3 --low-level-retries 10 --stats 30s
+            remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            test "$remote_size" = "$size"
+            echo "$(date -Is) preserve_verified=$name size=$size"
+          done
+          echo "$(date -Is) preserve_all_verified=yes"
+          SH
+          chmod 700 "$HOME/.local/bin/preserve_gdrive_underlay.sh"
+
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-underlay-preserve.service" <<'UNIT'
+          [Unit]
+          Description=Preserve local-only AgentOS backups to Google Drive recovery namespace
+          After=network-online.target agentos-gdrive-mount.service
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=%h/.local/bin/preserve_gdrive_underlay.sh
+          Nice=10
+          IOSchedulingClass=best-effort
+          IOSchedulingPriority=7
+          UNIT
+
+          systemctl --user daemon-reload
+          if ! systemctl --user is-active --quiet agentos-gdrive-underlay-preserve.service; then
+            systemctl --user start --no-block agentos-gdrive-underlay-preserve.service
+          fi
+          systemctl --user status agentos-gdrive-underlay-preserve.service --no-pager | head -n 40 || true
+          echo 'detached_backup_recovery_started=PASS'
+          REMOTE
