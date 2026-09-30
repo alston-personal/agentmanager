@@ -34,6 +34,10 @@ jobs:
           for p in "$HOME/.cache" "$HOME/.npm" "$HOME/.local/share" "$HOME/agent-data/runtime/dashboard" "$HOME/agent-data/projects/dressup-simulator" /tmp; do
             timeout 8 du -sh "$p" 2>/dev/null || echo "size_timeout=$p"
           done
+          echo 'cache_children:'
+          timeout 20 du -h -d1 "$HOME/.cache" 2>/dev/null | sort -h | tail -n 30 || true
+          echo 'local_share_children:'
+          timeout 20 du -h -d1 "$HOME/.local/share" 2>/dev/null | sort -h | tail -n 30 || true
           echo 'dashboard_release_count:'
           find "$HOME/agent-data/runtime/dashboard" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l || true
           echo 'tmp_old_count:'
