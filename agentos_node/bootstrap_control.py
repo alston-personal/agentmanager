@@ -39,6 +39,7 @@ ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
 ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
 ACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
+ACTION_INSTALL_MIO_OBSERVER_TIMER = "agentos.mio_observer.timer.install"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -67,6 +68,7 @@ ALLOWED_ACTIONS = {
     ACTION_INSTALL_ORACLE_EXEC,
     ACTION_PROJECT_MIO_OBSERVER,
     ACTION_DEPLOY_STUDIO_WEB_MIO,
+    ACTION_INSTALL_MIO_OBSERVER_TIMER,
 }
 MAX_REQUEST_AGE_SECONDS = 900
 REQUEST_OWNER = "agentos-node"
@@ -170,6 +172,7 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_INSTALL_ORACLE_EXEC,
         ACTION_PROJECT_MIO_OBSERVER,
         ACTION_DEPLOY_STUDIO_WEB_MIO,
+        ACTION_INSTALL_MIO_OBSERVER_TIMER,
     }
     if action in exact_actions and source_commit is None:
         raise ValueError(f"{action} requires exact source_commit")
@@ -336,6 +339,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             timeout=600,
             source_commit=source_commit,
             env_extra={"AGENTOS_STUDIO_COMMIT":str(params.get("studio_commit") or "")},
+        )
+    if action == ACTION_INSTALL_MIO_OBSERVER_TIMER:
+        return _run_canonical_script(
+            "scripts/install_mio_observer_timer_user.sh",
+            timeout=180,
+            source_commit=source_commit,
         )
     raise ValueError("unsupported bootstrap action")
 
