@@ -1,0 +1,54 @@
+name: Oracle Gemini Web Scheduler Diagnostic
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-gemini-web-scheduler-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Gemini GUI scheduler state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          echo "=== gui scheduler unit ==="
+          systemctl --user --no-pager --full status agentos-bootstrap-gui.service | sed -n '1,35p' || true
+          echo "=== scheduler status ==="
+          cat /home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json 2>/dev/null || true
+          echo "=== pending requests ==="
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('/tmp/agentos-bootstrap-control')
+          for kind,pat in [('requests','requests/*.request.json'),('receipts','receipts/*.json'),('rejected','rejected/*.request.json')]:
+              rows=[]
+              for p in sorted(root.glob(pat), key=lambda x:x.stat().st_mtime, reverse=True)[:15]:
+                  try:d=json.loads(p.read_text(encoding='utf-8'))
+                  except Exception:d={}
+                  rows.append({'file':p.name,'action':d.get('action'),'request_id':d.get('request_id'),'created_at':d.get('created_at'),'ok':d.get('ok'),'failure_class':d.get('failure_class')})
+              print(kind+'='+json.dumps(rows,separators=(',',':')))
+          PY
+          echo "=== gui locks ==="
+          ls -l /tmp/agentos-bootstrap-control/locks 2>/dev/null || true
+          echo "gemini_scheduler_diagnostic=PASS"
+          REMOTE
