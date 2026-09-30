@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.remote-diagnostic-command/v1",
+  "target": "oracle",
+  "purpose": "inspect disk exhaustion blocking Mio wardrobe auth deployment",
+  "requested_at": "2026-10-01T06:25:30+08:00"
+}
