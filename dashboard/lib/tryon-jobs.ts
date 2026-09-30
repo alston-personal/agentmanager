@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
-import { normalizeWardrobeLayer } from '@/lib/wardrobe-layers';
+import { normalizeWardrobeLayer } from './wardrobe-layers.mjs';
 
 export const TRYON_JOB_SCHEMA = 'agentos.tryon-render-job/v1' as const;
 export const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
