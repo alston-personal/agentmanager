@@ -6,7 +6,7 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-probe-threads-web-dm-login.yml'
-      - 'agentos_node/bootstrap_control.py'
+
       - 'scripts/probe_threads_web_dm_login_user.sh'
 
 permissions:
