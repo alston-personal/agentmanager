@@ -582,7 +582,7 @@ def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
         "characterVersion": job.get("characterVersion"),
         "view": job.get("view", "front"),
         "pose": job.get("pose", "neutral_standing"),
-        "renderer": "idm-vton+inference-provider-fallback/v5" if uses_any_item else "idm-vton+inference-provider-fallback/v2",
+        "renderer": "idm-vton+inference-provider-fallback/v5" if uses_any_item else "idm-vton-gradio-client/v1",
         "layers": [
             {
                 "layer": layer,
