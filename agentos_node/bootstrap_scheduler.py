@@ -208,6 +208,83 @@ def _held_locks(keys: tuple[str, ...], *, timeout_seconds: float = 120.0) -> Ite
                 handle.close()
 
 
+def _recover_inflight(role: str, worker_id: str) -> dict[str, int]:
+    """Recover requests orphaned when a role worker is restarted mid-job.
+
+    A fresh orphan is atomically returned to the shared request queue.  A stale
+    orphan receives a deterministic failure receipt instead of leaving ingress
+    workflows waiting forever.  Existing receipts win, making recovery
+    idempotent across repeated restarts.
+    """
+    worker_id = _safe_worker_id(worker_id)
+    requests, receipts, rejected = bc._ensure(bc._root())
+    inflight_dir = bc._root() / "inflight" / worker_id
+    inflight_dir.mkdir(parents=True, exist_ok=True)
+    recovered = 0
+    completed = 0
+    stale = 0
+    for source in sorted(inflight_dir.glob("*.request.json")):
+        request_id = source.name.removesuffix(".request.json")
+        receipt_path = receipts / f"{request_id}.json"
+        if receipt_path.exists():
+            source.unlink(missing_ok=True)
+            completed += 1
+            continue
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        action = str(payload.get("action") or "unknown")
+        policy = policy_for(action)
+        age = _request_age_seconds(payload)
+        if age > bc.MAX_REQUEST_AGE_SECONDS:
+            receipt = {
+                "schema": bc.RECEIPT_SCHEMA,
+                "request_id": request_id,
+                "action": action,
+                "source_commit": str((payload.get("params") or {}).get("source_commit") or "") or None,
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "executor_uid": os.getuid(),
+                "started_at": bc._now(),
+                "completed_at": bc._now(),
+                "ok": False,
+                "failure_class": "worker_restart_orphan_stale",
+                "error": f"orphaned inflight request exceeded freshness window: age={age:.1f}s",
+                "scheduler": {
+                    "node": "oracle",
+                    "worker_role": role,
+                    "worker_id": worker_id,
+                    "priority": policy.priority_label,
+                    "requested_capabilities": list(policy.capabilities),
+                    "locks": list(policy.locks),
+                    "recovered_after_restart": False,
+                },
+            }
+            bc._atomic_json(receipt_path, receipt)
+            _incident(
+                request_id=request_id,
+                action=action,
+                policy=policy,
+                failure_class="worker_restart_orphan_stale",
+                detail=f"age={int(age)}s",
+            )
+            target = rejected / source.name
+            target.unlink(missing_ok=True)
+            source.replace(target)
+            stale += 1
+            continue
+        destination = requests / source.name
+        if destination.exists():
+            # Another recovery path already requeued it; discard the duplicate
+            # inflight inode rather than creating two executions.
+            source.unlink(missing_ok=True)
+            completed += 1
+            continue
+        os.rename(source, destination)
+        recovered += 1
+    return {"recovered": recovered, "completed": completed, "stale": stale}
+
+
 def _claim(role: str, worker_id: str) -> tuple[Path, dict[str, Any]] | None:
     requests, _, _ = bc._ensure(bc._root())
     candidates = sorted((_request_summary(path) for path in requests.glob("*.request.json")), key=lambda item: item[:3])
@@ -584,6 +661,8 @@ def main() -> int:
     parser.add_argument("--lock-timeout-seconds", type=float, default=120.0)
     args = parser.parse_args()
     worker_id = _safe_worker_id(args.worker_id)
+    if args.role != "router":
+        _recover_inflight(args.role, worker_id)
     _write_status(worker_id, args.role, state="idle", current=None)
     last_idle_heartbeat = time.monotonic()
     while True:
