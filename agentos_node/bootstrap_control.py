@@ -38,6 +38,7 @@ ACTION_START_THREADS_WEB_DM_LOGIN = "agentos.social_threads_web_dm.login_start"
 ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
+ACTION_PROBE_CHATGPT_WEB = "agentos.chatgpt_web.probe"
 ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
 ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
@@ -67,6 +68,7 @@ ALLOWED_ACTIONS = {
     ACTION_RUN_MIO_DM_DECISION,
     ACTION_INSTALL_GUI_WORKER,
     ACTION_SMOKE_GUI_WORKER,
+    ACTION_PROBE_CHATGPT_WEB,
     ACTION_DEPLOY_MIO_TRYON,
     ACTION_INSTALL_ORACLE_EXEC,
     ACTION_PROJECT_MIO_OBSERVER,
@@ -334,6 +336,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_SMOKE_GUI_WORKER:
         return _run_canonical_script(
             "scripts/run_oracle_gui_worker_smoke_user.sh",
+            timeout=120,
+            source_commit=source_commit,
+        )
+    if action == ACTION_PROBE_CHATGPT_WEB:
+        return _run_canonical_script(
+            "scripts/probe_chatgpt_web_user.sh",
             timeout=120,
             source_commit=source_commit,
         )
