@@ -194,3 +194,76 @@ jobs:
           name: mio-visual-e2e
           path: /tmp/mio-visual-e2e/*.webp
           retention-days: 2
+
+  mio-neutral-canonical-generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Generate neutral canonical Mio candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          SRC="$ROOT/render_assets/mio-shoe-live-e2e-36580481746.webp"
+          OUT="$ROOT/canonical_candidates"
+          mkdir -p "$OUT"
+          export $(grep -E '^HF_TOKEN=' /home/ubuntu/.config/agentos/mio-tryon.env | xargs)
+          /home/ubuntu/.local/share/mio-tryon-venv/bin/python - <<'PY'
+          from pathlib import Path
+          import shutil
+          from gradio_client import handle_file
+          import sys
+          sys.path.insert(0,'/home/ubuntu/agentmanager')
+          from scripts.tryon_render_worker import qwen_edit_client, output_path
+
+          src=Path('/home/ubuntu/agent-data/projects/dressup-simulator/render_assets/mio-shoe-live-e2e-36580481746.webp')
+          out=Path('/home/ubuntu/agent-data/projects/dressup-simulator/canonical_candidates')
+          prompts=[
+              (
+                "Use this image only as the identity and body-proportion reference for the same woman. "
+                "Create a clean canonical full-body character reference, front-facing, standing upright in a relaxed neutral A-pose, "
+                "arms naturally slightly away from the torso, feet parallel and fully visible. Preserve exactly her face, hairstyle, "
+                "hair clip, age appearance, body proportions, leg length, skin tone, and overall identity. Replace the current outfit "
+                "with a plain modest technical fitting base: solid light neutral fitted short-sleeve top and plain fitted mid-thigh shorts, "
+                "no jacket, no bag, no accessories except the existing small hair clip, barefoot. Plain warm-white studio background, "
+                "even soft light, no props, no text, no circle behind her, no dramatic pose. Photorealistic. Output one complete head-to-toe person."
+              ),
+              (
+                "Transform this into a neutral front-view full-body canonical model sheet of the exact same woman. Keep her facial identity, "
+                "hair, small cat hair clip, height impression, shoulder width, waist, hip and leg proportions unchanged. She stands straight, "
+                "symmetrical and relaxed, looking at camera, both arms down slightly away from the body, both feet flat and visible. "
+                "Wear only a simple modest light-gray fitted technical T-shirt and plain dark-gray fitted shorts suitable for virtual try-on, "
+                "barefoot, no outerwear, no bag, no jewelry, no background circle. Clean seamless off-white studio background, soft even lighting, "
+                "photorealistic, full body centered with generous margin around head and feet."
+              ),
+          ]
+          for idx,prompt in enumerate(prompts,1):
+              result=qwen_edit_client().predict(handle_file(str(src)),prompt,api_name='/rewritten_instruction')
+              if not isinstance(result,(list,tuple)) or len(result)<2:
+                  raise RuntimeError(result)
+              generated=Path(output_path(result[1]))
+              dst=out/f'mio-neutral-canonical-candidate-{idx}.webp'
+              shutil.copy2(generated,dst)
+              print(f'canonical_candidate_{idx}={dst} bytes={dst.stat().st_size}')
+          PY
+          REMOTE
+          mkdir -p /tmp/mio-neutral-canonical
+          for n in 1 2; do
+            scp -P "$PORT" -o StrictHostKeyChecking=accept-new               "${ORACLE_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/projects/dressup-simulator/canonical_candidates/mio-neutral-canonical-candidate-$n.webp"               "/tmp/mio-neutral-canonical/candidate-$n.webp"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mio-neutral-canonical
+          path: /tmp/mio-neutral-canonical/*.webp
+          retention-days: 2
