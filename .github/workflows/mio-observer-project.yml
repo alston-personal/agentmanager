@@ -15,7 +15,7 @@ concurrency:
 jobs:
   project:
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,78 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_COMMIT="$(git rev-parse HEAD)"
-          printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          ID="mio-observer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$ID.request.json"
-          RECEIPT="$RECEIPTS/$ID.json"
-
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 60); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$ID" "$SOURCE_COMMIT" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          from pathlib import Path
-          path=Path(sys.argv[1])
-          payload={
-            "schema":"agentos.bootstrap-request/v1",
-            "request_id":sys.argv[2],
-            "action":"agentos.mio_observer.project",
-            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-            "params":{"source_commit":sys.argv[3]},
-            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
-          }
-          tmp=path.with_suffix(path.suffix+".tmp")
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 180); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT"
-
-          python3 - "$RECEIPT" "$SOURCE_COMMIT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
-          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
-          assert r.get("action")=="agentos.mio_observer.project",r
-          assert r.get("executor_user")=="ubuntu",r
-          assert r.get("executor_uid")==1001,r
-          assert r.get("source_commit")==expected,r
-          assert r.get("ok") is True,r
-          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
-          assert "mio_observer_public_live=PASS" in text,text[-12000:]
-          print("mio_observer_bootstrap=PASS")
-          PY
-
-          cp /tmp/mio-observer-public.json ./mio-observer-public.json
-          cp /tmp/mio-observer-owner.json ./mio-observer-owner.json
-
-      - name: Upload public projection
-        uses: actions/upload-artifact@v4
-        with:
-          name: mio-observer-public
-          path: mio-observer-public.json
-          retention-days: 3
-          if-no-files-found: error
-
-      - name: Upload owner projection
-        uses: actions/upload-artifact@v4
-        with:
-          name: mio-observer-owner
-          path: mio-observer-owner.json
-          retention-days: 3
-          if-no-files-found: error
+          printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 
           LIVE=/home/ubuntu/agentmanager
           ROOT=/tmp/agentos-bootstrap-control
@@ -107,6 +36,7 @@ jobs:
           REQUEST="$REQUESTS/$ID.request.json"
           RECEIPT="$RECEIPTS/$ID.json"
 
+          python3 -m py_compile agentos_node/bootstrap_control.py
           cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
           chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
           python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
@@ -119,35 +49,43 @@ jobs:
           test -d "$RECEIPTS"
 
           python3 - "$REQUEST" "$ID" "$SOURCE_COMMIT" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
+          import json, os, sys
+          from datetime import datetime, timezone
           from pathlib import Path
-          path=Path(sys.argv[1])
-          payload={
-            "schema":"agentos.bootstrap-request/v1",
-            "request_id":sys.argv[2],
-            "action":"agentos.mio_observer.project",
-            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-            "params":{"source_commit":sys.argv[3]},
-            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
+          path = Path(sys.argv[1])
+          payload = {
+            "schema": "agentos.bootstrap-request/v1",
+            "request_id": sys.argv[2],
+            "action": "agentos.mio_observer.project",
+            "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
+            "params": {"source_commit": sys.argv[3]},
+            "authority": {"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
           }
-          tmp=path.with_suffix(path.suffix+".tmp")
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          tmp = path.with_suffix(path.suffix + ".tmp")
+          tmp.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          os.chmod(tmp, 0o644)
+          tmp.replace(path)
+          os.chmod(path, 0o644)
           PY
 
-          for i in $(seq 1 180); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          for i in $(seq 1 240); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
           test -f "$RECEIPT"
 
           python3 - "$RECEIPT" "$SOURCE_COMMIT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
-          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
-          assert r.get("action")=="agentos.mio_observer.project",r
-          assert r.get("executor_user")=="ubuntu",r
-          assert r.get("executor_uid")==1001,r
-          assert r.get("source_commit")==expected,r
-          assert r.get("ok") is True,r
+          import json, sys
+          r = json.load(open(sys.argv[1], encoding="utf-8"))
+          expected = sys.argv[2]
+          assert r.get("schema") == "agentos.bootstrap-receipt/v1", r
+          assert r.get("action") == "agentos.mio_observer.project", r
+          assert r.get("executor_user") == "ubuntu", r
+          assert r.get("executor_uid") == 1001, r
+          assert r.get("source_commit") == expected, r
+          assert r.get("ok") is True, r
+          text = "\n".join(str(s.get("stdout","")) + "\n" + str(s.get("stderr","")) for s in r.get("steps",[]))
+          assert "mio_observer_public_live=PASS" in text, text[-12000:]
           print("mio_observer_bootstrap=PASS")
           PY
 
@@ -170,19 +108,18 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-
       - name: Verify live activity freshness
         shell: bash
         run: |
           set -euo pipefail
           curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/activity.json > "$RUNNER_TEMP/mio-activity.json"
           python3 - "$RUNNER_TEMP/mio-activity.json" <<'PY'
-          import json,sys
-          from datetime import datetime,timezone
-          d=json.load(open(sys.argv[1],encoding="utf-8"))
-          assert d.get("schema")=="milkcat.mio-observer-public/v1",d
-          ts=datetime.fromisoformat(str(d["updated_at"]).replace("Z","+00:00")).astimezone(timezone.utc)
-          age=(datetime.now(timezone.utc)-ts).total_seconds()
+          import json, sys
+          from datetime import datetime, timezone
+          d = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert d.get("schema") == "milkcat.mio-observer-public/v1", d
+          ts = datetime.fromisoformat(str(d["updated_at"]).replace("Z","+00:00")).astimezone(timezone.utc)
+          age = (datetime.now(timezone.utc) - ts).total_seconds()
           assert -60 <= age <= 900, f"stale activity projection: age={age:.1f}s"
           print("mio_observer_live_freshness=PASS")
           PY
