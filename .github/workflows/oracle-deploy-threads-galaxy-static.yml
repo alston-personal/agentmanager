@@ -13,7 +13,6 @@ on:
     paths:
       - '.github/workflows/oracle-deploy-threads-galaxy-static.yml'
       - 'scripts/deploy_threads_galaxy_static_user.sh'
-      - 'agentos_node/bootstrap_control.py'
 
 permissions:
   contents: read
