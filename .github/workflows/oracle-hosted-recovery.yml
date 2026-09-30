@@ -161,3 +161,5 @@ jobs:
           echo "oracle_exec_heartbeat=PASS"
           rm -f "$TMP"
           REMOTE
+
+# runner-pool recovery trigger 2026-09-30T03:56Z
