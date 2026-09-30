@@ -66,6 +66,17 @@ availability; acceptance and private/public boundaries are documented in
 | **AgentOS Status Center** | `scripts/agentos_status.py` | ✅ 現行 | Consolidated snapshot of roles, capabilities, projects, specs, and memory health for fast operational review. |
 | **端口巡護者 (Port Manager)** | `scripts/core_services/port_manager.py` | ✅ 現行 | 負責自動分配與追蹤 22 個專案的連接埠配置，防止端口衝突 |
 
+
+### Persona Agent Capabilities
+
+| Capability | Provider | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Persona Agent Attachment** | `personas/mio/agent.yaml` + `schemas/persona-capability-attachment.schema.json` | ✅ 現行 | Persona identity/memory/PDCA remains independent from detachable platform/tool capabilities. |
+| **Mio Observer Public Projection** | `scripts/project_mio_observer_user.py` | 🟡 Initial | Projects public-safe Mio activity/status into the persona page surface. |
+| **Mio Observer Owner Projection** | `scripts/project_mio_observer_user.py` | 🟡 Initial | Projects owner-visible PDCA, energy, uncertainty, incidents and capability health without exposing private model reasoning. |
+| **Mio Persona Agent** | `personas/mio/agent.yaml` | ✅ Registered | `persona.mio` is a first-class Persona Agent; Threads/DM/wardrobe/visual generation are attached capabilities rather than the agent identity itself. |
+
+
 ### Usage Pattern
 ```bash
 python3 scripts/capability_registry.py
