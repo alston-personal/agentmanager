@@ -165,3 +165,32 @@ jobs:
           for m,w,h,s,p in sorted(rows,reverse=True)[:80]:
               print(f"{w}x{h}\t{s}\t{p}")
           PY
+
+  mio-visual-e2e-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Fetch latest Mio visual outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          mkdir -p /tmp/mio-visual-e2e
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new             "${ORACLE_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/projects/dressup-simulator/render_assets/mio-shoe-live-e2e-36580481746.webp"             /tmp/mio-visual-e2e/latest-shoe-e2e.webp
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}"             'find /home/ubuntu/agent-data/releases/studio-web/mio-persona -path "*/tryon/cache/*.webp" -type f | tail -n 1'             > /tmp/mio-visual-e2e/cache-path.txt
+          CACHE_PATH="$(cat /tmp/mio-visual-e2e/cache-path.txt)"
+          test -n "$CACHE_PATH"
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new             "${ORACLE_USER}@${ORACLE_HOST}:$CACHE_PATH"             /tmp/mio-visual-e2e/legacy-fullbody-cache.webp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mio-visual-e2e
+          path: /tmp/mio-visual-e2e/*.webp
+          retention-days: 2
