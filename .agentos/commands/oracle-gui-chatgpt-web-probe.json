@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.chatgpt-web-probe-command/v1",
+  "target": "oracle-gui-worker",
+  "requested_at": "2026-09-30T07:50:00Z",
+  "purpose": "probe persistent ChatGPT Web session via Oracle GUI Worker"
+}
