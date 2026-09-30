@@ -1,0 +1,169 @@
+name: Oracle Install Colab Provider
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-install-colab-provider.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-colab-provider-install
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 20
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      UPSTREAM_SHA: 7768ebfb1627546595f37e9acfd2d353937c6cd8
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install pinned provider and run safe preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          [[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]]
+          PORT="${DEPLOY_PORT:-22}"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" "${GITHUB_RUN_ID}" <<'REMOTE'
+          set -euo pipefail
+          UPSTREAM_SHA="$1"
+          RUN_ID="$2"
+          [[ "$UPSTREAM_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+
+          ROOT=/home/ubuntu/agent-data/providers/colab
+          RELEASE_ROOT="$ROOT/releases"
+          RUNTIME_ROOT="$ROOT/runtime"
+          EVIDENCE_ROOT=/home/ubuntu/agent-data/evidence/colab
+          RELEASE="$RELEASE_ROOT/$UPSTREAM_SHA"
+          LIVE="$RUNTIME_ROOT/current"
+          RECEIPT="$EVIDENCE_ROOT/install-$RUN_ID.json"
+          TMP=$(mktemp -d /tmp/agentos-colab-provider-XXXXXXXX)
+
+          cleanup() { rm -rf "$TMP"; }
+          trap cleanup EXIT
+
+          mkdir -p "$RELEASE_ROOT" "$RUNTIME_ROOT" "$EVIDENCE_ROOT"
+          chmod 700 "$ROOT" "$EVIDENCE_ROOT"
+
+          PYTHON_BIN=python3
+          "$PYTHON_BIN" -m pip --version >/dev/null 2>&1 || {
+            echo "python_pip=missing" >&2
+            exit 11
+          }
+
+          if ! command -v uv >/dev/null 2>&1; then
+            "$PYTHON_BIN" -m pip install --user --disable-pip-version-check --no-input uv >/dev/null
+            export PATH="/home/ubuntu/.local/bin:$PATH"
+          fi
+          command -v uv >/dev/null 2>&1 || { echo "uv_install=failed" >&2; exit 12; }
+
+          if ! command -v colab >/dev/null 2>&1; then
+            uv python install 3.12 >/dev/null
+            uv tool install --python 3.12 google-colab-cli >/dev/null
+            export PATH="/home/ubuntu/.local/bin:$PATH"
+          fi
+          command -v colab >/dev/null 2>&1 || { echo "colab_cli_install=failed" >&2; exit 13; }
+
+          if [ ! -d "$RELEASE/.git" ]; then
+            git clone -q https://github.com/killkli/minimax-h3-colab-skill.git "$TMP/upstream"
+            git -C "$TMP/upstream" checkout -q --detach "$UPSTREAM_SHA"
+            test "$(git -C "$TMP/upstream" rev-parse HEAD)" = "$UPSTREAM_SHA"
+            mkdir -p "$RELEASE"
+            git -C "$TMP/upstream" archive "$UPSTREAM_SHA" | tar -x -C "$RELEASE"
+          fi
+
+          test -f "$RELEASE/SKILL.md"
+          test -f "$RELEASE/scripts/runner.py"
+          test -f "$RELEASE/assets/MiniMax_H3_Turbo_Colab.ipynb"
+          python3 -m py_compile "$RELEASE/scripts/runner.py"
+
+          ln -sfn "$RELEASE" "$RUNTIME_ROOT/.candidate-$RUN_ID"
+          mv -Tf "$RUNTIME_ROOT/.candidate-$RUN_ID" "$LIVE"
+
+          COLAB_VERSION="$(colab version 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/["\\]/_/g')"
+          AUTH_STATUS="AUTH_REQUIRED_OR_UNAVAILABLE"
+          BALANCE_JSON="null"
+          RATE_JSON="null"
+          ASSIGNMENTS_JSON="null"
+
+          USAGE_FILE="$TMP/usage.txt"
+          chmod 600 "$USAGE_FILE"
+          if timeout 25s colab --auth=oauth2 usage >"$USAGE_FILE" 2>&1; then
+            AUTH_STATUS="READY"
+            PARSED=$(python3 - "$USAGE_FILE" <<'PY'
+          import json,re,sys
+          text=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+          def num(pat):
+              m=re.search(pat,text,re.I|re.M)
+              return float(m.group(1).replace(',','')) if m else None
+          out={
+              "balance": num(r"^Current balance:\s*([\d,]+(?:\.\d+)?)\s+compute units\s*$"),
+              "rate_per_hour": num(r"^Usage rate:\s*([\d,]+(?:\.\d+)?)\s*/\s*hr\s*$"),
+              "active_assignments": num(r"^Active assignments:\s*(\d+)\s*$"),
+          }
+          print(json.dumps(out,separators=(',',':')))
+          PY
+            )
+            BALANCE_JSON=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["balance"])' "$PARSED")
+            RATE_JSON=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["rate_per_hour"])' "$PARSED")
+            ASSIGNMENTS_JSON=$(python3 -c 'import json,sys; v=json.loads(sys.argv[1])["active_assignments"]; print("null" if v is None else int(v))' "$PARSED")
+          fi
+
+          python3 - "$RECEIPT" "$UPSTREAM_SHA" "$RELEASE" "$COLAB_VERSION" "$AUTH_STATUS" "$BALANCE_JSON" "$RATE_JSON" "$ASSIGNMENTS_JSON" <<'PY'
+          import hashlib,json,os,sys,datetime
+          path,sha,release,version,auth,balance,rate,assignments=sys.argv[1:]
+          def parse_num(v):
+              if v in {"", "None", "null"}: return None
+              try: return float(v)
+              except Exception: return None
+          payload={
+              "schema":"agentos.colab-execution-receipt/v1",
+              "provider":"google-colab",
+              "capability":"capability://compute.colab.execute",
+              "consumer_capability":"capability://media.video.generate.minimax-h3",
+              "timestamp_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "upstream":{"repository":"killkli/minimax-h3-colab-skill","commit":sha},
+              "runtime":{"release":release,"runner_sha256":hashlib.sha256(open(os.path.join(release,"scripts/runner.py"),"rb").read()).hexdigest()},
+              "preflight":{
+                  "colab_cli_version":version,
+                  "auth_status":auth,
+                  "quota_observed":auth=="READY",
+                  "balance_compute_units":parse_num(balance),
+                  "rate_per_hour":parse_num(rate),
+                  "active_assignments":None if assignments in {"", "None", "null"} else int(float(assignments))
+              },
+              "result":{
+                  "status":"READY_FOR_SMOKE" if auth=="READY" else "AUTH_REQUIRED",
+                  "safe_to_generate":auth=="READY"
+              }
+          }
+          tmp=path+".tmp"
+          with open(tmp,"w",encoding="utf-8") as f:
+              json.dump(payload,f,ensure_ascii=False,indent=2); f.write("\n")
+              f.flush(); os.fsync(f.fileno())
+          os.replace(tmp,path)
+          os.chmod(path,0o600)
+          print(json.dumps(payload,ensure_ascii=False,indent=2))
+          PY
+
+          echo "colab_provider_release=$RELEASE"
+          echo "colab_provider_auth_status=$AUTH_STATUS"
+          echo "colab_provider_receipt=$RECEIPT"
+          if [ "$AUTH_STATUS" != "READY" ]; then
+            echo "colab_provider_preflight=AUTH_REQUIRED"
+            exit 20
+          fi
+          echo "colab_provider_preflight=PASS"
+          REMOTE

@@ -88,3 +88,31 @@ Keep both capabilities at `declared` until Oracle has a pinned upstream install 
 - `compute.colab.execute` may move to `implemented` after generic provider preflight/session/output handling is proven;
 - `media.video.generate.minimax-h3` may move to `implemented` after one end-to-end H3 job succeeds;
 - mark either `verified` only when repeatable acceptance and regression checks exist.
+
+
+## Oracle acceptance lane
+
+Canonical workflow: `.github/workflows/oracle-install-colab-provider.yml`
+
+The first pinned upstream candidate is:
+
+```text
+killkli/minimax-h3-colab-skill
+7768ebfb1627546595f37e9acfd2d353937c6cd8
+```
+
+The workflow installs the provider into an immutable path under
+`/home/ubuntu/agent-data/providers/colab/releases/<sha>`, updates a runtime
+`current` symlink, installs `uv` / `google-colab-cli` when needed, and runs
+a non-leaking OAuth/quota preflight.
+
+If Colab OAuth is not already established on Oracle, the workflow records
+`result.status=AUTH_REQUIRED` and exits without printing raw OAuth output.
+After authentication is completed, rerunning the same workflow must reach
+`READY_FOR_SMOKE` before any H3 generation acceptance is attempted.
+
+Receipt path:
+
+```text
+/home/ubuntu/agent-data/evidence/colab/install-<github-run-id>.json
+```
