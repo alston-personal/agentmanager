@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 import secrets
+from pathlib import Path
 from typing import Any
 
 from agent_core.realm_fabric import RealmFabricStore
@@ -57,6 +60,113 @@ class ControllerService:
 
     def nodes(self) -> dict[str, Any]:
         return self.fabric.node_registry.node_map()
+
+    def scheduler(self) -> dict[str, Any]:
+        """Read-only structured projection of the AgentOS role scheduler.
+
+        The scheduler owns execution state outside the Realm Fabric registry, so
+        the controller projects only bounded operational metadata: worker role,
+        state, current typed action, priority, declared locks, queue depth and
+        recent failure classifications. File paths and raw worker output are
+        deliberately excluded.
+        """
+        data_root = Path(os.environ.get('AGENTOS_DATA_ROOT') or os.environ.get('AGENT_DATA_ROOT', '/home/ubuntu/agent-data'))
+        status_path = data_root / 'runtime' / 'bootstrap-scheduler' / 'status.json'
+        incident_root = data_root / 'runtime' / 'bootstrap-scheduler' / 'incidents'
+
+        try:
+            raw = json.loads(status_path.read_text(encoding='utf-8')) if status_path.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+        workers_raw = raw.get('workers') if isinstance(raw.get('workers'), dict) else {}
+        workers: dict[str, Any] = {}
+        lock_holders: dict[str, str] = {}
+        for worker_id, row in sorted(workers_raw.items()):
+            if not isinstance(row, dict):
+                continue
+            current_raw = row.get('current_job') if isinstance(row.get('current_job'), dict) else None
+            current = None
+            if current_raw is not None:
+                locks = [str(item)[:128] for item in (current_raw.get('locks') or []) if isinstance(item, str)]
+                current = {
+                    'request_id': str(current_raw.get('request_id') or '')[:160] or None,
+                    'action': str(current_raw.get('action') or '')[:160] or None,
+                    'priority': str(current_raw.get('priority') or '')[:32] or None,
+                    'locks': locks,
+                }
+                for lock_key in locks:
+                    lock_holders.setdefault(lock_key, str(worker_id)[:128])
+            workers[str(worker_id)[:128]] = {
+                'role': str(row.get('role') or '')[:32] or None,
+                'state': str(row.get('state') or 'unknown')[:32],
+                'heartbeat': str(row.get('heartbeat') or '')[:64] or None,
+                'current_job': current,
+            }
+
+        queue_raw = raw.get('queue_depth') if isinstance(raw.get('queue_depth'), dict) else {}
+        queue_depth = {
+            role: max(0, int(queue_raw.get(role) or 0))
+            for role in ('control', 'social', 'gui', 'build')
+        }
+
+        incidents: list[dict[str, Any]] = []
+        if incident_root.exists():
+            try:
+                paths = sorted(incident_root.glob('*.json'), key=lambda path: path.stat().st_mtime, reverse=True)
+            except OSError:
+                paths = []
+            for path in paths[:20]:
+                try:
+                    row = json.loads(path.read_text(encoding='utf-8'))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                incidents.append({
+                    'project': str(row.get('project') or '')[:80] or None,
+                    'request_id': str(row.get('request_id') or '')[:160] or None,
+                    'action': str(row.get('action') or '')[:160] or None,
+                    'priority': str(row.get('priority') or '')[:32] or None,
+                    'requested_capabilities': [
+                        str(item)[:128] for item in (row.get('requested_capabilities') or [])
+                        if isinstance(item, str)
+                    ][:32],
+                    'preferred_node': str(row.get('preferred_node') or '')[:128] or None,
+                    'failure_class': str(row.get('failure_class') or '')[:64] or None,
+                    'fallback_attempted': bool(row.get('fallback_attempted')),
+                    'receipt_required': bool(row.get('receipt_required')),
+                    'observed_at': str(row.get('observed_at') or '')[:64] or None,
+                })
+
+        relevant_caps = {
+            'threads.gui.read', 'threads.gui.write', 'threads.api.read',
+            'browser.gui', 'browser.cdp', 'desktop.open_url', 'node.runtime.converge',
+        }
+        failover_candidates = []
+        for node in self.nodes().get('nodes') or []:
+            if not isinstance(node, dict) or node.get('role') != 'client':
+                continue
+            caps = sorted(relevant_caps.intersection(set(node.get('capabilities') or [])))
+            if caps or node.get('node_id') in {'mbpr', 'vopc5750', 'oracle-exec'}:
+                failover_candidates.append({
+                    'node_id': str(node.get('node_id') or '')[:128],
+                    'status': str(node.get('status') or 'unknown')[:32],
+                    'platform': str(node.get('platform') or '')[:64] or None,
+                    'capabilities': caps,
+                })
+
+        return {
+            'schema': 'agentos.runner-pool/v1',
+            'node': str(raw.get('node') or 'oracle')[:128],
+            'updated_at': str(raw.get('updated_at') or '')[:64] or None,
+            'worker_count': len(workers),
+            'busy_worker_count': sum(1 for row in workers.values() if row.get('state') == 'running'),
+            'queue_depth': queue_depth,
+            'workers': workers,
+            'lock_holders': lock_holders,
+            'recent_incidents': incidents,
+            'failover_candidates': failover_candidates,
+        }
 
     def node(self, node_id: str) -> dict[str, Any]:
         node_id = str(node_id or '').strip()
