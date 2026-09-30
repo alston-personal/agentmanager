@@ -1,0 +1,36 @@
+name: Oracle Safe Cache Cleanup
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-safe-cache-cleanup.json'
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Remove rebuildable caches only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo 'before:'
+          df -h /
+          rm -rf "$HOME/.cache/pip" "$HOME/.cache/huggingface" "$HOME/.npm/_cacache"
+          find /tmp -maxdepth 1 -user "$(id -u)" \( -type f -o -type d \) -mtime +1 -exec rm -rf -- {} + 2>/dev/null || true
+          echo 'after:'
+          df -h /
+          REMOTE
