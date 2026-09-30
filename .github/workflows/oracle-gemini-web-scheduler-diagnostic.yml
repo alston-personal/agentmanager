@@ -52,3 +52,5 @@ jobs:
           ls -l /tmp/agentos-bootstrap-control/locks 2>/dev/null || true
           echo "gemini_scheduler_diagnostic=PASS"
           REMOTE
+
+# retrigger diagnostic
