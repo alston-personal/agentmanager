@@ -135,3 +135,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/route_mio_social_incident.py
+# owner-requested verification 2026-09-30
