@@ -2,6 +2,13 @@ name: Mio Observer Projection
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/mio-observer-project.yml'
+      - 'scripts/project_mio_observer_user.py'
+      - 'scripts/project_mio_observer_user.sh'
 
 permissions:
   contents: read
@@ -12,71 +19,63 @@ concurrency:
 
 jobs:
   project:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 4
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: core/integration
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
-      - name: Project observer through bounded ubuntu bootstrap
+      - name: Project observer through AgentOS scheduler
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
           ID="mio-observer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$ID.request.json"
-          RECEIPT="$RECEIPTS/$ID.json"
-
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 60); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          from pathlib import Path
-          path=Path(sys.argv[1])
-          payload={
-            "schema":"agentos.bootstrap-request/v1",
-            "request_id":sys.argv[2],
-            "action":"agentos.mio_observer.project",
-            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-            "params":{"source_commit":sys.argv[3]},
-            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
-          }
-          tmp=path.with_suffix(path.suffix+".tmp")
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 180); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT"
-
+          RECEIPT="$RUNNER_TEMP/mio-observer-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=240 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.mio_observer.project "$ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
           assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
           assert r.get("action")=="agentos.mio_observer.project",r
-          assert r.get("executor_user")=="ubuntu",r
-          assert r.get("executor_uid")==1001,r
-          assert r.get("source_commit")==expected,r
+          assert r.get("source_commit")==sys.argv[2],r
           assert r.get("ok") is True,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="control",scheduler
+          assert scheduler.get("worker_id")=="oracle-control",scheduler
+          print("mio_observer_scheduler=oracle-control")
           print("mio_observer_bootstrap=PASS")
           PY
 
-          cp /tmp/mio-observer-public.json ./mio-observer-public.json
-          cp /tmp/mio-observer-owner.json ./mio-observer-owner.json
+      - name: Fetch generated projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'cat /tmp/mio-observer-public.json' > mio-observer-public.json
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'cat /tmp/mio-observer-owner.json' > mio-observer-owner.json
+          python3 - <<'PY'
+          import json
+          public=json.load(open('mio-observer-public.json',encoding='utf-8'))
+          owner=json.load(open('mio-observer-owner.json',encoding='utf-8'))
+          assert 'scheduling' in public,public
+          pool=owner.get('runner_pool') or {}
+          assert 'oracle-gui' in (pool.get('workers') or {}),pool
+          assert 'agentos-router' in (pool.get('workers') or {}),pool
+          print('mio_observer_runner_pool_projection=PASS')
+          PY
 
       - name: Upload public projection
         uses: actions/upload-artifact@v4
