@@ -14,12 +14,20 @@ permissions:
 # Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:
   deploy:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: ubuntu-latest
     timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: core/integration
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
       - name: Pin Studio Web exact commit
         shell: bash
@@ -33,46 +41,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
           ID="studio-mio-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$ID.request.json"
-          RECEIPT="$RECEIPTS/$ID.json"
-
-          python3 -m py_compile agentos_node/bootstrap_control.py
-          for i in $(seq 1 60); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" "$STUDIO_COMMIT" <<'PY'
-          import json, os, sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-          path=Path(sys.argv[1])
-          payload={
-            "schema":"agentos.bootstrap-request/v1",
-            "request_id":sys.argv[2],
-            "action":"agentos.studio_web_mio.deploy",
-            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-            "params":{"source_commit":sys.argv[3],"studio_commit":sys.argv[4]},
-            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
-          }
-          tmp=path.with_suffix(path.suffix+".tmp")
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644)
-          tmp.replace(path)
-          os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 600); do
-            [ -f "$RECEIPT" ] && break
-            sleep 1
-          done
-          test -f "$RECEIPT"
+          RECEIPT="$RUNNER_TEMP/studio-mio-receipt.json"
+          EXTRA_PARAMS="$(python3 -c 'import json,os; print(json.dumps({"studio_commit":os.environ["STUDIO_COMMIT"]},separators=(",",":")))' )"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=660 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.studio_web_mio.deploy "$ID" "$GITHUB_SHA" "$EXTRA_PARAMS" > "$RECEIPT"
 
           python3 - "$RECEIPT" "$GITHUB_SHA" "$STUDIO_COMMIT" <<'PY'
           import json, sys

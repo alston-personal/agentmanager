@@ -16,18 +16,26 @@ permissions:
 # Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:
   inspect:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Verify no model call or social write
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/core/integration'
-          test "$(id -un)" = 'agentos-node'
           python3 -m py_compile agentos_node/bootstrap_control.py
           bash -n scripts/inspect_mio_recent_threads_user.sh
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
           python3 - <<'PY'
           from pathlib import Path
           script=Path('scripts/inspect_mio_recent_threads_user.sh').read_text()
@@ -48,39 +56,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          ID="mio-recent-patrol-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          REQUEST="$REQUESTS/$ID.request.json"
-          RECEIPT="$RECEIPTS/$ID.json"
-          test -d "$REQUESTS" && test -d "$RECEIPTS"
-          test "$(stat -c '%U' "$REQUESTS")" = ubuntu
-          test "$(stat -c '%a' "$REQUESTS")" = 1777
-          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          from pathlib import Path
-          path=Path(sys.argv[1])
-          payload={
-              'schema':'agentos.bootstrap-request/v1',
-              'request_id':sys.argv[2],
-              'action':'agentos.social_threads_mio_recent.inspect',
-              'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-              'params':{'source_commit':sys.argv[3]},
-              'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
-          }
-          tmp=path.with_suffix(path.suffix+'.tmp')
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o644)
-          tmp.replace(path)
-          os.chmod(path,0o644)
-          PY
-          for _ in $(seq 1 180); do
-            test ! -f "$RECEIPT" || break
-            sleep 1
-          done
-          test -f "$RECEIPT" || { echo 'mio_recent_readonly_receipt=TIMEOUT'; exit 3; }
+          ID="mio-recent-patrol-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/mio-recent-patrol-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=300 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_mio_recent.inspect "$ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys,re
           doc=json.load(open(sys.argv[1],encoding='utf-8'))
