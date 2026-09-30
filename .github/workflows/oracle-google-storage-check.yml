@@ -1,0 +1,52 @@
+name: Oracle Google Storage Check
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-google-storage-check.json'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Google storage mount and AgentOS paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== df ==='
+          df -hT
+          echo '=== mounts matching google/rclone/fuse/gdrive ==='
+          mount | grep -Ei 'rclone|google|gdrive|fuse' || true
+          echo '=== findmnt ==='
+          findmnt -t fuse,fuse.rclone,fuseblk 2>/dev/null || true
+          echo '=== rclone ==='
+          command -v rclone || true
+          rclone listremotes 2>/dev/null || true
+          echo '=== likely mount dirs ==='
+          for p in "$HOME/google-drive" "$HOME/gdrive" "$HOME/drive" "$HOME/mnt" /mnt /media /srv; do
+            [ -e "$p" ] && { echo "-- $p"; ls -ld "$p"; timeout 5 du -sh "$p" 2>/dev/null || true; }
+          done
+          echo '=== services ==='
+          systemctl --user list-units --type=service --all 2>/dev/null | grep -Ei 'rclone|google|gdrive|mount' || true
+          systemctl list-units --type=service --all 2>/dev/null | grep -Ei 'rclone|google|gdrive|mount' || true
+          echo '=== fstab ==='
+          grep -Ei 'rclone|google|gdrive|fuse' /etc/fstab 2>/dev/null || true
+          echo '=== AgentOS path devices ==='
+          for p in "$HOME/agent-data" "$HOME/agentmanager" "$HOME/.local/share/agentos"; do
+            [ -e "$p" ] && { printf '%s -> ' "$p"; df -hT "$p" | tail -n1; }
+          done
+          REMOTE
