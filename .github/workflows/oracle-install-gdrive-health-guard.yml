@@ -1,0 +1,88 @@
+name: Oracle Install GDrive Health Guard
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-install-gdrive-health-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install mount health guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user" "$HOME/.local/state/agentos"
+
+          cat > "$HOME/.local/bin/check_agentos_gdrive.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          MOUNT=/mnt/agentos-gdrive
+          STATE="$HOME/.local/state/agentos/gdrive-health.state"
+          now="$(date -Is)"
+
+          if mountpoint -q "$MOUNT" && timeout 10 test -d "$MOUNT/backups"; then
+            printf 'checked_at=%s\nstate=READY\n' "$now" > "$STATE"
+            exit 0
+          fi
+
+          printf 'checked_at=%s\nstate=RECOVERING\n' "$now" > "$STATE"
+          systemctl --user restart agentos-gdrive-mount.service
+          for i in $(seq 1 20); do
+            if mountpoint -q "$MOUNT" && timeout 10 test -d "$MOUNT/backups"; then
+              printf 'checked_at=%s\nstate=RECOVERED\n' "$(date -Is)" > "$STATE"
+              exit 0
+            fi
+            sleep 1
+          done
+          printf 'checked_at=%s\nstate=FAILED\n' "$(date -Is)" > "$STATE"
+          exit 42
+          SH
+          chmod 700 "$HOME/.local/bin/check_agentos_gdrive.sh"
+
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-health.service" <<'UNIT'
+          [Unit]
+          Description=AgentOS Google Drive mount health check
+          After=agentos-gdrive-mount.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=%h/.local/bin/check_agentos_gdrive.sh
+          UNIT
+
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-health.timer" <<'UNIT'
+          [Unit]
+          Description=Periodic AgentOS Google Drive mount health check
+
+          [Timer]
+          OnBootSec=2min
+          OnUnitActiveSec=5min
+          AccuracySec=30s
+          Unit=agentos-gdrive-health.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-gdrive-health.timer
+          systemctl --user start agentos-gdrive-health.service
+          cat "$HOME/.local/state/agentos/gdrive-health.state"
+          systemctl --user is-active agentos-gdrive-health.timer
+          echo 'gdrive_health_guard_install=PASS'
+          REMOTE
