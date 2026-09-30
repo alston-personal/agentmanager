@@ -1,6 +1,7 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "inspect current Mio wardrobe try-on production failure",
-  "requested_at": "2026-09-30T08:02:00Z"
+  "purpose": "verify imported coarse-slot production try-on after dashboard fix",
+  "requested_at": "2026-09-30T08:11:30Z",
+  "nonce": "coarse-slot-acceptance-081130"
 }
