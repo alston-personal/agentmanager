@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AGENT_DATA_ROOT } from '@/lib/data-root';
+import { normalizeWardrobeLayer } from '@/lib/wardrobe-layers';
 
 export const TRYON_JOB_SCHEMA = 'agentos.tryon-render-job/v1' as const;
 export const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
@@ -125,7 +126,7 @@ export function resolveGarment(garmentId: string): LayerItem | null {
     if (!row) continue;
     const id = String(row.garmentId || row.garment_id || '');
     if (id !== garmentId) continue;
-    const layer = String(row.layer || row.slot || '');
+    const layer = normalizeWardrobeLayer(row.layer || row.slot || '');
     if (!ALLOWED_LAYERS.has(layer)) return null;
     const visual =
       row.source?.imageUrl ||
