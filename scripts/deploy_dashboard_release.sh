@@ -355,6 +355,13 @@ check_route /dashboard/api/admin/usage 401
 check_route /dashboard/api/wardrobe/intake 401
 check_route /dashboard/api/wardrobe/catalog 200
 check_route /dashboard/api/wardrobe/tryon/render 405
+code="$(curl --noproxy '*' -k -sS -o "$TMP/tryon-post-body" -w '%{http_code}' \
+  --resolve studio.milkcat.org:443:127.0.0.1 \
+  -X POST -H 'Content-Type: application/json' \
+  --data '{"characterId":"sunlake-milkcat-ai-001","selectedLayers":{"lower_main":"net-32235-711"}}' \
+  https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render)"
+echo "dashboard_route=/dashboard/api/wardrobe/tryon/render method=POST status=$code expected=401"
+test "$code" = 401
 check_route /dashboard/api/wardrobe/tryon/assets/missing-probe 401
 check_route /dashboard/api/wardrobe/outfit/current 401
 check_route /dashboard/admin/usage 307
@@ -380,6 +387,12 @@ check_public /dashboard/api/admin/usage 401
 check_public /dashboard/api/wardrobe/intake 401
 check_public /dashboard/api/wardrobe/catalog 200
 check_public /dashboard/api/wardrobe/tryon/render 405
+code="$(curl --noproxy '*' -sS -o "$TMP/tryon-public-post-body" -w '%{http_code}' \
+  -X POST -H 'Content-Type: application/json' \
+  --data '{"characterId":"sunlake-milkcat-ai-001","selectedLayers":{"lower_main":"net-32235-711"}}' \
+  https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render)"
+echo "dashboard_public_route=/dashboard/api/wardrobe/tryon/render method=POST status=$code expected=401"
+test "$code" = 401
 check_public /dashboard/api/wardrobe/tryon/assets/missing-probe 401
 check_public /dashboard/api/wardrobe/outfit/current 401
 check_public /dashboard/admin/usage 307
