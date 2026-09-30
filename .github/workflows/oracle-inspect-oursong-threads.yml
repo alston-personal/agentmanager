@@ -1,5 +1,5 @@
 name: Oracle Inspect Oursong Threads
-# rerun: 2026-09-30T09:25+08:00
+# rerun: 2026-09-30T09:33+08:00
 
 on:
   push:
@@ -71,34 +71,73 @@ jobs:
                   replies.append({'id':rid,'root_post_id':pid,'username':str(row.get('username') or '')[:80].lstrip('@'),'text':str(row.get('text') or '')[:350],'timestamp':str(row.get('timestamp') or '')[:50],'replied_to_id':str((row.get('replied_to') or {}).get('id') or ''),'is_reply_owned_by_me':bool(row.get('is_reply_owned_by_me')),'permalink':str(row.get('permalink') or '')[:150]})
           # External discovery is intentionally non-political. Political/public-official
           # threads may still appear organically, but this patrol does not target them.
-          discovery_queries=['塔羅','動漫','連假','羽球','台灣小旅行','貓','日常觀察']
+          # Stage 1 expands broad interests into ordinary-language variants.
+          topic_queries={
+              '塔羅':['塔羅','占卜'],
+              '動漫':['動漫','動畫','漫畫'],
+              '假期':['連假','放假','假期'],
+              '羽球':['羽球','羽毛球'],
+              '旅行':['台灣小旅行','台灣旅行','散步'],
+              '貓':['貓','貓咪'],
+              '日常':['日常觀察','日常'],
+          }
           candidates=[]
           seen=set()
           discovery_status={}
-          for q in discovery_queries:
-              discovery=read('keyword.search',query=q)
-              discovery_status[q]='PASS' if discovery.get('ok') is True else str(discovery.get('error_code') or 'FAILED')
-              if discovery.get('ok') is not True:
-                  continue
+          def search(query, search_type):
+              p={'schema':'agentos.social-request/v1','product_id':'galaxy','platform':'threads','operation':'keyword.search','account_binding_id':bid,
+                 'query':query,'search_type':search_type,'search_mode':'KEYWORD'}
+              req=urllib.request.Request('http://127.0.0.1:8771/v1/social/status',
+                  data=json.dumps(p,ensure_ascii=False,separators=(',',':')).encode(),
+                  headers={'Content-Type':'application/json','X-AgentOS-Product-Key':product_key},method='POST')
+              try:
+                  with urllib.request.urlopen(req,timeout=20) as r: return json.load(r)
+              except urllib.error.HTTPError as e:
+                  return {'ok':False,'error_code':'http_'+str(e.code)}
+          def add_rows(topic, query, mode, rows):
               added=0
-              for row in (discovery.get('result') or {}).get('items') or []:
+              for row in rows:
                   if not isinstance(row,dict): continue
                   oid=str(row.get('id') or '')
                   username=str(row.get('username') or '')[:80].lstrip('@')
-                  if not oid or oid in seen or username.lower()=='oursong_alstonhuang':
+                  text=str(row.get('text') or '').strip()
+                  if not oid or oid in seen or username.lower()=='oursong_alstonhuang' or not text:
                       continue
                   seen.add(oid)
+                  # A lightweight conversation score favors posts that contain enough
+                  # context to answer naturally; it is not an engagement prediction.
+                  score=0
+                  if 20<=len(text)<=400: score+=2
+                  if '?' in text or '？' in text: score+=2
+                  if '\\n' in text: score+=1
                   candidates.append({
-                      'id':oid,
-                      'topic':q,
-                      'username':username,
-                      'text':str(row.get('text') or '')[:400],
+                      'id':oid,'topic':topic,'query':query,'mode':mode,'conversation_score':score,
+                      'username':username,'text':text[:400],
                       'timestamp':str(row.get('timestamp') or '')[:50],
                       'permalink':str(row.get('permalink') or '')[:150]
                   })
                   added+=1
-                  if added>=2 or len(candidates)>=12: break
-              if len(candidates)>=12: break
+                  if added>=2 or len(candidates)>=16: break
+              return added
+          # Stage 2 searches RECENT first; when a query returns no usable rows,
+          # fall back to TOP so a quiet recent window does not look like API failure.
+          for topic,queries in topic_queries.items():
+              for q in queries:
+                  recent=search(q,'RECENT')
+                  key=q+':RECENT'
+                  discovery_status[key]='PASS' if recent.get('ok') is True else str(recent.get('error_code') or 'FAILED')
+                  added=0
+                  if recent.get('ok') is True:
+                      added=add_rows(topic,q,'RECENT',(recent.get('result') or {}).get('items') or [])
+                  if added==0:
+                      top=search(q,'TOP')
+                      key=q+':TOP'
+                      discovery_status[key]='PASS' if top.get('ok') is True else str(top.get('error_code') or 'FAILED')
+                      if top.get('ok') is True:
+                          add_rows(topic,q,'TOP',(top.get('result') or {}).get('items') or [])
+                  if len(candidates)>=16: break
+              if len(candidates)>=16: break
+          candidates.sort(key=lambda x:(-int(x.get('conversation_score') or 0),x.get('topic',''),x.get('id','')))
           print('oursong_patrol=PASS')
           print('oursong_posts='+json.dumps(owned,ensure_ascii=False,separators=(',',':')))
           print('oursong_replies='+json.dumps(replies[-40:],ensure_ascii=False,separators=(',',':')))
