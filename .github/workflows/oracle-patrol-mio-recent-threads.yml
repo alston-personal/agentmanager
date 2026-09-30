@@ -70,6 +70,10 @@ jobs:
           assert doc.get('executor_user')=='ubuntu'
           assert doc.get('executor_uid')==1001
           assert doc.get('source_commit')==sys.argv[2]
+          scheduler=doc.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='social',scheduler
+          assert scheduler.get('worker_id') in {'oracle-social-1','oracle-social-2'},scheduler
+          print('agentos_scheduler_worker='+scheduler['worker_id']+':social')
           if doc.get('ok') is not True:
             for step in doc.get('steps') or []:
               if not isinstance(step,dict): continue
@@ -138,4 +142,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/route_mio_social_incident.py
 
-# AgentOS scheduler acceptance rerun after hosted-ingress JSON fix
+
+# AgentOS scheduler acceptance: verify social lane receipt

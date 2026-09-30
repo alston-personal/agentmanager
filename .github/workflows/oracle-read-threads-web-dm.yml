@@ -57,6 +57,10 @@ jobs:
           assert r.get("action")=="agentos.social_threads_web_dm.read",r
           assert r.get("executor_user")=="ubuntu",r
           assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert scheduler.get("worker_id")=="oracle-gui",scheduler
+          print("agentos_scheduler_worker="+scheduler["worker_id"]+":gui")
           assert r.get("ok") is True,r
           text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
           state="unknown"
@@ -112,4 +116,5 @@ jobs:
         run: python3 scripts/route_mio_social_incident.py
 # owner-requested verification 2026-09-30
 
-# AgentOS scheduler acceptance rerun after hosted-ingress JSON fix
+
+# AgentOS scheduler acceptance: verify GUI lane receipt

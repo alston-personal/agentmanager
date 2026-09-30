@@ -18,13 +18,14 @@ printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
 printf '%s' "$TIMEOUT_SECONDS" | grep -Eq '^[0-9]{1,4}$'
 python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d,dict)' "$EXTRA_PARAMS_JSON"
 
+EXTRA_PARAMS_B64="$(printf '%s' "$EXTRA_PARAMS_JSON" | base64 | tr -d '\n')"
 ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "$DEPLOY_SSH_PORT" "$DEPLOY_USER@$ORACLE_HOST" \
-  bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_JSON" "$TIMEOUT_SECONDS" <<'REMOTE'
+  bash -s -- "$ACTION" "$REQUEST_ID" "$SOURCE_COMMIT" "$EXTRA_PARAMS_B64" "$TIMEOUT_SECONDS" <<'REMOTE'
 set -euo pipefail
 ACTION="$1"
 REQUEST_ID="$2"
 SOURCE_COMMIT="$3"
-EXTRA_PARAMS_JSON="$4"
+EXTRA_PARAMS_JSON="$(printf '%s' "$4" | base64 -d)"
 TIMEOUT_SECONDS="$5"
 REPO=/home/ubuntu/agentmanager
 ROOT=/tmp/agentos-bootstrap-control

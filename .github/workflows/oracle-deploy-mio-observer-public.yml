@@ -56,6 +56,10 @@ jobs:
           assert r.get("executor_user")=="ubuntu",r
           assert r.get("executor_uid")==1001,r
           assert r.get("source_commit")==sys.argv[2],r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="control",scheduler
+          assert scheduler.get("worker_id")=="oracle-control",scheduler
+          print("agentos_scheduler_worker="+scheduler["worker_id"]+":control")
           assert r.get("ok") is True,r
           text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
           assert "studio_web_mio_public_observer=PASS" in text,text[-16000:]
@@ -75,4 +79,5 @@ jobs:
             python3 -m json.tool >/dev/null
           echo "mio_observer_public_acceptance=PASS"
 
-# AgentOS scheduler acceptance rerun after hosted-ingress JSON fix
+
+# AgentOS scheduler acceptance: verify control lane receipt
