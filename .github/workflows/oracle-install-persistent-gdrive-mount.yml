@@ -1,0 +1,63 @@
+name: Oracle Install Persistent GDrive Mount
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-install-persistent-gdrive-mount.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install persistent mount on isolated path
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          command -v rclone >/dev/null
+          test -f "$HOME/.config/rclone/rclone.conf"
+          sudo -n mkdir -p /mnt/agentos-gdrive
+          sudo -n chown "$(id -u):$(id -g)" /mnt/agentos-gdrive
+          mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/state/agentos"
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-mount.service" <<'UNIT'
+          [Unit]
+          Description=AgentOS Google Drive mount
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/rclone mount gdrive: /mnt/agentos-gdrive --config=%h/.config/rclone/rclone.conf --vfs-cache-mode=minimal --dir-cache-time=1h --poll-interval=1m --umask=002 --log-level=INFO --log-file=%h/.local/state/agentos/rclone-gdrive.log
+          ExecStop=/bin/sh -c 'command -v fusermount3 >/dev/null && fusermount3 -u /mnt/agentos-gdrive || fusermount -u /mnt/agentos-gdrive'
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=default.target
+          UNIT
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-gdrive-mount.service
+          for i in $(seq 1 30); do
+            mountpoint -q /mnt/agentos-gdrive && break
+            sleep 1
+          done
+          mountpoint -q /mnt/agentos-gdrive
+          systemctl --user is-active agentos-gdrive-mount.service
+          findmnt /mnt/agentos-gdrive
+          timeout 10 ls -la /mnt/agentos-gdrive | head -n 20
+          loginctl show-user "$(id -un)" -p Linger 2>/dev/null || true
+          echo 'persistent_gdrive_mount=PASS'
+          REMOTE
