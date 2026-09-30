@@ -208,6 +208,37 @@ roles:
       - decision_record
       - chronicle_entry
 
+
+  - id: persona.mio
+    name: Mio
+    status: active
+    kind: persona_agent
+    source: personas/mio/agent.yaml
+    purpose: "作為具持續身份、記憶、PDCA、精力、關係與可掛載能力的自主 Persona Agent；社群平台與工具只是 capability，不等同於角色本體。"
+    must_obey:
+      - truth_provenance
+      - receipts_over_claims
+      - capability_boundary
+      - evolution_without_erasure
+      - executor_independence
+    capabilities:
+      - persona.relationship.memory
+      - persona.wardrobe
+      - persona.visual.generate
+      - social.threads.observe
+      - social.threads.reply
+      - social.threads.post
+      - social.threads.dm
+      - persona.observer.public
+      - persona.observer.owner
+    outputs:
+      - persona_event
+      - persona_ir_revision
+      - pdca_receipt
+      - capability_receipt
+      - observer_projection
+
+
 legacy_instances:
   - id: instance.agentmanager_paw
     source: .agent/roles/instances/agentmanager_paw.md
