@@ -75,6 +75,20 @@ jobs:
           systemctl --user list-timers --all 2>/dev/null | grep -Ei 'backup|agentos|gdrive' || true
           systemctl --user list-unit-files 2>/dev/null | grep -Ei 'backup|agentos|gdrive' || true
           crontab -l 2>/dev/null | grep -Ei 'backup|agentos|gdrive|03:00|3 \* \* \*' || true
+          echo '=== pre-reboot remote backup checks ==='
+          for name in agentos_backup_20260928_030001.tar.gz agentos_backup_20260929_030001.tar.gz; do
+            echo "-- $name"
+            rclone lsl "gdrive:backups/$name" 2>/dev/null || echo 'remote_missing'
+          done
+          echo '=== backup script destination ==='
+          if [ -f "$HOME/backup_agentos.sh" ]; then
+            grep -En 'gdrive|backups|tar|gzip|backup' "$HOME/backup_agentos.sh" | head -n 120 || true
+          else
+            echo 'backup_script_missing'
+          fi
+          echo '=== crontab metadata ==='
+          crontab -l 2>/dev/null || true
+          stat -c 'mtime=%y size=%s path=%n' /var/spool/cron/crontabs/$(id -un) 2>/dev/null || true
           echo '=== exact remote backup checks ==='
           for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
             echo "-- $name"
