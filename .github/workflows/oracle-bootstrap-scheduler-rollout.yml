@@ -9,6 +9,7 @@ on:
       - 'agentos_node/bootstrap_control.py'
       - 'agentos_node/bootstrap_scheduler.py'
       - 'scripts/install_bootstrap_scheduler_user.sh'
+      - 'scripts/update_scheduler_board.py'
   workflow_dispatch:
 
 permissions:
@@ -60,4 +61,23 @@ jobs:
             systemctl --user show "$unit" -p CPUQuotaPerSecUSec -p MemoryHigh -p MemoryMax --no-pager
           done
           echo "bootstrap_scheduler_acceptance=PASS"
+          REMOTE
+
+      - name: Refresh central scheduler board
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/update_scheduler_board.py
+          git -C "$REPO" fetch --no-tags origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/update_scheduler_board.py" > "$TMP"
+          python3 -m py_compile "$TMP"
+          AGENT_PROJECT_ROOT="$REPO" AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH="$REPO" python3 "$TMP"
+          grep -Fq 'AgentOS Runner Pool / Capability Scheduler' /home/ubuntu/agent-data/SCHEDULER_BOARD.md
+          grep -Fq 'agentos-router' /home/ubuntu/agent-data/SCHEDULER_BOARD.md
+          echo "scheduler_board_runner_pool=PASS"
           REMOTE
