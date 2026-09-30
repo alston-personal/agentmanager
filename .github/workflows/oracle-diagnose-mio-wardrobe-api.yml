@@ -91,6 +91,32 @@ jobs:
           print('net_shoe_candidate_count='+str(len(dict.fromkeys(values))))
           PY
 
+          echo "=== auth signin ==="
+          code="$(curl --noproxy '*' -k -sS -D /tmp/mio-auth-signin-head -o /tmp/mio-auth-signin-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+            'https://studio.milkcat.org/dashboard/api/auth/signin/google?returnTo=%2Fpersonas%2Fmio%2Fwardrobe%2F%3FresumeTryOn%3D1' || true)"
+          echo "auth_signin_http=$code"
+          grep -i '^location:' /tmp/mio-auth-signin-head | sed 's/[?&]state=[^&]*/\&state=<redacted>/' | head -n 1 || true
+          if [ "$code" != 307 ] && [ "$code" != 302 ]; then
+            head -c 500 /tmp/mio-auth-signin-body | tr '\n' ' '; echo
+          fi
+
+          echo "=== auth session ==="
+          code="$(curl --noproxy '*' -k -sS -o /tmp/mio-auth-session-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+            https://studio.milkcat.org/dashboard/api/auth/session || true)"
+          echo "auth_session_http=$code"
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('/tmp/mio-auth-session-body')
+          raw=p.read_text(encoding='utf-8',errors='replace')[:1200] if p.exists() else ''
+          try:
+              obj=json.loads(raw)
+              print('auth_session_loggedIn='+str(obj.get('loggedIn')))
+              print('auth_session_role='+str(obj.get('role')))
+              print('auth_session_provider='+str(obj.get('provider')))
+          except Exception:
+              print('auth_session_body_non_json='+raw.replace('\n',' ')[:300])
+          PY
+
           echo "=== admin runtime configuration ==="
           ADMIN_FILE=/home/ubuntu/.config/milkcat/admin-identities
           if [ -f "$ADMIN_FILE" ]; then
