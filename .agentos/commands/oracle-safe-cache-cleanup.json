@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.remote-maintenance-command/v1",
+  "target": "oracle",
+  "purpose": "free rebuildable cache space blocking Mio wardrobe auth deployment",
+  "requested_at": "2026-10-01T06:27:40+08:00"
+}
