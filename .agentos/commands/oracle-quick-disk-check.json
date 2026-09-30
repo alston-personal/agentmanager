@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "inspect current rclone cache and disk pressure during recovery",
-  "requested_at": "2026-10-01T07:45:00+08:00"
+  "purpose": "break down cache usage while second underlay backup is preserving",
+  "requested_at": "2026-10-01T07:50:00+08:00"
 }
