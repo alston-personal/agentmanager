@@ -49,6 +49,12 @@ jobs:
           uptime -s || true
           echo '=== newest local gdrive files ==='
           find "$HOME/gdrive" -xdev -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TS\t%s\t%P\n' 2>/dev/null | sort -r | head -n 60 || true
+          echo '=== remote backup evidence ==='
+          rclone lsf gdrive:backups --files-only --format 'pst' 2>/dev/null | grep -E 'agentos_backup_(20260930|20261001)_030001\.tar\.gz' || true
+          echo '=== backup schedulers ==='
+          crontab -l 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
+          systemctl --user list-timers --all 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
+          systemctl list-timers --all 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
           echo '=== AgentOS path devices ==='
           for p in "$HOME/agent-data" "$HOME/agentmanager" "$HOME/.local/share/agentos"; do
             [ -e "$p" ] && { printf '%s -> ' "$p"; df -hT "$p" | tail -n1; }
