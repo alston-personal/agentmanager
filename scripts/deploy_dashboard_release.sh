@@ -226,7 +226,15 @@ elif [ "$PM2_PREFLIGHT_RC" -eq 3 ]; then
   PM2_TARGET_PRESENT=0
   CURRENT_CWD="$(readlink -f "/proc/$CURRENT_LISTENER/cwd")"
   case "$CURRENT_CWD" in
-    /home/ubuntu/agent-data/releases/dashboard/apps/*) ;;
+    /home/ubuntu/agent-data/releases/dashboard/apps/*)
+      echo "dashboard_runtime_recovery_source=immutable_release"
+      ;;
+    /home/ubuntu/agentmanager/dashboard)
+      # Legacy shared-checkout runtime is exactly the drift this release controller
+      # is intended to replace. It is acceptable only after listener ownership is
+      # verified below; the new runtime will be switched to an immutable release.
+      echo "dashboard_runtime_recovery_source=legacy_shared_checkout"
+      ;;
     *) echo "dashboard_unmanaged_listener_cwd_unexpected=$CURRENT_CWD"; exit 2 ;;
   esac
   echo "dashboard_runtime_recovery=ADOPT_VERIFIED_LISTENER cwd=$CURRENT_CWD"
