@@ -6,62 +6,36 @@ on:
       - core/integration
     paths:
       - '.agentos/commands/oracle-gui-chatgpt-web-probe.json'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   probe:
-    runs-on: [self-hosted, Linux, ARM64, oracle, gui]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Probe ChatGPT Web through governed Oracle GUI Worker
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe ChatGPT Web through AgentOS GUI capability lane
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
           REQUEST_ID="oracle-chatgpt-web-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 120); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS" -a -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          path,request_id,sha=sys.argv[1],sys.argv[2],sys.argv[3]
-          payload={
-            'schema':'agentos.bootstrap-request/v1',
-            'request_id':request_id,
-            'action':'agentos.chatgpt_web.probe',
-            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-            'params':{'source_commit':sha},
-            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
-          }
-          tmp=path+'.tmp'
-          open(tmp,'w',encoding='utf-8').write(json.dumps(payload,sort_keys=True,indent=2)+'\n')
-          os.chmod(tmp,0o644)
-          os.replace(tmp,path)
-          os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 180); do
-            [ -f "$RECEIPT" ] && break
-            sleep 1
-          done
-          test -f "$RECEIPT" || { echo "chatgpt_web_probe_receipt=TIMEOUT"; exit 3; }
+          RECEIPT="$RUNNER_TEMP/chatgpt-web-probe.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.chatgpt_web.probe "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
 
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
@@ -69,14 +43,17 @@ jobs:
           expected=sys.argv[2]
           assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
           assert r.get('action')=='agentos.chatgpt_web.probe',r
-          assert r.get('executor_user')=='ubuntu',r
-          assert r.get('executor_uid')==1001,r
           assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          assert 'chatgpt.web.session' in set(scheduler.get('requested_capabilities') or []),scheduler
           text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
-          assert r.get('ok') is True,text[-12000:]
           assert 'chatgpt_web_probe=PASS' in text,text[-12000:]
+          states=[line for line in text.splitlines() if line.startswith('chatgpt_web_session_state=')]
+          assert states, text[-12000:]
           print('chatgpt_web_probe_receipt=PASS')
-          for line in text.splitlines():
-            if line.startswith('chatgpt_web_'):
-              print(line)
+          print('chatgpt_web_scheduler_lane=oracle-gui')
+          print(states[-1])
           PY
