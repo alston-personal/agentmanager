@@ -42,3 +42,20 @@
 - This is an observational single-post result, not a controlled causal test.
 - Preserve transferable format variables for future non-political experiments: timely context, single strong visual, short caption, immediately understandable premise, and low-friction sharing.
 - Do not infer that political subject matter itself is the causal driver; test those format variables separately on non-political posts.
+
+
+### 2026-09-30 09:19 Asia/Taipei follow-up
+- views: 4185
+- likes: 588
+- replies: 9
+- reposts: 10
+- quotes: 1
+- shares: 3
+- delta vs 2026-09-29 10:32:
+  - views: +1104
+  - likes: +135
+  - replies: +3
+  - reposts: +4
+  - quotes: +0
+  - shares: +0
+- observation: distribution continued for nearly another day, with additional views, likes, replies and reposts; quote/share counts were flat in this window.
