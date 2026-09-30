@@ -59,8 +59,13 @@ jobs:
           assert r.get("source_commit")==expected,r
           scheduler=r.get("scheduler") or {}
           assert scheduler.get("worker_role")=="gui",scheduler
-          assert scheduler.get("worker_id")=="oracle-gui",scheduler
+          assert scheduler.get("worker_id") in {"oracle-gui","mbpr"},scheduler
+          if scheduler.get("worker_id")=="mbpr":
+              assert scheduler.get("node")=="mbpr",scheduler
+              assert scheduler.get("fallback_from")=="oracle-gui",scheduler
+              assert scheduler.get("fallback_attempted") is True,scheduler
           print("agentos_scheduler_worker="+scheduler["worker_id"]+":gui")
+          print("agentos_scheduler_node="+str(scheduler.get("node") or "oracle"))
           assert r.get("ok") is True,r
           text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
           state="unknown"
