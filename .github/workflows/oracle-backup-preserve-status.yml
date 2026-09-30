@@ -28,6 +28,11 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
           echo 'RCLONE_PROCESSES'
           ps -eo pid,etimes,args | grep '[r]clone copyto' || true
+          echo 'RCLONE_IO'
+          for pid in $(pgrep -f 'rclone copyto .*recovered-oracle-underlay-20261001' || true); do
+            echo "pid=$pid"
+            cat "/proc/$pid/io" 2>/dev/null || true
+          done
           echo 'REMOTE_RECOVERY_FILES'
           timeout 20 rclone lsf gdrive:backups/recovered-oracle-underlay-20261001 --files-only --format 'sp' 2>/dev/null || true
           echo 'ROOT_SPACE'
