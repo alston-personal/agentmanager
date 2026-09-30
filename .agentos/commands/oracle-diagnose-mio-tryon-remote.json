@@ -1,7 +1,7 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "verify lower_main+shoes cache prefix survives bag provider quota",
-  "requested_at": "2026-09-30T08:13:30Z",
-  "nonce": "prefix-cache-acceptance-081330"
+  "purpose": "check current production Mio wardrobe admin login/session and recent 401s",
+  "requested_at": "2026-10-01T06:19:30+08:00",
+  "nonce": "auth-session-check-20261001-061930"
 }
