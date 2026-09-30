@@ -1,0 +1,33 @@
+name: Oracle GDrive Mount History
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-gdrive-mount-history.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read mount history
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          echo 'CURRENT_BOOT'
+          journalctl --user -b --no-pager 2>/dev/null | grep -Ei 'rclone|gdrive|fuse' | tail -n 120 || true
+          echo 'PREVIOUS_BOOT'
+          journalctl --user -b -1 --no-pager 2>/dev/null | grep -Ei 'rclone|gdrive|fuse' | tail -n 160 || true
+          REMOTE
