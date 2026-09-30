@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
+import tempfile
+import time
 from pathlib import Path
 import pwd
 import re
@@ -203,14 +206,34 @@ def _run_canonical_script(
     env_extra: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     repo = Path.home() / "agentmanager"
-    tmp = Path("/tmp") / ("agentos-bootstrap-" + Path(script_rel).name)
+    fd, tmp_raw = tempfile.mkstemp(prefix="agentos-bootstrap-" + Path(script_rel).name + "-", dir="/tmp")
+    os.close(fd)
+    tmp = Path(tmp_raw)
     steps: list[dict[str, Any]] = []
     source = source_commit or "origin/main"
-    fetch_args = ["git", "-C", str(repo), "fetch", "origin", source_commit] if source_commit else ["git", "-C", str(repo), "fetch", "origin", "main"]
-    fetch = subprocess.run(fetch_args, text=True, capture_output=True, timeout=60, check=False)
-    steps.append({"step": "git_fetch", "source_commit": source_commit, "returncode": fetch.returncode, "stdout": fetch.stdout[-8000:], "stderr": fetch.stderr[-8000:]})
-    if fetch.returncode != 0:
-        return {"ok": False, "source_commit": source_commit, "steps": steps}
+
+    # Exact source commits are normally prefetched by the governed ingress.
+    # Avoid concurrent git fetches against the shared live repository when the
+    # immutable object is already present.  Missing objects are fetched under a
+    # narrow source-materialization lock; execution itself remains parallel.
+    local_verify = None
+    if source_commit:
+        local_verify = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-e", f"{source_commit}^{{commit}}"],
+            text=True, capture_output=True, timeout=30, check=False,
+        )
+    if source_commit and local_verify is not None and local_verify.returncode == 0:
+        steps.append({"step": "git_fetch", "source_commit": source_commit, "returncode": 0, "status": "local_object_present"})
+    else:
+        lock_path = _root() / "locks" / "oracle-source-materialize.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            fetch_args = ["git", "-C", str(repo), "fetch", "origin", source_commit] if source_commit else ["git", "-C", str(repo), "fetch", "origin", "main"]
+            fetch = subprocess.run(fetch_args, text=True, capture_output=True, timeout=60, check=False)
+            steps.append({"step": "git_fetch", "source_commit": source_commit, "returncode": fetch.returncode, "stdout": fetch.stdout[-8000:], "stderr": fetch.stderr[-8000:]})
+            if fetch.returncode != 0:
+                return {"ok": False, "source_commit": source_commit, "steps": steps}
     if source_commit:
         verify = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{source_commit}^{{commit}}"], text=True, capture_output=True, timeout=30, check=False)
         steps.append({"step": "verify_source_commit", "returncode": verify.returncode, "stderr": verify.stderr[-8000:]})
@@ -356,6 +379,13 @@ def run_bootstrap_control_plane() -> dict[str, Any] | None:
     paths or executable arguments. Actions that publish runtime code may carry
     only an immutable exact source commit SHA, which is preserved in the receipt.
     """
+    scheduler_marker = Path(
+        os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data"
+    ) / "runtime" / "bootstrap-scheduler" / "enabled"
+    if scheduler_marker.exists():
+        # The role worker pool is the single queue owner when enabled.  Keeping
+        # the legacy scheduler-board hook passive prevents double execution.
+        return None
     requests, receipts, rejected = _ensure(_root())
     candidates = sorted(requests.glob("*.request.json"))
     if not candidates:
