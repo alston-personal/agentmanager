@@ -36,7 +36,7 @@ ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
 ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
-ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"\nACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
+ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"\nACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"\nACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -117,6 +117,8 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         allowed_params={"source_commit","post_key"}
     elif action == ACTION_RUN_MIO_DM_DECISION:
         allowed_params={"source_commit","source_run_id","username"}
+    elif action == ACTION_DEPLOY_STUDIO_WEB_MIO:
+        allowed_params={"source_commit","studio_commit"}
     else:
         allowed_params={"source_commit"}
     unknown = set(params) - allowed_params
@@ -130,6 +132,10 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
             raise ValueError("invalid source_run_id")
         if not re.fullmatch(r"[A-Za-z0-9._]{1,64}", username):
             raise ValueError("invalid DM username")
+    if action == ACTION_DEPLOY_STUDIO_WEB_MIO:
+        studio_commit=str(params.get("studio_commit") or "")
+        if not COMMIT_RE.fullmatch(studio_commit):
+            raise ValueError("studio_commit must be an exact lowercase 40-hex commit SHA")
     if unknown:
         raise ValueError(f"unsupported bootstrap params: {sorted(unknown)}")
     source_commit = str(params.get("source_commit") or "").strip() or None
@@ -316,6 +322,14 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
             "scripts/project_mio_observer_user.sh",
             timeout=90,
             source_commit=source_commit,
+        )
+    if action == ACTION_DEPLOY_STUDIO_WEB_MIO:
+        params=params or {}
+        return _run_canonical_script(
+            "scripts/deploy_studio_web_mio_user.sh",
+            timeout=600,
+            source_commit=source_commit,
+            env_extra={"AGENTOS_STUDIO_COMMIT":str(params.get("studio_commit") or "")},
         )
     raise ValueError("unsupported bootstrap action")
 
