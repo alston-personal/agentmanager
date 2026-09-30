@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   probe:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: [self-hosted, Linux, ARM64, oracle, gui]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
