@@ -50,18 +50,7 @@ jobs:
                 -H 'X-GitHub-Api-Version: 2022-11-28' \
                 "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runners/registration-token" || true)"
               echo "machine_runner_registration_http=$code"
-              python3 - <<'PY'
-import json
-from pathlib import Path
-p=Path('/tmp/runner-reg.json')
-if p.exists():
-    try:
-        d=json.loads(p.read_text())
-    except Exception:
-        d={}
-    print('machine_runner_registration_token_available=' + ('true' if bool(d.get('token')) else 'false'))
-    print('machine_runner_registration_expires_at=' + str(d.get('expires_at') or ''))
-PY
+              python3 -c "import json,pathlib; p=pathlib.Path('/tmp/runner-reg.json'); d=json.loads(p.read_text()) if p.exists() else {}; print('machine_runner_registration_token_available=' + ('true' if bool(d.get('token')) else 'false')); print('machine_runner_registration_expires_at=' + str(d.get('expires_at') or ''))"
               rm -f /tmp/runner-reg.json
             else
               echo "machine_runner_registration_http=no_token"
