@@ -82,7 +82,8 @@ trap 'status=$?; if [ "$status" -ne 0 ] && [ "${rollback_marker:-0}" = 1 ]; then
 systemctl --user daemon-reload
 for unit in   agentos-bootstrap-control.service   agentos-bootstrap-social-1.service   agentos-bootstrap-social-2.service   agentos-bootstrap-gui.service   agentos-bootstrap-build.service \
   agentos-bootstrap-router.service; do
-  systemctl --user enable --now "$unit" >/dev/null
+  systemctl --user enable "$unit" >/dev/null
+  systemctl --user restart "$unit"
   systemctl --user is-active --quiet "$unit"
   echo "bootstrap_scheduler_unit=$unit:active"
 done
