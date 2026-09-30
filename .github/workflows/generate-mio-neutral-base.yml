@@ -21,7 +21,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ] && [ -f /home/ubuntu/agentmanager/.env ]; then
+            HF_TOKEN="$(python3 - <<'PY'
+          from pathlib import Path
+          for raw in Path("/home/ubuntu/agentmanager/.env").read_text(encoding="utf-8").splitlines():
+              line=raw.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              key,value=line.split("=",1)
+              if key.strip() in {"HF_TOKEN","HUGGINGFACE_TOKEN"}:
+                  print(value.strip().strip('"').strip("'"))
+                  break
+          PY
+          )"
+            export HF_TOKEN
+          fi
           test -n "${HF_TOKEN:-}"
+          echo "::add-mask::$HF_TOKEN"
           WORK="$(mktemp -d /tmp/mio-neutral-base-XXXXXX)"
           trap 'rm -rf "$WORK"' EXIT
           SOURCE="$WORK/mio-source.webp"
