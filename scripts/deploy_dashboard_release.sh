@@ -126,6 +126,18 @@ check_public() {
   test "$code" = "$expected"
 }
 
+check_post_json_route() {
+  local route="$1" expected="$2"
+  local body="$3"
+  local code
+  code="$(curl --noproxy '*' -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 3 --max-time 12 \
+    --resolve studio.milkcat.org:443:127.0.0.1 \
+    -X POST -H 'Content-Type: application/json' --data "$body" \
+    "https://studio.milkcat.org$route" || true)"
+  printf 'dashboard_post_route=%s status=%s expected=%s\n' "$route" "$code" "$expected"
+  test "$code" = "$expected"
+}
+
 restore_old_runtime() {
   echo 'dashboard_runtime_rollback=STARTED'
 
@@ -355,6 +367,7 @@ check_route /dashboard/api/admin/usage 401
 check_route /dashboard/api/wardrobe/intake 401
 check_route /dashboard/api/wardrobe/catalog 200
 check_route /dashboard/api/wardrobe/tryon/render 405
+check_post_json_route /dashboard/api/wardrobe/tryon/render 401 '{"characterId":"sunlake-milkcat-ai-001","selectedLayers":{"lower_main":"net-32235-711"}}'
 check_route /dashboard/api/wardrobe/tryon/assets/missing-probe 401
 check_route /dashboard/api/wardrobe/outfit/current 401
 check_route /dashboard/admin/usage 307
