@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.persona-capability-attachment/v1",
+  "title": "AgentOS Persona Capability Attachment",
+  "type": "object",
+  "required": ["id", "status", "provider", "mode"],
+  "properties": {
+    "id": {"type":"string","pattern":"^[a-z0-9_.-]+$"},
+    "status": {"enum":["attached","detached","planned","degraded"]},
+    "provider": {"type":"string","minLength":1},
+    "mode": {"enum":["read","write","read_write","governed_write","policy_gated","projection","private_projection"]},
+    "health": {"enum":["unknown","healthy","degraded","blocked"]},
+    "last_receipt": {"type":["string","null"]},
+    "metadata": {"type":"object","additionalProperties":true}
+  },
+  "additionalProperties": false
+}
