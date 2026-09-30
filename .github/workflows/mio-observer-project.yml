@@ -20,13 +20,66 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: core/integration
-      - name: Build observer projections
+
+      - name: Project observer through bounded bootstrap
         shell: bash
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/scripts/project_mio_observer_user.py"
+          LIVE=/home/ubuntu/agentmanager
+          ROOT=/tmp/agentos-bootstrap-control
+          REQUESTS="$ROOT/requests"
+          RECEIPTS="$ROOT/receipts"
+          ID="mio-observer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          REQUEST="$REQUESTS/$ID.request.json"
+          RECEIPT="$RECEIPTS/$ID.json"
+
+          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
+          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
+          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
+
+          for i in $(seq 1 60); do
+            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
+            sleep 1
+          done
+          test -d "$REQUESTS"
+          test -d "$RECEIPTS"
+
+          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" <<'PY'
+          import json,os,sys
+          from datetime import datetime,timezone
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          payload={
+            "schema":"agentos.bootstrap-request/v1",
+            "request_id":sys.argv[2],
+            "action":"agentos.mio_observer.project",
+            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
+            "params":{"source_commit":sys.argv[3]},
+            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
+          }
+          tmp=path.with_suffix(path.suffix+".tmp")
+          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
+          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          PY
+
+          for i in $(seq 1 180); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          test -f "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.mio_observer.project",r
+          assert r.get("executor_user")=="ubuntu",r
+          assert r.get("executor_uid")==1001,r
+          assert r.get("source_commit")==expected,r
+          assert r.get("ok") is True,r
+          print("mio_observer_bootstrap=PASS")
+          PY
+
           cp /tmp/mio-observer-public.json ./mio-observer-public.json
           cp /tmp/mio-observer-owner.json ./mio-observer-owner.json
+
       - name: Upload public projection
         uses: actions/upload-artifact@v4
         with:
@@ -34,6 +87,7 @@ jobs:
           path: mio-observer-public.json
           retention-days: 3
           if-no-files-found: error
+
       - name: Upload owner projection
         uses: actions/upload-artifact@v4
         with:
