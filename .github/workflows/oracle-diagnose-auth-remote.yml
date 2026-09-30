@@ -1,0 +1,52 @@
+name: Oracle Diagnose Milkcat Auth Remote
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-diagnose-auth-remote.json'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect current auth path
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== auth/session anonymous ==='
+          curl --noproxy '*' -k -sS --resolve studio.milkcat.org:443:127.0.0.1 \
+            -D /tmp/auth-h -o /tmp/auth-b https://studio.milkcat.org/dashboard/api/auth/session || true
+          awk 'NR==1{print "auth_session_status="$2}' /tmp/auth-h
+          cat /tmp/auth-b | tr '\n' ' ' | sed 's/^/auth_session_body=/'
+          echo
+
+          echo '=== google signin redirect ==='
+          curl --noproxy '*' -k -sS --resolve studio.milkcat.org:443:127.0.0.1 \
+            -D /tmp/signin-h -o /dev/null \
+            'https://studio.milkcat.org/dashboard/api/auth/signin/google?returnTo=%2Fpersonas%2Fmio%2Fwardrobe%2F' || true
+          awk 'NR==1{print "auth_signin_status="$2}' /tmp/signin-h
+          awk 'BEGIN{IGNORECASE=1} /^location:/{print "auth_signin_location="$0}' /tmp/signin-h | sed 's/\r$//'
+
+          echo '=== recent auth access ==='
+          (sudo -n tail -n 1200 /var/log/nginx/access.log 2>/dev/null || tail -n 1200 /var/log/nginx/access.log 2>/dev/null || true) \
+            | grep -E '/dashboard/api/auth/(signin|callback|session)|/dashboard/api/wardrobe/tryon/render' \
+            | tail -n 100 || true
+
+          echo '=== recent auth errors ==='
+          (sudo -n tail -n 500 /var/log/nginx/error.log 2>/dev/null || tail -n 500 /var/log/nginx/error.log 2>/dev/null || true) \
+            | grep -Ei 'auth|oauth|callback|jwt|google|cookie' | tail -n 100 || true
+          REMOTE
