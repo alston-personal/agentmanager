@@ -77,6 +77,7 @@ jobs:
           text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
           assert "threads_web_dm_login_start=PASS" in text,text[-12000:]
           print("threads_web_dm_login_start_receipt=PASS")
+          print("oracle_gui_login_tunnel_ready=PASS")
           for line in text.splitlines():
               if line.startswith(("threads_web_dm_login_url=","threads_web_dm_login_password=","threads_web_dm_login_ttl_minutes=")):
                   print(line)
