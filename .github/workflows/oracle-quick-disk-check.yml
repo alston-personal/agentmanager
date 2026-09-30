@@ -29,6 +29,8 @@ jobs:
           set -euo pipefail
           df -h /
           echo 'quick_sizes:'
+          du -sh "$HOME/.cache/rclone" 2>/dev/null | sed 's/^/rclone_cache=/' || true
+          du -sh "$HOME/.local/state/agentos" 2>/dev/null | sed 's/^/agentos_state=/' || true
           for p in "$HOME/.cache" "$HOME/.npm" "$HOME/.local/share" "$HOME/agent-data/runtime/dashboard" "$HOME/agent-data/projects/dressup-simulator" /tmp; do
             timeout 8 du -sh "$p" 2>/dev/null || echo "size_timeout=$p"
           done
@@ -37,3 +39,4 @@ jobs:
           echo 'tmp_old_count:'
           find /tmp -maxdepth 1 -type d -user "$(id -u)" -mtime +1 2>/dev/null | wc -l || true
           REMOTE
+# refresh 2026-10-01T07:44+08:00
