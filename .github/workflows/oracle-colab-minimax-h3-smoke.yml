@@ -1,0 +1,153 @@
+name: Oracle Colab MiniMax H3 Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-colab-h3-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 180
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      UPSTREAM_SHA: 7768ebfb1627546595f37e9acfd2d353937c6cd8
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Run 4-second H3 provider smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" "${GITHUB_RUN_ID}" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"; RUN_ID="$2"
+          ROOT=/home/ubuntu/agent-data/providers/colab
+          RELEASE="$ROOT/releases/$SHA"
+          EVIDENCE=/home/ubuntu/agent-data/evidence/colab
+          WORK=/home/ubuntu/agent-data/tmp/colab-h3-smoke-$RUN_ID
+          OUT="$WORK/outputs"
+          mkdir -p "$WORK" "$OUT" "$EVIDENCE"
+          chmod 700 "$WORK" "$EVIDENCE"
+          trap 'rm -rf "$WORK"' EXIT
+
+          test -f "$RELEASE/scripts/runner.py"
+          command -v colab >/dev/null
+
+          python3 - "$WORK/reference.ppm" <<'PY'
+          import sys
+          p=sys.argv[1]
+          w=h=512
+          with open(p,'wb') as f:
+              f.write(f'P6\n{w} {h}\n255\n'.encode())
+              for y in range(h):
+                  for x in range(w):
+                      r=int(40 + 170*x/(w-1))
+                      g=int(70 + 110*y/(h-1))
+                      b=int(160 - 70*x/(w-1))
+                      f.write(bytes((r,g,b)))
+          PY
+
+          cat > "$WORK/prompt.txt" <<'EOF'
+          subject_definitions:
+          <Picture 1> is the visual reference for the entire scene.
+
+          summary:
+          A minimal abstract cinematic motion test based on <Picture 1>.
+
+          retention_analysis:
+          Preserve the dominant color gradient and overall composition of <Picture 1>.
+
+          detailed_description:
+          [Shot 1] The camera performs a very slow forward push while the abstract color field remains stable, with subtle light motion and no text or people.
+
+          overall_soundscape:
+          Very soft neutral ambient room tone.
+
+          non_diegetic_music:
+          None.
+          EOF
+
+          python3 - "$WORK/jobs.json" "$WORK/reference.ppm" "$WORK/prompt.txt" <<'PY'
+          import json,sys
+          path,img,prompt=sys.argv[1:]
+          data={"jobs":[{
+              "id":"agentos-smoke",
+              "title":"AgentOS MiniMax H3 provider smoke",
+              "reference_images":[img],
+              "prompt_file":prompt,
+              "duration_seconds":4,
+              "output_name":"agentos-smoke"
+          }]}
+          with open(path,'w',encoding='utf-8') as f:
+              json.dump(data,f,ensure_ascii=False,indent=2); f.write('\n')
+          PY
+
+          USAGE_BEFORE="$WORK/usage-before.txt"
+          colab --auth=oauth2 usage > "$USAGE_BEFORE" 2>&1
+
+          set +e
+          python3 "$RELEASE/scripts/runner.py" batch \
+            --manifest "$WORK/jobs.json" \
+            --gpu A100 \
+            --timeout 7200 \
+            --output-dir "$OUT" \
+            --progress "$WORK/progress.json" > "$WORK/runner.log" 2>&1
+          RC=$?
+          set -e
+
+          USAGE_AFTER="$WORK/usage-after.txt"
+          colab --auth=oauth2 usage > "$USAGE_AFTER" 2>&1 || true
+
+          python3 - "$EVIDENCE/h3-smoke-$RUN_ID.json" "$SHA" "$RC" "$OUT" "$USAGE_BEFORE" "$USAGE_AFTER" "$WORK/progress.json" <<'PY'
+          import hashlib,json,os,re,sys,datetime,glob
+          dst,sha,rc,out,before,after,progress=sys.argv[1:]
+          def parse_usage(path):
+              try: text=open(path,encoding='utf-8',errors='replace').read()
+              except Exception: return {}
+              def num(p):
+                  m=re.search(p,text,re.I|re.M)
+                  return float(m.group(1).replace(',','')) if m else None
+              return {
+                  "balance_compute_units":num(r"^Current balance:\s*([\d,]+(?:\.\d+)?)\s+compute units\s*$"),
+                  "rate_per_hour":num(r"^Usage rate:\s*([\d,]+(?:\.\d+)?)\s*/\s*hr\s*$"),
+                  "active_assignments":num(r"^Active assignments:\s*(\d+)\s*$")
+              }
+          outputs=[]
+          for p in sorted(glob.glob(os.path.join(out,'*.mp4'))):
+              outputs.append({"path":p,"bytes":os.path.getsize(p),"sha256":hashlib.sha256(open(p,'rb').read()).hexdigest()})
+          prog=None
+          if os.path.isfile(progress):
+              try: prog=json.load(open(progress,encoding='utf-8'))
+              except Exception: pass
+          payload={
+              "schema":"agentos.media-generation-receipt/v1",
+              "provider":"google-colab",
+              "capability":"capability://media.video.generate.minimax-h3",
+              "timestamp_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "upstream":{"repository":"killkli/minimax-h3-colab-skill","commit":sha},
+              "smoke":{"duration_seconds":4,"requested_gpu":"A100","high_mem":True},
+              "usage":{"before":parse_usage(before),"after":parse_usage(after)},
+              "runner":{"returncode":int(rc),"progress":prog},
+              "result":{"status":"PASS" if int(rc)==0 and outputs else "FAIL","outputs":outputs}
+          }
+          with open(dst+'.tmp','w',encoding='utf-8') as f:
+              json.dump(payload,f,ensure_ascii=False,indent=2); f.write('\n')
+          os.replace(dst+'.tmp',dst); os.chmod(dst,0o600)
+          print(json.dumps(payload,ensure_ascii=False,indent=2))
+          if payload["result"]["status"]!="PASS": raise SystemExit(21)
+          PY
+
+          echo "minimax_h3_colab_smoke=PASS"
+          echo "receipt=$EVIDENCE/h3-smoke-$RUN_ID.json"
+          REMOTE
