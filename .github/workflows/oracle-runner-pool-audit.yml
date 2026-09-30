@@ -1,0 +1,73 @@
+name: Oracle Runner Pool Audit
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-runner-pool-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - name: Audit host capacity and runner installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner_pool_audit=BEGIN"
+          echo "hostname=$(hostname)"
+          echo "whoami=$(id -un)"
+          echo "uid_gid=$(id)"
+          echo "arch=$(uname -m)"
+          echo "nproc=$(nproc)"
+          echo "loadavg=$(cat /proc/loadavg)"
+          awk '/MemTotal|MemAvailable|SwapTotal|SwapFree/ {print "mem_"tolower($1)"="$2" "$3}' /proc/meminfo
+          df -h / /home/agentos-node /home/ubuntu 2>/dev/null | sed -n '1,8p'
+          if test -x /home/agentos-node/runner/bin/Runner.Listener; then
+            echo "runner_version=$(/home/agentos-node/runner/bin/Runner.Listener --version | tail -1)"
+          fi
+          echo "=== runner units ==="
+          systemctl list-units --type=service --all --no-legend 'actions.runner.*.service' || true
+          echo "=== runner directories ==="
+          find /home/agentos-node -maxdepth 2 -type f -name '.runner' -print 2>/dev/null || true
+          echo "=== sudo ==="
+          if sudo -n true 2>/dev/null; then echo "sudo_noninteractive=true"; else echo "sudo_noninteractive=false"; fi
+          echo "=== machine github auth ==="
+          if command -v gh >/dev/null 2>&1 && gh auth status >/tmp/gh-status.txt 2>&1; then
+            echo "gh_authenticated=true"
+            gh auth status 2>&1 | sed -E 's/(Token:).*/\1 [REDACTED]/I' | sed -n '1,12p'
+            machine_token="$(gh auth token 2>/dev/null || true)"
+            if test -n "$machine_token"; then
+              code="$(curl -sS -o /tmp/runner-reg.json -w '%{http_code}' -X POST \
+                -H "Authorization: Bearer $machine_token" \
+                -H 'Accept: application/vnd.github+json' \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runners/registration-token" || true)"
+              echo "machine_runner_registration_http=$code"
+              python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('/tmp/runner-reg.json')
+if p.exists():
+    try:
+        d=json.loads(p.read_text())
+    except Exception:
+        d={}
+    print('machine_runner_registration_token_available=' + ('true' if bool(d.get('token')) else 'false'))
+    print('machine_runner_registration_expires_at=' + str(d.get('expires_at') or ''))
+PY
+              rm -f /tmp/runner-reg.json
+            else
+              echo "machine_runner_registration_http=no_token"
+            fi
+          else
+            echo "gh_authenticated=false"
+            sed -n '1,12p' /tmp/gh-status.txt 2>/dev/null || true
+          fi
+          echo "runner_pool_audit=PASS"
