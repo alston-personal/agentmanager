@@ -20,6 +20,8 @@ def test_installer_is_exact_integration_generation_and_enables_identity_only_con
     assert 'merge-base --is-ancestor "$SOURCE_COMMIT" "$LANE_HEAD"' in text
     assert 'AGENTOS_CONTROL_ALLOWED_ACTIONS=$ALLOWED_ACTIONS' in text
     assert 'agentos.continuation.inspect' in text
+    assert 'node.runner.inspect' in text
+    assert 'node.runner.recover' in text
     assert 'control_inbox_continuation_identity=ENABLED' in text
     assert 'control_inbox_exact_generation=PASS' in text
     assert 'canonical_ir' not in text.lower()
@@ -27,7 +29,7 @@ def test_installer_is_exact_integration_generation_and_enables_identity_only_con
 
 def test_auth_repair_rebuilds_same_fixed_action_allowlist():
     text = _text(AUTH_REPAIR)
-    expected = 'agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect'
+    expected = 'agent.surface.inspect,desktop.session.inspect,desktop.windows.inspect,agentos.continuation.inspect,node.ssh.inspect,node.ssh.recover,node.runner.inspect,node.runner.recover'
     assert f'ALLOWED_ACTIONS="{expected}"' in text
     assert 'AGENTOS_CONTROL_ALLOWED_ACTIONS=$ALLOWED_ACTIONS' in text
     assert 'Exactly eleven fixed KEY=VALUE lines' in text
