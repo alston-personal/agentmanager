@@ -85,22 +85,16 @@ for unit in   agentos-bootstrap-control.service   agentos-bootstrap-social-1.ser
   echo "bootstrap_scheduler_unit=$unit:active"
 done
 
-for _ in $(seq 1 20); do
-  if [ -s "$STATE_ROOT/status.json" ]; then break; fi
+worker_status_ready=0
+for _ in $(seq 1 30); do
+  if [ -s "$STATE_ROOT/status.json" ] && python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build'}; raise SystemExit(0 if expected <= set(d.get('workers') or {}) else 1)"; then
+    worker_status_ready=1
+    break
+  fi
   sleep 1
 done
-test -s "$STATE_ROOT/status.json"
-python3 - "$STATE_ROOT/status.json" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1],encoding='utf-8'))
-assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d
-workers=d.get('workers') or {}
-expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build'}
-missing=expected-set(workers)
-assert not missing,missing
-print('bootstrap_scheduler_worker_count='+str(len(expected)))
-print('bootstrap_scheduler_status=PASS')
-PY
+test "$worker_status_ready" = 1
+python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d; expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build'}; workers=d.get('workers') or {}; assert expected <= set(workers), expected-set(workers); print('bootstrap_scheduler_worker_count='+str(len(expected))); print('bootstrap_scheduler_status=PASS')"
 
 rollback_marker=0
 echo "bootstrap_scheduler_source_commit=$SOURCE_COMMIT"
