@@ -36,6 +36,7 @@ KNOWN_SURFACES: tuple[dict[str, Any], ...] = (
     {'provider': 'codex', 'executables': ('codex',), 'kind': 'agent-runtime', 'capabilities': ('agent.chat', 'code.edit')},
     {'provider': 'gemini', 'executables': ('gemini',), 'kind': 'agent-runtime', 'capabilities': ('agent.chat',)},
     {'provider': 'chatgpt-web', 'executables': (), 'kind': 'web-agent', 'capabilities': ('agent.chat',), 'bridge_only': True},
+    {'provider': 'gemini-web', 'executables': (), 'kind': 'web-agent', 'capabilities': ('agent.chat',), 'bridge_only': True},
 )
 
 
