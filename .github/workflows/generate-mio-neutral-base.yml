@@ -21,10 +21,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${HF_TOKEN:-}" ] && [ -f /home/ubuntu/agentmanager/.env ]; then
-            HF_TOKEN="$(python3 - <<'PY'
+          read_hf_token_file() {
+            python3 - "$1" <<'PY'
           from pathlib import Path
-          for raw in Path("/home/ubuntu/agentmanager/.env").read_text(encoding="utf-8").splitlines():
+          import sys
+          p=Path(sys.argv[1])
+          if not p.is_file():
+              raise SystemExit(0)
+          for raw in p.read_text(encoding="utf-8").splitlines():
               line=raw.strip()
               if not line or line.startswith("#") or "=" not in line:
                   continue
@@ -33,10 +37,39 @@ jobs:
                   print(value.strip().strip('"').strip("'"))
                   break
           PY
-          )"
-            export HF_TOKEN
+          }
+          if [ -z "${HF_TOKEN:-}" ]; then
+            for TOKEN_FILE in /home/ubuntu/agentmanager/.env /home/ubuntu/.config/agentos/mio-tryon.env /home/ubuntu/.env; do
+              VALUE="$(read_hf_token_file "$TOKEN_FILE" || true)"
+              if [ -n "$VALUE" ]; then
+                HF_TOKEN="$VALUE"
+                echo "hf_token_source=$TOKEN_FILE"
+                break
+              fi
+            done
           fi
-          test -n "${HF_TOKEN:-}"
+          if [ -z "${HF_TOKEN:-}" ]; then
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+            PID="$(systemctl --user show -p MainPID --value agentos-mio-tryon-render-worker.service 2>/dev/null || true)"
+            if [[ "$PID" =~ ^[1-9][0-9]*$ ]] && [ -r "/proc/$PID/environ" ]; then
+              HF_TOKEN="$(python3 - "$PID" <<'PY'
+          import sys
+          raw=open(f"/proc/{sys.argv[1]}/environ","rb").read().split(b"\0")
+          for row in raw:
+              if row.startswith(b"HF_TOKEN=") or row.startswith(b"HUGGINGFACE_TOKEN="):
+                  print(row.split(b"=",1)[1].decode("utf-8","ignore"))
+                  break
+          PY
+          )"
+              [ -n "${HF_TOKEN:-}" ] && echo "hf_token_source=running_tryon_worker"
+            fi
+          fi
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "hf_token_missing=FAIL checked local dotenv, AgentOS env file, and running worker" >&2
+            exit 2
+          fi
+          export HF_TOKEN
           echo "::add-mask::$HF_TOKEN"
           WORK="$(mktemp -d /tmp/mio-neutral-base-XXXXXX)"
           trap 'rm -rf "$WORK"' EXIT
