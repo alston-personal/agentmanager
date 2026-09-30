@@ -120,7 +120,7 @@ class ThinClient:
         surface_inventory = self.surface_inventory()
         caps = ['context.harvest', 'process.inspect', 'tool.presence', 'agent.surface.inspect']
         if platform.system() == 'Linux':
-            caps.extend(['node.ssh.inspect', 'node.ssh.recover'])
+            caps.extend(['node.ssh.inspect', 'node.ssh.recover', 'node.runner.inspect', 'node.runner.recover'])
         caps.extend(surface_inventory.get('capabilities') or [])
 
         # Session bridge capabilities are provider-authorized and must be
@@ -234,6 +234,10 @@ class ThinClient:
                 result = self._inspect_ssh()
             elif action == 'node.ssh.recover':
                 result = self._recover_ssh()
+            elif action == 'node.runner.inspect':
+                result = self._inspect_runner()
+            elif action == 'node.runner.recover':
+                result = self._recover_runner()
             elif action == 'node.runtime.converge':
                 from agentos_node.client_runtime_converge import execute_client_runtime_converge
                 result = execute_client_runtime_converge(task)
@@ -333,6 +337,74 @@ class ThinClient:
             'ssh_service_state': after['ssh_service_state'],
             'port22_listening': after['port22_listening'],
             'recovered': restart.returncode == 0 and after['ssh_service_active'] and after['port22_listening'],
+        }
+
+    def _runner_units(self) -> list[str]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.runner.inspect is Linux-only')
+        listing = subprocess.run(
+            ['systemctl', 'list-units', '--type=service', '--all', '--no-legend', '--no-pager', 'actions.runner.*.service'],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        units: list[str] = []
+        for line in listing.stdout.splitlines():
+            fields = line.split()
+            if not fields:
+                continue
+            unit = fields[0].strip()
+            if (
+                unit.startswith('actions.runner.')
+                and unit.endswith('.service')
+                and all(ch.isalnum() or ch in '._@-' for ch in unit)
+            ):
+                units.append(unit)
+        return sorted(set(units))
+
+    def _inspect_runner(self) -> dict[str, Any]:
+        units = self._runner_units()
+        active = 0
+        failed = 0
+        for unit in units:
+            status = subprocess.run(
+                ['systemctl', 'is-active', unit],
+                capture_output=True, text=True, timeout=10, check=False,
+            )
+            state = status.stdout.strip()
+            if status.returncode == 0 and state == 'active':
+                active += 1
+            elif state == 'failed':
+                failed += 1
+        return {
+            'runner_unit_count': len(units),
+            'runner_active_count': active,
+            'runner_failed_count': failed,
+            'runner_healthy': bool(units) and active == len(units),
+        }
+
+    def _recover_runner(self) -> dict[str, Any]:
+        if platform.system() != 'Linux':
+            raise RuntimeError('node.runner.recover is Linux-only')
+        before = self._inspect_runner()
+        units = self._runner_units()
+        restart_returncodes: list[int] = []
+        for unit in units:
+            argv = ['systemctl', 'restart', unit]
+            if hasattr(os, 'geteuid') and os.geteuid() != 0:
+                argv = ['sudo', '-n', *argv]
+            restart = subprocess.run(
+                argv, capture_output=True, text=True, timeout=30, check=False,
+            )
+            restart_returncodes.append(restart.returncode)
+        after = self._inspect_runner()
+        return {
+            'runner_unit_count': after['runner_unit_count'],
+            'runner_active_count_before': before['runner_active_count'],
+            'runner_active_count': after['runner_active_count'],
+            'runner_failed_count': after['runner_failed_count'],
+            'restart_attempted_count': len(units),
+            'restart_failed_count': sum(1 for code in restart_returncodes if code != 0),
+            'runner_healthy': after['runner_healthy'],
+            'recovered': bool(units) and all(code == 0 for code in restart_returncodes) and after['runner_healthy'],
         }
 
     def _inspect_processes(self, task: dict[str, Any]) -> dict[str, Any]:
