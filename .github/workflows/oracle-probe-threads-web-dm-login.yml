@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: threads-mio-gui
+  cancel-in-progress: false
+
+# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:
   probe:
     runs-on: [self-hosted, Linux, ARM64, oracle]
@@ -31,18 +36,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
           ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
           REQUEST_ID="threads-web-dm-login-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           REQUEST="$REQUESTS/$REQUEST_ID.request.json"
           RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
           for i in $(seq 1 120); do
             [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
             sleep 1
