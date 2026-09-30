@@ -95,3 +95,31 @@ jobs:
           print('asset_scan_count='+str(seen))
           PY
           REMOTE
+
+  mio-asset-candidates-hosted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Fetch Mio asset candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          mkdir -p /tmp/mio-asset-candidates
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new             "${ORACLE_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/runtime/transcripts/brain/f83ec3d4-ac26-4b70-bec2-e41a7ab49368/preview_sheet_01_front.jpg"             /tmp/mio-asset-candidates/preview_sheet_01_front.jpg
+          scp -P "$PORT" -o StrictHostKeyChecking=accept-new             "${ORACLE_USER}@${ORACLE_HOST}:/home/ubuntu/agent-data/projects/dressup-simulator/render_assets/mio-live-e2e-36397707913.webp"             /tmp/mio-asset-candidates/mio-live-e2e-36397707913.webp
+      - name: Upload Mio asset candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-asset-candidates
+          path: /tmp/mio-asset-candidates/*
+          retention-days: 2
