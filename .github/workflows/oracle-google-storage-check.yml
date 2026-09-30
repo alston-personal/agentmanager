@@ -71,6 +71,18 @@ jobs:
           crontab -l 2>/dev/null || true
           echo '-- root cron lines --'
           sudo -n crontab -l 2>/dev/null || true
+          echo '=== backup scheduler ==='
+          systemctl --user list-timers --all 2>/dev/null | grep -Ei 'backup|agentos|gdrive' || true
+          systemctl --user list-unit-files 2>/dev/null | grep -Ei 'backup|agentos|gdrive' || true
+          crontab -l 2>/dev/null | grep -Ei 'backup|agentos|gdrive|03:00|3 \* \* \*' || true
+          echo '=== exact remote backup checks ==='
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            echo "-- $name"
+            echo "local:"
+            stat -c 'size=%s mtime=%y path=%n' "$HOME/gdrive/backups/$name" 2>/dev/null || echo 'local_missing'
+            echo "remote:"
+            rclone lsl "gdrive:backups/$name" 2>/dev/null || echo 'remote_missing'
+          done
           echo '=== AgentOS path devices ==='
           for p in "$HOME/agent-data" "$HOME/agentmanager" "$HOME/.local/share/agentos"; do
             [ -e "$p" ] && { printf '%s -> ' "$p"; df -hT "$p" | tail -n1; }
