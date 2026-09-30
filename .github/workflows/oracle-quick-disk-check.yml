@@ -1,0 +1,39 @@
+name: Oracle Quick Disk Check
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-quick-disk-check.json'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Quick disk check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          df -h /
+          echo 'quick_sizes:'
+          for p in "$HOME/.cache" "$HOME/.npm" "$HOME/.local/share" "$HOME/agent-data/runtime/dashboard" "$HOME/agent-data/projects/dressup-simulator" /tmp; do
+            timeout 8 du -sh "$p" 2>/dev/null || echo "size_timeout=$p"
+          done
+          echo 'dashboard_release_count:'
+          find "$HOME/agent-data/runtime/dashboard" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l || true
+          echo 'tmp_old_count:'
+          find /tmp -maxdepth 1 -type d -user "$(id -u)" -mtime +1 2>/dev/null | wc -l || true
+          REMOTE
