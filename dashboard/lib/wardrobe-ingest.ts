@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { normalizeWardrobeLayer } from '@/lib/wardrobe-layers';
+import { normalizeWardrobeLayer } from './wardrobe-layers.mjs';
 
 export type IntakeState = 'pending_metadata' | 'fetching' | 'ready_for_tryon' | 'needs_review';
 
