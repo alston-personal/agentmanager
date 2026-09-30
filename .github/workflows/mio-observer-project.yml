@@ -2,17 +2,6 @@ name: Mio Observer Projection
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'
-  push:
-    branches:
-      - core/integration
-    paths:
-      - 'personas/mio/agent.yaml'
-      - 'scripts/project_mio_observer_user.py'
-      - 'scripts/project_mio_observer_user.sh'
-      - 'agentos_node/bootstrap_control.py'
-      - '.github/workflows/mio-observer-project.yml'
 
 permissions:
   contents: read
