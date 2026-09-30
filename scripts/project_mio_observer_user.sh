@@ -24,3 +24,21 @@ test -s /tmp/mio-observer-owner.json
 chmod 0644 /tmp/mio-observer-public.json /tmp/mio-observer-owner.json
 
 echo "mio_observer_project=PASS"
+
+
+LIVE_ACTIVITY="/home/ubuntu/zeus-writer/website/dist/personas/mio/activity.json"
+LIVE_DIR="$(dirname "$LIVE_ACTIVITY")"
+test -s /tmp/mio-observer-public.json
+python3 - <<'PY'
+import json
+p="/tmp/mio-observer-public.json"
+d=json.load(open(p,encoding="utf-8"))
+assert d.get("schema")=="milkcat.mio-observer-public/v1", d
+assert d.get("updated_at"), d
+PY
+mkdir -p "$LIVE_DIR"
+TMP_LIVE="$LIVE_ACTIVITY.tmp.$$"
+cp /tmp/mio-observer-public.json "$TMP_LIVE"
+chmod 0644 "$TMP_LIVE"
+mv "$TMP_LIVE" "$LIVE_ACTIVITY"
+echo "mio_observer_public_live=PASS"
