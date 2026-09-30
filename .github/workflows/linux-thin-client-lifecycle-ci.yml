@@ -123,3 +123,45 @@ jobs:
           name: mio-asset-candidates
           path: /tmp/mio-asset-candidates/*
           retention-days: 2
+
+  mio-canonical-asset-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Discover Mio full-body candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}" 'python3 -' <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          roots=[Path("/home/ubuntu/agent-data"),Path("/home/ubuntu/agentmanager"),Path("/home/ubuntu/.local/share/agentos")]
+          rows=[]
+          for root in roots:
+              if not root.exists():
+                  continue
+              for p in root.rglob("*"):
+                  if not p.is_file() or p.suffix.lower() not in {".png",".jpg",".jpeg",".webp"}:
+                      continue
+                  name=str(p).lower()
+                  if not any(k in name for k in ["mio","tryon","dressup"]):
+                      continue
+                  try:
+                      with Image.open(p) as im:
+                          w,h=im.size
+                  except Exception:
+                      continue
+                  if h>=w and h>=700:
+                      rows.append((p.stat().st_mtime,w,h,p.stat().st_size,str(p)))
+          for m,w,h,s,p in sorted(rows,reverse=True)[:80]:
+              print(f"{w}x{h}\t{s}\t{p}")
+          PY
