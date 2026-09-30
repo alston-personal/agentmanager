@@ -302,6 +302,15 @@ cp "$SEED_SRC"/*.json "$SEED_TMP"/
 for required in net-43774-002 net-32235-711 net-40832-002 net-40793-003; do
   test -s "$SEED_TMP/$required.json"
 done
+python3 - "$SEED_TMP" <<'PY'
+import json, pathlib, re, sys
+root=pathlib.Path(sys.argv[1])
+for path in root.glob('*.json'):
+    row=json.loads(path.read_text(encoding='utf-8'))
+    image=str((row.get('source') or {}).get('imageUrl') or '')
+    assert re.search(r'\.(?:png|jpe?g|webp)(?:\?|$)', image, re.I), f'wardrobe_seed_non_image_url:{path.name}:{image}'
+print('dashboard_mio_wardrobe_seed_images=PASS')
+PY
 rm -rf "$SEED_ROOT.prev-$RUN_ID"
 if [ -d "$SEED_ROOT" ]; then mv "$SEED_ROOT" "$SEED_ROOT.prev-$RUN_ID"; fi
 mv "$SEED_TMP" "$SEED_ROOT"
