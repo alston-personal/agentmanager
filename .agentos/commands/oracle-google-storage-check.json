@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "audit reboot timeline and local gdrive underlay writes",
-  "requested_at": "2026-10-01T07:21:00+08:00"
+  "purpose": "compare post-reboot local backups against gdrive remote and identify backup scheduler",
+  "requested_at": "2026-10-01T07:23:00+08:00"
 }
