@@ -227,3 +227,5 @@ jobs:
           PY
 
 # rerun after scheduler incident preservation fix
+
+# rerun after exact-generation worker restart fix
