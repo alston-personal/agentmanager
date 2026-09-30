@@ -31,77 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           STUDIO_COMMIT="6e9f0eabc57b1d9e688c1906964730e17261e5d1"
-          printf '%s' "$STUDIO_COMMIT" | grep -Eq '^[0-9a-f]{40}
-
-      - name: Deploy Mio route through bounded bootstrap
-        shell: bash
-        run: |
-          set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          ID="studio-mio-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$ID.request.json"
-          RECEIPT="$RECEIPTS/$ID.json"
-
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 60); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$ID" "$GITHUB_SHA" "$STUDIO_COMMIT" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          from pathlib import Path
-          path=Path(sys.argv[1])
-          payload={
-            "schema":"agentos.bootstrap-request/v1",
-            "request_id":sys.argv[2],
-            "action":"agentos.studio_web_mio.deploy",
-            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-            "params":{"source_commit":sys.argv[3],"studio_commit":sys.argv[4]},
-            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
-          }
-          tmp=path.with_suffix(path.suffix+".tmp")
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 600); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT"
-
-          python3 - "$RECEIPT" "$GITHUB_SHA" "$STUDIO_COMMIT" <<'PY'
-          import json,sys
-          r=json.load(open(sys.argv[1],encoding="utf-8"))
-          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
-          assert r.get("action")=="agentos.studio_web_mio.deploy",r
-          assert r.get("executor_user")=="ubuntu",r
-          assert r.get("executor_uid")==1001,r
-          assert r.get("source_commit")==sys.argv[2],r
-          assert r.get("ok") is True,r
-          text=json.dumps(r,ensure_ascii=False)
-          assert "studio_web_mio_public_observer=PASS" in text,r
-          assert sys.argv[3] in text,r
-          print("mio_observer_public_deploy=PASS")
-          PY
-
-      - name: Public acceptance
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/observer/ |
-            grep -Fq '澪的內心窗口'
-          curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/activity.json |
-            python3 -m json.tool >/dev/null
-          echo "mio_observer_public_acceptance=PASS"
-
+          printf '%s' "$STUDIO_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
           echo "STUDIO_COMMIT=$STUDIO_COMMIT" >> "$GITHUB_ENV"
 
       - name: Deploy Mio route through bounded bootstrap
@@ -116,6 +46,7 @@ jobs:
           REQUEST="$REQUESTS/$ID.request.json"
           RECEIPT="$RECEIPTS/$ID.json"
 
+          python3 -m py_compile agentos_node/bootstrap_control.py
           cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
           chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
           python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
@@ -128,8 +59,8 @@ jobs:
           test -d "$RECEIPTS"
 
           python3 - "$REQUEST" "$ID" "$GITHUB_SHA" "$STUDIO_COMMIT" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
+          import json, os, sys
+          from datetime import datetime, timezone
           from pathlib import Path
           path=Path(sys.argv[1])
           payload={
@@ -142,14 +73,19 @@ jobs:
           }
           tmp=path.with_suffix(path.suffix+".tmp")
           tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
+          os.chmod(tmp,0o644)
+          tmp.replace(path)
+          os.chmod(path,0o644)
           PY
 
-          for i in $(seq 1 600); do [ -f "$RECEIPT" ] && break; sleep 1; done
+          for i in $(seq 1 600); do
+            [ -f "$RECEIPT" ] && break
+            sleep 1
+          done
           test -f "$RECEIPT"
 
           python3 - "$RECEIPT" "$GITHUB_SHA" "$STUDIO_COMMIT" <<'PY'
-          import json,sys
+          import json, sys
           r=json.load(open(sys.argv[1],encoding="utf-8"))
           assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
           assert r.get("action")=="agentos.studio_web_mio.deploy",r
@@ -157,18 +93,20 @@ jobs:
           assert r.get("executor_uid")==1001,r
           assert r.get("source_commit")==sys.argv[2],r
           assert r.get("ok") is True,r
-          text=json.dumps(r,ensure_ascii=False)
-          assert "studio_web_mio_public_observer=PASS" in text,r
-          assert sys.argv[3] in text,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          assert "studio_web_mio_public_observer=PASS" in text,text[-16000:]
+          assert sys.argv[3] in text,text[-16000:]
           print("mio_observer_public_deploy=PASS")
           PY
 
-      - name: Public acceptance
+      - name: Production acceptance
         shell: bash
         run: |
           set -euo pipefail
-          curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/observer/ |
-            grep -Fq '澪的內心窗口'
+          python3 scripts/production_acceptance.py \
+            --url https://studio.milkcat.org/personas/mio/observer/ \
+            --home-url https://studio.milkcat.org/ \
+            --marker '澪的內心窗口'
           curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/activity.json |
             python3 -m json.tool >/dev/null
           echo "mio_observer_public_acceptance=PASS"
