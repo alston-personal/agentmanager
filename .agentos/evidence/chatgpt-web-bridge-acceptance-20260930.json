@@ -1,0 +1,54 @@
+{
+  "schema": "agentos.chatgpt-web-bridge-acceptance/v1",
+  "observed_at": "2026-09-30T08:01:16Z",
+  "provider": "chatgpt-web",
+  "readiness": {
+    "state": "READY",
+    "final_probe_run_id": 36687089192,
+    "scheduler_lane": "oracle-gui",
+    "composer_visible": true,
+    "persistent_profile": true,
+    "cdp": true
+  },
+  "session_provider_mvp": {
+    "acceptance_run_id": 36686911189,
+    "discover": "PASS",
+    "attach": "PASS",
+    "inspect": "PASS",
+    "inject_draft_only": "PASS",
+    "inject_cleanup": "PASS",
+    "receipt": "PASS",
+    "submitted_to_chatgpt": false
+  },
+  "bridge_service": {
+    "deployment_run_id": 36686863789,
+    "state": "active",
+    "shared_chromium_close_forbidden": true
+  },
+  "routing": {
+    "github_ingress": "ubuntu-latest",
+    "execution": "AgentOS bootstrap scheduler",
+    "worker_role": "gui",
+    "worker_id": "oracle-gui",
+    "required_capabilities": [
+      "chatgpt.web.session",
+      "browser.cdp",
+      "browser.persistent_profile"
+    ],
+    "shared_lock": "oracle-gui-profile"
+  },
+  "runner_pool": {
+    "role_runner_provision_run_id": 36686260994,
+    "status": "BLOCKED",
+    "failure_class": "github_registration_credential_unauthorized",
+    "http_status": 401,
+    "impact_on_chatgpt_bridge": "none_after_hosted_ingress_mitigation"
+  },
+  "not_yet_accepted": [
+    "full response_started/response_completed observer",
+    "rate_limited/session_expired live event tests",
+    "artifact harvester to asset://",
+    "UI version detection and screenshot-on-failure",
+    "GitHub role-runner registration after credential repair"
+  ]
+}
