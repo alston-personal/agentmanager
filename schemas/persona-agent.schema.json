@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentos.persona-agent/v1",
+  "title": "AgentOS Persona Agent",
+  "type": "object",
+  "required": ["schema","agent_id","character_id","display_name","status","kind","core","runtime","capability_attachments"],
+  "properties": {
+    "schema": {"const":"agentos.persona-agent/v1"},
+    "agent_id": {"type":"string","pattern":"^persona\\.[a-z0-9_.-]+$"},
+    "character_id": {"type":"string","minLength":1},
+    "display_name": {"type":"string","minLength":1},
+    "status": {"enum":["active","paused","retired"]},
+    "kind": {"const":"persona_agent"},
+    "core": {"type":"object","additionalProperties":{"type":"string"}},
+    "runtime": {"type":"object","additionalProperties":true},
+    "capability_attachments": {
+      "type":"array",
+      "items":{"$ref":"persona-capability-attachment.schema.json"}
+    },
+    "human_reserved":{"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "invariants":{"type":"array","items":{"type":"string"},"uniqueItems":true}
+  },
+  "additionalProperties": false
+}
