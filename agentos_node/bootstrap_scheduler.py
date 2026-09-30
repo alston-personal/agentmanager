@@ -33,10 +33,13 @@ MAINTENANCE = 70
 
 POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("control", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
-    bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("threads-mio-gui",)),
-    bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("threads-mio-gui",)),
-    bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("threads-mio-gui",)),
-    bc.ACTION_PROBE_THREADS_WEB_DM: ActionPolicy("gui", 15, "high", ("threads.gui.read",), ("threads-mio-gui",)),
+    bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
+    bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
+    bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui")),
+    bc.ACTION_PROBE_THREADS_WEB_DM: ActionPolicy("gui", 15, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
+    bc.ACTION_PROBE_CHATGPT_WEB: ActionPolicy("gui", 12, "high", ("chatgpt.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
+    bc.ACTION_ACCEPT_CHATGPT_WEB_SESSION: ActionPolicy("gui", 14, "high", ("chatgpt.web.session", "agent.session.attach", "agent.session.inspect", "agent.context.inject"), ("oracle-gui-profile",)),
+    bc.ACTION_INSTALL_CHATGPT_WEB_BRIDGE: ActionPolicy("gui", 22, "normal", ("chatgpt.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_RUN_MIO_DM_DECISION: ActionPolicy("social", 18, "high", ("mio.dm.decide",)),
     bc.ACTION_PAUSE_MIO_AUTOREPLY: ActionPolicy("control", 20, "high", ("mio.incident.repair",), ("oracle-core-runtime",)),
     bc.ACTION_INSPECT_MIO_SQUIRREL: ActionPolicy("social", NORMAL, "normal", ("threads.api.read",)),
@@ -57,7 +60,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_PROVISION_ZIWEI_MASTER_REPO: ActionPolicy("control", MAINTENANCE, "low", ("repository.provision",), ("oracle-core-runtime",)),
     bc.ACTION_DEPLOY_MIO_TELEGRAM: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_GUI_WORKER: ActionPolicy("control", MAINTENANCE, "low", ("node.gui.install",), ("oracle-core-runtime",)),
-    bc.ACTION_SMOKE_GUI_WORKER: ActionPolicy("gui", 25, "normal", ("threads.gui.read",), ("threads-mio-gui",)),
+    bc.ACTION_SMOKE_GUI_WORKER: ActionPolicy("gui", 25, "normal", ("browser.cdp", "browser.gui"), ("oracle-gui-profile",)),
     bc.ACTION_DEPLOY_MIO_TRYON: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
     bc.ACTION_INSTALL_ORACLE_EXEC: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
 }
