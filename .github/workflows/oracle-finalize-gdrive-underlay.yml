@@ -1,0 +1,68 @@
+name: Oracle Finalize GDrive Underlay Recovery
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-finalize-gdrive-underlay.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Finalize only after exact remote-size verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          SRC="$HOME/gdrive/backups"
+          DEST="gdrive:backups/recovered-oracle-underlay-20261001"
+
+          if pgrep -af 'rclone copyto .*recovered-oracle-underlay-20261001' >/dev/null; then
+            echo 'finalize_refused=preservation_still_running'
+            exit 42
+          fi
+
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            local_file="$SRC/$name"
+            test -f "$local_file"
+            local_size="$(stat -c %s "$local_file")"
+            remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            echo "verify=$name local=$local_size remote=$remote_size"
+            test "$remote_size" = "$local_size"
+          done
+
+          mountpoint -q /mnt/agentos-gdrive
+          systemctl --user is-active agentos-gdrive-mount.service
+
+          rm -f             "$SRC/agentos_backup_20260930_030001.tar.gz"             "$SRC/agentos_backup_20261001_030001.tar.gz"
+          rmdir "$SRC" 2>/dev/null || true
+
+          if [ -d "$HOME/gdrive" ]; then
+            if find "$HOME/gdrive" -mindepth 1 -print -quit | grep -q .; then
+              echo 'finalize_refused=unexpected_underlay_files_remain'
+              exit 43
+            fi
+            rmdir "$HOME/gdrive"
+          fi
+
+          ln -s /mnt/agentos-gdrive "$HOME/gdrive"
+          test -L "$HOME/gdrive"
+          mountpoint -q "$(readlink -f "$HOME/gdrive")"
+          echo 'legacy_gdrive_symlink=PASS'
+          df -h /
+          echo 'gdrive_underlay_finalize=PASS'
+          REMOTE
