@@ -1,0 +1,107 @@
+name: Oracle Diagnose Mio Wardrobe API
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-diagnose-mio-wardrobe-api.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect live dashboard wardrobe API
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          LIVE=/home/ubuntu/agent-data/runtime/dashboard/current
+          CWD="$(readlink -f "$LIVE" 2>/dev/null || true)"
+          echo "dashboard_live_cwd=$CWD"
+          test -n "$CWD" && test -d "$CWD"
+
+          echo "=== route source/build presence ==="
+          test -f "$CWD/app/api/wardrobe/tryon/render/route.ts" && echo "tryon_route_source=present" || echo "tryon_route_source=missing"
+          find "$CWD/.next/server/app" -path '*wardrobe*tryon*render*' -maxdepth 12 -type f 2>/dev/null | head -n 20 || true
+
+          echo "=== local API ==="
+          code="$(curl --noproxy '*' -sS -o /tmp/mio-tryon-api-body -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' \
+            --data '{"characterId":"sunlake-milkcat-ai-001","selectedLayers":{"lower_main":"net-32235-711"}}' \
+            http://127.0.0.1:3000/dashboard/api/wardrobe/tryon/render || true)"
+          echo "tryon_local_http=$code"
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('/tmp/mio-tryon-api-body')
+          raw=p.read_text(encoding='utf-8',errors='replace')[:1000] if p.exists() else ''
+          try:
+              obj=json.loads(raw)
+              print('tryon_local_json_keys='+','.join(sorted(obj.keys())))
+              if 'error' in obj:
+                  print('tryon_local_error='+str(obj['error'])[:300])
+          except Exception:
+              print('tryon_local_body_non_json='+raw.replace('\n',' ')[:300])
+          PY
+
+          echo "=== public reverse proxy ==="
+          code="$(curl --noproxy '*' -k -sS -o /tmp/mio-tryon-public-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+            -X POST -H 'Content-Type: application/json' \
+            --data '{"characterId":"sunlake-milkcat-ai-001","selectedLayers":{"lower_main":"net-32235-711"}}' \
+            https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render || true)"
+          echo "tryon_public_http=$code"
+          python3 - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('/tmp/mio-tryon-public-body')
+          raw=p.read_text(encoding='utf-8',errors='replace')[:1000] if p.exists() else ''
+          try:
+              obj=json.loads(raw)
+              print('tryon_public_json_keys='+','.join(sorted(obj.keys())))
+              if 'error' in obj:
+                  print('tryon_public_error='+str(obj['error'])[:300])
+          except Exception:
+              print('tryon_public_body_non_json='+raw.replace('\n',' ')[:300])
+          PY
+
+          echo "=== admin runtime configuration ==="
+          ADMIN_FILE=/home/ubuntu/.config/milkcat/admin-identities
+          if [ -f "$ADMIN_FILE" ]; then
+            echo "admin_identity_file=present"
+            echo "admin_identity_count=$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN_FILE" | wc -l)"
+            stat -c 'admin_identity_mode=%a owner=%u' "$ADMIN_FILE"
+          else
+            echo "admin_identity_file=missing"
+          fi
+
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          echo "recent_render_jobs:"
+          python3 - "$ROOT/render_jobs/runtime" <<'PY'
+          import json,pathlib,sys
+          d=pathlib.Path(sys.argv[1])
+          rows=[]
+          for p in d.glob('*.json'):
+              try:j=json.loads(p.read_text(encoding='utf-8'))
+              except:continue
+              rows.append((j.get('requestedAt',''),j))
+          for _,j in sorted(rows,reverse=True)[:8]:
+              print(json.dumps({
+                'jobId':j.get('jobId'),
+                'requestedAt':j.get('requestedAt'),
+                'status':j.get('status'),
+                'error':(j.get('error') or {}).get('code'),
+                'layers':list(((j.get('input') or {}).get('selectedLayers') or {}).keys())
+              },ensure_ascii=False))
+          PY
+          REMOTE
