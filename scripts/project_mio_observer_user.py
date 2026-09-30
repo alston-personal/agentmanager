@@ -9,6 +9,9 @@ DATA_ROOT=Path("/home/ubuntu/agent-data")
 PERSONA=DATA_ROOT/"personas/sunlake-milkcat"
 OUT_PUBLIC=Path("/tmp/mio-observer-public.json")
 OUT_OWNER=Path("/tmp/mio-observer-owner.json")
+SCHEDULER_STATUS=DATA_ROOT/"runtime/bootstrap-scheduler/status.json"
+SCHEDULER_INCIDENTS=DATA_ROOT/"runtime/bootstrap-scheduler/incidents"
+BOOTSTRAP_REQUESTS=Path("/tmp/agentos-bootstrap-control/requests")
 
 def load(path:Path, default):
     try:
@@ -18,6 +21,68 @@ def load(path:Path, default):
 
 def now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")
+
+def scheduler_view()->dict[str,Any]:
+    status=load(SCHEDULER_STATUS,{})
+    workers=status.get("workers") if isinstance(status.get("workers"),dict) else {}
+    queue_depth=status.get("queue_depth") if isinstance(status.get("queue_depth"),dict) else {}
+    projected_workers={}
+    for worker_id,row in sorted(workers.items()):
+        if not isinstance(row,dict):
+            continue
+        current=row.get("current_job") if isinstance(row.get("current_job"),dict) else None
+        projected_workers[worker_id]={
+          "role":row.get("role"),
+          "state":row.get("state"),
+          "heartbeat":row.get("heartbeat"),
+          "current_job":None if current is None else {
+            "action":current.get("action"),
+            "priority":current.get("priority"),
+            "locks":current.get("locks") or [],
+          },
+        }
+
+    dm_queued=0
+    if BOOTSTRAP_REQUESTS.exists():
+        for path in BOOTSTRAP_REQUESTS.glob("*.request.json"):
+            req=load(path,{})
+            if req.get("action")=="agentos.social_threads_web_dm.read":
+                dm_queued+=1
+    gui=workers.get("oracle-gui") if isinstance(workers.get("oracle-gui"),dict) else {}
+    gui_current=gui.get("current_job") if isinstance(gui.get("current_job"),dict) else {}
+    dm_status="idle"
+    dm_reason=None
+    if gui_current.get("action")=="agentos.social_threads_web_dm.read":
+        dm_status="processing"
+    elif dm_queued:
+        dm_status="waiting"
+        if gui.get("state")=="running":
+            dm_reason="oracle-gui busy"
+        else:
+            dm_reason="oracle-gui unavailable or awaiting scheduler"
+
+    incidents=[]
+    if SCHEDULER_INCIDENTS.exists():
+        for path in sorted(SCHEDULER_INCIDENTS.glob("*.json"),key=lambda p:p.stat().st_mtime,reverse=True)[:8]:
+            row=load(path,{})
+            if not isinstance(row,dict):
+                continue
+            incidents.append({
+              "action":row.get("action"),
+              "failure_class":row.get("failure_class"),
+              "priority":row.get("priority"),
+              "fallback_attempted":row.get("fallback_attempted"),
+              "observed_at":row.get("observed_at"),
+            })
+
+    return {
+      "schema":status.get("schema"),
+      "updated_at":status.get("updated_at"),
+      "queue_depth":queue_depth,
+      "workers":projected_workers,
+      "dm":{"status":dm_status,"waiting_count":dm_queued,"reason":dm_reason},
+      "recent_incidents":incidents,
+    }
 
 def main()->int:
     ir=load(PERSONA/"ir/current.json",{})
@@ -54,15 +119,25 @@ def main()->int:
         pdca_stale=(datetime.now(timezone.utc)-last_dt).total_seconds()>7200
     except Exception:
         pass
+    scheduler=scheduler_view()
+    scheduler_workers=scheduler.get("workers") or {}
+    expected_workers={"oracle-control","oracle-social-1","oracle-social-2","oracle-gui","oracle-build","agentos-router"}
+    scheduler_healthy=expected_workers <= set(scheduler_workers)
     capability_health={
       "persona.pdca":"degraded" if pdca_stale else "healthy",
       "social.metrics":"degraded" if latest_metric.get("status") in ("UNAVAILABLE","ERROR") else "healthy",
       "persona.relationship.memory":"healthy" if (PERSONA/"relationships").exists() else "unknown",
       "persona.observer.public":"healthy",
       "persona.observer.owner":"healthy",
+      "agentos.scheduler":"healthy" if scheduler_healthy else "degraded",
     }
     public["health"]=capability_health
     public["last_heartbeat_at"]=latest_metric.get("timestamp") or pdca.get("last_tick_at")
+    public["scheduling"]={
+      "dm_status":(scheduler.get("dm") or {}).get("status"),
+      "dm_waiting_reason":(scheduler.get("dm") or {}).get("reason"),
+      "queue_depth":scheduler.get("queue_depth") or {},
+    }
 
     owner={
       "schema":"agentos.mio-observer-owner/v1",
@@ -84,6 +159,7 @@ def main()->int:
       "latest_growth_metrics":latest_metric,
       "pdca_stale":pdca_stale,
       "last_heartbeat_at":public.get("last_heartbeat_at"),
+      "runner_pool":scheduler,
     }
     OUT_PUBLIC.write_text(json.dumps(public,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     OUT_OWNER.write_text(json.dumps(owner,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
