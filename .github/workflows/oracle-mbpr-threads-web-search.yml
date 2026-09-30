@@ -1,0 +1,55 @@
+name: Oracle MBPR Threads Web Search
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/mbpr-threads-web-search.json'
+
+permissions:
+  contents: read
+
+jobs:
+  search:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      AGENT_DATA_ROOT: ${{ github.workspace }}/.tmp-agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Search Threads through MBPR existing Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.realm_fabric import RealmFabricStore
+          cmd=json.load(open('.agentos/commands/mbpr-threads-web-search.json',encoding='utf-8'))
+          assert cmd.get('node_id')=='mbpr'
+          sha=str(cmd.get('source_commit') or '')
+          query=str(cmd.get('query') or '').strip()
+          assert len(sha)==40 and query
+          py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
+          root='/Users/tengweihuang/Library/Application Support/AgentOS/browser-bridge'
+          code=("import os,sys,runpy,urllib.request,tempfile; "
+                "sys.path.insert(0,"+repr(root+"/site-packages")+"); "
+                "os.environ['THREADS_SEARCH_QUERY']="+repr(query)+"; "
+                "p=tempfile.mktemp(suffix='.py'); "
+                "urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/threads_existing_chrome_search.py',p); "
+                "sys.argv=[p]; runpy.run_path(p,run_name='__main__')")
+          tid='threads-web-search-'+str(int(time.time()))
+          store=RealmFabricStore()
+          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':45,'cognition_ids_used':[]})
+          for _ in range(55):
+              r=store.get_receipt(tid)
+              if r:
+                  print(str(r.get('stdout') or ''))
+                  if r.get('ok') is True and int(r.get('returncode') or 0)==0:
+                      print('mbpr_threads_web_search=PASS')
+                      raise SystemExit(0)
+                  print(str(r.get('stderr') or '')[-3000:])
+                  raise SystemExit('mbpr Threads web search failed')
+              time.sleep(2)
+          raise SystemExit('mbpr Threads web search timeout')
+          PY
