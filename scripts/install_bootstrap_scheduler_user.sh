@@ -68,6 +68,7 @@ write_unit agentos-bootstrap-social-1.service social oracle-social-1 75% 1G 2G
 write_unit agentos-bootstrap-social-2.service social oracle-social-2 75% 1G 2G
 write_unit agentos-bootstrap-gui.service gui oracle-gui 125% 2G 3G
 write_unit agentos-bootstrap-build.service build oracle-build 50% 1G 3G
+write_unit agentos-bootstrap-router.service router agentos-router 25% 256M 512M
 
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
@@ -79,7 +80,8 @@ rollback_marker=1
 trap 'status=$?; if [ "$status" -ne 0 ] && [ "${rollback_marker:-0}" = 1 ]; then rm -f "$MARKER"; fi; rm -rf "$TMP"; exit "$status"' EXIT
 
 systemctl --user daemon-reload
-for unit in   agentos-bootstrap-control.service   agentos-bootstrap-social-1.service   agentos-bootstrap-social-2.service   agentos-bootstrap-gui.service   agentos-bootstrap-build.service; do
+for unit in   agentos-bootstrap-control.service   agentos-bootstrap-social-1.service   agentos-bootstrap-social-2.service   agentos-bootstrap-gui.service   agentos-bootstrap-build.service \
+  agentos-bootstrap-router.service; do
   systemctl --user enable --now "$unit" >/dev/null
   systemctl --user is-active --quiet "$unit"
   echo "bootstrap_scheduler_unit=$unit:active"
@@ -87,14 +89,14 @@ done
 
 worker_status_ready=0
 for _ in $(seq 1 30); do
-  if [ -s "$STATE_ROOT/status.json" ] && python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build'}; raise SystemExit(0 if expected <= set(d.get('workers') or {}) else 1)"; then
+  if [ -s "$STATE_ROOT/status.json" ] && python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; raise SystemExit(0 if expected <= set(d.get('workers') or {}) else 1)"; then
     worker_status_ready=1
     break
   fi
   sleep 1
 done
 test "$worker_status_ready" = 1
-python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d; expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build'}; workers=d.get('workers') or {}; assert expected <= set(workers), expected-set(workers); print('bootstrap_scheduler_worker_count='+str(len(expected))); print('bootstrap_scheduler_status=PASS')"
+python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d; expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; workers=d.get('workers') or {}; assert expected <= set(workers), expected-set(workers); print('bootstrap_scheduler_worker_count='+str(len(expected))); print('bootstrap_scheduler_status=PASS')"
 
 rollback_marker=0
 echo "bootstrap_scheduler_source_commit=$SOURCE_COMMIT"
