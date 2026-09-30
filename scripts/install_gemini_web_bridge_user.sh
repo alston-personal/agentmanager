@@ -81,3 +81,5 @@ print('gemini_web_bridge_provider=gemini-web')
 print('gemini_web_bridge_service=PASS')
 PY
 echo "gemini_web_bridge_install=PASS"
+
+# acceptance retrigger: gemini-web-mvp
