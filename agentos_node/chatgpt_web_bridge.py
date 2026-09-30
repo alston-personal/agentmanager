@@ -179,7 +179,6 @@ def snapshot_sessions() -> dict[str, Any]:
             _event("login_required", session_id=next(x["session_id"] for x in sessions if x["state"] == "LOGIN_REQUIRED"), state="login_required")
         return payload
     finally:
-        browser.close()
         p.stop()
 
 
@@ -281,7 +280,6 @@ def process_request(request: dict[str, Any]) -> dict[str, Any]:
 
         return _receipt(request, ok=False, state="provider_error", output=row, error="unsupported_operation")
     finally:
-        browser.close()
         p.stop()
 
 
