@@ -1,0 +1,109 @@
+name: AgentOS Runner Pool Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/agentos-runner-pool-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Snapshot scheduler and failover candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          python3 - <<'PY'
+import json
+from pathlib import Path
+from agent_core.node_registry import NodeRegistry
+status=json.load(open('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json',encoding='utf-8'))
+print('runner_pool_queue_depth='+json.dumps(status.get('queue_depth') or {},sort_keys=True,separators=(',',':')))
+for worker,row in sorted((status.get('workers') or {}).items()):
+    print('runner_pool_worker='+worker+':'+str(row.get('role'))+':'+str(row.get('state')))
+wanted={'threads.gui.read','threads.gui.write','desktop.open_url','desktop.screenshot','desktop.mouse','desktop.keyboard','shell.exec','node.runtime.converge'}
+for node in NodeRegistry().node_map().get('nodes') or []:
+    if node.get('node_id') not in {'mbpr','vopc5750','oracle-exec','oracle-core-node'}:
+        continue
+    caps=sorted(set(node.get('capabilities') or []) & wanted)
+    print('runner_pool_node='+str(node.get('node_id'))+':'+str(node.get('status'))+':'+str(node.get('platform'))+':caps='+','.join(caps))
+PY
+          echo "runner_pool_snapshot=PASS"
+          REMOTE
+
+      - name: Test C - social worker failover
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote() {
+            ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "$@"
+          }
+          remote 'export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus; systemctl --user stop agentos-bootstrap-social-1.service'
+          trap 'remote '"'"'export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus; systemctl --user start agentos-bootstrap-social-1.service'"'"' || true' EXIT
+          ID="runner-pool-test-c-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/test-c.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=240             bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.social_threads_mio_recent.inspect "$ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          python3 - "$RECEIPT" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding='utf-8'))
+s=r.get('scheduler') or {}
+assert r.get('ok') is True,r
+assert s.get('worker_role')=='social',s
+assert s.get('worker_id')=='oracle-social-2',s
+print('runner_pool_test_c=PASS')
+print('runner_pool_test_c_worker='+s['worker_id'])
+PY
+          remote 'export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus; systemctl --user start agentos-bootstrap-social-1.service'
+          trap - EXIT
+
+      - name: Test D - shared GUI profile lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOCK_LOG="$RUNNER_TEMP/gui-lock-holder.log"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             'mkdir -p /tmp/agentos-bootstrap-control/locks; exec 9>/tmp/agentos-bootstrap-control/locks/threads-mio-gui.lock; flock 9; echo gui_test_lock=HELD; sleep 8'             >"$LOCK_LOG" 2>&1 &
+          LOCK_PID=$!
+          trap 'kill "$LOCK_PID" 2>/dev/null || true; wait "$LOCK_PID" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do grep -q 'gui_test_lock=HELD' "$LOCK_LOG" && break; sleep 0.2; done
+          grep -q 'gui_test_lock=HELD' "$LOCK_LOG"
+          START=$(date +%s)
+          ID="runner-pool-test-d-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/test-d.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=240             bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.social_threads_web_dm.probe "$ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          END=$(date +%s)
+          wait "$LOCK_PID"
+          trap - EXIT
+          ELAPSED=$((END-START))
+          python3 - "$RECEIPT" "$ELAPSED" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding='utf-8')); elapsed=int(sys.argv[2])
+s=r.get('scheduler') or {}
+assert s.get('worker_role')=='gui',s
+assert s.get('worker_id')=='oracle-gui',s
+assert elapsed >= 6,(elapsed,r)
+assert r.get('ok') is True,r
+print('runner_pool_test_d=PASS')
+print('runner_pool_test_d_elapsed_seconds='+str(elapsed))
+print('runner_pool_test_d_worker='+s['worker_id'])
+PY
