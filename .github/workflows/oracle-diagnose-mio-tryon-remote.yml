@@ -139,15 +139,14 @@ jobs:
                   rows.append((p.stat().st_mtime,str(j['garmentId']),mapping[raw],raw))
           if rows:
               _,gid,layer,raw=sorted(rows,reverse=True)[0]
-              print(gid+'\t'+layer+'\t'+raw)
+              print(gid+' '+layer+' '+raw)
           PY
           )"
           if [ -n "$IMPORTED" ]; then
-            IFS=
-\t' read -r IMPORTED_ID IMPORTED_LAYER IMPORTED_RAW <<< "$IMPORTED"
+            read -r IMPORTED_ID IMPORTED_LAYER IMPORTED_RAW <<< "$IMPORTED"
             echo "mio_imported_probe_raw_slot=$IMPORTED_RAW"
             echo "mio_imported_probe_layer=$IMPORTED_LAYER"
-            BODY=/tmp/mio-imported-create-$.json
+            BODY=/tmp/mio-imported-create.json
             PAYLOAD="$(python3 - "$IMPORTED_ID" "$IMPORTED_LAYER" <<'PY'
           import json,sys
           print(json.dumps({
