@@ -115,6 +115,82 @@ def test_partial_render_keeps_failed_bag_pending(monkeypatch, tmp_path):
     assert (worker.ASSET_DIR / "partial-job.webp").exists()
 
 
+def test_cached_prefix_is_reused_when_new_bag_provider_fails(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    cached = tmp_path / "cached-prefix.webp"
+    cached.write_bytes(b"c" * 3000)
+
+    job = {
+        "schema": worker.SCHEMA,
+        "jobId": "prefix-job",
+        "characterId": "sunlake-milkcat-ai-001",
+        "characterVersion": "mio-body-v1",
+        "view": "front",
+        "pose": "neutral_standing",
+        "status": "queued",
+        "requestedAt": "2026-09-30T00:00:00Z",
+        "startedAt": None,
+        "completedAt": None,
+        "failedAt": None,
+        "supersededBy": None,
+        "input": {
+            "selectedLayers": {
+                "lower_main": {
+                    "garmentId": "pants-1",
+                    "name": "pants",
+                    "sourceImageUrl": "https://example.com/pants.jpg",
+                },
+                "shoes": {
+                    "garmentId": "shoes-1",
+                    "name": "shoes",
+                    "sourceImageUrl": "https://example.com/shoes.jpg",
+                },
+                "bag": {
+                    "garmentId": "bag-1",
+                    "name": "bag",
+                    "sourceImageUrl": "https://example.com/bag.jpg",
+                },
+            }
+        },
+        "output": {"asset": None, "previewAsset": None, "width": None, "height": None},
+        "error": None,
+    }
+
+    prefix_key = worker.outfit_cache_key(job, ["lower_main", "shoes"])
+    prefix_path = worker.cache_path(prefix_key)
+    prefix_path.parent.mkdir(parents=True, exist_ok=True)
+    prefix_path.write_bytes(cached.read_bytes())
+
+    def should_not_rerender_clothing(*args, **kwargs):
+        raise AssertionError("cached lower_main must not be re-rendered")
+
+    calls = []
+
+    def fail_new_bag(person_source, source_url, object_class, seed):
+        calls.append((person_source, object_class))
+        assert person_source == str(prefix_path)
+        assert object_class == "bag"
+        raise RuntimeError("bag provider quota exhausted")
+
+    monkeypatch.setattr(worker, "idm_try_on", should_not_rerender_clothing)
+    monkeypatch.setattr(worker, "omni_try_on", fail_new_bag)
+
+    job_path = worker.JOB_DIR / "prefix-job.json"
+    worker.atomic_write(job_path, job)
+    worker.process_job(job_path, job)
+
+    saved = json.loads(job_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "ready"
+    assert saved["output"]["provider"] == "real-render-cache-prefix"
+    assert saved["output"]["renderedLayers"] == ["lower_main", "shoes"]
+    assert saved["output"]["pendingLayers"] == ["bag"]
+    assert saved["output"]["prefixCacheKey"] == prefix_key
+    assert calls == [(str(prefix_path), "bag")]
+    asset = worker.ASSET_DIR / "prefix-job.webp"
+    assert asset.exists()
+    assert asset.read_bytes() == cached.read_bytes()
+
+
 def test_any_item_only_job_can_render_bag(monkeypatch, tmp_path):
     worker = load_worker(monkeypatch, tmp_path)
     person = tmp_path / "person.webp"
