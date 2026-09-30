@@ -42,6 +42,7 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_INSTALL_CHATGPT_WEB_BRIDGE: ActionPolicy("gui", 22, "normal", ("chatgpt.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_PROBE_GEMINI_WEB: ActionPolicy("gui", 12, "high", ("gemini.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_ACCEPT_GEMINI_WEB_SESSION: ActionPolicy("gui", 14, "high", ("gemini.web.session", "agent.session.attach", "agent.session.inspect", "agent.context.inject"), ("oracle-gui-profile",)),
+    bc.ACTION_START_GEMINI_WEB_LOGIN: ActionPolicy("gui", HIGH, "high", ("gemini.web.session", "desktop.remote_view", "browser.gui"), ("oracle-gui-profile",)),
     bc.ACTION_INSTALL_GEMINI_WEB_BRIDGE: ActionPolicy("gui", 22, "normal", ("gemini.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_RUN_MIO_DM_DECISION: ActionPolicy("social", 18, "high", ("mio.dm.decide",)),
     bc.ACTION_PAUSE_MIO_AUTOREPLY: ActionPolicy("control", 20, "high", ("mio.incident.repair",), ("oracle-core-runtime",)),
