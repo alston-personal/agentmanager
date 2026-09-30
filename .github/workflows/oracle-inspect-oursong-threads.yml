@@ -1,5 +1,5 @@
 name: Oracle Inspect Oursong Threads
-# rerun: 2026-09-30T09:33+08:00
+# rerun: 2026-09-30T09:36+08:00
 
 on:
   push:
@@ -143,4 +143,17 @@ jobs:
           print('oursong_replies='+json.dumps(replies[-40:],ensure_ascii=False,separators=(',',':')))
           print('oursong_discovery='+json.dumps(candidates,ensure_ascii=False,separators=(',',':')))
           print('oursong_discovery_status='+json.dumps(discovery_status,ensure_ascii=False,separators=(',',':')))
+          # Diagnose whether the provider is returning zero rows before local filtering.
+          probe={}
+          for q in ['塔羅','動漫','貓']:
+              for mode in ['RECENT','TOP']:
+                  res=search(q,mode)
+                  rows=(res.get('result') or {}).get('items') or [] if res.get('ok') is True else []
+                  probe[q+':'+mode]={
+                      'ok':bool(res.get('ok') is True),
+                      'row_count':len(rows),
+                      'sample_usernames':[str(x.get('username') or '')[:40] for x in rows[:3] if isinstance(x,dict)],
+                      'sample_ids':[str(x.get('id') or '')[:30] for x in rows[:3] if isinstance(x,dict)],
+                  }
+          print('oursong_discovery_probe='+json.dumps(probe,ensure_ascii=False,separators=(',',':')))
           PY
