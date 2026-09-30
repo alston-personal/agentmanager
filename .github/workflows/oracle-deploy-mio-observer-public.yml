@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          STUDIO_COMMIT="76da89cf58cca7217e6e8f8fe87d2daf5604d7ca"
+          STUDIO_COMMIT="b37ec6f991c29329f4e592eaf8c26bbcdc09f7a1"
           printf '%s' "$STUDIO_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
           echo "STUDIO_COMMIT=$STUDIO_COMMIT" >> "$GITHUB_ENV"
 
@@ -78,8 +78,8 @@ jobs:
           curl -L -fsS --max-time 20 https://studio.milkcat.org/personas/mio/activity.json |
             python3 -m json.tool >/dev/null
 
-          curl -L -fsS --max-time 20 'https://studio.milkcat.org/personas/mio/wardrobe/?acceptance=76da89c' |
-            python3 -c 'import sys; body=sys.stdin.read(); markers=["MIO DRESS-UP STUDIO · V4 LIVE TRY-ON","防潑水帆布鞋","data-tryon-login"]; missing=[m for m in markers if m not in body]; assert not missing, "missing markers: "+repr(missing); print("mio_wardrobe_public_acceptance=PASS")'
+          curl -L -fsS --max-time 20 'https://studio.milkcat.org/personas/mio/wardrobe/?acceptance=b37ec6f' |
+            python3 -c 'import sys; body=sys.stdin.read(); markers=["MIO DRESS-UP STUDIO · V4 LIVE TRY-ON","防潑水帆布鞋","data-tryon-login","正在自動重試"]; missing=[m for m in markers if m not in body]; assert not missing, "missing markers: "+repr(missing); print("mio_wardrobe_public_acceptance=PASS")'
           echo "mio_observer_public_acceptance=PASS"
 
 
