@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.remote-diagnostic-command/v1",
+  "target": "oracle",
+  "purpose": "inspect current production Milkcat auth/session failure",
+  "requested_at": "2026-10-01T06:20:30+08:00"
+}
