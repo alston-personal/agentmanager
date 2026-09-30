@@ -80,6 +80,10 @@ jobs:
             echo "-- $name"
             rclone lsl "gdrive:backups/$name" 2>/dev/null || echo 'remote_missing'
           done
+          echo '=== backup script body ==='
+          if [ -f "$HOME/backup_agentos.sh" ]; then
+            sed -n '1,60p' "$HOME/backup_agentos.sh"
+          fi
           echo '=== backup script destination ==='
           if [ -f "$HOME/backup_agentos.sh" ]; then
             grep -En 'gdrive|backups|tar|gzip|backup' "$HOME/backup_agentos.sh" | head -n 120 || true
