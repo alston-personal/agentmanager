@@ -1,0 +1,56 @@
+{
+  "schema": "agentos.gemini-web-bridge-acceptance/v1",
+  "observed_at": "2026-09-30T08:30:00Z",
+  "provider": "gemini-web",
+  "implementation": {
+    "reusable_web_surface_runtime": "agentos_node/web_agent_surface.py",
+    "provider_adapter": "agentos_node/gemini_web_bridge.py",
+    "session_bridge_operations": [
+      "discover",
+      "attach",
+      "snapshot",
+      "inject",
+      "harvest",
+      "handoff"
+    ],
+    "submit_default": false,
+    "shared_profile_lock": "oracle-gui-profile",
+    "scheduler_worker": "oracle-gui"
+  },
+  "deployment": {
+    "install_run_id": 36689228476,
+    "bridge_service": "PASS",
+    "provider_registered": true
+  },
+  "readiness": {
+    "run_id": 36689625293,
+    "scheduler_lane": "oracle-gui",
+    "state": "LOGIN_REQUIRED",
+    "login_handoff": "PASS",
+    "persistent_profile": true,
+    "cdp": true,
+    "human_action_required": "Complete Google login in the existing Oracle persistent Chromium profile."
+  },
+  "scheduler_recovery": {
+    "commit": "5e7e4f23f18b63fa9d0c72b762abda9f03d8b56e",
+    "diagnostic_run_id": 36689998441,
+    "state": "PASS",
+    "behavior": "fresh orphaned inflight requests are requeued after worker restart; stale orphans receive deterministic failure receipts"
+  },
+  "formal_session_acceptance": {
+    "state": "PENDING_LOGIN",
+    "required_after_login": [
+      "discover",
+      "attach",
+      "inspect",
+      "inject_draft_only",
+      "inject_cleanup",
+      "receipt"
+    ]
+  },
+  "secrets": {
+    "credentials_in_repo": false,
+    "cookies_in_repo": false,
+    "novnc_network_exposure": "localhost_only"
+  }
+}
