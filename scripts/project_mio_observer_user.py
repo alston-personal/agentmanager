@@ -44,6 +44,26 @@ def main()->int:
       "recent":[],
       "interests":[x.get("topic") for x in current_self.get("interests_with_evidence") or [] if isinstance(x,dict)],
     }
+    metrics_dir=PERSONA/"pdca/growth_metrics"
+    metric_files=sorted(metrics_dir.glob("*.json")) if metrics_dir.exists() else []
+    latest_metric=load(metric_files[-1],{}) if metric_files else {}
+    pdca_last=str(pdca.get("last_tick_at") or "")
+    pdca_stale=True
+    try:
+        last_dt=datetime.fromisoformat(pdca_last.replace("Z","+00:00")).astimezone(timezone.utc)
+        pdca_stale=(datetime.now(timezone.utc)-last_dt).total_seconds()>7200
+    except Exception:
+        pass
+    capability_health={
+      "persona.pdca":"degraded" if pdca_stale else "healthy",
+      "social.metrics":"degraded" if latest_metric.get("status") in ("UNAVAILABLE","ERROR") else "healthy",
+      "persona.relationship.memory":"healthy" if (PERSONA/"relationships").exists() else "unknown",
+      "persona.observer.public":"healthy",
+      "persona.observer.owner":"healthy",
+    }
+    public["health"]=capability_health
+    public["last_heartbeat_at"]=latest_metric.get("timestamp") or pdca.get("last_tick_at")
+
     owner={
       "schema":"agentos.mio-observer-owner/v1",
       "updated_at":now_iso(),
@@ -60,6 +80,10 @@ def main()->int:
       "uncertainties":current_self.get("uncertainties") or [],
       "interaction_principles":current_self.get("interaction_principles") or [],
       "recent_experience_refs":(ir.get("journey") or {}).get("recent_experience_refs") or [],
+      "capability_health":capability_health,
+      "latest_growth_metrics":latest_metric,
+      "pdca_stale":pdca_stale,
+      "last_heartbeat_at":public.get("last_heartbeat_at"),
     }
     OUT_PUBLIC.write_text(json.dumps(public,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     OUT_OWNER.write_text(json.dumps(owner,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
