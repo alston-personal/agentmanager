@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 12
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: cfa5664b25a5a0cae5a413941a8c27ee97cc1547
+      SOURCE_SHA: 76da89cf58cca7217e6e8f8fe87d2daf5604d7ca
       LIVE_ROOT: /home/ubuntu/zeus-writer/website/dist
       ROUTE_PATH: personas/mio
       BACKUP_KEY: mio-persona
@@ -142,6 +142,8 @@ jobs:
           grep -Fq 'milkcat.outfit-simulator/v3' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq 'mobile-tryon-dock' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq 'data-reload-page' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '登入／重新授權' "$ROUTE_DIR/wardrobe/index.html"
+          grep -Fq '734984_400_002E799BDE889B2.jpg' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '↻ 更新' "$ROUTE_DIR/wardrobe/index.html"
           grep -Fq '正在送出 AI 試穿工作' "$ROUTE_DIR/wardrobe/index.html"
           ! grep -Fq '自製試穿示意' "$ROUTE_DIR/wardrobe/index.html"
@@ -196,6 +198,8 @@ jobs:
           grep -Fq 'milkcat.outfit-simulator/v3' "$TMP/live-wardrobe"
           grep -Fq 'mobile-tryon-dock' "$TMP/live-wardrobe"
           grep -Fq 'data-reload-page' "$TMP/live-wardrobe"
+          grep -Fq '登入／重新授權' "$TMP/live-wardrobe"
+          grep -Fq '734984_400_002E799BDE889B2.jpg' "$TMP/live-wardrobe"
           grep -Fq '↻ 更新' "$TMP/live-wardrobe"
           grep -Fq '正在送出 AI 試穿工作' "$TMP/live-wardrobe"
           ! grep -Fq '自製試穿示意' "$TMP/live-wardrobe"
@@ -259,6 +263,8 @@ jobs:
           grep -Fq 'milkcat.outfit-simulator/v3' "$WARDROBE"
           grep -Fq 'mobile-tryon-dock' "$WARDROBE"
           grep -Fq 'data-reload-page' "$WARDROBE"
+          grep -Fq '登入／重新授權' "$WARDROBE"
+          grep -Fq '734984_400_002E799BDE889B2.jpg' "$WARDROBE"
           grep -Fq '↻ 更新' "$WARDROBE"
           grep -Fq '正在送出 AI 試穿工作' "$WARDROBE"
           ! grep -Fq '自製試穿示意' "$WARDROBE"
