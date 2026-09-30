@@ -1,0 +1,81 @@
+name: Oracle Install Underlay Preservation Service
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-install-underlay-preservation-service.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install local preservation service
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/state/agentos" "$HOME/.config/systemd/user"
+          cat > "$HOME/.local/bin/agentos-preserve-gdrive-underlay.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SRC="$HOME/gdrive/backups"
+          DEST="gdrive:backups/recovered-oracle-underlay-20261001"
+          STATE="$HOME/.local/state/agentos/gdrive-underlay-preserve.state"
+          names=(agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz)
+
+          echo "started_at=$(date -Is)" > "$STATE"
+          for name in "${names[@]}"; do
+            file="$SRC/$name"
+            test -f "$file"
+            size="$(stat -c %s "$file")"
+
+            while pgrep -af "rclone copyto .*$name .*recovered-oracle-underlay-20261001" >/dev/null; do
+              echo "waiting=$name" >> "$STATE"
+              sleep 15
+            done
+
+            remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            if [ "$remote_size" != "$size" ]; then
+              echo "copying=$name size=$size" >> "$STATE"
+              rclone copyto "$file" "$DEST/$name" --transfers 1 --checkers 4 --retries 5 --low-level-retries 20
+              remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            fi
+            test "$remote_size" = "$size"
+            echo "verified=$name size=$size" >> "$STATE"
+          done
+          echo "completed_at=$(date -Is)" >> "$STATE"
+          echo "result=PASS" >> "$STATE"
+          SH
+          chmod 700 "$HOME/.local/bin/agentos-preserve-gdrive-underlay.sh"
+
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-underlay-preserve.service" <<'UNIT'
+          [Unit]
+          Description=Preserve post-reboot local-only Google Drive underlay backups
+          After=network-online.target agentos-gdrive-mount.service
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=%h/.local/bin/agentos-preserve-gdrive-underlay.sh
+          StandardOutput=append:%h/.local/state/agentos/gdrive-underlay-preserve.log
+          StandardError=append:%h/.local/state/agentos/gdrive-underlay-preserve.log
+          UNIT
+
+          systemctl --user daemon-reload
+          systemctl --user start agentos-gdrive-underlay-preserve.service
+          systemctl --user is-active agentos-gdrive-underlay-preserve.service || true
+          echo 'underlay_preservation_service_started=PASS'
+          REMOTE
