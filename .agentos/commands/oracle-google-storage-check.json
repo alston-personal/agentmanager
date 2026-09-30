@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "verify Google Pro 5TB mount and whether AgentOS paths use it",
-  "requested_at": "2026-10-01T06:30:10+08:00"
+  "purpose": "audit reboot timeline and local gdrive underlay writes",
+  "requested_at": "2026-10-01T07:21:00+08:00"
 }
