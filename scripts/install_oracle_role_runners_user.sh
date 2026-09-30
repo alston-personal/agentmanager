@@ -33,7 +33,7 @@ fi
 registration_token() {
   local tmp code
   tmp="$(mktemp)"
-  code="$(curl -sS -o "$tmp" -w '%{http_code}' -X POST \
+  code="$(curl --http1.1 --retry 3 --retry-all-errors --retry-delay 1 -sS -o "$tmp" -w '%{http_code}' -X POST \
     -H "Authorization: Bearer $token" \
     -H 'Accept: application/vnd.github+json' \
     -H 'X-GitHub-Api-Version: 2022-11-28' \
