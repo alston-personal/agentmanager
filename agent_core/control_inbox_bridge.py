@@ -36,6 +36,11 @@ SSH_MAINTENANCE_RECEIPT_FIELDS = (
     'ssh_service_active_before', 'port22_listening_before',
     'restart_returncode', 'recovered',
 )
+RUNNER_MAINTENANCE_RECEIPT_FIELDS = (
+    'runner_unit_count', 'runner_active_count', 'runner_active_count_before',
+    'runner_failed_count', 'restart_attempted_count', 'restart_failed_count',
+    'runner_healthy', 'recovered',
+)
 EXECUTOR_JOB_RECEIPT_FIELDS = (
     'job_id', 'job_type', 'project_id', 'executor_class', 'capability',
     'executor_available', 'routable', 'authorized', 'successful',
@@ -139,6 +144,12 @@ def _project_receipt(receipt: Any, action: str) -> dict[str, Any] | None:
 
     if action in {'node.ssh.inspect', 'node.ssh.recover'}:
         for key in SSH_MAINTENANCE_RECEIPT_FIELDS:
+            if key in receipt:
+                safe = _safe_scalar(receipt.get(key))
+                if safe is not None or receipt.get(key) is None:
+                    projected[key] = safe
+    if action in {'node.runner.inspect', 'node.runner.recover'}:
+        for key in RUNNER_MAINTENANCE_RECEIPT_FIELDS:
             if key in receipt:
                 safe = _safe_scalar(receipt.get(key))
                 if safe is not None or receipt.get(key) is None:
