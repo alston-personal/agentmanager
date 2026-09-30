@@ -1,0 +1,120 @@
+name: Oracle Diagnose Mio Try-On Remote
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/oracle-diagnose-mio-tryon-remote.json'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect current Mio try-on production path
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo "mio_remote_diag_host=$(hostname)"
+          systemctl --user is-active agentos-mio-tryon-render-worker.service || true
+          echo "mio_tryon_worker_state=$(systemctl --user is-active agentos-mio-tryon-render-worker.service 2>/dev/null || true)"
+
+          TOKEN_ENV="$HOME/.config/agentos/mio-tryon.env"
+          if [ -s "$TOKEN_ENV" ] && grep -Eq '^(HF_TOKEN|HUGGINGFACE_TOKEN)=.+' "$TOKEN_ENV"; then
+            echo 'mio_hf_token_configured=yes'
+          else
+            echo 'mio_hf_token_configured=no'
+          fi
+
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          echo '=== recent jobs ==='
+          python3 - "$ROOT/render_jobs/runtime" <<'PY'
+          import json,pathlib,sys
+          d=pathlib.Path(sys.argv[1])
+          rows=[]
+          for p in d.glob('*.json'):
+              try:j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:continue
+              rows.append((j.get('requestedAt',''),j))
+          for _,j in sorted(rows,reverse=True)[:20]:
+              out=j.get('output') or {}
+              print(json.dumps({
+                  'jobId':j.get('jobId'),
+                  'requestedAt':j.get('requestedAt'),
+                  'status':j.get('status'),
+                  'layers':list(((j.get('input') or {}).get('selectedLayers') or {}).keys()),
+                  'error':j.get('error'),
+                  'provider':out.get('provider'),
+                  'renderedLayers':out.get('renderedLayers'),
+                  'pendingLayers':out.get('pendingLayers'),
+              },ensure_ascii=False))
+          PY
+
+          echo '=== nginx recent try-on requests ==='
+          (sudo -n tail -n 600 /var/log/nginx/access.log 2>/dev/null || tail -n 600 /var/log/nginx/access.log 2>/dev/null || true) \
+            | grep -F '/dashboard/api/wardrobe/tryon/' | tail -n 40 || true
+          echo '=== nginx recent errors ==='
+          (sudo -n tail -n 200 /var/log/nginx/error.log 2>/dev/null || tail -n 200 /var/log/nginx/error.log 2>/dev/null || true) \
+            | grep -Ei 'wardrobe|tryon|upstream|3000' | tail -n 60 || true
+
+          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          test -d "$LIVE" && test -f "$CONFIG" && test -f "$ADMIN"
+          export JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          for raw in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if line and not line.startswith('#') and '=' in line:
+                  k,v=line.split('=',1)
+                  if k.strip()=='JWT_SECRET':
+                      print(v.strip().strip('"').strip("'")); break
+          PY
+          )"
+          export ADMIN_KEY="$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')"
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'', secret=process.env.JWT_SECRET_VALUE||'';
+          if(!key||!secret) process.exit(2);
+          let provider='',subject='',username='e2e-admin';
+          const marker=':username:';
+          if(key.includes(marker)){const i=key.indexOf(marker);provider=key.slice(0,i);username=key.slice(i+marker.length);subject='remote-diag';}
+          else {const i=key.indexOf(':'); if(i<1) process.exit(3); provider=key.slice(0,i); subject=key.slice(i+1);}
+          process.stdout.write(jwt.sign({username,provider,subject,exp:Math.floor(Date.now()/1000)+900},secret));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE ADMIN_KEY
+
+          BODY=/tmp/mio-remote-create-$$.json
+          code="$(curl --noproxy '*' -k -sS -o "$BODY" -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+            -X POST -H 'Content-Type: application/json' -H "Cookie: auth_token=$TOKEN" \
+            --data '{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"lower_main":"net-32235-711","shoes":"net-40832-002","bag":"net-40793-003"}}' \
+            https://studio.milkcat.org/dashboard/api/wardrobe/tryon/render || true)"
+          echo "mio_remote_create_http=$code"
+          python3 - "$BODY" <<'PY'
+          import json,sys,pathlib
+          p=pathlib.Path(sys.argv[1]); raw=p.read_text(encoding='utf-8',errors='replace') if p.exists() else ''
+          try:
+              j=json.loads(raw)
+              print('mio_remote_create_keys='+','.join(sorted(j.keys())))
+              print('mio_remote_create_error='+str(j.get('error') or ''))
+              print('mio_remote_create_job='+str(j.get('jobId') or ''))
+          except Exception:
+              print('mio_remote_create_non_json='+raw[:500].replace('\n',' '))
+          PY
+          rm -f "$BODY"
+          unset TOKEN
+          REMOTE
