@@ -11,7 +11,6 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-install-galaxy-threads-experiment-monitor.yml'
-      - 'agentos_node/bootstrap_control.py'
       - 'scripts/install_galaxy_threads_experiment_monitor_user.sh'
       - 'scripts/monitor_galaxy_threads_experiment_user.py'
       - 'scripts/monitor_social_post_experiment_user.py'
@@ -27,10 +26,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: oracle-core-runtime
-  cancel-in-progress: false
 
 # Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:

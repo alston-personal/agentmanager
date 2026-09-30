@@ -6,15 +6,10 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-probe-threads-web-dm.yml'
-      - 'agentos_node/bootstrap_control.py'
       - 'scripts/probe_threads_web_dm_user.sh'
 
 permissions:
   contents: read
-
-concurrency:
-  group: threads-mio-gui
-  cancel-in-progress: false
 
 # Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:
