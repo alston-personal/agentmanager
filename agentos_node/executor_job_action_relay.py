@@ -21,6 +21,7 @@ from agentos_node.action_relay import ACTIONS, ActionRelayClient, main as action
 from agentos_node.executor_job_adapter import run_registered_executor_job
 from agentos_node.issue117_experience_provider import register_issue117_provider_if_available
 from agentos_node.typesafe_skill_install_provider import register_typesafe_skill_install_provider
+from agentos_node.gemini_cli_install_provider import register_gemini_cli_install_provider
 
 
 ACTION = "agentos.executor.job"
@@ -29,6 +30,7 @@ _REQUEST_FIELDS = ("job_type", "project_id", "executor_class", "workload_ref", "
 
 ISSUE117_PROVIDER_REGISTERED = register_issue117_provider_if_available()
 TYPESAFE_SKILL_PROVIDER_REGISTERED = register_typesafe_skill_install_provider()
+GEMINI_CLI_PROVIDER_REGISTERED = register_gemini_cli_install_provider()
 
 
 def _request_projection(request: Mapping[str, Any]) -> dict[str, Any]:

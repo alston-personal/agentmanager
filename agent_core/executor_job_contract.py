@@ -79,6 +79,15 @@ JOB_TYPES: dict[str, JobTypeSpec] = {
         workload_ref="skill://typesafe-ai",
         read_only=False,
     ),
+    "gemini.cli.install": JobTypeSpec(
+        job_type="gemini.cli.install",
+        capability="agentos.executor.install.gemini-cli",
+        authority="oracle-user-gemini-cli-install",
+        executor_class="gemini-cli",
+        project_id="agentos-core",
+        workload_ref="surface://gemini-cli",
+        read_only=False,
+    ),
 }
 
 
@@ -157,6 +166,10 @@ def canonical_experience_regression_request() -> dict[str, str]:
 
 def canonical_typesafe_skill_install_request() -> dict[str, str]:
     return _canonical_request("typesafe.skill.install")
+
+
+def canonical_gemini_cli_install_request() -> dict[str, str]:
+    return _canonical_request("gemini.cli.install")
 
 
 def project_executor_job_submission(

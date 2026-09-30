@@ -29,6 +29,10 @@ on:
       - 'agentos_node/issue117_experience_provider.py'
       - 'agentos_node/typesafe_skill_install_provider.py'
       - 'scripts/install_oracle_typesafe_skill.sh'
+      - 'agentos_node/gemini_cli_install_provider.py'
+      - 'agentos_node/gemini_cli_one_hook.py'
+      - 'scripts/install_gemini_cli_one.py'
+      - 'scripts/install_oracle_gemini_cli_one.sh'
 
 permissions:
   contents: read
@@ -51,10 +55,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --name-only HEAD^ HEAD | grep -Eq '^(\.github/workflows/oracle-exact-generation-executor-job-rollout.yml|agent_core/executor_job_contract.py|agentos_node/executor_job_adapter.py|agentos_node/executor_job_action_relay.py|agentos_node/typesafe_skill_install_provider.py|scripts/install_oracle_typesafe_skill.sh)$'; then
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          if printf '%s\n' "$changed" | grep -Eq '^(\.github/workflows/oracle-exact-generation-executor-job-rollout.yml|agent_core/executor_job_contract.py|agentos_node/executor_job_adapter.py|agentos_node/executor_job_action_relay.py|agentos_node/typesafe_skill_install_provider.py|scripts/install_oracle_typesafe_skill.sh)$'; then
             echo 'typesafe=true' >> "$GITHUB_OUTPUT"
           else
             echo 'typesafe=false' >> "$GITHUB_OUTPUT"
+          fi
+          if printf '%s\n' "$changed" | grep -Eq '^(\.github/workflows/oracle-exact-generation-executor-job-rollout.yml|agent_core/executor_job_contract.py|agentos_node/executor_job_adapter.py|agentos_node/executor_job_action_relay.py|agentos_node/gemini_cli_install_provider.py|agentos_node/gemini_cli_one_hook.py|scripts/install_gemini_cli_one.py|scripts/install_oracle_gemini_cli_one.sh)$'; then
+            echo 'gemini=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'gemini=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Preflight immutable integration generation
@@ -313,6 +323,84 @@ jobs:
           print("typesafe_agy_load=UNVERIFIED")
           PY
 
+      - name: Install Gemini CLI ONE adapter through bounded executor job
+        if: ${{ always() && steps.changes.outputs.gemini == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTION_ROOT=/home/ubuntu/agent-data/runtime/action-relay
+          REQUEST="$RUNNER_TEMP/one-gemini-cli-install-request.json"
+          SUBMISSION="$RUNNER_TEMP/one-gemini-cli-install-submission.json"
+          EVIDENCE="$RUNNER_TEMP/gemini-cli-install-live-receipt.json"
+
+          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
+
+          python3 - "$REQUEST" <<'PY'
+          import json, sys
+          from pathlib import Path
+          from agent_core.executor_job_contract import canonical_gemini_cli_install_request
+          payload = {
+              "schema": "agentos.controller-dispatch/v0.1",
+              "node_id": "oracle-core-node",
+              "action": "agentos.executor.job",
+              "payload": canonical_gemini_cli_install_request(),
+          }
+          Path(sys.argv[1]).write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+          curl -fsS --max-time 10 \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$REQUEST" \
+            http://127.0.0.1:8780/v1/controller/dispatch > "$SUBMISSION"
+
+          python3 - "$ACTION_ROOT" "$SUBMISSION" "$EVIDENCE" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
+
+          root = Path(sys.argv[1]); submission_path = Path(sys.argv[2]); evidence = Path(sys.argv[3])
+          submission = json.loads(submission_path.read_text(encoding="utf-8"))
+          assert submission.get("schema") == "agentos.executor-job-submission/v1", submission
+          assert submission.get("ok") is True, submission
+          assert submission.get("node_id") == "oracle-core-node", submission
+          assert submission.get("job_type") == "gemini.cli.install", submission
+          assert submission.get("credential_exposed") is False, submission
+          job_id = str(submission.get("job_id") or "")
+          assert job_id.startswith("action-"), submission
+
+          receipt_path = root / "receipts" / f"{job_id}.json"
+          for _ in range(660):
+              if receipt_path.is_file():
+                  break
+              time.sleep(1)
+          else:
+              raise SystemExit("Gemini CLI install receipt timeout")
+
+          receipt = ActionRelayExecutorJobDispatcher(root).inspect(job_id)
+          assert isinstance(receipt, dict), receipt
+          assert receipt.get("job_type") == "gemini.cli.install", receipt
+          assert receipt.get("project_id") == "agentos-core", receipt
+          assert receipt.get("executor_available") is True, receipt
+          assert receipt.get("routable") is True, receipt
+          assert receipt.get("authorized") is True, receipt
+          assert receipt.get("successful") is True, receipt
+          assert receipt.get("install_receipt_ok") is True, receipt
+          assert receipt.get("classification") == "GEMINI_CLI_ONE_INSTALL_PASS", receipt
+          assert receipt.get("credential_exposed") is False, receipt
+          safe = {key: receipt.get(key) for key in (
+              "schema", "job_id", "job_type", "project_id", "executor_class", "capability",
+              "executor_available", "routable", "authorized", "successful",
+              "credential_exposed", "verdict", "install_receipt_ok", "classification",
+          ) if key in receipt}
+          safe["one_controller_entered"] = True
+          safe["auth_ready"] = None
+          safe["live_sessionstart_verified"] = None
+          evidence.write_text(json.dumps(safe, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          print("gemini_cli_one_install=PASS")
+          print("gemini_cli_auth=UNVERIFIED")
+          print("gemini_cli_sessionstart=UNVERIFIED")
+          PY
+
       - name: Upload sanitized rollout evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -321,5 +409,6 @@ jobs:
           path: |
             ${{ runner.temp }}/executor-job-live-receipt.json
             ${{ runner.temp }}/typesafe-install-live-receipt.json
+            ${{ runner.temp }}/gemini-cli-install-live-receipt.json
           if-no-files-found: warn
           retention-days: 14
