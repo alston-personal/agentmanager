@@ -133,9 +133,27 @@ jobs:
           print('gemini_web_scheduler_lane=oracle-gui')
           PY
 
-      - name: Report Gemini login handoff requirement
+      - name: Start governed Gemini login handoff
         if: env.GEMINI_WEB_STATE == 'LOGIN_REQUIRED'
         shell: bash
         run: |
-          echo "gemini_web_session_provider_mvp=LOGIN_REQUIRED"
-          echo "gemini_web_handoff_required=true"
+          set -euo pipefail
+          REQUEST_ID="gemini-web-login-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/gemini-web-login.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.gemini_web.login.start "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('ok') is True,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          assert 'gemini_web_login=HUMAN_REQUIRED' in text,text[-12000:]
+          assert 'gemini_web_handoff=desktop.remote_view' in text,text[-12000:]
+          print('gemini_web_session_provider_mvp=LOGIN_REQUIRED')
+          print('gemini_web_login_handoff=PASS')
+          print('gemini_web_handoff_required=true')
+          PY
