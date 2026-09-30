@@ -116,25 +116,43 @@ jobs:
               elif "hf_token" in params:
                   kwargs["hf_token"] = token
 
-          client = Client("Qwen/Qwen-Image-2.1-workflow", **kwargs)
           instruction = (
-              "The person in this image is the canonical Mio character. Preserve her exact face, "
-              "identity, hairstyle, hair color, body proportions, skin tone, neutral standing pose, "
-              "camera angle, framing, lighting and plain studio background. Replace all current outfit "
-              "garments and accessories with a plain opaque modest technical dress-up base layer: "
-              "a fitted light-neutral crew-neck short-sleeve top and matching fitted mid-thigh shorts, "
-              "barefoot, no shoes, no bag, no jewelry, no logos, no outerwear. This is a virtual fitting "
-              "technical base garment, not underwear. No nudity. Keep the full body visible from head "
-              "to toes. Output one photorealistic full-body image only."
+              "Keep this exact woman as the same canonical character. Preserve her face, identity, hairstyle, "
+              "hair color, body proportions, skin tone, neutral standing pose, camera angle, framing, lighting "
+              "and plain studio background. Remove the current fashion outfit and accessories. Replace them with "
+              "only a plain opaque modest virtual fitting technical base: fitted light-neutral crew-neck "
+              "short-sleeve top plus matching fitted mid-thigh shorts. Barefoot. No shoes, no bag, no jewelry, "
+              "no logos, no outerwear. This is a technical base garment, not underwear. No nudity. Keep her full "
+              "body visible from head to toes. Photorealistic image only."
           )
-          result = client.predict(handle_file(str(source)), instruction, api_name="/rewritten_instruction")
-          if not isinstance(result, (list, tuple)) or len(result) < 2:
-              raise RuntimeError(f"unexpected Qwen result: {result!r}")
-          candidate = result[1]
-          if isinstance(candidate, dict):
-              candidate = candidate.get("path") or candidate.get("url")
-          if not isinstance(candidate, str):
-              raise RuntimeError(f"missing output path: {candidate!r}")
+
+          errors = []
+          candidate = None
+          for space_id in ("black-forest-labs/FLUX.1-Kontext-Dev", "mcp-tools/FLUX.1-Kontext-Dev"):
+              try:
+                  editor = Client(space_id, **kwargs)
+                  result = editor.predict(
+                      input_image=handle_file(str(source)),
+                      prompt=instruction,
+                      seed=0,
+                      randomize_seed=False,
+                      guidance_scale=2.5,
+                      steps=22,
+                      api_name="/infer",
+                  )
+                  raw = result[0] if isinstance(result, (list, tuple)) and result else result
+                  if isinstance(raw, dict):
+                      raw = raw.get("path") or raw.get("url")
+                  if isinstance(raw, str) and raw:
+                      candidate = raw
+                      print(f"mio_neutral_editor={space_id}")
+                      break
+                  errors.append(f"{space_id}:unexpected_result:{result!r}"[:500])
+              except Exception as exc:
+                  errors.append(f"{space_id}:{type(exc).__name__}:{exc}"[:700])
+
+          if not candidate:
+              raise RuntimeError("all neutral-base editors failed: " + " | ".join(errors))
           img = Image.open(candidate).convert("RGB")
           if img.width < 512 or img.height < 768:
               raise RuntimeError(f"generated base too small: {img.width}x{img.height}")
