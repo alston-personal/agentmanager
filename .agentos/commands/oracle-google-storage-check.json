@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "verify pre-reboot remote backups and inspect backup destination",
-  "requested_at": "2026-10-01T07:31:00+08:00"
+  "purpose": "inspect backup script body for streaming migration",
+  "requested_at": "2026-10-01T07:33:30+08:00"
 }
