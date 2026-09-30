@@ -41,3 +41,57 @@ jobs:
           tests/test_control_inbox_bridge.py
       - name: Validate Oracle installer shell syntax
         run: bash -n scripts/install_thin_client_linux_oracle.sh
+
+  mio-canonical-asset-inspect-hosted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      ORACLE_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      ORACLE_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start deploy SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect Mio canonical/full-body assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${ORACLE_PORT:-22}"
+          ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          roots=[
+              Path('/home/ubuntu/agent-data'),
+              Path('/home/ubuntu/agentmanager'),
+              Path('/home/ubuntu/zeus-writer/website'),
+          ]
+          keys=('mio','澪','body','front','neutral','canonical','render','tryon','avatar')
+          seen=0
+          for root in roots:
+              if not root.exists():
+                  continue
+              for p in root.rglob('*'):
+                  if seen>=220:
+                      break
+                  if not p.is_file():
+                      continue
+                  s=str(p).lower()
+                  if not any(k in s for k in keys):
+                      continue
+                  if p.suffix.lower() not in {'.png','.jpg','.jpeg','.webp'}:
+                      continue
+                  try:
+                      im=Image.open(p)
+                      w,h=im.size
+                  except Exception:
+                      continue
+                  print(f'asset={p} width={w} height={h} bytes={p.stat().st_size}')
+                  seen+=1
+          print('asset_scan_count='+str(seen))
+          PY
+          REMOTE
