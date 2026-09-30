@@ -5,6 +5,7 @@ import json
 import os
 import hashlib
 import inspect
+import io
 import time
 import shutil
 import tempfile
@@ -17,6 +18,11 @@ from typing import Any
 
 from gradio_client import Client, handle_file
 from PIL import Image, ImageOps
+
+try:
+    from huggingface_hub import InferenceClient
+except Exception:
+    InferenceClient = None
 
 SCHEMA = "agentos.tryon-render-job/v1"
 SPACE_ID = os.environ.get("AGENTOS_TRYON_SPACE_ID", "yisol/IDM-VTON")
@@ -90,6 +96,17 @@ QWEN_EDIT_SPACE_ID = os.environ.get(
     "AGENTOS_TRYON_QWEN_EDIT_SPACE_ID",
     "Qwen/Qwen-Image-2.1-workflow",
 )
+INFERENCE_PROVIDER_ROUTES = []
+for _route in os.environ.get(
+    "AGENTOS_TRYON_INFERENCE_PROVIDER_ROUTES",
+    "fal-ai:Qwen/Qwen-Image-Edit,wavespeed:Qwen/Qwen-Image-Edit-2511",
+).split(","):
+    _route = _route.strip()
+    if not _route or ":" not in _route:
+        continue
+    _provider, _model = _route.split(":", 1)
+    if _provider.strip() and _model.strip():
+        INFERENCE_PROVIDER_ROUTES.append((_provider.strip(), _model.strip()))
 
 
 def client() -> Client:
@@ -285,6 +302,91 @@ def build_reference_board(person_path: Path, object_path: Path) -> Path:
     return path
 
 
+def inference_provider_reference_try_on(
+    person_source: str,
+    object_url: str,
+    object_class: str,
+    seed: int,
+) -> tuple[str, str]:
+    if not HF_TOKEN:
+        raise RuntimeError("HF_TOKEN not configured for Inference Providers")
+    if InferenceClient is None:
+        raise RuntimeError("huggingface_hub InferenceClient is unavailable")
+    if not INFERENCE_PROVIDER_ROUTES:
+        raise RuntimeError("no Inference Provider routes configured")
+
+    temp_inputs: list[Path] = []
+    errors: list[str] = []
+    try:
+        if person_source.startswith(("http://", "https://")):
+            person_path = download_input(person_source, ".webp")
+            temp_inputs.append(person_path)
+        else:
+            person_path = Path(person_source)
+            if not person_path.exists():
+                raise RuntimeError(f"person input missing: {person_source}")
+
+        if object_url.startswith(("http://", "https://")):
+            object_path = download_input(object_url, ".jpg")
+            temp_inputs.append(object_path)
+        else:
+            object_path = Path(object_url)
+            if not object_path.exists():
+                raise RuntimeError(f"object input missing: {object_url}")
+
+        board_path = build_reference_board(person_path, object_path)
+        temp_inputs.append(board_path)
+
+        target = "shoes" if object_class == "shoe" else object_class
+        instruction = (
+            "The large full-body person on the left is the canonical subject. "
+            "The product on the right is a reference item only and must disappear as a separate object. "
+            f"Create one final photorealistic full-body image of the left person naturally wearing the exact {target} "
+            "from the right reference. Preserve the person's face, identity, hair, body proportions, pose, all other "
+            "clothing, hands, background, framing, and lighting. Change only the requested wearable item. Preserve the "
+            "product's exact color, silhouette, material, and design. Remove the reference-board layout and output only "
+            "one full-body person."
+        )
+        board_bytes = board_path.read_bytes()
+
+        for provider, model in INFERENCE_PROVIDER_ROUTES:
+            try:
+                client = InferenceClient(
+                    provider=provider,
+                    api_key=HF_TOKEN,
+                    timeout=420,
+                )
+                result = client.image_to_image(
+                    board_bytes,
+                    prompt=instruction,
+                    model=model,
+                )
+                fd, name = tempfile.mkstemp(prefix="mio-hf-provider-", suffix=".webp")
+                os.close(fd)
+                output = Path(name)
+                if isinstance(result, Image.Image):
+                    image = result.convert("RGB")
+                elif isinstance(result, (bytes, bytearray)):
+                    image = Image.open(io.BytesIO(bytes(result))).convert("RGB")
+                else:
+                    raise RuntimeError(f"unexpected image_to_image result: {type(result).__name__}")
+                image.save(output, format="WEBP", quality=95, method=6)
+                if output.stat().st_size < 1000:
+                    output.unlink(missing_ok=True)
+                    raise RuntimeError("Inference Provider output is unexpectedly small")
+                return str(output), f"{provider}:{model}"
+            except Exception as exc:
+                errors.append(f"{provider}:{model}={type(exc).__name__}:{exc}"[:700])
+
+        raise RuntimeError("Inference Providers failed: " + " | ".join(errors))
+    finally:
+        for path in temp_inputs:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def qwen_reference_try_on(
     person_source: str,
     object_url: str,
@@ -405,6 +507,16 @@ def omni_try_on(
         except Exception as exc:
             errors.append(f"{QWEN_EDIT_SPACE_ID}={type(exc).__name__}:{exc}"[:700])
 
+        try:
+            return inference_provider_reference_try_on(
+                str(person_path),
+                str(object_path),
+                object_class,
+                int(seed),
+            )
+        except Exception as exc:
+            errors.append(f"inference-providers={type(exc).__name__}:{exc}"[:1200])
+
         detail = " | ".join(errors)
         quota_exhausted = any(
             marker in detail.lower()
@@ -470,7 +582,7 @@ def outfit_cache_key(job: dict[str, Any], rendered_layers: list[str]) -> str:
         "characterVersion": job.get("characterVersion"),
         "view": job.get("view", "front"),
         "pose": job.get("pose", "neutral_standing"),
-        "renderer": "idm-vton+any-item-fallback/v4" if uses_any_item else "idm-vton-gradio-client/v1",
+        "renderer": "idm-vton+inference-provider-fallback/v5" if uses_any_item else "idm-vton-gradio-client/v1",
         "layers": [
             {
                 "layer": layer,
@@ -567,9 +679,25 @@ def process_job(path: Path, job: dict[str, Any]) -> None:
             if layer in CLOTHING_SUPPORTED:
                 garment_name = str(item.get("name") or "garment") if isinstance(item, dict) else "garment"
                 description = f"{garment_name}; {CLOTHING_SUPPORTED[layer]}"
-                person_url = idm_try_on(person_url, source_url, description, seed_base + index)
-                provider = "idm-vton-gradio-client"
-                provider_space = SPACE_ID
+                try:
+                    person_url = idm_try_on(person_url, source_url, description, seed_base + index)
+                    provider = "idm-vton-gradio-client"
+                    provider_space = SPACE_ID
+                except Exception as primary_exc:
+                    person_url, provider_space = inference_provider_reference_try_on(
+                        person_url,
+                        source_url,
+                        CLOTHING_SUPPORTED[layer],
+                        seed_base + index,
+                    )
+                    provider = "hf-inference-provider-reference-edit"
+                    warnings.append(
+                        {
+                            "layer": layer,
+                            "code": "specialized_renderer_fallback",
+                            "message": f"{type(primary_exc).__name__}: {primary_exc}"[:700],
+                        }
+                    )
             else:
                 person_url, provider_space = omni_try_on(
                     person_url,
