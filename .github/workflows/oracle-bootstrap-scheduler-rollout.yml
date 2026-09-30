@@ -1,0 +1,70 @@
+name: Oracle Bootstrap Scheduler Rollout
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-bootstrap-scheduler-rollout.yml'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'scripts/install_bootstrap_scheduler_user.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Roll out role scheduler from exact Core generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/install_bootstrap_scheduler_user.sh
+          git -C "$REPO" fetch --no-tags origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/install_bootstrap_scheduler_user.sh" > "$TMP"
+          chmod 700 "$TMP"
+          "$TMP" "$CORE_SHA"
+          rm -f "$TMP"
+          REMOTE
+
+      - name: Verify scheduler state and resource bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          python3 - <<'PY'
+import json
+p='/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json'
+d=json.load(open(p,encoding='utf-8'))
+print('scheduler_queue_depth='+json.dumps(d.get('queue_depth') or {},sort_keys=True,separators=(',',':')))
+for wid,row in sorted((d.get('workers') or {}).items()):
+    print('scheduler_worker='+wid+':'+str(row.get('role'))+':'+str(row.get('state')))
+PY
+          for unit in agentos-bootstrap-control.service agentos-bootstrap-social-1.service agentos-bootstrap-social-2.service agentos-bootstrap-gui.service agentos-bootstrap-build.service; do
+            systemctl --user is-active --quiet "$unit"
+            systemctl --user show "$unit" -p CPUQuotaPerSecUSec -p MemoryHigh -p MemoryMax --no-pager
+          done
+          echo "bootstrap_scheduler_acceptance=PASS"
+          REMOTE
