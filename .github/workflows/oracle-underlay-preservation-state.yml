@@ -1,0 +1,39 @@
+name: Oracle Underlay Preservation State
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-underlay-preservation-state.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read local preservation receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" '
+            echo SERVICE;
+            systemctl --user is-active agentos-gdrive-underlay-preserve.service || true;
+            echo STATE;
+            cat "$HOME/.local/state/agentos/gdrive-underlay-preserve.state" 2>/dev/null || true;
+            echo RCLONE;
+            ps -eo pid,etimes,args | grep "[r]clone copyto" || true;
+            echo REMOTE;
+            timeout 20 rclone lsf gdrive:backups/recovered-oracle-underlay-20261001 --files-only --format sp 2>/dev/null || true;
+            echo SPACE;
+            df -h /
+          '
