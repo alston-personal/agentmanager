@@ -23,6 +23,28 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Converge GUI scheduler orphan recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          git -C "$REPO" fetch --no-tags origin "$SHA" >/dev/null
+          for rel in agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py; do
+            git -C "$REPO" show "$SHA:$rel" > "$REPO/$rel.tmp"
+            mv "$REPO/$rel.tmp" "$REPO/$rel"
+          done
+          python3 -m py_compile "$REPO/agentos_node/bootstrap_control.py" "$REPO/agentos_node/bootstrap_scheduler.py"
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          systemctl --user restart agentos-bootstrap-gui.service
+          systemctl --user is-active --quiet agentos-bootstrap-gui.service
+          sleep 2
+          echo "gemini_scheduler_orphan_recovery_converged=PASS"
+          REMOTE
       - name: Inspect Gemini GUI scheduler state
         shell: bash
         run: |
