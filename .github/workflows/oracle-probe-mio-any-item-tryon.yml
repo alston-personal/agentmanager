@@ -46,7 +46,7 @@ jobs:
           # is actually installed before probing it.
           INSTALLED=0
           for i in $(seq 1 90); do
-            if [ -s "$WORKER" ] && grep -Fq 'pbgo/OmniTry' "$WORKER"; then
+            if [ -s "$WORKER" ] && grep -Fq 'inference_provider_reference_try_on' "$WORKER"; then
               INSTALLED=1
               break
             fi
@@ -92,7 +92,7 @@ jobs:
             "failedAt":None,
             "supersededBy":None,
             "input":{
-              "baseBodyAsset":"/personas/mio/mio-avatar.webp",
+              "baseBodyAsset":"/personas/mio/mio-base-v2.webp",
               "layerOrder":["shoes"],
               "selectedLayers":{
                 "shoes":{
