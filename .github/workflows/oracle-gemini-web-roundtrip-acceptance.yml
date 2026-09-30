@@ -1,0 +1,62 @@
+name: Oracle Gemini Web Roundtrip Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/oracle-gemini-web-roundtrip-acceptance.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Run governed Gemini roundtrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="gemini-web-roundtrip-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/gemini-web-roundtrip.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.gemini_web.roundtrip.acceptance "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.gemini_web.roundtrip.acceptance',r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          required=[
+              'gemini_web_roundtrip_inject=PASS',
+              'gemini_web_roundtrip_submit=PASS',
+              'gemini_web_roundtrip_response=PASS',
+              'gemini_web_roundtrip_harvest=PASS',
+              'gemini_web_roundtrip_acceptance=PASS',
+          ]
+          for marker in required:
+              assert marker in text,(marker,text[-12000:])
+          print('gemini_web_roundtrip_receipt=PASS')
+          print('gemini_web_roundtrip_scheduler_lane=oracle-gui')
+          print('gemini_web_bidirectional_mvp=PASS')
+          PY
