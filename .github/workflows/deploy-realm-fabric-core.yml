@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
+      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL || '161.33.24.170' }}
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
       DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.sha }}
@@ -105,6 +105,7 @@ jobs:
           [Service]
           Type=simple
           Environment=AGENT_DATA_ROOT=$DATA
+          EnvironmentFile=-/home/ubuntu/.config/agentos/controller.env
           ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
           Restart=always
           RestartSec=5
@@ -115,7 +116,8 @@ jobs:
           WantedBy=default.target
           EOF
           systemctl --user daemon-reload
-          systemctl --user enable --now agentos-realm-fabric.service
+          systemctl --user enable agentos-realm-fabric.service >/dev/null
+          systemctl --user restart agentos-realm-fabric.service
           for i in $(seq 1 20); do
             if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then break; fi
             sleep 1
@@ -123,6 +125,30 @@ jobs:
           curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
           echo
           systemctl --user is-active agentos-realm-fabric.service
+
+          CONTROLLER_ENV=/home/ubuntu/.config/agentos/controller.env
+          test -s "$CONTROLLER_ENV"
+          CONTROLLER_TOKEN="$(sed -n 's/^AGENTOS_CONTROLLER_TOKEN=//p' "$CONTROLLER_ENV" | head -n 1)"
+          test -n "$CONTROLLER_TOKEN"
+          curl -fsS --max-time 3 \
+            -H "Authorization: Bearer $CONTROLLER_TOKEN" \
+            http://127.0.0.1:8780/v1/controller/scheduler > /tmp/agentos-runner-pool-live.json
+          unset CONTROLLER_TOKEN
+          python3 - /tmp/agentos-runner-pool-live.json <<'PY'
+          import json,sys
+          payload=json.load(open(sys.argv[1],encoding='utf-8'))
+          pool=payload.get('runner_pool') or {}
+          assert payload.get('ok') is True,payload
+          assert pool.get('schema')=='agentos.runner-pool/v1',pool
+          workers=pool.get('workers') or {}
+          assert 'oracle-gui' in workers,workers
+          assert 'oracle-social-1' in workers,workers
+          assert 'oracle-social-2' in workers,workers
+          assert 'agentos-router' in workers,workers
+          print('controller_scheduler_endpoint=PASS')
+          print('controller_scheduler_worker_count='+str(pool.get('worker_count')))
+          print('controller_scheduler_busy_count='+str(pool.get('busy_worker_count')))
+          PY
 
           # Publish stable operator path only after the new service is healthy.
           ln -sfn "$RELEASE" "$CURRENT"
