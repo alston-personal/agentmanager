@@ -85,3 +85,5 @@ echo "gemini_web_bridge_install=PASS"
 # acceptance retrigger: gemini-web-mvp
 
 # readiness recheck 2026-09-30T08:57Z
+
+# final READY acceptance after interactive login 2026-09-30T08:59Z
