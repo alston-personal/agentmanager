@@ -99,6 +99,7 @@ jobs:
           ASSIGNMENTS_JSON="null"
 
           USAGE_FILE="$TMP/usage.txt"
+          : > "$USAGE_FILE"
           chmod 600 "$USAGE_FILE"
           if timeout 25s colab --auth=oauth2 usage >"$USAGE_FILE" 2>&1; then
             AUTH_STATUS="READY"
