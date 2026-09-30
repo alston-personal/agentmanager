@@ -1,0 +1,66 @@
+name: Oracle Probe NET Shoe Image Source
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-net-shoe-image-source.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Resolve official NET shoe image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          URL='https://m.net-fashion.net/product/735479'
+          HTML=/tmp/net-40832.html
+          curl -fsSL --retry 3 -A 'Mozilla/5.0' "$URL" -o "$HTML"
+          echo "net_shoe_page_bytes=$(wc -c < "$HTML")"
+          python3 - "$HTML" <<'PY'
+          import html,re,sys,urllib.parse,urllib.request
+          raw=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+          raw=html.unescape(raw)
+          candidates=[]
+          for pat in [
+              r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+              r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+              r'https?://[^"\'\s>]+(?:40832|73547)[^"\'\s>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"\'\s>]*)?',
+              r'https?://[^"\'\s>]*wimg\.tw[^"\'\s>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"\'\s>]*)?',
+          ]:
+              for m in re.finditer(pat,raw,re.I):
+                  u=m.group(1) if m.lastindex else m.group(0)
+                  if u.startswith('//'): u='https:'+u
+                  if u not in candidates: candidates.append(u)
+          good=[]
+          for u in candidates[:80]:
+              try:
+                  req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'})
+                  with urllib.request.urlopen(req,timeout=10) as r:
+                      ct=(r.headers.get('content-type') or '').lower()
+                      data=r.read(64)
+                  if 'image/' in ct and len(data)>16:
+                      good.append((u,ct))
+              except Exception:
+                  pass
+          for u,ct in good[:20]:
+              print('net_shoe_image_candidate='+u)
+              print('net_shoe_image_content_type='+ct)
+          if not good:
+              raise SystemExit('no_valid_image_candidate')
+          PY
+          REMOTE
