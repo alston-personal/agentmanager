@@ -12,6 +12,7 @@ on:
       - 'dashboard/app/api/auth/**'
       - 'dashboard/app/api/wardrobe/**'
       - 'dashboard/lib/wardrobe-ingest.ts'
+      - 'dashboard/data/mio-wardrobe-seed/**'
       - 'dashboard/lib/tryon-jobs.ts'
       - 'dashboard/lib/fengshui-admin.ts'
       - 'dashboard/lib/tarot-admin.ts'
