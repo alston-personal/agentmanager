@@ -1,0 +1,145 @@
+name: Oracle Probe Mio Full Outfit Try-On
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-mio-full-outfit-tryon.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-mio-full-outfit-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe real NET upper plus lower outfit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            bash -s -- "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          RUN_ID="$1"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user is-active agentos-mio-tryon-render-worker.service
+
+          WORKER="$HOME/.local/bin/agentos-mio-tryon-render-worker.py"
+          TOKEN_ENV="$HOME/.config/agentos/mio-tryon.env"
+          test -s "$WORKER"
+          grep -Fq 'inference_provider_reference_try_on' "$WORKER"
+          test -s "$TOKEN_ENV"
+          grep -Eq '^(HF_TOKEN|HUGGINGFACE_TOKEN)=.+' "$TOKEN_ENV"
+          echo "mio_full_outfit_runtime=READY"
+
+          ROOT="$HOME/agent-data/projects/dressup-simulator"
+          JOB_DIR="$ROOT/render_jobs/runtime"
+          ASSET_DIR="$ROOT/render_assets"
+          JOB_ID="mio-full-outfit-live-e2e-$RUN_ID"
+          JOB="$JOB_DIR/$JOB_ID.json"
+          ASSET="$ASSET_DIR/$JOB_ID.webp"
+          mkdir -p "$JOB_DIR" "$ASSET_DIR"
+          rm -f "$JOB" "$ASSET"
+
+          python3 - "$JOB" "$JOB_ID" <<'PY'
+          import json, pathlib, sys
+          from datetime import datetime, timezone
+          path=pathlib.Path(sys.argv[1]); job_id=sys.argv[2]
+          now=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z')
+          job={
+            "schema":"agentos.tryon-render-job/v1",
+            "jobId":job_id,
+            "characterId":"sunlake-milkcat-ai-001",
+            "characterVersion":"mio-body-v1",
+            "view":"front",
+            "pose":"neutral_standing",
+            "status":"queued",
+            "requestedAt":now,
+            "startedAt":None,
+            "completedAt":None,
+            "failedAt":None,
+            "supersededBy":None,
+            "input":{
+              "baseBodyAsset":"/personas/mio/mio-base-v2.webp",
+              "layerOrder":["upper_main","lower_main"],
+              "selectedLayers":{
+                "upper_main":{
+                  "garmentId":"net-42761-201",
+                  "name":"方領合身短版上衣",
+                  "layer":"upper_main",
+                  "sourceImageUrl":"https://s-net.wimg.tw//act/42761-201-1024-02.jpg?v=32570"
+                },
+                "lower_main":{
+                  "garmentId":"net-32235-711",
+                  "name":"綁帶後鬆緊打褶寬褲",
+                  "layer":"lower_main",
+                  "sourceImageUrl":"https://s-net.wimg.tw//act/32235-711-1024-01.jpg?v=32570"
+                }
+              }
+            },
+            "output":{"asset":None,"previewAsset":None,"width":None,"height":None},
+            "error":None
+          }
+          path.write_text(json.dumps(job,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          path.chmod(0o600)
+          PY
+
+          OK=0
+          for i in $(seq 1 240); do
+            STATE=$(python3 - "$JOB" <<'PY'
+          import json,sys
+          try:
+              print(json.load(open(sys.argv[1],encoding='utf-8')).get('status','missing'))
+          except Exception:
+              print('missing')
+          PY
+          )
+            echo "mio_full_outfit_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              python3 - "$JOB" "$ASSET" <<'PY'
+          import json, pathlib, sys
+          job=json.load(open(sys.argv[1],encoding='utf-8'))
+          asset=pathlib.Path(sys.argv[2])
+          out=job.get('output') or {}
+          rendered=out.get('renderedLayers') or []
+          pending=out.get('pendingLayers') or []
+          providers=out.get('providerOutputs') or []
+          assert rendered == ['upper_main','lower_main'], f'unexpected_rendered_layers:{rendered}'
+          assert not pending, f'pending_layers:{pending}'
+          assert asset.exists() and asset.stat().st_size > 1000, 'full_outfit_asset_missing'
+          print('mio_full_outfit_e2e=PASS')
+          print('mio_full_outfit_bytes='+str(asset.stat().st_size))
+          for row in providers:
+              print('mio_full_outfit_provider='+str(row.get('layer'))+':'+str(row.get('providerSpace')))
+          PY
+              OK=1
+              break
+            fi
+            if [ "$STATE" = failed ]; then
+              cat "$JOB"
+              journalctl --user -u agentos-mio-tryon-render-worker.service -n 120 --no-pager || true
+              break
+            fi
+            sleep 2
+          done
+          test "$OK" -eq 1
+          REMOTE
