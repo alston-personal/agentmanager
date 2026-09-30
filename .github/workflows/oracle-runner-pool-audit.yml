@@ -71,3 +71,5 @@ PY
             sed -n '1,12p' /tmp/gh-status.txt 2>/dev/null || true
           fi
           echo "runner_pool_audit=PASS"
+
+# retrigger after workflow registration
