@@ -85,15 +85,21 @@ PY
 
 pm2_safe_preflight() {
   pm2_json
-  python3 - "$TMP/pm2.json" "$APP_NAME" <<'PY'
+  local count
+  count="$(python3 - "$TMP/pm2.json" "$APP_NAME" <<'PY'
+import json,sys
+apps=json.load(open(sys.argv[1],encoding='utf8'))
+print(sum(1 for a in apps if a.get('name')==sys.argv[2]))
+PY
+)"
+  if [ "$count" = 1 ]; then
+    python3 - "$TMP/pm2.json" "$APP_NAME" <<'PY'
 import json,sys
 apps=json.load(open(sys.argv[1],encoding='utf8'))
 rows=[a for a in apps if a.get('name')==sys.argv[2]]
-assert len(rows)==1, f'dashboard_pm2_target_count={len(rows)}'
 app=rows[0]; env=app.get('pm2_env') or {}
 script=str(env.get('pm_exec_path') or '')
 cwd=str(env.get('pm_cwd') or '')
-args=env.get('args')
 status=str(env.get('status') or '')
 assert cwd.startswith('/home/ubuntu/'), f'dashboard_pm2_cwd_unexpected:{cwd}'
 assert script in {'/usr/bin/npm','/usr/local/bin/npm'} or script.endswith('/npm'), f'dashboard_pm2_script_unexpected:{script}'
@@ -101,6 +107,21 @@ assert status=='online', f'dashboard_pm2_not_online:{status}'
 print('dashboard_pm2_preflight=PASS name='+str(app.get('name'))+' cwd='+cwd+' script=npm')
 print(cwd)
 PY
+    return 0
+  fi
+  if [ "$count" != 0 ]; then
+    echo "dashboard_pm2_target_count=$count"
+    return 1
+  fi
+
+  local pid cwd args
+  pid="$(listener_pid)"
+  cwd="$(readlink -f "/proc/$pid/cwd")"
+  args="$(ps -p "$pid" -o args=)"
+  [[ "$cwd" == /home/ubuntu/* ]]
+  grep -Fq 'next-server' <<<"$args"
+  echo "dashboard_pm2_preflight=BOOTSTRAP_FROM_LISTENER pid=$pid cwd=$cwd"
+  echo "$cwd"
 }
 
 check_route() {
@@ -318,7 +339,7 @@ test "$(readlink -f "$LIVE")" = "$RELEASE"
 echo "dashboard_live_pointer=PASS release=$RELEASE"
 
 # Stop exactly the verified old Dashboard process. Its Next child may outlive PM2 stop.
-node "$PM2_CLI" stop "$APP_NAME" >/dev/null
+node "$PM2_CLI" stop "$APP_NAME" >/dev/null 2>&1 || true
 remaining="$(listener_pid || true)"
 if [ -n "$remaining" ]; then
   test "$remaining" = "$CURRENT_LISTENER" || {
@@ -332,7 +353,7 @@ if [ -n "$remaining" ]; then
   kill -TERM "$remaining"
 fi
 wait_port_clear || { echo 'dashboard_old_listener_stop=FAILED'; exit 1; }
-node "$PM2_CLI" delete "$APP_NAME" >/dev/null
+node "$PM2_CLI" delete "$APP_NAME" >/dev/null 2>&1 || true
 PM2_REPLACED=1
 
 # Recreate the app against the immutable release, not the shared checkout.
