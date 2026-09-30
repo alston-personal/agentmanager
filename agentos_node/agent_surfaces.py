@@ -35,6 +35,7 @@ KNOWN_SURFACES: tuple[dict[str, Any], ...] = (
     {'provider': 'claude-code', 'executables': ('claude',), 'kind': 'agent-runtime', 'capabilities': ('agent.chat', 'code.edit')},
     {'provider': 'codex', 'executables': ('codex',), 'kind': 'agent-runtime', 'capabilities': ('agent.chat', 'code.edit')},
     {'provider': 'gemini', 'executables': ('gemini',), 'kind': 'agent-runtime', 'capabilities': ('agent.chat',)},
+    {'provider': 'chatgpt-web', 'executables': (), 'kind': 'web-agent', 'capabilities': ('agent.chat',), 'bridge_only': True},
 )
 
 
@@ -78,11 +79,12 @@ def discover_surfaces(*, process_names: Iterable[str] | None = None, which=shuti
 
         aliases = {str(x).lower() for x in spec['executables']}
         is_running = bool(aliases & running)
-        if executable_path is None and not is_running:
-            continue
-
         provider = str(spec['provider'])
         bridge = describe_bridge(provider)
+        bridge_only = bool(spec.get('bridge_only'))
+        if executable_path is None and not is_running and not (bridge_only and bridge):
+            continue
+
         capabilities = list(spec['capabilities'])
         if bridge and bridge.get('ready'):
             capabilities.extend(bridge.get('capabilities') or [])
@@ -92,7 +94,7 @@ def discover_surfaces(*, process_names: Iterable[str] | None = None, which=shuti
             kind=str(spec['kind']),
             provider=provider,
             executable=executable_path,
-            running=is_running,
+            running=is_running or bool(bridge_only and bridge and bridge.get('ready')),
             capabilities=tuple(sorted(set(capabilities))),
             attachable=bool(bridge and bridge.get('ready') and 'agent.session.attach' in (bridge.get('capabilities') or [])),
             metadata={
