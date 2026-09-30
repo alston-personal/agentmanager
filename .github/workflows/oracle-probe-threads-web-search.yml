@@ -1,0 +1,96 @@
+name: Oracle Probe Threads Web Search
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-probe-threads-web-search.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe logged-in Threads web discovery via Oracle GUI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time,urllib.parse,urllib.request,sys
+          try:
+              import websocket
+          except Exception as exc:
+              print('threads_web_search_probe=WEBSOCKET_MODULE_MISSING')
+              print(type(exc).__name__)
+              raise
+
+          base='http://127.0.0.1:9222'
+          query='貓'
+          url='https://www.threads.com/search?q='+urllib.parse.quote(query)+'&serp_type=recent'
+          req=urllib.request.Request(base+'/json/new?'+urllib.parse.quote(url,safe=''),method='PUT')
+          with urllib.request.urlopen(req,timeout=5) as r:
+              target=json.load(r)
+          tid=str(target.get('id') or '')
+          wsurl=str(target.get('webSocketDebuggerUrl') or '')
+          assert tid and wsurl, target
+
+          ws=websocket.create_connection(wsurl,timeout=8,origin='http://127.0.0.1:9222')
+          seq=0
+          def cmd(method,params=None):
+              global seq
+              seq+=1
+              ws.send(json.dumps({'id':seq,'method':method,'params':params or {}}))
+              deadline=time.time()+10
+              while time.time()<deadline:
+                  msg=json.loads(ws.recv())
+                  if msg.get('id')==seq:
+                      return msg
+              raise TimeoutError(method)
+          cmd('Runtime.enable')
+          cmd('Page.enable')
+          # Let Threads hydrate search results.
+          time.sleep(8)
+          expr=r"""(()=>{
+            const links=[...document.querySelectorAll('a[href*="/post/"]')];
+            const rows=[];
+            const seen=new Set();
+            for(const a of links){
+              const href=a.href;
+              if(seen.has(href)) continue;
+              seen.add(href);
+              let node=a;
+              for(let i=0;i<8 && node;i++,node=node.parentElement){
+                const txt=(node.innerText||'').trim();
+                if(txt.length>=20){
+                  rows.push({href,text:txt.slice(0,600)});
+                  break;
+                }
+              }
+              if(rows.length>=12) break;
+            }
+            return {
+              url:location.href,
+              title:document.title,
+              body:(document.body?.innerText||'').slice(0,2000),
+              rows
+            };
+          })()"""
+          res=cmd('Runtime.evaluate',{'expression':expr,'returnByValue':True})
+          val=((res.get('result') or {}).get('result') or {}).get('value') or {}
+          ws.close()
+          current=str(val.get('url') or '')
+          low=current.lower()
+          if 'login' in low or 'accountscenter' in low:
+              print('threads_web_search_probe=LOGIN_REQUIRED')
+              raise SystemExit(2)
+          rows=val.get('rows') or []
+          print('threads_web_search_probe=PASS')
+          print('threads_web_search_url='+current)
+          print('threads_web_search_row_count='+str(len(rows)))
+          print('threads_web_search_rows='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
+          print('threads_web_search_body_sample='+json.dumps(str(val.get('body') or '')[:1200],ensure_ascii=False))
+          PY
