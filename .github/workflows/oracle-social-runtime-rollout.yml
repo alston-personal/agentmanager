@@ -6,7 +6,7 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-social-runtime-rollout.yml'
-      - 'agentos_node/bootstrap_control.py'
+
       - 'scripts/deploy_social_runtime_user.sh'
       - 'agentos_node/social/**'
       - 'dashboard/app/api/social/**'
