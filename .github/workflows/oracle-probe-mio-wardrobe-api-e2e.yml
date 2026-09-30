@@ -1,0 +1,151 @@
+name: Oracle Probe Mio Wardrobe API E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-probe-mio-wardrobe-api-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-mio-wardrobe-api-e2e
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Exercise authenticated public try-on API end to end
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          LIVE="$(readlink -f /home/ubuntu/agent-data/runtime/dashboard/current)"
+          CONFIG=/home/ubuntu/.config/milkcat/dashboard.env.local
+          ADMIN=/home/ubuntu/.config/milkcat/admin-identities
+          test -d "$LIVE" && test -f "$CONFIG" && test -f "$ADMIN"
+          test -d "$LIVE/node_modules/jsonwebtoken"
+
+          export JWT_SECRET_VALUE="$(python3 - "$CONFIG" <<'PY'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1])
+          for raw in p.read_text(encoding='utf-8').splitlines():
+              line=raw.strip()
+              if not line or line.startswith('#') or '=' not in line: continue
+              k,v=line.split('=',1)
+              if k.strip()=='JWT_SECRET':
+                  print(v.strip().strip('"').strip("'"))
+                  break
+          PY
+          )"
+          test -n "$JWT_SECRET_VALUE"
+
+          export ADMIN_KEY="$(grep -Ev '^[[:space:]]*(#|$)' "$ADMIN" | head -n1 | tr -d '\r')"
+          test -n "$ADMIN_KEY"
+
+          TOKEN="$(cd "$LIVE" && node - <<'NODE'
+          const jwt=require('jsonwebtoken');
+          const key=process.env.ADMIN_KEY||'';
+          const secret=process.env.JWT_SECRET_VALUE||'';
+          if(!secret || !key) process.exit(2);
+          let provider='',subject='',username='e2e-admin';
+          const marker=':username:';
+          if(key.includes(marker)){
+            const i=key.indexOf(marker);
+            provider=key.slice(0,i);
+            username=key.slice(i+marker.length);
+            subject='e2e-probe-subject';
+          }else{
+            const i=key.indexOf(':');
+            if(i<1) process.exit(3);
+            provider=key.slice(0,i);
+            subject=key.slice(i+1);
+          }
+          const payload={username,provider,subject,exp:Math.floor(Date.now()/1000)+900};
+          process.stdout.write(jwt.sign(payload,secret));
+          NODE
+          )"
+          unset JWT_SECRET_VALUE ADMIN_KEY
+          test -n "$TOKEN"
+
+          BASE=https://studio.milkcat.org
+          BODY=/tmp/mio-api-e2e-create-$$.json
+          code="$(curl --noproxy '*' -k -sS -o "$BODY" -w '%{http_code}' \
+            --resolve studio.milkcat.org:443:127.0.0.1 \
+            -X POST -H 'Content-Type: application/json' \
+            -H "Cookie: auth_token=$TOKEN" \
+            --data '{"characterId":"sunlake-milkcat-ai-001","view":"front","pose":"neutral_standing","selectedLayers":{"lower_main":"net-32235-711"}}' \
+            "$BASE/dashboard/api/wardrobe/tryon/render")"
+          echo "mio_api_e2e_create_http=$code"
+          test "$code" = 201
+          JOB_ID="$(python3 - "$BODY" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert j.get('success') is True
+          job=str(j.get('jobId') or '')
+          assert job
+          print(job)
+          PY
+          )"
+          rm -f "$BODY"
+
+          OK=0
+          for i in $(seq 1 120); do
+            POLL=/tmp/mio-api-e2e-poll-$$.json
+            code="$(curl --noproxy '*' -k -sS -o "$POLL" -w '%{http_code}' \
+              --resolve studio.milkcat.org:443:127.0.0.1 \
+              -H "Cookie: auth_token=$TOKEN" \
+              "$BASE/dashboard/api/wardrobe/tryon/jobs/$JOB_ID")"
+            test "$code" = 200
+            STATE="$(python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(j.get('status','missing'))
+          PY
+          )"
+            echo "mio_api_e2e_state=$STATE poll=$i"
+            if [ "$STATE" = ready ]; then
+              python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          out=j.get('output') or {}
+          rendered=out.get('renderedLayers') or []
+          pending=out.get('pendingLayers') or []
+          assert 'lower_main' in rendered, rendered
+          assert 'lower_main' not in pending, pending
+          assert out.get('asset'), 'missing_asset'
+          print('mio_api_e2e=PASS')
+          print('mio_api_e2e_asset=present')
+          PY
+              rm -f "$POLL"
+              OK=1
+              break
+            fi
+            if [ "$STATE" = failed ]; then
+              python3 - "$POLL" <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          e=j.get('error') or {}
+          print('mio_api_e2e=FAIL code='+str(e.get('code'))+' message='+str(e.get('message'))[:300])
+          PY
+              rm -f "$POLL"
+              break
+            fi
+            rm -f "$POLL"
+            sleep 2
+          done
+          test "$OK" -eq 1
+          unset TOKEN
+          REMOTE
