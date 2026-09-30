@@ -36,7 +36,7 @@ ASSET_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_assets"
 CACHE_DIR = DATA_ROOT / "projects" / "dressup-simulator" / "render_cache"
 BASE_BODY_URL = os.environ.get(
     "AGENTOS_MIO_BASE_BODY_URL",
-    "https://studio.milkcat.org/personas/mio/mio-avatar.webp",
+    "https://studio.milkcat.org/personas/mio/mio-base-v2.webp",
 )
 
 CLOTHING_SUPPORTED = {
