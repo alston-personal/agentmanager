@@ -1,0 +1,12 @@
+{
+  "schema": "agentos.runner-pool-incident/v1",
+  "observed_at": "2026-09-30T07:53:26Z",
+  "component": "github-self-hosted-runner-registration",
+  "run_id": 36686260994,
+  "failure_class": "github_registration_credential_unauthorized",
+  "http_status": 401,
+  "impact": "Role-based GitHub self-hosted runners could not be registered, so direct Actions-level GUI lane provisioning remains blocked.",
+  "mitigation": "ChatGPT Web jobs now use GitHub-hosted ingress and are routed by AgentOS Bootstrap Scheduler to worker_role=gui / worker_id=oracle-gui.",
+  "credential_material_logged": false,
+  "follow_up": "Replace or re-authorize the Oracle machine GitHub credential with repository runner-administration permission before retrying role runner registration."
+}
