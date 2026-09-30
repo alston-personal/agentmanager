@@ -40,7 +40,7 @@ jobs:
           import json
           from pathlib import Path
           root=Path('/tmp/agentos-bootstrap-control')
-          for kind,pat in [('requests','requests/*.request.json'),('receipts','receipts/*.json'),('rejected','rejected/*.request.json')]:
+          for kind,pat in [('requests','requests/*.request.json'),('inflight','inflight/**/*.request.json'),('receipts','receipts/*.json'),('rejected','rejected/*.request.json')]:
               rows=[]
               for p in sorted(root.glob(pat), key=lambda x:x.stat().st_mtime, reverse=True)[:15]:
                   try:d=json.loads(p.read_text(encoding='utf-8'))
