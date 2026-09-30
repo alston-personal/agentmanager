@@ -1,0 +1,65 @@
+name: Oracle ChatGPT Web Session Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/oracle-chatgpt-web-session-acceptance.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Exercise discover attach inspect inject and receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="chatgpt-web-session-acceptance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/chatgpt-web-session-acceptance.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.chatgpt_web.session.acceptance "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.chatgpt_web.session.acceptance',r
+          assert r.get('source_commit')==expected,r
+          assert r.get('ok') is True,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          required=[
+              'chatgpt_web_discover=PASS',
+              'chatgpt_web_attach=PASS',
+              'chatgpt_web_inspect=PASS',
+              'chatgpt_web_inject_draft=PASS',
+              'chatgpt_web_inject_cleanup=PASS',
+              'chatgpt_web_receipt=PASS',
+              'chatgpt_web_session_acceptance=PASS',
+          ]
+          for marker in required:
+              assert marker in text,(marker,text[-12000:])
+          print('chatgpt_web_session_provider_mvp=PASS')
+          print('chatgpt_web_scheduler_lane=oracle-gui')
+          PY
