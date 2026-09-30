@@ -1,0 +1,71 @@
+name: Oracle Gemini Web Session Acceptance
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.agentos/commands/oracle-gemini-web-session-acceptance.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Exercise Gemini discover attach inspect inject and receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="gemini-web-session-acceptance-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/gemini-web-session-acceptance.json"
+          set +e
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.gemini_web.session.acceptance "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          rc=$?
+          set -e
+          test "$rc" -eq 0
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          expected=sys.argv[2]
+          assert r.get('schema')=='agentos.bootstrap-receipt/v1',r
+          assert r.get('action')=='agentos.gemini_web.session.acceptance',r
+          assert r.get('source_commit')==expected,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          if 'gemini_web_session_acceptance=LOGIN_REQUIRED' in text:
+              print('gemini_web_session_provider_mvp=LOGIN_REQUIRED')
+              print('gemini_web_scheduler_lane=oracle-gui')
+              raise SystemExit(20)
+          assert r.get('ok') is True,r
+          required=[
+              'gemini_web_discover=PASS',
+              'gemini_web_attach=PASS',
+              'gemini_web_inspect=PASS',
+              'gemini_web_inject_draft=PASS',
+              'gemini_web_inject_cleanup=PASS',
+              'gemini_web_receipt=PASS',
+              'gemini_web_session_acceptance=PASS',
+          ]
+          for marker in required:
+              assert marker in text,(marker,text[-12000:])
+          print('gemini_web_session_provider_mvp=PASS')
+          print('gemini_web_scheduler_lane=oracle-gui')
+          PY
