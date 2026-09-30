@@ -169,6 +169,30 @@ def build_findings(limit_spec: str | None = None) -> list[SpecFinding]:
             if capability not in providers:
                 notes.append(f"no provider found for {capability}")
 
+        acceptance = meta.get("acceptance") or {}
+        if not isinstance(acceptance, dict):
+            acceptance = {}
+        production_target = str(
+            acceptance.get("production_url")
+            or meta.get("production_url")
+            or ""
+        ).strip()
+        production_receipt = str(
+            acceptance.get("production_receipt")
+            or meta.get("production_receipt")
+            or ""
+        ).strip()
+        production_state = str(
+            acceptance.get("production_state")
+            or meta.get("production_state")
+            or ""
+        ).strip()
+
+        if production_target and production_state != "PRODUCTION_VERIFIED":
+            notes.append("production target declared but not PRODUCTION_VERIFIED")
+        if production_target and not production_receipt:
+            notes.append("production target missing deployment/acceptance receipt")
+
         if open_items:
             notes.append(f"{open_items} open checklist item(s)")
         if freshness_days >= 7 and open_items:
@@ -228,6 +252,7 @@ def render_report(findings: list[SpecFinding]) -> str:
         "- Specs should declare ownership and target projects.",
         "- Open checklist items indicate the spec is not yet fully closed.",
         "- A spec is considered healthy only when the implementation path is visible in project declarations or status updates.",
+        "- For runtime/public outcomes, CI or source completion is insufficient; production targets must carry PRODUCTION_VERIFIED evidence.",
     ])
     return "\n".join(lines)
 
