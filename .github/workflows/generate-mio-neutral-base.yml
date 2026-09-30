@@ -76,11 +76,18 @@ jobs:
           SOURCE="$WORK/mio-source.webp"
           OUTPUT="$WORK/mio-base-v2.webp"
 
-          curl -fsS --retry 5 --retry-delay 2             "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$GITHUB_RUN_ID"             -o "$SOURCE"
+          if curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1               "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$GITHUB_RUN_ID"               -o "$SOURCE"; then
+            echo "mio_source=local_nginx"
+          else
+            curl -fsS --retry 5 --retry-delay 2               "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$GITHUB_RUN_ID"               -o "$SOURCE"
+            echo "mio_source=public"
+          fi
           test -s "$SOURCE"
+          echo "mio_source_bytes=$(wc -c < "$SOURCE")"
 
-          VENV="$HOME/.local/share/mio-tryon-venv"
+          VENV="/home/ubuntu/.local/share/mio-tryon-venv"
           test -x "$VENV/bin/python"
+          echo "mio_tryon_venv=PASS"
           "$VENV/bin/python" - "$SOURCE" "$OUTPUT" <<'PY'
           import inspect, os, pathlib, sys
           from gradio_client import Client, handle_file
