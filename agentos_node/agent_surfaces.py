@@ -97,7 +97,12 @@ def discover_surfaces(*, process_names: Iterable[str] | None = None, which=shuti
             executable=executable_path,
             running=is_running or bool(bridge_only and bridge and bridge.get('ready')),
             capabilities=tuple(sorted(set(capabilities))),
-            attachable=bool(bridge and bridge.get('ready') and 'agent.session.attach' in (bridge.get('capabilities') or [])),
+            attachable=bool(
+                bridge
+                and bridge.get('ready')
+                and 'agent.session.attach' in (bridge.get('capabilities') or [])
+                and str(bridge.get('session_state') or 'READY').upper() == 'READY'
+            ),
             metadata={
                 'executable_name': executable_name,
                 'session_bridge': bridge,
