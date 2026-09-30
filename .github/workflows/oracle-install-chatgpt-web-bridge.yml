@@ -1,0 +1,78 @@
+name: Oracle Install ChatGPT Web Bridge
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-install-chatgpt-web-bridge.yml'
+      - 'agentos_node/chatgpt_web_bridge.py'
+      - 'agentos_node/session_bridge.py'
+      - 'agentos_node/agent_surfaces.py'
+      - 'agentos_node/bootstrap_control.py'
+      - 'agentos_node/bootstrap_scheduler.py'
+      - 'scripts/install_chatgpt_web_bridge_user.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-chatgpt-web-bridge-install
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install exact ChatGPT web bridge generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          CORE_SHA="$1"
+          REPO=/home/ubuntu/agentmanager
+          TMP=/tmp/install_chatgpt_web_bridge_user.sh
+          git -C "$REPO" fetch --no-tags origin "$CORE_SHA" >/dev/null
+          git -C "$REPO" show "$CORE_SHA:scripts/install_chatgpt_web_bridge_user.sh" > "$TMP"
+          chmod 700 "$TMP"
+          AGENTOS_SOURCE_COMMIT="$CORE_SHA" AGENTOS_REPO="$REPO" "$TMP"
+          rm -f "$TMP"
+          REMOTE
+
+      - name: Verify bridge descriptor and service
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          systemctl --user is-active --quiet agentos-chatgpt-web-bridge.service
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path.home()/'.local/share/agentos/chatgpt-web/bridge/bridge.json'
+          d=json.loads(p.read_text(encoding='utf-8'))
+          assert d.get('schema')=='agentos.session-bridge/v0.1',d
+          assert d.get('provider')=='chatgpt-web',d
+          assert d.get('ready') is True,d
+          print('chatgpt_web_bridge_service=PASS')
+          print('chatgpt_web_bridge_session_state='+str(d.get('session_state') or 'UNKNOWN'))
+          PY
+          REMOTE
