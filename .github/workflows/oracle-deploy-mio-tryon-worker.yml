@@ -137,7 +137,7 @@ jobs:
             "view":"front","pose":"neutral_standing","status":"queued",
             "requestedAt":now,"startedAt":None,"completedAt":None,"failedAt":None,"supersededBy":None,
             "input":{
-              "baseBodyAsset":"/personas/mio/mio-avatar.webp",
+              "baseBodyAsset":"/personas/mio/mio-base-v2.webp",
               "layerOrder":["upper_main"],
               "selectedLayers":{
                 "upper_main":{"garmentId":"net-43774-002","name":"white top","layer":"upper_main","sourceImageUrl":"https://net.wimg.tw/files/1/products/735109_color_002E799BDE889B2.jpg?v=32570"}

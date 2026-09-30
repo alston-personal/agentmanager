@@ -6,7 +6,7 @@ import { AGENT_DATA_ROOT } from '@/lib/data-root';
 export const TRYON_JOB_SCHEMA = 'agentos.tryon-render-job/v1' as const;
 export const DEFAULT_CHARACTER_ID = 'sunlake-milkcat-ai-001';
 export const DEFAULT_CHARACTER_VERSION = 'mio-body-v1';
-export const DEFAULT_BASE_BODY_ASSET = '/personas/mio/mio-avatar.webp';
+export const DEFAULT_BASE_BODY_ASSET = '/personas/mio/mio-base-v2.webp';
 
 export const LAYER_ORDER = [
   'upper_inner',
