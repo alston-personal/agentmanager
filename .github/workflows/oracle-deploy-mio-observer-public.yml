@@ -27,10 +27,9 @@ jobs:
 
       - name: Resolve Studio Web exact main commit
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          unset GH_TOKEN GITHUB_TOKEN || true
           STUDIO_COMMIT="$(gh api repos/alston-personal/studio-web/commits/main --jq .sha)"
           printf '%s' "$STUDIO_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
           echo "STUDIO_COMMIT=$STUDIO_COMMIT" >> "$GITHUB_ENV"
