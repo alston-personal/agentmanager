@@ -179,3 +179,82 @@ def test_http_controller_requires_separate_credential_and_dispatches(tmp_path: P
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+def test_controller_scheduler_projection_is_bounded_and_http_readable(tmp_path: Path, monkeypatch) -> None:
+    data_root = tmp_path / 'agent-data'
+    runtime = data_root / 'runtime' / 'bootstrap-scheduler'
+    incidents = runtime / 'incidents'
+    incidents.mkdir(parents=True)
+    (runtime / 'status.json').write_text(json.dumps({
+        'schema': 'agentos.bootstrap-scheduler-status/v1',
+        'node': 'oracle',
+        'updated_at': '2026-09-30T05:30:00Z',
+        'queue_depth': {'control': 1, 'social': 2, 'gui': 1, 'build': 0},
+        'workers': {
+            'oracle-gui': {
+                'role': 'gui',
+                'state': 'running',
+                'heartbeat': '2026-09-30T05:30:00Z',
+                'current_job': {
+                    'request_id': 'mio-dm-test',
+                    'action': 'agentos.social_threads_web_dm.read',
+                    'priority': 'high',
+                    'locks': ['threads-mio-gui'],
+                    'private_path': '/home/ubuntu/private',
+                },
+            },
+            'agentos-router': {
+                'role': 'router',
+                'state': 'idle',
+                'heartbeat': '2026-09-30T05:30:00Z',
+                'current_job': None,
+            },
+        },
+    }), encoding='utf-8')
+    (incidents / 'incident.json').write_text(json.dumps({
+        'schema': 'agentos.scheduler-incident/v1',
+        'project': 'mio',
+        'request_id': 'mio-dm-test',
+        'action': 'agentos.social_threads_web_dm.read',
+        'priority': 'high',
+        'requested_capabilities': ['threads.gui.read'],
+        'preferred_node': 'oracle',
+        'failure_class': 'queue_starvation',
+        'fallback_attempted': True,
+        'receipt_required': True,
+        'observed_at': '2026-09-30T05:30:00Z',
+        'detail': 'Bearer secret-must-not-project',
+    }), encoding='utf-8')
+    monkeypatch.setenv('AGENT_DATA_ROOT', str(data_root))
+
+    fabric, _ = _online_fabric(tmp_path / 'realm')
+    controller = ControllerService(fabric)
+    pool = controller.scheduler()
+    assert pool['schema'] == 'agentos.runner-pool/v1'
+    assert pool['worker_count'] == 2
+    assert pool['busy_worker_count'] == 1
+    assert pool['queue_depth']['gui'] == 1
+    assert pool['lock_holders']['threads-mio-gui'] == 'oracle-gui'
+    assert pool['workers']['oracle-gui']['current_job']['action'] == 'agentos.social_threads_web_dm.read'
+    assert 'private_path' not in pool['workers']['oracle-gui']['current_job']
+    assert pool['recent_incidents'][0]['failure_class'] == 'queue_starvation'
+    assert 'detail' not in pool['recent_incidents'][0]
+
+    server = RealmHTTPServer(('127.0.0.1', 0), fabric, controller_token='controller-secret')
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f'http://127.0.0.1:{server.server_address[1]}'
+    try:
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            _request(base + '/v1/controller/scheduler')
+        assert missing.value.code == 401
+
+        status, payload = _request(base + '/v1/controller/scheduler', 'controller-secret')
+        assert status == 200
+        assert payload['runner_pool']['schema'] == 'agentos.runner-pool/v1'
+        assert payload['runner_pool']['workers']['agentos-router']['role'] == 'router'
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
