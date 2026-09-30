@@ -36,7 +36,7 @@ ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
 ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
-ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
+ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"\nACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
@@ -309,6 +309,12 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
         return _run_canonical_script(
             "scripts/install_thin_client_linux_oracle.sh",
             timeout=420,
+            source_commit=source_commit,
+        )
+    if action == ACTION_PROJECT_MIO_OBSERVER:
+        return _run_canonical_script(
+            "scripts/project_mio_observer_user.sh",
+            timeout=90,
             source_commit=source_commit,
         )
     raise ValueError("unsupported bootstrap action")
