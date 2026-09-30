@@ -29,7 +29,11 @@ def _utc_now() -> str:
 def bridge_root(provider: str) -> Path | None:
     key = 'AGENTOS_' + provider.upper().replace('-', '_') + '_BRIDGE'
     raw = os.environ.get(key)
-    return Path(raw).expanduser() if raw else None
+    if raw:
+        return Path(raw).expanduser()
+    if provider == 'chatgpt-web':
+        return Path.home() / '.local/share/agentos/chatgpt-web/bridge'
+    return None
 
 
 def describe_bridge(provider: str) -> dict[str, Any] | None:
