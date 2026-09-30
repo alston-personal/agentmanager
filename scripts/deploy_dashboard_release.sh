@@ -226,10 +226,15 @@ elif [ "$PM2_PREFLIGHT_RC" -eq 3 ]; then
   PM2_TARGET_PRESENT=0
   CURRENT_CWD="$(readlink -f "/proc/$CURRENT_LISTENER/cwd")"
   case "$CURRENT_CWD" in
-    /home/ubuntu/agent-data/releases/dashboard/apps/*) ;;
+    /home/ubuntu/agent-data/releases/dashboard/apps/*)
+      RECOVERY_SOURCE="immutable_release"
+      ;;
+    /home/ubuntu/agentmanager/dashboard)
+      RECOVERY_SOURCE="legacy_shared_checkout"
+      ;;
     *) echo "dashboard_unmanaged_listener_cwd_unexpected=$CURRENT_CWD"; exit 2 ;;
   esac
-  echo "dashboard_runtime_recovery=ADOPT_VERIFIED_LISTENER cwd=$CURRENT_CWD"
+  echo "dashboard_runtime_recovery=ADOPT_VERIFIED_LISTENER source=$RECOVERY_SOURCE cwd=$CURRENT_CWD"
 else
   echo "dashboard_pm2_preflight=FAILED rc=$PM2_PREFLIGHT_RC"
   exit "$PM2_PREFLIGHT_RC"
