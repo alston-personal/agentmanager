@@ -1,5 +1,5 @@
 name: Oracle Inspect Oursong Threads
-# rerun: 2026-09-28T20:35+08:00
+# rerun: 2026-09-30T09:25+08:00
 
 on:
   push:
@@ -69,17 +69,39 @@ jobs:
                   rid=str(row.get('id') or '')
                   if not re.fullmatch(r'[0-9]{10,25}',rid): continue
                   replies.append({'id':rid,'root_post_id':pid,'username':str(row.get('username') or '')[:80].lstrip('@'),'text':str(row.get('text') or '')[:350],'timestamp':str(row.get('timestamp') or '')[:50],'replied_to_id':str((row.get('replied_to') or {}).get('id') or ''),'is_reply_owned_by_me':bool(row.get('is_reply_owned_by_me')),'permalink':str(row.get('permalink') or '')[:150]})
-          discovery=read('keyword.search',query='塔羅')
+          # External discovery is intentionally non-political. Political/public-official
+          # threads may still appear organically, but this patrol does not target them.
+          discovery_queries=['塔羅','動漫','連假','羽球','台灣小旅行','貓','日常觀察']
           candidates=[]
-          if discovery.get('ok') is True:
+          seen=set()
+          discovery_status={}
+          for q in discovery_queries:
+              discovery=read('keyword.search',query=q)
+              discovery_status[q]='PASS' if discovery.get('ok') is True else str(discovery.get('error_code') or 'FAILED')
+              if discovery.get('ok') is not True:
+                  continue
+              added=0
               for row in (discovery.get('result') or {}).get('items') or []:
                   if not isinstance(row,dict): continue
-                  if str(row.get('username') or '').lstrip('@').lower()=='oursong_alstonhuang': continue
-                  candidates.append({'id':str(row.get('id') or ''),'username':str(row.get('username') or '')[:80].lstrip('@'),'text':str(row.get('text') or '')[:400],'timestamp':str(row.get('timestamp') or '')[:50],'permalink':str(row.get('permalink') or '')[:150]})
-                  if len(candidates)>=8: break
+                  oid=str(row.get('id') or '')
+                  username=str(row.get('username') or '')[:80].lstrip('@')
+                  if not oid or oid in seen or username.lower()=='oursong_alstonhuang':
+                      continue
+                  seen.add(oid)
+                  candidates.append({
+                      'id':oid,
+                      'topic':q,
+                      'username':username,
+                      'text':str(row.get('text') or '')[:400],
+                      'timestamp':str(row.get('timestamp') or '')[:50],
+                      'permalink':str(row.get('permalink') or '')[:150]
+                  })
+                  added+=1
+                  if added>=2 or len(candidates)>=12: break
+              if len(candidates)>=12: break
           print('oursong_patrol=PASS')
           print('oursong_posts='+json.dumps(owned,ensure_ascii=False,separators=(',',':')))
           print('oursong_replies='+json.dumps(replies[-40:],ensure_ascii=False,separators=(',',':')))
           print('oursong_discovery='+json.dumps(candidates,ensure_ascii=False,separators=(',',':')))
-          print('oursong_discovery_status='+('PASS' if discovery.get('ok') is True else str(discovery.get('error_code') or 'FAILED')))
+          print('oursong_discovery_status='+json.dumps(discovery_status,ensure_ascii=False,separators=(',',':')))
           PY
