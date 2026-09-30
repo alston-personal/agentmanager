@@ -335,7 +335,7 @@ jobs:
 
           curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health >/dev/null
 
-          PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime python3 - "$REQUEST" <<'PY'
+          python3 - "$REQUEST" <<'PY'
           import json, sys
           from pathlib import Path
           from agent_core.executor_job_contract import canonical_gemini_cli_install_request
@@ -353,7 +353,7 @@ jobs:
             --data-binary "@$REQUEST" \
             http://127.0.0.1:8780/v1/controller/dispatch > "$SUBMISSION"
 
-          PYTHONPATH=/home/ubuntu/.local/share/agentos/action-runtime python3 - "$ACTION_ROOT" "$SUBMISSION" "$EVIDENCE" <<'PY'
+          python3 - "$ACTION_ROOT" "$SUBMISSION" "$EVIDENCE" <<'PY'
           import json, sys, time
           from pathlib import Path
           from agentos_node.executor_job_action_relay import ActionRelayExecutorJobDispatcher
