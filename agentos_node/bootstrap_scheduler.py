@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -336,9 +338,240 @@ def run_once(role: str, worker_id: str, *, lock_timeout_seconds: float = 120.0) 
         _write_status(worker_id, role, state="idle", current=None)
 
 
+
+def _parse_time(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value or "").replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _request_age_seconds(payload: dict[str, Any]) -> float:
+    created = _parse_time(str(payload.get("created_at") or ""))
+    if created is None:
+        return 0.0
+    return max(0.0, (datetime.now(timezone.utc) - created).total_seconds())
+
+
+def _incident_once(*, request_id: str, action: str, policy: ActionPolicy, failure_class: str,
+                   fallback_attempted: bool = False, detail: str | None = None) -> Path | None:
+    marker_root = state_root() / "incident-markers"
+    marker_root.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", request_id)[:100] or "unknown"
+    marker = marker_root / f"{safe}.{failure_class}"
+    try:
+        fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return None
+    else:
+        os.close(fd)
+    return _incident(
+        request_id=request_id,
+        action=action,
+        policy=policy,
+        failure_class=failure_class,
+        fallback_attempted=fallback_attempted,
+        detail=detail,
+    )
+
+
+def _gui_worker_state() -> tuple[str, bool]:
+    path = state_root() / "status.json"
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return "unknown", True
+    row = (doc.get("workers") or {}).get("oracle-gui") or {}
+    state = str(row.get("state") or "unknown")
+    heartbeat = _parse_time(str(row.get("heartbeat") or ""))
+    stale = heartbeat is None or (datetime.now(timezone.utc) - heartbeat).total_seconds() > 20
+    return state, stale
+
+
+def _mbpr_threads_gui_candidate() -> tuple[dict[str, Any] | None, str]:
+    try:
+        from agent_core.node_registry import NodeRegistry
+        nodes = NodeRegistry().node_map().get("nodes") or []
+    except Exception as exc:
+        return None, "node_registry_error:" + type(exc).__name__
+    node = next((item for item in nodes if item.get("node_id") == "mbpr"), None)
+    if not isinstance(node, dict):
+        return None, "mbpr_not_registered"
+    if node.get("status") != "online":
+        return None, "mbpr_offline"
+    if "threads.gui.read" not in set(node.get("capabilities") or []):
+        return None, "mbpr_missing_threads.gui.read"
+    return node, "ready"
+
+
+def _merge_fallback_events(events: Any) -> int:
+    if not isinstance(events, list) or not events:
+        return 0
+    root = Path.home() / ".local" / "share" / "agentos" / "social" / "threads-web-dm"
+    path = root / "events.jsonl"
+    root.mkdir(parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
+    seen: set[str] = set()
+    if path.exists():
+        for raw in path.read_text(encoding="utf-8").splitlines()[-500:]:
+            try:
+                row = json.loads(raw)
+            except Exception:
+                continue
+            if isinstance(row, dict) and row.get("message_id"):
+                seen.add(str(row["message_id"]))
+    appended = 0
+    with path.open("a", encoding="utf-8") as handle:
+        for event in events[:100]:
+            if not isinstance(event, dict):
+                continue
+            message_id = str(event.get("message_id") or "")
+            if not message_id or message_id in seen:
+                continue
+            safe = dict(event)
+            safe["source"] = "realm_failover"
+            handle.write(json.dumps(safe, ensure_ascii=False, separators=(",", ":")) + "\n")
+            seen.add(message_id)
+            appended += 1
+    os.chmod(path, 0o600)
+    return appended
+
+
+def route_failover_once(*, worker_id: str = "agentos-router", failover_after_seconds: float = 5.0,
+                        incident_after_seconds: float = 15.0, receipt_timeout_seconds: float = 90.0) -> dict[str, Any] | None:
+    requests, receipts, _rejected = bc._ensure(bc._root())
+    candidates = sorted((_request_summary(path) for path in requests.glob("*.request.json")), key=lambda item: item[:3])
+    for _priority, _created, filename, payload in candidates:
+        action = str(payload.get("action") or "")
+        if action != bc.ACTION_READ_THREADS_WEB_DM:
+            continue
+        policy = policy_for(action)
+        age = _request_age_seconds(payload)
+        gui_state, gui_stale = _gui_worker_state()
+        oracle_busy = gui_state == "running" or gui_stale
+        if age < failover_after_seconds or not oracle_busy:
+            continue
+
+        request_id = filename.removesuffix(".request.json")
+        candidate, candidate_reason = _mbpr_threads_gui_candidate()
+        if candidate is None:
+            if age >= incident_after_seconds:
+                failure = "node_offline" if candidate_reason == "mbpr_offline" else "capability_unavailable"
+                _incident_once(
+                    request_id=request_id,
+                    action=action,
+                    policy=policy,
+                    failure_class=failure,
+                    fallback_attempted=False,
+                    detail=f"oracle_gui={gui_state};fallback={candidate_reason};queue_age={int(age)}s",
+                )
+                _incident_once(
+                    request_id=request_id,
+                    action=action,
+                    policy=policy,
+                    failure_class="queue_starvation",
+                    fallback_attempted=False,
+                    detail=f"oracle_gui={gui_state};fallback={candidate_reason};queue_age={int(age)}s",
+                )
+            continue
+
+        source = requests / filename
+        inflight_dir = bc._root() / "inflight" / worker_id
+        inflight_dir.mkdir(parents=True, exist_ok=True)
+        claimed = inflight_dir / filename
+        try:
+            os.rename(source, claimed)
+        except FileNotFoundError:
+            continue
+
+        started = bc._now()
+        try:
+            request_id, action, source_commit, _post_key = bc._validate_request(claimed, payload)
+            from agent_core.realm_fabric import RealmFabricStore
+            store = RealmFabricStore()
+            task_id = "scheduler-failover-" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:24]
+            existing = store.get_receipt(task_id)
+            if existing is None:
+                store.queue_task(
+                    "mbpr",
+                    {
+                        "schema": "agentos.node-task/v0.1",
+                        "task_id": task_id,
+                        "action": "threads.gui.read",
+                        "account": "mio.milkcat",
+                        "source_commit": source_commit,
+                        "cognition_ids_used": [],
+                    },
+                )
+            deadline = time.monotonic() + max(5.0, receipt_timeout_seconds)
+            remote = existing
+            while remote is None and time.monotonic() < deadline:
+                time.sleep(1.0)
+                remote = store.get_receipt(task_id)
+            if remote is None:
+                raise TimeoutError("mbpr_failover_receipt_timeout")
+            if remote.get("ok") is not True:
+                raise RuntimeError("mbpr_failover_worker_failed")
+            state = str(remote.get("threads_gui_read_state") or "UNKNOWN")
+            if state not in {"PASS", "LOGIN_REQUIRED"}:
+                raise RuntimeError("mbpr_failover_invalid_state:" + state)
+
+            appended = _merge_fallback_events(remote.get("events"))
+            stdout = "\n".join(
+                [
+                    "threads_web_dm_bridge=" + ("PASS" if state == "PASS" else "LOGIN_REQUIRED"),
+                    "threads_web_dm_new_events=" + str(int(remote.get("new_events") or 0)),
+                    "threads_web_dm_inbound_events=" + str(int(remote.get("inbound_events") or 0)),
+                    "threads_web_dm_failover_events_merged=" + str(appended),
+                    "threads_web_dm_read=" + state,
+                ]
+            ) + "\n"
+            receipt = {
+                "schema": bc.RECEIPT_SCHEMA,
+                "request_id": request_id,
+                "action": action,
+                "source_commit": source_commit,
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "executor_uid": os.getuid(),
+                "started_at": started,
+                "completed_at": bc._now(),
+                "ok": True,
+                "steps": [{"step": "mbpr_threads_gui_read", "returncode": 0, "stdout": stdout, "stderr": ""}],
+                "scheduler": {
+                    "node": "mbpr",
+                    "worker_role": "gui",
+                    "worker_id": "mbpr",
+                    "priority": policy.priority_label,
+                    "requested_capabilities": list(policy.capabilities),
+                    "locks": list(policy.locks),
+                    "fallback_from": "oracle-gui",
+                    "fallback_attempted": True,
+                },
+            }
+            bc._atomic_json(receipts / f"{request_id}.json", receipt)
+            claimed.unlink(missing_ok=True)
+            return receipt
+        except Exception as exc:
+            _incident_once(
+                request_id=request_id,
+                action=action,
+                policy=policy,
+                failure_class="worker_failed",
+                fallback_attempted=True,
+                detail=f"mbpr:{type(exc).__name__}:{exc}",
+            )
+            source = requests / filename
+            if not source.exists() and claimed.exists():
+                try:
+                    os.rename(claimed, source)
+                except OSError:
+                    pass
+            return None
+    return None
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--role", choices=("control", "social", "gui", "build"), required=True)
+    parser.add_argument("--role", choices=("control", "social", "gui", "build", "router"), required=True)
     parser.add_argument("--worker-id", required=True)
     parser.add_argument("--poll-seconds", type=float, default=0.75)
     parser.add_argument("--lock-timeout-seconds", type=float, default=120.0)
@@ -347,7 +580,10 @@ def main() -> int:
     _write_status(worker_id, args.role, state="idle", current=None)
     last_idle_heartbeat = time.monotonic()
     while True:
-        receipt = run_once(args.role, worker_id, lock_timeout_seconds=args.lock_timeout_seconds)
+        if args.role == "router":
+            receipt = route_failover_once(worker_id=worker_id)
+        else:
+            receipt = run_once(args.role, worker_id, lock_timeout_seconds=args.lock_timeout_seconds)
         if receipt is None:
             now = time.monotonic()
             if now - last_idle_heartbeat >= 10:
