@@ -1,0 +1,52 @@
+name: Oracle Preserve Local-Only Backups
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-preserve-local-only-backups.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Preserve local-only backup files to remote quarantine
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          SRC="$HOME/gdrive/backups"
+          DEST="gdrive:backups/recovered-oracle-underlay-20261001"
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            file="$SRC/$name"
+            test -f "$file"
+            if command -v lsof >/dev/null 2>&1 && lsof "$file" >/dev/null 2>&1; then
+              echo "backup_open=$name"
+              exit 3
+            fi
+            size="$(stat -c %s "$file")"
+            echo "preserve_start=$name size=$size"
+            if timeout 15 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | grep -qx "$size"; then
+              echo "preserve_already_present=$name"
+            else
+              rclone copyto "$file" "$DEST/$name" --transfers 1 --checkers 4 --retries 3 --low-level-retries 10
+            fi
+            remote_size="$(timeout 20 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            test "$remote_size" = "$size"
+            echo "preserve_verified=$name size=$size"
+          done
+          echo "local_files_retained=yes"
+          df -h /
+          REMOTE
