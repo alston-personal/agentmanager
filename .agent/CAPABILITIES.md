@@ -87,3 +87,13 @@ python3 scripts/agentos_status.py
 ```
 
 *「石虎 Agent 的能力不僅是寫出的代碼，更是已知的律法。」*
+
+
+### Production Completion Gate
+
+| Capability | Provider | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Production Acceptance** | `scripts/production_acceptance.py` | ✅ 現行 | Prevents source/CI success from being reported as deployed; route-specific verification detects SPA/home fallback false positives. |
+| **Deployment Completion Receipt** | `schemas/deployment-completion-receipt.schema.json` | ✅ 現行 | Standard lifecycle from SOURCE_READY through PRODUCTION_VERIFIED. Only PRODUCTION_VERIFIED closes deployed/public work. |
+
+Policy source: `docs/DEPLOYMENT_COMPLETION_CONTRACT.md`.
