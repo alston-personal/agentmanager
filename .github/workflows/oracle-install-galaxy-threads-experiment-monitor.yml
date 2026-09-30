@@ -28,6 +28,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: oracle-core-runtime
+  cancel-in-progress: false
+
+# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:
   install:
     runs-on: [self-hosted, Linux, ARM64, oracle]
@@ -52,7 +57,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
           ROOT=/tmp/agentos-bootstrap-control
           REQUESTS="$ROOT/requests"
           RECEIPTS="$ROOT/receipts"
@@ -63,10 +67,6 @@ jobs:
           # Only bootstrap_control is updated by the runner identity. The
           # ubuntu-owned installer materializes all companion scripts from the
           # immutable source commit, avoiding cross-user write failures.
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          chmod 0664 "$LIVE/agentos_node/bootstrap_control.py" || true
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
           for i in $(seq 1 120); do
             [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
             sleep 1
