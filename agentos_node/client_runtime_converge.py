@@ -141,6 +141,14 @@ def execute_client_runtime_converge(task: dict[str, Any]) -> dict[str, Any]:
         venv.EnvBuilder(with_pip=True,clear=True).create(candidate/'venv')
         p=subprocess.run([str(py),'-m','pip','install','-q','--upgrade',f'git+https://github.com/{REPO}.git@{commit}'],capture_output=True,text=True,timeout=240,check=False)
         if p.returncode!=0: raise RuntimeError('candidate install failed: '+p.stderr[-1000:])
+        # macOS GUI failover is a typed capability. Install the Python driver,
+        # but advertise threads.gui.read only when local Chrome is also present.
+        browser_dep=subprocess.run(
+            [str(py),'-m','pip','install','-q','playwright>=1.50,<2'],
+            capture_output=True,text=True,timeout=180,check=False,
+        )
+        if browser_dep.returncode!=0:
+            raise RuntimeError('candidate browser dependency install failed: '+browser_dep.stderr[-1000:])
     check=subprocess.run([str(py),'-c','import agentos_node.client_cli,agentos_node.thin_client; print("candidate_import=PASS")'],capture_output=True,text=True,timeout=30,check=False)
     if check.returncode!=0 or 'candidate_import=PASS' not in check.stdout: raise RuntimeError('candidate import failed')
 
