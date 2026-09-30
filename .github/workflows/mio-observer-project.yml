@@ -1,0 +1,43 @@
+name: Mio Observer Projection
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mio-observer-project
+  cancel-in-progress: true
+
+jobs:
+  project:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: core/integration
+      - name: Build observer projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/scripts/project_mio_observer_user.py"
+          cp /tmp/mio-observer-public.json ./mio-observer-public.json
+          cp /tmp/mio-observer-owner.json ./mio-observer-owner.json
+      - name: Upload public projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-observer-public
+          path: mio-observer-public.json
+          retention-days: 3
+          if-no-files-found: error
+      - name: Upload owner projection
+        uses: actions/upload-artifact@v4
+        with:
+          name: mio-observer-owner
+          path: mio-observer-owner.json
+          retention-days: 3
+          if-no-files-found: error
