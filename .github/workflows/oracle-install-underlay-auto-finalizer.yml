@@ -1,0 +1,116 @@
+name: Oracle Install Underlay Auto Finalizer
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-install-underlay-auto-finalizer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Install fail-closed local finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user" "$HOME/.local/state/agentos"
+
+          cat > "$HOME/.local/bin/finalize_gdrive_underlay.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SRC="$HOME/gdrive/backups"
+          DEST="gdrive:backups/recovered-oracle-underlay-20261001"
+          STATE="$HOME/.local/state/agentos/gdrive-underlay-finalize.state"
+          names=(agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz)
+
+          if [ -L "$HOME/gdrive" ]; then
+            printf 'checked_at=%s\nstate=ALREADY_FINALIZED\n' "$(date -Is)" > "$STATE"
+            exit 0
+          fi
+
+          if pgrep -af 'rclone copyto .*recovered-oracle-underlay-20261001' >/dev/null; then
+            printf 'checked_at=%s\nstate=WAITING_COPY\n' "$(date -Is)" > "$STATE"
+            exit 0
+          fi
+
+          for name in "${names[@]}"; do
+            local_file="$SRC/$name"
+            test -f "$local_file" || { printf 'checked_at=%s\nstate=WAITING_LOCAL_%s\n' "$(date -Is)" "$name" > "$STATE"; exit 0; }
+            local_size="$(stat -c %s "$local_file")"
+            remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            if [ "$remote_size" != "$local_size" ]; then
+              printf 'checked_at=%s\nstate=WAITING_REMOTE_SIZE\nfile=%s\nlocal=%s\nremote=%s\n' "$(date -Is)" "$name" "$local_size" "$remote_size" > "$STATE"
+              exit 0
+            fi
+            local_md5="$(md5sum "$local_file" | awk '{print $1}')"
+            remote_md5="$(timeout 120 rclone md5sum "$DEST/$name" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+            if [ -z "$remote_md5" ] || [ "$remote_md5" != "$local_md5" ]; then
+              printf 'checked_at=%s\nstate=WAITING_MD5\nfile=%s\n' "$(date -Is)" "$name" > "$STATE"
+              exit 0
+            fi
+          done
+
+          mountpoint -q /mnt/agentos-gdrive
+          systemctl --user is-active --quiet agentos-gdrive-mount.service
+
+          rm -f "$SRC/agentos_backup_20260930_030001.tar.gz" "$SRC/agentos_backup_20261001_030001.tar.gz"
+          rmdir "$SRC" 2>/dev/null || true
+          if [ -d "$HOME/gdrive" ]; then
+            if find "$HOME/gdrive" -mindepth 1 -print -quit | grep -q .; then
+              printf 'checked_at=%s\nstate=REFUSED_UNEXPECTED_FILES\n' "$(date -Is)" > "$STATE"
+              exit 43
+            fi
+            rmdir "$HOME/gdrive"
+          fi
+          ln -s /mnt/agentos-gdrive "$HOME/gdrive"
+          test -L "$HOME/gdrive"
+          mountpoint -q /mnt/agentos-gdrive
+          printf 'checked_at=%s\nstate=PASS\n' "$(date -Is)" > "$STATE"
+          SH
+          chmod 700 "$HOME/.local/bin/finalize_gdrive_underlay.sh"
+
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-underlay-finalize.service" <<'UNIT'
+          [Unit]
+          Description=Finalize recovered Google Drive underlay
+          After=network-online.target agentos-gdrive-mount.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=%h/.local/bin/finalize_gdrive_underlay.sh
+          UNIT
+
+          cat > "$HOME/.config/systemd/user/agentos-gdrive-underlay-finalize.timer" <<'UNIT'
+          [Unit]
+          Description=Check whether Google Drive underlay recovery can be finalized
+
+          [Timer]
+          OnBootSec=3min
+          OnUnitActiveSec=1min
+          AccuracySec=10s
+          Unit=agentos-gdrive-underlay-finalize.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-gdrive-underlay-finalize.timer
+          systemctl --user start agentos-gdrive-underlay-finalize.service || true
+          cat "$HOME/.local/state/agentos/gdrive-underlay-finalize.state" 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-underlay-finalize.timer
+          echo 'underlay_auto_finalizer_install=PASS'
+          REMOTE
