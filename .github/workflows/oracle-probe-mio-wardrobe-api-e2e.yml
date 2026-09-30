@@ -147,5 +147,84 @@ jobs:
             sleep 2
           done
           test "$OK" -eq 1
+
+          export MIO_E2E_TOKEN="$TOKEN"
+          GUI_PY=/home/ubuntu/.local/share/agentos/gui-worker/venv/bin/python
+          test -x "$GUI_PY"
+          "$GUI_PY" - <<'PY'
+          import os
+          from playwright.sync_api import sync_playwright
+
+          token=os.environ.get('MIO_E2E_TOKEN') or ''
+          assert token, 'missing_e2e_token'
+          url='https://studio.milkcat.org/personas/mio/wardrobe/?browserE2E=1'
+
+          with sync_playwright() as p:
+              browser=p.chromium.launch(
+                  headless=True,
+                  args=['--host-resolver-rules=MAP studio.milkcat.org 127.0.0.1'],
+              )
+              context=browser.new_context(ignore_https_errors=True, viewport={'width':390,'height':844})
+              context.add_cookies([{
+                  'name':'auth_token',
+                  'value':token,
+                  'domain':'studio.milkcat.org',
+                  'path':'/',
+                  'secure':True,
+                  'httpOnly':True,
+                  'sameSite':'Lax',
+              }])
+              page=context.new_page()
+              page.goto(url,wait_until='domcontentloaded',timeout=60000)
+              pick=page.locator('[data-garment-card="net-32235-711"] [data-select-item]')
+              pick.wait_for(state='visible',timeout=30000)
+
+              initial=page.locator('[data-avatar-image]').get_attribute('src')
+              assert initial=='/personas/mio/mio-base-v2.webp', initial
+              print('mio_browser_e2e_base=PASS')
+
+              pick.click()
+
+              page.wait_for_function(
+                  """() => {
+                    const truth=document.querySelector('[data-render-truth]')?.textContent || '';
+                    const status=document.querySelector('[data-status]')?.textContent || '';
+                    return truth.includes('AI 試穿結果') || status.includes('整套試穿已完成');
+                  }""",
+                  timeout=180000,
+              )
+
+              src=page.locator('[data-avatar-image]').get_attribute('src') or ''
+              truth=page.locator('[data-render-truth]').text_content() or ''
+              status=page.locator('[data-status]').text_content() or ''
+              card_state=page.locator('[data-garment-card="net-32235-711"] [data-pick-state]').text_content() or ''
+
+              assert '/dashboard/api/wardrobe/tryon/assets/' in src, src
+              assert 'AI 試穿結果' in truth, truth
+              assert '整套試穿已完成' in status, status
+              assert '已套用試穿圖' in card_state, card_state
+
+              asset=page.evaluate(
+                  """async (src) => {
+                    const r=await fetch(src,{credentials:'include',cache:'no-store'});
+                    const b=await r.arrayBuffer();
+                    return {status:r.status,type:r.headers.get('content-type')||'',bytes:b.byteLength};
+                  }""",
+                  src,
+              )
+              assert asset['status']==200, asset
+              assert asset['type'].startswith('image/'), asset
+              assert asset['bytes']>1000, asset
+
+              mobile_src=page.locator('[data-mobile-avatar]').get_attribute('src') or ''
+              assert mobile_src==src, (mobile_src,src)
+
+              print('mio_browser_e2e=PASS')
+              print('mio_browser_e2e_asset=PASS')
+              print('mio_browser_e2e_mobile_sync=PASS')
+              print('mio_browser_e2e_asset_bytes='+str(asset['bytes']))
+              browser.close()
+          PY
+          unset MIO_E2E_TOKEN
           unset TOKEN
           REMOTE
