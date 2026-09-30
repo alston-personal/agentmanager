@@ -45,6 +45,10 @@ jobs:
           systemctl list-units --type=service --all 2>/dev/null | grep -Ei 'rclone|google|gdrive|mount' || true
           echo '=== fstab ==='
           grep -Ei 'rclone|google|gdrive|fuse' /etc/fstab 2>/dev/null || true
+          echo '=== reboot start ==='
+          uptime -s || true
+          echo '=== newest local gdrive files ==='
+          find "$HOME/gdrive" -xdev -type f -printf '%TY-%Tm-%TdT%TH:%TM:%TS\t%s\t%P\n' 2>/dev/null | sort -r | head -n 60 || true
           echo '=== AgentOS path devices ==='
           for p in "$HOME/agent-data" "$HOME/agentmanager" "$HOME/.local/share/agentos"; do
             [ -e "$p" ] && { printf '%s -> ' "$p"; df -hT "$p" | tail -n1; }
