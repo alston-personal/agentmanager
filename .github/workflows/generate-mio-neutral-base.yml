@@ -1,0 +1,134 @@
+name: Generate Mio Neutral Dress-Up Base
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/generate-mio-neutral-base.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 15
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN || secrets.HUGGINGFACE_TOKEN }}
+    steps:
+      - name: Generate neutral technical base and open Studio Web PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${HF_TOKEN:-}"
+          WORK="$(mktemp -d /tmp/mio-neutral-base-XXXXXX)"
+          trap 'rm -rf "$WORK"' EXIT
+          SOURCE="$WORK/mio-source.webp"
+          OUTPUT="$WORK/mio-base-v2.webp"
+
+          curl -fsS --retry 5 --retry-delay 2             "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$GITHUB_RUN_ID"             -o "$SOURCE"
+          test -s "$SOURCE"
+
+          VENV="$HOME/.local/share/mio-tryon-venv"
+          test -x "$VENV/bin/python"
+          "$VENV/bin/python" - "$SOURCE" "$OUTPUT" <<'PY'
+          import inspect, os, pathlib, sys
+          from gradio_client import Client, handle_file
+          from PIL import Image
+
+          source = pathlib.Path(sys.argv[1])
+          output = pathlib.Path(sys.argv[2])
+          token = (os.environ.get("HF_TOKEN") or "").strip()
+          kwargs = {
+              "download_files": True,
+              "verbose": False,
+              "httpx_kwargs": {"timeout": 420.0},
+          }
+          params = inspect.signature(Client).parameters
+          if token:
+              if "token" in params:
+                  kwargs["token"] = token
+              elif "hf_token" in params:
+                  kwargs["hf_token"] = token
+
+          client = Client("Qwen/Qwen-Image-2.1-workflow", **kwargs)
+          instruction = (
+              "The person in this image is the canonical Mio character. Preserve her exact face, "
+              "identity, hairstyle, hair color, body proportions, skin tone, neutral standing pose, "
+              "camera angle, framing, lighting and plain studio background. Replace all current outfit "
+              "garments and accessories with a plain opaque modest technical dress-up base layer: "
+              "a fitted light-neutral crew-neck short-sleeve top and matching fitted mid-thigh shorts, "
+              "barefoot, no shoes, no bag, no jewelry, no logos, no outerwear. This is a virtual fitting "
+              "technical base garment, not underwear. No nudity. Keep the full body visible from head "
+              "to toes. Output one photorealistic full-body image only."
+          )
+          result = client.predict(handle_file(str(source)), instruction, api_name="/rewritten_instruction")
+          if not isinstance(result, (list, tuple)) or len(result) < 2:
+              raise RuntimeError(f"unexpected Qwen result: {result!r}")
+          candidate = result[1]
+          if isinstance(candidate, dict):
+              candidate = candidate.get("path") or candidate.get("url")
+          if not isinstance(candidate, str):
+              raise RuntimeError(f"missing output path: {candidate!r}")
+          img = Image.open(candidate).convert("RGB")
+          if img.width < 512 or img.height < 768:
+              raise RuntimeError(f"generated base too small: {img.width}x{img.height}")
+          img.save(output, format="WEBP", quality=95, method=6)
+          print(f"mio_neutral_base_generated=PASS size={img.width}x{img.height} bytes={output.stat().st_size}")
+          PY
+          test -s "$OUTPUT"
+
+          REPO="$WORK/studio-web"
+          gh repo clone alston-personal/studio-web "$REPO" -- --branch main --single-branch
+          cd "$REPO"
+          BRANCH="fix/mio-neutral-base-v2-$GITHUB_RUN_ID"
+          git checkout -b "$BRANCH"
+          cp "$OUTPUT" public/personas/mio/mio-base-v2.webp
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          page = Path("src/pages/personas/mio/wardrobe/index.astro")
+          text = page.read_text(encoding="utf-8")
+          new = re.sub(
+              r"const canonicalBaseData = 'data:image/webp;base64,[^']+';",
+              "const canonicalBaseData = '/personas/mio/mio-base-v2.webp';",
+              text,
+              count=1,
+          )
+          if new == text:
+              raise SystemExit("canonicalBaseData data URI pattern not found")
+          new = new.replace(
+              "目前顯示澪的中性技術基準身形",
+              "目前顯示澪的中性技術底衣基準",
+          ).replace(
+              "起始狀態：澪的中性技術基準身形",
+              "起始狀態：澪的中性技術底衣基準",
+          ).replace(
+              "人物窗格暫時保留中性技術基準身形",
+              "人物窗格暫時保留中性技術底衣基準",
+          ).replace(
+              "試穿生成失敗；仍顯示中性技術基準身形",
+              "試穿生成失敗；仍顯示中性技術底衣基準",
+          )
+          page.write_text(new, encoding="utf-8")
+
+          profile = Path("src/data/mioPublicProfile.ts")
+          p = profile.read_text(encoding="utf-8")
+          p2 = p.replace("bodyAnchorVersion: 'mio-body-v1'", "bodyAnchorVersion: 'mio-body-v2-neutral-base'", 1)
+          p2 = p2.replace("internalBodyReferenceVersion: 'mio-internal-body-v1'", "internalBodyReferenceVersion: 'mio-internal-body-v2-neutral-base'", 1)
+          if p2 == p:
+              raise SystemExit("body anchor version patterns not found")
+          profile.write_text(p2, encoding="utf-8")
+          PY
+
+          git config user.name "AgentOS"
+          git config user.email "agentos@milkcat.org"
+          git add public/personas/mio/mio-base-v2.webp src/pages/personas/mio/wardrobe/index.astro src/data/mioPublicProfile.ts
+          git commit -m "fix(mio): use neutral technical base for dress-up"
+          git push origin "$BRANCH"
+
+          PR_URL="$(gh pr create             --repo alston-personal/studio-web             --base main             --head "$BRANCH"             --title "fix(mio): use neutral technical base for dress-up"             --body "Use a dedicated modest neutral technical base image for Mio's dress-up studio. The initial state has no wardrobe items selected; selected garments render on top of this base. The base preserves Mio's canonical identity and proportions.")"
+          echo "studio_pr=$PR_URL"
