@@ -1,0 +1,67 @@
+name: Oracle Gemini Web Live Inspect
+
+on:
+  push:
+    branches:
+      - core/integration
+    paths:
+      - '.github/workflows/oracle-gemini-web-live-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Read live Gemini bridge state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          echo "=== services ==="
+          systemctl --user is-active agentos-gemini-web-bridge.service || true
+          systemctl --user is-active agentos-bootstrap-gui.service || true
+          echo "=== scheduler status ==="
+          cat /home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json 2>/dev/null || true
+          echo "=== gemini bridge ==="
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          home=Path.home()
+          for label,p in [
+              ('bridge',home/'.local/share/agentos/gemini-web/bridge/bridge.json'),
+              ('sessions',home/'.local/share/agentos/gemini-web/bridge/sessions.json'),
+              ('probe',home/'.local/share/agentos/gemini-web/probe-current.json'),
+          ]:
+              if p.exists():
+                  try: d=json.loads(p.read_text(encoding='utf-8'))
+                  except Exception as e:
+                      print(label+'_error='+type(e).__name__); continue
+                  if label=='bridge':
+                      print('bridge_session_state='+str(d.get('session_state')))
+                  elif label=='sessions':
+                      print('session_states='+','.join(str(x.get('state')) for x in (d.get('sessions') or [])))
+                      print('session_ids='+','.join(str(x.get('session_id')) for x in (d.get('sessions') or [])))
+                  else:
+                      print('probe_state='+str(d.get('state')))
+          root=home/'.local/share/agentos/gemini-web/bridge'
+          print('bridge_requests='+','.join(x.name for x in sorted((root/'requests').glob('*.json'))))
+          print('bridge_receipts='+','.join(x.name for x in sorted((root/'receipts').glob('*.json'))[-10:]))
+          PY
+          echo "=== bootstrap inflight ==="
+          find /tmp/agentos-bootstrap-control/inflight -maxdepth 2 -type f -name '*gemini*' -printf '%p\n' 2>/dev/null || true
+          echo "gemini_live_inspect=PASS"
+          REMOTE
