@@ -20,6 +20,8 @@ CONTROLLER_ACTION_CAPABILITY = {
     'node.runtime.converge': 'shell.exec',
     'node.ssh.inspect': 'node.ssh.inspect',
     'node.ssh.recover': 'node.ssh.recover',
+    'node.runner.inspect': 'node.runner.inspect',
+    'node.runner.recover': 'node.runner.recover',
 }
 
 

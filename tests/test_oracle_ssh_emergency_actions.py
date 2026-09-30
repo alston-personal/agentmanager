@@ -20,7 +20,7 @@ def _fixture():
         'hostname': 'oracle',
         'platform': 'Linux',
         'platform_release': 'test',
-        'capabilities': ['node.ssh.inspect', 'node.ssh.recover'],
+        'capabilities': ['node.ssh.inspect', 'node.ssh.recover', 'node.runner.inspect', 'node.runner.recover'],
         'tool_presence': {},
         'surface_inventory': {'surfaces': []},
         'workspace_roots': {'readable': ['/home/ubuntu/AgentOS'], 'writable': ['/home/ubuntu/AgentOS']},
@@ -61,6 +61,40 @@ def test_controller_routes_only_typed_ssh_recover():
         task = fabric.load()['tasks']['oracle-exec'][0]
         assert task['action'] == 'node.ssh.recover'
         assert 'executable' not in task
+        assert 'argv' not in task
+    finally:
+        tmp.cleanup()
+
+
+def test_controller_routes_only_typed_runner_inspect():
+    tmp, fabric = _fixture()
+    try:
+        out = ControllerService(fabric).dispatch('oracle-exec', {
+            'action': 'node.runner.inspect',
+            'executable': 'bash',
+            'argv': ['-c', 'id'],
+        })
+        assert out['ok'] is True
+        task = fabric.load()['tasks']['oracle-exec'][0]
+        assert task['action'] == 'node.runner.inspect'
+        assert 'executable' not in task
+        assert 'argv' not in task
+    finally:
+        tmp.cleanup()
+
+
+def test_controller_routes_only_typed_runner_recover():
+    tmp, fabric = _fixture()
+    try:
+        out = ControllerService(fabric).dispatch('oracle-exec', {
+            'action': 'node.runner.recover',
+            'unit': 'evil.service',
+            'argv': ['restart', 'evil.service'],
+        })
+        assert out['ok'] is True
+        task = fabric.load()['tasks']['oracle-exec'][0]
+        assert task['action'] == 'node.runner.recover'
+        assert 'unit' not in task
         assert 'argv' not in task
     finally:
         tmp.cleanup()
