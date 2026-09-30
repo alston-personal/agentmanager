@@ -151,6 +151,12 @@ class ThinClient:
             ])
         elif platform.system() == 'Darwin':
             caps.extend(['desktop.open_url', 'node.runtime.converge'])
+            try:
+                from agentos_node.social.threads_gui_client import capability_ready as threads_gui_read_ready
+                if threads_gui_read_ready():
+                    caps.append('threads.gui.read')
+            except Exception:
+                pass
         elif platform.system() == 'Linux':
             caps.extend(_linux_gui_worker_capabilities())
         return {
@@ -241,6 +247,11 @@ class ThinClient:
             elif action == 'node.runtime.converge':
                 from agentos_node.client_runtime_converge import execute_client_runtime_converge
                 result = execute_client_runtime_converge(task)
+            elif action == 'threads.gui.read':
+                from agentos_node.social.threads_gui_client import capability_ready as threads_gui_read_ready, read_threads_dm
+                if not threads_gui_read_ready():
+                    raise RuntimeError('threads_gui_read_capability_unavailable')
+                result = read_threads_dm(account=str(task.get('account') or 'mio.milkcat'))
             elif action == 'agent.session.discover':
                 result = {'session_index': self._session_bridge(task).discover()}
             elif action in {'agent.session.attach', 'agent.session.inspect', 'agent.context.harvest', 'agent.context.inject', 'agent.session.handoff'}:
