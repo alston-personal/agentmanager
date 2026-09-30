@@ -225,3 +225,5 @@ jobs:
           print('runner_pool_test_d_elapsed_seconds='+str(elapsed))
           print('runner_pool_test_d_worker='+s['worker_id'])
           PY
+
+# rerun after scheduler incident preservation fix
