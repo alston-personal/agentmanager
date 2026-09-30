@@ -41,6 +41,9 @@ ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
 ACTION_PROBE_CHATGPT_WEB = "agentos.chatgpt_web.probe"
 ACTION_INSTALL_CHATGPT_WEB_BRIDGE = "agentos.chatgpt_web.bridge.install"
 ACTION_ACCEPT_CHATGPT_WEB_SESSION = "agentos.chatgpt_web.session.acceptance"
+ACTION_PROBE_GEMINI_WEB = "agentos.gemini_web.probe"
+ACTION_INSTALL_GEMINI_WEB_BRIDGE = "agentos.gemini_web.bridge.install"
+ACTION_ACCEPT_GEMINI_WEB_SESSION = "agentos.gemini_web.session.acceptance"
 ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
 ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
 ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
@@ -73,6 +76,9 @@ ALLOWED_ACTIONS = {
     ACTION_PROBE_CHATGPT_WEB,
     ACTION_INSTALL_CHATGPT_WEB_BRIDGE,
     ACTION_ACCEPT_CHATGPT_WEB_SESSION,
+    ACTION_PROBE_GEMINI_WEB,
+    ACTION_INSTALL_GEMINI_WEB_BRIDGE,
+    ACTION_ACCEPT_GEMINI_WEB_SESSION,
     ACTION_DEPLOY_MIO_TRYON,
     ACTION_INSTALL_ORACLE_EXEC,
     ACTION_PROJECT_MIO_OBSERVER,
@@ -180,6 +186,9 @@ def _validate_request(path: Path, payload: dict[str, Any]) -> tuple[str, str, st
         ACTION_PROBE_CHATGPT_WEB,
         ACTION_INSTALL_CHATGPT_WEB_BRIDGE,
         ACTION_ACCEPT_CHATGPT_WEB_SESSION,
+        ACTION_PROBE_GEMINI_WEB,
+        ACTION_INSTALL_GEMINI_WEB_BRIDGE,
+        ACTION_ACCEPT_GEMINI_WEB_SESSION,
         ACTION_DEPLOY_MIO_TRYON,
         ACTION_INSTALL_ORACLE_EXEC,
         ACTION_PROJECT_MIO_OBSERVER,
@@ -361,6 +370,24 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_ACCEPT_CHATGPT_WEB_SESSION:
         return _run_canonical_script(
             "scripts/accept_chatgpt_web_session_user.sh",
+            timeout=120,
+            source_commit=source_commit,
+        )
+    if action == ACTION_PROBE_GEMINI_WEB:
+        return _run_canonical_script(
+            "scripts/probe_gemini_web_user.sh",
+            timeout=120,
+            source_commit=source_commit,
+        )
+    if action == ACTION_INSTALL_GEMINI_WEB_BRIDGE:
+        return _run_canonical_script(
+            "scripts/install_gemini_web_bridge_user.sh",
+            timeout=180,
+            source_commit=source_commit,
+        )
+    if action == ACTION_ACCEPT_GEMINI_WEB_SESSION:
+        return _run_canonical_script(
+            "scripts/accept_gemini_web_session_user.sh",
             timeout=120,
             source_commit=source_commit,
         )
