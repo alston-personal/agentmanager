@@ -72,3 +72,70 @@ jobs:
           print('gemini_web_bridge_service=PASS')
           PY
           REMOTE
+
+      - name: Probe Gemini Web through AgentOS scheduler
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="gemini-web-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/gemini-web-probe.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.gemini_web.probe "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          python3 - "$RECEIPT" "$GITHUB_ENV" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('ok') is True,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          states=[x for x in text.splitlines() if x.startswith('gemini_web_session_state=')]
+          assert states,text[-12000:]
+          state=states[-1].split('=',1)[1].strip()
+          print('gemini_web_probe_receipt=PASS')
+          print('gemini_web_scheduler_lane=oracle-gui')
+          print('gemini_web_session_state='+state)
+          with open(sys.argv[2],'a',encoding='utf-8') as h:
+              h.write('GEMINI_WEB_STATE='+state+'\n')
+          PY
+
+      - name: Accept Gemini Web session provider
+        if: env.GEMINI_WEB_STATE == 'READY'
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="gemini-web-accept-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/gemini-web-accept.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.gemini_web.session.acceptance "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          python3 - "$RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert r.get('ok') is True,r
+          scheduler=r.get('scheduler') or {}
+          assert scheduler.get('worker_role')=='gui',scheduler
+          assert scheduler.get('worker_id')=='oracle-gui',scheduler
+          text='\n'.join(str(s.get('stdout') or '')+'\n'+str(s.get('stderr') or '') for s in r.get('steps',[]))
+          required=[
+              'gemini_web_discover=PASS',
+              'gemini_web_attach=PASS',
+              'gemini_web_inspect=PASS',
+              'gemini_web_inject_draft=PASS',
+              'gemini_web_inject_cleanup=PASS',
+              'gemini_web_receipt=PASS',
+              'gemini_web_session_acceptance=PASS',
+          ]
+          for marker in required:
+              assert marker in text,(marker,text[-12000:])
+          print('gemini_web_session_provider_mvp=PASS')
+          print('gemini_web_scheduler_lane=oracle-gui')
+          PY
+
+      - name: Report Gemini login handoff requirement
+        if: env.GEMINI_WEB_STATE == 'LOGIN_REQUIRED'
+        shell: bash
+        run: |
+          echo "gemini_web_session_provider_mvp=LOGIN_REQUIRED"
+          echo "gemini_web_handoff_required=true"
