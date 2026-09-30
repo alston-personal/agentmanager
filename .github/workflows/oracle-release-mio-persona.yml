@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 12
     env:
       SOURCE_REPOSITORY: alston-personal/studio-web
-      SOURCE_SHA: 4276dc362da583e6d0a1ce9fe49ddd3ce0131bdf
+      SOURCE_SHA: fd6c47851b3d08174e7292412cfa46d4a6ec403b
       LIVE_ROOT: /home/ubuntu/zeus-writer/website/dist
       ROUTE_PATH: personas/mio
       BACKUP_KEY: mio-persona
