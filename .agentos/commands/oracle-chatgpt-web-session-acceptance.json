@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.command/v1",
+  "command": "oracle-chatgpt-web-session-acceptance",
+  "requested_at": "2026-09-30T07:58:00Z",
+  "purpose": "Validate chatgpt-web session provider MVP through AgentOS GUI scheduler lane"
+}
