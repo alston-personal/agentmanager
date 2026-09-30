@@ -1,0 +1,226 @@
+name: Oracle Generate Mio Neutral Base via Colab
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-generate-mio-neutral-base-colab.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mio-neutral-base-colab
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 120
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Generate canonical neutral base on Colab GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          PORT="${DEPLOY_PORT:-22}"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "${GITHUB_RUN_ID}" <<'REMOTE'
+          set -euo pipefail
+          RUN_ID="$1"
+          export PATH="/home/ubuntu/.local/bin:$PATH"
+          command -v colab >/dev/null
+          colab --auth=oauth2 usage >/dev/null
+
+          WORK="/home/ubuntu/agent-data/tmp/mio-neutral-colab-$RUN_ID"
+          SOURCE="$WORK/mio-source.webp"
+          OUTPUT="$WORK/mio-base-v2.webp"
+          NOTEBOOK="$WORK/mio-neutral-base.ipynb"
+          SESSION="mio-neutral-$RUN_ID"
+          mkdir -p "$WORK"
+          chmod 700 "$WORK"
+          SESSION_STARTED=0
+
+          cleanup() {
+            if [ "$SESSION_STARTED" = 1 ]; then
+              timeout 300s colab --auth=oauth2 stop --session "$SESSION" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$WORK" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          curl -kfsS --retry 3 --resolve studio.milkcat.org:443:127.0.0.1             "https://studio.milkcat.org/personas/mio/mio-avatar.webp?_=$RUN_ID"             -o "$SOURCE"
+          test -s "$SOURCE"
+          echo "mio_source_bytes=$(wc -c < "$SOURCE")"
+
+          HF_TOKEN="$(python3 - <<'PY'
+          from pathlib import Path
+          candidates=[
+              Path("/home/ubuntu/agentmanager/.env"),
+              Path("/home/ubuntu/.config/agentos/mio-tryon.env"),
+              Path("/home/ubuntu/.env"),
+          ]
+          for p in candidates:
+              if not p.is_file():
+                  continue
+              for raw in p.read_text(encoding="utf-8").splitlines():
+                  line=raw.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key,value=line.split("=",1)
+                  if key.strip() in {"HF_TOKEN","HUGGINGFACE_TOKEN"}:
+                      print(value.strip().strip('"').strip("'"))
+                      raise SystemExit(0)
+          PY
+          )"
+          test -n "$HF_TOKEN"
+
+          python3 - "$NOTEBOOK" <<'PY'
+          import json,sys
+          path=sys.argv[1]
+          install = r'''
+          import subprocess, sys
+          subprocess.check_call([
+              sys.executable, "-m", "pip", "install", "-q",
+              "git+https://github.com/huggingface/diffusers",
+              "transformers>=4.57.1", "accelerate>=1.2",
+              "sentencepiece", "protobuf", "safetensors", "Pillow"
+          ])
+          '''
+          infer = r'''
+          import os, torch
+          from PIL import Image
+          from diffusers import QwenImageEditPlusPipeline
+
+          assert torch.cuda.is_available(), "GPU is required"
+          props=torch.cuda.get_device_properties(0)
+          vram=props.total_memory/(1024**3)
+          print(f"gpu={props.name} vram_gib={vram:.1f}")
+
+          kwargs={"torch_dtype":torch.bfloat16}
+          if vram >= 65:
+              kwargs["device_map"]="cuda"
+          else:
+              kwargs["device_map"]="balanced"
+
+          pipe=QwenImageEditPlusPipeline.from_pretrained(
+              "Qwen/Qwen-Image-Edit-2511",
+              token=os.environ.get("HF_TOKEN") or None,
+              **kwargs,
+          )
+          pipe.set_progress_bar_config(disable=False)
+
+          image=Image.open("/content/mio-source.webp").convert("RGB")
+          prompt=(
+              "Keep this exact woman as the same canonical Mio character. Preserve her exact face, identity, "
+              "hairstyle, hair color, body proportions, skin tone, neutral standing pose, camera angle, framing, "
+              "lighting and plain studio background. Remove the current fashion outfit and accessories. Replace "
+              "them with only a plain opaque modest virtual fitting technical base: a fitted light-neutral "
+              "crew-neck short-sleeve top and matching fitted mid-thigh shorts. Barefoot. No shoes, no bag, "
+              "no jewelry, no logos, no outerwear. This is a technical fitting base garment, not underwear. "
+              "No nudity. Keep the complete body visible from head to toes. Photorealistic image only."
+          )
+          negative=(
+              "different person, different face, changed hairstyle, changed body proportions, cropped feet, "
+              "shoes, jacket, coat, bag, jewelry, logo, text, nudity, underwear, deformed hands, extra limbs"
+          )
+          generator=torch.Generator(device="cpu").manual_seed(290918)
+          with torch.inference_mode():
+              result=pipe(
+                  image=[image],
+                  prompt=prompt,
+                  generator=generator,
+                  true_cfg_scale=4.0,
+                  negative_prompt=negative,
+                  num_inference_steps=28,
+                  guidance_scale=1.0,
+                  num_images_per_prompt=1,
+              )
+          out=result.images[0]
+          out.save("/content/mio-base-v2.webp", format="WEBP", quality=95, method=6)
+          print(f"saved=/content/mio-base-v2.webp size={out.size}")
+          '''
+          nb={
+              "cells":[
+                  {"cell_type":"code","execution_count":None,"metadata":{},"outputs":[],"source":[x+"\n" for x in install.strip().splitlines()]},
+                  {"cell_type":"code","execution_count":None,"metadata":{},"outputs":[],"source":[x+"\n" for x in infer.strip().splitlines()]},
+              ],
+              "metadata":{"kernelspec":{"display_name":"Python 3","language":"python","name":"python3"},"language_info":{"name":"python","version":"3"}},
+              "nbformat":4,
+              "nbformat_minor":5,
+          }
+          with open(path,"w",encoding="utf-8") as f:
+              json.dump(nb,f,ensure_ascii=False)
+          PY
+
+          echo "colab_neutral_base_session=$SESSION"
+          colab --auth=oauth2 new --session "$SESSION" --gpu A100 --high-mem
+          SESSION_STARTED=1
+          colab --auth=oauth2 upload --session "$SESSION" "$SOURCE" /content/mio-source.webp
+
+          set +e
+          colab --auth=oauth2 exec             --session "$SESSION"             --timeout 5400             --env "HF_TOKEN=$HF_TOKEN"             --file "$NOTEBOOK"
+          EXEC_RC=$?
+          set -e
+          if [ "$EXEC_RC" -ne 0 ]; then
+            echo "mio_neutral_colab_exec=FAIL rc=$EXEC_RC" >&2
+            exit "$EXEC_RC"
+          fi
+
+          colab --auth=oauth2 download --session "$SESSION" /content/mio-base-v2.webp "$OUTPUT"
+          test -s "$OUTPUT"
+          BYTES="$(wc -c < "$OUTPUT")"
+          test "$BYTES" -gt 10000
+          echo "mio_neutral_colab_output=PASS bytes=$BYTES"
+
+          REPO="$WORK/studio-web"
+          gh auth status >/dev/null
+          gh repo clone alston-personal/studio-web "$REPO" -- --branch main --single-branch
+          cd "$REPO"
+          BRANCH="fix/mio-neutral-base-colab-$RUN_ID"
+          git checkout -b "$BRANCH"
+          cp "$OUTPUT" public/personas/mio/mio-base-v2.webp
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          page=Path("src/pages/personas/mio/wardrobe/index.astro")
+          text=page.read_text(encoding="utf-8")
+          new=re.sub(
+              r"const canonicalBaseData = (?:'data:image/webp;base64,[^']+'|'/personas/mio/mio-base-v2\.webp');",
+              "const canonicalBaseData = '/personas/mio/mio-base-v2.webp';",
+              text,
+              count=1,
+          )
+          if new == text and "const canonicalBaseData = '/personas/mio/mio-base-v2.webp';" not in text:
+              raise SystemExit("canonicalBaseData pattern not found")
+          new=new.replace("目前顯示澪的中性技術基準身形","目前顯示澪的中性技術底衣基準")
+          new=new.replace("起始狀態：澪的中性技術基準身形","起始狀態：澪的中性技術底衣基準")
+          new=new.replace("人物窗格暫時保留中性技術基準身形","人物窗格暫時保留中性技術底衣基準")
+          new=new.replace("試穿生成失敗；仍顯示中性技術基準身形","試穿生成失敗；仍顯示中性技術底衣基準")
+          page.write_text(new,encoding="utf-8")
+
+          profile=Path("src/data/mioPublicProfile.ts")
+          p=profile.read_text(encoding="utf-8")
+          p=re.sub(r"bodyAnchorVersion: '[^']+'","bodyAnchorVersion: 'mio-body-v2-neutral-base'",p,count=1)
+          p=re.sub(r"internalBodyReferenceVersion: '[^']+'","internalBodyReferenceVersion: 'mio-internal-body-v2-neutral-base'",p,count=1)
+          profile.write_text(p,encoding="utf-8")
+          PY
+
+          git config user.name "AgentOS"
+          git config user.email "agentos@milkcat.org"
+          git add public/personas/mio/mio-base-v2.webp src/pages/personas/mio/wardrobe/index.astro src/data/mioPublicProfile.ts
+          git commit -m "fix(mio): use Colab-generated neutral dress-up base"
+          git push origin "$BRANCH"
+          gh pr create             --repo alston-personal/studio-web             --base main             --head "$BRANCH"             --title "fix(mio): use Colab-generated neutral dress-up base"             --body "Replace the dressed canonical wardrobe preview with a dedicated neutral technical fitting base generated on governed Colab compute. Initial outfit remains empty; wardrobe items are rendered only after selection."
+          echo "mio_neutral_colab_pr=PASS"
+          REMOTE
