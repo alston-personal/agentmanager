@@ -55,6 +55,17 @@ jobs:
           crontab -l 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
           systemctl --user list-timers --all 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
           systemctl list-timers --all 2>/dev/null | grep -Ei 'backup|gdrive|rclone' || true
+          echo '=== remote capacity and structure ==='
+          rclone about gdrive: 2>/dev/null || true
+          echo '-- remote root dirs --'
+          rclone lsf gdrive: --dirs-only --max-depth 2 2>/dev/null | head -n 200 || true
+          echo '-- remote backups newest --'
+          rclone lsf gdrive:backups --files-only --format 'tsp' 2>/dev/null | sort -r | head -n 80 || true
+          echo '=== backup writer discovery ==='
+          grep -RIl --exclude='*.log' --exclude-dir='.git' 'agentos_backup_' "$HOME/agentmanager" "$HOME/agent-data" /etc/cron.d /etc/cron.daily /etc/systemd/system 2>/dev/null | head -n 80 || true
+          grep -RIl --exclude='*.log' --exclude-dir='.git' '/gdrive/backups' "$HOME/agentmanager" "$HOME/agent-data" /etc/cron.d /etc/cron.daily /etc/systemd/system 2>/dev/null | head -n 80 || true
+          echo '-- all user cron lines --'
+          crontab -l 2>/dev/null || true
           echo '=== AgentOS path devices ==='
           for p in "$HOME/agent-data" "$HOME/agentmanager" "$HOME/.local/share/agentos"; do
             [ -e "$p" ] && { printf '%s -> ' "$p"; df -hT "$p" | tail -n1; }
