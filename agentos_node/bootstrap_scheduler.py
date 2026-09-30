@@ -1,0 +1,363 @@
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterator
+
+from agentos_node import bootstrap_control as bc
+
+
+@dataclass(frozen=True, slots=True)
+class ActionPolicy:
+    role: str
+    priority: int
+    priority_label: str
+    capabilities: tuple[str, ...] = ()
+    locks: tuple[str, ...] = ()
+
+
+HIGH = 10
+NORMAL = 30
+PUBLISH = 40
+LOW = 60
+MAINTENANCE = 70
+
+POLICIES: dict[str, ActionPolicy] = {
+    bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("control", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
+    bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("threads-mio-gui",)),
+    bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("threads-mio-gui",)),
+    bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("threads-mio-gui",)),
+    bc.ACTION_PROBE_THREADS_WEB_DM: ActionPolicy("gui", 15, "high", ("threads.gui.read",), ("threads-mio-gui",)),
+    bc.ACTION_RUN_MIO_DM_DECISION: ActionPolicy("social", 18, "high", ("mio.dm.decide",)),
+    bc.ACTION_PAUSE_MIO_AUTOREPLY: ActionPolicy("control", 20, "high", ("mio.incident.repair",), ("oracle-core-runtime",)),
+    bc.ACTION_INSPECT_MIO_SQUIRREL: ActionPolicy("social", NORMAL, "normal", ("threads.api.read",)),
+    bc.ACTION_INSPECT_MIO_RECENT: ActionPolicy("social", NORMAL, "normal", ("threads.api.read",)),
+    bc.ACTION_PUBLISH_MIO_APPROVED: ActionPolicy("social", PUBLISH, "normal", ("threads.api.write",), ("mio-publish",)),
+    bc.ACTION_PUBLISH_MIO_DAY2: ActionPolicy("social", PUBLISH, "normal", ("threads.api.write",), ("mio-publish",)),
+    bc.ACTION_PUBLISH_GALAXY_DAY1: ActionPolicy("social", PUBLISH, "normal", ("threads.api.write",), ("threads:oursong",)),
+    bc.ACTION_PUBLISH_SUNLAKE_PERSONA_REPLIES: ActionPolicy("social", PUBLISH, "normal", ("threads.api.write",), ("threads:oursong",)),
+    bc.ACTION_PROBE_MIO_IMAGE_CONTAINER: ActionPolicy("build", 45, "normal", ("asset.processing",)),
+    bc.ACTION_PROJECT_MIO_OBSERVER: ActionPolicy("control", LOW, "low", ("observer.update",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_STUDIO_WEB_MIO: ActionPolicy("control", LOW, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_GALAXY_EXPERIMENT_MONITOR: ActionPolicy("control", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_MIO_OBSERVER_TIMER: ActionPolicy("control", LOW, "low", ("monitor.install",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_SOCIAL_RUNTIME: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_THREADS_GALAXY: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_RECONCILE_CONTROL_INBOX: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_REALM_GATEWAY: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+    bc.ACTION_PROVISION_ZIWEI_MASTER_REPO: ActionPolicy("control", MAINTENANCE, "low", ("repository.provision",), ("oracle-core-runtime",)),
+    bc.ACTION_DEPLOY_MIO_TELEGRAM: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_GUI_WORKER: ActionPolicy("control", MAINTENANCE, "low", ("node.gui.install",), ("oracle-core-runtime",)),
+    bc.ACTION_SMOKE_GUI_WORKER: ActionPolicy("gui", 25, "normal", ("threads.gui.read",), ("threads-mio-gui",)),
+    bc.ACTION_DEPLOY_MIO_TRYON: ActionPolicy("control", MAINTENANCE, "low", ("deployment",), ("oracle-core-runtime",)),
+    bc.ACTION_INSTALL_ORACLE_EXEC: ActionPolicy("control", MAINTENANCE, "low", ("node.runtime.converge",), ("oracle-core-runtime",)),
+}
+
+DEFAULT_POLICY = ActionPolicy("control", MAINTENANCE, "low", ("agentos.bootstrap.execute",), ("oracle-core-runtime",))
+_LOCK_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+class LockTimeout(RuntimeError):
+    def __init__(self, lock_key: str):
+        super().__init__("lock_timeout:" + lock_key)
+        self.lock_key = lock_key
+
+
+def data_root() -> Path:
+    return Path(os.environ.get("AGENT_DATA_ROOT") or "/home/ubuntu/agent-data")
+
+
+def state_root() -> Path:
+    return data_root() / "runtime" / "bootstrap-scheduler"
+
+
+def policy_for(action: str) -> ActionPolicy:
+    return POLICIES.get(str(action or ""), DEFAULT_POLICY)
+
+
+def _safe_worker_id(value: str) -> str:
+    value = str(value or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value):
+        raise ValueError("invalid worker_id")
+    return value
+
+
+def _request_summary(path: Path) -> tuple[int, str, str, dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    action = str(payload.get("action") or "unknown")
+    policy = policy_for(action)
+    created = str(payload.get("created_at") or "")
+    return policy.priority, created, path.name, payload
+
+
+def _queue_depths(requests: Path) -> dict[str, int]:
+    depths = {"control": 0, "social": 0, "gui": 0, "build": 0}
+    for path in requests.glob("*.request.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        role = policy_for(str(payload.get("action") or "")).role
+        depths[role] = depths.get(role, 0) + 1
+    return depths
+
+
+def _write_status(worker_id: str, role: str, *, state: str, current: dict[str, Any] | None = None) -> None:
+    root = state_root()
+    root.mkdir(parents=True, exist_ok=True)
+    lock_path = root / "status.lock"
+    status_path = root / "status.json"
+    with lock_path.open("a+") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            doc = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
+        except Exception:
+            doc = {}
+        requests, _, _ = bc._ensure(bc._root())
+        workers = doc.get("workers") if isinstance(doc.get("workers"), dict) else {}
+        workers[worker_id] = {
+            "role": role,
+            "state": state,
+            "current_job": current,
+            "heartbeat": bc._now(),
+        }
+        payload = {
+            "schema": "agentos.bootstrap-scheduler-status/v1",
+            "node": "oracle",
+            "updated_at": bc._now(),
+            "queue_depth": _queue_depths(requests),
+            "workers": workers,
+        }
+        tmp = status_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(status_path)
+
+
+def _incident(*, request_id: str, action: str, policy: ActionPolicy, failure_class: str,
+              fallback_attempted: bool = False, detail: str | None = None) -> Path:
+    root = state_root() / "incidents"
+    root.mkdir(parents=True, exist_ok=True)
+    project = "mio" if ("mio" in action or "web_dm" in action) else "agentos"
+    payload: dict[str, Any] = {
+        "schema": "agentos.scheduler-incident/v1",
+        "project": project,
+        "request_id": request_id,
+        "action": action,
+        "priority": policy.priority_label,
+        "requested_capabilities": list(policy.capabilities),
+        "preferred_node": "oracle",
+        "failure_class": failure_class,
+        "fallback_attempted": fallback_attempted,
+        "receipt_required": True,
+        "observed_at": bc._now(),
+    }
+    if detail:
+        payload["detail"] = str(detail)[:240]
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", request_id)[:100] or "unknown"
+    path = root / f"{safe}-{int(time.time())}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+@contextmanager
+def _held_locks(keys: tuple[str, ...], *, timeout_seconds: float = 120.0) -> Iterator[None]:
+    handles = []
+    lock_root = bc._root() / "locks"
+    lock_root.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + max(0.1, timeout_seconds)
+    try:
+        for key in sorted(set(keys)):
+            if not _LOCK_RE.fullmatch(key):
+                raise ValueError("invalid lock key")
+            handle = (lock_root / f"{key}.lock").open("a+")
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    handles.append(handle)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        handle.close()
+                        raise LockTimeout(key)
+                    time.sleep(0.2)
+        yield
+    finally:
+        for handle in reversed(handles):
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
+
+
+def _claim(role: str, worker_id: str) -> tuple[Path, dict[str, Any]] | None:
+    requests, _, _ = bc._ensure(bc._root())
+    candidates = sorted((_request_summary(path) for path in requests.glob("*.request.json")), key=lambda item: item[:3])
+    inflight_dir = bc._root() / "inflight" / worker_id
+    inflight_dir.mkdir(parents=True, exist_ok=True)
+    for _priority, _created, filename, payload in candidates:
+        action = str(payload.get("action") or "unknown")
+        if policy_for(action).role != role:
+            continue
+        source = requests / filename
+        destination = inflight_dir / filename
+        if destination.exists():
+            continue
+        try:
+            os.rename(source, destination)
+        except FileNotFoundError:
+            continue
+        return destination, payload
+    return None
+
+
+def run_once(role: str, worker_id: str, *, lock_timeout_seconds: float = 120.0) -> dict[str, Any] | None:
+    worker_id = _safe_worker_id(worker_id)
+    claim = _claim(role, worker_id)
+    if claim is None:
+        return None
+    source, payload = claim
+    requests, receipts, rejected = bc._ensure(bc._root())
+    request_id = source.name.removesuffix(".request.json")
+    action = str(payload.get("action") or "unknown")
+    policy = policy_for(action)
+    _write_status(worker_id, role, state="running", current={
+        "request_id": request_id,
+        "action": action,
+        "priority": policy.priority_label,
+        "locks": list(policy.locks),
+    })
+    started = bc._now()
+    source_commit: str | None = None
+    receipt: dict[str, Any]
+    try:
+        request_id, action, source_commit, post_key = bc._validate_request(source, payload)
+        receipt_path = receipts / f"{request_id}.json"
+        if receipt_path.exists():
+            source.unlink(missing_ok=True)
+            return json.loads(receipt_path.read_text(encoding="utf-8"))
+        with _held_locks(policy.locks, timeout_seconds=lock_timeout_seconds):
+            result = bc._execute(action, source_commit, post_key, payload.get("params") or {})
+        receipt = {
+            "schema": bc.RECEIPT_SCHEMA,
+            "request_id": request_id,
+            "action": action,
+            "executor_user": os.environ.get("USER") or str(os.getuid()),
+            "executor_uid": os.getuid(),
+            "started_at": started,
+            "completed_at": bc._now(),
+            **result,
+            "scheduler": {
+                "node": "oracle",
+                "worker_role": role,
+                "worker_id": worker_id,
+                "priority": policy.priority_label,
+                "requested_capabilities": list(policy.capabilities),
+                "locks": list(policy.locks),
+            },
+        }
+        if receipt.get("ok") is not True:
+            receipt["failure_class"] = "worker_failed"
+            _incident(request_id=request_id, action=action, policy=policy, failure_class="worker_failed")
+        bc._atomic_json(receipt_path, receipt)
+        if receipt.get("ok") is True:
+            source.unlink(missing_ok=True)
+        else:
+            target = rejected / source.name
+            target.unlink(missing_ok=True)
+            source.replace(target)
+        return receipt
+    except LockTimeout as exc:
+        receipt = {
+            "schema": bc.RECEIPT_SCHEMA,
+            "request_id": request_id,
+            "action": action,
+            "source_commit": source_commit,
+            "executor_user": os.environ.get("USER") or str(os.getuid()),
+            "executor_uid": os.getuid(),
+            "started_at": started,
+            "completed_at": bc._now(),
+            "ok": False,
+            "failure_class": "lock_timeout",
+            "error": str(exc),
+            "scheduler": {
+                "node": "oracle",
+                "worker_role": role,
+                "worker_id": worker_id,
+                "priority": policy.priority_label,
+                "requested_capabilities": list(policy.capabilities),
+                "locks": list(policy.locks),
+            },
+        }
+        bc._atomic_json(receipts / f"{request_id}.json", receipt)
+        _incident(request_id=request_id, action=action, policy=policy, failure_class="lock_timeout", detail=exc.lock_key)
+        target = rejected / source.name
+        target.unlink(missing_ok=True)
+        source.replace(target)
+        return receipt
+    except BaseException as exc:
+        receipt = {
+            "schema": bc.RECEIPT_SCHEMA,
+            "request_id": request_id,
+            "action": action,
+            "source_commit": source_commit,
+            "executor_user": os.environ.get("USER") or str(os.getuid()),
+            "executor_uid": os.getuid(),
+            "started_at": started,
+            "completed_at": bc._now(),
+            "ok": False,
+            "failure_class": "worker_failed",
+            "error": f"{type(exc).__name__}: {exc}"[:500],
+            "scheduler": {
+                "node": "oracle",
+                "worker_role": role,
+                "worker_id": worker_id,
+                "priority": policy.priority_label,
+                "requested_capabilities": list(policy.capabilities),
+                "locks": list(policy.locks),
+            },
+        }
+        bc._atomic_json(receipts / f"{request_id}.json", receipt)
+        _incident(request_id=request_id, action=action, policy=policy, failure_class="worker_failed", detail=str(exc))
+        target = rejected / source.name
+        target.unlink(missing_ok=True)
+        source.replace(target)
+        return receipt
+    finally:
+        _write_status(worker_id, role, state="idle", current=None)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--role", choices=("control", "social", "gui", "build"), required=True)
+    parser.add_argument("--worker-id", required=True)
+    parser.add_argument("--poll-seconds", type=float, default=0.75)
+    parser.add_argument("--lock-timeout-seconds", type=float, default=120.0)
+    args = parser.parse_args()
+    worker_id = _safe_worker_id(args.worker_id)
+    _write_status(worker_id, args.role, state="idle", current=None)
+    last_idle_heartbeat = time.monotonic()
+    while True:
+        receipt = run_once(args.role, worker_id, lock_timeout_seconds=args.lock_timeout_seconds)
+        if receipt is None:
+            now = time.monotonic()
+            if now - last_idle_heartbeat >= 10:
+                _write_status(worker_id, args.role, state="idle", current=None)
+                last_idle_heartbeat = now
+            time.sleep(max(0.1, args.poll_seconds))
+        else:
+            last_idle_heartbeat = time.monotonic()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
