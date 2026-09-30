@@ -19,78 +19,119 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json,time,urllib.parse,urllib.request,sys
-          try:
-              import websocket
-          except Exception as exc:
-              print('threads_web_search_probe=WEBSOCKET_MODULE_MISSING')
-              print(type(exc).__name__)
-              raise
+          node <<'JS'
+          const http = require('http');
+          const querystring = require('querystring');
 
-          base='http://127.0.0.1:9222'
-          query='貓'
-          url='https://www.threads.com/search?q='+urllib.parse.quote(query)+'&serp_type=recent'
-          req=urllib.request.Request(base+'/json/new?'+urllib.parse.quote(url,safe=''),method='PUT')
-          with urllib.request.urlopen(req,timeout=5) as r:
-              target=json.load(r)
-          tid=str(target.get('id') or '')
-          wsurl=str(target.get('webSocketDebuggerUrl') or '')
-          assert tid and wsurl, target
+          function httpJson(method, url) {
+            return new Promise((resolve, reject) => {
+              const u = new URL(url);
+              const req = http.request({
+                method, hostname: u.hostname, port: u.port, path: u.pathname + u.search
+              }, res => {
+                let data='';
+                res.on('data', d => data += d);
+                res.on('end', () => {
+                  try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+                });
+              });
+              req.on('error', reject);
+              req.end();
+            });
+          }
 
-          ws=websocket.create_connection(wsurl,timeout=8,origin='http://127.0.0.1:9222')
-          seq=0
-          def cmd(method,params=None):
-              global seq
-              seq+=1
-              ws.send(json.dumps({'id':seq,'method':method,'params':params or {}}))
-              deadline=time.time()+10
-              while time.time()<deadline:
-                  msg=json.loads(ws.recv())
-                  if msg.get('id')==seq:
-                      return msg
-              raise TimeoutError(method)
-          cmd('Runtime.enable')
-          cmd('Page.enable')
-          # Let Threads hydrate search results.
-          time.sleep(8)
-          expr=r"""(()=>{
-            const links=[...document.querySelectorAll('a[href*="/post/"]')];
-            const rows=[];
-            const seen=new Set();
-            for(const a of links){
-              const href=a.href;
-              if(seen.has(href)) continue;
-              seen.add(href);
-              let node=a;
-              for(let i=0;i<8 && node;i++,node=node.parentElement){
-                const txt=(node.innerText||'').trim();
-                if(txt.length>=20){
-                  rows.push({href,text:txt.slice(0,600)});
-                  break;
-                }
-              }
-              if(rows.length>=12) break;
+          async function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+          async function main(){
+            if (typeof WebSocket === 'undefined') {
+              console.log('threads_web_search_probe=NODE_WEBSOCKET_UNAVAILABLE');
+              process.exit(2);
             }
-            return {
-              url:location.href,
-              title:document.title,
-              body:(document.body?.innerText||'').slice(0,2000),
-              rows
-            };
-          })()"""
-          res=cmd('Runtime.evaluate',{'expression':expr,'returnByValue':True})
-          val=((res.get('result') or {}).get('result') or {}).get('value') or {}
-          ws.close()
-          current=str(val.get('url') or '')
-          low=current.lower()
-          if 'login' in low or 'accountscenter' in low:
-              print('threads_web_search_probe=LOGIN_REQUIRED')
-              raise SystemExit(2)
-          rows=val.get('rows') or []
-          print('threads_web_search_probe=PASS')
-          print('threads_web_search_url='+current)
-          print('threads_web_search_row_count='+str(len(rows)))
-          print('threads_web_search_rows='+json.dumps(rows,ensure_ascii=False,separators=(',',':')))
-          print('threads_web_search_body_sample='+json.dumps(str(val.get('body') or '')[:1200],ensure_ascii=False))
-          PY
+            const base='http://127.0.0.1:9222';
+            const q='貓';
+            const targetUrl='https://www.threads.com/search?q='+encodeURIComponent(q)+'&serp_type=recent';
+            const target=await httpJson('PUT', base+'/json/new?'+encodeURIComponent(targetUrl));
+            const wsurl=String(target.webSocketDebuggerUrl||'');
+            if(!wsurl) throw new Error('missing_websocket_debugger_url');
+
+            const ws=new WebSocket(wsurl);
+            await new Promise((resolve,reject)=>{
+              const t=setTimeout(()=>reject(new Error('ws_open_timeout')),8000);
+              ws.addEventListener('open',()=>{clearTimeout(t); resolve();},{once:true});
+              ws.addEventListener('error',e=>{clearTimeout(t); reject(e);},{once:true});
+            });
+
+            let seq=0;
+            const pending=new Map();
+            ws.addEventListener('message', ev=>{
+              const msg=JSON.parse(String(ev.data));
+              if(msg.id && pending.has(msg.id)){
+                const {resolve}=pending.get(msg.id);
+                pending.delete(msg.id);
+                resolve(msg);
+              }
+            });
+            function cmd(method,params={}){
+              return new Promise((resolve,reject)=>{
+                const id=++seq;
+                const timer=setTimeout(()=>{
+                  pending.delete(id);
+                  reject(new Error('cdp_timeout:'+method));
+                },10000);
+                pending.set(id,{resolve:(v)=>{clearTimeout(timer);resolve(v);}});
+                ws.send(JSON.stringify({id,method,params}));
+              });
+            }
+
+            await cmd('Runtime.enable');
+            await cmd('Page.enable');
+            await sleep(8000);
+            const expr=`(()=>{
+              const links=[...document.querySelectorAll('a[href*="/post/"]')];
+              const rows=[];
+              const seen=new Set();
+              for(const a of links){
+                const href=a.href;
+                if(seen.has(href)) continue;
+                seen.add(href);
+                let node=a;
+                for(let i=0;i<8 && node;i++,node=node.parentElement){
+                  const txt=(node.innerText||'').trim();
+                  if(txt.length>=20){
+                    rows.push({href,text:txt.slice(0,600)});
+                    break;
+                  }
+                }
+                if(rows.length>=12) break;
+              }
+              return {
+                url:location.href,
+                title:document.title,
+                body:(document.body?.innerText||'').slice(0,2000),
+                rows
+              };
+            })()`;
+            const res=await cmd('Runtime.evaluate',{expression:expr,returnByValue:true});
+            const val=(((res||{}).result||{}).result||{}).value||{};
+            ws.close();
+
+            const current=String(val.url||'');
+            const low=current.toLowerCase();
+            if(low.includes('login')||low.includes('accountscenter')){
+              console.log('threads_web_search_probe=LOGIN_REQUIRED');
+              process.exit(2);
+            }
+            const rows=Array.isArray(val.rows)?val.rows:[];
+            console.log('threads_web_search_probe=PASS');
+            console.log('threads_web_search_url='+current);
+            console.log('threads_web_search_row_count='+rows.length);
+            console.log('threads_web_search_rows='+JSON.stringify(rows));
+            console.log('threads_web_search_body_sample='+JSON.stringify(String(val.body||'').slice(0,1200)));
+          }
+
+          main().catch(err=>{
+            console.error('threads_web_search_probe=ERROR');
+            console.error(String(err&&err.stack||err));
+            process.exit(1);
+          });
+          JS
