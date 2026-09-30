@@ -31,9 +31,11 @@ def bridge_root(provider: str) -> Path | None:
     raw = os.environ.get(key)
     if raw:
         return Path(raw).expanduser()
-    if provider == 'chatgpt-web':
-        return Path.home() / '.local/share/agentos/chatgpt-web/bridge'
-    return None
+    defaults = {
+        'chatgpt-web': Path.home() / '.local/share/agentos/chatgpt-web/bridge',
+        'gemini-web': Path.home() / '.local/share/agentos/gemini-web/bridge',
+    }
+    return defaults.get(provider)
 
 
 def describe_bridge(provider: str) -> dict[str, Any] | None:
