@@ -1,0 +1,75 @@
+name: Oracle Diagnose Current Mio Try-On Failure
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-diagnose-current-mio-tryon-failure.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Inspect recent Mio jobs and live shoe catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -euo pipefail
+          ROOT=/home/ubuntu/agent-data/projects/dressup-simulator
+          JOB_DIR="$ROOT/render_jobs/runtime"
+
+          echo "=== recent jobs ==="
+          python3 - "$JOB_DIR" <<'PY'
+          import json,pathlib,sys
+          d=pathlib.Path(sys.argv[1])
+          rows=[]
+          for p in d.glob('*.json'):
+              try:j=json.loads(p.read_text(encoding='utf-8'))
+              except Exception:continue
+              rows.append((j.get('requestedAt',''),p,j))
+          for _,p,j in sorted(rows,reverse=True)[:20]:
+              out=j.get('output') or {}
+              print(json.dumps({
+                'jobId':j.get('jobId'),
+                'requestedAt':j.get('requestedAt'),
+                'status':j.get('status'),
+                'error':j.get('error'),
+                'layers':list(((j.get('input') or {}).get('selectedLayers') or {}).keys()),
+                'provider':out.get('provider'),
+                'providerOutputs':out.get('providerOutputs'),
+                'warnings':out.get('warnings'),
+                'asset':out.get('asset')
+              },ensure_ascii=False))
+          PY
+
+          echo "=== worker service ==="
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          systemctl --user is-active agentos-mio-tryon-render-worker.service || true
+          journalctl --user -u agentos-mio-tryon-render-worker.service -n 120 --no-pager || true
+
+          echo "=== live catalog shoe items ==="
+          curl --noproxy '*' -k -fsS --resolve studio.milkcat.org:443:127.0.0.1             https://studio.milkcat.org/dashboard/api/wardrobe/catalog -o /tmp/mio-catalog.json
+          python3 - /tmp/mio-catalog.json <<'PY'
+          import json,sys
+          j=json.load(open(sys.argv[1],encoding='utf-8'))
+          rows=j.get('items') or j.get('garments') or []
+          for x in rows:
+              layer=str(x.get('layer') or x.get('slot') or '')
+              if 'shoe' in layer.lower():
+                  print(json.dumps(x,ensure_ascii=False))
+          PY
+          REMOTE
