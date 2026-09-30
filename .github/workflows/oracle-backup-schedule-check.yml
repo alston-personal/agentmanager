@@ -1,0 +1,39 @@
+name: Oracle Backup Schedule Check
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-backup-schedule-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect backup scheduling only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          echo 'USER_CRON'
+          crontab -l 2>/dev/null || true
+          echo 'ROOT_CRON'
+          sudo -n crontab -l 2>/dev/null || true
+          echo 'USER_TIMERS'
+          systemctl --user list-timers --all 2>/dev/null || true
+          echo 'SYSTEM_TIMERS'
+          systemctl list-timers --all 2>/dev/null || true
+          echo 'HOME_BACKUP_FILES'
+          find "$HOME" -maxdepth 2 -type f -iname '*backup*' -printf '%p\n' 2>/dev/null | head -n 120 || true
+          REMOTE
