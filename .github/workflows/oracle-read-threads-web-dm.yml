@@ -6,7 +6,7 @@ on:
       - core/integration
     paths:
       - '.github/workflows/oracle-read-threads-web-dm.yml'
-      - 'agentos_node/bootstrap_control.py'
+
       - 'agentos_node/social/web_dm.py'
       - 'scripts/threads_web_dm_bridge_user.py'
       - 'scripts/run_threads_web_dm_read_user.sh'
