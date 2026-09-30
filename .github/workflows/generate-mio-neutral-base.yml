@@ -86,8 +86,16 @@ jobs:
           echo "mio_source_bytes=$(wc -c < "$SOURCE")"
 
           VENV="/home/ubuntu/.local/share/mio-tryon-venv"
-          test -x "$VENV/bin/python"
-          echo "mio_tryon_venv=PASS"
+          if [ ! -x "$VENV/bin/python" ]; then
+            VENV="$WORK/venv"
+            python3 -m venv "$VENV"
+            "$VENV/bin/python" -m pip install --quiet --upgrade pip
+            "$VENV/bin/python" -m pip install --quiet "gradio_client>=1.13,<3" "Pillow>=10,<13"
+            echo "mio_tryon_venv=BOOTSTRAPPED"
+          else
+            echo "mio_tryon_venv=REUSED"
+          fi
+          "$VENV/bin/python" -c 'from gradio_client import Client, handle_file; from PIL import Image; print("mio_neutral_generator_imports=PASS")'
           "$VENV/bin/python" - "$SOURCE" "$OUTPUT" <<'PY'
           import inspect, os, pathlib, sys
           from gradio_client import Client, handle_file
