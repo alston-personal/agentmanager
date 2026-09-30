@@ -51,6 +51,115 @@ jobs:
           echo "runner_pool_snapshot=PASS"
           REMOTE
 
+      - name: Test B - GUI busy failover or structured incident
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote() {
+            ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "$@"
+          }
+          CANDIDATE="$(remote 'AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -c '"'"'from agent_core.node_registry import NodeRegistry; n=next((x for x in NodeRegistry().node_map().get("nodes",[]) if x.get("node_id")=="mbpr"),{}); print("ready" if n.get("status")=="online" and "threads.gui.read" in set(n.get("capabilities") or []) else ("offline" if n.get("status")!="online" else "missing_capability"))'"'"'')"
+          echo "runner_pool_test_b_candidate=$CANDIDATE"
+
+          LOCK_LOG="$RUNNER_TEMP/test-b-gui-lock.log"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            'mkdir -p /tmp/agentos-bootstrap-control/locks; exec 9>/tmp/agentos-bootstrap-control/locks/threads-mio-gui.lock; flock 9; echo gui_test_b_lock=HELD; sleep 24' \
+            >"$LOCK_LOG" 2>&1 &
+          LOCK_PID=$!
+          trap 'kill "$LOCK_PID" 2>/dev/null || true; wait "$LOCK_PID" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 40); do
+            grep -q 'gui_test_b_lock=HELD' "$LOCK_LOG" && break
+            sleep 0.2
+          done
+          grep -q 'gui_test_b_lock=HELD' "$LOCK_LOG"
+
+          PROBE_ID="runner-pool-test-b-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PROBE_RECEIPT="$RUNNER_TEMP/test-b-probe.json"
+          (
+            AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+              bash scripts/submit_oracle_bootstrap_request_remote.sh \
+                agentos.social_threads_web_dm.probe "$PROBE_ID" "$GITHUB_SHA" '{}' > "$PROBE_RECEIPT"
+          ) &
+          PROBE_PID=$!
+
+          BUSY=0
+          for _ in $(seq 1 40); do
+            if remote 'python3 -c '"'"'import json; d=json.load(open("/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json")); r=(d.get("workers") or {}).get("oracle-gui") or {}; c=r.get("current_job") or {}; raise SystemExit(0 if r.get("state")=="running" and c.get("action")=="agentos.social_threads_web_dm.probe" else 1)'"'"''; then
+              BUSY=1
+              break
+            fi
+            sleep 0.25
+          done
+          test "$BUSY" = 1
+          echo "runner_pool_test_b_oracle_gui=busy"
+
+          DM_ID="runner-pool-test-b-dm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          DM_RECEIPT="$RUNNER_TEMP/test-b-dm.json"
+          if [ "$CANDIDATE" = ready ]; then
+            AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+              bash scripts/submit_oracle_bootstrap_request_remote.sh \
+                agentos.social_threads_web_dm.read "$DM_ID" "$GITHUB_SHA" '{}' > "$DM_RECEIPT"
+            python3 - "$DM_RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          s=r.get('scheduler') or {}
+          assert r.get('ok') is True,r
+          assert s.get('node')=='mbpr',s
+          assert s.get('worker_id')=='mbpr',s
+          assert s.get('fallback_from')=='oracle-gui',s
+          assert s.get('fallback_attempted') is True,s
+          print('runner_pool_test_b=PASS')
+          print('runner_pool_test_b_node=mbpr')
+          PY
+          else
+            (
+              AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
+                bash scripts/submit_oracle_bootstrap_request_remote.sh \
+                  agentos.social_threads_web_dm.read "$DM_ID" "$GITHUB_SHA" '{}' > "$DM_RECEIPT"
+            ) &
+            DM_PID=$!
+            sleep 18
+            remote bash -s -- "$DM_ID" <<'REMOTE'
+          set -euo pipefail
+          ID="$1"
+          python3 - "$ID" <<'PY'
+          import json,sys
+          from pathlib import Path
+          request_id=sys.argv[1]
+          root=Path('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/incidents')
+          rows=[]
+          for path in root.glob(request_id+'-*.json'):
+              try:
+                  row=json.loads(path.read_text(encoding='utf-8'))
+              except Exception:
+                  continue
+              rows.append(row)
+          classes={str(row.get('failure_class')) for row in rows}
+          assert 'queue_starvation' in classes,(classes,rows)
+          assert classes & {'node_offline','capability_unavailable'},(classes,rows)
+          print('runner_pool_test_b=PASS_WITH_INCIDENT')
+          print('runner_pool_test_b_failure_classes='+','.join(sorted(classes)))
+          PY
+          REMOTE
+            wait "$LOCK_PID"
+            wait "$PROBE_PID"
+            wait "$DM_PID"
+            trap - EXIT
+            python3 - "$DM_RECEIPT" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding='utf-8'))
+          s=r.get('scheduler') or {}
+          assert r.get('ok') is True,r
+          assert s.get('worker_id')=='oracle-gui',s
+          print('runner_pool_test_b_local_recovery=PASS')
+          PY
+            exit 0
+          fi
+
+          wait "$LOCK_PID"
+          wait "$PROBE_PID"
+          trap - EXIT
+
       - name: Test C - social worker failover
         shell: bash
         run: |
