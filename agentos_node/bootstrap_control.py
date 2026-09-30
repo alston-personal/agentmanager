@@ -36,7 +36,9 @@ ACTION_RUN_MIO_DM_DECISION = "agentos.mio_dm_decision.run"
 ACTION_INSTALL_GUI_WORKER = "agentos.gui_worker.install"
 ACTION_SMOKE_GUI_WORKER = "agentos.gui_worker.smoke"
 ACTION_DEPLOY_MIO_TRYON = "agentos.mio_tryon.deploy"
-ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"\nACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"\nACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
+ACTION_INSTALL_ORACLE_EXEC = "agentos.oracle_exec.install"
+ACTION_PROJECT_MIO_OBSERVER = "agentos.mio_observer.project"
+ACTION_DEPLOY_STUDIO_WEB_MIO = "agentos.studio_web_mio.deploy"
 ALLOWED_ACTIONS = {
     ACTION_REPAIR_TRANSPORT,
     ACTION_DEPLOY_REALM_GATEWAY,
