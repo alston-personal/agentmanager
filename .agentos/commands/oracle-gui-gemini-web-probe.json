@@ -1,6 +1,6 @@
 {
   "schema": "agentos.command/v1",
   "command": "oracle-gui-gemini-web-probe",
-  "requested_at": "2026-09-30T08:57:00Z",
-  "purpose": "Recheck Gemini Web readiness after user login attempt"
+  "requested_at": "2026-09-30T09:03:00Z",
+  "purpose": "Final Gemini Web READY regression after session provider acceptance"
 }
