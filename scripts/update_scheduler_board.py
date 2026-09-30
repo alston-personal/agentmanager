@@ -26,6 +26,8 @@ PERSISTENT_PULSE = PLATFORM_DRIVER.persistent_state_dir() / "pulse_snapshot.json
 SCHEDULE_YAML = PROJECT_ROOT / "schedule.yaml"
 CHRONOS_LOG = AGENT_DATA_ROOT / "logs/chronos.log"
 BOARD_MD = AGENT_DATA_ROOT / "SCHEDULER_BOARD.md"
+RUNNER_POOL_STATUS = AGENT_DATA_ROOT / "runtime/bootstrap-scheduler/status.json"
+RUNNER_POOL_INCIDENTS = AGENT_DATA_ROOT / "runtime/bootstrap-scheduler/incidents"
 
 def get_real_time_pulse():
     pulse_data = {}
@@ -55,6 +57,34 @@ def get_scheduled_tasks():
         except Exception:
             pass
     return schedules
+
+def get_runner_pool():
+    status = {}
+    if RUNNER_POOL_STATUS.exists():
+        try:
+            value = json.loads(RUNNER_POOL_STATUS.read_text(encoding="utf-8"))
+            status = value if isinstance(value, dict) else {}
+        except Exception:
+            status = {}
+
+    incidents = []
+    if RUNNER_POOL_INCIDENTS.exists():
+        try:
+            paths = sorted(
+                RUNNER_POOL_INCIDENTS.glob("*.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            for path in paths[:8]:
+                try:
+                    row = json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    incidents.append(row)
+        except Exception:
+            pass
+    return status, incidents
 
 def get_recent_chronos_logs():
     lines = []
@@ -90,6 +120,7 @@ def generate_markdown():
     pulse_data = get_real_time_pulse()
     schedules = get_scheduled_tasks()
     recent_logs = get_recent_chronos_logs()
+    runner_pool, runner_incidents = get_runner_pool()
     
     md = []
     md.append("# 🕹️ AgentOS Swarm Scheduler Board")
@@ -127,8 +158,49 @@ def generate_markdown():
         
     md.append("\n---\n")
     
-    # 2. Scheduled Tasks
-    md.append("### 🗓️ 2. 定時任務調度 (Scheduled Tasks)")
+    # 2. AgentOS Runner Pool
+    md.append("### 🧭 2. AgentOS Runner Pool / Capability Scheduler")
+    queue_depth = runner_pool.get("queue_depth") if isinstance(runner_pool.get("queue_depth"), dict) else {}
+    workers = runner_pool.get("workers") if isinstance(runner_pool.get("workers"), dict) else {}
+    md.append(
+        "Queue depth: "
+        + ", ".join(f"{role}={queue_depth.get(role, 0)}" for role in ("gui", "social", "control", "build"))
+    )
+    md.append("\n| Worker | Role | State | Current Job | Priority | Locks | Heartbeat |")
+    md.append("| :--- | :---: | :---: | :--- | :---: | :--- | :--- |")
+    if workers:
+        for worker_id, row in sorted(workers.items()):
+            if not isinstance(row, dict):
+                continue
+            current = row.get("current_job") if isinstance(row.get("current_job"), dict) else {}
+            action = str(current.get("action") or "-")
+            priority = str(current.get("priority") or "-")
+            locks = ", ".join(str(item) for item in (current.get("locks") or [])) or "-"
+            heartbeat = str(row.get("heartbeat") or "-")
+            md.append(
+                f"| **{worker_id}** | {row.get('role', '-')} | {row.get('state', 'unknown')} | "
+                f"\`{action}\` | {priority} | \`{locks}\` | {heartbeat} |"
+            )
+    else:
+        md.append("| - | - | unknown | No runner-pool status available | - | - | - |")
+
+    md.append("\n**Recent scheduler incidents**")
+    if runner_incidents:
+        md.append("\n| Observed | Project | Action | Failure | Priority | Fallback |")
+        md.append("| :--- | :--- | :--- | :--- | :---: | :---: |")
+        for row in runner_incidents:
+            md.append(
+                f"| {row.get('observed_at', '-')} | {row.get('project', '-')} | "
+                f"\`{row.get('action', '-')}\` | **{row.get('failure_class', '-')}** | "
+                f"{row.get('priority', '-')} | {str(bool(row.get('fallback_attempted'))).lower()} |"
+            )
+    else:
+        md.append("\n- No recent scheduler incidents.")
+
+    md.append("\n---\n")
+
+    # 3. Scheduled Tasks
+    md.append("### 🗓️ 3. 定時任務調度 (Scheduled Tasks)")
     md.append("Loaded from persistent scheduler configuration `schedule.yaml`:")
     md.append("\n| 任務名稱 (Task) | 執行頻率 (Interval) | 預計執行內容 (Command Excerpt) |")
     md.append("| :--- | :---: | :--- |")
@@ -155,8 +227,8 @@ def generate_markdown():
         
     md.append("\n---\n")
     
-    # 3. Log Stream
-    md.append("### 🏆 3. 自律推進成果與歷程 (Recent Swarm Activity)")
+    # 4. Log Stream
+    md.append("### 🏆 4. 自律推進成果與歷程 (Recent Swarm Activity)")
     md.append("Real-time trigger logs streaming from `chronos.log`:")
     md.append("\n```text")
     if recent_logs:
