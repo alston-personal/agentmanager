@@ -62,8 +62,36 @@ EOF
 restart_dashboard() {
   install_dashboard_service
 
-  # Retire legacy dashboard processes before the canonical systemd-owned
-  # runtime starts. A reboot may leave none; that is a valid cold-start case.
+  # Retire any PM2-owned legacy dashboard release before the canonical
+  # systemd-owned runtime starts. Killing only the child process is insufficient
+  # because PM2 immediately resurrects it and keeps port 3000 occupied.
+  if command -v pm2 >/dev/null 2>&1; then
+    mapfile -t legacy_pm2_ids < <(
+      pm2 jlist 2>/dev/null | python3 -c 'import json,sys
+try:
+    data=json.load(sys.stdin)
+except Exception:
+    data=[]
+for app in data:
+    env=app.get("pm2_env") or {}
+    cwd=str(env.get("pm_cwd") or "")
+    if "/agent-data/releases/dashboard/apps/" in cwd:
+        ident=app.get("pm_id")
+        if ident is not None:
+            print(ident)'
+    )
+    if [ "${#legacy_pm2_ids[@]}" -gt 0 ]; then
+      echo "dashboard_legacy_pm2_ids=${legacy_pm2_ids[*]}"
+      pm2 delete "${legacy_pm2_ids[@]}"
+      # Persist the current PM2 process list so the retired dashboard is not
+      # resurrected on the next PM2 startup/reboot.
+      pm2 save --force >/dev/null
+      echo "dashboard_legacy_pm2_retired=PASS"
+    fi
+  fi
+
+  # Retire any remaining legacy dashboard processes before the canonical
+  # systemd-owned runtime starts. A reboot may leave none; that is valid.
   local own_pgid
   own_pgid=$(ps -o pgid= -p $$ | tr -d ' ')
   python3 - "$DASH" "$own_pgid" <<'PY'
