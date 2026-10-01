@@ -94,3 +94,4 @@ def test_installer_publishes_marker_only_after_stable_liveness():
     assert "runtime_converge_action_loaded=PASS" in text
     assert "content_publish_x_auth_action_loaded=PASS" in text
     assert "content_publish_social_actions_loaded=PASS" in text
+    assert "content_publish_social_write_action_loaded=PASS" in text
