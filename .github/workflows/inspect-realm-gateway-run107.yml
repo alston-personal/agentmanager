@@ -63,6 +63,53 @@ jobs:
               print(json.dumps(safe,indent=2,sort_keys=True))
           PY
           echo 'scheduler_status_end'
+          echo 'control_worker_runtime_begin'
+          systemctl --user show agentos-bootstrap-control.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp --no-pager || true
+          MAINPID="$(systemctl --user show agentos-bootstrap-control.service -p MainPID --value 2>/dev/null || true)"
+          if [ -n "$MAINPID" ] && [ "$MAINPID" != 0 ]; then
+            ps -o pid=,ppid=,pgid=,stat=,etime=,pcpu=,pmem=,comm=,args= --forest -g "$(ps -o pgid= -p "$MAINPID" | tr -d ' ')" 2>/dev/null | head -80 || true
+          fi
+          echo 'control_worker_runtime_end'
+          CURRENT_ID='realm-gateway-36830032112-1'
+          for id in "$CURRENT_ID" "$REQUEST_ID"; do
+            echo "request_state_begin=$id"
+            for kind in requests receipts rejected; do
+              p="$ROOT/$kind/$id"
+              [ "$kind" = requests ] && p="$p.request.json"
+              [ "$kind" = receipts ] && p="$p.json"
+              [ "$kind" = rejected ] && p="$p.request.json"
+              if [ -f "$p" ]; then
+                echo "$kind=PRESENT"
+                if [ "$kind" = receipts ]; then
+                  python3 - "$p" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+out={
+  'schema':d.get('schema'),'request_id':d.get('request_id'),'action':d.get('action'),
+  'source_commit':d.get('source_commit'),'ok':d.get('ok'),'error':d.get('error'),
+  'started_at':d.get('started_at'),'completed_at':d.get('completed_at'),
+  'scheduler':d.get('scheduler'),
+  'steps':[{
+    'step':s.get('step'),'returncode':s.get('returncode'),'error':s.get('error'),
+    'stdout_tail':str(s.get('stdout') or '')[-1200:],
+    'stderr_tail':str(s.get('stderr') or '')[-1200:]
+  } for s in (d.get('steps') or [])]
+}
+print(json.dumps(out,indent=2,sort_keys=True))
+PY
+                fi
+              else
+                echo "$kind=ABSENT"
+              fi
+            done
+            for p in "$ROOT"/inflight/*/"$id.request.json"; do
+              [ -e "$p" ] || continue
+              echo "inflight=PRESENT:$p"
+            done
+            echo "request_state_end=$id"
+          done
+          exit 0
+
           for kind in requests receipts rejected; do
             p="$ROOT/$kind/$REQUEST_ID"
             [ "$kind" = requests ] && p="$p.request.json"
