@@ -119,7 +119,43 @@ try {
   Write-Host "Pinned source: $sourceCommit"
 
   $oldTask=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue
-  if($oldTask){ Stop-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue }
+  if($oldTask){
+    Stop-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+  }
+
+  # Scheduled Task may have spawned python.exe as a child. Stopping the task wrapper
+  # does not reliably terminate that child on Windows, leaving AgentOS source files
+  # locked during an in-place upgrade. Kill only AgentOS Thin Client processes.
+  $agentProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.CommandLine -and
+      $_.CommandLine -match 'agentos_node\.client_cli' -and
+      $_.CommandLine -match '\brun\b'
+    }
+
+  foreach($proc in $agentProcesses) {
+    Write-Host ("Stopping stale AgentOS Thin Client process PID " + $proc.ProcessId)
+    & taskkill.exe /PID $proc.ProcessId /T /F | Out-Null
+  }
+
+  if($agentProcesses) {
+    $deadline=(Get-Date).AddSeconds(10)
+    do {
+      Start-Sleep -Milliseconds 300
+      $stillRunning = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.CommandLine -and
+          $_.CommandLine -match 'agentos_node\.client_cli' -and
+          $_.CommandLine -match '\brun\b'
+        }
+    } while($stillRunning -and (Get-Date) -lt $deadline)
+
+    if($stillRunning) {
+      $pids=($stillRunning | Select-Object -ExpandProperty ProcessId) -join ','
+      throw "Stale AgentOS Thin Client process did not stop: PID(s) $pids"
+    }
+  }
 
   Write-Step 'Installing AgentOS Thin Client'
   $bootstrap=Join-Path $env:TEMP ("agentos-thin-client-" + $sourceCommit.Substring(0,12) + ".ps1")
