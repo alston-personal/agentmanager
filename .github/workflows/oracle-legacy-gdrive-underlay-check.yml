@@ -1,0 +1,44 @@
+name: Oracle Legacy GDrive Underlay Check
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-legacy-gdrive-underlay-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect retired underlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          P="$HOME/gdrive"
+          echo "legacy_exists=$([ -e "$P" ] && echo yes || echo no)"
+          if [ -e "$P" ]; then
+            stat -c 'mode=%a owner=%U group=%G size=%s mtime=%y' "$P"
+            echo 'top:'
+            find "$P" -mindepth 1 -maxdepth 2 -printf '%y %p\n' 2>/dev/null | head -n 80 || true
+            echo 'files:'
+            find "$P" -xdev -type f -printf '%s %p\n' 2>/dev/null | head -n 80 || true
+            echo "bytes=$(du -sb "$P" 2>/dev/null | awk '{print $1}')"
+            if command -v lsof >/dev/null 2>&1; then
+              lsof +D "$P" 2>/dev/null | head -n 80 || true
+            fi
+          fi
+          REMOTE
