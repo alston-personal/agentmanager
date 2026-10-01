@@ -1,0 +1,102 @@
+{
+  "schema": "agentos.content-publish-provider-registry/v1",
+  "providers": [
+    {
+      "provider_id": "threads-social-runtime",
+      "platform": "threads",
+      "transport": "agentos-social-runtime",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["publish", "reply", "status"],
+      "supports_media": true,
+      "supports_reply": true,
+      "supports_thread": true,
+      "supports_unattended_publish": true,
+      "priority": 100,
+      "health_probe": "social-runtime:/v1/social/status"
+    },
+    {
+      "provider_id": "meta-graph-api",
+      "platform": "facebook",
+      "transport": "meta-graph-api",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["publish", "reply"],
+      "supports_media": true,
+      "supports_reply": true,
+      "supports_thread": false,
+      "supports_unattended_publish": true,
+      "priority": 80
+    },
+    {
+      "provider_id": "meta-graph-api",
+      "platform": "instagram",
+      "transport": "meta-graph-api",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["publish", "reply"],
+      "supports_media": true,
+      "supports_reply": true,
+      "supports_thread": false,
+      "supports_unattended_publish": true,
+      "priority": 80
+    },
+    {
+      "provider_id": "x-api",
+      "platform": "x",
+      "transport": "x-api",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["publish", "prepare", "identity.read"],
+      "supports_media": true,
+      "supports_reply": true,
+      "supports_thread": true,
+      "supports_unattended_publish": true,
+      "priority": 100,
+      "health_probe": "scripts/x_auth_inspect.py"
+    },
+    {
+      "provider_id": "x-web-assist",
+      "platform": "x",
+      "transport": "governed-gui-worker",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["prepare"],
+      "supports_media": true,
+      "supports_reply": false,
+      "supports_thread": false,
+      "supports_unattended_publish": false,
+      "priority": 50,
+      "metadata": {
+        "confirmation_required": true,
+        "domain_allowlist": ["x.com"]
+      }
+    },
+    {
+      "provider_id": "blogger-email",
+      "platform": "blogger",
+      "transport": "email",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["publish"],
+      "supports_media": false,
+      "supports_reply": false,
+      "supports_thread": false,
+      "supports_unattended_publish": true,
+      "priority": 50
+    },
+    {
+      "provider_id": "matters-legacy-adapter",
+      "platform": "matters",
+      "transport": "legacy-adapter",
+      "health": "UNKNOWN",
+      "auth_state": "UNKNOWN",
+      "capabilities": ["publish", "draft"],
+      "supports_media": true,
+      "supports_reply": false,
+      "supports_thread": false,
+      "supports_unattended_publish": true,
+      "priority": 40
+    }
+  ]
+}
