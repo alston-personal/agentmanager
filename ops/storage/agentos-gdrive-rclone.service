@@ -1,0 +1,29 @@
+[Unit]
+Description=AgentOS Google Drive rclone mount
+Documentation=https://rclone.org/commands/rclone_mount/
+Wants=network-online.target
+After=network-online.target
+Before=agentos-storage-ready.service
+
+[Service]
+Type=notify
+User=ubuntu
+Group=ubuntu
+Environment=AGENTOS_GDRIVE_MOUNTPOINT=/home/ubuntu/gdrive
+ExecStartPre=/usr/bin/mkdir -p /home/ubuntu/gdrive
+ExecStart=/usr/bin/rclone mount gdrive: /home/ubuntu/gdrive \
+  --config=/home/ubuntu/.config/rclone/rclone.conf \
+  --allow-other \
+  --vfs-cache-mode=writes \
+  --vfs-cache-max-age=24h \
+  --dir-cache-time=5m \
+  --poll-interval=1m \
+  --umask=0027 \
+  --log-level=INFO
+ExecStop=/bin/fusermount3 -uz /home/ubuntu/gdrive
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target
