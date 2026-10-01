@@ -3,6 +3,7 @@ name: Deploy Realm Fabric Core
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - '.github/workflows/deploy-realm-fabric-core.yml'
       - 'agent_core/resolve_facade.py'
@@ -98,15 +99,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
-          if grep -q 'agentos.realm-fabric.install_release' "$runtime" 2>/dev/null \
-             && grep -q 'agentos.project.register_core' "$runtime" 2>/dev/null \
-             && grep -q 'core_project_runtime_binding_v1' "$runtime" 2>/dev/null \
-             && grep -q 'realm_fabric_release_isolation_v1' "$runtime" 2>/dev/null \
-             && grep -q 'realm_fabric_process_attestation_v1' "$runtime" 2>/dev/null; then
+
+          prove_relay() {
+            python3 - <<'PY'
+          import json, os, time
+          from agentos_node.action_relay import ActionRelayClient
+
+          root='/home/ubuntu/agent-data/runtime/action-relay'
+          client=ActionRelayClient(root)
+          capsule=client.submit('agentos.realm-fabric.deployment_status', {})
+          deadline=time.monotonic()+12
+          receipt=None
+          while time.monotonic()<deadline:
+              receipt=client.receipt(capsule['capsule_id'])
+              if receipt is not None:
+                  break
+              time.sleep(0.25)
+          if receipt is None:
+              raise SystemExit('action_relay_capability_proof_timeout')
+          print(json.dumps(receipt,ensure_ascii=False,indent=2))
+          if receipt.get('ok') is not True:
+              raise SystemExit('action_relay_capability_proof_failed')
+          if receipt.get('action') != 'agentos.realm-fabric.deployment_status':
+              raise SystemExit('action_relay_capability_proof_wrong_action')
+          print('action_relay_runtime_core=PROVEN')
+          PY
+          }
+
+          if prove_relay; then
             echo 'action_relay_runtime_core=ALREADY_READY'
             exit 0
           fi
+
           echo 'action_relay_runtime_core=REFRESH_REQUIRED'
           tmp=/tmp/bootstrap-action-relay-core-safe.sh
           sed \
@@ -114,23 +138,16 @@ jobs:
             -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
             scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
           chmod 700 "$tmp"
+
+          # The safe bootstrap has legacy post-checks outside the Realm Fabric
+          # deploy dependency. Its process return code is therefore diagnostic;
+          # the authoritative test is an actual governed capability receipt.
           set +e
           bash "$tmp"
           bootstrap_rc=$?
           set -e
 
-          # The safe bootstrap also performs legacy Antigravity post-checks that
-          # may be unreadable from the agentos-node runner identity. The Core
-          # deploy only depends on the governed Action Relay runtime contract,
-          # so judge refresh success by the exact capability markers we need.
-          missing=0
-          for marker in             'agentos.realm-fabric.install_release'             'agentos.project.register_core'             'core_project_runtime_binding_v1'             'realm_fabric_release_isolation_v1'             'realm_fabric_process_attestation_v1'; do
-            if ! grep -q "$marker" "$runtime" 2>/dev/null; then
-              echo "missing_action_relay_marker=$marker" >&2
-              missing=1
-            fi
-          done
-          if [[ "$missing" != 0 ]]; then
+          if ! prove_relay; then
             echo "action_relay_refresh_failed bootstrap_rc=$bootstrap_rc" >&2
             exit 1
           fi

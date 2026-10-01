@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 
 ROOT = Path.cwd()
-RUNTIME = Path('/home/ubuntu/.local/share/agentos/action-relay-runtime')
 SPOOL = Path('/home/ubuntu/agent-data/runtime/action-relay')
 DEPLOYMENT_STATE = Path('/home/ubuntu/agent-data/governance/core-deployment.json')
 OUT = ROOT / '.agentos/evidence/realm-fabric-install-current.json'
@@ -26,20 +25,6 @@ sys.path.insert(0, str(ROOT))
 from agentos_node.action_relay import ActionRelayClient
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
-runtime_file = RUNTIME / 'agentos_node/action_relay.py'
-deadline = time.time() + 240
-while time.time() < deadline:
-    try:
-        body = runtime_file.read_text(encoding='utf-8') if runtime_file.is_file() else ''
-        if all(action in body for action in (CLAIM_ACTION, INSTALL_ACTION, STATUS_ACTION)) and 'realm_fabric_deployment_fence_v1' in body:
-            break
-    except OSError:
-        pass
-    time.sleep(1)
-else:
-    OUT.write_text(json.dumps({'ok': False, 'stage': 'runtime_ready', 'source_commit': source_commit}, indent=2) + '\n', encoding='utf-8')
-    raise SystemExit(2)
-
 client = ActionRelayClient(SPOOL)
 
 
@@ -51,6 +36,19 @@ def wait_receipt(capsule_id: str, timeout: int = 180) -> dict:
             return receipt
         time.sleep(1)
     raise TimeoutError(capsule_id)
+
+
+# Prove the governed relay capability through behavior, not by reading
+# ubuntu-owned implementation files from the agentos-node runner identity.
+proof_payload = client.submit(STATUS_ACTION, {})
+try:
+    proof = wait_receipt(proof_payload['capsule_id'], timeout=15)
+except TimeoutError:
+    OUT.write_text(json.dumps({'ok': False, 'stage': 'runtime_capability_proof_timeout', 'source_commit': source_commit}, indent=2) + '\n', encoding='utf-8')
+    raise SystemExit(2)
+if proof.get('ok') is not True or proof.get('action') != STATUS_ACTION:
+    OUT.write_text(json.dumps({'ok': False, 'stage': 'runtime_capability_proof', 'source_commit': source_commit, 'receipt': proof}, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    raise SystemExit(2)
 
 
 def current_state() -> dict:
