@@ -116,8 +116,11 @@ assert CONVERGE_ACTION == 'agentos.runtime.converge'
 assert X_AUTH_ACTION == 'agentos.content.x.auth.inspect'
 assert BOOTSTRAP_ACTION == 'agentos.content.social.bootstrap'
 assert INSPECT_ACTION == 'agentos.content.social.inspect'
-for expected in (ACTION, CONVERGE_ACTION, X_AUTH_ACTION, BOOTSTRAP_ACTION, INSPECT_ACTION):
-    assert expected in ACTIONS
+assert ACTION in ACTIONS
+assert CONVERGE_ACTION in ACTIONS
+assert X_AUTH_ACTION in ACTIONS
+assert BOOTSTRAP_ACTION in ACTIONS
+assert INSPECT_ACTION in ACTIONS
 print('action_runtime_import=ok')
 print('executor_job_action_loaded=PASS')
 print('runtime_converge_action_loaded=PASS')
