@@ -135,8 +135,19 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                 query = parse_qs(parsed.query)
                 node_id = (query.get('node_id') or [''])[0]
                 token = self._bearer()
-                tasks = self.fabric.pull_tasks(node_id, token)
-                self._send(200, {'ok': True, 'tasks': tasks})
+                wait_raw = (query.get('wait_seconds') or ['0'])[0]
+                try:
+                    wait_seconds = max(0.0, min(float(wait_raw), 25.0))
+                except ValueError:
+                    raise ValueError('wait_seconds must be numeric')
+                deadline = time.monotonic() + wait_seconds
+                tasks: list[dict[str, Any]] = []
+                while True:
+                    tasks = self.fabric.pull_tasks(node_id, token)
+                    if tasks or time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.05)
+                self._send(200, {'ok': True, 'tasks': tasks, 'waited': wait_seconds > 0})
                 return
             if parsed.path == '/v1/bootstrap':
                 query = parse_qs(parsed.query)
