@@ -108,6 +108,7 @@ ADAPTER = WebSurfaceAdapter(
     cdp_url=CDP_URL,
     preflight_target_inventory=True,
     connect_timeout_ms=5000,
+    raw_cdp_fallback=True,
 )
 
 
