@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "gemini-creative-only-009",
+  "nonce": "gemini-send-button-probe-010",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName System.Windows.Forms\nAdd-Type @\"\nusing System;\nusing System.Runtime.InteropServices;\npublic static class W32U2 {\n [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);\n [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd,int n);\n [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X,int Y);\n [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f,uint dx,uint dy,uint data,UIntPtr extra);\n}\n\"@\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'No visible Edge window'}\n[W32U2]::ShowWindow($edge.MainWindowHandle,9)|Out-Null\n[W32U2]::SetForegroundWindow($edge.MainWindowHandle)|Out-Null\n$txt=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6KuL55W25oiR55qE5Ym15oSP5pCt5qqU44CC5oiR5oOz5YGa5LiA56+H57mB6auU5Lit5paHIFRocmVhZHMg6LK85paH77yM5Li76aGM5piv44CM5YWp5YCLIEFJIOW9vOatpOWNlOS9nO+8jOaKiuS4gOWAi+S6uueahOS4gOWPpemcgOaxguiuiuaIkOWujOaIkOeahOS9nOWTgeOAjeOAggoK6KuL5Y+q57Wm5oiR5LiA57WE5pyA57WC5o6o6Jam77yaCjEuIDEyMCDlrZfku6XlhafnmoQgVGhyZWFkcyDmlofmoYjvvIzopoHlg4/nnJ/kurrliIbkuqvmlrDprq7pq5TpqZfvvIzkuI3lg4/lu6PlkYrjgIIKMi4g5pyA5b6M55So5LiA5Y+l6Ieq54S255qE5ZWP6aGM5byV5bCO55WZ6KiA44CCCjMuIOS4gOWAi+mBqeWQiOaQremFjemAmeevh+iyvOaWh+eahOWWruW8temFjeWcluani+aDs++8muenkeaKgOaEn+S9hua6q+aaluOAgeS4jeimgeWkp+mHj+aWh+Wtl+OAgeS4jeimgeS8gealreewoeWgsemiqOOAggoK5LiN6KaB5o+Q5YiwIEFQSe+8jOS5n+S4jeimgeism+aKgOihk+e0sOevgOOAgg=='))\nSet-Clipboard -Value $txt\n[W32U2]::SetCursorPos(430,780)|Out-Null\n[W32U2]::mouse_event(2,0,0,0,[UIntPtr]::Zero)\n[W32U2]::mouse_event(4,0,0,0,[UIntPtr]::Zero)\nStart-Sleep -Milliseconds 250\n[System.Windows.Forms.SendKeys]::SendWait('^a')\n[System.Windows.Forms.SendKeys]::SendWait('^v')\nStart-Sleep -Milliseconds 350\n[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')\nStart-Sleep -Seconds 12\n[W32U2]::SetCursorPos(520,600)|Out-Null\n[W32U2]::mouse_event(2,0,0,0,[UIntPtr]::Zero)\n[W32U2]::mouse_event(4,0,0,0,[UIntPtr]::Zero)\nStart-Sleep -Milliseconds 250\n[System.Windows.Forms.SendKeys]::SendWait('^a')\n[System.Windows.Forms.SendKeys]::SendWait('^c')\nStart-Sleep -Milliseconds 250\n$clip=[string](Get-Clipboard -Raw -ErrorAction SilentlyContinue)\nif($clip.Length -gt 16000){$clip=$clip.Substring([Math]::Max(0,$clip.Length-16000))}\n[pscustomobject]@{title=$edge.MainWindowTitle;page_text=$clip}|ConvertTo-Json -Compress"
+      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'No visible Edge window'}\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$out=@()\nfor($i=0;$i -lt $all.Count;$i++){\n $e=$all.Item($i)\n $ct=$e.Current.ControlType.ProgrammaticName\n if($ct -match 'Button|Edit|Text'){\n   $r=$e.Current.BoundingRectangle\n   if($r.Y -gt 600 -and $r.Y -lt 900){\n     $out += [pscustomobject]@{type=$ct;name=[string]$e.Current.Name;aid=[string]$e.Current.AutomationId;x=[int]$r.X;y=[int]$r.Y;w=[int]$r.Width;h=[int]$r.Height;focus=[bool]$e.Current.HasKeyboardFocus;enabled=[bool]$e.Current.IsEnabled}\n   }\n }\n}\n$out | ConvertTo-Json -Depth 4 -Compress"
     ],
-    "timeout_seconds": 65
+    "timeout_seconds": 30
   }
 }
