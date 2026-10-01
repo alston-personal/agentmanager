@@ -307,7 +307,7 @@ cd "$STAGE"
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 test -f .next/server/app-paths-manifest.json
-node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route","/api/wardrobe/intake/route","/api/wardrobe/catalog/route","/api/wardrobe/tryon/render/route","/api/wardrobe/tryon/jobs/[jobId]/route","/api/wardrobe/tryon/retry/route","/api/wardrobe/tryon/assets/[jobId]/route","/api/wardrobe/outfit/current/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
+node -e 'const p=require("./.next/server/app-paths-manifest.json"); for(const r of ["/admin/usage/page","/api/admin/usage/route","/api/auth/session/route","/api/wardrobe/intake/route","/api/wardrobe/catalog/route","/api/wardrobe/tryon/render/route","/api/wardrobe/tryon/jobs/[jobId]/route","/api/wardrobe/tryon/retry/route","/api/wardrobe/tryon/assets/[jobId]/route","/api/wardrobe/outfit/current/route","/api/wardrobe/auth-handoff/route"]) if(!p[r]) throw Error("missing built route: "+r); console.log("dashboard_built_routes=PASS");'
 
 # Seed the source-backed Mio garments required by the try-on validator.
 # These files are service-owned runtime prerequisites; imported/user garments remain separate.
