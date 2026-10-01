@@ -55,6 +55,33 @@ jobs:
               find "$ROOT" -maxdepth 4 -type f -name "$id*" -printf "%p %s bytes %TY-%Tm-%TdT%TH:%TM:%TS\n" 2>/dev/null | sort || true
               echo request_state_end=$id
             done
+            echo receipt107_begin
+            python3 - <<'PY'
+import json
+p='/tmp/agentos-bootstrap-control/receipts/realm-gateway-36830120832-1.json'
+d=json.load(open(p,encoding='utf-8'))
+safe={
+  'schema':d.get('schema'),
+  'request_id':d.get('request_id'),
+  'action':d.get('action'),
+  'source_commit':d.get('source_commit'),
+  'ok':d.get('ok'),
+  'error':d.get('error'),
+  'failure_class':d.get('failure_class'),
+  'executor_user':d.get('executor_user'),
+  'started_at':d.get('started_at'),
+  'completed_at':d.get('completed_at'),
+  'scheduler':d.get('scheduler'),
+  'steps':[{
+    'step':x.get('step'),
+    'returncode':x.get('returncode'),
+    'stdout_tail':str(x.get('stdout') or '')[-2500:],
+    'stderr_tail':str(x.get('stderr') or '')[-2500:],
+  } for x in (d.get('steps') or [])],
+}
+print(json.dumps(safe,indent=2,sort_keys=True))
+PY
+            echo receipt107_end
             echo scheduler_status_excerpt_begin
             grep -E "oracle-control|realm-gateway-36830|heartbeat|state|queue_depth|control" /home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json 2>/dev/null | tail -80 || true
             echo scheduler_status_excerpt_end
