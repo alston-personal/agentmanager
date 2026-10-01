@@ -1,16 +1,10 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-reload-ffmpeg-017",
-  "action": "shell.exec",
+  "nonce": "desktop-demo-smoke-start-018",
+  "action": "desktop.demo.start",
   "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$pidOld=(Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -match 'python(.exe)?\"? -m agentos_node.client_cli run'} | Select-Object -First 1 -ExpandProperty ProcessId); if(-not $pidOld){throw 'thin_client_pid_missing'}; $cmd=\"Start-Sleep -Seconds 2; Stop-Process -Id $pidOld -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3; Start-ScheduledTask -TaskName 'AgentOS Thin Client'\"; Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cmd); Write-Output ('reload_pid='+$pidOld)"
-    ],
-    "timeout_seconds": 20
+    "label": "AgentOS Demo Smoke",
+    "stage": "REC / recorder smoke"
   }
 }
