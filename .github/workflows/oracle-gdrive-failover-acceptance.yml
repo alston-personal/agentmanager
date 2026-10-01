@@ -1,0 +1,53 @@
+name: Oracle GDrive Failover Acceptance
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-gdrive-failover-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Prove mount auto-recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+
+          systemctl --user stop agentos-gdrive-mount.service
+          for i in $(seq 1 20); do
+            if ! mountpoint -q "$MOUNT"; then break; fi
+            sleep 1
+          done
+          if mountpoint -q "$MOUNT"; then
+            echo "gdrive_failover_stop=FAILED"
+            exit 2
+          fi
+          echo "gdrive_failover_unmounted=PASS"
+
+          "$HOME/.local/bin/check_agentos_gdrive.sh"
+
+          mountpoint -q "$MOUNT"
+          systemctl --user is-active agentos-gdrive-mount.service
+          grep -Eq '^state=RECOVERED$|^state=READY$' "$HOME/.local/state/agentos/gdrive-health.state"
+          timeout 15 test -d "$MOUNT/backups"
+
+          echo "gdrive_failover_recovery=PASS"
+          cat "$HOME/.local/state/agentos/gdrive-health.state"
+          REMOTE
