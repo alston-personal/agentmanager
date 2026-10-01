@@ -1,0 +1,145 @@
+name: Hosted Finalize Dashboard Cutover
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-finalize-dashboard-cutover-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Finalize canonical Dashboard ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
+          exec 9>/tmp/agentos-dashboard-deploy.lock
+          flock -w 360 9
+          echo 'dashboard_cutover_lock=PASS'
+
+          PM2_BIN="$(command -v pm2 2>/dev/null || true)"
+          if [ -z "$PM2_BIN" ] && [ -d "$HOME/.nvm/versions/node" ]; then
+            PM2_BIN="$(find "$HOME/.nvm/versions/node" -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | sort | tail -n1 || true)"
+          fi
+          if [ -z "$PM2_BIN" ]; then
+            PM2_BIN="$(find "$HOME/.local" /usr/local -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | sort | tail -n1 || true)"
+          fi
+          echo "dashboard_pm2_cli=${PM2_BIN:-MISSING}"
+
+          if [ -n "$PM2_BIN" ]; then
+            "$PM2_BIN" jlist >/tmp/agentos-pm2-jlist.json 2>/dev/null || echo '[]' >/tmp/agentos-pm2-jlist.json
+            python3 - <<'PY'
+import json
+from pathlib import Path
+data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
+for app in data:
+    env=app.get('pm2_env') or {}
+    print('pm_id=%s name=%s cwd=%s status=%s' % (
+        app.get('pm_id'), app.get('name') or env.get('name'),
+        env.get('pm_cwd'), env.get('status')))
+PY
+            mapfile -t IDS < <(python3 - <<'PY'
+import json
+from pathlib import Path
+try: data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
+except Exception: data=[]
+for app in data:
+    env=app.get('pm2_env') or {}
+    joined=' '.join([
+      str(env.get('pm_cwd') or ''),
+      str(env.get('pm_exec_path') or ''),
+      str(app.get('name') or ''),
+      str(env.get('name') or '')
+    ]).lower()
+    if '/agent-data/releases/dashboard/apps/' in joined or 'dashboard' in joined:
+      i=app.get('pm_id')
+      if i is not None: print(i)
+PY
+            )
+            if [ "${#IDS[@]}" -gt 0 ]; then
+              echo "dashboard_legacy_pm2_ids=${IDS[*]}"
+              "$PM2_BIN" delete "${IDS[@]}"
+              "$PM2_BIN" save --force >/dev/null
+              echo 'dashboard_legacy_pm2_retired=PASS'
+            else
+              echo 'dashboard_legacy_pm2_retired=NO_MATCH'
+            fi
+          fi
+
+          # Kill only any remaining release-owned dashboard groups after PM2 retirement.
+          python3 - <<'PY'
+from pathlib import Path
+import os, signal, time
+groups=set()
+for e in Path('/proc').iterdir():
+    if not e.name.isdigit(): continue
+    try:
+        if e.stat().st_uid != os.getuid(): continue
+        cwd=str((e/'cwd').resolve())
+        cmd=(e/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
+        if '/agent-data/releases/dashboard/apps/' in cwd and ('next start' in cmd or 'next-server' in cmd or 'npm start' in cmd):
+            groups.add(os.getpgid(int(e.name)))
+    except Exception:
+        pass
+for g in groups:
+    try:
+        os.killpg(g, signal.SIGTERM)
+        print(f'dashboard_legacy_term_pgid={g}')
+    except ProcessLookupError:
+        pass
+if groups: time.sleep(2)
+PY
+
+          systemctl --user restart agentos-dashboard.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet agentos-dashboard.service && curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet agentos-dashboard.service
+
+          LISTENER="$(ss -ltnp 2>/dev/null | grep ':3000 ' || true)"
+          echo "dashboard_listener=$LISTENER"
+          PID="$(printf '%s\n' "$LISTENER" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1)"
+          test -n "$PID"
+          CWD="$(readlink -f "/proc/$PID/cwd" 2>/dev/null || true)"
+          echo "dashboard_listener_pid=$PID"
+          echo "dashboard_listener_cwd=$CWD"
+          test "$CWD" = "/home/ubuntu/agentmanager/dashboard"
+
+          BODY=/tmp/local-bootstrap-final
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 8 'http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "local_bootstrap_http=$CODE"
+          cat "$BODY"; echo
+          test "$CODE" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$BODY"
+          echo 'dashboard_canonical_cutover=PASS'
+          REMOTE
+
+      - name: Verify public bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=/tmp/public-bootstrap-final
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 10 'https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "public_bootstrap_http=$CODE"
+          cat "$BODY"; echo
+          test "$CODE" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$BODY"
+          echo 'realm_gateway_bootstrap_public=PASS'
