@@ -27,6 +27,13 @@ python3 "$PORT_MANAGER" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard 
 python3 "$PORT_MANAGER" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
 echo "port_governance=PASS"
 
+# Serialize all Dashboard mutations. Multiple repair/deploy carriers touching the
+# same .next tree caused transient ENOENT build failures and ambiguous runtime state.
+command -v flock >/dev/null 2>&1 || { echo "ERROR: flock is required for dashboard deployment serialization" >&2; exit 2; }
+exec 9>/tmp/agentos-dashboard-deploy.lock
+flock -w 180 9 || { echo "ERROR: another dashboard deployment owns the mutation lock" >&2; exit 7; }
+echo "dashboard_deploy_lock=PASS"
+
 git -C "$REPO" fetch origin "$SOURCE_COMMIT"
 git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 
@@ -317,6 +324,11 @@ if ! printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1' || ! printf '
   exit 6
 fi
 echo "local_realm_health=PASS"
+
+# The canonical systemd runtime must not read the same .next tree while it is
+# being destroyed/rebuilt. An explicit stop does not trigger Restart=always.
+systemctl --user stop agentos-dashboard.service >/dev/null 2>&1 || true
+echo "dashboard_canonical_runtime_stopped_for_build=PASS"
 
 rm -rf "$DASH/.next"
 echo "dashboard_build_cache=CLEARED"
