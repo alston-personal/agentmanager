@@ -11,6 +11,8 @@ SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 DASH="$REPO/dashboard"
 PORT_MANAGER_REL="scripts/core_services/port_manager.py"
 PORT_MANAGER_EXACT="/tmp/agentos-port-manager-$SOURCE_COMMIT.py"
+RETIRE_PM2_REL="scripts/retire_legacy_dashboard_pm2_user.sh"
+RETIRE_PM2_EXACT="/tmp/agentos-retire-dashboard-pm2-$SOURCE_COMMIT.sh"
 ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
@@ -30,6 +32,9 @@ git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 git -C "$REPO" show "$SOURCE_COMMIT:$PORT_MANAGER_REL" > "$PORT_MANAGER_EXACT"
 chmod 700 "$PORT_MANAGER_EXACT"
 echo "port_manager_source=$SOURCE_COMMIT:$PORT_MANAGER_REL"
+git -C "$REPO" show "$SOURCE_COMMIT:$RETIRE_PM2_REL" > "$RETIRE_PM2_EXACT"
+chmod 700 "$RETIRE_PM2_EXACT"
+echo "dashboard_pm2_retire_source=$SOURCE_COMMIT:$RETIRE_PM2_REL"
 
 if ! python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard >/dev/null 2>&1; then
   python3 "$PORT_MANAGER_EXACT" migrate 3000 agentmanager agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
@@ -148,6 +153,11 @@ PY
       echo "dashboard_legacy_pm2_retired=NO_MATCH"
     fi
   fi
+
+  # If the PM2 CLI is unavailable, retire the daemon only after proving both
+  # its durable registry and all descendants are Dashboard-only. This helper is
+  # idempotent and becomes a no-op when the Dashboard has already been removed.
+  "$RETIRE_PM2_EXACT"
 
   # Retire any remaining legacy dashboard processes before the canonical
   # systemd-owned runtime starts. A reboot may leave none; that is valid.
