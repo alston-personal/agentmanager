@@ -59,10 +59,14 @@ def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Startin
     _require_windows()
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
+        sharex = Path(os.environ.get("ProgramFiles") or r"C:\\Program Files") / "ShareX" / "ffmpeg.exe"
+        if sharex.is_file():
+            ffmpeg = str(sharex)
+    if not ffmpeg:
         local = os.environ.get("LOCALAPPDATA")
         if local:
             packages = Path(local) / "Microsoft" / "WinGet" / "Packages"
-            candidates = sorted(packages.glob("**/ffmpeg.exe")) if packages.is_dir() else []
+            candidates = sorted(packages.rglob("ffmpeg.exe")) if packages.is_dir() else []
             if candidates:
                 ffmpeg = str(candidates[-1])
     if not ffmpeg:
