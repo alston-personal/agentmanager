@@ -1,0 +1,48 @@
+{
+  "schema": "agentos.capability-manifest/v1",
+  "capability_id": "content.publish",
+  "display_name": "Governed Content Publish",
+  "semantic_owner": "content-publish",
+  "version": "0.1.0",
+  "lifecycle": "implemented",
+  "contract": {
+    "input_schema": "agentos.content-publish/v1",
+    "content_schema": "agentos.content-artifact/v1",
+    "batch_schema": "agentos.content-publish-batch/v1",
+    "outputs": [
+      "agentos.content-publish-receipt/v1",
+      "agentos.content-publish-batch-receipt/v1"
+    ],
+    "side_effects": [
+      "provider-dependent-public-publish-only-with-authority",
+      "prepare-mode-has-no-public-side-effect"
+    ]
+  },
+  "invocation": {
+    "kind": "python-library",
+    "entrypoint": "runtime_core.content_publish",
+    "example": "Resolve capability://content.publish before selecting a platform provider."
+  },
+  "discovery": {
+    "governance_directory": true,
+    "provider_id": "service://content.publish",
+    "reuse_before_build": true
+  },
+  "policy": {
+    "caller_credentials_allowed": false,
+    "caller_browser_script_allowed": false,
+    "account_ref_required": true,
+    "provider_health_separate_from_node_health": true,
+    "blind_retry_after_unknown_side_effect": false,
+    "gui_transport_is_default": false,
+    "gui_unattended_x_publish": false,
+    "reuse_existing_social_runtime": true
+  },
+  "governance": {
+    "auto_promote": false,
+    "authority_expansion": false,
+    "requires_evidence": true,
+    "requires_regression_gate": true,
+    "public_publish_requires_effect_authority": true
+  }
+}
