@@ -3,6 +3,8 @@ name: Oracle Inspect Realm Fabric Endpoint
 on:
   workflow_dispatch:
   push:
+    branches:
+      - core/integration
     paths:
       - '.github/workflows/oracle-inspect-realm-fabric-endpoint.yml'
 
@@ -15,28 +17,48 @@ concurrency:
 
 jobs:
   inspect:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
+    runs-on: ubuntu-latest
     timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
       - name: Inspect current Core listener and Realm Fabric authority
         shell: bash
         run: |
           set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
           echo "identity=$(id)"
           echo "home=$HOME"
           echo "agent_data_root_meta=$(stat -c '%U:%G %a' /home/ubuntu/agent-data 2>/dev/null || echo missing)"
           if [ -w /home/ubuntu/agent-data ]; then echo 'agent_data_root_writable=true'; else echo 'agent_data_root_writable=false'; fi
-          echo '=== USER SYSTEMD ==='
-          systemctl --user is-system-running || true
+          echo '=== REALM SERVICE ==='
+          systemctl --user is-active agentos-realm-fabric.service || true
+          systemctl --user show agentos-realm-fabric.service -p MainPID -p ExecMainPID -p ActiveState -p SubState -p FragmentPath -p ExecStart --no-pager || true
           echo '=== LISTENERS ==='
-          ss -ltn || true
+          ss -ltnp 2>/dev/null | grep -E ':8765|:8780|:3000' || true
           echo '=== CONTROL PLANE ==='
           curl -fsS --max-time 3 http://127.0.0.1:8765/health || true
           echo
           echo '=== REALM FABRIC ==='
-          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health || true
-          echo
+          if BODY=$(curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health); then
+            echo "$BODY"
+            echo 'realm_fabric_health=PASS'
+          else
+            rc=$?
+            echo "realm_fabric_health=FAIL rc=$rc"
+          fi
+          echo '=== REALM JOURNAL ==='
+          journalctl --user -u agentos-realm-fabric.service -n 120 --no-pager || true
           echo '=== LIVE CHECKOUT ==='
           LIVE=/home/ubuntu/agentmanager
           test -d "$LIVE/.git" && git -C "$LIVE" rev-parse HEAD || true
@@ -44,7 +66,21 @@ jobs:
           if [ -f "$LIVE/.env" ]; then
             grep -E '^(AGENTOS_CONTROL_PLANE_PUBLIC_URL|AGENTOS_REALM_ID|AGENT_DATA_ROOT|AGENT_MODE)=' "$LIVE/.env" || true
           fi
-          echo '=== NGINX SITES ==='
-          if command -v nginx >/dev/null 2>&1; then
-            nginx -T 2>/dev/null | grep -E 'server_name|listen 443|location .*agentos|proxy_pass.*8765|proxy_pass.*8766|proxy_pass.*8780' || true
-          fi
+          echo '=== NODE SNAPSHOT ==='
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 - <<'PY' || true
+          import json
+          from agent_core.node_registry import NodeRegistry
+          nodes=NodeRegistry().node_map().get('nodes') or []
+          for node in nodes:
+              if node.get('node_id') in {'oracle-core-node','mbpr','vopc5750','oracle-exec'}:
+                  print(json.dumps({
+                      'node_id':node.get('node_id'),
+                      'status':node.get('status'),
+                      'reported_status':node.get('reported_status'),
+                      'heartbeat_age_seconds':node.get('heartbeat_age_seconds'),
+                      'platform':node.get('platform'),
+                      'runtime':node.get('runtime'),
+                      'capabilities':node.get('capabilities'),
+                  },sort_keys=True,separators=(',',':')))
+          PY
+          REMOTE
