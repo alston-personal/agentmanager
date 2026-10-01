@@ -83,7 +83,11 @@ for entry in Path('/proc').iterdir():
         pgid=os.getpgid(int(entry.name))
     except (OSError, PermissionError, ProcessLookupError):
         continue
-    if cwd != target:
+    is_dashboard_runtime = (
+        cwd == target
+        or '/agent-data/releases/dashboard/apps/' in cwd
+    )
+    if not is_dashboard_runtime:
         continue
     if raw.startswith('npm start') or 'next start' in raw or raw.startswith('next-server'):
         if pgid != own_pgid:
