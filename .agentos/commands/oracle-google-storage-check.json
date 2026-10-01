@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "inspect backup script body, current schedule, and recovery upload status",
-  "requested_at": "2026-10-01T16:21:00+08:00"
+  "purpose": "check recovery copy process and remote quarantine files",
+  "requested_at": "2026-10-01T16:22:30+08:00"
 }
