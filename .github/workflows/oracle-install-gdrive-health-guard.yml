@@ -36,61 +36,12 @@ jobs:
           STATE="$HOME/.local/state/agentos/gdrive-health.state"
           now="$(date -Is)"
 
-          update_registry() {
-            local state="$1"
-            python3 - "$state" "$MOUNT" <<'PY'
-          import json
-          import os
-          import sys
-          from datetime import datetime, timezone
-          from pathlib import Path
-
-          state = sys.argv[1]
-          mountpoint = sys.argv[2]
-          path = Path.home() / "agent-data" / "resources" / "registry.json"
-          path.parent.mkdir(parents=True, exist_ok=True)
-          try:
-              data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-          except Exception:
-              data = {}
-          data.setdefault("schema_version", "0.1")
-          resources = data.setdefault("resources", {})
-          resource = resources.get("storage://google-drive", {})
-          resource.update({
-              "id": "storage://google-drive",
-              "kind": "storage",
-              "declared": {
-                  "mountpoint": mountpoint,
-                  "compatibility_path": str(Path.home() / "gdrive"),
-                  "service": "agentos-gdrive-mount.service",
-                  "fstype": "fuse.rclone",
-                  "failure_policy": "fail-closed",
-              },
-          })
-          observed = resource.setdefault("observed", {})
-          observed["mounted"] = state in {"READY", "RECOVERED"}
-          observed["state"] = state
-          verification = resource.setdefault("verification", {})
-          verification["status"] = "verified" if state in {"READY", "RECOVERED"} else "degraded"
-          verification["last_verified_at"] = datetime.now(timezone.utc).isoformat()
-          verification["ttl_seconds"] = 360
-          verification["errors"] = [] if state in {"READY", "RECOVERED"} else [f"gdrive health state: {state}"]
-          resources["storage://google-drive"] = resource
-          data["updated_at"] = datetime.now(timezone.utc).isoformat()
-          tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-          tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-          os.replace(tmp, path)
-          PY
-          }
-
           if mountpoint -q "$MOUNT" && timeout 10 test -d "$MOUNT/backups"; then
             printf 'checked_at=%s\nstate=READY\n' "$now" > "$STATE"
-            update_registry READY
             exit 0
           fi
 
           printf 'checked_at=%s\nstate=RECOVERING\n' "$now" > "$STATE"
-          update_registry RECOVERING
           if findmnt -rn "$MOUNT" >/dev/null 2>&1; then
             (command -v fusermount3 >/dev/null && fusermount3 -uz "$MOUNT") || \
               (command -v fusermount >/dev/null && fusermount -uz "$MOUNT") || true
@@ -101,13 +52,11 @@ jobs:
           for i in $(seq 1 60); do
             if mountpoint -q "$MOUNT" && timeout 15 test -d "$MOUNT/backups"; then
               printf 'checked_at=%s\nstate=RECOVERED\n' "$(date -Is)" > "$STATE"
-              update_registry RECOVERED
               exit 0
             fi
             sleep 2
           done
           printf 'checked_at=%s\nstate=FAILED\n' "$(date -Is)" > "$STATE"
-          update_registry FAILED
           exit 42
           SH
           chmod 700 "$HOME/.local/bin/check_agentos_gdrive.sh"
@@ -138,15 +87,12 @@ jobs:
 
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-gdrive-health.timer
-          if ! systemctl --user start agentos-gdrive-health.service; then
-            systemctl --user status agentos-gdrive-health.service --no-pager -l || true
-            journalctl --user -u agentos-gdrive-health.service -n 120 --no-pager || true
-            cat "$HOME/.local/state/agentos/gdrive-health.state" 2>/dev/null || true
-            exit 1
-          fi
+          systemctl --user start agentos-gdrive-health.service
           cat "$HOME/.local/state/agentos/gdrive-health.state"
           systemctl --user is-active agentos-gdrive-health.timer
           echo 'gdrive_health_guard_install=PASS'
           REMOTE
 
 # user-mountpoint-fix 2026-10-01T09:32+08:00
+
+# storage-resource-publisher-split 2026-10-02
