@@ -91,6 +91,23 @@ function Install-Supervisor([string]$PythonPath) {
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   }
 
+  # Remove legacy supervisor artifacts from pre-headless builds. The primary
+  # hidden Thin Client task now owns restart behavior; stale watchdog/switch
+  # tasks can otherwise keep waking the user session or leave console windows.
+  foreach($legacyTask in @('AgentOS Thin Client Watchdog','AgentOS Thin Client Headless Switch')){
+    $legacy=Get-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
+    if($legacy){
+      Stop-ScheduledTask -TaskName $legacyTask -ErrorAction SilentlyContinue
+      Unregister-ScheduledTask -TaskName $legacyTask -Confirm:$false
+    }
+  }
+  foreach($legacyScript in @(
+    (Join-Path $InstallRoot 'agentos-thin-client-watchdog.ps1'),
+    (Join-Path $InstallRoot 'agentos-headless-switch.ps1')
+  )){
+    Remove-Item -LiteralPath $legacyScript -Force -ErrorAction SilentlyContinue
+  }
+
   $state=Join-Path $InstallRoot 'state'
   $runner=Join-Path $InstallRoot 'agentos-thin-client-hidden.ps1'
   $log=Join-Path $InstallRoot 'thin-client.log'
