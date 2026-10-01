@@ -1,16 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "threads-publish-verify-032",
-  "action": "shell.exec",
+  "nonce": "threads-profile-open-033",
+  "action": "desktop.open_url",
   "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\nAdd-Type @\"\nusing System;\nusing System.Runtime.InteropServices;\npublic static class W32VerifyPost {\n [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);\n}\n\"@\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'Edge not visible'}\n[W32VerifyPost]::SetForegroundWindow($edge.MainWindowHandle)|Out-Null\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$target=$null\nforeach($e in $all){\n  $n=[string]$e.Current.Name\n  if($n -eq '已發佈查看' -or $n -eq '查看'){\n    $target=$e\n  }\n}\nif($null -ne $target){\n  try{\n    $inv=$target.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)\n    $inv.Invoke()\n  }catch{\n    try{\n      $sel=$target.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)\n      $sel.Select()\n    }catch{}\n  }\n}\nStart-Sleep -Seconds 5\n\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$address=''\n$hits=@()\nforeach($e in $all){\n  $ct=$e.Current.ControlType.ProgrammaticName\n  $n=[string]$e.Current.Name\n  if($ct -eq 'ControlType.Edit' -and [string]$e.Current.AutomationId -eq 'view_1017'){\n    try{\n      $vp=$e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)\n      $address=[string]$vp.Current.Value\n    }catch{}\n  }\n  if($n -like '*剛剛真的看著 ChatGPT*' -or $n -like '*你最想把哪件事丟給兩個 AI 一起完成*'){\n    $r=$e.Current.BoundingRectangle\n    $hits += [pscustomobject]@{type=$ct;name=$n;x=[string]$r.X;y=[string]$r.Y;w=[string]$r.Width;h=[string]$r.Height}\n  }\n}\n[pscustomobject]@{title=$edge.MainWindowTitle;address=$address;post_hits=$hits}|ConvertTo-Json -Depth 6 -Compress"
-    ],
-    "timeout_seconds": 35
+    "url": "https://www.threads.com/@oursong_alstonhuang"
   }
 }
