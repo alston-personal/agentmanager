@@ -36,9 +36,25 @@ git -C "$REPO" show "$SOURCE_COMMIT:$RETIRE_PM2_REL" > "$RETIRE_PM2_EXACT"
 chmod 700 "$RETIRE_PM2_EXACT"
 echo "dashboard_pm2_retire_source=$SOURCE_COMMIT:$RETIRE_PM2_REL"
 
-if ! python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard >/dev/null 2>&1; then
-  python3 "$PORT_MANAGER_EXACT" migrate 3000 agentmanager agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
-fi
+PORT_3000_OWNER="$(
+  python3 "$PORT_MANAGER_EXACT" list --json |
+    python3 -c 'import json,sys; print((json.load(sys.stdin).get("3000") or {}).get("project") or "")'
+)"
+case "$PORT_3000_OWNER" in
+  agentos-dashboard)
+    python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard
+    ;;
+  agentmanager)
+    python3 "$PORT_MANAGER_EXACT" migrate 3000 agentmanager agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+    ;;
+  "")
+    python3 "$PORT_MANAGER_EXACT" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+    ;;
+  *)
+    echo "ERROR: governed port 3000 belongs to unexpected project '$PORT_3000_OWNER'" >&2
+    exit 8
+    ;;
+esac
 python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard
 python3 "$PORT_MANAGER_EXACT" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
 echo "port_governance=PASS"
