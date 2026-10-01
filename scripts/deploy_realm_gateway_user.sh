@@ -9,7 +9,8 @@ fi
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 DASH="$REPO/dashboard"
-PORT_MANAGER="$REPO/scripts/core_services/port_manager.py"
+PORT_MANAGER_REL="scripts/core_services/port_manager.py"
+PORT_MANAGER_EXACT="/tmp/agentos-port-manager-$SOURCE_COMMIT.py"
 ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
@@ -22,9 +23,16 @@ LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstra
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
 
-[ -f "$PORT_MANAGER" ] || { echo "ERROR: Port Manager missing" >&2; exit 2; }
-python3 "$PORT_MANAGER" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
-python3 "$PORT_MANAGER" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
+# Fetch the exact source revision before invoking any deployment dependency.
+# Governance helpers must come from the same immutable revision as the repair.
+git -C "$REPO" fetch origin "$SOURCE_COMMIT"
+git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
+git -C "$REPO" show "$SOURCE_COMMIT:$PORT_MANAGER_REL" > "$PORT_MANAGER_EXACT"
+chmod 700 "$PORT_MANAGER_EXACT"
+echo "port_manager_source=$SOURCE_COMMIT:$PORT_MANAGER_REL"
+
+python3 "$PORT_MANAGER_EXACT" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+python3 "$PORT_MANAGER_EXACT" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
 echo "port_governance=PASS"
 
 # Serialize all Dashboard mutations. Multiple repair/deploy carriers touching the
@@ -33,9 +41,6 @@ command -v flock >/dev/null 2>&1 || { echo "ERROR: flock is required for dashboa
 exec 9>/tmp/agentos-dashboard-deploy.lock
 flock -w 180 9 || { echo "ERROR: another dashboard deployment owns the mutation lock" >&2; exit 7; }
 echo "dashboard_deploy_lock=PASS"
-
-git -C "$REPO" fetch origin "$SOURCE_COMMIT"
-git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 
 DASH_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 DASH_UNIT="$DASH_UNIT_DIR/agentos-dashboard.service"
