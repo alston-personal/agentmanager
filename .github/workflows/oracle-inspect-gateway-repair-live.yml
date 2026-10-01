@@ -1,0 +1,45 @@
+name: Oracle Inspect Gateway Repair Live
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-inspect-gateway-repair-live.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live repair state
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          echo '=== DEPLOY/BUILD PROCESSES ==='
+          ps -eo pid,ppid,pgid,stat,etime,%cpu,%mem,cmd | grep -E 'deploy_realm_gateway|next build|next-server|npm (run build|start)|pm2|flock' | grep -v grep || true
+          echo '=== LOCK ==='
+          command -v lslocks >/dev/null 2>&1 && lslocks | grep agentos-dashboard-deploy || true
+          echo '=== SERVICES ==='
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p ExecMainPID --no-pager || true
+          systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState -p MainPID -p ExecMainPID --no-pager || true
+          echo '=== LISTENERS ==='
+          ss -ltnp 2>/dev/null | grep -E ':3000|:8780' || true
+          echo '=== NEXT TREE ==='
+          stat -c 'next_meta=size=%s mtime=%y' /home/ubuntu/agentmanager/dashboard/.next 2>/dev/null || echo next_missing
+          du -sh /home/ubuntu/agentmanager/dashboard/.next 2>/dev/null || true
+          REMOTE
