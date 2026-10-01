@@ -25,6 +25,7 @@ jobs:
           python3 - <<'PY'
           import json,time
           from agent_core.realm_fabric import RealmFabricStore
+          from agent_core.node_registry import NodeRegistry
           cmd=json.load(open('.agentos/commands/mbpr-threads-web-search.json',encoding='utf-8'))
           assert cmd.get('node_id')=='mbpr'
           sha=str(cmd.get('source_commit') or '')
@@ -38,10 +39,17 @@ jobs:
                 "p=tempfile.mktemp(suffix='.py'); "
                 "urllib.request.urlretrieve('https://raw.githubusercontent.com/alston-personal/agentmanager/"+sha+"/scripts/threads_existing_chrome_search.py',p); "
                 "sys.argv=[p]; runpy.run_path(p,run_name='__main__')")
-          tid='threads-web-search-'+str(int(time.time()))
+          registry=NodeRegistry().node_map()
+          node=next((n for n in registry.get('nodes',[]) if n.get('node_id')=='mbpr'),None)
+          print('mbpr_registry='+json.dumps(node,ensure_ascii=False,separators=(',',':')))
           store=RealmFabricStore()
+          fabric=store.load()
+          print('mbpr_fabric_present='+str('mbpr' in (fabric.get('nodes') or {})).lower())
+          if not node or node.get('status')!='online':
+              raise SystemExit('mbpr node offline or not registered')
+          tid='threads-web-search-'+str(int(time.time()))
           store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':45,'cognition_ids_used':[]})
-          for _ in range(55):
+          for _ in range(35):
               r=store.get_receipt(tid)
               if r:
                   print(str(r.get('stdout') or ''))
