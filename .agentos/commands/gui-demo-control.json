@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "threads-file-dialog-probe-023",
+  "nonce": "top-windows-probe-024",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,7 +9,7 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\n$desktop=[System.Windows.Automation.AutomationElement]::RootElement\n$wins=$desktop.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)\n$dlg=$null\nfor($i=0;$i -lt $wins.Count;$i++){\n  $w=$wins.Item($i)\n  $cls=[string]$w.Current.ClassName\n  $name=[string]$w.Current.Name\n  if($cls -eq '#32770' -or $name -match '開啟|Open|選取|檔案'){ $dlg=$w; break }\n}\nif($null -eq $dlg){throw 'No file picker dialog found'}\n$all=$dlg.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$out=@()\nfor($i=0;$i -lt $all.Count;$i++){\n  $e=$all.Item($i)\n  $ct=$e.Current.ControlType.ProgrammaticName\n  if($ct -match 'Edit|Button|ComboBox'){\n    $r=$e.Current.BoundingRectangle\n    $out += [pscustomobject]@{\n      type=$ct\n      name=[string]$e.Current.Name\n      aid=[string]$e.Current.AutomationId\n      class=[string]$e.Current.ClassName\n      focusable=[bool]$e.Current.IsKeyboardFocusable\n      enabled=[bool]$e.Current.IsEnabled\n      has_focus=[bool]$e.Current.HasKeyboardFocus\n      x=[string]$r.X;y=[string]$r.Y;w=[string]$r.Width;h=[string]$r.Height\n      value_supported=[bool]$e.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]([object]$null))\n    }\n  }\n}\n[pscustomobject]@{dialog_name=[string]$dlg.Current.Name;dialog_class=[string]$dlg.Current.ClassName;controls=$out}|ConvertTo-Json -Depth 6 -Compress"
+      "$ErrorActionPreference='Stop'\nAdd-Type @\"\nusing System;\nusing System.Text;\nusing System.Runtime.InteropServices;\npublic static class W32Top {\n  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);\n  [DllImport(\"user32.dll\")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);\n  [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr hWnd);\n  [DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);\n  [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int max);\n  [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder sb, int max);\n}\n\"@\n$out=New-Object System.Collections.ArrayList\n$cb=[W32Top+EnumWindowsProc]{\n param($h,$l)\n if([W32Top]::IsWindowVisible($h)){\n   $tsb=New-Object System.Text.StringBuilder 512\n   $csb=New-Object System.Text.StringBuilder 256\n   [void][W32Top]::GetWindowText($h,$tsb,$tsb.Capacity)\n   [void][W32Top]::GetClassName($h,$csb,$csb.Capacity)\n   [uint32]$pid=0\n   [void][W32Top]::GetWindowThreadProcessId($h,[ref]$pid)\n   $p=Get-Process -Id $pid -ErrorAction SilentlyContinue\n   [void]$out.Add([pscustomobject]@{\n     hwnd=[string]$h\n     title=$tsb.ToString()\n     class=$csb.ToString()\n     pid=[int]$pid\n     process=[string]$p.ProcessName\n   })\n }\n return $true\n}\n[W32Top]::EnumWindows($cb,[IntPtr]::Zero)|Out-Null\n$out | ConvertTo-Json -Depth 4 -Compress"
     ],
     "timeout_seconds": 30
   }
