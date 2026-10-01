@@ -1,0 +1,128 @@
+name: Repair VO10005870 Legacy Popup Sources
+
+on:
+  push:
+    branches:
+      - inspect/vo10005870-cmd-popup-20261001
+    paths:
+      - '.github/workflows/repair-vo10005870-legacy-popup.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Remove obsolete AgentOS popup sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import json,time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id='VO10005870'
+          nodes=NodeRegistry().node_map().get('nodes') or []
+          node=next((n for n in nodes if str(n.get('node_id') or '')==node_id),None)
+          if not node: raise SystemExit('node_not_registered')
+          status=str(node.get('effective_status') or node.get('status') or '')
+          roots=(node.get('workspace_roots') or {}).get('readable') or []
+          caps=set(node.get('capabilities') or [])
+          if status!='online': raise SystemExit('node_not_online:'+status)
+          if 'shell.exec' not in caps: raise SystemExit('node_missing_shell_exec')
+          if not roots: raise SystemExit('node_missing_readable_workspace')
+          cwd=str(roots[0])
+
+          ps=r"""
+          $ErrorActionPreference='Stop'
+
+          foreach($name in @('AgentOS Thin Client Watchdog','AgentOS Thin Client Headless Switch')){
+            $t=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            if($null -ne $t){
+              Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+              Unregister-ScheduledTask -TaskName $name -Confirm:$false
+            }
+          }
+
+          foreach($path in @(
+            (Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-thin-client-watchdog.ps1'),
+            (Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-headless-switch.ps1')
+          )){
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }
+
+          Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -ieq 'cmd.exe' -and
+            [string]$_.CommandLine -like '*\Downloads\join.cmd*'
+          } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+          }
+
+          Start-Sleep -Seconds 2
+
+          $client=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction Stop
+          $action=$client.Actions | Select-Object -First 1
+          $legacy=@()
+          foreach($name in @('AgentOS Thin Client Watchdog','AgentOS Thin Client Headless Switch')){
+            if($null -ne (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue)){ $legacy += $name }
+          }
+          $joinAlive=@(
+            Get-CimInstance Win32_Process | Where-Object {
+              $_.Name -ieq 'cmd.exe' -and
+              [string]$_.CommandLine -like '*\Downloads\join.cmd*'
+            }
+          )
+
+          $doc=[ordered]@{
+            client_state=[string]$client.State
+            client_execute=[string]$action.Execute
+            client_arguments=[string]$action.Arguments
+            client_hidden=[bool]$client.Settings.Hidden
+            legacy_tasks=@($legacy)
+            join_cmd_process_count=[int]$joinAlive.Count
+          }
+
+          if($doc.client_state -ne 'Running'){ throw 'Thin Client is not running' }
+          if($doc.client_execute -notmatch '(?i)powershell\.exe$'){ throw 'Thin Client is not using hidden PowerShell' }
+          if($doc.client_arguments -notlike '*-WindowStyle Hidden*'){ throw 'Thin Client hidden flag missing' }
+          if(-not $doc.client_hidden){ throw 'Thin Client task is not hidden' }
+          if($legacy.Count -ne 0){ throw 'Legacy AgentOS tasks remain' }
+          if($joinAlive.Count -ne 0){ throw 'join.cmd process remains' }
+
+          $doc | ConvertTo-Json -Compress
+          """
+
+          fabric=RealmFabricStore()
+          task_id='repair-legacy-popup-VO10005870-20261001-v1'
+          existing=fabric.get_receipt(task_id)
+          if existing is None:
+              task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':cwd,'timeout_seconds':90,'cognition_ids_used':[]}
+              fabric.queue_task(node_id,task)
+              print('repair_queued=PASS',flush=True)
+          receipt=existing
+          for _ in range(45):
+              if receipt is not None: break
+              time.sleep(2)
+              receipt=fabric.get_receipt(task_id)
+          if receipt is None: raise SystemExit('receipt_timeout')
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0)!=0:
+              raise SystemExit('repair_failed:'+str(receipt.get('stderr') or receipt.get('error') or '')[-3000:])
+          print('REPAIR_JSON='+str(receipt.get('stdout') or '').strip())
+          PY
+          REMOTE
