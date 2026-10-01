@@ -473,20 +473,57 @@ def _gui_worker_state() -> tuple[str, bool]:
     return state, stale
 
 
-def _mbpr_threads_gui_candidate() -> tuple[dict[str, Any] | None, str]:
+def _select_external_capability_candidate(
+    nodes: list[dict[str, Any]],
+    required_capabilities: tuple[str, ...],
+) -> tuple[dict[str, Any] | None, str]:
+    """Select the freshest online external node that satisfies every capability.
+
+    Local Oracle execution is represented by role workers, not by Realm fallback
+    candidates.  Keep the same-machine oracle-exec client out of this selector;
+    every other client node competes by live capability and heartbeat freshness.
+    """
+    required = set(required_capabilities)
+    external = [
+        item
+        for item in nodes
+        if isinstance(item, dict)
+        and item.get("role") != "core"
+        and str(item.get("node_id") or "") != "oracle-exec"
+    ]
+    if not external:
+        return None, "external_nodes_not_registered"
+
+    online = [item for item in external if item.get("status") == "online"]
+    if not online:
+        return None, "external_nodes_offline"
+
+    eligible = [
+        item
+        for item in online
+        if required.issubset(set(item.get("capabilities") or []))
+    ]
+    if not eligible:
+        return None, "external_nodes_missing_capability"
+
+    def rank(item: dict[str, Any]) -> tuple[float, str]:
+        age = item.get("heartbeat_age_seconds")
+        try:
+            freshness = float(age)
+        except (TypeError, ValueError):
+            freshness = float("inf")
+        return freshness, str(item.get("node_id") or "")
+
+    return min(eligible, key=rank), "ready"
+
+
+def _external_capability_candidate(required_capabilities: tuple[str, ...]) -> tuple[dict[str, Any] | None, str]:
     try:
         from agent_core.node_registry import NodeRegistry
         nodes = NodeRegistry().node_map().get("nodes") or []
     except Exception as exc:
         return None, "node_registry_error:" + type(exc).__name__
-    node = next((item for item in nodes if item.get("node_id") == "mbpr"), None)
-    if not isinstance(node, dict):
-        return None, "mbpr_not_registered"
-    if node.get("status") != "online":
-        return None, "mbpr_offline"
-    if "threads.gui.read" not in set(node.get("capabilities") or []):
-        return None, "mbpr_missing_threads.gui.read"
-    return node, "ready"
+    return _select_external_capability_candidate(nodes, required_capabilities)
 
 
 def _merge_fallback_events(events: Any) -> int:
@@ -538,10 +575,10 @@ def route_failover_once(*, worker_id: str = "agentos-router", failover_after_sec
             continue
 
         request_id = filename.removesuffix(".request.json")
-        candidate, candidate_reason = _mbpr_threads_gui_candidate()
+        candidate, candidate_reason = _external_capability_candidate(policy.capabilities)
         if candidate is None:
             if age >= incident_after_seconds:
-                failure = "node_offline" if candidate_reason == "mbpr_offline" else "capability_unavailable"
+                failure = "node_offline" if candidate_reason == "external_nodes_offline" else "capability_unavailable"
                 _incident_once(
                     request_id=request_id,
                     action=action,
@@ -574,11 +611,14 @@ def route_failover_once(*, worker_id: str = "agentos-router", failover_after_sec
             request_id, action, source_commit, _post_key = bc._validate_request(claimed, payload)
             from agent_core.realm_fabric import RealmFabricStore
             store = RealmFabricStore()
+            candidate_id = str(candidate.get("node_id") or "")
+            if not candidate_id:
+                raise RuntimeError("external_failover_candidate_missing_node_id")
             task_id = "scheduler-failover-" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()[:24]
             existing = store.get_receipt(task_id)
             if existing is None:
                 store.queue_task(
-                    "mbpr",
+                    candidate_id,
                     {
                         "schema": "agentos.node-task/v0.1",
                         "task_id": task_id,
@@ -594,12 +634,12 @@ def route_failover_once(*, worker_id: str = "agentos-router", failover_after_sec
                 time.sleep(1.0)
                 remote = store.get_receipt(task_id)
             if remote is None:
-                raise TimeoutError("mbpr_failover_receipt_timeout")
+                raise TimeoutError(candidate_id + "_failover_receipt_timeout")
             if remote.get("ok") is not True:
-                raise RuntimeError("mbpr_failover_worker_failed")
+                raise RuntimeError(candidate_id + "_failover_worker_failed")
             state = str(remote.get("threads_gui_read_state") or "UNKNOWN")
             if state not in {"PASS", "LOGIN_REQUIRED"}:
-                raise RuntimeError("mbpr_failover_invalid_state:" + state)
+                raise RuntimeError(candidate_id + "_failover_invalid_state:" + state)
 
             appended = _merge_fallback_events(remote.get("events"))
             stdout = "\n".join(
@@ -621,11 +661,11 @@ def route_failover_once(*, worker_id: str = "agentos-router", failover_after_sec
                 "started_at": started,
                 "completed_at": bc._now(),
                 "ok": True,
-                "steps": [{"step": "mbpr_threads_gui_read", "returncode": 0, "stdout": stdout, "stderr": ""}],
+                "steps": [{"step": "realm_failover_threads_gui_read", "returncode": 0, "stdout": stdout, "stderr": ""}],
                 "scheduler": {
-                    "node": "mbpr",
+                    "node": candidate_id,
                     "worker_role": "gui",
-                    "worker_id": "mbpr",
+                    "worker_id": candidate_id,
                     "priority": policy.priority_label,
                     "requested_capabilities": list(policy.capabilities),
                     "locks": list(policy.locks),
@@ -643,7 +683,7 @@ def route_failover_once(*, worker_id: str = "agentos-router", failover_after_sec
                 policy=policy,
                 failure_class="worker_failed",
                 fallback_attempted=True,
-                detail=f"mbpr:{type(exc).__name__}:{exc}",
+                detail=f"{str(candidate.get('node_id') or 'external')}:{type(exc).__name__}:{exc}",
             )
             source = requests / filename
             if not source.exists() and claimed.exists():
