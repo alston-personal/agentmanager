@@ -29,7 +29,13 @@ jobs:
           set -euo pipefail
           command -v rclone >/dev/null
           test -f "$HOME/.config/rclone/rclone.conf"
-          mkdir -p "$HOME/.local/share/agentos/gdrive-remote"
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+          if findmnt -rn "$MOUNT" >/dev/null 2>&1; then
+            (command -v fusermount3 >/dev/null && fusermount3 -uz "$MOUNT") || \
+              (command -v fusermount >/dev/null && fusermount -uz "$MOUNT") || true
+            sleep 1
+          fi
+          mkdir -p "$MOUNT"
           mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/state/agentos"
           cat > "$HOME/.config/systemd/user/agentos-gdrive-mount.service" <<'UNIT'
           [Unit]
