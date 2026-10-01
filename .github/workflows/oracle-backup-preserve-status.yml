@@ -35,6 +35,25 @@ jobs:
           done
           echo 'REMOTE_RECOVERY_FILES'
           timeout 20 rclone lsf gdrive:backups/recovered-oracle-underlay-20261001 --files-only --format 'sp' 2>/dev/null || true
+          echo 'EXACT_RECOVERY'
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            echo "-- $name"
+            local_file="$HOME/gdrive/backups/$name"
+            if [ -f "$local_file" ]; then
+              echo "local_size=$(stat -c %s "$local_file")"
+              echo "local_md5=$(md5sum "$local_file" | awk '{print $1}')"
+            else
+              echo 'local_missing=yes'
+            fi
+            remote="gdrive:backups/recovered-oracle-underlay-20261001/$name"
+            echo "remote_size=$(timeout 20 rclone lsf "$remote" --files-only --format s 2>/dev/null | head -n1 || true)"
+            echo "remote_md5=$(timeout 45 rclone md5sum "$remote" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+          done
+          echo 'FINALIZER_STATE'
+          cat "$HOME/.local/state/agentos/gdrive-underlay-finalize.state" 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-underlay-finalize.timer 2>/dev/null || true
+          systemctl --user is-active agentos-remote-backup.timer 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-mount.service 2>/dev/null || true
           echo 'ROOT_SPACE'
           df -h /
           REMOTE
@@ -44,3 +63,5 @@ jobs:
 # status refresh 2026-10-01T07:49+08:00
 
 # status-refresh 1790818314671
+
+# exact recovery status 2026-10-01T14:10+08:00
