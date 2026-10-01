@@ -1,9 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "open-gemini-003",
-  "action": "desktop.open_url",
+  "nonce": "screenshot-gemini-004",
+  "action": "desktop.screenshot",
   "payload": {
-    "url": "https://gemini.google.com/app"
+    "quality": 45
   }
 }
