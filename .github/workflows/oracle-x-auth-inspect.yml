@@ -1,0 +1,160 @@
+name: Content Publish V1 Verify
+
+on:
+  pull_request:
+    branches:
+      - core/integration
+    paths:
+      - 'runtime_core/content_publish.py'
+      - 'runtime_core/x_auth_probe.py'
+      - 'agentos_node/content_publish_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'tests/test_content_publish.py'
+      - 'tests/test_content_publish_action_relay.py'
+      - 'config/content_publish_providers.json'
+      - 'scripts/x_auth_inspect.py'
+      - 'capabilities/content_publish/**'
+      - '.github/workflows/oracle-x-auth-inspect.yml'
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'runtime_core/content_publish.py'
+      - 'runtime_core/x_auth_probe.py'
+      - 'agentos_node/content_publish_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'tests/test_content_publish.py'
+      - 'tests/test_content_publish_action_relay.py'
+      - 'config/content_publish_providers.json'
+      - 'scripts/x_auth_inspect.py'
+      - 'capabilities/content_publish/**'
+      - '.github/workflows/oracle-x-auth-inspect.yml'
+  workflow_dispatch:
+    inputs:
+      expected_username:
+        description: Expected X username (without @); blank means discover identity
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q pytest
+      - run: >-
+          python -m pytest -q
+          tests/test_content_publish.py
+          tests/test_content_publish_action_relay.py
+
+  x-live-read-only-inspect:
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      SOURCE_COMMIT: ${{ github.sha }}
+      EXPECTED_USERNAME: ${{ inputs.expected_username }}
+      RELAY_ROOT: /home/ubuntu/agent-data/runtime/action-relay
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Converge Oracle Core to exact core/integration generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = "agentos-node"
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import json, os, time
+          from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
+
+          sha=os.environ["SOURCE_COMMIT"]
+          dispatcher=ActionRelayRuntimeConvergeDispatcher(os.environ["RELAY_ROOT"])
+          request={
+            "schema":"agentos.runtime-converge-request/v1",
+            "request_id":"content-publish-x-"+sha[:20],
+            "node_id":"oracle-core-node",
+            "repository":"alston-personal/agentmanager",
+            "source_ref":"core/integration",
+            "source_commit":sha,
+          }
+          submission=dispatcher.submit(request=request)
+          print("runtime_converge_task="+submission["task_id"])
+          deadline=time.time()+360
+          while time.time()<deadline:
+            receipt=dispatcher.inspect(submission["task_id"])
+            if receipt is not None:
+              print(json.dumps(receipt,sort_keys=True))
+              if receipt.get("ok") is not True:
+                raise SystemExit("runtime_converge_failed")
+              if receipt.get("resulting_commit") != sha:
+                raise SystemExit("runtime_converge_commit_mismatch")
+              print("runtime_converge=PASS")
+              break
+            time.sleep(1)
+          else:
+            raise SystemExit("runtime_converge_timeout")
+          PY
+
+      - name: Reconcile ubuntu-owned Action Relay generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user start agentos-action-relay-reconcile.service
+
+          for i in $(seq 1 120); do
+            if python3 - "$SOURCE_COMMIT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path("/home/ubuntu/agent-data/runtime/action-relay/capabilities.json")
+          if not p.is_file():
+              raise SystemExit(1)
+          x=json.loads(p.read_text(encoding="utf-8"))
+          raise SystemExit(0 if x.get("source_commit")==sys.argv[1] else 1)
+          PY
+            then
+              echo "action_relay_generation=PASS"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "action_relay_generation=TIMEOUT" >&2
+          exit 1
+
+      - name: Run bounded legacy X auth probe through ubuntu Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import json, os, time
+          from agentos_node.content_publish_action_relay import ContentPublishXAuthDispatcher
+
+          dispatcher=ContentPublishXAuthDispatcher(os.environ["RELAY_ROOT"])
+          submission=dispatcher.submit(expected_username=os.environ.get("EXPECTED_USERNAME",""))
+          print("x_auth_probe_task="+submission["task_id"])
+          deadline=time.time()+120
+          while time.time()<deadline:
+            receipt=dispatcher.inspect(submission["task_id"])
+            if receipt is not None:
+              print("x_auth_probe_status="+str(receipt.get("status")))
+              print("x_authentication_status="+str(receipt.get("authentication_status")))
+              print("x_authentication_success="+str(bool(receipt.get("authentication_success"))).lower())
+              print("x_auth_identity="+str((receipt.get("account_identity") or {}).get("username") or "unknown"))
+              print("x_write_entitlement="+str(receipt.get("write_entitlement")))
+              print("x_media_entitlement="+str(receipt.get("media_entitlement")))
+              print("x_executor_user="+str(receipt.get("executor_user")))
+              assert receipt.get("credential_exposed") is False, receipt
+              assert receipt.get("side_effect") is False, receipt
+              assert receipt.get("executor_user") == "ubuntu", receipt
+              print("x_read_only_probe=PASS")
+              break
+            time.sleep(1)
+          else:
+            raise SystemExit("x_auth_probe_timeout")
+          PY
