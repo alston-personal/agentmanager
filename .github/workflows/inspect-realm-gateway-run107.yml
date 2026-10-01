@@ -35,9 +35,18 @@ jobs:
             PID=$(systemctl --user show agentos-bootstrap-control.service -p MainPID --value 2>/dev/null || true)
             echo control_main_pid=$PID
             if [ -n "$PID" ] && [ "$PID" != 0 ]; then
-              PGID=$(ps -o pgid= -p "$PID" | tr -d " ")
-              echo control_pgid=$PGID
-              ps -eo pid=,ppid=,pgid=,stat=,etime=,pcpu=,pmem=,comm=,args= --forest | awk -v p="$PGID" "$3==p {print}" | head -100 || true
+              echo control_process_tree_begin
+              ps -o pid=,ppid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$PID" || true
+              CHILDREN=$(pgrep -P "$PID" | tr "\n" " " || true)
+              echo direct_children="$CHILDREN"
+              for c in $CHILDREN; do
+                ps -o pid=,ppid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$c" || true
+                GC=$(pgrep -P "$c" | tr "\n" " " || true)
+                for g in $GC; do
+                  ps -o pid=,ppid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$g" || true
+                done
+              done
+              echo control_process_tree_end
             fi
             echo control_unit_end
             ROOT=/tmp/agentos-bootstrap-control
