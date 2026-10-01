@@ -162,7 +162,7 @@ jobs:
             console.log('raw_cdp_target_count='+rows.length);
             finish('raw_cdp_ws=PASS');
           };
-NODE
+          NODE
           else
             echo "raw_cdp_ws=UNAVAILABLE"
           fi
