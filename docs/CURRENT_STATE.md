@@ -106,6 +106,14 @@ Important distinctions:
 
 The authoritative live node count/status comes from the runtime NodeRegistry, not from architecture diagrams or conversation assumptions.
 
+### Hosted node readiness verification
+
+A freshly enrolled client may complete its readiness regression without requiring an operator to paste a local verification command. The bounded command surface is `.agentos/commands/realm-node-readiness-verify.json`; it names only the target node and an idempotency nonce. The hosted carrier validates that fixed schema, enters Oracle through the existing restricted deploy SSH identity, and uses the live `NodeRegistry` plus `RealmFabricStore` as the execution authority.
+
+The carrier may queue only the fixed local `agentos-client verify` operation through the node's already-advertised `shell.exec` capability. It must require the node to be freshly online, require an allowed readable workspace, and wait for the ordinary Realm node receipt. Acceptance requires a zero process return code plus `node_ready:true`, the expected Realm and node identities, and `benchmark_persisted:true`. Node tokens are never read from Oracle, copied into GitHub Actions, or printed as evidence.
+
+This path preserves the authority boundary: GitHub Hosted Actions is transport/orchestration only; Oracle Core owns node registry and task queuing; the enrolled client enforces its local execution policy; the resulting Realm receipt and persisted readiness benchmark are the end-to-end evidence. If the node is offline, the carrier fails closed rather than bypassing the local lifecycle supervisor or inventing a second control path.
+
 ## Web static-index capability contract
 
 Crawler/AI-friendly public rendering is a reusable capability, not product-specific page code. The canonical capability is `web.static-index.render`, declared by `capabilities/web_static_index/capability-manifest.json` and discoverable through the Governance Directory via the generic manifest adapter.

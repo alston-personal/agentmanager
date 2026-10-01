@@ -1,0 +1,168 @@
+name: Hosted Realm Node Readiness Verify
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.agentos/commands/realm-node-readiness-verify.json'
+      - '.github/workflows/hosted-realm-node-readiness-verify.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-realm-node-readiness-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.actor == 'alstonhuang'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Validate bounded readiness request
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json,re
+          d=json.load(open('.agentos/commands/realm-node-readiness-verify.json',encoding='utf-8'))
+          assert d.get('schema')=='agentos.realm-command/v0.1',d
+          assert d.get('action')=='realm.node.readiness-verify',d
+          node_id=str(d.get('node_id') or '')
+          nonce=str(d.get('nonce') or '')
+          assert re.fullmatch(r'[A-Za-z0-9._-]{1,64}',node_id),node_id
+          assert re.fullmatch(r'[A-Za-z0-9._-]{1,96}',nonce),nonce
+          print('node_id='+node_id)
+          print('nonce='+nonce)
+          PY
+
+      - name: Queue governed local verify and await node receipt
+        shell: bash
+        env:
+          NODE_ID: ${{ steps.request.outputs.node_id }}
+          NONCE: ${{ steps.request.outputs.nonce }}
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          ssh \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=8 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -p "${DEPLOY_PORT:-22}" \
+            "${DEPLOY_USER}@${ORACLE_HOST}" \
+            bash -s -- "$NODE_ID" "$NONCE" <<'REMOTE'
+          set -euo pipefail
+          NODE_ID="$1"
+          NONCE="$2"
+          REPO=/home/ubuntu/agentmanager
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH="$REPO"
+          cd "$REPO"
+
+          python3 - "$NODE_ID" "$NONCE" <<'PY'
+          import json,re,sys,time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id,nonce=sys.argv[1],sys.argv[2]
+          nodes=NodeRegistry().node_map().get('nodes') or []
+          node=next((n for n in nodes if str(n.get('node_id') or '')==node_id),None)
+          if node is None:
+              raise SystemExit(f'node_not_registered:{node_id}')
+
+          status=str(node.get('effective_status') or node.get('status') or '')
+          caps=set(node.get('capabilities') or [])
+          roots=(node.get('workspace_roots') or {}).get('readable') or []
+          print('readiness_target_node='+node_id,flush=True)
+          print('readiness_target_status='+status,flush=True)
+          print('readiness_target_platform='+str(node.get('platform') or ''),flush=True)
+          if status!='online':
+              raise SystemExit(f'node_not_online:{status}')
+          if 'shell.exec' not in caps:
+              raise SystemExit('node_missing_shell_exec')
+          if not roots:
+              raise SystemExit('node_missing_readable_workspace')
+          cwd=str(roots[0])
+
+          safe_nonce=re.sub(r'[^A-Za-z0-9._-]','-',nonce)[:96]
+          task_id=f'readiness-{node_id}-{safe_nonce}'
+          fabric=RealmFabricStore()
+          existing=fabric.get_receipt(task_id)
+          if existing is None:
+              ps=r'''$ErrorActionPreference='Stop'
+          $cmd=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-client.cmd'
+          if(-not (Test-Path $cmd)){ throw "agentos-client.cmd missing: $cmd" }
+          & $cmd verify
+          exit $LASTEXITCODE
+          '''
+              task={
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':task_id,
+                  'action':'shell.exec',
+                  'executable':'powershell',
+                  'argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':cwd,
+                  'timeout_seconds':120,
+                  'cognition_ids_used':[],
+              }
+              fabric.queue_task(node_id,task)
+              print('readiness_task_queued=PASS',flush=True)
+          else:
+              print('readiness_task_reused=PASS',flush=True)
+
+          receipt=existing
+          for i in range(75):
+              if receipt is not None:
+                  break
+              if i and i%5==0:
+                  print('readiness_receipt_waiting='+str(i*2),flush=True)
+              time.sleep(2)
+              receipt=fabric.get_receipt(task_id)
+          if receipt is None:
+              raise SystemExit('readiness_receipt_timeout')
+
+          if receipt.get('ok') is not True:
+              raise SystemExit('readiness_node_receipt_not_ok:'+str(receipt.get('error') or ''))
+          if int(receipt.get('returncode') or 0)!=0:
+              raise SystemExit('readiness_verify_returncode='+str(receipt.get('returncode'))+' stderr='+str(receipt.get('stderr') or '')[-1000:])
+
+          raw=str(receipt.get('stdout') or '').strip()
+          try:
+              doc=json.loads(raw)
+          except json.JSONDecodeError as exc:
+              raise SystemExit('readiness_verify_non_json_stdout:'+raw[-1500:]) from exc
+          ready=doc.get('readiness') or {}
+          if doc.get('ok') is not True:
+              raise SystemExit('readiness_cli_ok_false')
+          if ready.get('node_ready') is not True:
+              raise SystemExit('readiness_node_ready_false:'+json.dumps(ready,ensure_ascii=False)[-3000:])
+          if str(ready.get('realm_id') or '')!='realm-alston':
+              raise SystemExit('readiness_realm_mismatch:'+str(ready.get('realm_id')))
+          if str(ready.get('node_id') or '')!=node_id:
+              raise SystemExit('readiness_node_id_mismatch:'+str(ready.get('node_id')))
+          if ready.get('benchmark_persisted') is not True:
+              raise SystemExit('readiness_benchmark_not_persisted')
+
+          print('realm_node_readiness_verify=PASS')
+          print('node_ready=true')
+          print('realm_id='+str(ready.get('realm_id')))
+          print('node_id='+str(ready.get('node_id')))
+          print('benchmark_persisted=true')
+          print('task_id='+task_id)
+          PY
+          REMOTE

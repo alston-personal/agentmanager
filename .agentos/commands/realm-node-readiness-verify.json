@@ -1,0 +1,6 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.node.readiness-verify",
+  "node_id": "VO10005870",
+  "nonce": "vo10005870-readiness-20261001-v1"
+}
