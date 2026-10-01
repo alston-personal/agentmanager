@@ -1,0 +1,62 @@
+name: Diagnose Oracle Colab ADC Readiness
+
+on:
+  push:
+    branches:
+      - diag/oracle-colab-adc-readiness-20261001
+    paths:
+      - '.github/workflows/diag-oracle-colab-adc-readiness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 8
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe ADC without GPU allocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s <<'REMOTE'
+          set -u
+          export PATH="/home/ubuntu/.local/bin:$PATH"
+          echo "gcloud_path=$(command -v gcloud || true)"
+          if command -v gcloud >/dev/null 2>&1; then
+            echo "gcloud_version=$(gcloud version --format='value(Google Cloud SDK)' 2>/dev/null | head -n 1 || true)"
+          fi
+          ADC_FILE="${GOOGLE_APPLICATION_CREDENTIALS:-/home/ubuntu/.config/gcloud/application_default_credentials.json}"
+          if [ -f "$ADC_FILE" ]; then
+            echo "adc_file_exists=true"
+            stat -c 'adc_mode=%a adc_owner=%U adc_group=%G' "$ADC_FILE" || true
+          else
+            echo "adc_file_exists=false"
+          fi
+
+          set +e
+          timeout 15s colab --auth=adc whoami > /tmp/colab-adc-whoami.txt 2>&1
+          WRC=$?
+          timeout 15s colab --auth=adc usage > /tmp/colab-adc-usage.txt 2>&1
+          URC=$?
+          set -e
+          echo "adc_whoami_rc=$WRC"
+          echo "adc_usage_rc=$URC"
+          python3 - <<'PY'
+          import re
+          for name,path in [('whoami','/tmp/colab-adc-whoami.txt'),('usage','/tmp/colab-adc-usage.txt')]:
+              try:s=open(path,encoding='utf-8',errors='replace').read()
+              except Exception:s=''
+              s=re.sub(r'(?i)(access[_ -]?token|refresh[_ -]?token|authorization|bearer)\s*[:=]\s*\S+',r'\1=<redacted>',s)
+              print(f'--- {name} ---')
+              print('\n'.join(s.splitlines()[-30:]))
+          PY
+          rm -f /tmp/colab-adc-whoami.txt /tmp/colab-adc-usage.txt
+          REMOTE
