@@ -1,0 +1,44 @@
+name: Oracle Inspect Gateway Repair Live 2
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/oracle-inspect-gateway-repair-live-2.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live state
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+          echo '=== PM2 CLI ==='
+          echo "PATH=$PATH"
+          command -v pm2 || true
+          find "$HOME/.nvm/versions/node" "$HOME/.local" /usr/local -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | head -n 20 || true
+          echo '=== REPAIR ==='
+          ps -eo pid,ppid,pgid,stat,etime,%cpu,%mem,cmd | grep -E 'deploy_realm_gateway|next build|next-server|npm (run build|start)|PM2 v|pm2 ' | grep -v grep || true
+          echo '=== SERVICES ==='
+          systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p ExecMainPID --no-pager || true
+          echo '=== LISTENER ==='
+          ss -ltnp 2>/dev/null | grep ':3000' || true
+          echo '=== BOOTSTRAP ==='
+          BODY=/tmp/live2
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "local_bootstrap_http=$CODE"
+          head -c 500 "$BODY" 2>/dev/null || true
+          echo
+          REMOTE
