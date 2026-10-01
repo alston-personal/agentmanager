@@ -15,6 +15,14 @@ mkdir -p "$ROOT/requests" "$ROOT/receipts" "$UNIT_DIR"
 chmod 700 "$ROOT" "$ROOT/requests" "$ROOT/receipts"
 test -x "$VENV/bin/python"
 
+# Both web-surface installers rewrite shared AgentOS modules in the canonical
+# checkout. Serialize that mutation across providers so concurrent workflow
+# runs cannot steal or remove each other's temporary files.
+command -v flock >/dev/null 2>&1 || { echo "web_bridge_runtime_lock=FLOCK_MISSING" >&2; exit 3; }
+exec 8>/tmp/agentos-web-bridge-runtime.lock
+flock -w 240 8 || { echo "web_bridge_runtime_lock=TIMEOUT" >&2; exit 7; }
+echo "web_bridge_runtime_lock=PASS"
+
 for rel in agentos_node/chatgpt_web_bridge.py agentos_node/session_bridge.py agentos_node/agent_surfaces.py agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py; do
   git -C "$REPO" show "$AGENTOS_SOURCE_COMMIT:$rel" > "$REPO/$rel.tmp"
   mv "$REPO/$rel.tmp" "$REPO/$rel"
