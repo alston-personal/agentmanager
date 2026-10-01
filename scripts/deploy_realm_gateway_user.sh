@@ -164,8 +164,17 @@ printf '%s' "$LOCAL_BODY" | grep -q 'agentos.one-health/v0.1'
 printf '%s' "$LOCAL_BODY" | grep -q 'realm-alston'
 echo "local_realm_health=PASS"
 
+rm -rf "$DASH/.next"
+echo "dashboard_build_cache=CLEARED"
 (cd "$DASH" && npm run build)
 echo "dashboard_build=PASS"
+
+if ! grep -R -q '"method".*"path"\|"path".*"method"' "$DASH/.next/server" 2>/dev/null; then
+  echo "ERROR: compiled Realm gateway artifact does not contain current diagnostic fields" >&2
+  exit 5
+fi
+echo "realm_gateway_compiled_generation=PASS"
+
 restart_dashboard
 
 for i in $(seq 1 30); do
