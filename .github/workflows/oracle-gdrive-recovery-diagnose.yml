@@ -43,3 +43,5 @@ jobs:
           echo '=== RCLONE LOG ==='
           tail -n 100 "$HOME/.local/state/agentos/rclone-gdrive.log" 2>/dev/null || true
           REMOTE
+
+# rerun after stale-fuse installer patch 2026-10-01T14:18:30+08:00
