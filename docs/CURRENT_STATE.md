@@ -192,7 +192,7 @@ When implementation contradicts this file, fix the file immediately; do not pres
 
 ## Low-latency interactive GUI execution
 
-The Windows Thin Client now has an explicit low-latency interactive execution path in addition to single-step desktop actions.
+The Windows Thin Client now has an explicit low-latency interactive execution path in addition to single-step desktop actions. Idle long-poll waits are state-change driven: an empty task pull does not rewrite Realm state, and the server watches the fabric file signature while idle rather than reparsing/writing it at a fixed 20 Hz cadence.
 
 - `/v1/tasks` accepts bounded `wait_seconds` long polling so an enrolled Node does not need to sleep for the historical five-second polling interval before seeing work.
 - the Thin Client keeps heartbeat cadence independent from task delivery and waits for work through the long-poll channel;
