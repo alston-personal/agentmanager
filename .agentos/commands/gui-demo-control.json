@@ -1,7 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "inspect-windows-002",
-  "action": "desktop.windows.inspect",
-  "payload": {}
+  "nonce": "open-gemini-003",
+  "action": "desktop.open_url",
+  "payload": {
+    "url": "https://gemini.google.com/app"
+  }
 }
