@@ -1,19 +1,15 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-install-ffmpeg-008",
+  "nonce": "desktop-demo-install-ffmpeg-009",
   "action": "shell.exec",
   "payload": {
-    "executable": "winget",
+    "executable": "powershell",
     "argv": [
-      "install",
-      "--id",
-      "Gyan.FFmpeg",
-      "--exact",
-      "--silent",
-      "--accept-source-agreements",
-      "--accept-package-agreements",
-      "--disable-interactivity"
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$winget=Join-Path $env:LOCALAPPDATA 'Microsoft\\WindowsApps\\winget.exe'; & $winget install --id Gyan.FFmpeg --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity; exit $LASTEXITCODE"
     ],
     "timeout_seconds": 240
   }
