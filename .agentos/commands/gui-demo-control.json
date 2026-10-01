@@ -1,10 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-smoke-start-014",
-  "action": "desktop.demo.start",
+  "nonce": "desktop-demo-ffmpeg-locate-015",
+  "action": "shell.exec",
   "payload": {
-    "label": "AgentOS Demo Smoke",
-    "stage": "REC / recorder smoke"
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$roots=@((Join-Path $env:LOCALAPPDATA 'Microsoft\\WinGet'),(Join-Path $env:LOCALAPPDATA 'Microsoft\\WindowsApps'),(Join-Path $env:USERPROFILE 'scoop'),$env:ProgramFiles); $hits=@(); foreach($r in $roots){if($r -and (Test-Path $r)){ $hits += Get-ChildItem -LiteralPath $r -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName }}; [pscustomobject]@{LOCALAPPDATA=$env:LOCALAPPDATA;PATH=$env:PATH;hits=$hits}|ConvertTo-Json -Depth 4 -Compress"
+    ],
+    "timeout_seconds": 60
   }
 }
