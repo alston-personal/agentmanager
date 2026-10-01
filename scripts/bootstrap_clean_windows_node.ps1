@@ -30,10 +30,15 @@ function Resolve-Python {
     "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe"
   )
-  foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate) { return $candidate } }
-  $cmd = Get-Command python -ErrorAction SilentlyContinue
-  if ($cmd) { return $cmd.Source }
-  throw "Python was installed but python.exe could not be resolved in this session."
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) {
+      try {
+        $probe = @(& $candidate -c "import sys; print(sys.executable)" 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $probe.Count -gt 0) { return $candidate }
+      } catch {}
+    }
+  }
+  throw "Python was installed but a real python.exe could not be resolved in this session."
 }
 
 $python = Resolve-Python
@@ -52,7 +57,7 @@ Invoke-WebRequest -UseBasicParsing -Headers @{'Cache-Control'='no-cache'} -Uri $
 Write-Host "agentos_bootstrap_source_commit=$sha"
 Write-Host "agentos_bootstrap_installer=$tempInstaller"
 
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempInstaller -InstallRoot $InstallRoot -WorkspaceRoot $WorkspaceRoot -SourceRef $sha
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempInstaller -InstallRoot $InstallRoot -WorkspaceRoot $WorkspaceRoot -SourceRef $sha -PythonExe $python
 if ($LASTEXITCODE -ne 0) { throw "Thin Client installer failed with exit code $LASTEXITCODE" }
 
 $launcher = Join-Path $InstallRoot 'agentos-client.cmd'
