@@ -1,6 +1,7 @@
 name: Oracle Gemini Web Live Inspect
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - core/integration
@@ -34,34 +35,92 @@ jobs:
           echo "=== services ==="
           systemctl --user is-active agentos-gemini-web-bridge.service || true
           systemctl --user is-active agentos-bootstrap-gui.service || true
+          systemctl --user --no-pager --full status agentos-gemini-web-bridge.service | sed -n '1,28p' || true
+
           echo "=== scheduler status ==="
-          cat /home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json 2>/dev/null || true
-          echo "=== gemini bridge ==="
           python3 - <<'PY'
           import json
           from pathlib import Path
+          p=Path('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json')
+          if p.exists():
+              d=json.loads(p.read_text(encoding='utf-8'))
+              row=(d.get('workers') or {}).get('oracle-gui') or {}
+              print('gui_state='+str(row.get('state')))
+              current=row.get('current_job') or {}
+              print('gui_action='+str(current.get('action')))
+              print('gui_queue_depth='+str((d.get('queue_depth') or {}).get('gui')))
+          PY
+
+          echo "=== gemini bridge snapshot ==="
+          python3 - <<'PY'
+          import json,time
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          def age_seconds(value):
+              try:
+                  ts=datetime.fromisoformat(str(value or '').replace('Z','+00:00')).astimezone(timezone.utc)
+                  return round(max(0.0,(datetime.now(timezone.utc)-ts).total_seconds()),3)
+              except Exception:
+                  return None
+
           home=Path.home()
+          root=home/'.local/share/agentos/gemini-web/bridge'
           for label,p in [
-              ('bridge',home/'.local/share/agentos/gemini-web/bridge/bridge.json'),
-              ('sessions',home/'.local/share/agentos/gemini-web/bridge/sessions.json'),
+              ('bridge',root/'bridge.json'),
+              ('sessions',root/'sessions.json'),
               ('probe',home/'.local/share/agentos/gemini-web/probe-current.json'),
           ]:
-              if p.exists():
-                  try: d=json.loads(p.read_text(encoding='utf-8'))
-                  except Exception as e:
-                      print(label+'_error='+type(e).__name__); continue
-                  if label=='bridge':
-                      print('bridge_session_state='+str(d.get('session_state')))
-                  elif label=='sessions':
-                      print('session_states='+','.join(str(x.get('state')) for x in (d.get('sessions') or [])))
-                      print('session_ids='+','.join(str(x.get('session_id')) for x in (d.get('sessions') or [])))
-                  else:
-                      print('probe_state='+str(d.get('state')))
-          root=home/'.local/share/agentos/gemini-web/bridge'
-          print('bridge_requests='+','.join(x.name for x in sorted((root/'requests').glob('*.json'))))
-          print('bridge_receipts='+','.join(x.name for x in sorted((root/'receipts').glob('*.json'))[-10:]))
+              print(label+'_present='+str(p.exists()).lower())
+              if not p.exists():
+                  continue
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8-sig'))
+              except Exception as e:
+                  print(label+'_error='+type(e).__name__)
+                  continue
+              if label=='bridge':
+                  print('bridge_ready='+str(bool(d.get('ready'))).lower())
+                  print('bridge_session_state='+str(d.get('session_state')))
+              elif label=='sessions':
+                  sessions=[x for x in (d.get('sessions') or []) if isinstance(x,dict)]
+                  print('sessions_observed_age_seconds='+str(age_seconds(d.get('observed_at'))))
+                  print('session_count='+str(len(sessions)))
+                  print('session_states='+','.join(str(x.get('state') or 'UNKNOWN') for x in sessions))
+                  hosts=[]
+                  for x in sessions:
+                      host=(urlparse(str(x.get('url') or '')).hostname or '').lower()
+                      if host and host not in hosts:
+                          hosts.append(host)
+                  print('session_hosts='+','.join(hosts))
+              else:
+                  print('probe_observed_age_seconds='+str(age_seconds(d.get('observed_at'))))
+                  print('probe_state='+str(d.get('state')))
+                  print('probe_source='+str(d.get('source')))
+          events=root/'events.jsonl'
+          if events.exists():
+              rows=[]
+              for raw in events.read_text(encoding='utf-8').splitlines()[-12:]:
+                  try: item=json.loads(raw)
+                  except Exception: continue
+                  rows.append((str(item.get('event') or ''),str(item.get('state') or '')))
+              print('recent_bridge_events='+','.join(a+':'+b for a,b in rows))
           PY
-          echo "=== bootstrap inflight ==="
-          find /tmp/agentos-bootstrap-control/inflight -maxdepth 2 -type f -name '*gemini*' -printf '%p\n' 2>/dev/null || true
+
+          echo "=== CDP endpoint ==="
+          if RAW="$(timeout 5s curl -fsS http://127.0.0.1:9222/json/version 2>/dev/null)"; then
+            printf '%s' "$RAW" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("cdp_version=PASS"); print("cdp_browser="+str(d.get("Browser") or "unknown")); print("cdp_websocket="+str(bool(d.get("webSocketDebuggerUrl"))).lower())'
+          else
+            echo "cdp_version=FAIL_OR_TIMEOUT"
+          fi
+          if RAW="$(timeout 5s curl -fsS http://127.0.0.1:9222/json/list 2>/dev/null)"; then
+            printf '%s' "$RAW" | python3 -c 'import json,sys; from urllib.parse import urlparse; rows=json.load(sys.stdin); hosts={}; [hosts.__setitem__((urlparse(str(x.get("url") or "")).hostname or "non-http").lower(),hosts.get((urlparse(str(x.get("url") or "")).hostname or "non-http").lower(),0)+1) for x in rows if isinstance(x,dict)]; print("cdp_targets=PASS"); print("cdp_target_count="+str(len(rows))); print("cdp_target_hosts="+",".join(k+":"+str(v) for k,v in sorted(hosts.items())))'
+          else
+            echo "cdp_targets=FAIL_OR_TIMEOUT"
+          fi
+
+          echo "=== bridge process ==="
+          pgrep -af 'agentos_node.gemini_web_bridge|playwright.*run-driver' || true
           echo "gemini_live_inspect=PASS"
           REMOTE
