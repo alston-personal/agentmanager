@@ -36,6 +36,19 @@ with sync_playwright() as p:
     else:
         state='UNKNOWN'
 
+resume_candidate=False
+mio_hint=False
+if state=='LOGIN_REQUIRED':
+    compact=' '.join(low.split())
+    resume_candidate=any(x in compact for x in (
+        'continue with instagram',
+        'continue as',
+        '繼續使用 instagram',
+        '使用 instagram 繼續',
+        '繼續以',
+    ))
+    mio_hint=('mio.milkcat' in compact or '@mio.milkcat' in compact)
+
 root=Path('/home/ubuntu/agent-data/runtime/social/threads-web-dm')
 root.mkdir(parents=True,exist_ok=True)
 os.chmod(root,0o700)
@@ -44,10 +57,14 @@ out.write_text(json.dumps({
     'schema':'agentos.threads-web-dm-login-probe/v2',
     'mode':'oracle_gui_worker',
     'session_state':state,
+    'resume_candidate':resume_candidate,
+    'mio_account_hint':mio_hint,
 },sort_keys=True,indent=2)+'\n',encoding='utf-8')
 os.chmod(out,0o600)
 
 print('threads_web_dm_login_probe=PASS')
 print('threads_web_dm_login_mode=oracle_gui_worker')
 print('threads_web_dm_login_session_state='+state)
+print('threads_web_dm_login_resume_candidate='+str(resume_candidate).lower())
+print('threads_web_dm_login_mio_account_hint='+str(mio_hint).lower())
 PY
