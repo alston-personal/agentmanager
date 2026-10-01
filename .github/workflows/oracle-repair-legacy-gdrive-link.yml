@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
           set -euo pipefail
-          TARGET="$HOME/.local/share/agentos/gdrive-remote"
+          TARGET="$HOME/.local/share/agentos/gdrive-remote-v2"
           LEGACY="$HOME/gdrive"
 
           echo '=== finalizer state before repair ==='
@@ -66,3 +66,5 @@ jobs:
           echo "legacy_link_after=$(readlink "$LEGACY")"
           echo 'legacy_gdrive_link_repair=PASS'
           REMOTE
+
+# canonical-v2 repair 2026-10-01T14:14+08:00
