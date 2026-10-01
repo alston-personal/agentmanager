@@ -70,3 +70,65 @@ jobs:
           print('x_media_entitlement='+str(x.get('media_entitlement')))
           PY
           echo "x_auth_probe_exit=$probe_rc"
+
+
+  x-legacy-boundary-inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    env:
+      DEPLOY_HOST: 127.0.0.1
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      EXPECTED_USERNAME: ${{ inputs.expected_username }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start bounded localhost SSH identity
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Probe legacy ZeusWriter X credential boundary without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_USER:-}"
+          port="${DEPLOY_SSH_PORT:-22}"
+          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
+          probe="/tmp/agentos-x-auth-inspect-${GITHUB_RUN_ID}.py"
+          scp -q -P "$port" -o StrictHostKeyChecking=accept-new scripts/x_auth_inspect.py "$remote:$probe"
+
+          ssh -o StrictHostKeyChecking=accept-new -p "$port" "$remote" \
+            bash -s -- "$probe" "$EXPECTED_USERNAME" <<'REMOTE'
+          set -euo pipefail
+          probe="$1"
+          expected="$2"
+          cleanup() { rm -f "$probe" /tmp/x-auth-inspect-legacy.json; }
+          trap cleanup EXIT
+
+          if [ ! -r /home/ubuntu/zeus-writer/.env ]; then
+            printf '%s\n' \
+              '{"schema":"agentos.x-auth-inspect/v1","status":"AUTH_REQUIRED","reason":"legacy credential source unreadable","credential_exposed":false,"side_effect":false,"write_entitlement":"UNKNOWN","media_entitlement":"UNKNOWN","account_identity":null}' \
+              > /tmp/x-auth-inspect-legacy.json
+          else
+            set -a
+            . /home/ubuntu/zeus-writer/.env
+            set +a
+            set +e
+            python3 "$probe" --expected-username "$expected" > /tmp/x-auth-inspect-legacy.json
+            probe_rc=$?
+            set -e
+            echo "x_legacy_probe_exit=$probe_rc"
+          fi
+
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/x-auth-inspect-legacy.json',encoding='utf-8'))
+          assert x.get('credential_exposed') is False, x
+          assert x.get('side_effect') is False, x
+          print('x_legacy_probe_status='+str(x.get('status')))
+          print('x_legacy_identity='+str((x.get('account_identity') or {}).get('username') or 'unknown'))
+          print('x_legacy_write_entitlement='+str(x.get('write_entitlement')))
+          print('x_legacy_media_entitlement='+str(x.get('media_entitlement')))
+          PY
+          REMOTE
