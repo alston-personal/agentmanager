@@ -286,9 +286,80 @@ def _recover_inflight(role: str, worker_id: str) -> dict[str, int]:
     return {"recovered": recovered, "completed": completed, "stale": stale}
 
 
+def _supersede_older_idempotent_requests(
+    role: str,
+    worker_id: str,
+    candidates: list[tuple[int, str, str, dict[str, Any]]],
+) -> list[tuple[int, str, str, dict[str, Any]]]:
+    """Complete redundant pending idempotent requests without executing them.
+
+    A login-start request only asks the persistent GUI browser to expose the
+    login page.  Replaying older generations after a worker restart can hang on
+    obsolete browser drivers and provides no additional side effect.  Keep the
+    newest pending login-start request and emit deterministic terminal receipts
+    for older equivalents so ingress callers do not wait until timeout.
+    """
+    idempotent_actions = {bc.ACTION_START_THREADS_WEB_DM_LOGIN}
+    requests, receipts, rejected = bc._ensure(bc._root())
+    dropped: set[str] = set()
+
+    for action in idempotent_actions:
+        rows = [
+            item for item in candidates
+            if str(item[3].get("action") or "") == action
+            and policy_for(action).role == role
+        ]
+        if len(rows) <= 1:
+            continue
+        keep = max(rows, key=lambda item: (item[1], item[2]))
+        policy = policy_for(action)
+        for item in rows:
+            if item is keep:
+                continue
+            _priority, _created, filename, payload = item
+            source = requests / filename
+            if not source.exists():
+                continue
+            request_id = filename.removesuffix(".request.json")
+            source_commit = str((payload.get("params") or {}).get("source_commit") or "") or None
+            receipt = {
+                "schema": bc.RECEIPT_SCHEMA,
+                "request_id": request_id,
+                "action": action,
+                "source_commit": source_commit,
+                "executor_user": os.environ.get("USER") or str(os.getuid()),
+                "executor_uid": os.getuid(),
+                "started_at": bc._now(),
+                "completed_at": bc._now(),
+                "ok": False,
+                "failure_class": "superseded",
+                "error": "superseded_by_newer_equivalent_request",
+                "scheduler": {
+                    "node": "oracle",
+                    "worker_role": role,
+                    "worker_id": worker_id,
+                    "priority": policy.priority_label,
+                    "requested_capabilities": list(policy.capabilities),
+                    "locks": list(policy.locks),
+                    "superseded_by": keep[2].removesuffix(".request.json"),
+                },
+            }
+            bc._atomic_json(receipts / f"{request_id}.json", receipt)
+            target = rejected / source.name
+            target.unlink(missing_ok=True)
+            try:
+                source.replace(target)
+            except FileNotFoundError:
+                continue
+            dropped.add(filename)
+
+    return [item for item in candidates if item[2] not in dropped]
+
+
 def _claim(role: str, worker_id: str) -> tuple[Path, dict[str, Any]] | None:
     requests, _, _ = bc._ensure(bc._root())
     candidates = sorted((_request_summary(path) for path in requests.glob("*.request.json")), key=lambda item: item[:3])
+    candidates = _supersede_older_idempotent_requests(role, worker_id, candidates)
     inflight_dir = bc._root() / "inflight" / worker_id
     inflight_dir.mkdir(parents=True, exist_ok=True)
     for _priority, _created, filename, payload in candidates:
