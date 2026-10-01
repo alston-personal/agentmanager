@@ -302,21 +302,18 @@ class ThinClient:
             elif action == 'desktop.windows.tile':
                 result = interactive_desktop.tile_windows(task)
             elif action == 'desktop.demo.start':
-                if not self.policy.writable_roots:
-                    raise PermissionError('desktop_demo_requires_writable_root')
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
                 result = desktop_demo.start(
-                    self.policy.writable_roots[0],
+                    workspace,
                     label=str(task.get('label') or 'AgentOS Demo'),
                     stage=str(task.get('stage') or 'Starting'),
                 )
             elif action == 'desktop.demo.stage':
-                if not self.policy.writable_roots:
-                    raise PermissionError('desktop_demo_requires_writable_root')
-                result = desktop_demo.set_stage(self.policy.writable_roots[0], str(task.get('stage') or ''))
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.set_stage(workspace, str(task.get('stage') or ''))
             elif action == 'desktop.demo.stop':
-                if not self.policy.writable_roots:
-                    raise PermissionError('desktop_demo_requires_writable_root')
-                result = desktop_demo.stop(self.policy.writable_roots[0], final_stage=str(task.get('final_stage') or 'Verified'))
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else desktop_demo.default_workspace()
+                result = desktop_demo.stop(workspace, final_stage=str(task.get('final_stage') or 'Verified'))
             elif action == 'desktop.mouse':
                 result = interactive_desktop.mouse(task)
             elif action == 'desktop.keyboard':
