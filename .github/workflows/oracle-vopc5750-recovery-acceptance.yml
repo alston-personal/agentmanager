@@ -1,0 +1,65 @@
+name: Oracle vopc5750 Recovery Acceptance
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/vopc5750-recovery-acceptance.json'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 4
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify live status and governed receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          cmd=json.load(open('.agentos/commands/vopc5750-recovery-acceptance.json',encoding='utf-8'))
+          assert cmd.get('schema')=='agentos.realm-command/v0.1'
+          assert cmd.get('action')=='realm.node.recovery-acceptance'
+          node_id='vopc5750'
+
+          node=next(n for n in NodeRegistry().node_map()['nodes'] if n.get('node_id')==node_id)
+          print(json.dumps({'node_before':node},ensure_ascii=False,indent=2))
+          assert node.get('status')=='online', node
+          assert int(node.get('heartbeat_age_seconds') or 999999) < 60, node
+
+          task_id='recovery-accept-'+str(int(time.time()))
+          task={
+            'schema':'agentos.node-task/v0.1',
+            'task_id':task_id,
+            'action':'process.inspect',
+            'query':'agentos',
+            'limit':20,
+            'cognition_ids_used':[],
+          }
+          store=RealmFabricStore()
+          store.queue_task(node_id,task)
+          print('queued_task='+task_id)
+
+          for _ in range(60):
+              receipt=store.get_receipt(task_id)
+              if receipt:
+                  print(json.dumps({'receipt':receipt},ensure_ascii=False,indent=2))
+                  assert receipt.get('schema')=='agentos.node-receipt/v0.1', receipt
+                  assert receipt.get('node_id')==node_id, receipt
+                  assert receipt.get('ok') is True, receipt
+                  print('vopc5750_governed_receipt=PASS')
+                  print('vopc5750_recovery_acceptance=PASS')
+                  raise SystemExit(0)
+              time.sleep(2)
+          raise SystemExit('vopc5750 governed receipt timeout')
+          PY
