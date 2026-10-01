@@ -5,6 +5,7 @@ on:
     branches: [core/integration]
     paths:
       - '.agentos/commands/realm-gateway-repair-hosted.json'
+      - '.github/workflows/oracle-realm-gateway-repair-hosted.yml'
 
 permissions:
   contents: read
@@ -38,3 +39,5 @@ jobs:
           test "$CODE" = 401
           ! grep -q 'Realm gateway route not allowlisted' "$BODY"
           echo 'realm_gateway_repair=PASS'
+
+# trigger: 2026-10-01T03:10Z bootstrap-route-repair
