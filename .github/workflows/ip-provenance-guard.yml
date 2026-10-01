@@ -1,0 +1,85 @@
+name: AgentOS IP Provenance Guard
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'agent_core/**'
+      - 'agentos_node/**'
+      - 'governance/**'
+      - 'docs/IP_PROVENANCE.md'
+      - '.github/workflows/ip-provenance-guard.yml'
+
+jobs:
+  ip-scope:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate canonical IP policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('governance/ip-ownership-policy.json')
+          d=json.loads(p.read_text())
+          assert d['schema']=='agentos.ip-ownership-policy/v1'
+          classes=set(d['required_provenance']['employment_scope_classification'])
+          required={'personal-preexisting','personal-independent','company-deliverable','mixed-review-required'}
+          assert required <= classes
+          assert d['guards']['mixed_review_required_blocks_core_promotion'] is True
+          assert d['guards']['company_confidential_input_blocks_persistence'] is True
+          print('ip_policy_contract=PASS')
+          PY
+
+      - name: Enforce PR employment-scope declaration for Core changes
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s\n' "$CHANGED"
+
+          CORE_CHANGED=0
+          while IFS= read -r path; do
+            case "$path" in
+              agent_core/*|agentos_node/*|governance/*|.agent/*|scripts/deploy_*|scripts/bootstrap_*|docs/AGENTOS_NODE.md|docs/governance/*)
+                CORE_CHANGED=1
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "$CORE_CHANGED" -eq 0 ]; then
+            echo 'ip_scope_guard=SKIP_NO_CORE_CHANGE'
+            exit 0
+          fi
+
+          scope="$(printf '%s\n' "${PR_BODY:-}" | sed -nE 's/^[[:space:]]*IP-Scope:[[:space:]]*(personal-preexisting|personal-independent|company-deliverable|mixed-review-required)[[:space:]]*$/\1/p' | tail -n1)"
+          if [ -z "$scope" ]; then
+            echo 'ERROR: Core/reusable AgentOS change requires a PR body line: IP-Scope: personal-preexisting | personal-independent | company-deliverable | mixed-review-required' >&2
+            exit 2
+          fi
+
+          case "$scope" in
+            mixed-review-required)
+              echo 'ERROR: mixed-review-required cannot be promoted into canonical AgentOS Core.' >&2
+              exit 3
+              ;;
+            company-deliverable)
+              echo 'ERROR: company-deliverable must remain in a company/project-specific lane and cannot be promoted into AgentOS Core without explicit IP review.' >&2
+              exit 4
+              ;;
+            personal-preexisting|personal-independent)
+              echo "ip_scope_guard=PASS scope=$scope"
+              ;;
+          esac
