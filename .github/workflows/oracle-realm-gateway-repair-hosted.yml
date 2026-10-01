@@ -43,4 +43,4 @@ jobs:
 
 # trigger: 2026-10-01T03:10Z bootstrap-route-repair
 
-# retry: 2026-10-01T03:19Z hosted-bootstrap-route-repair
+# retry: 2026-10-01T03:40Z clean-next-generation
