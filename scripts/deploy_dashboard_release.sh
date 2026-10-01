@@ -33,10 +33,29 @@ LEGACY_NEXT_MOVED=0
 LEGACY_PROBE="$LEGACY/.next.runtime-isolation-probe-$RUN_ID"
 
 listener_pid() {
-  local pids
-  pids="$(ss -H -ltnp 'sport = :3000' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
-  [[ "$pids" =~ ^[0-9]+$ ]] || return 1
-  printf '%s' "$pids"
+  local pids candidate cwd matches
+  pids="$(ss -H -ltnp 'sport = :3000' 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
+  if [[ "$pids" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$pids"
+    return 0
+  fi
+
+  # On some Oracle sessions ss can confirm the listener but omit process
+  # metadata. Fall back to a tightly-scoped next-server process scan and only
+  # accept exactly one Dashboard-owned candidate.
+  matches=""
+  for candidate in $(pgrep -f 'next-server' 2>/dev/null || true); do
+    test -r "/proc/$candidate/cwd" || continue
+    cwd="$(readlink -f "/proc/$candidate/cwd" 2>/dev/null || true)"
+    case "$cwd" in
+      /home/ubuntu/agent-data/releases/dashboard/apps/*|/home/ubuntu/agentmanager/dashboard)
+        matches="$matches $candidate"
+        ;;
+    esac
+  done
+  matches="$(echo "$matches" | xargs)"
+  [[ "$matches" =~ ^[0-9]+$ ]] || return 1
+  printf '%s' "$matches"
 }
 
 port_3000_clear() {
