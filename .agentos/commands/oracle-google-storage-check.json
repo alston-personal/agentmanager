@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "verify recovery namespace file sizes and local underlay remnants",
-  "requested_at": "2026-10-01T16:24:00+08:00"
+  "purpose": "post-fix verify gdrive v2 mount, recovery namespace, finalizer state, legacy underlay remnants, and root disk",
+  "requested_at": "2026-10-01T19:40:00+08:00"
 }
