@@ -1,0 +1,38 @@
+name: Oracle Inspect PM2 Daemon Environment
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/oracle-inspect-pm2-daemon-env.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect PM2 daemon environment
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          PID="$(pgrep -f 'PM2 v[0-9].*: God Daemon' | head -n1 || true)"
+          echo "pm2_daemon_pid=$PID"
+          test -n "$PID"
+          echo "pm2_daemon_exe=$(readlink -f /proc/$PID/exe 2>/dev/null || true)"
+          echo "pm2_daemon_cwd=$(readlink -f /proc/$PID/cwd 2>/dev/null || true)"
+          tr '\0' '\n' </proc/$PID/environ 2>/dev/null | grep -E '^(PATH|NVM_BIN|NVM_DIR|NODE_PATH|PM2_HOME)=' || true
+          PATH_FROM_DAEMON="$(tr '\0' '\n' </proc/$PID/environ 2>/dev/null | sed -n 's/^PATH=//p' | head -n1)"
+          echo "daemon_path=$PATH_FROM_DAEMON"
+          OLDIFS="$IFS"; IFS=:
+          for d in $PATH_FROM_DAEMON; do
+            [ -x "$d/pm2" ] && echo "pm2_candidate=$d/pm2"
+          done
+          IFS="$OLDIFS"
+          REMOTE
