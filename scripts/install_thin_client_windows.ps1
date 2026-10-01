@@ -32,6 +32,7 @@ if ($major -lt 3) { throw "Python 3 is required; found $version" }
 $files = @(
   'agentos_node/__init__.py',
   'agentos_node/thin_client.py',
+  'agentos_node/onboarding.py',
   'agentos_node/node_adapter.py',
   'agentos_node/interactive_desktop.py',
   'agentos_node/thin_client_transport.py',
