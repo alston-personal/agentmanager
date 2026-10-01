@@ -66,27 +66,57 @@ restart_dashboard() {
   # systemd-owned runtime starts. Killing only the child process is insufficient
   # because PM2 immediately resurrects it and keeps port 3000 occupied.
   if command -v pm2 >/dev/null 2>&1; then
-    mapfile -t legacy_pm2_ids < <(
-      pm2 jlist 2>/dev/null | python3 -c 'import json,sys
+    pm2 jlist > /tmp/agentos-pm2-jlist.json 2>/dev/null || echo '[]' > /tmp/agentos-pm2-jlist.json
+    echo "dashboard_pm2_inventory_begin"
+    python3 - <<'PY'
+import json
+from pathlib import Path
 try:
-    data=json.load(sys.stdin)
+    data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
 except Exception:
     data=[]
 for app in data:
-    env=app.get("pm2_env") or {}
-    cwd=str(env.get("pm_cwd") or "")
-    if "/agent-data/releases/dashboard/apps/" in cwd:
-        ident=app.get("pm_id")
+    env=app.get('pm2_env') or {}
+    print('pm_id=%s name=%s cwd=%s pm_exec_path=%s status=%s' % (
+        app.get('pm_id'),
+        app.get('name') or env.get('name'),
+        env.get('pm_cwd'),
+        env.get('pm_exec_path'),
+        env.get('status'),
+    ))
+PY
+    echo "dashboard_pm2_inventory_end"
+
+    mapfile -t legacy_pm2_ids < <(
+      python3 - <<'PY'
+import json
+from pathlib import Path
+try:
+    data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
+except Exception:
+    data=[]
+for app in data:
+    env=app.get('pm2_env') or {}
+    fields=[
+        str(env.get('pm_cwd') or ''),
+        str(env.get('pm_exec_path') or ''),
+        str(app.get('name') or ''),
+        str(env.get('name') or ''),
+    ]
+    joined=' '.join(fields).lower()
+    if '/agent-data/releases/dashboard/apps/' in joined or 'dashboard' in joined:
+        ident=app.get('pm_id')
         if ident is not None:
-            print(ident)'
+            print(ident)
+PY
     )
     if [ "${#legacy_pm2_ids[@]}" -gt 0 ]; then
       echo "dashboard_legacy_pm2_ids=${legacy_pm2_ids[*]}"
       pm2 delete "${legacy_pm2_ids[@]}"
-      # Persist the current PM2 process list so the retired dashboard is not
-      # resurrected on the next PM2 startup/reboot.
       pm2 save --force >/dev/null
       echo "dashboard_legacy_pm2_retired=PASS"
+    else
+      echo "dashboard_legacy_pm2_retired=NO_MATCH"
     fi
   fi
 
