@@ -54,7 +54,8 @@ def test_missing_legacy_token_is_auth_required_and_secret_free(monkeypatch,tmp_p
     result=social.bootstrap_account({"account_ref":"oursong_alstonhuang"})
     assert result["status"]=="AUTH_REQUIRED"
     assert result["credential_exposed"] is False
-    assert result["side_effect"] is False
+    assert result["public_publish_performed"] is False
+    assert result["credential_migrated"] is False
 
 
 def test_inspect_requires_host_registry_and_does_not_expose_key(monkeypatch,tmp_path):
@@ -79,4 +80,5 @@ def test_dispatcher_capsules_contain_only_account_ref(monkeypatch,tmp_path):
     receipt=dispatcher.inspect(submitted["task_id"])
     assert receipt["status"]=="AUTH_REQUIRED"
     assert receipt["credential_exposed"] is False
-    assert receipt["side_effect"] is False
+    assert receipt["public_publish_performed"] is False
+    assert receipt["credential_migrated"] is False
