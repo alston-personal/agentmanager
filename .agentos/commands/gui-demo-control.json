@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "fast-demo-20261001-1949",
+  "nonce": "fast-demo-20261001-1952b",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
