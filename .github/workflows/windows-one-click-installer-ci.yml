@@ -85,7 +85,5 @@ jobs:
 
           if(-not $cmd.Contains('install-agentos.ps1')) { throw 'double-click bootstrap is not wired to install-agentos.ps1' }
           $successBlock = ($cmd -split ':fail',2)[0]
-          if($successBlock -match '(?im)^pause\s*
-          Write-Host 'windows_one_click_contract=PASS'
-) { throw 'successful installer path must not pause or leave a cmd window open' }
+          if($successBlock -match '(?im)^pause\s*$') { throw 'successful installer path must not pause or leave a cmd window open' }
           Write-Host 'windows_one_click_contract=PASS'
