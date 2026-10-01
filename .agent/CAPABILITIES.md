@@ -51,6 +51,7 @@ AgentOS now treats reusable work as a capability, not a project-specific side ef
 | :--- | :--- | :--- | :--- |
 | **Video Indexing Hub** | `video-indexing` | 🧠 Proposed | Central visual indexing, transcript grounding, and scene-map artifact producer for all video-aware projects. |
 | **Web Static Index Renderer** | `capability://web.static-index.render` | ✅ Implemented candidate | 公開網頁產出流程呼叫的共用靜態索引能力；由產品提供頁面資料，Capability 統一產出 crawler/AI 可讀 HTML 與 receipt，避免各專案把 SEO/AI markup 寫死。 |
+| **Content Publish** | `capability://content.publish` | 🧪 Implemented candidate | 共用多平台內容發佈 facade；以 Content Artifact、Provider Registry、transport resolver、write intent 與 sanitized receipt 統一 ZeusWriter／Mio／其他專案，優先重用既有 Social Runtime。 |
 
 ### Governance Capability
 | Capability | Provider | Status | Notes |
