@@ -102,8 +102,17 @@ identity with GET `/2/users/me`. It does not create a Post or upload media.
 Because X does not expose a universally reliable no-side-effect endpoint that
 proves create-Post or media-upload entitlement for every auth/tier combination,
 the probe reports write/media entitlement as `UNKNOWN` unless an authoritative
-provider-side signal is available. Live publish is not used as an entitlement
-probe.
+provider-side signal is available. A successful identity response proves
+`authentication_status=READY`, but overall publish-provider status remains
+`UNKNOWN` until write entitlement is proven. Live publish is not used as an
+entitlement probe.
+
+Legacy ZeusWriter credentials remain owned by the `ubuntu` runtime boundary.
+The normal `agentos-node` runner must not read `/home/ubuntu/zeus-writer/.env`
+directly. The fixed `agentos.content.x.auth.inspect` Action Relay action runs
+under the existing ubuntu-owned deterministic relay, accepts only an optional
+expected username, and returns a sanitized read-only receipt. No caller-selected
+path, endpoint, token, shell, or browser script is accepted.
 
 ## Batch contract
 
