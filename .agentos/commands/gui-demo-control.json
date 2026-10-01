@@ -1,14 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-deploy-003",
+  "nonce": "desktop-demo-runtime-inspect-004",
   "action": "shell.exec",
   "payload": {
-    "executable": "python",
+    "executable": "powershell",
     "argv": [
-      "-c",
-      "import urllib.request,pathlib; base='https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/'; root=pathlib.Path(r'C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\agentos_node'); [(root/n).write_bytes(urllib.request.urlopen(base+n,timeout=20).read()) for n in ['desktop_demo.py','interactive_desktop.py','thin_client.py']]; print('deployed',[(n,(root/n).stat().st_size) for n in ['desktop_demo.py','interactive_desktop.py','thin_client.py']])"
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$p=Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -like '*agentos_node.client_cli*'} | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine; $p | ConvertTo-Json -Compress; Get-ScheduledTask | Where-Object {$_.TaskName -like '*AgentOS*'} | Select-Object TaskName,State,TaskPath | ConvertTo-Json -Compress"
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 30
   }
 }
