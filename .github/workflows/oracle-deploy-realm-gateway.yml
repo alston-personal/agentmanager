@@ -68,69 +68,45 @@ jobs:
           echo 'clean_next_bootstrap_allowlist=PASS'
           echo 'clean_next_resolve_allowlist=PASS'
 
+
   deploy:
     needs: build-check
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 8
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install canonical bootstrap hook and request pinned Realm gateway deploy
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Request pinned Realm gateway deploy through AgentOS scheduler
         shell: bash
         run: |
           set -euo pipefail
-          LIVE=/home/ubuntu/agentmanager
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
-          REQUEST_ID="realm-gateway-${GITHUB_RUN_ID}-$(date -u +%Y%m%dT%H%M%SZ)"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-
-          python3 -m py_compile agentos_node/bootstrap_control.py
-          test -w "$LIVE/agentos_node/bootstrap_control.py"
-          cat agentos_node/bootstrap_control.py > "$LIVE/agentos_node/bootstrap_control.py"
-          python3 -m py_compile "$LIVE/agentos_node/bootstrap_control.py"
-
-          for i in $(seq 1 120); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS" && test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          from pathlib import Path
-          p=Path(sys.argv[1]); rid=sys.argv[2]; source_commit=sys.argv[3]
-          payload={
-            'schema':'agentos.bootstrap-request/v1',
-            'request_id':rid,
-            'action':'agentos.realm_gateway.deploy',
-            'params':{'source_commit':source_commit},
-            'created_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00','Z'),
-            'authority':{'source':'github-actions','target_user':'ubuntu','arbitrary_shell':False},
-          }
-          tmp=p.with_suffix(p.suffix+'.tmp')
-          tmp.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8')
-          os.chmod(tmp,0o644); tmp.replace(p); os.chmod(p,0o644)
-          PY
-
-          for i in $(seq 1 360); do
-            [ -f "$RECEIPT" ] && break
-            sleep 1
-          done
-          test -f "$RECEIPT" || { echo 'realm_gateway_receipt=TIMEOUT'; exit 3; }
+          REQUEST_ID="realm-gateway-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/realm-gateway-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=480             bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.realm_gateway.deploy "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
           cat "$RECEIPT"
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
-          r=json.load(open(sys.argv[1])); source_commit=sys.argv[2]
+          r=json.load(open(sys.argv[1],encoding='utf-8')); source_commit=sys.argv[2]
+          s=r.get('scheduler') or {}
           assert r.get('schema') == 'agentos.bootstrap-receipt/v1', r
           assert r.get('action') == 'agentos.realm_gateway.deploy', r
           assert r.get('executor_user') == 'ubuntu', r
           assert r.get('executor_uid') == 1001, r
           assert r.get('source_commit') == source_commit, r
           assert r.get('ok') is True, r
-          text='\n'.join((s.get('stdout','')+'\n'+s.get('stderr','')) for s in r.get('steps',[]))
+          assert s.get('node') == 'oracle', s
+          assert s.get('worker_role') == 'control', s
+          assert s.get('worker_id') == 'oracle-control', s
+          assert 'oracle-core-runtime' in set(s.get('locks') or []), s
+          text='\n'.join((step.get('stdout','')+'\n'+step.get('stderr','')) for step in r.get('steps',[]))
           assert f'route_source={source_commit}:dashboard/app/api/agentos/[...path]/route.ts' in text, text[-12000:]
           assert 'dashboard_build=PASS' in text, text[-12000:]
           assert 'realm_gateway_bootstrap_local=PASS' in text, text[-12000:]
@@ -140,6 +116,7 @@ jobs:
           assert 'nginx_mutation=NONE' in text, text[-12000:]
           print('realm_gateway_deploy=PASS')
           print('realm_gateway_pinned_source=PASS')
+          print('realm_gateway_scheduler_worker='+s['worker_id'])
           PY
 
       - name: Verify public ONE identity and bootstrap/resolve routing
@@ -155,10 +132,7 @@ jobs:
           test "$C" = 401
           ! grep -q 'Realm gateway route not allowlisted' "$B"
           R=/tmp/public-resolve-final
-          RC=$(curl -sS -o "$R" -w '%{http_code}' --max-time 8 \
-            -H 'Content-Type: application/json' \
-            -d '{"schema":"agentos.resolve-request/v1","node_id":"__gateway_probe__","intent":"continue","project":"agentos-core"}' \
-            'https://studio.milkcat.org/dashboard/api/agentos/v1/resolve' || true)
+          RC=$(curl -sS -o "$R" -w '%{http_code}' --max-time 8             -H 'Content-Type: application/json'             -d '{"schema":"agentos.resolve-request/v1","node_id":"__gateway_probe__","intent":"continue","project":"agentos-core"}'             'https://studio.milkcat.org/dashboard/api/agentos/v1/resolve' || true)
           test "$RC" = 401
           ! grep -q 'Realm gateway route not allowlisted' "$R"
           echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
