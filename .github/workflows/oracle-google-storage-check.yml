@@ -93,6 +93,12 @@ jobs:
           echo '=== crontab metadata ==='
           crontab -l 2>/dev/null || true
           stat -c 'mtime=%y size=%s path=%n' /var/spool/cron/crontabs/$(id -un) 2>/dev/null || true
+          echo '=== recovery upload status ==='
+          ps -eo pid,etimes,args | grep '[r]clone copyto' || true
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            echo "-- recovery $name"
+            rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001/$name" --files-only --format s 2>/dev/null || echo 'recovery_missing'
+          done
           echo '=== exact remote backup checks ==='
           for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
             echo "-- $name"
