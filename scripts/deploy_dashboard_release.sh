@@ -89,7 +89,24 @@ wait_dashboard_ready() {
 }
 
 pm2_json() {
-  node "$PM2_CLI" jlist > "$TMP/pm2.json"
+  local attempt
+  for attempt in $(seq 1 5); do
+    : > "$TMP/pm2.json"
+    if node "$PM2_CLI" jlist > "$TMP/pm2.json" 2>"$TMP/pm2.err" &&
+       test -s "$TMP/pm2.json" &&
+       python3 - "$TMP/pm2.json" <<'PY'
+import json,sys
+json.load(open(sys.argv[1],encoding='utf8'))
+PY
+    then
+      return 0
+    fi
+    echo "dashboard_pm2_jlist_retry=$attempt"
+    sleep 1
+  done
+  echo "dashboard_pm2_jlist=FAILED"
+  cat "$TMP/pm2.err" >&2 || true
+  return 1
 }
 
 pm2_cwd_for_name() {
