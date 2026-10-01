@@ -617,8 +617,19 @@ def capability_marker_payload(*, source_ref: str, source_commit: str) -> dict[st
         raise ValueError("invalid Action Relay capability provenance")
     return {
         "schema": "agentos.action-relay-capabilities/v1",
-        "actions": ["agentos.executor.job", ACTION],
-        "node_capabilities": ["node.runtime.converge"],
+        "actions": [
+            "agentos.executor.job",
+            ACTION,
+            "agentos.content.x.auth.inspect",
+            "agentos.content.social.bootstrap",
+            "agentos.content.social.inspect",
+        ],
+        "node_capabilities": [
+            "node.runtime.converge",
+            "content.publish.x.auth.inspect",
+            "content.publish.social.bootstrap",
+            "content.publish.social.inspect",
+        ],
         "source_ref": source_ref,
         "source_commit": source_commit,
         "observed_at": _utc_now(),

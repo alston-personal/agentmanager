@@ -109,13 +109,23 @@ echo "action_relay_runtime_worktree=PASS"
   PYTHONPATH="$RUNTIME_ROOT" python3 - <<'PY'
 from agentos_node.executor_job_action_relay import ACTION, ACTIONS
 from agentos_node.runtime_converge_action_relay import ACTION as CONVERGE_ACTION
+from agentos_node.content_publish_action_relay import ACTION as X_AUTH_ACTION
+from agentos_node.content_publish_social_action_relay import BOOTSTRAP_ACTION, INSPECT_ACTION
 assert ACTION == 'agentos.executor.job'
 assert CONVERGE_ACTION == 'agentos.runtime.converge'
+assert X_AUTH_ACTION == 'agentos.content.x.auth.inspect'
+assert BOOTSTRAP_ACTION == 'agentos.content.social.bootstrap'
+assert INSPECT_ACTION == 'agentos.content.social.inspect'
 assert ACTION in ACTIONS
 assert CONVERGE_ACTION in ACTIONS
+assert X_AUTH_ACTION in ACTIONS
+assert BOOTSTRAP_ACTION in ACTIONS
+assert INSPECT_ACTION in ACTIONS
 print('action_runtime_import=ok')
 print('executor_job_action_loaded=PASS')
 print('runtime_converge_action_loaded=PASS')
+print('content_publish_x_auth_action_loaded=PASS')
+print('content_publish_social_actions_loaded=PASS')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
 )
@@ -180,6 +190,7 @@ grep -Fq 'capability_marker_payload' "$PUBLISHER" || { echo "ERROR: capability p
 echo "action_relay_install=PASS"
 echo "action_relay_executor_job_extension=PASS"
 echo "action_relay_runtime_converge_extension=PASS"
+echo "action_relay_content_publish_extension=PASS"
 echo "action_relay_capability_marker=PASS"
 echo "action_relay_capability_atomic_publish=PASS"
 echo "action_relay_capability_group_context=PASS"

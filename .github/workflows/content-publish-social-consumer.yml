@@ -1,0 +1,194 @@
+name: Content Publish Social Consumer
+
+on:
+  pull_request:
+    branches: [core/integration]
+    paths:
+      - 'config/content_publish_accounts.json'
+      - 'agentos_node/content_publish_social_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/runtime_converge_action_relay.py'
+      - 'agent_core/runtime_converge_capability.py'
+      - 'scripts/install_action_relay_user.sh'
+      - 'scripts/reconcile_action_relay_runtime.py'
+      - 'tests/test_content_publish_social_action_relay.py'
+      - 'tests/test_runtime_converge_capability.py'
+      - 'tests/test_action_relay_generation_reconcile.py'
+      - '.github/workflows/content-publish-social-consumer.yml'
+  push:
+    branches: [core/integration]
+    paths:
+      - 'config/content_publish_accounts.json'
+      - 'agentos_node/content_publish_social_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'agentos_node/runtime_converge_action_relay.py'
+      - 'agent_core/runtime_converge_capability.py'
+      - 'scripts/install_action_relay_user.sh'
+      - 'scripts/reconcile_action_relay_runtime.py'
+      - '.github/workflows/content-publish-social-consumer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -q pytest
+      - run: >-
+          python -m pytest -q
+          tests/test_content_publish_social_action_relay.py
+          tests/test_runtime_converge_capability.py
+          tests/test_action_relay_generation_reconcile.py
+
+  bootstrap-live-account:
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      EVENT_COMMIT: ${{ github.sha }}
+      SOURCE_COMMIT: ${{ github.sha }}
+      RELAY_ROOT: /home/ubuntu/agent-data/runtime/action-relay
+      ACCOUNT_REF: oursong_alstonhuang
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve current compatible Core head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin core/integration
+          current="$(git rev-parse FETCH_HEAD)"
+          event="$EVENT_COMMIT"
+          if [ "$current" != "$event" ]; then
+            critical=(
+              config/content_publish_accounts.json
+              agentos_node/content_publish_social_action_relay.py
+              agentos_node/executor_job_action_relay.py
+              agentos_node/runtime_converge_action_relay.py
+              agent_core/runtime_converge_capability.py
+              scripts/install_action_relay_user.sh
+              scripts/reconcile_action_relay_runtime.py
+              .github/workflows/content-publish-social-consumer.yml
+            )
+            git diff --quiet "$event" "$current" -- "${critical[@]}" || {
+              echo "content_social_stale_incompatible=FAIL" >&2
+              exit 4
+            }
+            echo "content_social_event_superseded_compatibly=true"
+          fi
+          echo "SOURCE_COMMIT=$current" >> "$GITHUB_ENV"
+          echo "content_social_source_commit=$current"
+
+      - name: Converge exact Core generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = "agentos-node"
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import os,time
+          from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
+          sha=os.environ["SOURCE_COMMIT"]
+          d=ActionRelayRuntimeConvergeDispatcher(os.environ["RELAY_ROOT"])
+          req={
+            "schema":"agentos.runtime-converge-request/v1",
+            "request_id":"content-social-"+sha[:20],
+            "node_id":"oracle-core-node",
+            "repository":"alston-personal/agentmanager",
+            "source_ref":"core/integration",
+            "source_commit":sha,
+          }
+          s=d.submit(request=req); deadline=time.time()+360
+          print("content_social_converge_task="+s["task_id"])
+          while time.time()<deadline:
+              r=d.inspect(s["task_id"])
+              if r is not None:
+                  assert r.get("ok") is True,r
+                  assert r.get("resulting_commit")==sha,r
+                  print("content_social_converge=PASS")
+                  break
+              time.sleep(1)
+          else: raise SystemExit("content_social_converge_timeout")
+          PY
+
+      - name: Reconcile ubuntu Action Relay generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user start agentos-action-relay-reconcile.service
+          for i in $(seq 1 120); do
+            if python3 - "$SOURCE_COMMIT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path("/home/ubuntu/agent-data/runtime/action-relay/capabilities.json")
+          if not p.is_file(): raise SystemExit(1)
+          x=json.loads(p.read_text(encoding="utf-8"))
+          required={
+            "agentos.content.social.bootstrap",
+            "agentos.content.social.inspect",
+          }
+          ok=x.get("source_commit")==sys.argv[1] and required.issubset(set(x.get("actions") or []))
+          raise SystemExit(0 if ok else 1)
+          PY
+            then echo "content_social_relay_generation=PASS"; exit 0; fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Bootstrap product-specific Threads binding from legacy ZeusWriter credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import os,time
+          from agentos_node.content_publish_social_action_relay import ContentPublishSocialDispatcher
+          d=ContentPublishSocialDispatcher(os.environ["RELAY_ROOT"])
+          s=d.submit_bootstrap(account_ref=os.environ["ACCOUNT_REF"]); deadline=time.time()+120
+          print("content_social_bootstrap_task="+s["task_id"])
+          while time.time()<deadline:
+              r=d.inspect(s["task_id"])
+              if r is not None:
+                  print("content_social_bootstrap_status="+str(r.get("status")))
+                  print("content_social_bootstrap_username="+str(r.get("username") or "unknown"))
+                  print("content_social_product_registration="+str(r.get("product_registration") or "unknown"))
+                  assert r.get("credential_exposed") is False,r
+                  assert r.get("public_publish_performed") is False,r
+                  assert r.get("credential_migrated") is True,r
+                  assert r.get("status")=="BOUND",r
+                  assert r.get("executor_user")=="ubuntu",r
+                  print("content_social_bootstrap=PASS")
+                  break
+              time.sleep(1)
+          else: raise SystemExit("content_social_bootstrap_timeout")
+          PY
+
+      - name: Verify account through shared Social Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import os,time
+          from agentos_node.content_publish_social_action_relay import ContentPublishSocialDispatcher
+          d=ContentPublishSocialDispatcher(os.environ["RELAY_ROOT"])
+          s=d.submit_inspect(account_ref=os.environ["ACCOUNT_REF"]); deadline=time.time()+120
+          print("content_social_inspect_task="+s["task_id"])
+          while time.time()<deadline:
+              r=d.inspect(s["task_id"])
+              if r is not None:
+                  print("content_social_inspect_status="+str(r.get("status")))
+                  print("content_social_username="+str(r.get("username") or "unknown"))
+                  print("content_social_write_entitlement="+str(r.get("write_entitlement")))
+                  assert r.get("credential_exposed") is False,r
+                  assert r.get("public_publish_performed") is False,r
+                  assert r.get("status")=="AUTHENTICATED",r
+                  assert r.get("executor_user")=="ubuntu",r
+                  print("content_social_account_inspect=PASS")
+                  break
+              time.sleep(1)
+          else: raise SystemExit("content_social_inspect_timeout")
+          PY

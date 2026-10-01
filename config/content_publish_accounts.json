@@ -1,0 +1,15 @@
+{
+  "schema": "agentos.content-publish-account-config/v1",
+  "accounts": {
+    "oursong_alstonhuang": {
+      "platform": "threads",
+      "product_id": "content-publish",
+      "expected_username": "oursong_alstonhuang",
+      "auth_profile": "persona",
+      "bootstrap": {
+        "kind": "legacy-zeus-writer-env",
+        "env_key": "SOC_THREADS_TOKEN"
+      }
+    }
+  }
+}
