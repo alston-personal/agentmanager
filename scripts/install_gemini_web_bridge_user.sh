@@ -68,25 +68,41 @@ EOF
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 systemctl --user daemon-reload
-systemctl --user enable --now agentos-gemini-web-bridge.service >/dev/null
+systemctl --user enable agentos-gemini-web-bridge.service >/dev/null
+
+# bridge.json/sessions.json are derived runtime state. Remove stale generations
+# before restart so verification proves the exact deployed code actually ran.
+rm -f "$ROOT/bridge.json" "$ROOT/sessions.json"
+systemctl --user restart agentos-gemini-web-bridge.service
 systemctl --user restart agentos-bootstrap-gui.service
 systemctl --user is-active --quiet agentos-gemini-web-bridge.service
 systemctl --user is-active --quiet agentos-bootstrap-gui.service
 
 for _ in $(seq 1 30); do
-  [ -s "$ROOT/bridge.json" ] && break
+  if [ -s "$ROOT/bridge.json" ] && [ -s "$ROOT/sessions.json" ]; then break; fi
   sleep 1
 done
 test -s "$ROOT/bridge.json"
+test -s "$ROOT/sessions.json"
 
-python3 - "$ROOT/bridge.json" <<'PY'
+python3 - "$ROOT/bridge.json" "$ROOT/sessions.json" <<'PY'
 import json,sys
+from datetime import datetime,timezone
+
 b=json.load(open(sys.argv[1],encoding='utf-8'))
+s=json.load(open(sys.argv[2],encoding='utf-8'))
 assert b.get('schema')=='agentos.session-bridge/v0.1',b
 assert b.get('provider')=='gemini-web',b
 assert b.get('ready') is True,b
+assert s.get('schema')=='agentos.session-index/v0.1',s
+assert s.get('provider')=='gemini-web',s
+observed=datetime.fromisoformat(str(s.get('observed_at') or '').replace('Z','+00:00')).astimezone(timezone.utc)
+age=max(0.0,(datetime.now(timezone.utc)-observed).total_seconds())
+assert age <= 30,(age,s)
 print('gemini_web_bridge_provider=gemini-web')
 print('gemini_web_bridge_service=PASS')
+print('gemini_web_bridge_snapshot_fresh=PASS')
+print('gemini_web_bridge_session_state='+str(b.get('session_state') or 'UNKNOWN'))
 PY
 echo "gemini_web_bridge_install=PASS"
 
