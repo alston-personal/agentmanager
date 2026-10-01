@@ -83,17 +83,45 @@ function Resolve-SourceCommit([string]$Ref) {
   return $sha
 }
 
-function Install-Supervisor([string]$Launcher) {
+function Install-Supervisor([string]$PythonPath) {
   Write-Step 'Enabling AgentOS background service'
   $taskName='AgentOS Thin Client'
   $existing=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if($existing){
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   }
-  $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/d /c "' + $Launcher + '" run') -WorkingDirectory $InstallRoot
+
+  $state=Join-Path $InstallRoot 'state'
+  $runner=Join-Path $InstallRoot 'agentos-thin-client-hidden.ps1'
+  $log=Join-Path $InstallRoot 'thin-client.log'
+  $escapedInstall=$InstallRoot.Replace("'","''")
+  $escapedState=$state.Replace("'","''")
+  $escapedPython=$PythonPath.Replace("'","''")
+  $escapedLog=$log.Replace("'","''")
+  $runnerBody=@(
+    "$ErrorActionPreference='Stop'",
+    "$env:PYTHONPATH='$escapedInstall'",
+    "$env:AGENTOS_CLIENT_HOME='$escapedState'",
+    "& '$escapedPython' -m agentos_node.client_cli run *>> '$escapedLog'",
+    'exit $LASTEXITCODE'
+  ) -join [Environment]::NewLine
+  $runnerBody | Set-Content -Encoding UTF8 -LiteralPath $runner
+
+  # Use a hidden PowerShell host instead of cmd.exe so background restarts never
+  # flash a console window in the signed-in user's desktop session.
+  $action=New-ScheduledTaskAction `
+    -Execute 'powershell.exe' `
+    -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') `
+    -WorkingDirectory $InstallRoot
   $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
+  $settings=New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -RestartCount 10 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -Hidden
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon (headless)' -Force | Out-Null
+
   Start-ScheduledTask -TaskName $taskName
   Start-Sleep -Seconds 4
   $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
@@ -101,7 +129,11 @@ function Install-Supervisor([string]$Launcher) {
     $info=Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
     throw "AgentOS Thin Client did not stay Running. LastTaskResult=$($info.LastTaskResult)"
   }
-  Write-Host 'Background service: Running' -ForegroundColor Green
+  $taskAction=(Get-ScheduledTask -TaskName $taskName).Actions | Select-Object -First 1
+  if([string]$taskAction.Execute -match '(?i)cmd\.exe$'){
+    throw 'AgentOS Thin Client task still uses visible cmd.exe'
+  }
+  Write-Host 'Background service: Running (headless)' -ForegroundColor Green
 }
 
 try {
@@ -183,7 +215,7 @@ try {
     Write-Host 'Enrollment preserved; no new token or approval code will be created.' -ForegroundColor Green
   }
 
-  Install-Supervisor $launcher
+  Install-Supervisor $python.Path
 
   Write-Step 'Verifying end-to-end readiness'
   & $launcher verify
