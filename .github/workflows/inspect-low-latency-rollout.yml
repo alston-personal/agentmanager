@@ -1,0 +1,70 @@
+name: Inspect Low-Latency Rollout
+
+on:
+  push:
+    branches:
+      - ops/inspect-low-latency-rollout-20261001
+    paths:
+      - '.github/workflows/inspect-low-latency-rollout.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect live Core and Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== repo ==='
+          git -C /home/ubuntu/agentmanager rev-parse HEAD || true
+          git -C /home/ubuntu/agentmanager status --short || true
+
+          echo '=== realm service ==='
+          systemctl --user show agentos-realm-fabric.service             --property=ActiveState             --property=SubState             --property=MainPID             --property=ExecStart             --property=WorkingDirectory || true
+
+          echo '=== realm process ==='
+          pgrep -af 'agent_core.realm_cli serve' || true
+
+          echo '=== live release source markers ==='
+          unit=/home/ubuntu/.config/systemd/user/agentos-realm-fabric.service
+          if test -f "$unit"; then
+            sed -n '1,120p' "$unit"
+            execstart=$(sed -n 's/^ExecStart=//p' "$unit" | head -1)
+            launcher=$(printf '%s' "$execstart" | awk '{print $1}')
+            release=$(dirname "$(dirname "$launcher")")
+            echo "release_root=$release"
+            if test -f "$release/agent_core/realm_server.py"; then
+              grep -n "wait_seconds" "$release/agent_core/realm_server.py" || true
+            fi
+            if test -f "$release/agentos_node/thin_client_transport.py"; then
+              grep -n "task_wait_seconds\|poll_seconds" "$release/agentos_node/thin_client_transport.py" || true
+            fi
+          fi
+
+          echo '=== action relay runtime markers ==='
+          runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
+          test -f "$runtime" && {
+            grep -n "agentos.realm-fabric.install_release" "$runtime" | head -3 || true
+            grep -n "core_project_runtime_binding_v1" "$runtime" | head -3 || true
+            grep -n "realm_fabric_release_isolation_v1" "$runtime" | head -3 || true
+            grep -n "realm_fabric_process_attestation_v1" "$runtime" | head -3 || true
+          }
+
+          echo '=== health ==='
+          curl -fsS http://127.0.0.1:8780/v1/health || true
+          echo
+          REMOTE
