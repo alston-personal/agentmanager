@@ -61,7 +61,7 @@ class SocialRequest:
             raise ValueError("unsupported_social_request_schema")
         if not self.product_id.strip():
             raise ValueError("product_id_required")
-        if self.platform not in {"threads", "facebook", "instagram"}:
+        if self.platform not in {"threads", "facebook", "instagram", "x"}:
             raise ValueError("unsupported_social_platform")
         if self.operation not in SUPPORTED_OPERATIONS:
             raise ValueError("unsupported_social_operation")
