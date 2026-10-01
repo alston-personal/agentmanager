@@ -2,7 +2,7 @@ name: Oracle Install Direct GDrive Backup
 
 on:
   push:
-    branches: [core/integration]
+    branches: [core/integration, diag/oracle-gdrive-storage-recovery-20261001]
     paths:
       - '.github/workflows/oracle-install-direct-gdrive-backup.yml'
 
