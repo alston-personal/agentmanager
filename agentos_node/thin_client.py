@@ -308,6 +308,8 @@ class ThinClient:
                 result = adapter.execute(task)
                 if not isinstance(result, dict):
                     raise TypeError(f'adapter result must be object: {adapter.adapter_id}')
+                result = dict(result)
+                result.setdefault('adapter_id', str(adapter.adapter_id))
             receipt.update(result)
             receipt['ok'] = True
         except Exception as exc:
