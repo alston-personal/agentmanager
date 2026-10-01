@@ -127,6 +127,23 @@ jobs:
               print('pwa_start_body_non_json='+raw.replace('\n',' ')[:500])
           PY
 
+          echo "=== wardrobe auth handoff ==="
+          test -f "$CWD/.next/server/app/api/wardrobe/auth-handoff/route.js" && echo "wardrobe_handoff_route=present" || echo "wardrobe_handoff_route=missing"
+          code="$(curl --noproxy '*' -k -sS -o /tmp/mio-wardrobe-handoff-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+            -X POST -H 'Accept: application/json' 'https://studio.milkcat.org/dashboard/api/wardrobe/auth-handoff?action=start' || true)"
+          echo "wardrobe_handoff_start_http=$code"
+          python3 - <<'PY'
+          import json,pathlib
+          raw=pathlib.Path('/tmp/mio-wardrobe-handoff-body').read_text(encoding='utf-8',errors='replace')[:1200]
+          try:
+              obj=json.loads(raw)
+              print('wardrobe_handoff_start_keys='+','.join(sorted(obj.keys())))
+              print('wardrobe_handoff_has_id='+str(bool(obj.get('handoffId'))))
+              print('wardrobe_handoff_has_signin='+str(bool(obj.get('signInUrl'))))
+          except Exception:
+              print('wardrobe_handoff_non_json='+raw.replace('\n',' ')[:400])
+          PY
+
           echo "=== auth signin ==="
           code="$(curl --noproxy '*' -k -sS -D /tmp/mio-auth-signin-head -o /tmp/mio-auth-signin-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
             'https://studio.milkcat.org/dashboard/api/auth/signin/google?returnTo=%2Fpersonas%2Fmio%2Fwardrobe%2F%3FresumeTryOn%3D1' || true)"
