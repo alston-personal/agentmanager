@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agentos_node import interactive_desktop
+from agentos_node.desktop_plan import execute_plan
 from agentos_node.agent_surfaces import discover_surfaces
 from agentos_node.session_bridge import FileSessionBridge
 
@@ -102,7 +103,7 @@ class ThinClient:
         if platform.system() == 'Windows':
             caps.extend([
                 'desktop.session.inspect', 'desktop.windows.inspect', 'desktop.screenshot',
-                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard',
+                'desktop.open_url', 'desktop.mouse', 'desktop.keyboard', 'desktop.plan.execute',
             ])
         return {
             'schema': 'agentos.node-manifest/v0.1',
@@ -203,6 +204,9 @@ class ThinClient:
                 result = interactive_desktop.mouse(task)
             elif action == 'desktop.keyboard':
                 result = interactive_desktop.keyboard(task)
+            elif action == 'desktop.plan.execute':
+                workspace = self.policy.writable_roots[0] if self.policy.writable_roots else Path.cwd()
+                result = execute_plan(task, workspace=workspace)
             else:
                 raise ValueError(f'unsupported action: {action}')
             receipt.update(result)
