@@ -14,7 +14,7 @@
   "invocation": {
     "kind": "external-cli-provider",
     "required_cli": "google-colab-cli",
-    "preflight": "colab --auth=oauth2 usage",
+    "preflight": "colab --auth=adc usage",
     "runtime_owner": "node://oracle"
   },
   "discovery": {
@@ -26,6 +26,7 @@
     "quota_must_be_queried_at_runtime": true,
     "gpu_allocation_is_not_guaranteed_by_quota": true,
     "oauth_credentials_must_not_enter_prompts_manifests_or_logs": true,
+    "adc_is_required_for_unattended_execution": true,
     "upload_requires_explicit_job_artifacts": true,
     "preserve_completed_outputs_on_partial_failure": true,
     "provider_specific_models_must_compose_over_this_capability": true
