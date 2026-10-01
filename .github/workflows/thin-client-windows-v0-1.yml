@@ -12,6 +12,7 @@ on:
       - 'agentos_node/client_cli.py'
       - 'scripts/install_thin_client_windows.ps1'
       - 'scripts/bootstrap_clean_windows_node.ps1'
+      - 'scripts/AgentOS-Join.cmd'
       - '.github/workflows/thin-client-windows-v0-1.yml'
   workflow_dispatch:
 
@@ -30,6 +31,12 @@ jobs:
           $text = Get-Content -Raw ./scripts/bootstrap_clean_windows_node.ps1
           [scriptblock]::Create($text) | Out-Null
           Write-Host 'clean_windows_bootstrap_syntax=PASS'
+      - name: Dry-run one-click Node join launcher
+        shell: cmd
+        run: |
+          set AGENTOS_JOIN_DRY_RUN=1
+          call scripts\AgentOS-Join.cmd ci-win-node
+          if not exist "%TEMP%\agentos-bootstrap-clean-windows.ps1" exit /b 1
       - name: Install from canonical public bootstrap
         shell: powershell
         run: |
