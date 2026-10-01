@@ -31,6 +31,7 @@ jobs:
             set -euo pipefail
             echo control_unit_begin
             systemctl --user show agentos-bootstrap-control.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp --no-pager || true
+            systemctl --user status agentos-bootstrap-control.service --no-pager -l || true
             PID=$(systemctl --user show agentos-bootstrap-control.service -p MainPID --value 2>/dev/null || true)
             echo control_main_pid=$PID
             if [ -n "$PID" ] && [ "$PID" != 0 ]; then
