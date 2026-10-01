@@ -26,3 +26,5 @@ jobs:
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" 'sed -n "1,80p" "$HOME/backup_agentos.sh"'
+
+# trigger 2026-10-01T09:33+08:00
