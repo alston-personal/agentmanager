@@ -1,6 +1,7 @@
 name: Oracle Patrol Mio Recent Threads (Read Only)
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - core/integration
