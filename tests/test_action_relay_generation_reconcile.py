@@ -48,8 +48,8 @@ def _write_marker(data: Path) -> None:
         "schema": reconcile.MARKER_SCHEMA,
         "source_ref": reconcile.SOURCE_REF,
         "source_commit": SHA,
-        "actions": ["agentos.runtime.converge"],
-        "node_capabilities": ["node.runtime.converge"],
+        "actions": sorted(reconcile.EXPECTED_ACTIONS),
+        "node_capabilities": sorted(reconcile.EXPECTED_NODE_CAPABILITIES),
     }), encoding="utf-8")
 
 
