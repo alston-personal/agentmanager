@@ -35,6 +35,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
 
 if errorlevel 1 goto :fail
 
+if /I "%AGENTOS_JOIN_DRY_RUN%"=="1" (
+  echo agentos_join_dry_run=PASS
+  echo agentos_join_bootstrap=%AGENTOS_BOOTSTRAP%
+  exit /b 0
+)
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AGENTOS_BOOTSTRAP%" -NodeId "%AGENTOS_NODE_ID%" -SourceRef "%AGENTOS_REF%"
 if errorlevel 1 goto :fail
 
