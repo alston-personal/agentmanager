@@ -1,0 +1,45 @@
+{
+  "schema": "agentos.ip-ownership-policy/v1",
+  "owner_scope": "personal-preexisting-ip",
+  "canonical_asset": "AgentOS",
+  "principles": [
+    "AgentOS Core, reusable capabilities, governance contracts, generic orchestration, Realm/Node protocols, and cross-project platform infrastructure are treated as personal pre-existing IP unless an explicit signed agreement states otherwise.",
+    "Employment-related deliverables MUST be isolated from AgentOS Core and integrated only through project adapters, plugins, connectors, or capability contracts.",
+    "Company confidential information, source code, credentials, customer data, internal documents, VPN-only resources, and proprietary datasets MUST NOT be copied into AgentOS repositories or durable memory.",
+    "Company-funded or company-owned accounts, devices, cloud resources, subscriptions, repositories, and credentials MUST NOT be relied on as the canonical development or ownership basis for AgentOS Core.",
+    "A work-related use case does not by itself change ownership classification; provenance, contractual scope, resource origin, and project boundaries must be recorded.",
+    "No Agent may make a legal conclusion that ownership is resolved solely by repository location, work hours, or device location."
+  ],
+  "required_provenance": {
+    "core_changes": [
+      "source_repository",
+      "source_commit",
+      "author_or_executor",
+      "project_or_capability_id",
+      "resource_origin",
+      "employment_scope_classification",
+      "third_party_inputs"
+    ],
+    "employment_scope_classification": [
+      "personal-preexisting",
+      "personal-independent",
+      "company-deliverable",
+      "mixed-review-required"
+    ]
+  },
+  "guards": {
+    "mixed_review_required_blocks_core_promotion": true,
+    "company_confidential_input_blocks_persistence": true,
+    "company_deliverable_must_not_be_promoted_into_core_without_explicit_ip_review": true,
+    "third_party_code_requires_license_provenance": true
+  },
+  "recommended_records": [
+    "docs/IP_PROVENANCE.md",
+    "Git commit history",
+    "repository creation history",
+    "domain/cloud/subscription ownership receipts",
+    "architecture and IR history",
+    "signed pre-existing-IP or side-project exclusion agreement when available"
+  ],
+  "legal_note": "This policy is an internal provenance and separation control, not a legal determination of ownership. Contract and applicable law remain authoritative."
+}
