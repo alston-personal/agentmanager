@@ -57,6 +57,45 @@ jobs:
             rc=$?
             echo "realm_fabric_health=FAIL rc=$rc"
           fi
+          echo '=== REALM STORE TIMING ==='
+          FABRIC=/home/ubuntu/agent-data/realm/fabric.json
+          stat -c 'fabric_meta=size=%s blocks=%b mtime=%y owner=%U:%G mode=%a' "$FABRIC" 2>/dev/null || true
+          du -h "$FABRIC" 2>/dev/null || true
+          AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager timeout 15s python3 - <<'PY' || true
+          import json,time
+          from pathlib import Path
+          from agent_core.realm_fabric import RealmFabricStore
+          p=Path('/home/ubuntu/agent-data/realm/fabric.json')
+          t=time.perf_counter(); raw=p.read_bytes(); t1=time.perf_counter()
+          data=json.loads(raw); t2=time.perf_counter()
+          print(f'fabric_read_ms={(t1-t)*1000:.1f}')
+          print(f'fabric_parse_ms={(t2-t1)*1000:.1f}')
+          print('fabric_bytes='+str(len(raw)))
+          print('fabric_counts='+json.dumps({
+            'nodes':len(data.get('nodes') or {}),
+            'tasks':sum(len(v or []) for v in (data.get('tasks') or {}).values()),
+            'receipts':len(data.get('receipts') or {}),
+            'invites':len(data.get('invites') or {}),
+            'join_requests':len(data.get('join_requests') or {}),
+          },sort_keys=True,separators=(',',':')))
+          t3=time.perf_counter(); loaded=RealmFabricStore().load(); t4=time.perf_counter()
+          print(f'fabric_store_load_ms={(t4-t3)*1000:.1f}')
+          print('fabric_store_load_realm='+str(loaded.get('realm_id')))
+          PY
+          echo '=== REALM PROCESS ==='
+          MAIN=$(systemctl --user show agentos-realm-fabric.service -p MainPID --value 2>/dev/null || true)
+          if [ -n "$MAIN" ] && [ "$MAIN" != 0 ]; then
+            ps -o pid,ppid,pgid,stat,%cpu,%mem,nlwp,etime,rss,vsz,cmd -p "$MAIN" || true
+            CHILDREN=$(pgrep -P "$MAIN" | tr '\n' ' ' || true)
+            echo "realm_children=$CHILDREN"
+            [ -n "$CHILDREN" ] && ps -o pid,ppid,pgid,stat,%cpu,%mem,nlwp,etime,rss,vsz,cmd -p $(echo "$CHILDREN") || true
+            for PID in $MAIN $CHILDREN; do
+              echo "pid=$PID cwd=$(readlink -f /proc/$PID/cwd 2>/dev/null || true)"
+              echo "pid=$PID cmd=$(tr '\0' ' ' </proc/$PID/cmdline 2>/dev/null || true)"
+              echo "pid=$PID fd_count=$(find /proc/$PID/fd -maxdepth 1 -type l 2>/dev/null | wc -l)"
+            done
+          fi
+          echo "realm_current=$(readlink -f /home/ubuntu/.local/share/agentos/realm-fabric/current 2>/dev/null || true)"
           echo '=== REALM JOURNAL ==='
           journalctl --user -u agentos-realm-fabric.service -n 120 --no-pager || true
           echo '=== LIVE CHECKOUT ==='
