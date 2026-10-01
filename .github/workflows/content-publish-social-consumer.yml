@@ -51,11 +51,39 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 12
     env:
+      EVENT_COMMIT: ${{ github.sha }}
       SOURCE_COMMIT: ${{ github.sha }}
       RELAY_ROOT: /home/ubuntu/agent-data/runtime/action-relay
       ACCOUNT_REF: oursong_alstonhuang
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve current compatible Core head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin core/integration
+          current="$(git rev-parse FETCH_HEAD)"
+          event="$EVENT_COMMIT"
+          if [ "$current" != "$event" ]; then
+            critical=(
+              config/content_publish_accounts.json
+              agentos_node/content_publish_social_action_relay.py
+              agentos_node/executor_job_action_relay.py
+              agentos_node/runtime_converge_action_relay.py
+              agent_core/runtime_converge_capability.py
+              scripts/install_action_relay_user.sh
+              scripts/reconcile_action_relay_runtime.py
+              .github/workflows/content-publish-social-consumer.yml
+            )
+            git diff --quiet "$event" "$current" -- "${critical[@]}" || {
+              echo "content_social_stale_incompatible=FAIL" >&2
+              exit 4
+            }
+            echo "content_social_event_superseded_compatibly=true"
+          fi
+          echo "SOURCE_COMMIT=$current" >> "$GITHUB_ENV"
+          echo "content_social_source_commit=$current"
 
       - name: Converge exact Core generation
         shell: bash
