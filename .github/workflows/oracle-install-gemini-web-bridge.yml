@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: oracle-gemini-web-bridge-install
+  group: oracle-web-bridge-runtime-install
   cancel-in-progress: false
 
 jobs:
