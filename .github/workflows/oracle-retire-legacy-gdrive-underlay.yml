@@ -1,0 +1,55 @@
+name: Oracle Retire Legacy GDrive Underlay
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-retire-legacy-gdrive-underlay.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Retire legacy path fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          P="$HOME/gdrive"
+          test -d "$P"
+          test -z "$(find "$P" -mindepth 1 -print -quit)"
+
+          cat > "$P/README.RETIRED" <<'TXT'
+          RETIRED AgentOS Google Drive mountpoint.
+          Do not write here.
+          Canonical mount: ~/.local/share/agentos/gdrive-remote-v2
+          Backups use direct rclone streaming and do not depend on a FUSE mount.
+          TXT
+
+          chmod 0444 "$P/README.RETIRED"
+          chmod 0555 "$P"
+
+          if touch "$P/SHOULD_NOT_WRITE" 2>/dev/null; then
+            rm -f "$P/SHOULD_NOT_WRITE"
+            echo "legacy_gdrive_write_guard=FAILED"
+            exit 3
+          fi
+
+          test "$(stat -c %a "$P")" = 555
+          test "$(stat -c %a "$P/README.RETIRED")" = 444
+          echo "legacy_gdrive_underlay_retired=PASS"
+          echo "legacy_gdrive_write_guard=PASS"
+          REMOTE
