@@ -41,6 +41,31 @@ jobs:
           bash -n scripts/run_threads_web_dm_read_user.sh
           bash -n scripts/submit_oracle_bootstrap_request_remote.sh
 
+      - name: Probe safe login resume hints
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST_ID="threads-web-dm-login-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RECEIPT="$RUNNER_TEMP/threads-web-dm-login-probe-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=240 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_web_dm.login_probe "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+
+          python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8")); expected=sys.argv[2]
+          assert r.get("schema")=="agentos.bootstrap-receipt/v1",r
+          assert r.get("action")=="agentos.social_threads_web_dm.login_probe",r
+          assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert r.get("ok") is True,r
+          text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
+          for line in text.splitlines():
+              if line.startswith(("threads_web_dm_login_session_state=","threads_web_dm_login_resume_candidate=","threads_web_dm_login_mio_account_hint=")):
+                  print(line)
+          PY
+
       - name: Read via bounded bootstrap action
         shell: bash
         run: |
