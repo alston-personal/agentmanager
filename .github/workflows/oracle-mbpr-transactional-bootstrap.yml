@@ -9,33 +9,66 @@ permissions:
   contents: read
 jobs:
   migrate:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 7
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
     env:
-      AGENT_DATA_ROOT: /home/ubuntu/agent-data
-      PYTHONPATH: ${{ github.workspace }}
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
-      - name: Stage transactional candidate
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Validate transactional target
         shell: bash
         run: |
-          python3 - <<'PY'
-          import json,re,time
-          from agent_core.realm_fabric import RealmFabricStore
+          set -euo pipefail
+          SHA="$(python3 - <<'PY'
+          import json,re
           cmd=json.load(open('.agentos/commands/mbpr-transactional-bootstrap.json',encoding='utf-8'))
           assert cmd.get('schema')=='agentos.realm-command/v0.1'
           assert cmd.get('action')=='realm.node.transactional-bootstrap'
           assert cmd.get('node_id')=='mbpr'
           sha=str(cmd.get('source_commit') or '')
           assert re.fullmatch(r'[0-9a-f]{40}',sha)
+          print(sha)
+          PY
+          )"
+          echo "MBPR_SOURCE_COMMIT=$SHA" >> "$GITHUB_ENV"
+          echo "mbpr_transactional_source_commit=$SHA"
+
+      - name: Stage transactional candidate through Realm control plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$MBPR_SOURCE_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          python3 - "$SHA" <<'PY'
+          import sys,time
+          from agent_core.realm_fabric import RealmFabricStore
+          sha=sys.argv[1]
           py='/Users/tengweihuang/Library/Application Support/AgentOS/venv/bin/python'
           url=f'https://raw.githubusercontent.com/alston-personal/agentmanager/{sha}/scripts/bootstrap_macos_transactional_runtime.py'
           code=f"import urllib.request,runpy,tempfile,sys; p=tempfile.mktemp(suffix='.py'); urllib.request.urlretrieve('{url}',p); sys.argv=[p,'--source-commit','{sha}']; runpy.run_path(p,run_name='__main__')"
           tid='mbpr-tx-bootstrap-'+str(int(time.time()))
           store=RealmFabricStore()
-          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'shell.exec','executable':py,'argv':['-c',code],'cwd':'/Users/tengweihuang/AgentOS','timeout_seconds':120,'cognition_ids_used':[]})
-          open('/tmp/mbpr-bootstrap-sha','w').write(sha)
-          for _ in range(70):
+          store.queue_task('mbpr',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':tid,
+              'action':'shell.exec',
+              'executable':py,
+              'argv':['-c',code],
+              'cwd':'/Users/tengweihuang/AgentOS',
+              'timeout_seconds':180,
+              'cognition_ids_used':[],
+          })
+          for _ in range(100):
               r=store.get_receipt(tid)
               if r:
                   out=str(r.get('stdout') or '')
@@ -49,33 +82,59 @@ jobs:
               time.sleep(2)
           raise SystemExit('transactional bootstrap stage receipt timeout')
           PY
-      - name: Wait for candidate heartbeat
+          REMOTE
+
+      - name: Wait for candidate heartbeat and GUI capability
         shell: bash
         run: |
-          python3 - <<'PY'
-          import time
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$MBPR_SOURCE_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          python3 - "$SHA" <<'PY'
+          import sys,time
           from agent_core.node_registry import NodeRegistry
-          sha=open('/tmp/mbpr-bootstrap-sha').read().strip()
-          deadline=time.time()+120
+          sha=sys.argv[1]
+          deadline=time.time()+150
+          last=None
           while time.time()<deadline:
               node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='mbpr'),None)
+              last=node
               runtime=(node or {}).get('runtime') or {}
-              if node and node.get('status')=='online' and runtime.get('source_commit')==sha:
+              caps=set((node or {}).get('capabilities') or [])
+              if node and node.get('status')=='online' and runtime.get('source_commit')==sha and 'threads.gui.read' in caps:
                   print('mbpr_candidate_heartbeat=PASS')
+                  print('mbpr_threads_gui_read_capability=PASS')
                   raise SystemExit(0)
               time.sleep(3)
-          raise SystemExit('candidate heartbeat timeout')
+          raise SystemExit('candidate heartbeat/capability timeout: '+repr(last))
           PY
+          REMOTE
+
       - name: Probe candidate runtime
         shell: bash
         run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
           python3 - <<'PY'
           import time
           from agent_core.realm_fabric import RealmFabricStore
           tid='mbpr-candidate-probe-'+str(int(time.time()))
           store=RealmFabricStore()
-          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'process.inspect','query':'agentos_node','limit':20,'cognition_ids_used':[]})
-          for _ in range(40):
+          store.queue_task('mbpr',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':tid,
+              'action':'process.inspect',
+              'query':'agentos_node',
+              'limit':20,
+              'cognition_ids_used':[],
+          })
+          for _ in range(50):
               r=store.get_receipt(tid)
               if r:
                   if r.get('ok') is not True:
@@ -85,17 +144,32 @@ jobs:
               time.sleep(2)
           raise SystemExit('candidate probe timeout')
           PY
+          REMOTE
+
       - name: Accept candidate runtime
         shell: bash
         run: |
-          python3 - <<'PY'
-          import time
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$MBPR_SOURCE_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          python3 - "$SHA" <<'PY'
+          import sys,time
           from agent_core.realm_fabric import RealmFabricStore
-          sha=open('/tmp/mbpr-bootstrap-sha').read().strip()
+          sha=sys.argv[1]
           tid='mbpr-candidate-accept-'+str(int(time.time()))
           store=RealmFabricStore()
-          store.queue_task('mbpr',{'schema':'agentos.node-task/v0.1','task_id':tid,'action':'node.runtime.converge','phase':'accept','source_commit':sha,'cognition_ids_used':[]})
-          for _ in range(40):
+          store.queue_task('mbpr',{
+              'schema':'agentos.node-task/v0.1',
+              'task_id':tid,
+              'action':'node.runtime.converge',
+              'phase':'accept',
+              'source_commit':sha,
+              'cognition_ids_used':[],
+          })
+          for _ in range(50):
               r=store.get_receipt(tid)
               if r:
                   status=((r.get('runtime_converge') or {}).get('status'))
@@ -106,3 +180,31 @@ jobs:
               time.sleep(2)
           raise SystemExit('candidate accept timeout')
           PY
+          REMOTE
+
+      - name: Verify accepted MBPR node
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s -- "$MBPR_SOURCE_COMMIT" <<'REMOTE'
+          set -euo pipefail
+          SHA="$1"
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          python3 - "$SHA" <<'PY'
+          import sys,json
+          from agent_core.node_registry import NodeRegistry
+          sha=sys.argv[1]
+          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='mbpr'),None)
+          assert node and node.get('status')=='online',node
+          assert ((node.get('runtime') or {}).get('source_commit'))==sha,node
+          assert 'threads.gui.read' in set(node.get('capabilities') or []),node
+          print('mbpr_transactional_bootstrap=PASS')
+          print('mbpr_node='+json.dumps({
+              'status':node.get('status'),
+              'platform':node.get('platform'),
+              'runtime':node.get('runtime'),
+              'threads_gui_read':True,
+          },sort_keys=True,separators=(',',':')))
+          PY
+          REMOTE
