@@ -22,6 +22,10 @@ def test_windows_watchdog_is_independent_and_restarts_thin_client():
     assert WINDOWS_THIN_CLIENT_TASK in script
     assert 'Get-ScheduledTask' in script
     assert 'Start-ScheduledTask' in script
+    assert 'heartbeat-lease.json' in script
+    assert '$age -gt 120' in script
+    assert 'Ensure-AgentOSThinClientTask' in script
+    assert 'Register-ScheduledTask' in script
     assert 'ONE' not in script
 
 
