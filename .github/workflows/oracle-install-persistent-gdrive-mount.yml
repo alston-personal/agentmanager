@@ -39,10 +39,12 @@ jobs:
 
           [Service]
           Type=simple
+          ExecStartPre=/bin/sh -c 'if findmnt -rn %h/.local/share/agentos/gdrive-remote >/dev/null 2>&1; then (command -v fusermount3 >/dev/null && fusermount3 -uz %h/.local/share/agentos/gdrive-remote) || (command -v fusermount >/dev/null && fusermount -uz %h/.local/share/agentos/gdrive-remote) || true; fi'
           ExecStart=/usr/bin/rclone mount gdrive: %h/.local/share/agentos/gdrive-remote --config=%h/.config/rclone/rclone.conf --vfs-cache-mode=minimal --dir-cache-time=1h --poll-interval=1m --umask=002 --log-level=INFO --log-file=%h/.local/state/agentos/rclone-gdrive.log
-          ExecStop=/bin/sh -c 'command -v fusermount3 >/dev/null && fusermount3 -u %h/.local/share/agentos/gdrive-remote || fusermount -u %h/.local/share/agentos/gdrive-remote'
+          ExecStop=/bin/sh -c '(command -v fusermount3 >/dev/null && fusermount3 -uz %h/.local/share/agentos/gdrive-remote) || (command -v fusermount >/dev/null && fusermount -uz %h/.local/share/agentos/gdrive-remote) || true'
           Restart=always
           RestartSec=10
+          TimeoutStopSec=15
 
           [Install]
           WantedBy=default.target
