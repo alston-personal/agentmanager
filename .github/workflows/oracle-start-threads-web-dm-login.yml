@@ -8,64 +8,44 @@ on:
     paths:
       - '.github/workflows/oracle-start-threads-web-dm-login.yml'
       - 'scripts/start_threads_web_dm_login_user.sh'
+      - 'scripts/submit_oracle_bootstrap_request_remote.sh'
 
 permissions:
   contents: read
 
-# Core runtime is converged separately; this workflow must not overwrite live bootstrap_control.py.
 jobs:
   start:
-    runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
       - uses: actions/checkout@v4
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
       - name: Preflight
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/core/integration"
-          test "$(id -un)" = "agentos-node"
           python3 -m py_compile agentos_node/bootstrap_control.py
           bash -n scripts/start_threads_web_dm_login_user.sh
+          bash -n scripts/submit_oracle_bootstrap_request_remote.sh
 
-      - name: Start one-time login session
+      - name: Start login via governed GUI lane
         shell: bash
         run: |
           set -euo pipefail
-          ROOT=/tmp/agentos-bootstrap-control
-          REQUESTS="$ROOT/requests"
-          RECEIPTS="$ROOT/receipts"
           REQUEST_ID="threads-web-dm-login-start-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          REQUEST="$REQUESTS/$REQUEST_ID.request.json"
-          RECEIPT="$RECEIPTS/$REQUEST_ID.json"
-          for i in $(seq 1 120); do
-            [ -d "$REQUESTS" ] && [ -d "$RECEIPTS" ] && break
-            sleep 1
-          done
-          test -d "$REQUESTS"
-          test -d "$RECEIPTS"
-
-          python3 - "$REQUEST" "$REQUEST_ID" "$GITHUB_SHA" <<'PY'
-          import json,os,sys
-          from datetime import datetime,timezone
-          from pathlib import Path
-          path=Path(sys.argv[1]); request_id=sys.argv[2]; sha=sys.argv[3]
-          payload={
-            "schema":"agentos.bootstrap-request/v1",
-            "request_id":request_id,
-            "action":"agentos.social_threads_web_dm.login_start",
-            "created_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
-            "params":{"source_commit":sha},
-            "authority":{"source":"github-actions","target_user":"ubuntu","arbitrary_shell":False},
-          }
-          tmp=path.with_suffix(path.suffix+".tmp")
-          tmp.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
-          os.chmod(tmp,0o644); tmp.replace(path); os.chmod(path,0o644)
-          PY
-
-          for i in $(seq 1 540); do [ -f "$RECEIPT" ] && break; sleep 1; done
-          test -f "$RECEIPT"
+          RECEIPT="$RUNNER_TEMP/threads-web-dm-login-start-receipt.json"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=300 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.social_threads_web_dm.login_start "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
 
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
@@ -74,13 +54,15 @@ jobs:
           assert r.get("action")=="agentos.social_threads_web_dm.login_start",r
           assert r.get("executor_user")=="ubuntu",r
           assert r.get("source_commit")==expected,r
+          scheduler=r.get("scheduler") or {}
+          assert scheduler.get("worker_role")=="gui",scheduler
+          assert scheduler.get("worker_id")=="oracle-gui",scheduler
           assert r.get("ok") is True,r
           text="\n".join(str(s.get("stdout",""))+"\n"+str(s.get("stderr","")) for s in r.get("steps",[]))
-          assert "threads_web_dm_login_start=PASS" in text,text[-12000:]
+          assert "threads_web_dm_login_start=PASS" in text,text[-8000:]
+          print("agentos_scheduler_worker=oracle-gui:gui")
           print("threads_web_dm_login_start_receipt=PASS")
-          print("oracle_gui_login_tunnel_ready=PASS")
           for line in text.splitlines():
-              if line.startswith(("threads_web_dm_login_url=","threads_web_dm_login_password=","threads_web_dm_login_ttl_minutes=")):
+              if line.startswith(("threads_web_dm_login_mode=","threads_web_dm_login_browser_persistent=","threads_web_dm_login_remote_view=")):
                   print(line)
           PY
-# owner onsite verification 2026-09-30
