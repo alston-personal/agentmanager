@@ -58,6 +58,7 @@ class JobTypeSpec:
     project_id: str
     workload_ref: str
     read_only: bool
+    required_resources: tuple[str, ...] = ()
 
 
 JOB_TYPES: dict[str, JobTypeSpec] = {

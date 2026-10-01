@@ -1,4 +1,8 @@
+from dataclasses import replace
+
+from agent_core import executor_job_contract
 from agent_core.executor_job_contract import canonical_experience_regression_request
+from agentos_node import executor_job_adapter
 from agentos_node.executor_job_adapter import (
     ExecutorJobProviderRegistry,
     execute_registered_executor_job,
@@ -140,3 +144,42 @@ def test_duplicate_provider_registration_fails_closed():
         assert "already registered" in str(exc)
     else:
         raise AssertionError("duplicate provider registration must fail closed")
+
+
+def test_required_resource_blocks_provider_before_execution(monkeypatch):
+    original = executor_job_contract.JOB_TYPES["experience.regression"]
+    monkeypatch.setitem(
+        executor_job_contract.JOB_TYPES,
+        "experience.regression",
+        replace(original, required_resources=("storage://google-drive",)),
+    )
+    monkeypatch.setattr(
+        executor_job_adapter.resource_registry,
+        "resource_ready",
+        lambda resource_id: (False, "RESOURCE_NOT_READY"),
+    )
+
+    called = {"value": False}
+    registry = ExecutorJobProviderRegistry()
+
+    def provider(request):
+        called["value"] = True
+        return {"verdict": "PASS"}
+
+    registry.register(
+        job_type="experience.regression",
+        provider_id="issue117-v1",
+        executor_class="openai-codex-local",
+        handler=provider,
+    )
+    receipt = execute_registered_executor_job(
+        job_id="job-resource-blocked",
+        request=canonical_experience_regression_request(),
+        registry=registry,
+    )
+    assert called["value"] is False
+    assert receipt["executor_available"] is True
+    assert receipt["routable"] is False
+    assert receipt["authorized"] is False
+    assert receipt["successful"] is False
+    assert receipt["classification"] == "RESOURCE_NOT_READY"

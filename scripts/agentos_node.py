@@ -23,6 +23,7 @@ CAPABILITIES = [
     {"id": "resource.query", "mode": "read", "description": "Read/list registered world resources."},
     {"id": "resource.register", "mode": "write", "description": "Register declared resource state."},
     {"id": "resource.verify.site", "mode": "observe", "description": "Targeted site verification."},
+    {"id": "resource.verify.mount", "mode": "observe", "description": "Verify mounted storage readiness."},
 ]
 
 
@@ -67,6 +68,7 @@ def main(argv=None) -> int:
     rr.add_argument("resource_id"); rr.add_argument("--kind", required=True)
     rr.add_argument("--declared-json", required=True); rr.add_argument("--ttl", type=int, default=86400); rr.add_argument("--replace", action="store_true")
     rv = rs.add_parser("verify-site"); rv.add_argument("resource_id")
+    rm = rs.add_parser("verify-mount"); rm.add_argument("resource_id")
 
     args = parser.parse_args(argv)
     governance.seed_core()
@@ -98,6 +100,13 @@ def main(argv=None) -> int:
         if args.command == "verify-site":
             try:
                 emit(resources.verify_site(args.resource_id)); return 0
+            except Exception as exc:
+                print(f"error: {exc}", file=sys.stderr); return 2
+        if args.command == "verify-mount":
+            try:
+                result = resources.verify_mount(args.resource_id)
+                emit(result)
+                return 0 if result.get("verification", {}).get("status") == "verified" else 5
             except Exception as exc:
                 print(f"error: {exc}", file=sys.stderr); return 2
 

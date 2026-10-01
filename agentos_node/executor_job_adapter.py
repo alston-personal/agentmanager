@@ -15,6 +15,7 @@ from agent_core.executor_job_contract import (
     validate_executor_job,
 )
 from agent_core.experience_attribution_contract import sanitize_attribution_evidence_json
+from agent_core import resource_registry
 
 
 Provider = Callable[[Mapping[str, Any]], Mapping[str, Any]]
@@ -139,6 +140,16 @@ def run_registered_executor_job(
     cannot register or control the provider callable.
     """
     spec = validate_executor_job(request)
+    for resource_id in spec.required_resources:
+        ready, classification = resource_registry.resource_ready(resource_id)
+        if not ready:
+            return _semantic_failure(
+                classification,
+                executor_available=True,
+                routable=False,
+                authorized=False,
+            )
+
     binding = registry.get(spec.job_type)
     if binding is None:
         return _semantic_failure(
