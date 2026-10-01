@@ -73,6 +73,7 @@ $files = @(
   'agentos_node/__init__.py',
   'agentos_node/thin_client.py',
   'agentos_node/interactive_desktop.py',
+  'agentos_node/desktop_plan.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py',
   'agentos_node/session_bridge.py',
@@ -89,7 +90,7 @@ $clientCliText = Get-Content -Raw $clientCli
 if ($clientCliText -notmatch "encoding='utf-8-sig'") {
   throw "Downloaded client_cli.py failed BOM-compatibility guard (ref=$Ref)"
 }
-foreach ($required in @('thin_client.py','interactive_desktop.py','thin_client_transport.py','session_bridge.py','agent_surfaces.py')) {
+foreach ($required in @('thin_client.py','interactive_desktop.py','desktop_plan.py','thin_client_transport.py','session_bridge.py','agent_surfaces.py')) {
   if (-not (Test-Path (Join-Path $Pkg $required))) {
     throw "Thin Client dependency missing: $required (ref=$Ref)"
   }
