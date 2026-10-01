@@ -17,12 +17,14 @@ EXPECTED_ACTIONS = {
     "agentos.content.x.auth.inspect",
     "agentos.content.social.bootstrap",
     "agentos.content.social.inspect",
+    "agentos.content.social.write",
 }
 EXPECTED_NODE_CAPABILITIES = {
     NODE_CAPABILITY,
     "content.publish.x.auth.inspect",
     "content.publish.social.bootstrap",
     "content.publish.social.inspect",
+    "content.publish.social.write",
 }
 
 
