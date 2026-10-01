@@ -43,4 +43,4 @@ jobs:
 
 # trigger: 2026-10-01T03:10Z bootstrap-route-repair
 
-# retry: 2026-10-01T03:51Z stale-release-listener-fix
+# retry: 2026-10-01T04:02Z trace-release-supervisor
