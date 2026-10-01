@@ -6,30 +6,31 @@ if [ "$(id -un)" != "ubuntu" ]; then
   exit 2
 fi
 
-ROOT="$HOME/.local/share/agentos/gui-worker"
-PY="$ROOT/venv/bin/python"
-test -x "$PY"
-test -f "$ROOT/capability.json"
+python3 - <<'PY'
+import json
+import urllib.parse
+import urllib.request
 
-"$PY" - <<'PY'
-import json, urllib.request
-from playwright.sync_api import sync_playwright
-
-with urllib.request.urlopen('http://127.0.0.1:9222/json/version',timeout=3) as r:
+base='http://127.0.0.1:9222'
+with urllib.request.urlopen(base+'/json/version',timeout=3) as r:
     meta=json.load(r)
 assert meta.get('webSocketDebuggerUrl')
 
-with sync_playwright() as p:
-    browser=p.chromium.connect_over_cdp('http://127.0.0.1:9222')
-    assert browser.contexts
-    ctx=browser.contexts[0]
-    page=ctx.pages[0] if ctx.pages else ctx.new_page()
-    if not page.url.startswith('https://www.threads.com/'):
-        page.goto('https://www.threads.com/login',wait_until='domcontentloaded',timeout=20000)
-    elif '/messages' not in page.url and '/login' not in page.url:
-        page.goto('https://www.threads.com/login',wait_until='domcontentloaded',timeout=20000)
-    print('threads_web_dm_login_start=PASS')
-    print('threads_web_dm_login_mode=oracle_gui_worker')
-    print('threads_web_dm_login_browser_persistent=true')
-    print('threads_web_dm_login_remote_view=localhost_only')
+# Starting the login handoff only needs a visible persistent-browser tab.
+# Use Chrome's bounded HTTP CDP endpoint instead of attaching Playwright;
+# this avoids leaving a driver process holding scheduler stdout/stderr.
+url='https://www.threads.com/login'
+req=urllib.request.Request(
+    base+'/json/new?'+urllib.parse.quote(url,safe=''),
+    method='PUT',
+)
+with urllib.request.urlopen(req,timeout=5) as r:
+    target=json.load(r)
+assert target.get('id')
+
+print('threads_web_dm_login_start=PASS')
+print('threads_web_dm_login_mode=oracle_gui_worker')
+print('threads_web_dm_login_browser_persistent=true')
+print('threads_web_dm_login_remote_view=localhost_only')
+print('threads_web_dm_login_transport=cdp_http')
 PY
