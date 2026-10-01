@@ -1,0 +1,16 @@
+{
+  "schema": "agentos.storage-policy/v1",
+  "resources": {
+    "storage://google-drive": {
+      "kind": "storage",
+      "node_id": "oracle",
+      "mountpoint": "/home/ubuntu/.local/share/agentos/gdrive-remote-v2",
+      "compatibility_path": "/home/ubuntu/gdrive",
+      "service": "agentos-gdrive-mount.service",
+      "expected_fstype": "fuse.rclone",
+      "failure_policy": "fail-closed",
+      "incident_on_unready": true,
+      "rule": "Jobs that persist to Google Drive MUST declare storage://google-drive as a required resource. Execution is refused unless Resource Registry verification is READY."
+    }
+  }
+}
