@@ -1,0 +1,75 @@
+name: Oracle Inspect PM2 Managed Apps
+on:
+  push:
+    branches: [core/integration]
+    paths: ['.github/workflows/oracle-inspect-pm2-managed-apps.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect PM2 children and dump
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -u
+          PID="$(pgrep -f 'PM2 v[0-9].*: God Daemon' | head -n1 || true)"
+          echo "pm2_daemon_pid=$PID"
+          test -n "$PID"
+          echo '=== DIRECT CHILDREN ==='
+          ps -o pid,ppid,pgid,stat,etime,cmd --ppid "$PID" || true
+          echo '=== DESCENDANTS ==='
+          python3 - "$PID" <<'PY'
+from pathlib import Path
+import sys
+root=int(sys.argv[1])
+pp={}
+cmd={}
+for e in Path('/proc').iterdir():
+    if not e.name.isdigit(): continue
+    try:
+        pid=int(e.name)
+        st=(e/'status').read_text(errors='replace')
+        parent=0
+        for line in st.splitlines():
+            if line.startswith('PPid:'):
+                parent=int(line.split(':',1)[1].strip()); break
+        pp[pid]=parent
+        cmd[pid]=(e/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
+    except Exception:
+        pass
+for pid in sorted(pp):
+    cur=pid
+    seen=set()
+    while cur in pp and cur not in seen and cur>1:
+        if pp.get(cur)==root:
+            print(f'pid={pid} ppid={pp.get(pid)} cmd={cmd.get(pid,"")[:500]}')
+            break
+        seen.add(cur); cur=pp.get(cur,0)
+PY
+          echo '=== DUMP ==='
+          if [ -f "$HOME/.pm2/dump.pm2" ]; then
+            python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path.home()/'.pm2/dump.pm2'
+try: data=json.loads(p.read_text())
+except Exception as e:
+    print('dump_parse_error='+repr(e)); raise SystemExit
+for app in data if isinstance(data,list) else []:
+    print('name=%s pm_id=%s cwd=%s exec=%s status=%s' % (
+      app.get('name'), app.get('pm_id'), app.get('pm_cwd'), app.get('pm_exec_path'), app.get('status')))
+PY
+          else
+            echo dump_missing
+          fi
+          REMOTE
