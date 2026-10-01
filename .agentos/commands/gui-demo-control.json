@@ -1,19 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "benchmark3-e2e-023",
+  "nonce": "desktop-demo-install-ffmpeg-009",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
     "argv": [
-      "-STA",
       "-NoProfile",
       "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      "C:\\Users\\alston.huang\\AgentOS\\agentos_gui_demo_benchmark.ps1"
+      "-Command",
+      "& winget install --id Gyan.FFmpeg --exact --silent --accept-source-agreements --accept-package-agreements --disable-interactivity; exit $LASTEXITCODE"
     ],
-    "timeout_seconds": 150
+    "timeout_seconds": 240
   }
 }
