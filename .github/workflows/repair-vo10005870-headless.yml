@@ -80,7 +80,7 @@ jobs:
           repair_id='headless-repair-VO10005870-20261001-v1'
           existing=fabric.get_receipt(repair_id)
           if existing is None:
-              ps=r'''$ErrorActionPreference='Stop'
+              ps=r"""$ErrorActionPreference='Stop'
           $install=Join-Path $env:LOCALAPPDATA 'AgentOS'
           $state=Join-Path $install 'state'
           $launcher=Join-Path $install 'agentos-client.cmd'
@@ -134,7 +134,7 @@ jobs:
           $a=(Get-ScheduledTask -TaskName $taskName).Actions | Select-Object -First 1
           if([string]$a.Execute -match '(?i)cmd\.exe$'){ throw 'visible cmd.exe action remains' }
           Write-Output 'headless_definition=PASS'
-          '''
+          """
               task={
                   'schema':'agentos.node-task/v0.1',
                   'task_id':repair_id,
@@ -167,7 +167,7 @@ jobs:
           inspect_id='headless-inspect-VO10005870-20261001-v1'
           existing2=fabric.get_receipt(inspect_id)
           if existing2 is None:
-              inspect_ps=r'''$ErrorActionPreference='Stop'
+              inspect_ps=r"""$ErrorActionPreference='Stop'
           $t=Get-ScheduledTask -TaskName 'AgentOS Thin Client' -ErrorAction Stop
           $a=$t.Actions | Select-Object -First 1
           $doc=[ordered]@{
@@ -177,7 +177,7 @@ jobs:
             hidden=[bool]$t.Settings.Hidden
           }
           $doc | ConvertTo-Json -Compress
-          '''
+          """
               task2={
                   'schema':'agentos.node-task/v0.1',
                   'task_id':inspect_id,
