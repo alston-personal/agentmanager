@@ -95,6 +95,22 @@ jobs:
           for route in start exchange complete; do
             test -f "$CWD/.next/server/app/api/auth/pwa/$route/route.js" && echo "pwa_route_$route=present" || echo "pwa_route_$route=missing"
           done
+          echo "=== PWA route mapping ==="
+          python3 - "$CWD/.next/server/app-paths-manifest.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding='utf-8'))
+          for k,v in sorted(p.items()):
+              if '/api/auth/pwa/' in k:
+                  print('pwa_manifest='+k+' -> '+v)
+          PY
+          for url in \
+            http://127.0.0.1:3000/dashboard/api/auth/pwa/start \
+            http://127.0.0.1:3000/api/auth/pwa/start; do
+            code_local="$(curl --noproxy '*' -sS -o /tmp/mio-pwa-local-body -w '%{http_code}' -X POST -H 'Accept: application/json' "$url" || true)"
+            echo "pwa_local_url=$url status=$code_local"
+            head -c 300 /tmp/mio-pwa-local-body | tr '\n' ' '; echo
+          done
+
           code="$(curl --noproxy '*' -k -sS -o /tmp/mio-pwa-start-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
             -X POST -H 'Accept: application/json' https://studio.milkcat.org/dashboard/api/auth/pwa/start || true)"
           echo "pwa_start_http=$code"
