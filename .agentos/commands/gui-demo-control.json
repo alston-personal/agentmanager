@@ -1,14 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-redeploy-ffmpeg-016",
+  "nonce": "desktop-demo-reload-ffmpeg-017",
   "action": "shell.exec",
   "payload": {
-    "executable": "python",
+    "executable": "powershell",
     "argv": [
-      "-c",
-      "import urllib.request,pathlib; url='https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/desktop_demo.py'; p=pathlib.Path(r'C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\agentos_node\\\\desktop_demo.py'); p.write_bytes(urllib.request.urlopen(url,timeout=20).read()); print(p.stat().st_size)"
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$pidOld=(Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -match 'python(.exe)?\"? -m agentos_node.client_cli run'} | Select-Object -First 1 -ExpandProperty ProcessId); if(-not $pidOld){throw 'thin_client_pid_missing'}; $cmd=\"Start-Sleep -Seconds 2; Stop-Process -Id $pidOld -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3; Start-ScheduledTask -TaskName 'AgentOS Thin Client'\"; Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cmd); Write-Output ('reload_pid='+$pidOld)"
     ],
-    "timeout_seconds": 40
+    "timeout_seconds": 20
   }
 }
