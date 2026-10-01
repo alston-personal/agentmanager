@@ -32,7 +32,7 @@ jobs:
           cat > "$HOME/.local/bin/check_agentos_gdrive.sh" <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
-          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
           STATE="$HOME/.local/state/agentos/gdrive-health.state"
           now="$(date -Is)"
 
@@ -42,13 +42,19 @@ jobs:
           fi
 
           printf 'checked_at=%s\nstate=RECOVERING\n' "$now" > "$STATE"
+          if findmnt -rn "$MOUNT" >/dev/null 2>&1; then
+            (command -v fusermount3 >/dev/null && fusermount3 -uz "$MOUNT") || \
+              (command -v fusermount >/dev/null && fusermount -uz "$MOUNT") || true
+            sleep 1
+          fi
+          systemctl --user reset-failed agentos-gdrive-mount.service || true
           systemctl --user restart agentos-gdrive-mount.service
-          for i in $(seq 1 20); do
-            if mountpoint -q "$MOUNT" && timeout 10 test -d "$MOUNT/backups"; then
+          for i in $(seq 1 60); do
+            if mountpoint -q "$MOUNT" && timeout 15 test -d "$MOUNT/backups"; then
               printf 'checked_at=%s\nstate=RECOVERED\n' "$(date -Is)" > "$STATE"
               exit 0
             fi
-            sleep 1
+            sleep 2
           done
           printf 'checked_at=%s\nstate=FAILED\n' "$(date -Is)" > "$STATE"
           exit 42
