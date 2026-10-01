@@ -1,16 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-ffmpeg-locate-015",
+  "nonce": "desktop-demo-redeploy-ffmpeg-016",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "python",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$roots=@((Join-Path $env:LOCALAPPDATA 'Microsoft\\WinGet'),(Join-Path $env:LOCALAPPDATA 'Microsoft\\WindowsApps'),(Join-Path $env:USERPROFILE 'scoop'),$env:ProgramFiles); $hits=@(); foreach($r in $roots){if($r -and (Test-Path $r)){ $hits += Get-ChildItem -LiteralPath $r -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName }}; [pscustomobject]@{LOCALAPPDATA=$env:LOCALAPPDATA;PATH=$env:PATH;hits=$hits}|ConvertTo-Json -Depth 4 -Compress"
+      "-c",
+      "import urllib.request,pathlib; url='https://raw.githubusercontent.com/alston-personal/agentmanager/feat/desktop-demo-recorder/agentos_node/desktop_demo.py'; p=pathlib.Path(r'C:\\\\Users\\\\alston.huang\\\\AppData\\\\Local\\\\AgentOS\\\\agentos_node\\\\desktop_demo.py'); p.write_bytes(urllib.request.urlopen(url,timeout=20).read()); print(p.stat().st_size)"
     ],
-    "timeout_seconds": 60
+    "timeout_seconds": 40
   }
 }
