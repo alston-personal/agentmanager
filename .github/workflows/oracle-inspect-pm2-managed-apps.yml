@@ -1,10 +1,15 @@
 name: Oracle Inspect PM2 Managed Apps
+
 on:
+  workflow_dispatch:
   push:
     branches: [core/integration]
-    paths: ['.github/workflows/oracle-inspect-pm2-managed-apps.yml']
+    paths:
+      - '.github/workflows/oracle-inspect-pm2-managed-apps.yml'
+
 permissions:
   contents: read
+
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -17,61 +22,120 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Inspect PM2 children and dump
+
+      - name: Inspect PM2 daemon, children, CLI and dump
         shell: bash
         run: |
+          set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
           set -u
           PID="$(pgrep -f 'PM2 v[0-9].*: God Daemon' | head -n1 || true)"
           echo "pm2_daemon_pid=$PID"
           test -n "$PID"
+
+          echo '=== DAEMON IDENTITY ==='
+          echo "pm2_daemon_exe=$(readlink -f "/proc/$PID/exe" 2>/dev/null || true)"
+          echo "pm2_daemon_cwd=$(readlink -f "/proc/$PID/cwd" 2>/dev/null || true)"
+          python3 - "$PID" <<'PY'
+          from pathlib import Path
+          import sys
+
+          pid=sys.argv[1]
+          raw=(Path('/proc')/pid/'environ').read_bytes().split(b'\0')
+          allowed={'PATH','PM2_HOME','NVM_BIN','NODE_PATH','npm_config_prefix','HOME'}
+          env={}
+          for item in raw:
+              if b'=' not in item:
+                  continue
+              key,value=item.split(b'=',1)
+              key=key.decode('utf-8','replace')
+              if key in allowed:
+                  env[key]=value.decode('utf-8','replace')
+          for key in sorted(env):
+              print(f'pm2_env_{key}={env[key]}')
+          for directory in env.get('PATH','').split(':'):
+              if not directory:
+                  continue
+              candidate=Path(directory)/'pm2'
+              if candidate.exists():
+                  print(f'pm2_cli_from_daemon_path={candidate}')
+          PY
+
+          echo '=== LIKELY PM2 CLI FILES ==='
+          for root in             "$HOME/.nvm"             "$HOME/.npm"             "$HOME/.npm-global"             "$HOME/.local"             "/usr/local/lib/node_modules"             "/usr/lib/node_modules"             "/opt"
+          do
+            [ -e "$root" ] || continue
+            find "$root" -maxdepth 8 -type f \( -path '*/pm2/bin/pm2' -o -path '*/bin/pm2' \) -perm -u+x 2>/dev/null | head -n 40
+          done
+
           echo '=== DIRECT CHILDREN ==='
           ps -o pid,ppid,pgid,stat,etime,cmd --ppid "$PID" || true
+
           echo '=== DESCENDANTS ==='
           python3 - "$PID" <<'PY'
-from pathlib import Path
-import sys
-root=int(sys.argv[1])
-pp={}
-cmd={}
-for e in Path('/proc').iterdir():
-    if not e.name.isdigit(): continue
-    try:
-        pid=int(e.name)
-        st=(e/'status').read_text(errors='replace')
-        parent=0
-        for line in st.splitlines():
-            if line.startswith('PPid:'):
-                parent=int(line.split(':',1)[1].strip()); break
-        pp[pid]=parent
-        cmd[pid]=(e/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
-    except Exception:
-        pass
-for pid in sorted(pp):
-    cur=pid
-    seen=set()
-    while cur in pp and cur not in seen and cur>1:
-        if pp.get(cur)==root:
-            print(f'pid={pid} ppid={pp.get(pid)} cmd={cmd.get(pid,"")[:500]}')
-            break
-        seen.add(cur); cur=pp.get(cur,0)
-PY
-          echo '=== DUMP ==='
+          from pathlib import Path
+          import os
+          import sys
+
+          root=int(sys.argv[1])
+          pp={}
+          cmd={}
+          cwd={}
+          for entry in Path('/proc').iterdir():
+              if not entry.name.isdigit():
+                  continue
+              try:
+                  pid=int(entry.name)
+                  status=(entry/'status').read_text(errors='replace')
+                  parent=0
+                  for line in status.splitlines():
+                      if line.startswith('PPid:'):
+                          parent=int(line.split(':',1)[1].strip())
+                          break
+                  pp[pid]=parent
+                  cmd[pid]=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
+                  cwd[pid]=str((entry/'cwd').resolve())
+              except Exception:
+                  pass
+
+          def under_root(pid: int) -> bool:
+              cur=pid
+              seen=set()
+              while cur in pp and cur not in seen and cur>1:
+                  if pp.get(cur)==root:
+                      return True
+                  seen.add(cur)
+                  cur=pp.get(cur,0)
+              return False
+
+          for pid in sorted(pp):
+              if under_root(pid):
+                  print(f'pid={pid} ppid={pp.get(pid)} cwd={cwd.get(pid,"")} cmd={cmd.get(pid,"")[:500]}')
+          PY
+
+          echo '=== PM2 DUMP ==='
           if [ -f "$HOME/.pm2/dump.pm2" ]; then
             python3 - <<'PY'
-import json
-from pathlib import Path
-p=Path.home()/'.pm2/dump.pm2'
-try: data=json.loads(p.read_text())
-except Exception as e:
-    print('dump_parse_error='+repr(e)); raise SystemExit
-for app in data if isinstance(data,list) else []:
-    print('name=%s pm_id=%s cwd=%s exec=%s status=%s' % (
-      app.get('name'), app.get('pm_id'), app.get('pm_cwd'), app.get('pm_exec_path'), app.get('status')))
-PY
+          import json
+          from pathlib import Path
+
+          path=Path.home()/'.pm2/dump.pm2'
+          try:
+              data=json.loads(path.read_text())
+          except Exception as exc:
+              print('dump_parse_error='+repr(exc))
+              raise SystemExit
+          for app in data if isinstance(data,list) else []:
+              print('name=%s pm_id=%s cwd=%s exec=%s status=%s autorestart=%s' % (
+                  app.get('name'),
+                  app.get('pm_id'),
+                  app.get('pm_cwd'),
+                  app.get('pm_exec_path'),
+                  app.get('status'),
+                  app.get('autorestart'),
+              ))
+          PY
           else
             echo dump_missing
           fi
           REMOTE
-
-# trigger: inspect-pm2-managed-apps-now
