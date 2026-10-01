@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
           set -euo pipefail
-          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
           echo '=== STATE ==='
           cat "$HOME/.local/state/agentos/gdrive-health.state" 2>/dev/null || true
           echo '=== SERVICE ==='
