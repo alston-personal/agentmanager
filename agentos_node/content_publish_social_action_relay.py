@@ -194,7 +194,8 @@ def bootstrap_account(params: Mapping[str, Any]) -> dict[str, Any]:
             "account_ref": cfg["account_ref"],
             "status": "AUTH_REQUIRED",
             "credential_exposed": False,
-            "side_effect": False,
+            "public_publish_performed": False,
+            "credential_migrated": False,
         }
 
     social_env = _parse_env(SOCIAL_ENV)
@@ -208,7 +209,8 @@ def bootstrap_account(params: Mapping[str, Any]) -> dict[str, Any]:
             "account_ref": cfg["account_ref"],
             "status": "AUTH_REQUIRED",
             "credential_exposed": False,
-            "side_effect": False,
+            "public_publish_performed": False,
+            "credential_migrated": False,
         }
 
     provider_account_id = str(identity.get("id") or "").strip()
@@ -224,7 +226,8 @@ def bootstrap_account(params: Mapping[str, Any]) -> dict[str, Any]:
             "status": "PERMISSION_DENIED",
             "observed_username": username,
             "credential_exposed": False,
-            "side_effect": False,
+            "public_publish_performed": False,
+            "credential_migrated": False,
         }
 
     created, _secret_path = register_product(
@@ -271,7 +274,8 @@ def bootstrap_account(params: Mapping[str, Any]) -> dict[str, Any]:
         "username": username,
         "product_registration": "CREATED" if created else "PRESERVED",
         "credential_exposed": False,
-        "side_effect": False,
+        "public_publish_performed": False,
+        "credential_migrated": True,
     }
 
 
@@ -288,7 +292,8 @@ def inspect_account(params: Mapping[str, Any]) -> dict[str, Any]:
             "account_ref": cfg["account_ref"],
             "status": "AUTH_REQUIRED",
             "credential_exposed": False,
-            "side_effect": False,
+            "public_publish_performed": False,
+            "credential_migrated": False,
         }
     if item.get("product_id") != "content-publish" or item.get("platform") != "threads":
         raise RuntimeError("content_publish_account_registry_scope_invalid")
@@ -327,7 +332,7 @@ def inspect_account(params: Mapping[str, Any]) -> dict[str, Any]:
         "username": username,
         "write_entitlement": "UNKNOWN",
         "credential_exposed": False,
-        "side_effect": False,
+        "public_publish_performed": False,
     }
 
 
@@ -371,10 +376,11 @@ class ContentPublishSocialDispatcher:
         allowed = {
             "ok", "capability", "account_ref", "status", "product_id", "binding_id",
             "provider_account_id", "username", "product_registration",
-            "write_entitlement", "credential_exposed", "side_effect", "executor_user",
+            "write_entitlement", "credential_exposed", "public_publish_performed",
+            "credential_migrated", "executor_user",
         }
         result = {key: receipt.get(key) for key in allowed if key in receipt}
         result["task_id"] = str(task_id)
         result["credential_exposed"] = False
-        result["side_effect"] = False
+        result["public_publish_performed"] = False
         return result
