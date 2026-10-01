@@ -1,0 +1,55 @@
+name: Oracle Direct Backup Smoke
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-direct-backup-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify streaming backup transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          bash -n "$HOME/.local/bin/backup_agentos_remote.sh"
+
+          TMPDIR="$(mktemp -d)"
+          SIZE_FILE="$(mktemp)"
+          MD5_FILE="$(mktemp)"
+          trap 'rm -rf "$TMPDIR" "$SIZE_FILE" "$MD5_FILE"' EXIT
+
+          printf 'AgentOS direct backup smoke %s\n' "$(date -Is)" > "$TMPDIR/probe.txt"
+          DEST="gdrive:backups/.smoke/agentos_stream_smoke_$(date +%Y%m%d_%H%M%S).tar.gz"
+
+          tar -C "$TMPDIR" -czf - probe.txt             | tee >(wc -c | tr -d ' ' > "$SIZE_FILE")                   >(md5sum | awk '{print $1}' > "$MD5_FILE")             | rclone rcat "$DEST" --retries 3 --low-level-retries 10
+
+          local_size="$(cat "$SIZE_FILE")"
+          local_md5="$(cat "$MD5_FILE")"
+          remote_size="$(timeout 30 rclone lsf "$DEST" --files-only --format s | head -n1)"
+          remote_md5="$(timeout 30 rclone md5sum "$DEST" | awk 'NR==1{print $1}')"
+
+          echo "smoke_local_size=$local_size"
+          echo "smoke_remote_size=$remote_size"
+          test "$remote_size" = "$local_size"
+          test "$remote_md5" = "$local_md5"
+          echo 'direct_backup_stream_hash=PASS'
+
+          rclone deletefile "$DEST"
+          echo 'direct_backup_smoke_cleanup=PASS'
+          REMOTE
