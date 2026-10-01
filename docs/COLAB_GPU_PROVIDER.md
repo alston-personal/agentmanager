@@ -41,8 +41,8 @@ The intended execution node is Oracle. Promotion requires a governed installatio
 
 1. Python 3.12 / `uv` prerequisites as required by upstream;
 2. `google-colab-cli` is installed;
-3. OAuth2 authentication succeeds without secrets entering logs;
-4. `colab --auth=oauth2 usage` returns a usable account state;
+3. Oracle has Application Default Credentials (ADC) for the intended Google user with scopes `openid`, `cloud-platform`, `userinfo.email`, and `colaboratory`;
+4. `colab --auth=adc usage` returns a usable account state without interactive stdin;
 5. the upstream skill is installed at a pinned commit SHA;
 6. a small reference-to-video job completes;
 7. the output MP4 exists and is captured in an AgentOS receipt;
@@ -104,15 +104,39 @@ killkli/minimax-h3-colab-skill
 The workflow installs the provider into an immutable path under
 `/home/ubuntu/agent-data/providers/colab/releases/<sha>`, updates a runtime
 `current` symlink, installs `uv` / `google-colab-cli` when needed, and runs
-a non-leaking OAuth/quota preflight.
+a non-leaking ADC/quota preflight.
 
-If Colab OAuth is not already established on Oracle, the workflow records
-`result.status=AUTH_REQUIRED` and exits without printing raw OAuth output.
-After authentication is completed, rerunning the same workflow must reach
-`READY_FOR_SMOKE` before any H3 generation acceptance is attempted.
+If Oracle ADC is not established, the provider remains `AUTH_REQUIRED`. The canonical one-time bootstrap script is `/home/ubuntu/.config/agentos/colab-adc-bootstrap.sh`. It runs `gcloud auth application-default login` with the four Colab-required scopes. After that one-time interactive authorization, unattended provider and H3 jobs use `COLAB_AUTH=adc` and must not depend on OAuth copy-paste stdin.
+
+The pinned Oracle gcloud runtime is installed by `.github/workflows/oracle-install-colab-adc-runtime.yml`. Current pinned version: `587.0.0` (Linux ARM archive, verified by SHA-256).
 
 Receipt path:
 
 ```text
 /home/ubuntu/agent-data/evidence/colab/install-<github-run-id>.json
 ```
+
+
+## Authentication decision: ADC for AgentOS
+
+The Colab CLI OAuth2 provider uses a remote copy-paste authorization flow and may call `input()` when a refresh token is unavailable or invalid. That behavior is suitable for an interactive terminal, but unsafe for AgentOS unattended SSH/heredoc execution because stdin is also the command transport.
+
+AgentOS therefore standardizes Oracle Colab execution on **Application Default Credentials (ADC)**:
+
+```text
+interactive bootstrap once
+  -> gcloud application-default credentials
+  -> unattended colab --auth=adc
+  -> MiniMax H3 / other Colab consumers
+```
+
+Required user credential scopes:
+
+```text
+openid
+https://www.googleapis.com/auth/cloud-platform
+https://www.googleapis.com/auth/userinfo.email
+https://www.googleapis.com/auth/colaboratory
+```
+
+ADC credentials remain in the standard gcloud config path with mode 0600 and must never be copied into prompts, repositories, receipts, or workflow logs.
