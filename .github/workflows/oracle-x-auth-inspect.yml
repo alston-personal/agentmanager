@@ -45,10 +45,12 @@ jobs:
         run: |
           set -euo pipefail
           for envfile in /home/ubuntu/agentmanager/.env /home/ubuntu/zeus-writer/.env; do
-            if [ -f "$envfile" ]; then
+            if [ -r "$envfile" ]; then
               set -a
               . "$envfile"
               set +a
+            elif [ -e "$envfile" ]; then
+              echo "x_auth_probe_env_unreadable=$envfile"
             fi
           done
 
