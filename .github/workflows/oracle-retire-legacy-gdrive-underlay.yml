@@ -30,7 +30,9 @@ jobs:
           set -euo pipefail
           P="$HOME/gdrive"
           test -d "$P"
-          test -z "$(find "$P" -mindepth 1 -print -quit)"
+          chmod 0755 "$P"
+          unexpected="$(find "$P" -mindepth 1 -maxdepth 1 ! -name 'README.RETIRED' -print -quit)"
+          test -z "$unexpected"
 
           cat > "$P/README.RETIRED" <<'TXT'
           RETIRED AgentOS Google Drive mountpoint.
