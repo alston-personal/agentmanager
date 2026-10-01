@@ -337,7 +337,7 @@ def _execute(action: str, source_commit: str | None, post_key: str | None = None
     if action == ACTION_PROBE_THREADS_WEB_DM_LOGIN:
         return _run_canonical_script("scripts/probe_threads_web_dm_login_user.sh", timeout=120, source_commit=source_commit)
     if action == ACTION_START_THREADS_WEB_DM_LOGIN:
-        return _run_canonical_script("scripts/start_threads_web_dm_login_user.sh", timeout=300, source_commit=source_commit)
+        return _run_canonical_script("scripts/start_threads_web_dm_login_user.sh", timeout=60, source_commit=source_commit)
     if action == ACTION_RUN_MIO_DM_DECISION:
         params=params or {}
         return _run_canonical_script(
