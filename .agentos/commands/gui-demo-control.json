@@ -1,9 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "screenshot-gemini-004",
-  "action": "desktop.screenshot",
+  "nonce": "gemini-uia-inspect-005",
+  "action": "shell.exec",
   "payload": {
-    "quality": 45
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\nAdd-Type -AssemblyName System.Windows.Forms\nAdd-Type @\"\nusing System;\nusing System.Runtime.InteropServices;\npublic static class Win32Demo {\n  [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);\n  [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);\n}\n\"@\n$edge = Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1\nif($null -eq $edge){ throw 'No visible Edge window' }\n[Win32Demo]::ShowWindow($edge.MainWindowHandle,9) | Out-Null\n[Win32Demo]::SetForegroundWindow($edge.MainWindowHandle) | Out-Null\nStart-Sleep -Milliseconds 500\n[System.Windows.Forms.SendKeys]::SendWait('^l')\n[System.Windows.Forms.SendKeys]::SendWait('https://gemini.google.com/app')\n[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')\nStart-Sleep -Seconds 8\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$out=@()\nfor($i=0;$i -lt $all.Count;$i++){\n  $e=$all.Item($i)\n  $ct=$e.Current.ControlType.ProgrammaticName\n  if($ct -match 'Edit|Button|Text|Document'){\n    $name=[string]$e.Current.Name\n    $aid=[string]$e.Current.AutomationId\n    $cls=[string]$e.Current.ClassName\n    if($name -or $aid){\n      $r=$e.Current.BoundingRectangle\n      $out += [pscustomobject]@{type=$ct;name=$name;automation_id=$aid;class=$cls;x=[int]$r.X;y=[int]$r.Y;w=[int]$r.Width;h=[int]$r.Height;focus=[bool]$e.Current.HasKeyboardFocus}\n      if($out.Count -ge 120){break}\n    }\n  }\n}\n[pscustomobject]@{title=$edge.MainWindowTitle;controls=$out} | ConvertTo-Json -Depth 5 -Compress"
+    ],
+    "timeout_seconds": 45
   }
 }
