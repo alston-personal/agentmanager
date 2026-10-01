@@ -2,13 +2,6 @@ name: Oracle Start Threads Web DM Login
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core/integration
-    paths:
-      - '.github/workflows/oracle-start-threads-web-dm-login.yml'
-      - 'scripts/start_threads_web_dm_login_user.sh'
-      - 'scripts/submit_oracle_bootstrap_request_remote.sh'
 
 permissions:
   contents: read
@@ -16,7 +9,7 @@ permissions:
 jobs:
   start:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 4
     env:
       ORACLE_HOST: 161.33.24.170
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
