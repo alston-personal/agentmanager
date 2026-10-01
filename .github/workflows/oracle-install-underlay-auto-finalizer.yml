@@ -38,8 +38,14 @@ jobs:
           names=(agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz)
 
           if [ -L "$HOME/gdrive" ]; then
-            printf 'checked_at=%s\nstate=ALREADY_FINALIZED\n' "$(date -Is)" > "$STATE"
-            exit 0
+            link_target="$(readlink -f "$HOME/gdrive" 2>/dev/null || true)"
+            expected_target="$HOME/.local/share/agentos/gdrive-remote-v2"
+            if [ "$link_target" = "$expected_target" ] && mountpoint -q "$expected_target" && systemctl --user is-active --quiet agentos-gdrive-mount.service; then
+              printf 'checked_at=%s\nstate=ALREADY_FINALIZED\ntarget=%s\n' "$(date -Is)" "$link_target" > "$STATE"
+              exit 0
+            fi
+            printf 'checked_at=%s\nstate=REFUSED_WRONG_SYMLINK\ntarget=%s\nexpected=%s\n' "$(date -Is)" "$link_target" "$expected_target" > "$STATE"
+            exit 44
           fi
 
           if pgrep -af 'rclone copyto .*recovered-oracle-underlay-20261001' >/dev/null; then
