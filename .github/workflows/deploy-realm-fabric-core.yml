@@ -55,14 +55,13 @@ jobs:
           grep -q 'core_project_runtime_binding_v1' agentos_node/action_relay.py
           grep -q 'realm_fabric_release_isolation_v1' agentos_node/action_relay.py
           grep -q 'realm_fabric_process_attestation_v1' agentos_node/action_relay.py
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add agentos_node/action_relay.py
-          if ! git diff --cached --quiet; then
-            git commit -m 'fix(agentos): bind project registration to deployed Core release'
-            git pull --rebase origin main
-            git push origin HEAD:main
+          if ! git diff --quiet -- agentos_node/action_relay.py; then
+            echo 'generated_action_relay_drift=FAIL' >&2
+            echo 'Patch scripts produced a development mutation. Promote that change through a non-main branch + PR before deploying.' >&2
+            git diff -- agentos_node/action_relay.py >&2
+            exit 1
           fi
+          echo 'generated_action_relay_drift=PASS'
 
   deploy:
     needs: patch-capability
@@ -115,13 +114,27 @@ jobs:
             -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
             scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
           chmod 700 "$tmp"
+          set +e
           bash "$tmp"
-          grep -q 'agentos.realm-fabric.install_release' "$runtime"
-          grep -q 'agentos.project.register_core' "$runtime"
-          grep -q 'core_project_runtime_binding_v1' "$runtime"
-          grep -q 'realm_fabric_release_isolation_v1' "$runtime"
-          grep -q 'realm_fabric_process_attestation_v1' "$runtime"
-          echo 'action_relay_runtime_core=READY_AFTER_REFRESH'
+          bootstrap_rc=$?
+          set -e
+
+          # The safe bootstrap also performs legacy Antigravity post-checks that
+          # may be unreadable from the agentos-node runner identity. The Core
+          # deploy only depends on the governed Action Relay runtime contract,
+          # so judge refresh success by the exact capability markers we need.
+          missing=0
+          for marker in             'agentos.realm-fabric.install_release'             'agentos.project.register_core'             'core_project_runtime_binding_v1'             'realm_fabric_release_isolation_v1'             'realm_fabric_process_attestation_v1'; do
+            if ! grep -q "$marker" "$runtime" 2>/dev/null; then
+              echo "missing_action_relay_marker=$marker" >&2
+              missing=1
+            fi
+          done
+          if [[ "$missing" != 0 ]]; then
+            echo "action_relay_refresh_failed bootstrap_rc=$bootstrap_rc" >&2
+            exit 1
+          fi
+          echo "action_relay_runtime_core=READY_AFTER_REFRESH bootstrap_rc=$bootstrap_rc"
 
       - name: Install exact Realm Fabric release through Action Relay
         shell: bash
@@ -213,7 +226,7 @@ jobs:
           test "$code" = "401"
           echo "unauthenticated_resolve=PASS"
 
-      - name: Publish governed Core evidence
+      - name: Collect governed Core evidence
         if: always()
         shell: bash
         run: |
@@ -222,16 +235,13 @@ jobs:
           for E in .agentos/evidence/realm-fabric-install-current.json .agentos/evidence/agentos-core-project-registration.json; do
             test -f "$E" && cp "$E" /tmp/agentos-core-evidence/$(basename "$E")
           done
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p .agentos/evidence
-          for F in /tmp/agentos-core-evidence/*; do
-            test -f "$F" && cp "$F" .agentos/evidence/$(basename "$F")
-          done
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agentos/evidence
-          git diff --cached --quiet && exit 0
-          git commit -m 'evidence(agentos): governed Core project authority'
-          git pull --rebase origin main
-          git push origin HEAD:main
+          find /tmp/agentos-core-evidence -maxdepth 1 -type f -print || true
+
+      - name: Upload governed Core evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentos-core-evidence-${{ github.run_id }}
+          path: /tmp/agentos-core-evidence
+          if-no-files-found: ignore
+          retention-days: 14
