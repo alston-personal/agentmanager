@@ -58,8 +58,8 @@ jobs:
           remote() {
             ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "$@"
           }
-          CANDIDATE="$(remote 'AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -c '"'"'from agent_core.node_registry import NodeRegistry; n=next((x for x in NodeRegistry().node_map().get("nodes",[]) if x.get("node_id")=="mbpr"),{}); print("ready" if n.get("status")=="online" and "threads.gui.read" in set(n.get("capabilities") or []) else ("offline" if n.get("status")!="online" else "missing_capability"))'"'"'')"
-          echo "runner_pool_test_b_candidate=$CANDIDATE"
+          CANDIDATE_INFO="$(remote 'AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -c '"'"'from agent_core.node_registry import NodeRegistry; ns=NodeRegistry().node_map().get("nodes") or []; xs=[n for n in ns if isinstance(n,dict) and n.get("role")!="core" and str(n.get("node_id") or "")!="oracle-exec"]; on=[n for n in xs if n.get("status")=="online"]; ok=[n for n in on if "threads.gui.read" in set(n.get("capabilities") or [])]; ok=sorted(ok,key=lambda n:((n.get("heartbeat_age_seconds") if isinstance(n.get("heartbeat_age_seconds"),(int,float)) else 10**12),str(n.get("node_id") or ""))); print(("ready:"+str(ok[0].get("node_id"))) if ok else ("unavailable:external_nodes_not_registered" if not xs else ("unavailable:external_nodes_offline" if not on else "unavailable:external_nodes_missing_capability")))'"'"'')"
+          echo "runner_pool_test_b_candidate=$CANDIDATE_INFO"
 
           LOCK_LOG="$RUNNER_TEMP/test-b-gui-lock.log"
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
@@ -95,21 +95,24 @@ jobs:
 
           DM_ID="runner-pool-test-b-dm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           DM_RECEIPT="$RUNNER_TEMP/test-b-dm.json"
-          if [ "$CANDIDATE" = ready ]; then
+          if [[ "$CANDIDATE_INFO" == ready:* ]]; then
+            TARGET_NODE="${CANDIDATE_INFO#ready:}"
+            test -n "$TARGET_NODE"
             AGENTOS_RECEIPT_TIMEOUT_SECONDS=180 \
               bash scripts/submit_oracle_bootstrap_request_remote.sh \
                 agentos.social_threads_web_dm.read "$DM_ID" "$GITHUB_SHA" '{}' > "$DM_RECEIPT"
-            python3 - "$DM_RECEIPT" <<'PY'
+            python3 - "$DM_RECEIPT" "$TARGET_NODE" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1],encoding='utf-8'))
+          target=sys.argv[2]
           s=r.get('scheduler') or {}
           assert r.get('ok') is True,r
-          assert s.get('node')=='mbpr',s
-          assert s.get('worker_id')=='mbpr',s
+          assert s.get('node')==target,s
+          assert s.get('worker_id')==target,s
           assert s.get('fallback_from')=='oracle-gui',s
           assert s.get('fallback_attempted') is True,s
           print('runner_pool_test_b=PASS')
-          print('runner_pool_test_b_node=mbpr')
+          print('runner_pool_test_b_node='+target)
           PY
           else
             (

@@ -10,6 +10,7 @@ on:
       - 'agentos_node/bootstrap_scheduler.py'
       - 'scripts/install_bootstrap_scheduler_user.sh'
       - 'scripts/update_scheduler_board.py'
+      - 'tests/test_bootstrap_scheduler_selector.py'
   workflow_dispatch:
 
 permissions:
@@ -24,6 +25,14 @@ jobs:
       DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
       DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate capability-based external node selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/test_bootstrap_scheduler_selector.py
+
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
