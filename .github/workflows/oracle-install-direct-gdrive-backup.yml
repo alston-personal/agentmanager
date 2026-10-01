@@ -1,0 +1,116 @@
+name: Oracle Install Direct GDrive Backup
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-install-direct-gdrive-backup.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install streaming remote backup timer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          command -v rclone >/dev/null
+          command -v flock >/dev/null
+          test -f "$HOME/.config/rclone/rclone.conf"
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/state/agentos" "$HOME/.config/systemd/user"
+
+          cat > "$HOME/.local/bin/backup_agentos_remote.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec 9>"$HOME/.local/state/agentos/backup-agentos.lock"
+          flock -n 9 || { echo "backup_skip=already_running"; exit 0; }
+
+          DATE="$(date +'%Y%m%d_%H%M%S')"
+          NAME="agentos_backup_${DATE}.tar.gz"
+          DEST="gdrive:backups/${NAME}"
+          STATE="$HOME/.local/state/agentos/backup-agentos.state"
+          SIZE_FILE="$(mktemp)"
+          MD5_FILE="$(mktemp)"
+          trap 'rm -f "$SIZE_FILE" "$MD5_FILE"' EXIT
+
+          printf 'started_at=%s\nname=%s\nstate=STREAMING\n' "$(date -Is)" "$NAME" > "$STATE"
+
+          tar --exclude='node_modules' \
+              --exclude='dist' \
+              --exclude='__pycache__' \
+              --exclude='venv' \
+              --exclude='*.log' \
+              -czf - \
+              "$HOME/agentmanager" \
+              "$HOME/agent-data" \
+            | tee >(wc -c | tr -d ' ' > "$SIZE_FILE") \
+                  >(md5sum | awk '{print $1}' > "$MD5_FILE") \
+            | rclone rcat "$DEST" --retries 5 --low-level-retries 20
+
+          local_size="$(cat "$SIZE_FILE")"
+          local_md5="$(cat "$MD5_FILE")"
+          remote_size="$(timeout 60 rclone lsf "$DEST" --files-only --format s 2>/dev/null | head -n1 || true)"
+          remote_md5="$(timeout 120 rclone md5sum "$DEST" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+
+          test -n "$local_size"
+          test "$remote_size" = "$local_size"
+          test -n "$local_md5"
+          test "$remote_md5" = "$local_md5"
+
+          printf 'completed_at=%s\nname=%s\nstate=PASS\nbytes=%s\nmd5=%s\n' \
+            "$(date -Is)" "$NAME" "$local_size" "$local_md5" > "$STATE"
+          echo "agentos_remote_backup=PASS name=$NAME bytes=$local_size"
+          SH
+          chmod 700 "$HOME/.local/bin/backup_agentos_remote.sh"
+
+          cat > "$HOME/.config/systemd/user/agentos-remote-backup.service" <<'UNIT'
+          [Unit]
+          Description=AgentOS direct Google Drive backup
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=%h/.local/bin/backup_agentos_remote.sh
+          StandardOutput=append:%h/.local/state/agentos/backup-agentos.log
+          StandardError=append:%h/.local/state/agentos/backup-agentos.log
+          UNIT
+
+          cat > "$HOME/.config/systemd/user/agentos-remote-backup.timer" <<'UNIT'
+          [Unit]
+          Description=Daily AgentOS direct Google Drive backup
+
+          [Timer]
+          OnCalendar=*-*-* 03:00:00
+          AccuracySec=1min
+          Persistent=true
+          Unit=agentos-remote-backup.service
+
+          [Install]
+          WantedBy=timers.target
+          UNIT
+
+          current="$(crontab -l 2>/dev/null || true)"
+          printf '%s\n' "$current" | grep -v 'backup_agentos' | sed '/^[[:space:]]*$/d' | crontab -
+
+          systemctl --user daemon-reload
+          systemctl --user enable --now agentos-remote-backup.timer
+          systemctl --user is-enabled agentos-remote-backup.timer
+          systemctl --user is-active agentos-remote-backup.timer
+          systemctl --user list-timers agentos-remote-backup.timer --no-pager
+          echo 'direct_gdrive_backup_install=PASS'
+          REMOTE
