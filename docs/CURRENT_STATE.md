@@ -38,6 +38,7 @@ Lower layers may inform higher layers but may not silently overwrite them.
 | Discussion Index (#290) | Candidate only | append-only ONE discussion provenance/search substrate is proposed in draft PR #293. It is not canonical authority, Canonical IR, Experience, or transcript-vault acceptance until integrated and live-accepted |
 | Project/repository identity | Canonical explicit map | `docs/PROJECT_REPO_MAP.md`, `governance/product-migrations.json`; identity is never inferred from repository-name similarity |
 | Evidence-first acceptance | Canonical | exact source/runtime identity + bounded sanitized terminal receipts; static CI cannot manufacture live VERIFIED markers |
+| Governed content publishing (#686) | Implemented candidate / not live-verified | `capability://content.publish` is a higher-level Content Artifact/batch/provider resolver composed over existing Core #154/#267 Social Runtime; it does not duplicate OAuth/account binding/write acceptance. X API health is read-only probed; X web-assist remains unverified until a governed GUI provider/session proves readiness. |
 
 ## Node / capability semantics
 
@@ -112,6 +113,8 @@ An online environment is identified by environment + canonical repository + sour
 
 ## Governance invariants
 
+- `content.publish` provider resolution does not mint social write acceptance; #154/#267 exact product/platform/operation/account/write-intent acceptance still governs social effects.
+- A Node or GUI executor being online does not make an X web publisher READY; provider/session/account health requires its own evidence.
 - Capability does not imply authority.
 - Event does not imply authority; events trigger reconciliation only.
 - Transport failure does not widen authority or silently turn GitHub Actions into the steady-state control plane.
