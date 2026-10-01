@@ -61,11 +61,12 @@ def _expected_username(params: Mapping[str, Any]) -> str:
 def inspect_legacy_x_auth(
     params: Mapping[str, Any],
     *,
-    env_path: Path = LEGACY_ENV,
+    env_path: Path | None = None,
 ) -> dict[str, Any]:
     expected = _expected_username(params)
+    source = Path(env_path) if env_path is not None else LEGACY_ENV
     try:
-        credentials = _load_credentials(env_path)
+        credentials = _load_credentials(source)
     except (OSError, UnicodeError):
         credentials = {}
     result = inspect_x_auth(credentials, expected_username=expected)
