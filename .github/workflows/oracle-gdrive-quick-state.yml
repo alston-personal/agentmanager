@@ -1,0 +1,62 @@
+name: Oracle GDrive Quick State
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-gdrive-quick-state.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect canonical mount and recovery state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -u
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
+          echo '=== legacy path ==='
+          ls -ld "$HOME/gdrive" 2>/dev/null || true
+          echo "legacy_readlink=$(readlink -f "$HOME/gdrive" 2>/dev/null || true)"
+          echo "legacy_is_symlink=$([ -L "$HOME/gdrive" ] && echo yes || echo no)"
+
+          echo '=== canonical v2 mount ==='
+          mountpoint -q "$MOUNT"; echo "v2_mountpoint_rc=$?"
+          findmnt "$MOUNT" 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-mount.service 2>/dev/null || true
+
+          echo '=== recovery states ==='
+          for f in             "$HOME/.local/state/agentos/gdrive-underlay-finalize.state"             "$HOME/.local/state/agentos/gdrive-underlay-preserve.state"             "$HOME/.local/state/agentos/gdrive-health.state"; do
+            echo "--- $f"
+            cat "$f" 2>/dev/null || echo missing
+          done
+
+          echo '=== candidate underlay directories ==='
+          find "$HOME" -maxdepth 5 -type d \( -iname '*underlay*' -o -iname '*gdrive*recovery*' -o -iname '*gdrive*old*' \) -print 2>/dev/null | sort | head -n 120
+
+          echo '=== stranded backup files ==='
+          find "$HOME" -xdev -type f \( -name 'agentos_backup_20260930_030001.tar.gz' -o -name 'agentos_backup_20261001_030001.tar.gz' \)             -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TS\t%p\n' 2>/dev/null | sort
+
+          echo '=== recovery remote ==='
+          for n in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            printf '%s\t' "$n"
+            timeout 20 rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001/$n" --files-only --format s 2>/dev/null || echo MISSING
+          done
+
+          echo '=== root disk ==='
+          df -hT /
+          echo 'quick_state=PASS'
+          REMOTE
