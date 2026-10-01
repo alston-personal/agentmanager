@@ -1,16 +1,14 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "fast-demo-profile-readback-2008",
+  "nonce": "desktop-demo-locate-001",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "git",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\nAdd-Type -AssemblyName System.Windows.Forms\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'Edge not visible'}\n[System.Windows.Forms.SendKeys]::SendWait('^l');[System.Windows.Forms.SendKeys]::SendWait('https://www.threads.com/@oursong_alstonhuang');[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')\nStart-Sleep -Seconds 6\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$needle=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('56ys5LqM6LyqIEFnZW50T1MgR1VJIERlbW8='))\n$hits=@()\nfor($i=0;$i -lt $all.Count;$i++){\n $e=$all.Item($i);$name=[string]$e.Current.Name\n if($name -like ('*'+$needle+'*')){$hits += $name}\n}\n[pscustomobject]@{verified=($hits.Count -gt 0);hits=$hits}|ConvertTo-Json -Depth 4 -Compress"
+      "rev-parse",
+      "--show-toplevel"
     ],
-    "timeout_seconds": 30
+    "timeout_seconds": 20
   }
 }
