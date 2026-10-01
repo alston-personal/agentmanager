@@ -93,6 +93,14 @@ Dashboard secrets and OAuth configuration are configuration state, not source-tr
 
 `scripts/deploy_dashboard_release.sh` owns the release switch, exact listener verification, canary, PM2 replacement, rollback, auth/admin route checks and a regression probe that temporarily removes only the legacy shared `.next` build. A release is accepted only if the public protected routes remain healthy while that legacy build is absent. Until the first successful Oracle receipt, the registry marks this Dashboard migration as candidate rather than live.
 
+## Windows one-click node onboarding
+
+The canonical Windows onboarding entry point is `install-agentos.cmd`, backed by `install-agentos.ps1`. A user starts the installer once. The bootstrap resolves an immutable source commit, ensures a real Python 3 interpreter is available, installs the Thin Client files, preserves any existing enrollment identity, and configures the per-user `AgentOS Thin Client` Scheduled Task.
+
+A fresh machine may require one Realm enrollment approval. That approval is the intentional trust boundary: the installer displays the bounded enrollment code and waits for approval, then continues automatically in the same invocation. It must not require a second installer run merely to enable autostart. A machine with an existing `state/client.json` must preserve that identity and token, skip re-enrollment, repair/restart the background task, and proceed directly to readiness verification.
+
+Acceptance is end-to-end rather than file-copy success. The installer only reports `AGENTOS_ONE_CLICK_INSTALL=PASS` after the background Thin Client remains running and `agentos-client verify` succeeds against ONE. The installer may auto-install Python through winget when Python is absent, but Windows Store App Execution Alias stubs are not accepted as a valid interpreter.
+
 ## Realm Node Map and capability semantics
 
 The Realm Node Map is persistent ONE-side state. A node record may include heartbeat freshness, reported/effective status, capabilities, tool presence, and surface inventory.
