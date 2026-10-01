@@ -20,7 +20,8 @@ class ClientConfig:
     realm_id: str
     node_id: str
     node_token: str
-    poll_seconds: float = 5.0
+    poll_seconds: float = 0.25
+    task_wait_seconds: float = 20.0
 
     @classmethod
     def load(cls, path: str | Path) -> 'ClientConfig':
@@ -194,11 +195,17 @@ class ThinClientTransport:
         baseline = self.client.capability_manifest()
         return self._complete_regression(baseline, report_kind='readiness-regression', completion_schema='agentos.node-readiness/v0.1')
 
-    def pull_tasks(self) -> list[dict[str, Any]]:
+    def pull_tasks(self, *, wait_seconds: float | None = None) -> list[dict[str, Any]]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        query = urllib.parse.urlencode({'node_id': self.config.node_id})
-        result = self._request(self.config.one_url + '/v1/tasks?' + query, token=self.config.node_token)
+        wait = self.config.task_wait_seconds if wait_seconds is None else wait_seconds
+        wait = max(0.0, min(float(wait), 25.0))
+        query = urllib.parse.urlencode({'node_id': self.config.node_id, 'wait_seconds': f'{wait:.3f}'})
+        result = self._request(
+            self.config.one_url + '/v1/tasks?' + query,
+            token=self.config.node_token,
+            timeout=max(15.0, wait + 5.0),
+        )
         return list(result.get('tasks') or [])
 
     def submit_receipt(self, receipt: dict[str, Any]) -> dict[str, Any]:
@@ -218,13 +225,22 @@ class ThinClientTransport:
     def run_forever(self) -> None:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        delay = max(1.0, float(self.config.poll_seconds))
+        heartbeat_interval = 10.0
+        last_heartbeat = 0.0
+        retry_delay = max(0.1, float(self.config.poll_seconds))
         while True:
             try:
-                self.run_once()
+                now = time.monotonic()
+                if now - last_heartbeat >= heartbeat_interval:
+                    self.heartbeat()
+                    last_heartbeat = now
+                tasks = self.pull_tasks()
+                for task in tasks:
+                    receipt = self.client.execute(task)
+                    self.submit_receipt(receipt)
             except Exception as exc:
                 print(f'[agentos-client] transport error: {exc}', flush=True)
-            time.sleep(delay)
+                time.sleep(retry_delay)
 
 
 def build_client(config: ClientConfig, policy: ThinClientPolicy) -> ThinClientTransport:
