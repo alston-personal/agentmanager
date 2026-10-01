@@ -59,6 +59,13 @@ def start(workspace: Path, *, label: str = "AgentOS Demo", stage: str = "Startin
     _require_windows()
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            packages = Path(local) / "Microsoft" / "WinGet" / "Packages"
+            candidates = sorted(packages.glob("**/ffmpeg.exe")) if packages.is_dir() else []
+            if candidates:
+                ffmpeg = str(candidates[-1])
+    if not ffmpeg:
         raise RuntimeError("ffmpeg_not_found")
     root = _dir(workspace)
     state_path = root / STATE_NAME
