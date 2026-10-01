@@ -1,6 +1,6 @@
 {
   "schema": "agentos.remote-diagnostic-command/v1",
   "target": "oracle",
-  "purpose": "inspect backup script body for streaming migration",
-  "requested_at": "2026-10-01T07:33:30+08:00"
+  "purpose": "inspect current legacy gdrive underlay state after recovery",
+  "requested_at": "2026-10-01T09:35:00+08:00"
 }
