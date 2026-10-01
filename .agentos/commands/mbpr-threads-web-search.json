@@ -2,7 +2,7 @@
   "schema": "agentos.realm-command/v0.1",
   "action": "realm.node.threads-existing.search",
   "node_id": "mbpr",
-  "source_commit": "40b749bc4f71500f1e2523990a0b69a1278f9da6",
+  "source_commit": "10bb9bce9f20d5820e1c5ce2f09c61aba4f75290",
   "query": "貓",
-  "nonce": "threads-web-search-20260930-1620"
+  "nonce": "threads-web-search-20261001-0812"
 }
