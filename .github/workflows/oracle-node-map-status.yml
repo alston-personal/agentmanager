@@ -1,0 +1,38 @@
+name: Oracle Node Map Status
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.agentos/commands/node-map-status.json'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 3
+    env:
+      AGENT_DATA_ROOT: /home/ubuntu/agent-data
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print selected live Node identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from agent_core.node_registry import NodeRegistry
+          m=NodeRegistry().node_map()
+          wanted={'oracle-core-node','oracle-exec','vopc5750','mbpr'}
+          rows=[n for n in m.get('nodes',[]) if n.get('node_id') in wanted]
+          print(json.dumps({
+            'realm_id':m.get('realm_id'),
+            'online_node_count':m.get('online_node_count'),
+            'nodes':rows,
+          },ensure_ascii=False,indent=2,sort_keys=True))
+          for n in rows:
+            print('node_status='+str(n.get('node_id'))+':'+str(n.get('status'))+':last_heartbeat='+str(n.get('last_heartbeat_at')))
+          PY
