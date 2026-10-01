@@ -9,11 +9,16 @@ on:
         default: main
         type: string
   push:
+    branches:
+      - core/integration
     paths:
       - '.github/workflows/deploy-realm-fabric-core.yml'
       - 'agent_core/controller_api.py'
+      - 'agent_core/realm_fabric.py'
       - 'agent_core/realm_server.py'
+      - 'scripts/compact_realm_fabric_receipts.py'
       - 'tests/test_controller_api.py'
+      - 'tests/test_realm_fabric.py'
 
 permissions:
   contents: read
@@ -36,13 +41,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run controller contract tests
+
+      - name: Run Realm/controller contract tests
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q pytest pyyaml
-          python -m py_compile agent_core/controller_api.py agent_core/realm_server.py
-          python -m pytest -q tests/test_controller_api.py
+          python -m py_compile agent_core/realm_fabric.py agent_core/controller_api.py agent_core/realm_server.py scripts/compact_realm_fabric_receipts.py
+          python -m pytest -q tests/test_realm_fabric.py tests/test_realm_fabric_atomic_repair.py tests/test_controller_api.py
 
       - name: Validate deployment settings
         shell: bash
@@ -55,58 +61,87 @@ jobs:
           DEPLOY_HOST="${DEPLOY_HOST%%:*}"
           test -n "$DEPLOY_HOST"
           echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Install versioned Realm Fabric release and service
+
+      - name: Install exact Realm source release and externalize receipts
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            bash -s -- "$DEPLOY_REF" <<'REMOTE'
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=9 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}"             bash -s -- "$DEPLOY_REF" <<'REMOTE'
           set -euo pipefail
           REF="$1"
           DATA=/home/ubuntu/agent-data
+          REPO=/home/ubuntu/agentmanager
           ROOT=/home/ubuntu/.local/share/agentos/realm-fabric
-          RELEASE="$ROOT/releases/${REF//\//_}"
-          CURRENT="$ROOT/current"
           UNIT="$HOME/.config/systemd/user/agentos-realm-fabric.service"
-          BACKUP="$UNIT.pre-realm-fabric"
-          LIVE_ENV=/home/ubuntu/agentmanager/.env
-          mkdir -p "$RELEASE" "$HOME/.config/systemd/user" "$DATA/logs"
+          UNIT_BACKUP="$UNIT.pre-exact-source"
+          mkdir -p "$ROOT/releases" "$HOME/.config/systemd/user" "$DATA/logs"
 
-          if [ -f "$UNIT" ]; then cp "$UNIT" "$BACKUP"; fi
+          git -C "$REPO" fetch --no-tags origin "$REF"
+          SHA="$(git -C "$REPO" rev-parse "$REF^{commit}")"
+          printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'
+          RELEASE="$ROOT/releases/$SHA"
+          STAGE="$ROOT/.stage-$SHA"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          git -C "$REPO" archive "$SHA" | tar -x -C "$STAGE"
+          PYTHONPATH="$STAGE" /usr/bin/python3 -m py_compile             "$STAGE/agent_core/realm_fabric.py"             "$STAGE/agent_core/realm_server.py"             "$STAGE/scripts/compact_realm_fabric_receipts.py"
+          PYTHONPATH="$STAGE" /usr/bin/python3 - <<'PY'
+          from agent_core.realm_fabric import RealmFabricStore, ReceiptArchiveStore
+          from agent_core.realm_server import RealmHTTPServer
+          print('realm_exact_source_import=PASS')
+          PY
+
+          [ -f "$UNIT" ] && cp "$UNIT" "$UNIT_BACKUP"
+          COMPACTION_BACKUP=""
+          COMPACTED=0
           rollback() {
             rc=$?
             if [ "$rc" -ne 0 ]; then
-              echo "Realm Fabric deployment failed; restoring previous unit" >&2
-              if [ -f "$BACKUP" ]; then cp "$BACKUP" "$UNIT"; systemctl --user daemon-reload; systemctl --user restart agentos-realm-fabric.service || true; else rm -f "$UNIT"; systemctl --user daemon-reload; fi
+              echo "Realm Fabric exact-source deployment failed; rolling back" >&2
+              systemctl --user stop agentos-realm-fabric.service || true
+              if [ "$COMPACTED" = 1 ] && [ -n "$COMPACTION_BACKUP" ] && [ -f "$COMPACTION_BACKUP" ]; then
+                cp "$COMPACTION_BACKUP" "$DATA/realm/fabric.json"
+                chmod 0640 "$DATA/realm/fabric.json" || true
+              fi
+              if [ -f "$UNIT_BACKUP" ]; then
+                cp "$UNIT_BACKUP" "$UNIT"
+                systemctl --user daemon-reload
+                systemctl --user restart agentos-realm-fabric.service || true
+              fi
             fi
+            rm -rf "$STAGE"
             exit "$rc"
           }
           trap rollback EXIT
 
-          python3 -m venv "$RELEASE/venv"
-          "$RELEASE/venv/bin/python" -m pip install --upgrade pip >/dev/null
-          "$RELEASE/venv/bin/python" -m pip install "git+https://github.com/alston-personal/agentmanager.git@$REF"
+          # Stop HTTP mutation before the one-time hot-store migration. The same
+          # Fabric flock also protects against direct store writers.
+          systemctl --user stop agentos-realm-fabric.service
+          COMPACT_JSON="$(sg agentos -c "AGENT_DATA_ROOT='$DATA' PYTHONPATH='$STAGE' /usr/bin/python3 '$STAGE/scripts/compact_realm_fabric_receipts.py' --path '$DATA/realm/fabric.json'" | head -n1)"
+          echo "realm_compaction=$COMPACT_JSON"
+          COMPACTION_BACKUP="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("backup_path") or "")' "$COMPACT_JSON")"
+          COMPACTED=1
 
-          REALM_ID=realm-alston
-          if [ -f "$LIVE_ENV" ]; then
-            configured=$(grep -E '^AGENTOS_REALM_ID=' "$LIVE_ENV" | tail -n1 | cut -d= -f2- || true)
-            [ -n "$configured" ] && REALM_ID="$configured"
-          fi
-          AGENT_DATA_ROOT="$DATA" "$RELEASE/venv/bin/agentos-one" init --realm-id "$REALM_ID"
+          rm -rf "$RELEASE"
+          mv "$STAGE" "$RELEASE"
+          STAGE="$ROOT/.stage-consumed-$SHA"
 
           cat > "$UNIT" <<EOF
           [Unit]
-          Description=AgentOS ONE Realm Fabric
+          Description=AgentOS ONE Realm Fabric (exact source release)
           After=network.target
 
           [Service]
           Type=simple
+          WorkingDirectory=$RELEASE
           Environment=AGENT_DATA_ROOT=$DATA
+          Environment=PYTHONPATH=$RELEASE
           EnvironmentFile=-/home/ubuntu/.config/agentos/controller.env
-          ExecStart=$RELEASE/venv/bin/agentos-one serve --host 127.0.0.1 --port 8780
+          ExecStart=/usr/bin/sg agentos -c '/usr/bin/python3 -m agent_core.realm_cli serve --host 127.0.0.1 --port 8780'
           Restart=always
           RestartSec=5
           StandardOutput=append:$DATA/logs/realm-fabric.log
@@ -115,24 +150,44 @@ jobs:
           [Install]
           WantedBy=default.target
           EOF
+
           systemctl --user daemon-reload
           systemctl --user enable agentos-realm-fabric.service >/dev/null
           systemctl --user restart agentos-realm-fabric.service
-          for i in $(seq 1 20); do
-            if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health >/dev/null; then break; fi
+
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 2 http://127.0.0.1:8780/v1/health > /tmp/realm-health.json; then
+              break
+            fi
             sleep 1
           done
-          curl -fsS --max-time 3 http://127.0.0.1:8780/v1/health
-          echo
-          systemctl --user is-active agentos-realm-fabric.service
+          cat /tmp/realm-health.json
+          grep -q 'agentos.one-health/v0.1' /tmp/realm-health.json
+          grep -q 'realm-alston' /tmp/realm-health.json
+          echo 'realm_fabric_health=PASS'
+
+          PYTHONPATH="$RELEASE" AGENT_DATA_ROOT="$DATA" /usr/bin/python3 - <<'PY'
+          import json
+          from agent_core.realm_fabric import RealmFabricStore
+          store=RealmFabricStore()
+          hot=store.load()
+          hot_count=len(hot.get('receipts') or {})
+          archive_count=store.receipt_archive.count()
+          size=store.path.stat().st_size
+          assert hot_count == 0, hot_count
+          assert archive_count >= 25000, archive_count
+          assert size < 2_000_000, size
+          print('realm_hot_receipts=0')
+          print('realm_archive_receipts='+str(archive_count))
+          print('realm_hot_store_bytes='+str(size))
+          print('realm_store_compaction=PASS')
+          PY
 
           CONTROLLER_ENV=/home/ubuntu/.config/agentos/controller.env
           test -s "$CONTROLLER_ENV"
           CONTROLLER_TOKEN="$(sed -n 's/^AGENTOS_CONTROLLER_TOKEN=//p' "$CONTROLLER_ENV" | head -n 1)"
           test -n "$CONTROLLER_TOKEN"
-          curl -fsS --max-time 3 \
-            -H "Authorization: Bearer $CONTROLLER_TOKEN" \
-            http://127.0.0.1:8780/v1/controller/scheduler > /tmp/agentos-runner-pool-live.json
+          curl -fsS --max-time 3             -H "Authorization: Bearer $CONTROLLER_TOKEN"             http://127.0.0.1:8780/v1/controller/scheduler > /tmp/agentos-runner-pool-live.json
           unset CONTROLLER_TOKEN
           python3 - /tmp/agentos-runner-pool-live.json <<'PY'
           import json,sys
@@ -141,23 +196,18 @@ jobs:
           assert payload.get('ok') is True,payload
           assert pool.get('schema')=='agentos.runner-pool/v1',pool
           workers=pool.get('workers') or {}
-          assert 'oracle-gui' in workers,workers
-          assert 'oracle-social-1' in workers,workers
-          assert 'oracle-social-2' in workers,workers
-          assert 'agentos-router' in workers,workers
+          for required in ('oracle-gui','oracle-social-1','oracle-social-2','agentos-router'):
+              assert required in workers,workers
           print('controller_scheduler_endpoint=PASS')
           print('controller_scheduler_worker_count='+str(pool.get('worker_count')))
           print('controller_scheduler_busy_count='+str(pool.get('busy_worker_count')))
           PY
 
-          # Publish stable operator path only after the new service is healthy.
-          ln -sfn "$RELEASE" "$CURRENT"
-          test -x "$CURRENT/venv/bin/agentos-one"
+          ln -sfn "$RELEASE" "$ROOT/current"
+          echo "realm_fabric_source_commit=$SHA"
           echo "realm_fabric_release=$RELEASE"
-          echo "realm_fabric_current=$CURRENT"
+          echo "realm_fabric_current=$(readlink -f "$ROOT/current")"
           echo "realm_fabric_port=8780"
-          echo "public_route_configured=false"
+          echo "realm_receipt_archive=$DATA/realm/receipts.sqlite3"
           trap - EXIT
           REMOTE
-
-# live recovery trigger 2026-10-01T05:13Z

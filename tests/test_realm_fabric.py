@@ -77,6 +77,71 @@ class TestRealmFabric(unittest.TestCase):
         self.assertEqual(node_map['nodes'][0]['status'], 'online')
         self.assertIn('filesystem.write', node_map['realm_capabilities'])
 
+    def test_legacy_receipts_externalize_without_loss(self):
+        hot = self.fabric.load()
+        hot['receipts'] = {
+            'legacy-a': {
+                'schema': 'agentos.node-receipt/v0.1',
+                'node_id': 'legacy-node',
+                'task_id': 'legacy-a',
+                'ok': True,
+                'received_at': '2026-10-01T00:00:00Z',
+            },
+            'legacy-b': {
+                'schema': 'agentos.node-receipt/v0.1',
+                'node_id': 'legacy-node',
+                'task_id': 'legacy-b',
+                'ok': False,
+                'received_at': '2026-10-01T00:00:01Z',
+            },
+        }
+        self.fabric.save(hot)
+
+        result = self.fabric.externalize_receipts()
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['migrated_receipt_count'], 2)
+        self.assertEqual(result['hot_receipt_count'], 0)
+        self.assertEqual(self.fabric.load()['receipts'], {})
+        self.assertTrue(Path(result['backup_path']).exists())
+        self.assertTrue(self.fabric.get_receipt('legacy-a')['ok'])
+        self.assertFalse(self.fabric.get_receipt('legacy-b')['ok'])
+
+    def test_new_receipt_is_archived_not_added_to_hot_fabric(self):
+        invite = self.fabric.create_invite()
+        enrolled = self.fabric.enroll(
+            invite_id=invite['invite_id'],
+            code=invite['code'],
+            manifest={
+                'schema': 'agentos.node-manifest/v0.1',
+                'realm_id': 'realm-test',
+                'node_id': 'archive-node',
+                'role': 'client',
+                'hostname': 'archive-node',
+                'platform': 'Darwin',
+                'capabilities': [],
+                'tool_presence': {},
+                'surface_inventory': {'surfaces': []},
+            },
+        )
+        stored = self.fabric.record_receipt(
+            {
+                'schema': 'agentos.node-receipt/v0.1',
+                'realm_id': 'realm-test',
+                'node_id': 'archive-node',
+                'task_id': 'archive-task',
+                'action': 'bounded.test',
+                'ok': True,
+            },
+            enrolled['node_token'],
+        )
+        self.assertTrue(stored['ok'])
+        self.assertNotIn('archive-task', self.fabric.load()['receipts'])
+        archived = self.fabric.get_receipt('archive-task')
+        self.assertIsNotNone(archived)
+        self.assertTrue(archived['ok'])
+        self.assertEqual(self.fabric.receipt_archive.count(), 1)
+
+
     def test_invite_is_one_time(self):
         invite = self.fabric.create_invite()
         policy = ThinClientPolicy(readable_roots=(self.workspace,))

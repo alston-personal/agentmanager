@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import secrets
+import sqlite3
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -36,6 +37,109 @@ def _user_code() -> str:
     return raw[:4] + '-' + raw[4:]
 
 
+class ReceiptArchiveStore:
+    """Durable receipt archive kept outside the hot Realm fabric snapshot."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    def _connect(self) -> sqlite3.Connection:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(self.path), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA journal_mode=DELETE")
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS receipts ("
+            "task_id TEXT PRIMARY KEY,"
+            "received_at TEXT,"
+            "payload_json TEXT NOT NULL"
+            ")"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS receipts_received_at_idx ON receipts(received_at)")
+        conn.commit()
+        try:
+            os.chmod(self.path, 0o640)
+        except OSError:
+            pass
+        return conn
+
+    @staticmethod
+    def _row(task_id: str, payload: dict[str, Any]) -> tuple[str, str | None, str]:
+        return (
+            str(task_id),
+            str(payload.get("received_at") or "") or None,
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        )
+
+    def put_many(self, receipts: dict[str, dict[str, Any]]) -> int:
+        rows = [self._row(task_id, dict(payload)) for task_id, payload in receipts.items()]
+        if not rows:
+            return 0
+        conn = self._connect()
+        try:
+            with conn:
+                conn.executemany(
+                    "INSERT INTO receipts(task_id, received_at, payload_json) VALUES(?,?,?) "
+                    "ON CONFLICT(task_id) DO UPDATE SET "
+                    "received_at=excluded.received_at, payload_json=excluded.payload_json",
+                    rows,
+                )
+        finally:
+            conn.close()
+        return len(rows)
+
+    def put(self, task_id: str, payload: dict[str, Any]) -> None:
+        self.put_many({str(task_id): dict(payload)})
+
+    def get(self, task_id: str) -> dict[str, Any] | None:
+        if not self.path.exists():
+            return None
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT payload_json FROM receipts WHERE task_id=?",
+                (str(task_id),),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        value = json.loads(str(row[0]))
+        return value if isinstance(value, dict) else None
+
+    def count(self) -> int:
+        if not self.path.exists():
+            return 0
+        conn = self._connect()
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM receipts").fetchone()
+        finally:
+            conn.close()
+        return int(row[0] if row else 0)
+
+    def missing(self, task_ids: list[str]) -> list[str]:
+        wanted = [str(item) for item in task_ids]
+        if not wanted:
+            return []
+        if not self.path.exists():
+            return wanted
+        found: set[str] = set()
+        conn = self._connect()
+        try:
+            for offset in range(0, len(wanted), 500):
+                chunk = wanted[offset:offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"SELECT task_id FROM receipts WHERE task_id IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                found.update(str(row[0]) for row in rows)
+        finally:
+            conn.close()
+        return [task_id for task_id in wanted if task_id not in found]
+
+
 class RealmFabricStore:
     """Persistent ONE-side state for Thin Client enrollment and task transport.
 
@@ -57,6 +161,7 @@ class RealmFabricStore:
         self.path = Path(path) if path else data_root / 'realm' / 'fabric.json'
         self.lock_path = self.path.with_suffix(self.path.suffix + '.lock')
         self.node_registry = node_registry or NodeRegistry()
+        self.receipt_archive = ReceiptArchiveStore(self.path.with_name('receipts.sqlite3'))
 
     def _empty(self) -> dict[str, Any]:
         return {
@@ -138,6 +243,63 @@ class RealmFabricStore:
             result = mutator(data)
             self._save_unlocked(data)
             return result
+
+    def externalize_receipts(self) -> dict[str, Any]:
+        """Move legacy hot receipts into the durable SQLite archive without loss.
+
+        The archive is committed and verified before the hot snapshot is
+        replaced. A hash-bound backup of the exact pre-migration fabric remains
+        available for rollback.
+        """
+        with self._exclusive_lock():
+            data = self._load_unlocked()
+            receipts = {
+                str(task_id): dict(payload)
+                for task_id, payload in (data.get('receipts') or {}).items()
+                if isinstance(payload, dict)
+            }
+            before_bytes = self.path.stat().st_size if self.path.exists() else 0
+            if not receipts:
+                return {
+                    'ok': True,
+                    'migrated_receipt_count': 0,
+                    'archive_receipt_count': self.receipt_archive.count(),
+                    'hot_receipt_count': 0,
+                    'before_bytes': before_bytes,
+                    'after_bytes': before_bytes,
+                    'backup_path': None,
+                }
+
+            raw = self.path.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            backup = self.path.with_name(f'{self.path.name}.pre-receipts-{digest[:16]}.bak')
+            if backup.exists():
+                if hashlib.sha256(backup.read_bytes()).hexdigest() != digest:
+                    raise RuntimeError('receipt_externalization_backup_collision')
+            else:
+                with backup.open('xb') as handle:
+                    handle.write(raw)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.chmod(backup, 0o640)
+
+            self.receipt_archive.put_many(receipts)
+            missing = self.receipt_archive.missing(list(receipts))
+            if missing:
+                raise RuntimeError(f'receipt_archive_verification_failed:{len(missing)}')
+
+            data['receipts'] = {}
+            self._save_unlocked(data)
+            return {
+                'ok': True,
+                'migrated_receipt_count': len(receipts),
+                'archive_receipt_count': self.receipt_archive.count(),
+                'hot_receipt_count': 0,
+                'before_bytes': before_bytes,
+                'after_bytes': self.path.stat().st_size,
+                'backup_path': str(backup),
+                'source_sha256': digest,
+            }
 
     @staticmethod
     def _authenticate_data(data: dict[str, Any], node_id: str, token: str) -> dict[str, Any]:
@@ -392,14 +554,17 @@ class RealmFabricStore:
         return self._mutate(mutate)
 
     def pull_tasks(self, node_id: str, token: str, *, limit: int = 10) -> list[dict[str, Any]]:
-        def mutate(data: dict[str, Any]) -> list[dict[str, Any]]:
+        # Polling an empty queue must not fsync/rewrite the Realm snapshot.
+        with self._exclusive_lock():
+            data = self._load_unlocked()
             self._authenticate_data(data, node_id, token)
             queue = list(data['tasks'].get(node_id, []))
             take = queue[:max(1, min(limit, 50))]
+            if not take:
+                return []
             data['tasks'][node_id] = queue[len(take):]
+            self._save_unlocked(data)
             return take
-
-        return self._mutate(mutate)
 
     def record_receipt(self, receipt: dict[str, Any], token: str) -> dict[str, Any]:
         if receipt.get('schema') != 'agentos.node-receipt/v0.1':
@@ -409,14 +574,20 @@ class RealmFabricStore:
         if not task_id:
             raise ValueError('receipt task_id is required')
 
-        def mutate(data: dict[str, Any]) -> dict[str, Any]:
+        # Receipt evidence is append/update keyed in the durable archive, not in
+        # fabric.json. Holding the Fabric lock keeps authentication and archive
+        # publication ordered without causing the hot control snapshot to grow.
+        with self._exclusive_lock():
+            data = self._load_unlocked()
             self._authenticate_data(data, node_id, token)
             stored = {**receipt, 'received_at': _utc_now()}
-            data['receipts'][task_id] = stored
-            data['nodes'][node_id]['last_seen_at'] = _utc_now()
+            self.receipt_archive.put(task_id, stored)
             return stored
 
-        return self._mutate(mutate)
-
     def get_receipt(self, task_id: str) -> dict[str, Any] | None:
-        return self.load()['receipts'].get(task_id)
+        # Preserve compatibility during migration: a legacy hot receipt wins,
+        # then fall back to the external durable archive.
+        hot = self.load()['receipts'].get(task_id)
+        if isinstance(hot, dict):
+            return hot
+        return self.receipt_archive.get(task_id)
