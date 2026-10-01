@@ -28,6 +28,7 @@ def execute_plan(task: dict[str, Any], *, workspace: Path, max_steps: int = 64) 
         raise ValueError(f'desktop plan exceeds max_steps={max_steps}')
 
     started = time.monotonic()
+    experience_ids = [str(x) for x in (plan.get('experience_ids') or []) if str(x).strip()]
     results: list[dict[str, Any]] = []
     stop_on_error = bool(plan.get('stop_on_error', True))
 
@@ -79,6 +80,7 @@ def execute_plan(task: dict[str, Any], *, workspace: Path, max_steps: int = 64) 
                     'steps_completed': index,
                     'elapsed_ms': int((time.monotonic() - started) * 1000),
                     'results': results,
+                    'experience_ids_used': experience_ids,
                 }
 
     return {
@@ -87,4 +89,5 @@ def execute_plan(task: dict[str, Any], *, workspace: Path, max_steps: int = 64) 
         'steps_completed': len(results),
         'elapsed_ms': int((time.monotonic() - started) * 1000),
         'results': results,
+        'experience_ids_used': experience_ids,
     }
