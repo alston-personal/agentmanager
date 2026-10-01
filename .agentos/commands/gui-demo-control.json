@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-runtime-inspect-004",
+  "nonce": "desktop-demo-runtime-reload-005",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$p=Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -like '*agentos_node.client_cli*'} | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine; $p | ConvertTo-Json -Compress; Get-ScheduledTask | Where-Object {$_.TaskName -like '*AgentOS*'} | Select-Object TaskName,State,TaskPath | ConvertTo-Json -Compress"
+      "$cmd='Start-Sleep -Seconds 2; Stop-ScheduledTask -TaskName ''AgentOS Thin Client'' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName ''AgentOS Thin Client'''; Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cmd); Write-Output 'reload_scheduled'"
     ],
-    "timeout_seconds": 30
+    "timeout_seconds": 20
   }
 }
