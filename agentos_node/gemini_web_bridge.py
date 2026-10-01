@@ -106,6 +106,8 @@ ADAPTER = WebSurfaceAdapter(
     classify=classify,
     harvest=harvest,
     cdp_url=CDP_URL,
+    preflight_target_inventory=True,
+    connect_timeout_ms=5000,
 )
 
 
