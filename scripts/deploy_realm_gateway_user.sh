@@ -86,8 +86,16 @@ restart_dashboard() {
   # Retire any PM2-owned legacy dashboard release before the canonical
   # systemd-owned runtime starts. Killing only the child process is insufficient
   # because PM2 immediately resurrects it and keeps port 3000 occupied.
-  if command -v pm2 >/dev/null 2>&1; then
-    pm2 jlist > /tmp/agentos-pm2-jlist.json 2>/dev/null || echo '[]' > /tmp/agentos-pm2-jlist.json
+  PM2_BIN="$(command -v pm2 2>/dev/null || true)"
+  if [ -z "$PM2_BIN" ] && [ -d "$HOME/.nvm/versions/node" ]; then
+    PM2_BIN="$(find "$HOME/.nvm/versions/node" -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | sort | tail -n1 || true)"
+  fi
+  if [ -z "$PM2_BIN" ]; then
+    PM2_BIN="$(find "$HOME/.local" /usr/local -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | sort | tail -n1 || true)"
+  fi
+  echo "dashboard_pm2_cli=${PM2_BIN:-MISSING}"
+  if [ -n "$PM2_BIN" ]; then
+    "$PM2_BIN" jlist > /tmp/agentos-pm2-jlist.json 2>/dev/null || echo '[]' > /tmp/agentos-pm2-jlist.json
     echo "dashboard_pm2_inventory_begin"
     python3 - <<'PY'
 import json
@@ -133,8 +141,8 @@ PY
     )
     if [ "${#legacy_pm2_ids[@]}" -gt 0 ]; then
       echo "dashboard_legacy_pm2_ids=${legacy_pm2_ids[*]}"
-      pm2 delete "${legacy_pm2_ids[@]}"
-      pm2 save --force >/dev/null
+      "$PM2_BIN" delete "${legacy_pm2_ids[@]}"
+      "$PM2_BIN" save --force >/dev/null
       echo "dashboard_legacy_pm2_retired=PASS"
     else
       echo "dashboard_legacy_pm2_retired=NO_MATCH"
