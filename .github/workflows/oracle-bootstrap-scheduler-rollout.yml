@@ -11,6 +11,7 @@ on:
       - 'scripts/install_bootstrap_scheduler_user.sh'
       - 'scripts/update_scheduler_board.py'
       - 'tests/test_bootstrap_scheduler_selector.py'
+      - 'tests/test_bootstrap_scheduler_queue_ttl.py'
   workflow_dispatch:
 
 permissions:
@@ -32,6 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH=. python3 tests/test_bootstrap_scheduler_selector.py
+          PYTHONPATH=. python3 tests/test_bootstrap_scheduler_queue_ttl.py
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
