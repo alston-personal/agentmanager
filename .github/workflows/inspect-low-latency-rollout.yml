@@ -66,6 +66,11 @@ jobs:
               fi
             done
           }
+          echo '=== runtime permissions ==='
+          ls -ld /home/ubuntu/.local/share/agentos/action-relay-runtime /home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node 2>&1 || true
+          ls -l "$runtime" 2>&1 || true
+          id || true
+
           echo '=== chronos/bootstrap activity ==='
           pgrep -af 'chronos-safe|bootstrap-action-relay|scripts/chronos.py|agentos-action-relay' || true
 
