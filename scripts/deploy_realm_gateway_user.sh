@@ -114,6 +114,29 @@ PY
   curl -fsS --max-time 3 http://127.0.0.1:3000/dashboard >/dev/null
   echo "dashboard_service_active=PASS"
   echo "dashboard_cold_start_supported=PASS"
+
+  echo "dashboard_runtime_identity_begin"
+  systemctl --user show agentos-dashboard.service -p MainPID -p ExecMainPID -p ActiveState -p SubState -p FragmentPath --no-pager || true
+  ss -ltnp 2>/dev/null | grep ':3000' || true
+  python3 - <<'PY'
+from pathlib import Path
+import os
+for entry in Path('/proc').iterdir():
+    if not entry.name.isdigit():
+        continue
+    try:
+        pid=int(entry.name)
+        cmd=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+        cwd=str((entry/'cwd').resolve())
+        status=(entry/'status').read_text(errors='replace')
+        if 'node' not in cmd and 'next' not in cmd and 'npm' not in cmd:
+            continue
+        uid_line=next((x for x in status.splitlines() if x.startswith('Uid:')), '')
+        print(f'pid={pid} cwd={cwd} uid={uid_line} cmd={cmd[:500]}')
+    except Exception:
+        pass
+PY
+  echo "dashboard_runtime_identity_end"
 }
 
 TMP=$(mktemp -d)
