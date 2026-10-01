@@ -1,9 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "threads-open-url-017",
-  "action": "desktop.open_url",
-  "payload": {
-    "url": "https://www.threads.com/"
-  }
+  "nonce": "threads-window-inspect-018",
+  "action": "desktop.windows.inspect",
+  "payload": {}
 }
