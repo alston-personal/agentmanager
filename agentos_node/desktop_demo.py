@@ -25,6 +25,16 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def default_workspace() -> Path:
+    _require_windows()
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        raise RuntimeError("LOCALAPPDATA_missing")
+    root = (Path(local) / "AgentOS" / "evidence").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def _dir(workspace: Path) -> Path:
     root = workspace.expanduser().resolve() / "agentos-demo"
     root.mkdir(parents=True, exist_ok=True)
