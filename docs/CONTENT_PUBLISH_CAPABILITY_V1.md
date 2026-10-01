@@ -70,6 +70,36 @@ OAuth, tokens, account binding, acceptance or provider HTTP. Resolving a provide
 does not mint authority: the Social Runtime's exact write acceptance remains
 required for a social write.
 
+## Account Registry and Social consumer isolation
+
+Social Runtime bindings are scoped to an exact `product_id`; a Threads binding
+created for `galaxy` is not valid for `content-publish`. ZeusWriter therefore
+must not borrow Mio/Galaxy product credentials or account bindings.
+
+The non-secret source configuration is
+`config/content_publish_accounts.json`. It maps a stable caller-facing
+`account_ref` to the expected platform/product identity and an allowlisted
+bootstrap source. Runtime binding metadata is persisted only on the Oracle host
+at `/home/ubuntu/.config/agentos/content-publish/accounts.json`; tokens remain in
+the Social Runtime credential vault.
+
+For the existing ZeusWriter Threads account, the fixed
+`agentos.content.social.bootstrap` Ubuntu Action Relay action may migrate only
+the pre-existing `SOC_THREADS_TOKEN` from the fixed legacy ZeusWriter env path.
+It first resolves the token to a Threads identity, verifies the allowlisted
+username, registers the `content-publish` Social Runtime consumer, stores a
+product-specific binding in the shared vault, writes only secret-free Account
+Registry metadata, and restarts the fixed Social Runtime service. It accepts no
+caller token, path, product ID, endpoint, command, or shell.
+
+Bootstrap performs a host-local credential migration, so its receipt states
+`credential_migrated=true` when successful while separately proving
+`public_publish_performed=false`. The read-only
+`agentos.content.social.inspect` action verifies the resulting binding through
+the normal Shared Social Runtime `identity.read` route. Authentication success
+does not by itself prove Threads publish entitlement; that remains `UNKNOWN`
+until a separately authorized write acceptance/E2E proves it.
+
 ## Resolution
 
 1. Match platform and account.
