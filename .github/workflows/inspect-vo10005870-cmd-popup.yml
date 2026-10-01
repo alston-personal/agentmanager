@@ -48,7 +48,7 @@ jobs:
           if 'shell.exec' not in caps: raise SystemExit('node_missing_shell_exec')
           if not roots: raise SystemExit('node_missing_readable_workspace')
           cwd=str(roots[0])
-          task_id='inspect-cmd-popup-VO10005870-20261001-v1'
+          task_id='inspect-cmd-popup-VO10005870-20261001-v2'
           fabric=RealmFabricStore()
           existing=fabric.get_receipt(task_id)
           if existing is None:
@@ -83,19 +83,98 @@ jobs:
             }
           }
           $cmdProcs=Get-CimInstance Win32_Process | Where-Object {
-            $_.Name -match '(?i)^cmd\.exe$'
+            $_.Name -match '(?i)^cmd\.exe
+          """
+              task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':cwd,'timeout_seconds':90,'cognition_ids_used':[]}
+              fabric.queue_task(node_id,task)
+              print('queued=PASS',flush=True)
+          receipt=existing
+          for _ in range(45):
+              if receipt is not None: break
+              time.sleep(2)
+              receipt=fabric.get_receipt(task_id)
+          if receipt is None: raise SystemExit('receipt_timeout')
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0)!=0:
+              raise SystemExit('receipt_failed:'+str(receipt.get('stderr') or receipt.get('error') or '')[-3000:])
+          print('NODE_JSON='+str(receipt.get('stdout') or '').strip())
+          PY
+          REMOTE
+
           } | ForEach-Object {
+            $p=$_
+            $parent=Get-CimInstance Win32_Process -Filter ("ProcessId=" + $p.ParentProcessId) -ErrorAction SilentlyContinue
+            $grand=$null
+            if($parent){ $grand=Get-CimInstance Win32_Process -Filter ("ProcessId=" + $parent.ParentProcessId) -ErrorAction SilentlyContinue }
             [pscustomobject]@{
-              ProcessId=$_.ProcessId
-              ParentProcessId=$_.ParentProcessId
-              CommandLine=[string]$_.CommandLine
+              ProcessId=$p.ProcessId
+              ParentProcessId=$p.ParentProcessId
+              CommandLine=[string]$p.CommandLine
+              ParentName=[string]$parent.Name
+              ParentCommandLine=[string]$parent.CommandLine
+              GrandParentName=[string]$grand.Name
+              GrandParentCommandLine=[string]$grand.CommandLine
             }
           }
+
+          $join=Join-Path $env:USERPROFILE 'Downloads\join.cmd'
+          $joinInfo=$null
+          if(Test-Path -LiteralPath $join){
+            $joinInfo=[pscustomobject]@{
+              Path=$join
+              LastWriteTime=[string](Get-Item -LiteralPath $join).LastWriteTime
+              Content=(Get-Content -Raw -LiteralPath $join)
+            }
+          }
+
+          $fs=Get-ScheduledTask -TaskName 'FS Update' -ErrorAction SilentlyContinue
+          $fsInfo=$null
+          if($fs){
+            $fsi=Get-ScheduledTaskInfo -TaskName 'FS Update' -ErrorAction SilentlyContinue
+            $fsInfo=[pscustomobject]@{
+              State=[string]$fs.State
+              Hidden=[bool]$fs.Settings.Hidden
+              Execute=($fs.Actions | ForEach-Object {[string]$_.Execute}) -join ' | '
+              Arguments=($fs.Actions | ForEach-Object {[string]$_.Arguments}) -join ' | '
+              TriggerXml=($fs.Triggers | ForEach-Object { $_ | Export-Clixml -Depth 4; '' }) -join ''
+              LastRunTime=[string]$fsi.LastRunTime
+              LastTaskResult=[string]$fsi.LastTaskResult
+              NextRunTime=[string]$fsi.NextRunTime
+            }
+          }
+
+          $watchdogPath=Join-Path $env:LOCALAPPDATA 'AgentOS\agentos-thin-client-watchdog.ps1'
+          $watchdogInfo=$null
+          if(Test-Path -LiteralPath $watchdogPath){
+            $watchdogInfo=[pscustomobject]@{
+              Path=$watchdogPath
+              Content=(Get-Content -Raw -LiteralPath $watchdogPath)
+            }
+          }
+
+          $startupHits=@()
+          foreach($root in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+          )){
+            if(Test-Path $root){
+              $props=Get-ItemProperty -Path $root
+              foreach($p in $props.PSObject.Properties){
+                if([string]$p.Value -match '(?i)join\.cmd|AgentOS|cmd\.exe'){
+                  $startupHits += [pscustomobject]@{Root=$root;Name=$p.Name;Value=[string]$p.Value}
+                }
+              }
+            }
+          }
+
           [pscustomobject]@{
             agentos_tasks=@($tasks)
             cmd_tasks=@($cmdTasks)
             cmd_processes=@($cmdProcs)
-          } | ConvertTo-Json -Depth 8 -Compress
+            join_cmd=$joinInfo
+            fs_update=$fsInfo
+            watchdog=$watchdogInfo
+            startup_hits=@($startupHits)
+          } | ConvertTo-Json -Depth 10 -Compress
           """
               task={'schema':'agentos.node-task/v0.1','task_id':task_id,'action':'shell.exec','executable':'powershell','argv':['-NoProfile','-NonInteractive','-Command',ps],'cwd':cwd,'timeout_seconds':90,'cognition_ids_used':[]}
               fabric.queue_task(node_id,task)
