@@ -1,16 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "threads-login-probe-016",
-  "action": "shell.exec",
+  "nonce": "threads-open-url-017",
+  "action": "desktop.open_url",
   "payload": {
-    "executable": "powershell",
-    "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\nAdd-Type -AssemblyName System.Windows.Forms\nAdd-Type @\"\nusing System;\nusing System.Runtime.InteropServices;\npublic static class W32ThreadsProbe {\n [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);\n [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd,int n);\n [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X,int Y);\n [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f,uint dx,uint dy,uint data,UIntPtr extra);\n}\n\"@\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'No visible Edge window'}\n[W32ThreadsProbe]::ShowWindow($edge.MainWindowHandle,9)|Out-Null\n[W32ThreadsProbe]::SetForegroundWindow($edge.MainWindowHandle)|Out-Null\n[System.Windows.Forms.SendKeys]::SendWait('^l')\n[System.Windows.Forms.SendKeys]::SendWait('https://www.threads.com/')\n[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')\nStart-Sleep -Seconds 10\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$out=@()\nfor($i=0;$i -lt $all.Count;$i++){\n $e=$all.Item($i)\n $ct=$e.Current.ControlType.ProgrammaticName\n $name=[string]$e.Current.Name\n if(($ct -match 'Button|Edit|Text|TabItem|Hyperlink') -and $name){\n   $r=$e.Current.BoundingRectangle\n   $out += [pscustomobject]@{type=$ct;name=$name;aid=[string]$e.Current.AutomationId;x=[string]$r.X;y=[string]$r.Y;w=[string]$r.Width;h=[string]$r.Height;enabled=[bool]$e.Current.IsEnabled}\n   if($out.Count -ge 220){break}\n }\n}\n[W32ThreadsProbe]::SetCursorPos(500,600)|Out-Null\n[W32ThreadsProbe]::mouse_event(2,0,0,0,[UIntPtr]::Zero)\n[W32ThreadsProbe]::mouse_event(4,0,0,0,[UIntPtr]::Zero)\nStart-Sleep -Milliseconds 250\n[System.Windows.Forms.SendKeys]::SendWait('^a')\n[System.Windows.Forms.SendKeys]::SendWait('^c')\nStart-Sleep -Milliseconds 250\n$clip=[string](Get-Clipboard -Raw -ErrorAction SilentlyContinue)\nif($clip.Length -gt 16000){$clip=$clip.Substring([Math]::Max(0,$clip.Length-16000))}\n[pscustomobject]@{title=$edge.MainWindowTitle;page_text=$clip;controls=$out}|ConvertTo-Json -Depth 6 -Compress"
-    ],
-    "timeout_seconds": 55
+    "url": "https://www.threads.com/"
   }
 }
