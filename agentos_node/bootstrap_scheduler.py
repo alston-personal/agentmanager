@@ -342,7 +342,7 @@ def _supersede_older_idempotent_requests(
     newest pending login-start request and emit deterministic terminal receipts
     for older equivalents so ingress callers do not wait until timeout.
     """
-    idempotent_actions = {bc.ACTION_START_THREADS_WEB_DM_LOGIN}
+    idempotent_actions = {bc.ACTION_START_THREADS_WEB_DM_LOGIN, bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN}
     requests, receipts, rejected = bc._ensure(bc._root())
     dropped: set[str] = set()
 
