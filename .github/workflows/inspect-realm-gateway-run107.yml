@@ -23,120 +23,29 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read scheduler and request state
+      - name: Read stuck control worker state
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
-          set -euo pipefail
-          REQUEST_ID='realm-gateway-36830120832-1'
-          DATA=/home/ubuntu/agent-data
-          ROOT=/tmp/agentos-bootstrap-control
-          echo 'scheduler_status_begin'
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          p=Path('/home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json')
-          if not p.exists():
-              print('scheduler_status=MISSING')
-          else:
-              d=json.loads(p.read_text())
-              safe={
-                'updated_at':d.get('updated_at'),
-                'node':d.get('node'),
-                'queue_depth':d.get('queue_depth'),
-                'workers':{},
-              }
-              for wid,row in (d.get('workers') or {}).items():
-                  cur=row.get('current_job') if isinstance(row,dict) else None
-                  safe['workers'][wid]={
-                    'role':row.get('role'),
-                    'state':row.get('state'),
-                    'heartbeat':row.get('heartbeat'),
-                    'current_job': None if not isinstance(cur,dict) else {
-                      'request_id':cur.get('request_id'),
-                      'action':cur.get('action'),
-                      'priority':cur.get('priority'),
-                      'locks':cur.get('locks'),
-                    }
-                  }
-              print(json.dumps(safe,indent=2,sort_keys=True))
-          PY
-          echo 'scheduler_status_end'
-          echo 'control_worker_runtime_begin'
-          systemctl --user show agentos-bootstrap-control.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp --no-pager || true
-          MAINPID="$(systemctl --user show agentos-bootstrap-control.service -p MainPID --value 2>/dev/null || true)"
-          if [ -n "$MAINPID" ] && [ "$MAINPID" != 0 ]; then
-            ps -o pid=,ppid=,pgid=,stat=,etime=,pcpu=,pmem=,comm=,args= --forest -g "$(ps -o pgid= -p "$MAINPID" | tr -d ' ')" 2>/dev/null | head -80 || true
-          fi
-          echo 'control_worker_runtime_end'
-          CURRENT_ID='realm-gateway-36830032112-1'
-          for id in "$CURRENT_ID" "$REQUEST_ID"; do
-            echo "request_state_begin=$id"
-            for kind in requests receipts rejected; do
-              p="$ROOT/$kind/$id"
-              [ "$kind" = requests ] && p="$p.request.json"
-              [ "$kind" = receipts ] && p="$p.json"
-              [ "$kind" = rejected ] && p="$p.request.json"
-              if [ -f "$p" ]; then
-                echo "$kind=PRESENT"
-                if [ "$kind" = receipts ]; then
-                  python3 - "$p" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1]))
-out={
-  'schema':d.get('schema'),'request_id':d.get('request_id'),'action':d.get('action'),
-  'source_commit':d.get('source_commit'),'ok':d.get('ok'),'error':d.get('error'),
-  'started_at':d.get('started_at'),'completed_at':d.get('completed_at'),
-  'scheduler':d.get('scheduler'),
-  'steps':[{
-    'step':s.get('step'),'returncode':s.get('returncode'),'error':s.get('error'),
-    'stdout_tail':str(s.get('stdout') or '')[-1200:],
-    'stderr_tail':str(s.get('stderr') or '')[-1200:]
-  } for s in (d.get('steps') or [])]
-}
-print(json.dumps(out,indent=2,sort_keys=True))
-PY
-                fi
-              else
-                echo "$kind=ABSENT"
-              fi
-            done
-            for p in "$ROOT"/inflight/*/"$id.request.json"; do
-              [ -e "$p" ] || continue
-              echo "inflight=PRESENT:$p"
-            done
-            echo "request_state_end=$id"
-          done
-          exit 0
-
-          for kind in requests receipts rejected; do
-            p="$ROOT/$kind/$REQUEST_ID"
-            [ "$kind" = requests ] && p="$p.request.json"
-            [ "$kind" = receipts ] && p="$p.json"
-            [ "$kind" = rejected ] && p="$p.request.json"
-            if [ -f "$p" ]; then
-              echo "$kind=PRESENT"
-              if [ "$kind" = receipts ]; then
-                python3 - "$p" <<'PY'
-          import json,sys
-          d=json.load(open(sys.argv[1]))
-          out={
-            'schema':d.get('schema'),'request_id':d.get('request_id'),'action':d.get('action'),
-            'source_commit':d.get('source_commit'),'ok':d.get('ok'),'error':d.get('error'),
-            'started_at':d.get('started_at'),'completed_at':d.get('completed_at'),
-            'scheduler':d.get('scheduler'),
-            'steps':[{
-              'step':s.get('step'),'returncode':s.get('returncode'),'error':s.get('error'),
-              'stdout_tail':str(s.get('stdout') or '')[-1200:],
-              'stderr_tail':str(s.get('stderr') or '')[-1200:]
-            } for s in (d.get('steps') or [])]
-          }
-          print(json.dumps(out,indent=2,sort_keys=True))
-          PY
-              fi
-            else
-              echo "$kind=ABSENT"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" '
+            set -euo pipefail
+            echo control_unit_begin
+            systemctl --user show agentos-bootstrap-control.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp --no-pager || true
+            PID=$(systemctl --user show agentos-bootstrap-control.service -p MainPID --value 2>/dev/null || true)
+            echo control_main_pid=$PID
+            if [ -n "$PID" ] && [ "$PID" != 0 ]; then
+              PGID=$(ps -o pgid= -p "$PID" | tr -d " ")
+              echo control_pgid=$PGID
+              ps -eo pid=,ppid=,pgid=,stat=,etime=,pcpu=,pmem=,comm=,args= --forest | awk -v p="$PGID" "$3==p {print}" | head -100 || true
             fi
-          done
-          REMOTE
+            echo control_unit_end
+            ROOT=/tmp/agentos-bootstrap-control
+            for id in realm-gateway-36830032112-1 realm-gateway-36830120832-1; do
+              echo request_state_begin=$id
+              find "$ROOT" -maxdepth 4 -type f -name "$id*" -printf "%p %s bytes %TY-%Tm-%TdT%TH:%TM:%TS\n" 2>/dev/null | sort || true
+              echo request_state_end=$id
+            done
+            echo scheduler_status_excerpt_begin
+            grep -E "oracle-control|realm-gateway-36830|heartbeat|state|queue_depth|control" /home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json 2>/dev/null | tail -80 || true
+            echo scheduler_status_excerpt_end
+          '
