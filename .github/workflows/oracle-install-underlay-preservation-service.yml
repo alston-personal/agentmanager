@@ -79,3 +79,5 @@ jobs:
           systemctl --user is-active agentos-gdrive-underlay-preserve.service || true
           echo 'underlay_preservation_service_started=PASS'
           REMOTE
+
+# recovery-retrigger 2026-10-01T19:45+08:00
