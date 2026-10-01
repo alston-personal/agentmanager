@@ -18,7 +18,6 @@ del /q "%BOOTSTRAP%" >nul 2>&1
 if not "%RC%"=="0" goto :failcode
 echo.
 echo AgentOS installation completed successfully.
-pause
 exit /b 0
 
 :fail
