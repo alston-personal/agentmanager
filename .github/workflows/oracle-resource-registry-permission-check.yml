@@ -1,0 +1,38 @@
+name: Oracle Resource Registry Permission Check
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-resource-registry-permission-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect registry permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          id
+          namei -l "$HOME/agent-data/resources/registry.json" || true
+          ls -ld "$HOME/agent-data" "$HOME/agent-data/resources" || true
+          ls -la "$HOME/agent-data/resources" | head -n 40 || true
+          test -w "$HOME/agent-data/resources" && echo dir_writable=yes || echo dir_writable=no
+          stat -c 'uid=%u gid=%g mode=%a owner=%U group=%G path=%n' "$HOME/agent-data/resources" "$HOME/agent-data/resources/registry.json" 2>/dev/null || true
+          systemctl --user cat agentos-control-plane.service 2>/dev/null | head -n 80 || true
+          echo permission_check=PASS
+          REMOTE
