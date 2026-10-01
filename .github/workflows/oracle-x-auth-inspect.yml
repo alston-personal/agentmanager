@@ -102,7 +102,7 @@ jobs:
             bash -s -- "$probe" "$EXPECTED_USERNAME" <<'REMOTE'
           set -euo pipefail
           probe="$1"
-          expected="$2"
+          expected="${2:-}"
           cleanup() { rm -f "$probe" /tmp/x-auth-inspect-legacy.json; }
           trap cleanup EXIT
 
