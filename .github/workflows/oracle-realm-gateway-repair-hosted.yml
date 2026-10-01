@@ -43,5 +43,5 @@ jobs:
 
 # trigger: 2026-10-01T03:10Z bootstrap-route-repair
 
-# retry: 2026-10-01T05:31Z post-realm-restart-finalize
+# retry: 2026-10-01T05:40Z pm2-full-metadata-retire
 # retry: 2026-10-01T05:27Z after-receipt-store-compaction
