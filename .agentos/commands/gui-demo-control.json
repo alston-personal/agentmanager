@@ -1,16 +1,20 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-winget-probe-007",
+  "nonce": "desktop-demo-install-ffmpeg-008",
   "action": "shell.exec",
   "payload": {
-    "executable": "powershell",
+    "executable": "winget",
     "argv": [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "$w=Get-Command winget -ErrorAction SilentlyContinue; if($w){[pscustomobject]@{winget=$w.Source;version=(& winget --version)}|ConvertTo-Json -Compress}else{'{\"winget\":null}'}"
+      "install",
+      "--id",
+      "Gyan.FFmpeg",
+      "--exact",
+      "--silent",
+      "--accept-source-agreements",
+      "--accept-package-agreements",
+      "--disable-interactivity"
     ],
-    "timeout_seconds": 20
+    "timeout_seconds": 240
   }
 }
