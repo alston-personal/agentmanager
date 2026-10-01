@@ -91,6 +91,26 @@ jobs:
           print('net_shoe_candidate_count='+str(len(dict.fromkeys(values))))
           PY
 
+          echo "=== PWA auth handoff ==="
+          for route in start exchange complete; do
+            test -f "$CWD/.next/server/app/api/auth/pwa/$route/route.js" && echo "pwa_route_$route=present" || echo "pwa_route_$route=missing"
+          done
+          code="$(curl --noproxy '*' -k -sS -o /tmp/mio-pwa-start-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
+            -X POST -H 'Accept: application/json' https://studio.milkcat.org/dashboard/api/auth/pwa/start || true)"
+          echo "pwa_start_http=$code"
+          python3 - <<'PY'
+          import json,pathlib
+          raw=pathlib.Path('/tmp/mio-pwa-start-body').read_text(encoding='utf-8',errors='replace')[:1200]
+          try:
+              obj=json.loads(raw)
+              print('pwa_start_keys='+','.join(sorted(obj.keys())))
+              print('pwa_start_has_handoff='+str(bool(obj.get('handoffId'))))
+              print('pwa_start_has_signin='+str(bool(obj.get('signInUrl'))))
+              if 'error' in obj: print('pwa_start_error='+str(obj['error'])[:300])
+          except Exception:
+              print('pwa_start_body_non_json='+raw.replace('\n',' ')[:500])
+          PY
+
           echo "=== auth signin ==="
           code="$(curl --noproxy '*' -k -sS -D /tmp/mio-auth-signin-head -o /tmp/mio-auth-signin-body -w '%{http_code}' --resolve studio.milkcat.org:443:127.0.0.1 \
             'https://studio.milkcat.org/dashboard/api/auth/signin/google?returnTo=%2Fpersonas%2Fmio%2Fwardrobe%2F%3FresumeTryOn%3D1' || true)"
