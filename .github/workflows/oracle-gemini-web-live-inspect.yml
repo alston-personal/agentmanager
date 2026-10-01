@@ -101,11 +101,16 @@ jobs:
           events=root/'events.jsonl'
           if events.exists():
               rows=[]
-              for raw in events.read_text(encoding='utf-8').splitlines()[-12:]:
+              error_types=[]
+              for raw in events.read_text(encoding='utf-8').splitlines()[-24:]:
                   try: item=json.loads(raw)
                   except Exception: continue
                   rows.append((str(item.get('event') or ''),str(item.get('state') or '')))
-              print('recent_bridge_events='+','.join(a+':'+b for a,b in rows))
+                  if item.get('event') == 'provider_error':
+                      detail=str(item.get('detail') or '')
+                      error_types.append(detail.split(':',1)[0][:80] if detail else 'unknown')
+              print('recent_bridge_events='+','.join(a+':'+b for a,b in rows[-12:]))
+              print('recent_bridge_error_types='+','.join(error_types[-12:]))
           PY
 
           echo "=== CDP endpoint ==="
@@ -118,6 +123,48 @@ jobs:
             printf '%s' "$RAW" | python3 -c 'import json,sys; from urllib.parse import urlparse; rows=json.load(sys.stdin); hosts={}; [hosts.__setitem__((urlparse(str(x.get("url") or "")).hostname or "non-http").lower(),hosts.get((urlparse(str(x.get("url") or "")).hostname or "non-http").lower(),0)+1) for x in rows if isinstance(x,dict)]; print("cdp_targets=PASS"); print("cdp_target_count="+str(len(rows))); print("cdp_target_hosts="+",".join(k+":"+str(v) for k,v in sorted(hosts.items())))'
           else
             echo "cdp_targets=FAIL_OR_TIMEOUT"
+          fi
+
+          echo "=== transport versions ==="
+          python3 - <<'PY'
+          import importlib.metadata,importlib.util
+          try:
+              print('playwright_python='+importlib.metadata.version('playwright'))
+          except Exception:
+              print('playwright_python=UNKNOWN')
+          print('python_websocket_client='+('AVAILABLE' if importlib.util.find_spec('websocket') else 'UNAVAILABLE'))
+          print('python_websockets='+('AVAILABLE' if importlib.util.find_spec('websockets') else 'UNAVAILABLE'))
+          PY
+          node --version 2>/dev/null | sed 's/^/node_version=/' || echo "node_version=UNAVAILABLE"
+          node -e 'console.log("node_global_websocket="+typeof WebSocket)' 2>/dev/null || echo "node_global_websocket=UNAVAILABLE"
+
+          echo "=== raw browser CDP websocket ==="
+          WS_URL="$(timeout 5s curl -fsS http://127.0.0.1:9222/json/version 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("webSocketDebuggerUrl") or "")')" || WS_URL=""
+          if [ -n "$WS_URL" ] && command -v node >/dev/null 2>&1; then
+            timeout 7s node - "$WS_URL" <<'NODE' || true
+          const wsUrl=process.argv[2];
+          if (typeof WebSocket === 'undefined') {
+            console.log('raw_cdp_ws=NODE_WEBSOCKET_UNAVAILABLE');
+            process.exit(0);
+          }
+          let done=false;
+          const finish=(line,code=0)=>{ if(done)return; done=true; console.log(line); try{ws.close();}catch{}; process.exitCode=code; };
+          const ws=new WebSocket(wsUrl);
+          const timer=setTimeout(()=>finish('raw_cdp_ws=TIMEOUT',2),5000);
+          ws.onopen=()=>ws.send(JSON.stringify({id:1,method:'Target.getTargets'}));
+          ws.onerror=()=>{clearTimeout(timer); finish('raw_cdp_ws=ERROR',2);};
+          ws.onmessage=(event)=>{
+            let msg;
+            try{msg=JSON.parse(String(event.data));}catch{return;}
+            if(msg.id!==1)return;
+            clearTimeout(timer);
+            const rows=msg.result?.targetInfos||[];
+            console.log('raw_cdp_target_count='+rows.length);
+            finish('raw_cdp_ws=PASS');
+          };
+NODE
+          else
+            echo "raw_cdp_ws=UNAVAILABLE"
           fi
 
           echo "=== bridge process ==="
