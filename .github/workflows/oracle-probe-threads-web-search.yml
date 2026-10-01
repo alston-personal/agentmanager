@@ -48,7 +48,7 @@ jobs:
               process.exit(2);
             }
             const base='http://127.0.0.1:9222';
-            const queries=['貓咪','動漫','羽球','台灣旅行'];
+            const queries=['動漫','迷因','塔羅','AI創作','社群經營','內容創作','日常吐槽'];
             const q=queries[0];
             const targetUrl='https://www.threads.com/search?q='+encodeURIComponent(q)+'&serp_type=recent';
             const target=await httpJson('PUT', base+'/json/new?'+encodeURIComponent(targetUrl));
@@ -84,8 +84,7 @@ jobs:
               });
             }
 
-            await cmd('Runtime.enable');
-            await cmd('Page.enable');
+            await cmd('Runtime.evaluate',{expression:'location.href',returnByValue:true});
             async function readRows(query){
               await cmd('Runtime.evaluate',{expression:'location.href='+JSON.stringify('https://www.threads.com/search?q='+encodeURIComponent(query)+'&serp_type=recent')});
               await sleep(6500);
