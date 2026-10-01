@@ -31,4 +31,8 @@ jobs:
             echo "### $f"
             sed -n '1,160p' "$f" 2>/dev/null || echo missing
           done
+          echo '### backup_agentos_stream.sh'
+          sed -n '1,220p' "$HOME/.local/bin/backup_agentos_stream.sh" 2>/dev/null || echo missing
+          echo '### backup_agentos_remote.sh'
+          sed -n '1,220p' "$HOME/.local/bin/backup_agentos_remote.sh" 2>/dev/null || echo missing
           REMOTE
