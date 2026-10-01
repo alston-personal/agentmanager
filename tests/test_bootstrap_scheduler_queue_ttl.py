@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentos_node import bootstrap_control as bc
-from agentos_node.bootstrap_scheduler import _claim, policy_for
+from agentos_node.bootstrap_scheduler import _claim, _recover_inflight, policy_for
 
 
 def old_timestamp(seconds: int) -> str:
@@ -60,6 +60,44 @@ class InteractiveQueueTtlTests(unittest.TestCase):
                 self.assertFalse(receipt["ok"])
                 self.assertEqual(receipt["failure_class"], "queue_expired")
                 self.assertEqual(receipt["scheduler"]["queue_ttl_seconds"], 90)
+
+
+    def test_restart_recovery_expires_stale_inflight_login_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bootstrap_root = root / "bootstrap"
+            data_root = root / "data"
+            with patch.dict(
+                os.environ,
+                {
+                    "AGENTOS_BOOTSTRAP_ROOT": str(bootstrap_root),
+                    "AGENT_DATA_ROOT": str(data_root),
+                },
+                clear=False,
+            ):
+                _requests, receipts, rejected = bc._ensure(bootstrap_root)
+                request_id = "stale-inflight-login"
+                payload = {
+                    "schema": bc.SCHEMA,
+                    "request_id": request_id,
+                    "action": bc.ACTION_START_THREADS_WEB_DM_LOGIN,
+                    "created_at": old_timestamp(180),
+                    "params": {"source_commit": "c" * 40},
+                }
+                inflight = bootstrap_root / "inflight" / "oracle-gui"
+                inflight.mkdir(parents=True, exist_ok=True)
+                request_path = inflight / f"{request_id}.request.json"
+                request_path.write_text(json.dumps(payload), encoding="utf-8")
+
+                result = _recover_inflight("gui", "oracle-gui")
+
+                self.assertEqual(result["stale"], 1)
+                self.assertFalse(request_path.exists())
+                self.assertTrue((rejected / request_path.name).exists())
+                receipt = json.loads(
+                    (receipts / f"{request_id}.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(receipt["failure_class"], "queue_expired")
 
     def test_normal_gui_probe_keeps_global_freshness_window(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
