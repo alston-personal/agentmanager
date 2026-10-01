@@ -61,12 +61,33 @@ jobs:
                   print(f'pm2_cli_from_daemon_path={candidate}')
           PY
 
-          echo '=== LIKELY PM2 CLI FILES ==='
-          for root in             "$HOME/.nvm"             "$HOME/.npm"             "$HOME/.npm-global"             "$HOME/.local"             "/usr/local/lib/node_modules"             "/usr/lib/node_modules"             "/opt"
-          do
-            [ -e "$root" ] || continue
-            find "$root" -maxdepth 8 -type f \( -path '*/pm2/bin/pm2' -o -path '*/bin/pm2' \) -perm -u+x 2>/dev/null | head -n 40
-          done
+          echo '=== DAEMON PATH CANDIDATES ==='
+          python3 - "$PID" <<'PY'
+          from pathlib import Path
+          import os
+          import sys
+
+          pid=sys.argv[1]
+          raw=(Path('/proc')/pid/'environ').read_bytes().split(b'\0')
+          env={}
+          for item in raw:
+              if b'=' not in item:
+                  continue
+              key,value=item.split(b'=',1)
+              env[key.decode('utf-8','replace')]=value.decode('utf-8','replace')
+          for directory in env.get('PATH','').split(':'):
+              if not directory:
+                  continue
+              for name in ('pm2','pm2-runtime'):
+                  candidate=Path(directory)/name
+                  if candidate.exists():
+                      print(f'pm2_path_candidate={candidate} executable={os.access(candidate,os.X_OK)}')
+          exe=Path(os.readlink(f'/proc/{pid}/exe')).resolve()
+          for name in ('pm2','pm2-runtime'):
+              candidate=exe.parent/name
+              if candidate.exists():
+                  print(f'pm2_node_sibling_candidate={candidate} executable={os.access(candidate,os.X_OK)}')
+          PY
 
           echo '=== DIRECT CHILDREN ==='
           ps -o pid,ppid,pgid,stat,etime,cmd --ppid "$PID" || true
