@@ -21,11 +21,56 @@ def windows_node_install_root() -> Path:
 def render_windows_watchdog_script() -> str:
     return """$ErrorActionPreference='Stop'
 $taskName='AgentOS Thin Client'
-$task=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-if ($null -eq $task) { exit 2 }
+$install=Join-Path $env:LOCALAPPDATA 'AgentOS'
+$launcher=Join-Path $install 'agentos-client.cmd'
+$leaseCandidates=@()
+if ($env:AGENTOS_CLIENT_HOME) {
+  $leaseCandidates += (Join-Path $env:AGENTOS_CLIENT_HOME 'heartbeat-lease.json')
+}
+$leaseCandidates += (Join-Path (Join-Path $install 'state') 'heartbeat-lease.json')
+$leaseCandidates += (Join-Path (Join-Path $env:USERPROFILE '.agentos') 'heartbeat-lease.json')
+
+function Ensure-AgentOSThinClientTask {
+  $task=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  if ($null -ne $task) { return $task }
+  if (-not (Test-Path -LiteralPath $launcher)) { throw 'agentos-client launcher missing' }
+  $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/d /c "' + $launcher + '" run') -WorkingDirectory $install
+  $trigger=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Description 'AgentOS Thin Client user-session daemon' -Force | Out-Null
+  return (Get-ScheduledTask -TaskName $taskName -ErrorAction Stop)
+}
+
+$task=Ensure-AgentOSThinClientTask
+$restart=$false
 if ($task.State -ne 'Running') {
+  $restart=$true
+} else {
+  $lease=$null
+  foreach($candidate in $leaseCandidates) {
+    if (Test-Path -LiteralPath $candidate) {
+      try {
+        $candidateLease=Get-Content -Raw -LiteralPath $candidate | ConvertFrom-Json
+        if ($null -eq $lease -or [int64]$candidateLease.recorded_at_unix -gt [int64]$lease.recorded_at_unix) {
+          $lease=$candidateLease
+        }
+      } catch {}
+    }
+  }
+  if ($null -eq $lease) {
+    $restart=$true
+  } else {
+    $now=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $age=$now-[int64]$lease.recorded_at_unix
+    if ($age -gt 120) { $restart=$true }
+  }
+}
+
+if ($restart) {
+  Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
   Start-ScheduledTask -TaskName $taskName
-  Start-Sleep -Seconds 3
+  Start-Sleep -Seconds 5
   $state=(Get-ScheduledTask -TaskName $taskName).State
   if ($state -ne 'Running') { exit 3 }
 }
@@ -55,9 +100,10 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Se
 
 $watchdogName='{WINDOWS_WATCHDOG_TASK}'
 $watchdogAction=New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{watchdog.replace("'", "''")}"') -WorkingDirectory $install
-$watchdogTrigger=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+$watchdogLogon=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$watchdogPeriodic=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
 $watchdogSettings=New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName $watchdogName -Action $watchdogAction -Trigger $watchdogTrigger -Settings $watchdogSettings -Description 'AgentOS OS-level watchdog; restarts Thin Client when it is not running' -Force | Out-Null
+Register-ScheduledTask -TaskName $watchdogName -Action $watchdogAction -Trigger @($watchdogLogon,$watchdogPeriodic) -Settings $watchdogSettings -Description 'AgentOS heartbeat-aware Thin Client watchdog' -Force | Out-Null
 
 Start-ScheduledTask -TaskName $taskName
 Start-Sleep -Seconds 2
