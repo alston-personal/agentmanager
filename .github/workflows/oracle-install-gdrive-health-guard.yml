@@ -138,7 +138,12 @@ jobs:
 
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-gdrive-health.timer
-          systemctl --user start agentos-gdrive-health.service
+          if ! systemctl --user start agentos-gdrive-health.service; then
+            systemctl --user status agentos-gdrive-health.service --no-pager -l || true
+            journalctl --user -u agentos-gdrive-health.service -n 120 --no-pager || true
+            cat "$HOME/.local/state/agentos/gdrive-health.state" 2>/dev/null || true
+            exit 1
+          fi
           cat "$HOME/.local/state/agentos/gdrive-health.state"
           systemctl --user is-active agentos-gdrive-health.timer
           echo 'gdrive_health_guard_install=PASS'
