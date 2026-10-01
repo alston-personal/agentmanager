@@ -113,7 +113,7 @@ REMOTE
     printf '%s\n' "$RECEIPT_JSON"
     exit 0
   fi
-  sleep 4
+  sleep 10
 done
 
 echo "receipt timeout for $REQUEST_ID" >&2
