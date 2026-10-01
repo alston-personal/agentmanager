@@ -33,7 +33,7 @@ new = """            current_pointer_mode = 'symlink'
                 'current': str(current),
                 'current_pointer_mode': current_pointer_mode,
 """
-if new in text:
+if new in text or ("current_pointer_mode = 'symlink'" in text and "legacy_directory_preserved" in text):
     print('realm_fabric_current_pointer_compat=ALREADY_PRESENT')
     raise SystemExit(0)
 if old not in text:
