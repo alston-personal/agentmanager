@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "gemini-download-image-013",
+  "nonce": "inspect-download-result-014",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'No visible Edge window'}\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$target=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5LiL6LyJ5Y6f5bC65a+45ZyW54mH'))\n$btn=$null\nfor($i=0;$i -lt $all.Count;$i++){\n $e=$all.Item($i)\n if($e.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and [string]$e.Current.Name -eq $target){$btn=$e;break}\n}\nif($null -eq $btn){throw 'Gemini download button not found'}\ntry{\n $invoke=$btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)\n $invoke.Invoke()\n}catch{\n $btn.SetFocus()\n Add-Type -AssemblyName System.Windows.Forms\n [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')\n}\nStart-Sleep -Seconds 8\n$downloads=Join-Path $env:USERPROFILE 'Downloads'\n$files=Get-ChildItem -LiteralPath $downloads -File -ErrorAction SilentlyContinue |\n  Where-Object {$_.Extension -match '(?i)^\\.(png|jpg|jpeg|webp)$'} |\n  Sort-Object LastWriteTime -Descending |\n  Select-Object -First 8 |\n  ForEach-Object {[pscustomobject]@{name=$_.Name;path=$_.FullName;bytes=$_.Length;last_write=[string]$_.LastWriteTime}}\n[pscustomobject]@{clicked=$true;downloads=$files}|ConvertTo-Json -Depth 5 -Compress"
+      "$ErrorActionPreference='Stop'\n$home=$env:USERPROFILE\n$roots=@(\n  (Join-Path $home 'Downloads'),\n  (Join-Path $home 'Pictures'),\n  (Join-Path $home 'Desktop')\n)\n$recent=@()\nforeach($root in $roots){\n  if(Test-Path -LiteralPath $root){\n    Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue |\n      Where-Object {$_.LastWriteTime -gt (Get-Date).AddMinutes(-10)} |\n      Sort-Object LastWriteTime -Descending |\n      Select-Object -First 30 |\n      ForEach-Object {\n        $recent += [pscustomobject]@{name=$_.Name;path=$_.FullName;ext=$_.Extension;bytes=$_.Length;last_write=[string]$_.LastWriteTime}\n      }\n  }\n}\nAdd-Type @\"\nusing System;\nusing System.Text;\nusing System.Runtime.InteropServices;\nusing System.Collections.Generic;\npublic static class W32Enum {\n  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);\n  [DllImport(\"user32.dll\")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);\n  [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);\n  [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr hWnd);\n}\n\"@\n$wins=New-Object System.Collections.ArrayList\n$cb=[W32Enum+EnumWindowsProc]{\n param($h,$l)\n if([W32Enum]::IsWindowVisible($h)){\n   $sb=New-Object System.Text.StringBuilder 512\n   [void][W32Enum]::GetWindowText($h,$sb,$sb.Capacity)\n   $t=$sb.ToString().Trim()\n   if($t){[void]$wins.Add([pscustomobject]@{hwnd=[string]$h;title=$t})}\n }\n return $true\n}\n[W32Enum]::EnumWindows($cb,[IntPtr]::Zero)|Out-Null\n[pscustomobject]@{recent=$recent;windows=$wins}|ConvertTo-Json -Depth 6 -Compress"
     ],
-    "timeout_seconds": 40
+    "timeout_seconds": 45
   }
 }
