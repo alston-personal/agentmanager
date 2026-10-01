@@ -114,3 +114,5 @@ jobs:
           systemctl --user list-timers agentos-remote-backup.timer --no-pager
           echo 'direct_gdrive_backup_install=PASS'
           REMOTE
+
+# trigger 2026-10-01T14:12+08:00
