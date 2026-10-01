@@ -1,6 +1,7 @@
 name: Oracle Start Threads Web DM Login
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - core/integration
