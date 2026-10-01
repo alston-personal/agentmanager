@@ -29,12 +29,18 @@ jobs:
           set -euo pipefail
           command -v rclone >/dev/null
           test -f "$HOME/.config/rclone/rclone.conf"
-          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+          OLD_MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
+          systemctl --user stop agentos-gdrive-mount.service 2>/dev/null || true
+          if findmnt -rn "$OLD_MOUNT" >/dev/null 2>&1; then
+            (command -v fusermount3 >/dev/null && fusermount3 -uz "$OLD_MOUNT") || \
+              (command -v fusermount >/dev/null && fusermount -uz "$OLD_MOUNT") || true
+          fi
           if findmnt -rn "$MOUNT" >/dev/null 2>&1; then
             (command -v fusermount3 >/dev/null && fusermount3 -uz "$MOUNT") || \
               (command -v fusermount >/dev/null && fusermount -uz "$MOUNT") || true
-            sleep 1
           fi
+          sleep 1
           mkdir -p "$MOUNT"
           mkdir -p "$HOME/.config/systemd/user" "$HOME/.local/state/agentos"
           cat > "$HOME/.config/systemd/user/agentos-gdrive-mount.service" <<'UNIT'
@@ -45,11 +51,13 @@ jobs:
 
           [Service]
           Type=simple
-          ExecStartPre=/bin/sh -c 'if findmnt -rn %h/.local/share/agentos/gdrive-remote >/dev/null 2>&1; then (command -v fusermount3 >/dev/null && fusermount3 -uz %h/.local/share/agentos/gdrive-remote) || (command -v fusermount >/dev/null && fusermount -uz %h/.local/share/agentos/gdrive-remote) || true; fi'
-          ExecStart=/usr/bin/rclone mount gdrive: %h/.local/share/agentos/gdrive-remote --config=%h/.config/rclone/rclone.conf --vfs-cache-mode=minimal --dir-cache-time=1h --poll-interval=1m --umask=002 --log-level=INFO --log-file=%h/.local/state/agentos/rclone-gdrive.log
-          ExecStop=/bin/sh -c '(command -v fusermount3 >/dev/null && fusermount3 -uz %h/.local/share/agentos/gdrive-remote) || (command -v fusermount >/dev/null && fusermount -uz %h/.local/share/agentos/gdrive-remote) || true'
+          ExecStartPre=/bin/sh -c 'if findmnt -rn %h/.local/share/agentos/gdrive-remote-v2 >/dev/null 2>&1; then (command -v fusermount3 >/dev/null && fusermount3 -uz %h/.local/share/agentos/gdrive-remote-v2) || (command -v fusermount >/dev/null && fusermount -uz %h/.local/share/agentos/gdrive-remote-v2) || true; fi'
+          ExecStart=/usr/bin/rclone mount gdrive: %h/.local/share/agentos/gdrive-remote-v2 --config=%h/.config/rclone/rclone.conf --vfs-cache-mode=minimal --dir-cache-time=1h --poll-interval=1m --umask=002 --log-level=INFO --log-file=%h/.local/state/agentos/rclone-gdrive.log
+          ExecStartPost=/bin/sh -c 'for i in $(seq 1 60); do if mountpoint -q %h/.local/share/agentos/gdrive-remote-v2 && timeout 10 test -d %h/.local/share/agentos/gdrive-remote-v2/backups; then exit 0; fi; sleep 1; done; exit 1'
+          ExecStop=/bin/sh -c '(command -v fusermount3 >/dev/null && fusermount3 -uz %h/.local/share/agentos/gdrive-remote-v2) || (command -v fusermount >/dev/null && fusermount -uz %h/.local/share/agentos/gdrive-remote-v2) || true'
           Restart=always
           RestartSec=10
+          TimeoutStartSec=75
           TimeoutStopSec=15
 
           [Install]
@@ -58,13 +66,13 @@ jobs:
           systemctl --user daemon-reload
           systemctl --user enable --now agentos-gdrive-mount.service
           for i in $(seq 1 30); do
-            mountpoint -q "$HOME/.local/share/agentos/gdrive-remote" && break
+            mountpoint -q "$HOME/.local/share/agentos/gdrive-remote-v2" && break
             sleep 1
           done
-          mountpoint -q "$HOME/.local/share/agentos/gdrive-remote"
+          mountpoint -q "$HOME/.local/share/agentos/gdrive-remote-v2"
           systemctl --user is-active agentos-gdrive-mount.service
-          findmnt "$HOME/.local/share/agentos/gdrive-remote"
-          timeout 10 ls -la "$HOME/.local/share/agentos/gdrive-remote" | head -n 20
+          findmnt "$HOME/.local/share/agentos/gdrive-remote-v2"
+          timeout 10 ls -la "$HOME/.local/share/agentos/gdrive-remote-v2" | head -n 20
           loginctl show-user "$(id -un)" -p Linger 2>/dev/null || true
           echo 'persistent_gdrive_mount=PASS'
           REMOTE
