@@ -25,6 +25,7 @@ Canonical sources remain separated by concern:
 | Resource/world model | `/home/ubuntu/agent-data/resources/registry.json` |
 | Port allocation | `/home/ubuntu/agent-data/config/port_registry.json` via `manager://port` |
 | Project state | `/home/ubuntu/agent-data/projects/*/project.yaml` |
+| IP provenance / employment boundary | `governance/ip-ownership-policy.json` + `docs/IP_PROVENANCE.md` |
 | Governance query index | `/home/ubuntu/agent-data/governance/directory.json` |
 
 The Directory **indexes and resolves** these authorities; it must not silently redefine them.
