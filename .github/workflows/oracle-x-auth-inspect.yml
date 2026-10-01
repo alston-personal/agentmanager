@@ -1,0 +1,46 @@
+name: Oracle X Read-only Auth Inspect
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_username:
+        description: Expected X username (without @)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/content-publish-capability-v1
+
+      - name: Load node-local credentials and run non-publish probe
+        shell: bash
+        env:
+          EXPECTED_USERNAME: ${{ inputs.expected_username }}
+        run: |
+          set -euo pipefail
+          for envfile in /home/ubuntu/agentmanager/.env /home/ubuntu/zeus-writer/.env; do
+            if [ -f "$envfile" ]; then
+              set -a
+              . "$envfile"
+              set +a
+            fi
+          done
+          python3 scripts/x_auth_inspect.py --expected-username "$EXPECTED_USERNAME" | tee /tmp/x-auth-inspect.json
+          python3 - <<'PY'
+          import json
+          x=json.load(open('/tmp/x-auth-inspect.json',encoding='utf-8'))
+          assert x.get('credential_exposed') is False, x
+          assert x.get('side_effect') is False, x
+          print('x_auth_probe_status='+str(x.get('status')))
+          print('x_auth_identity='+str((x.get('account_identity') or {}).get('username') or 'unknown'))
+          print('x_write_entitlement='+str(x.get('write_entitlement')))
+          print('x_media_entitlement='+str(x.get('media_entitlement')))
+          PY
