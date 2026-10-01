@@ -28,7 +28,8 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_COMMIT=59edfd87f1544cbdbfb847fa3cf0a9e6841d27ae
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             "cd /home/ubuntu/agentmanager && git fetch origin $SOURCE_COMMIT && AGENTOS_SOURCE_COMMIT=$SOURCE_COMMIT bash scripts/deploy_realm_gateway_user.sh"
+          scp -o StrictHostKeyChecking=accept-new -P "${DEPLOY_PORT:-22}" scripts/deploy_realm_gateway_user.sh "${DEPLOY_USER}@${ORACLE_HOST}:/tmp/deploy_realm_gateway_user_hosted.sh"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "chmod 700 /tmp/deploy_realm_gateway_user_hosted.sh && AGENTOS_SOURCE_COMMIT=$SOURCE_COMMIT AGENTOS_REPO=/home/ubuntu/agentmanager /tmp/deploy_realm_gateway_user_hosted.sh"
       - name: Verify public bootstrap route
         shell: bash
         run: |
@@ -41,3 +42,5 @@ jobs:
           echo 'realm_gateway_repair=PASS'
 
 # trigger: 2026-10-01T03:10Z bootstrap-route-repair
+
+# retry: hosted-script-copy
