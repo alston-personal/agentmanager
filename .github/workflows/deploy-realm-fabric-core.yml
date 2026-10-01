@@ -159,3 +159,5 @@ jobs:
           echo "public_route_configured=false"
           trap - EXIT
           REMOTE
+
+# live recovery trigger 2026-10-01T05:13Z
