@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: oracle-realm-gateway-deploy
+  group: oracle-realm-gateway-deploy-v2
   cancel-in-progress: false
 
 jobs:
