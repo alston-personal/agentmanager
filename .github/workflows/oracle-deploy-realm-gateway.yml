@@ -95,7 +95,10 @@ jobs:
           set -euo pipefail
           REQUEST_ID="realm-gateway-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           RECEIPT="$RUNNER_TEMP/realm-gateway-receipt.json"
-          AGENTOS_RECEIPT_TIMEOUT_SECONDS=480             bash scripts/submit_oracle_bootstrap_request_remote.sh               agentos.realm_gateway.deploy "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=480 \
+            bash scripts/submit_oracle_bootstrap_request_remote.sh \
+              agentos.realm_gateway.deploy "$REQUEST_ID" "$GITHUB_SHA" '{}' \
+              > "$RECEIPT"
           cat "$RECEIPT"
           python3 - "$RECEIPT" "$GITHUB_SHA" <<'PY'
           import json,sys
