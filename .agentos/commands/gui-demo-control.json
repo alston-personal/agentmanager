@@ -1,9 +1,16 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "threads-profile-open-033",
-  "action": "desktop.open_url",
+  "nonce": "threads-profile-verify-034",
+  "action": "shell.exec",
   "payload": {
-    "url": "https://www.threads.com/@oursong_alstonhuang"
+    "executable": "powershell",
+    "argv": [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName UIAutomationClient\nAdd-Type -AssemblyName UIAutomationTypes\n$edge=Get-Process msedge -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1\nif($null -eq $edge){throw 'Edge not visible'}\nStart-Sleep -Seconds 4\n$root=[System.Windows.Automation.AutomationElement]::FromHandle($edge.MainWindowHandle)\n$all=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)\n$hits=@()\n$images=@()\n$address=''\nfor($i=0;$i -lt $all.Count;$i++){\n  $e=$all.Item($i)\n  $ct=$e.Current.ControlType.ProgrammaticName\n  $name=[string]$e.Current.Name\n  if($ct -eq 'ControlType.Edit' -and [string]$e.Current.AutomationId -eq 'view_1017'){\n    try{$vp=$e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern);$address=[string]$vp.Current.Value}catch{}\n  }\n  if($name -like '*剛剛真的看著 ChatGPT*' -or $name -like '*你最想把哪件事丟給兩個 AI 一起完成*'){\n    $r=$e.Current.BoundingRectangle\n    $hits += [pscustomobject]@{type=$ct;name=$name;x=[string]$r.X;y=[string]$r.Y;w=[string]$r.Width;h=[string]$r.Height}\n  }\n  if($ct -eq 'ControlType.Image'){\n    $r=$e.Current.BoundingRectangle\n    if(-not [double]::IsInfinity($r.Y) -and $r.Y -gt 250 -and $r.Y -lt 1400){\n      if($r.Width -gt 200 -and $r.Height -gt 200){\n        $images += [pscustomobject]@{name=$name;x=[string]$r.X;y=[string]$r.Y;w=[string]$r.Width;h=[string]$r.Height}\n      }\n    }\n  }\n}\n[pscustomobject]@{title=$edge.MainWindowTitle;address=$address;post_hits=$hits;large_images=$images}|ConvertTo-Json -Depth 6 -Compress"
+    ],
+    "timeout_seconds": 35
   }
 }
