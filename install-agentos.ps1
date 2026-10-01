@@ -99,10 +99,10 @@ function Install-Supervisor([string]$PythonPath) {
   $escapedPython=$PythonPath.Replace("'","''")
   $escapedLog=$log.Replace("'","''")
   $runnerBody=@(
-    "$ErrorActionPreference='Stop'",
-    "$env:PYTHONPATH='$escapedInstall'",
-    "$env:AGENTOS_CLIENT_HOME='$escapedState'",
-    "& '$escapedPython' -m agentos_node.client_cli run *>> '$escapedLog'",
+    '$ErrorActionPreference=''Stop'''
+    ('$env:PYTHONPATH=''' + $escapedInstall + '''')
+    ('$env:AGENTOS_CLIENT_HOME=''' + $escapedState + '''')
+    ('& ''' + $escapedPython + ''' -m agentos_node.client_cli run *>> ''' + $escapedLog + '''')
     'exit $LASTEXITCODE'
   ) -join [Environment]::NewLine
   $runnerBody | Set-Content -Encoding UTF8 -LiteralPath $runner
