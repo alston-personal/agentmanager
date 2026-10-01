@@ -1,0 +1,142 @@
+name: Inspect VO10005870 CMD Popup V3
+
+on:
+  push:
+    branches:
+      - inspect/vo10005870-cmd-popup-20261001
+    paths:
+      - '.github/workflows/inspect-vo10005870-cmd-popup-v3.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          python3 - <<'PY'
+          import time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          node_id='VO10005870'
+          nodes=NodeRegistry().node_map().get('nodes') or []
+          node=next((n for n in nodes if str(n.get('node_id') or '')==node_id),None)
+          if not node:
+              raise SystemExit('node_not_registered')
+          status=str(node.get('effective_status') or node.get('status') or '')
+          roots=(node.get('workspace_roots') or {}).get('readable') or []
+          caps=set(node.get('capabilities') or [])
+          print('status='+status,flush=True)
+          if status!='online':
+              raise SystemExit('node_not_online:'+status)
+          if 'shell.exec' not in caps:
+              raise SystemExit('node_missing_shell_exec')
+          if not roots:
+              raise SystemExit('node_missing_readable_workspace')
+          cwd=str(roots[0])
+
+          ps = r"""
+          $ErrorActionPreference='Stop'
+
+          $cmds=@()
+          Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'cmd.exe' } | ForEach-Object {
+            $p=$_
+            $parent=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $p.ParentProcessId) -ErrorAction SilentlyContinue
+            $grand=$null
+            if($null -ne $parent){
+              $grand=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $parent.ParentProcessId) -ErrorAction SilentlyContinue
+            }
+            $cmds += [pscustomobject]@{
+              pid=[int]$p.ProcessId
+              command=[string]$p.CommandLine
+              parent_name=[string]$parent.Name
+              parent_command=[string]$parent.CommandLine
+              grand_name=[string]$grand.Name
+              grand_command=[string]$grand.CommandLine
+            }
+          }
+
+          function TaskSummary([string]$name){
+            $t=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            if($null -eq $t){ return $null }
+            $i=Get-ScheduledTaskInfo -TaskName $name -ErrorAction SilentlyContinue
+            return [pscustomobject]@{
+              name=$name
+              state=[string]$t.State
+              hidden=[bool]$t.Settings.Hidden
+              execute=($t.Actions | ForEach-Object { [string]$_.Execute }) -join ' | '
+              arguments=($t.Actions | ForEach-Object { [string]$_.Arguments }) -join ' | '
+              last_run=[string]$i.LastRunTime
+              next_run=[string]$i.NextRunTime
+              last_result=[string]$i.LastTaskResult
+            }
+          }
+
+          $joinPath=Join-Path $env:USERPROFILE 'Downloads\join.cmd'
+          $join=[pscustomobject]@{
+            exists=[bool](Test-Path -LiteralPath $joinPath)
+            content=''
+          }
+          if($join.exists){
+            $join.content=[string](Get-Content -Raw -LiteralPath $joinPath)
+          }
+
+          [pscustomobject]@{
+            cmd_processes=@($cmds)
+            join_cmd=$join
+            fs_update=(TaskSummary 'FS Update')
+            agentos_client=(TaskSummary 'AgentOS Thin Client')
+            agentos_watchdog=(TaskSummary 'AgentOS Thin Client Watchdog')
+            agentos_switch=(TaskSummary 'AgentOS Thin Client Headless Switch')
+          } | ConvertTo-Json -Depth 8 -Compress
+          """
+
+          fabric=RealmFabricStore()
+          task_id='inspect-cmd-popup-VO10005870-20261001-v4'
+          existing=fabric.get_receipt(task_id)
+          if existing is None:
+              task={
+                  'schema':'agentos.node-task/v0.1',
+                  'task_id':task_id,
+                  'action':'shell.exec',
+                  'executable':'powershell',
+                  'argv':['-NoProfile','-NonInteractive','-Command',ps],
+                  'cwd':cwd,
+                  'timeout_seconds':90,
+                  'cognition_ids_used':[],
+              }
+              fabric.queue_task(node_id,task)
+              print('queued=PASS',flush=True)
+
+          receipt=existing
+          for _ in range(45):
+              if receipt is not None:
+                  break
+              time.sleep(2)
+              receipt=fabric.get_receipt(task_id)
+          if receipt is None:
+              raise SystemExit('receipt_timeout')
+          if receipt.get('ok') is not True or int(receipt.get('returncode') or 0)!=0:
+              raise SystemExit('receipt_failed:'+str(receipt.get('stderr') or receipt.get('error') or '')[-3000:])
+          print('NODE_JSON='+str(receipt.get('stdout') or '').strip())
+          PY
+          REMOTE
