@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 import pwd
 import re
+import signal
 import subprocess
 from datetime import datetime, timezone
 from typing import Any
@@ -276,12 +277,36 @@ def _run_canonical_script(
         env["AGENTOS_SOURCE_COMMIT"] = source_commit
     if env_extra:
         env.update(env_extra)
+    proc: subprocess.Popen[str] | None = None
     try:
-        run = subprocess.run(["/bin/bash", str(tmp)], text=True, capture_output=True, timeout=timeout, check=False, env=env)
-        steps.append({"step": "run_script", "returncode": run.returncode, "stdout": run.stdout[-30000:], "stderr": run.stderr[-20000:]})
-        return {"ok": run.returncode == 0, "source_commit": source_commit, "script_sha256": digest, "steps": steps}
+        proc = subprocess.Popen(
+            ["/bin/bash", str(tmp)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+        )
+        stdout, stderr = proc.communicate(timeout=timeout)
+        steps.append({"step": "run_script", "returncode": proc.returncode, "stdout": stdout[-30000:], "stderr": stderr[-20000:]})
+        return {"ok": proc.returncode == 0, "source_commit": source_commit, "script_sha256": digest, "steps": steps}
     except subprocess.TimeoutExpired as exc:
-        steps.append({"step": "run_script", "error": "TimeoutExpired", "timeout": timeout, "stdout": (exc.stdout or "")[-30000:] if isinstance(exc.stdout, str) else "", "stderr": (exc.stderr or "")[-20000:] if isinstance(exc.stderr, str) else ""})
+        if proc is not None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = proc.communicate()
+        else:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+        steps.append({
+            "step": "run_script",
+            "error": "TimeoutExpired",
+            "timeout": timeout,
+            "stdout": (stdout or "")[-30000:] if isinstance(stdout, str) else "",
+            "stderr": (stderr or "")[-20000:] if isinstance(stderr, str) else "",
+        })
         return {"ok": False, "source_commit": source_commit, "script_sha256": digest, "steps": steps}
     finally:
         tmp.unlink(missing_ok=True)
