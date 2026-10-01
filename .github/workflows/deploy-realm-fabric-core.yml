@@ -115,13 +115,27 @@ jobs:
             -e 's|_a_os.chmod(_a_tmp,0o660)|_a_os.chmod(_a_tmp,0o644)|' \
             scripts/bootstrap_action_relay_via_chronos_safe_v2.sh > "$tmp"
           chmod 700 "$tmp"
+          set +e
           bash "$tmp"
-          grep -q 'agentos.realm-fabric.install_release' "$runtime"
-          grep -q 'agentos.project.register_core' "$runtime"
-          grep -q 'core_project_runtime_binding_v1' "$runtime"
-          grep -q 'realm_fabric_release_isolation_v1' "$runtime"
-          grep -q 'realm_fabric_process_attestation_v1' "$runtime"
-          echo 'action_relay_runtime_core=READY_AFTER_REFRESH'
+          bootstrap_rc=$?
+          set -e
+
+          # The safe bootstrap also performs legacy Antigravity post-checks that
+          # may be unreadable from the agentos-node runner identity. The Core
+          # deploy only depends on the governed Action Relay runtime contract,
+          # so judge refresh success by the exact capability markers we need.
+          missing=0
+          for marker in             'agentos.realm-fabric.install_release'             'agentos.project.register_core'             'core_project_runtime_binding_v1'             'realm_fabric_release_isolation_v1'             'realm_fabric_process_attestation_v1'; do
+            if ! grep -q "$marker" "$runtime" 2>/dev/null; then
+              echo "missing_action_relay_marker=$marker" >&2
+              missing=1
+            fi
+          done
+          if [[ "$missing" != 0 ]]; then
+            echo "action_relay_refresh_failed bootstrap_rc=$bootstrap_rc" >&2
+            exit 1
+          fi
+          echo "action_relay_runtime_core=READY_AFTER_REFRESH bootstrap_rc=$bootstrap_rc"
 
       - name: Install exact Realm Fabric release through Action Relay
         shell: bash
