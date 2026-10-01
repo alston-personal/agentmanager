@@ -31,7 +31,10 @@ git -C "$REPO" show "$SOURCE_COMMIT:$PORT_MANAGER_REL" > "$PORT_MANAGER_EXACT"
 chmod 700 "$PORT_MANAGER_EXACT"
 echo "port_manager_source=$SOURCE_COMMIT:$PORT_MANAGER_REL"
 
-python3 "$PORT_MANAGER_EXACT" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+if ! python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard >/dev/null 2>&1; then
+  python3 "$PORT_MANAGER_EXACT" migrate 3000 agentmanager agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+fi
+python3 "$PORT_MANAGER_EXACT" require 3000 agentos-dashboard
 python3 "$PORT_MANAGER_EXACT" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
 echo "port_governance=PASS"
 
