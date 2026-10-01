@@ -77,7 +77,7 @@ jobs:
           verification["errors"] = [] if state in {"READY", "RECOVERED"} else [f"gdrive health state: {state}"]
           resources["storage://google-drive"] = resource
           data["updated_at"] = datetime.now(timezone.utc).isoformat()
-          tmp = path.with_suffix(".tmp")
+          tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
           tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           os.replace(tmp, path)
           PY
