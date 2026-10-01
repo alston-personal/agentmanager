@@ -11,6 +11,7 @@ on:
       - 'agentos_node/social/web_dm.py'
       - 'scripts/threads_web_dm_bridge_user.py'
       - 'scripts/run_threads_web_dm_read_user.sh'
+      - 'scripts/probe_threads_web_dm_login_user.sh'
 
 permissions:
   contents: read
