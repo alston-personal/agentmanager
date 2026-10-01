@@ -50,7 +50,7 @@ jobs:
             echo "verify_md5=$name PASS"
           done
 
-          mountpoint -q $HOME/.local/share/agentos/gdrive-remote
+          mountpoint -q $HOME/.local/share/agentos/gdrive-remote-v2
           systemctl --user is-active agentos-gdrive-mount.service
 
           rm -f             "$SRC/agentos_backup_20260930_030001.tar.gz"             "$SRC/agentos_backup_20261001_030001.tar.gz"
@@ -64,13 +64,13 @@ jobs:
             rmdir "$HOME/gdrive"
           fi
 
-          ln -s "$HOME/.local/share/agentos/gdrive-remote" "$HOME/gdrive"
+          ln -s "$HOME/.local/share/agentos/gdrive-remote-v2" "$HOME/gdrive"
           test -L "$HOME/gdrive"
-          mountpoint -q $HOME/.local/share/agentos/gdrive-remote
+          mountpoint -q $HOME/.local/share/agentos/gdrive-remote-v2
           cat > "$HOME/backup_agentos_guarded.sh" <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
-          if ! mountpoint -q $HOME/.local/share/agentos/gdrive-remote; then
+          if ! mountpoint -q $HOME/.local/share/agentos/gdrive-remote-v2; then
             echo "$(date -Is) backup_refused=gdrive_not_mounted" >&2
             exit 42
           fi
