@@ -23,6 +23,7 @@ class ActionPolicy:
     priority_label: str
     capabilities: tuple[str, ...] = ()
     locks: tuple[str, ...] = ()
+    queue_ttl_seconds: float | None = None
 
 
 HIGH = 10
@@ -35,14 +36,14 @@ POLICIES: dict[str, ActionPolicy] = {
     bc.ACTION_REPAIR_TRANSPORT: ActionPolicy("control", 5, "high", ("node.runtime.repair",), ("oracle-core-runtime",)),
     bc.ACTION_READ_THREADS_WEB_DM: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
-    bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui")),
+    bc.ACTION_START_THREADS_WEB_DM_LOGIN: ActionPolicy("gui", HIGH, "high", ("threads.gui.write",), ("oracle-gui-profile", "threads-mio-gui"), queue_ttl_seconds=90),
     bc.ACTION_PROBE_THREADS_WEB_DM: ActionPolicy("gui", 15, "high", ("threads.gui.read",), ("oracle-gui-profile", "threads-mio-gui")),
     bc.ACTION_PROBE_CHATGPT_WEB: ActionPolicy("gui", 12, "high", ("chatgpt.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_ACCEPT_CHATGPT_WEB_SESSION: ActionPolicy("gui", 14, "high", ("chatgpt.web.session", "agent.session.attach", "agent.session.inspect", "agent.context.inject"), ("oracle-gui-profile",)),
     bc.ACTION_INSTALL_CHATGPT_WEB_BRIDGE: ActionPolicy("gui", 22, "normal", ("chatgpt.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_PROBE_GEMINI_WEB: ActionPolicy("gui", 12, "high", ("gemini.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_ACCEPT_GEMINI_WEB_SESSION: ActionPolicy("gui", 14, "high", ("gemini.web.session", "agent.session.attach", "agent.session.inspect", "agent.context.inject"), ("oracle-gui-profile",)),
-    bc.ACTION_START_GEMINI_WEB_LOGIN: ActionPolicy("gui", HIGH, "high", ("gemini.web.session", "desktop.remote_view", "browser.gui"), ("oracle-gui-profile",)),
+    bc.ACTION_START_GEMINI_WEB_LOGIN: ActionPolicy("gui", HIGH, "high", ("gemini.web.session", "desktop.remote_view", "browser.gui"), ("oracle-gui-profile",), queue_ttl_seconds=90),
     bc.ACTION_ACCEPT_GEMINI_WEB_ROUNDTRIP: ActionPolicy("gui", 14, "high", ("gemini.web.session", "agent.context.inject", "agent.context.harvest"), ("oracle-gui-profile",)),
     bc.ACTION_INSTALL_GEMINI_WEB_BRIDGE: ActionPolicy("gui", 22, "normal", ("gemini.web.session", "browser.cdp", "browser.persistent_profile"), ("oracle-gui-profile",)),
     bc.ACTION_RUN_MIO_DM_DECISION: ActionPolicy("social", 18, "high", ("mio.dm.decide",)),
@@ -209,6 +210,60 @@ def _held_locks(keys: tuple[str, ...], *, timeout_seconds: float = 120.0) -> Ite
                 handle.close()
 
 
+def _expire_request(
+    source: Path,
+    payload: dict[str, Any],
+    *,
+    role: str,
+    worker_id: str,
+    receipts: Path,
+    rejected: Path,
+    failure_class: str = "queue_expired",
+) -> None:
+    request_id = source.name.removesuffix(".request.json")
+    action = str(payload.get("action") or "unknown")
+    policy = policy_for(action)
+    age = _request_age_seconds(payload)
+    receipt_path = receipts / f"{request_id}.json"
+    if receipt_path.exists():
+        source.unlink(missing_ok=True)
+        return
+    now = bc._now()
+    receipt = {
+        "schema": bc.RECEIPT_SCHEMA,
+        "request_id": request_id,
+        "action": action,
+        "source_commit": str((payload.get("params") or {}).get("source_commit") or "") or None,
+        "executor_user": os.environ.get("USER") or str(os.getuid()),
+        "executor_uid": os.getuid(),
+        "started_at": now,
+        "completed_at": now,
+        "ok": False,
+        "failure_class": failure_class,
+        "error": f"request exceeded scheduler queue lifetime: age={age:.1f}s",
+        "scheduler": {
+            "node": "oracle",
+            "worker_role": role,
+            "worker_id": worker_id,
+            "priority": policy.priority_label,
+            "requested_capabilities": list(policy.capabilities),
+            "locks": list(policy.locks),
+            "queue_ttl_seconds": policy.queue_ttl_seconds,
+        },
+    }
+    bc._atomic_json(receipt_path, receipt)
+    _incident(
+        request_id=request_id,
+        action=action,
+        policy=policy,
+        failure_class=failure_class,
+        detail=f"age={int(age)}s;ttl={policy.queue_ttl_seconds}",
+    )
+    target = rejected / source.name
+    target.unlink(missing_ok=True)
+    source.replace(target)
+
+
 def _recover_inflight(role: str, worker_id: str) -> dict[str, int]:
     """Recover requests orphaned when a role worker is restarted mid-job.
 
@@ -238,40 +293,28 @@ def _recover_inflight(role: str, worker_id: str) -> dict[str, int]:
         action = str(payload.get("action") or "unknown")
         policy = policy_for(action)
         age = _request_age_seconds(payload)
-        if age > bc.MAX_REQUEST_AGE_SECONDS:
-            receipt = {
-                "schema": bc.RECEIPT_SCHEMA,
-                "request_id": request_id,
-                "action": action,
-                "source_commit": str((payload.get("params") or {}).get("source_commit") or "") or None,
-                "executor_user": os.environ.get("USER") or str(os.getuid()),
-                "executor_uid": os.getuid(),
-                "started_at": bc._now(),
-                "completed_at": bc._now(),
-                "ok": False,
-                "failure_class": "worker_restart_orphan_stale",
-                "error": f"orphaned inflight request exceeded freshness window: age={age:.1f}s",
-                "scheduler": {
-                    "node": "oracle",
-                    "worker_role": role,
-                    "worker_id": worker_id,
-                    "priority": policy.priority_label,
-                    "requested_capabilities": list(policy.capabilities),
-                    "locks": list(policy.locks),
-                    "recovered_after_restart": False,
-                },
-            }
-            bc._atomic_json(receipt_path, receipt)
-            _incident(
-                request_id=request_id,
-                action=action,
-                policy=policy,
-                failure_class="worker_restart_orphan_stale",
-                detail=f"age={int(age)}s",
+        if policy.queue_ttl_seconds is not None and age > policy.queue_ttl_seconds:
+            _expire_request(
+                source,
+                payload,
+                role=role,
+                worker_id=worker_id,
+                receipts=receipts,
+                rejected=rejected,
+                failure_class="queue_expired",
             )
-            target = rejected / source.name
-            target.unlink(missing_ok=True)
-            source.replace(target)
+            stale += 1
+            continue
+        if age > bc.MAX_REQUEST_AGE_SECONDS:
+            _expire_request(
+                source,
+                payload,
+                role=role,
+                worker_id=worker_id,
+                receipts=receipts,
+                rejected=rejected,
+                failure_class="worker_restart_orphan_stale",
+            )
             stale += 1
             continue
         destination = requests / source.name
@@ -287,15 +330,28 @@ def _recover_inflight(role: str, worker_id: str) -> dict[str, int]:
 
 
 def _claim(role: str, worker_id: str) -> tuple[Path, dict[str, Any]] | None:
-    requests, _, _ = bc._ensure(bc._root())
+    requests, receipts, rejected = bc._ensure(bc._root())
     candidates = sorted((_request_summary(path) for path in requests.glob("*.request.json")), key=lambda item: item[:3])
     inflight_dir = bc._root() / "inflight" / worker_id
     inflight_dir.mkdir(parents=True, exist_ok=True)
     for _priority, _created, filename, payload in candidates:
         action = str(payload.get("action") or "unknown")
-        if policy_for(action).role != role:
+        policy = policy_for(action)
+        if policy.role != role:
             continue
         source = requests / filename
+        if policy.queue_ttl_seconds is not None and _request_age_seconds(payload) > policy.queue_ttl_seconds:
+            if source.exists():
+                _expire_request(
+                    source,
+                    payload,
+                    role=role,
+                    worker_id=worker_id,
+                    receipts=receipts,
+                    rejected=rejected,
+                    failure_class="queue_expired",
+                )
+            continue
         destination = inflight_dir / filename
         if destination.exists():
             continue
