@@ -1,0 +1,53 @@
+name: Oracle Canonicalize Backup Timer
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-canonicalize-backup-timer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Keep only the verified direct backup timer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          systemctl --user disable --now agentos-backup.timer 2>/dev/null || true
+          systemctl --user stop agentos-backup.service 2>/dev/null || true
+
+          systemctl --user enable --now agentos-remote-backup.timer
+          systemctl --user is-enabled agentos-remote-backup.timer
+          systemctl --user is-active agentos-remote-backup.timer
+
+          current="$(crontab -l 2>/dev/null || true)"
+          printf '%s\n' "$current" | grep -v 'backup_agentos' | sed '/^[[:space:]]*$/d' | crontab -
+
+          echo '=== active backup timers ==='
+          systemctl --user list-timers --all --no-pager | grep -E 'agentos-.*backup' || true
+          echo '=== legacy timer state ==='
+          systemctl --user is-enabled agentos-backup.timer 2>/dev/null || true
+          systemctl --user is-active agentos-backup.timer 2>/dev/null || true
+          echo '=== canonical timer state ==='
+          systemctl --user is-enabled agentos-remote-backup.timer
+          systemctl --user is-active agentos-remote-backup.timer
+          echo '=== cron backup lines ==='
+          crontab -l 2>/dev/null | grep -E 'backup_agentos|gdrive.*backup' || true
+          echo 'backup_timer_canonicalization=PASS'
+          REMOTE
