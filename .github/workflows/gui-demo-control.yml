@@ -108,5 +108,7 @@ jobs:
           print('RECEIPT_JSON='+json.dumps(receipt,ensure_ascii=False,separators=(',',':')))
           if receipt.get('ok') is not True:
               raise SystemExit('task_failed:'+str(receipt.get('error') or 'unknown'))
+          if action == 'shell.exec' and int(receipt.get('returncode') or 0) != 0:
+              raise SystemExit('shell_failed_rc:'+str(receipt.get('returncode'))+':'+str(receipt.get('stderr') or '')[-1000:])
           PY
           REMOTE
