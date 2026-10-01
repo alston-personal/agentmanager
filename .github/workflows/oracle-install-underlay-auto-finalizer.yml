@@ -64,7 +64,7 @@ jobs:
             fi
           done
 
-          mountpoint -q /mnt/agentos-gdrive
+          mountpoint -q $HOME/.local/share/agentos/gdrive-remote
           systemctl --user is-active --quiet agentos-gdrive-mount.service
 
           rm -f "$SRC/agentos_backup_20260930_030001.tar.gz" "$SRC/agentos_backup_20261001_030001.tar.gz"
@@ -76,9 +76,9 @@ jobs:
             fi
             rmdir "$HOME/gdrive"
           fi
-          ln -s /mnt/agentos-gdrive "$HOME/gdrive"
+          ln -s "$HOME/.local/share/agentos/gdrive-remote" "$HOME/gdrive"
           test -L "$HOME/gdrive"
-          mountpoint -q /mnt/agentos-gdrive
+          mountpoint -q $HOME/.local/share/agentos/gdrive-remote
           printf 'checked_at=%s\nstate=PASS\n' "$(date -Is)" > "$STATE"
           SH
           chmod 700 "$HOME/.local/bin/finalize_gdrive_underlay.sh"
@@ -114,3 +114,5 @@ jobs:
           systemctl --user is-active agentos-gdrive-underlay-finalize.timer
           echo 'underlay_auto_finalizer_install=PASS'
           REMOTE
+
+# user-mountpoint-fix 2026-10-01T09:37+08:00
