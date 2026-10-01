@@ -76,6 +76,7 @@ jobs:
           print(f"storage_resource_publish=PASS state={state}")
           PY
 
+          sudo -n install -d -o root -g root -m 0755 /usr/local/libexec
           sudo -n install -o root -g root -m 0755 /tmp/agentos-storage-resource-publish.py /usr/local/libexec/agentos-storage-resource-publish.py
 
           sudo -n tee /etc/systemd/system/agentos-storage-resource-publish.service >/dev/null <<'UNIT'
