@@ -30,6 +30,43 @@ jobs:
           set -euo pipefail
           P="$HOME/gdrive"
           echo "legacy_exists=$([ -e "$P" ] && echo yes || echo no)"
+          echo '=== recovery state ==='
+          ps -eo pid,etimes,args | grep '[r]clone copyto .*recovered-oracle-underlay-20261001' || true
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            local_file="$HOME/gdrive/backups/$name"
+            echo "-- $name"
+            if [ -f "$local_file" ]; then
+              local_size="$(stat -c %s "$local_file")"
+              local_md5="$(md5sum "$local_file" | awk '{print $1}')"
+              echo "local_size=$local_size"
+              echo "local_md5=$local_md5"
+            else
+              local_size=""
+              local_md5=""
+              echo 'local_missing=yes'
+            fi
+            remote_size="$(timeout 30 rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            remote_md5="$(timeout 60 rclone md5sum "gdrive:backups/recovered-oracle-underlay-20261001/$name" 2>/dev/null | awk 'NR==1{print $1}' || true)"
+            echo "remote_size=${remote_size:-missing}"
+            echo "remote_md5=${remote_md5:-missing}"
+            if [ -n "$local_size" ] && [ "$remote_size" = "$local_size" ] && [ -n "$local_md5" ] && [ "$remote_md5" = "$local_md5" ]; then
+              echo 'recovery_verified=yes'
+            else
+              echo 'recovery_verified=no'
+            fi
+          done
+          echo '=== service state ==='
+          systemctl --user is-enabled agentos-gdrive-mount.service 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-mount.service 2>/dev/null || true
+          systemctl --user is-enabled agentos-gdrive-health.timer 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-health.timer 2>/dev/null || true
+          systemctl --user is-enabled agentos-remote-backup.timer 2>/dev/null || true
+          systemctl --user is-active agentos-remote-backup.timer 2>/dev/null || true
+          systemctl --user is-enabled agentos-gdrive-underlay-finalize.timer 2>/dev/null || true
+          systemctl --user is-active agentos-gdrive-underlay-finalize.timer 2>/dev/null || true
+          cat "$HOME/.local/state/agentos/gdrive-underlay-finalize.state" 2>/dev/null || true
+          mountpoint -q "$HOME/.local/share/agentos/gdrive-remote-v2" && echo 'canonical_mount_ready=yes' || echo 'canonical_mount_ready=no'
+          [ -L "$HOME/gdrive" ] && echo "legacy_symlink=$(readlink "$HOME/gdrive")" || true
           if [ -e "$P" ]; then
             stat -c 'mode=%a owner=%U group=%G size=%s mtime=%y' "$P"
             echo 'top:'
