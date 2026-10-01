@@ -1,0 +1,45 @@
+name: Oracle GDrive Recovery Diagnose
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-gdrive-recovery-diagnose.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect recovery state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+          echo '=== STATE ==='
+          cat "$HOME/.local/state/agentos/gdrive-health.state" 2>/dev/null || true
+          echo '=== SERVICE ==='
+          systemctl --user --no-pager --plain status agentos-gdrive-mount.service 2>&1 | tail -n 80 || true
+          echo '=== MOUNT ==='
+          mountpoint "$MOUNT" || true
+          findmnt "$MOUNT" || true
+          echo '=== REMOTE PROBE ==='
+          timeout 30 ls -ld "$MOUNT/backups" 2>&1 || true
+          echo '=== JOURNAL ==='
+          journalctl --user -u agentos-gdrive-mount.service --since '-10 min' --no-pager | tail -n 120 || true
+          echo '=== RCLONE LOG ==='
+          tail -n 100 "$HOME/.local/state/agentos/rclone-gdrive.log" 2>/dev/null || true
+          REMOTE
