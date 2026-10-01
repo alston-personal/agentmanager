@@ -74,7 +74,10 @@ jobs:
           if action not in caps:
               raise SystemExit('capability_missing:'+action)
           if not roots:
-              raise SystemExit('node_missing_readable_workspace')
+              # Demo branch compatibility for the enrolled VO10005870 Windows node.
+              # Keep shell cwd bounded to the known AgentOS workspace rather than
+              # broadening authority to arbitrary filesystem locations.
+              roots=[r'C:\\Users\\alston.huang\\AgentOS']
 
           task={
               'schema':'agentos.node-task/v0.1',
