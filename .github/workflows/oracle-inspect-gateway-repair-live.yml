@@ -26,27 +26,40 @@ jobs:
       - name: Inspect live repair state
         shell: bash
         run: |
+          set -euo pipefail
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
           set -u
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+
           echo '=== PM2 CLI ==='
-echo "PATH=$PATH"
-command -v pm2 || true
-type -a pm2 2>/dev/null || true
-find "$HOME/.nvm" "$HOME/.local" /usr/local -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | head -n 20 || true
-echo '=== DEPLOY/BUILD PROCESSES ==='
+          echo "PATH=$PATH"
+          command -v pm2 || true
+          type -a pm2 2>/dev/null || true
+          find "$HOME/.nvm" "$HOME/.local" /usr/local -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | head -n 20 || true
+
+          echo '=== DEPLOY/BUILD PROCESSES ==='
           ps -eo pid,ppid,pgid,stat,etime,%cpu,%mem,cmd | grep -E 'deploy_realm_gateway|next build|next-server|npm (run build|start)|pm2|flock' | grep -v grep || true
+
           echo '=== LOCK ==='
           command -v lslocks >/dev/null 2>&1 && lslocks | grep agentos-dashboard-deploy || true
+
           echo '=== SERVICES ==='
           systemctl --user show agentos-dashboard.service -p ActiveState -p SubState -p MainPID -p ExecMainPID --no-pager || true
           systemctl --user show agentos-realm-fabric.service -p ActiveState -p SubState -p MainPID -p ExecMainPID --no-pager || true
+
           echo '=== LISTENERS ==='
           ss -ltnp 2>/dev/null | grep -E ':3000|:8780' || true
+
           echo '=== NEXT TREE ==='
           stat -c 'next_meta=size=%s mtime=%y' /home/ubuntu/agentmanager/dashboard/.next 2>/dev/null || echo next_missing
           du -sh /home/ubuntu/agentmanager/dashboard/.next 2>/dev/null || true
-          REMOTE
 
-# inspect-retry: pm2-cli-path
+          echo '=== LOCAL ROUTES ==='
+          for url in             'http://127.0.0.1:8780/v1/health'             'http://127.0.0.1:3000/dashboard'             'http://127.0.0.1:3000/dashboard/api/agentos/v1/health'             'http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__probe__'
+          do
+            body=/tmp/agentos-inspect-body
+            code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 5 "$url" || true)
+            echo "inspect_url=$url http=$code prefix=$(head -c 300 "$body" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ')"
+          done
+          REMOTE
