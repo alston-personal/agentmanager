@@ -2,7 +2,7 @@ name: Oracle Install Persistent GDrive Mount
 
 on:
   push:
-    branches: [core/integration]
+    branches: [core/integration, diag/oracle-gdrive-storage-recovery-20261001]
     paths:
       - '.github/workflows/oracle-install-persistent-gdrive-mount.yml'
 
