@@ -34,6 +34,19 @@ class PortManagerGateTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             port_manager.require_port(3000, "other-service")
 
+    def test_migrate_requires_expected_current_owner(self):
+        port_manager.ensure_port(3000, "agentmanager")
+        with self.assertRaises(RuntimeError):
+            port_manager.migrate_port(3000, "wrong-owner", "agentos-dashboard")
+
+    def test_migrate_records_transfer(self):
+        port_manager.ensure_port(3000, "agentmanager", "Dashboard Next.js")
+        port_manager.migrate_port(3000, "agentmanager", "agentos-dashboard", "AgentOS Dashboard / Realm Gateway")
+        data=json.loads(self.registry.read_text())
+        self.assertEqual(data["3000"]["project"], "agentos-dashboard")
+        self.assertEqual(data["3000"]["migration"]["from_project"], "agentmanager")
+        self.assertEqual(data["3000"]["migration"]["to_project"], "agentos-dashboard")
+
 
 if __name__ == "__main__":
     unittest.main()
