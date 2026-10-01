@@ -93,6 +93,10 @@ jobs:
           echo '=== crontab metadata ==='
           crontab -l 2>/dev/null || true
           stat -c 'mtime=%y size=%s path=%n' /var/spool/cron/crontabs/$(id -un) 2>/dev/null || true
+          echo '=== recovery namespace listing ==='
+          rclone lsf "gdrive:backups/recovered-oracle-underlay-20261001" --files-only --format 'sp' 2>/dev/null | sort || true
+          echo '=== local underlay candidates ==='
+          find "$HOME/.local/share/agentos" "$HOME" -maxdepth 3 -type d \( -iname '*underlay*' -o -iname '*gdrive*old*' -o -iname '*gdrive*recovery*' \) -print 2>/dev/null | head -n 80 || true
           echo '=== recovery upload status ==='
           ps -eo pid,etimes,args | grep '[r]clone copyto' || true
           for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
