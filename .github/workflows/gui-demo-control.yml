@@ -57,6 +57,10 @@ jobs:
               'desktop.open_url',
               'desktop.mouse',
               'desktop.keyboard',
+              'desktop.windows.tile',
+              'desktop.demo.start',
+              'desktop.demo.stage',
+              'desktop.demo.stop',
               'shell.exec',
           }
           if action not in allowed:
