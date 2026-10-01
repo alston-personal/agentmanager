@@ -34,6 +34,7 @@ async function evaluate(wsUrl, expression) {
   if (typeof WebSocket !== 'function') throw new Error('node_websocket_unavailable');
   return await new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
       reject(new Error('cdp_runtime_timeout'));
@@ -54,13 +55,28 @@ async function evaluate(wsUrl, expression) {
         },
       }));
     });
-    ws.addEventListener('message', event => {
-      let doc;
-      try { doc = JSON.parse(String(event.data)); } catch { return; }
-      if (doc.id !== 1) return;
-      if (doc.error) return finish(reject, new Error('cdp_runtime_error'));
-      const value = doc?.result?.result?.value;
-      finish(resolve, value);
+    ws.addEventListener('message', async event => {
+      let raw = event.data;
+      try {
+        if (typeof raw !== 'string') {
+          if (raw instanceof ArrayBuffer) {
+            raw = Buffer.from(raw).toString('utf8');
+          } else if (ArrayBuffer.isView(raw)) {
+            raw = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength).toString('utf8');
+          } else if (raw && typeof raw.text === 'function') {
+            raw = await raw.text();
+          } else {
+            raw = String(raw);
+          }
+        }
+        const doc = JSON.parse(raw);
+        if (doc.id !== 1) return;
+        if (doc.error) return finish(reject, new Error('cdp_runtime_error'));
+        const value = doc?.result?.result?.value;
+        finish(resolve, value);
+      } catch {
+        return;
+      }
     });
     ws.addEventListener('error', () => finish(reject, new Error('cdp_websocket_error')));
   });
