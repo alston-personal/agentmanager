@@ -32,7 +32,7 @@ jobs:
           cat > "$HOME/.local/bin/check_agentos_gdrive.sh" <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
-          MOUNT=/mnt/agentos-gdrive
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
           STATE="$HOME/.local/state/agentos/gdrive-health.state"
           now="$(date -Is)"
 
@@ -86,3 +86,5 @@ jobs:
           systemctl --user is-active agentos-gdrive-health.timer
           echo 'gdrive_health_guard_install=PASS'
           REMOTE
+
+# user-mountpoint-fix 2026-10-01T09:32+08:00
