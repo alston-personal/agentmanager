@@ -1,0 +1,78 @@
+name: Windows One-Click Installer CI
+
+on:
+  pull_request:
+    paths:
+      - 'install-agentos.ps1'
+      - 'install-agentos.cmd'
+      - 'scripts/install_thin_client_windows.ps1'
+      - '.github/workflows/windows-one-click-installer-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'install-agentos.ps1'
+      - 'install-agentos.cmd'
+      - 'scripts/install_thin_client_windows.ps1'
+      - '.github/workflows/windows-one-click-installer-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  parse-and-contract:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse PowerShell installers
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @('install-agentos.ps1','scripts/install_thin_client_windows.ps1')
+          foreach($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "${file}: $($_.Message)" }
+              throw "PowerShell parse failed: $file"
+            }
+            Write-Host "powershell_parse=PASS file=$file"
+          }
+
+      - name: Enforce one-click contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $one = Get-Content -Raw install-agentos.ps1
+          $cmd = Get-Content -Raw install-agentos.cmd
+          $low = Get-Content -Raw scripts/install_thin_client_windows.ps1
+
+          foreach($needle in @(
+            'Existing enrollment detected',
+            'Enrollment preserved; no new token or approval code will be created.',
+            'Register-ScheduledTask',
+            'Start-ScheduledTask',
+            'AGENTOS_ONE_CLICK_INSTALL=PASS',
+            '& $launcher verify',
+            '--timeout-seconds $ApprovalTimeoutSeconds'
+          )) {
+            if(-not $one.Contains($needle)) { throw "missing one-click contract marker: $needle" }
+          }
+
+          foreach($needle in @(
+            'agentos_node/session_bridge.py',
+            'agentos_node/agent_surfaces.py',
+            'Windows Store App Execution Alias is not accepted'
+          )) {
+            if(-not $low.Contains($needle)) { throw "missing low-level installer marker: $needle" }
+          }
+
+          if(-not $cmd.Contains('install-agentos.ps1')) { throw 'double-click bootstrap is not wired to install-agentos.ps1' }
+          Write-Host 'windows_one_click_contract=PASS'
