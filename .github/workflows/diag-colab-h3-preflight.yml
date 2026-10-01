@@ -1,0 +1,72 @@
+name: Diagnose Colab H3 Preflight
+
+on:
+  push:
+    branches:
+      - diag/colab-h3-preflight-20261001
+    paths:
+      - '.github/workflows/diag-colab-h3-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 10
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      UPSTREAM_SHA: 7768ebfb1627546595f37e9acfd2d353937c6cd8
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Probe H3 prerequisites without allocating GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" <<'REMOTE'
+          set -u
+          export PATH="/home/ubuntu/.local/bin:$PATH"
+          SHA="$1"
+          RELEASE="/home/ubuntu/agent-data/providers/colab/releases/$SHA"
+          TMP=$(mktemp -d /tmp/agentos-h3-diag-XXXXXXXX)
+          trap 'rm -rf "$TMP"' EXIT
+          echo "stage=begin"
+          echo "python=$(python3 --version 2>&1)"
+          echo "colab_path=$(command -v colab || true)"
+          echo "colab_version=$(colab version 2>&1 | head -n 1 || true)"
+          test -f "$RELEASE/scripts/runner.py" && echo "runner_exists=true" || echo "runner_exists=false"
+
+          set +e
+          python3 "$RELEASE/scripts/runner.py" --help >"$TMP/runner-help.txt" 2>&1
+          R1=$?
+          set -e
+          echo "runner_help_rc=$R1"
+          tail -n 20 "$TMP/runner-help.txt" | sed -E 's/(access[_ -]?token|refresh[_ -]?token|authorization|bearer)[=: ]+[^ ]+/\1=<redacted>/Ig'
+
+          set +e
+          timeout 20s colab --auth=oauth2 usage >"$TMP/usage.txt" 2>&1
+          R2=$?
+          set -e
+          echo "usage_rc=$R2"
+          python3 - "$TMP/usage.txt" <<'PY'
+          import re,sys
+          s=open(sys.argv[1],encoding='utf-8',errors='replace').read()
+          s=re.sub(r'(?i)(access[_ -]?token|refresh[_ -]?token|authorization|bearer)\s*[:=]\s*\S+',r'\1=<redacted>',s)
+          print("\n".join(s.splitlines()[-40:]))
+          PY
+
+          cat >"$TMP/jobs.json" <<'JSON'
+          {"jobs":[{"id":"diag","reference_images":["/tmp/does-not-exist.png"],"prompt":"test","duration_seconds":4,"output_name":"diag"}]}
+          JSON
+          set +e
+          python3 "$RELEASE/scripts/runner.py" batch --manifest "$TMP/jobs.json" --output-dir "$TMP/out" >"$TMP/validate.txt" 2>&1
+          R3=$?
+          set -e
+          echo "invalid_manifest_probe_rc=$R3"
+          tail -n 40 "$TMP/validate.txt" | sed -E 's/(access[_ -]?token|refresh[_ -]?token|authorization|bearer)[=: ]+[^ ]+/\1=<redacted>/Ig'
+          echo "stage=end"
+          REMOTE
