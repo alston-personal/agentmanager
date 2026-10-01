@@ -311,6 +311,10 @@ class RealmFabricStore:
         self.authenticate(node_id, token)
         data = self.load()
         queue = list(data['tasks'].get(node_id, []))
+        if not queue:
+            # Long-poll clients can ask repeatedly while idle. Never rewrite
+            # canonical Realm state merely to prove that an empty queue is empty.
+            return []
         take = queue[:max(1, min(limit, 50))]
         data['tasks'][node_id] = queue[len(take):]
         self.save(data)

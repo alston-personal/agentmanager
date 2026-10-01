@@ -140,10 +140,23 @@ class RealmRequestHandler(BaseHTTPRequestHandler):
                     wait_seconds = max(0.0, min(float(wait_raw), 25.0))
                 except ValueError:
                     raise ValueError('wait_seconds must be numeric')
+                # Authenticate once before entering the wait loop so invalid
+                # credentials fail immediately. While idle, watch only the
+                # fabric file identity instead of reparsing and rewriting it at
+                # 20 Hz per connected Node.
+                self.fabric.authenticate(node_id, token)
                 deadline = time.monotonic() + wait_seconds
                 tasks: list[dict[str, Any]] = []
+                last_signature: tuple[int, int] | None = None
                 while True:
-                    tasks = self.fabric.pull_tasks(node_id, token)
+                    try:
+                        stat = self.fabric.path.stat()
+                        signature = (int(stat.st_mtime_ns), int(stat.st_size))
+                    except FileNotFoundError:
+                        signature = (0, 0)
+                    if last_signature is None or signature != last_signature:
+                        tasks = self.fabric.pull_tasks(node_id, token)
+                        last_signature = signature
                     if tasks or time.monotonic() >= deadline:
                         break
                     time.sleep(0.05)
