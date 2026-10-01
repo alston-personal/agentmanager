@@ -43,5 +43,5 @@ jobs:
 
 # trigger: 2026-10-01T03:10Z bootstrap-route-repair
 
-# retry: 2026-10-01T06:10Z guarded-port-owner-migration
+# retry: 2026-10-01T06:15Z resolve-pm2-cli
 # retry: 2026-10-01T05:27Z after-receipt-store-compaction
