@@ -55,3 +55,4 @@ jobs:
           REMOTE
 
 # diagnostic is intentionally read-only; never restart or rewrite the live scheduler
+# Mio GUI queue diagnostic 2026-10-01T15:00+08:00
