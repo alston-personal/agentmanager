@@ -5,6 +5,7 @@ on:
     branches: [core/integration]
     paths:
       - '.github/workflows/oracle-finalize-dashboard-cutover-hosted.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,6 +22,7 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
       - name: Finalize canonical Dashboard ownership
         shell: bash
         run: |
@@ -46,32 +48,38 @@ jobs:
           if [ -n "$PM2_BIN" ]; then
             "$PM2_BIN" jlist >/tmp/agentos-pm2-jlist.json 2>/dev/null || echo '[]' >/tmp/agentos-pm2-jlist.json
             python3 - <<'PY'
-import json
-from pathlib import Path
-data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
-for app in data:
-    env=app.get('pm2_env') or {}
-    print('pm_id=%s name=%s cwd=%s status=%s' % (
-        app.get('pm_id'), app.get('name') or env.get('name'),
-        env.get('pm_cwd'), env.get('status')))
-PY
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
+          for app in data:
+              env=app.get('pm2_env') or {}
+              print('pm_id=%s name=%s cwd=%s status=%s' % (
+                  app.get('pm_id'),
+                  app.get('name') or env.get('name'),
+                  env.get('pm_cwd'),
+                  env.get('status'),
+              ))
+          PY
             mapfile -t IDS < <(python3 - <<'PY'
-import json
-from pathlib import Path
-try: data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
-except Exception: data=[]
-for app in data:
-    env=app.get('pm2_env') or {}
-    joined=' '.join([
-      str(env.get('pm_cwd') or ''),
-      str(env.get('pm_exec_path') or ''),
-      str(app.get('name') or ''),
-      str(env.get('name') or '')
-    ]).lower()
-    if '/agent-data/releases/dashboard/apps/' in joined or 'dashboard' in joined:
-      i=app.get('pm_id')
-      if i is not None: print(i)
-PY
+          import json
+          from pathlib import Path
+          try:
+              data=json.loads(Path('/tmp/agentos-pm2-jlist.json').read_text())
+          except Exception:
+              data=[]
+          for app in data:
+              env=app.get('pm2_env') or {}
+              joined=' '.join([
+                  str(env.get('pm_cwd') or ''),
+                  str(env.get('pm_exec_path') or ''),
+                  str(app.get('name') or ''),
+                  str(env.get('name') or ''),
+              ]).lower()
+              if '/agent-data/releases/dashboard/apps/' in joined or 'dashboard' in joined:
+                  ident=app.get('pm_id')
+                  if ident is not None:
+                      print(ident)
+          PY
             )
             if [ "${#IDS[@]}" -gt 0 ]; then
               echo "dashboard_legacy_pm2_ids=${IDS[*]}"
@@ -83,33 +91,40 @@ PY
             fi
           fi
 
-          # Kill only any remaining release-owned dashboard groups after PM2 retirement.
           python3 - <<'PY'
-from pathlib import Path
-import os, signal, time
-groups=set()
-for e in Path('/proc').iterdir():
-    if not e.name.isdigit(): continue
-    try:
-        if e.stat().st_uid != os.getuid(): continue
-        cwd=str((e/'cwd').resolve())
-        cmd=(e/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
-        if '/agent-data/releases/dashboard/apps/' in cwd and ('next start' in cmd or 'next-server' in cmd or 'npm start' in cmd):
-            groups.add(os.getpgid(int(e.name)))
-    except Exception:
-        pass
-for g in groups:
-    try:
-        os.killpg(g, signal.SIGTERM)
-        print(f'dashboard_legacy_term_pgid={g}')
-    except ProcessLookupError:
-        pass
-if groups: time.sleep(2)
-PY
+          from pathlib import Path
+          import os
+          import signal
+          import time
+
+          groups=set()
+          for entry in Path('/proc').iterdir():
+              if not entry.name.isdigit():
+                  continue
+              try:
+                  if entry.stat().st_uid != os.getuid():
+                      continue
+                  cwd=str((entry/'cwd').resolve())
+                  cmd=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode(errors='replace')
+                  if '/agent-data/releases/dashboard/apps/' in cwd and ('next start' in cmd or 'next-server' in cmd or 'npm start' in cmd):
+                      groups.add(os.getpgid(int(entry.name)))
+              except Exception:
+                  pass
+          for group in groups:
+              try:
+                  os.killpg(group, signal.SIGTERM)
+                  print(f'dashboard_legacy_term_pgid={group}')
+              except ProcessLookupError:
+                  pass
+          if groups:
+              time.sleep(2)
+          PY
 
           systemctl --user restart agentos-dashboard.service
-          for i in $(seq 1 30); do
-            if systemctl --user is-active --quiet agentos-dashboard.service && curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then break; fi
+          for _ in $(seq 1 30); do
+            if systemctl --user is-active --quiet agentos-dashboard.service && curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then
+              break
+            fi
             sleep 1
           done
           systemctl --user is-active --quiet agentos-dashboard.service
@@ -143,5 +158,3 @@ PY
           test "$CODE" = 401
           ! grep -q 'Realm gateway route not allowlisted' "$BODY"
           echo 'realm_gateway_bootstrap_public=PASS'
-
-# trigger: finalize-cutover-now
