@@ -74,6 +74,12 @@ jobs:
           echo '=== chronos/bootstrap activity ==='
           pgrep -af 'chronos-safe|bootstrap-action-relay|scripts/chronos.py|agentos-action-relay' || true
 
+          echo '=== action relay spool latest ==='
+          for d in inbox processing receipts quarantine; do
+            echo "--- $d ---"
+            ls -lt "/home/ubuntu/agent-data/runtime/action-relay/$d" 2>&1 | head -12 || true
+          done
+
           echo '=== health ==='
           curl -fsS http://127.0.0.1:8780/v1/health || true
           echo
