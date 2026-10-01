@@ -14,6 +14,34 @@ from agentos_node.onboarding import build_join_regression_report
 from agentos_node.thin_client import NodeIdentity, ThinClient, ThinClientPolicy
 
 
+def _client_home() -> Path:
+    root = os.environ.get('AGENTOS_CLIENT_HOME')
+    return Path(root).expanduser() if root else (Path.home() / '.agentos')
+
+
+def _heartbeat_lease_path() -> Path:
+    return _client_home() / 'heartbeat-lease.json'
+
+
+def _write_heartbeat_lease(config: 'ClientConfig') -> None:
+    target = _heartbeat_lease_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        'schema': 'agentos.node-heartbeat-lease/v0.1',
+        'realm_id': config.realm_id,
+        'node_id': config.node_id,
+        'one_url': config.one_url,
+        'recorded_at_unix': int(time.time()),
+    }
+    tmp = target.with_suffix(target.suffix + '.tmp')
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, target)
+
+
 @dataclass
 class ClientConfig:
     one_url: str
@@ -122,7 +150,14 @@ class ThinClientTransport:
     def heartbeat(self) -> dict[str, Any]:
         if not self.config:
             raise RuntimeError('client is not enrolled')
-        return self._request(self.config.one_url + '/v1/heartbeat', method='POST', body=self.client.heartbeat(), token=self.config.node_token)
+        result = self._request(
+            self.config.one_url + '/v1/heartbeat',
+            method='POST',
+            body=self.client.heartbeat(),
+            token=self.config.node_token,
+        )
+        _write_heartbeat_lease(self.config)
+        return result
 
     def bootstrap(self) -> dict[str, Any]:
         if not self.config:
