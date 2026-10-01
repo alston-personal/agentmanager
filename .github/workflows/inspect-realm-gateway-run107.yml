@@ -23,66 +23,9 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-      - name: Read stuck control worker state
+      - name: Read run107 terminal receipt
         shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" '
-            set -euo pipefail
-            echo control_unit_begin
-            systemctl --user show agentos-bootstrap-control.service -p ActiveState -p SubState -p MainPID -p ExecMainStartTimestamp --no-pager || true
-            systemctl --user status agentos-bootstrap-control.service --no-pager -l || true
-            PID=$(systemctl --user show agentos-bootstrap-control.service -p MainPID --value 2>/dev/null || true)
-            echo control_main_pid=$PID
-            if [ -n "$PID" ] && [ "$PID" != 0 ]; then
-              echo control_process_tree_begin
-              ps -o pid=,ppid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$PID" || true
-              CHILDREN=$(pgrep -P "$PID" | tr "\n" " " || true)
-              echo direct_children="$CHILDREN"
-              for c in $CHILDREN; do
-                ps -o pid=,ppid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$c" || true
-                GC=$(pgrep -P "$c" | tr "\n" " " || true)
-                for g in $GC; do
-                  ps -o pid=,ppid=,stat=,etime=,pcpu=,pmem=,comm=,args= -p "$g" || true
-                done
-              done
-              echo control_process_tree_end
-            fi
-            echo control_unit_end
-            ROOT=/tmp/agentos-bootstrap-control
-            for id in realm-gateway-36830032112-1 realm-gateway-36830120832-1; do
-              echo request_state_begin=$id
-              find "$ROOT" -maxdepth 4 -type f -name "$id*" -printf "%p %s bytes %TY-%Tm-%TdT%TH:%TM:%TS\n" 2>/dev/null | sort || true
-              echo request_state_end=$id
-            done
-            echo receipt107_begin
-            python3 - <<'PY'
-import json
-p='/tmp/agentos-bootstrap-control/receipts/realm-gateway-36830120832-1.json'
-d=json.load(open(p,encoding='utf-8'))
-safe={
-  'schema':d.get('schema'),
-  'request_id':d.get('request_id'),
-  'action':d.get('action'),
-  'source_commit':d.get('source_commit'),
-  'ok':d.get('ok'),
-  'error':d.get('error'),
-  'failure_class':d.get('failure_class'),
-  'executor_user':d.get('executor_user'),
-  'started_at':d.get('started_at'),
-  'completed_at':d.get('completed_at'),
-  'scheduler':d.get('scheduler'),
-  'steps':[{
-    'step':x.get('step'),
-    'returncode':x.get('returncode'),
-    'stdout_tail':str(x.get('stdout') or '')[-2500:],
-    'stderr_tail':str(x.get('stderr') or '')[-2500:],
-  } for x in (d.get('steps') or [])],
-}
-print(json.dumps(safe,indent=2,sort_keys=True))
-PY
-            echo receipt107_end
-            echo scheduler_status_excerpt_begin
-            grep -E "oracle-control|realm-gateway-36830|heartbeat|state|queue_depth|control" /home/ubuntu/agent-data/runtime/bootstrap-scheduler/status.json 2>/dev/null | tail -80 || true
-            echo scheduler_status_excerpt_end
-          '
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" \
+            "python3 -c 'import json; p=\"/tmp/agentos-bootstrap-control/receipts/realm-gateway-36830120832-1.json\"; d=json.load(open(p,encoding=\"utf-8\")); safe={\"schema\":d.get(\"schema\"),\"request_id\":d.get(\"request_id\"),\"action\":d.get(\"action\"),\"source_commit\":d.get(\"source_commit\"),\"ok\":d.get(\"ok\"),\"error\":d.get(\"error\"),\"failure_class\":d.get(\"failure_class\"),\"executor_user\":d.get(\"executor_user\"),\"started_at\":d.get(\"started_at\"),\"completed_at\":d.get(\"completed_at\"),\"scheduler\":d.get(\"scheduler\"),\"steps\":[{\"step\":x.get(\"step\"),\"returncode\":x.get(\"returncode\"),\"stdout_tail\":str(x.get(\"stdout\") or \"\")[-2200:],\"stderr_tail\":str(x.get(\"stderr\") or \"\")[-2200:]} for x in (d.get(\"steps\") or [])]}; print(json.dumps(safe,indent=2,sort_keys=True))'"
