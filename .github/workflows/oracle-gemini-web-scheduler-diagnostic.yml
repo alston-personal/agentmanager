@@ -51,6 +51,8 @@ jobs:
           PY
           echo "=== gui locks ==="
           ls -l /tmp/agentos-bootstrap-control/locks 2>/dev/null || true
+          echo "=== active lock holders ==="
+          lslocks -n -o PID,COMMAND,PATH 2>/dev/null | grep '/tmp/agentos-bootstrap-control/locks/' || true
           echo "gemini_scheduler_diagnostic=PASS"
           REMOTE
 
