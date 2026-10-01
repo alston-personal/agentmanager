@@ -64,7 +64,10 @@ jobs:
             '--timeout-seconds $ApprovalTimeoutSeconds',
             'Get-CimInstance Win32_Process',
             'taskkill.exe',
-            'agentos_node\.client_cli'
+            'agentos_node\.client_cli',
+            '-WindowStyle Hidden',
+            'agentos-thin-client-hidden.ps1',
+            "AgentOS Thin Client task still uses visible cmd.exe"
           )) {
             if(-not $one.Contains($needle)) { throw "missing one-click contract marker: $needle" }
           }
