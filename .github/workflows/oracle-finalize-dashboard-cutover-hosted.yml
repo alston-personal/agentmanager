@@ -143,3 +143,5 @@ PY
           test "$CODE" = 401
           ! grep -q 'Realm gateway route not allowlisted' "$BODY"
           echo 'realm_gateway_bootstrap_public=PASS'
+
+# trigger: finalize-cutover-now
