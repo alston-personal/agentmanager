@@ -137,6 +137,35 @@ def ensure_port(port: int, project: str, description: str = ""):
     return require_port(port, project)
 
 
+def migrate_port(port: int, from_project: str, to_project: str, description: str = ""):
+    registry = load_registry()
+    port_str = str(port)
+    current = registry.get(port_str)
+    if not current:
+        raise RuntimeError(f"Port {port} is not registered; use ensure/register instead of migrate")
+    owner = str(current.get("project") or "")
+    if owner != from_project:
+        raise RuntimeError(
+            f"Port {port} migration refused: expected current owner '{from_project}', observed '{owner}'"
+        )
+    if from_project == to_project:
+        return require_port(port, to_project)
+    registry[port_str] = {
+        "project": to_project,
+        "description": description or str(current.get("description") or ""),
+        "managed_by": "manager://port",
+        "updated_at": _now(),
+        "migration": {
+            "from_project": from_project,
+            "to_project": to_project,
+            "migrated_at": _now(),
+        },
+    }
+    save_registry(registry)
+    print(f"Port {port} migrated from '{from_project}' to '{to_project}'.")
+    return port
+
+
 def main():
     parser = argparse.ArgumentParser(description="AgentOS Port Manager (authoritative network port allocator)")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -169,6 +198,12 @@ def main():
     ensure_parser.add_argument("project")
     ensure_parser.add_argument("--desc", default="")
 
+    migrate_parser = subparsers.add_parser("migrate", help="Transfer a port only when its current owner matches the expected old owner")
+    migrate_parser.add_argument("port", type=int)
+    migrate_parser.add_argument("from_project")
+    migrate_parser.add_argument("to_project")
+    migrate_parser.add_argument("--desc", default="")
+
     args = parser.parse_args()
     try:
         if args.command == "allocate":
@@ -183,6 +218,8 @@ def main():
             require_port(args.port, args.project)
         elif args.command == "ensure":
             ensure_port(args.port, args.project, args.desc)
+        elif args.command == "migrate":
+            migrate_port(args.port, args.from_project, args.to_project, args.desc)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(2)
