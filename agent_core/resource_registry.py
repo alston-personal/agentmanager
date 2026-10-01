@@ -35,7 +35,7 @@ def load_registry(path: Path = REGISTRY_PATH) -> dict:
 def save_registry(data: dict, path: Path = REGISTRY_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data["updated_at"] = _now()
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
