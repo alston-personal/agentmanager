@@ -31,7 +31,8 @@ jobs:
           PORT="${DEPLOY_PORT:-22}"
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" "${GITHUB_RUN_ID}" <<'REMOTE'
           set -euo pipefail
-          export PATH="/home/ubuntu/.local/bin:$PATH"
+          export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.local/opt/google-cloud-sdk/bin:$PATH"
+          export COLAB_AUTH=adc
           SHA="$1"; RUN_ID="$2"
           ROOT=/home/ubuntu/agent-data/providers/colab
           RELEASE="$ROOT/releases/$SHA"
@@ -44,6 +45,13 @@ jobs:
 
           test -f "$RELEASE/scripts/runner.py"
           command -v colab >/dev/null
+          command -v gcloud >/dev/null
+          ADC=/home/ubuntu/.config/gcloud/application_default_credentials.json
+          if [ ! -f "$ADC" ]; then
+            echo "colab_adc=AUTH_REQUIRED"
+            echo "bootstrap=/home/ubuntu/.config/agentos/colab-adc-bootstrap.sh"
+            exit 22
+          fi
 
           python3 - "$WORK/reference.ppm" <<'PY'
           import sys
@@ -96,7 +104,7 @@ jobs:
 
           USAGE_BEFORE="$WORK/usage-before.txt"
           set +e
-          colab --auth=oauth2 usage > "$USAGE_BEFORE" 2>&1
+          colab --auth=adc usage > "$USAGE_BEFORE" 2>&1
           USAGE_BEFORE_RC=$?
           set -e
 
@@ -111,7 +119,7 @@ jobs:
           set -e
 
           USAGE_AFTER="$WORK/usage-after.txt"
-          colab --auth=oauth2 usage > "$USAGE_AFTER" 2>&1 || true
+          colab --auth=adc usage > "$USAGE_AFTER" 2>&1 || true
 
           python3 - "$EVIDENCE/h3-smoke-$RUN_ID.json" "$SHA" "$RC" "$OUT" "$USAGE_BEFORE" "$USAGE_AFTER" "$WORK/progress.json" "$WORK/runner.log" "$USAGE_BEFORE_RC" <<'PY'
           import hashlib,json,os,re,sys,datetime,glob

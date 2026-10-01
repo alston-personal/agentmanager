@@ -1,0 +1,80 @@
+name: Oracle Install Colab ADC Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oracle-install-colab-adc-runtime.yml'
+      - 'scripts/colab_adc_bootstrap.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracle-colab-adc-runtime
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: [self-hosted, Linux, ARM64, oracle]
+    timeout-minutes: 12
+    env:
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      GCLOUD_VERSION: '587.0.0'
+      GCLOUD_SHA256: 'fb3946b8558beaade24595ddf7e388f63e57c614cb90a6463558779d6ec0c14c'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Install pinned gcloud runtime and ADC bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          scp -o StrictHostKeyChecking=accept-new -P "$PORT" scripts/colab_adc_bootstrap.sh "$DEPLOY_USER@127.0.0.1:/tmp/agentos-colab-adc-bootstrap.sh"
+          ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$GCLOUD_VERSION" "$GCLOUD_SHA256" <<'REMOTE'
+          set -euo pipefail
+          VERSION="$1"; EXPECTED="$2"
+          ROOT=/home/ubuntu/.local/opt
+          SDK="$ROOT/google-cloud-sdk"
+          BIN=/home/ubuntu/.local/bin
+          TMP=$(mktemp -d /tmp/agentos-gcloud-install-XXXXXXXX)
+          trap 'rm -rf "$TMP"' EXIT
+          mkdir -p "$ROOT" "$BIN" /home/ubuntu/.config/agentos
+          chmod 700 /home/ubuntu/.config/agentos
+
+          if [ ! -x "$SDK/bin/gcloud" ] || [ "$("$SDK/bin/gcloud" version --format='value(Google Cloud SDK)' 2>/dev/null | head -n1 || true)" != "$VERSION" ]; then
+            ARCHIVE="$TMP/google-cloud-cli-linux-arm.tar.gz"
+            curl -fsSL --retry 4 --retry-all-errors               https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-arm.tar.gz               -o "$ARCHIVE"
+            echo "$EXPECTED  $ARCHIVE" | sha256sum -c -
+            tar -xzf "$ARCHIVE" -C "$TMP"
+            test -x "$TMP/google-cloud-sdk/bin/gcloud"
+            rm -rf "$ROOT/google-cloud-sdk.next"
+            mv "$TMP/google-cloud-sdk" "$ROOT/google-cloud-sdk.next"
+            rm -rf "$SDK"
+            mv "$ROOT/google-cloud-sdk.next" "$SDK"
+          fi
+
+          ln -sfn "$SDK/bin/gcloud" "$BIN/gcloud"
+          install -m 0700 /tmp/agentos-colab-adc-bootstrap.sh /home/ubuntu/.config/agentos/colab-adc-bootstrap.sh
+          rm -f /tmp/agentos-colab-adc-bootstrap.sh
+
+          export PATH="$BIN:$PATH"
+          test "$(gcloud version --format='value(Google Cloud SDK)' | head -n1)" = "$VERSION"
+
+          ADC=/home/ubuntu/.config/gcloud/application_default_credentials.json
+          if [ -f "$ADC" ]; then
+            chmod 600 "$ADC"
+            ADC_STATE=present
+          else
+            ADC_STATE=required
+          fi
+
+          echo "gcloud_runtime=PASS version=$VERSION"
+          echo "adc_state=$ADC_STATE"
+          echo "adc_bootstrap=/home/ubuntu/.config/agentos/colab-adc-bootstrap.sh"
+          REMOTE
