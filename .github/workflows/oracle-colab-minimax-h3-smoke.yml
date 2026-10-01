@@ -31,6 +31,7 @@ jobs:
           PORT="${DEPLOY_PORT:-22}"
           ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "$DEPLOY_USER@127.0.0.1" bash -s -- "$UPSTREAM_SHA" "${GITHUB_RUN_ID}" <<'REMOTE'
           set -euo pipefail
+          export PATH="/home/ubuntu/.local/bin:$PATH"
           SHA="$1"; RUN_ID="$2"
           ROOT=/home/ubuntu/agent-data/providers/colab
           RELEASE="$ROOT/releases/$SHA"
