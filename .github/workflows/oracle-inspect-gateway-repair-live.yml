@@ -30,7 +30,12 @@ jobs:
           set -u
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
-          echo '=== DEPLOY/BUILD PROCESSES ==='
+          echo '=== PM2 CLI ==='
+echo "PATH=$PATH"
+command -v pm2 || true
+type -a pm2 2>/dev/null || true
+find "$HOME/.nvm" "$HOME/.local" /usr/local -type f -path '*/bin/pm2' -perm -u+x 2>/dev/null | head -n 20 || true
+echo '=== DEPLOY/BUILD PROCESSES ==='
           ps -eo pid,ppid,pgid,stat,etime,%cpu,%mem,cmd | grep -E 'deploy_realm_gateway|next build|next-server|npm (run build|start)|pm2|flock' | grep -v grep || true
           echo '=== LOCK ==='
           command -v lslocks >/dev/null 2>&1 && lslocks | grep agentos-dashboard-deploy || true
@@ -43,3 +48,5 @@ jobs:
           stat -c 'next_meta=size=%s mtime=%y' /home/ubuntu/agentmanager/dashboard/.next 2>/dev/null || echo next_missing
           du -sh /home/ubuntu/agentmanager/dashboard/.next 2>/dev/null || true
           REMOTE
+
+# inspect-retry: pm2-cli-path
