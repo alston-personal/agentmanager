@@ -32,7 +32,7 @@ jobs:
           cat > "$HOME/.local/bin/check_agentos_gdrive.sh" <<'SH'
           #!/usr/bin/env bash
           set -euo pipefail
-          MOUNT="$HOME/.local/share/agentos/gdrive-remote"
+          MOUNT="$HOME/.local/share/agentos/gdrive-remote-v2"
           STATE="$HOME/.local/state/agentos/gdrive-health.state"
           now="$(date -Is)"
 
