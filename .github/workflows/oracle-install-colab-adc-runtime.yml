@@ -47,7 +47,7 @@ jobs:
           mkdir -p "$ROOT" "$BIN" /home/ubuntu/.config/agentos
           chmod 700 /home/ubuntu/.config/agentos
 
-          if [ ! -x "$SDK/bin/gcloud" ] || [ "$("$SDK/bin/gcloud" version --format='value(Google Cloud SDK)' 2>/dev/null | head -n1 || true)" != "$VERSION" ]; then
+          if [ ! -x "$SDK/bin/gcloud" ] || [ "$("$SDK/bin/gcloud" version 2>/dev/null | awk -F': ' '/Google Cloud SDK/ {print $2; exit}' || true)" != "$VERSION" ]; then
             ARCHIVE="$TMP/google-cloud-cli-linux-arm.tar.gz"
             curl -fsSL --retry 4 --retry-all-errors               https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-arm.tar.gz               -o "$ARCHIVE"
             echo "$EXPECTED  $ARCHIVE" | sha256sum -c -
@@ -64,7 +64,7 @@ jobs:
           rm -f /tmp/agentos-colab-adc-bootstrap.sh
 
           export PATH="$BIN:$PATH"
-          test "$(gcloud version --format='value(Google Cloud SDK)' | head -n1)" = "$VERSION"
+          test "$(gcloud version | awk -F': ' '/Google Cloud SDK/ {print $2; exit}')" = "$VERSION"
 
           ADC=/home/ubuntu/.config/gcloud/application_default_credentials.json
           if [ -f "$ADC" ]; then
