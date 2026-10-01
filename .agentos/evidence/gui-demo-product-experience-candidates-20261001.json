@@ -1,0 +1,67 @@
+{
+  "schema": "agentos.product-experience-candidate-set/v0.1",
+  "product_id": "agentos-gui-web-automation",
+  "observed_at": "2026-10-01T09:02:55Z",
+  "source_session": "demo://chatgpt-gemini-threads/20261001",
+  "status": "validated_candidate",
+  "units": [
+    {
+      "id": "gui.text.unicode-clipboard",
+      "kind": "rule",
+      "claim": "Non-ASCII or long GUI text input should use Unicode clipboard paste instead of direct SendKeys typing so execution is independent of the active Windows IME.",
+      "scope": "Windows interactive GUI text entry",
+      "source_experience": [
+        "gui-demo-gemini-unicode-collab-008",
+        "gui-demo-gemini-creative-only-009"
+      ],
+      "validation": [
+        "Gemini received complete Traditional Chinese prompts after Unicode clipboard paste."
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "gui.url.semantic-open",
+      "kind": "rule",
+      "claim": "Absolute web navigation should use desktop.open_url rather than keyboard entry into the browser address bar.",
+      "scope": "Windows browser navigation",
+      "source_experience": [
+        "gui-demo-threads-login-probe-016",
+        "gui-demo-threads-open-url-017"
+      ],
+      "validation": [
+        "Keyboard URL entry was corrupted by input state; desktop.open_url opened Threads successfully."
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "gui.media.clipboard-first",
+      "kind": "heuristic",
+      "claim": "When a web composer accepts pasted images, prefer clipboard image paste before native file-picker automation.",
+      "scope": "Web social composers that support image paste",
+      "source_experience": [
+        "gui-demo-threads-force-file-submit-029",
+        "gui-demo-threads-paste-image-030"
+      ],
+      "validation": [
+        "Native file picker automation repeatedly failed; clipboard image paste produced a visible remove-media control in Threads."
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "gui.action.postcondition-required",
+      "kind": "pattern",
+      "claim": "A GUI action is not complete when the click/keystroke returns; require a semantic postcondition before advancing.",
+      "scope": "All interactive GUI plans",
+      "source_experience": [
+        "gui-demo-threads-download-image-013",
+        "gui-demo-threads-publish-031",
+        "gui-demo-threads-profile-verify-034"
+      ],
+      "validation": [
+        "Download and publish steps required explicit file/toast/profile verification to distinguish invocation from completion."
+      ],
+      "confidence": 0.98
+    }
+  ],
+  "promotion_note": "Do not promote to trusted/canonical until a later independent execution loads these units and demonstrates measurable uplift."
+}
