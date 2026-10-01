@@ -3,6 +3,7 @@ name: Deploy Realm Fabric Core
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - '.github/workflows/deploy-realm-fabric-core.yml'
       - 'agent_core/resolve_facade.py'
