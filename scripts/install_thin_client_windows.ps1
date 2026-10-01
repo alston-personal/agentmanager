@@ -32,6 +32,7 @@ if ($major -lt 3) { throw "Python 3 is required; found $version" }
 $files = @(
   'agentos_node/__init__.py',
   'agentos_node/thin_client.py',
+  'agentos_node/node_adapter.py',
   'agentos_node/interactive_desktop.py',
   'agentos_node/thin_client_transport.py',
   'agentos_node/client_cli.py',
@@ -54,7 +55,7 @@ if ($clientCliText -notmatch "encoding='utf-8-sig'") {
 if (-not (Test-Path (Join-Path $Pkg 'interactive_desktop.py'))) {
   throw "Interactive Desktop Adapter missing (ref=$Ref)"
 }
-foreach ($required in @('session_bridge.py','agent_surfaces.py','employee_wake_inbox.py','runtime_provenance.py')) {
+foreach ($required in @('node_adapter.py','session_bridge.py','agent_surfaces.py','employee_wake_inbox.py','runtime_provenance.py')) {
   if (-not (Test-Path (Join-Path $Pkg $required))) {
     throw "Thin Client dependency missing: $required (ref=$Ref)"
   }
