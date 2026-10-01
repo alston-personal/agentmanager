@@ -1,9 +1,9 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-smoke-stage-019",
-  "action": "desktop.demo.stage",
+  "nonce": "desktop-demo-smoke-stop-020",
+  "action": "desktop.demo.stop",
   "payload": {
-    "stage": "Threads / verification smoke"
+    "final_stage": "Verified / recorder smoke PASS"
   }
 }
