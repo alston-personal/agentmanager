@@ -48,7 +48,8 @@ jobs:
               process.exit(2);
             }
             const base='http://127.0.0.1:9222';
-            const q='貓';
+            const queries=['貓咪','動漫','羽球','台灣旅行'];
+            const q=queries[0];
             const targetUrl='https://www.threads.com/search?q='+encodeURIComponent(q)+'&serp_type=recent';
             const target=await httpJson('PUT', base+'/json/new?'+encodeURIComponent(targetUrl));
             const wsurl=String(target.webSocketDebuggerUrl||'');
@@ -85,8 +86,10 @@ jobs:
 
             await cmd('Runtime.enable');
             await cmd('Page.enable');
-            await sleep(8000);
-            const expr=`(()=>{
+            async function readRows(query){
+              await cmd('Runtime.evaluate',{expression:'location.href='+JSON.stringify('https://www.threads.com/search?q='+encodeURIComponent(query)+'&serp_type=recent')});
+              await sleep(6500);
+              const expr=`(()=>{
               const links=[...document.querySelectorAll('a[href*="/post/"]')];
               const rows=[];
               const seen=new Set();
@@ -111,22 +114,32 @@ jobs:
                 rows
               };
             })()`;
-            const res=await cmd('Runtime.evaluate',{expression:expr,returnByValue:true});
-            const val=(((res||{}).result||{}).result||{}).value||{};
-            ws.close();
-
-            const current=String(val.url||'');
-            const low=current.toLowerCase();
-            if(low.includes('login')||low.includes('accountscenter')){
-              console.log('threads_web_search_probe=LOGIN_REQUIRED');
-              process.exit(2);
+              const res=await cmd('Runtime.evaluate',{expression:expr,returnByValue:true});
+              return (((res||{}).result||{}).result||{}).value||{};
             }
-            const rows=Array.isArray(val.rows)?val.rows:[];
+            const all=[];
+            const seen=new Set();
+            for(const query of queries){
+              const val=await readRows(query);
+              const body=String(val.body||'');
+              const loggedOut=/Log in|登入/.test(body);
+              for(const row of (Array.isArray(val.rows)?val.rows:[])){
+                const href=String(row.href||'').replace(/\/media$/,'');
+                const text=String(row.text||'').trim();
+                if(!href||!text||seen.has(href)) continue;
+                seen.add(href);
+                const normalized=text.toLowerCase();
+                const relevant=normalized.includes(query.toLowerCase());
+                if(!relevant) continue;
+                all.push({query,href,text:text.slice(0,500),logged_out:loggedOut});
+                if(all.length>=16) break;
+              }
+              if(all.length>=16) break;
+            }
+            ws.close();
             console.log('threads_web_search_probe=PASS');
-            console.log('threads_web_search_url='+current);
-            console.log('threads_web_search_row_count='+rows.length);
-            console.log('threads_web_search_rows='+JSON.stringify(rows));
-            console.log('threads_web_search_body_sample='+JSON.stringify(String(val.body||'').slice(0,1200)));
+            console.log('threads_web_search_candidate_count='+all.length);
+            console.log('threads_web_search_candidates='+JSON.stringify(all));
           }
 
           main().catch(err=>{
