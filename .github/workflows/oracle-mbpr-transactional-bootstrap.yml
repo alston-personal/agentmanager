@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           SHA="$1"
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          export PYTHONPATH=/home/ubuntu/agentmanager
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current
           python3 - "$SHA" <<'PY'
           import sys,time
           from agent_core.realm_fabric import RealmFabricStore
@@ -92,7 +92,7 @@ jobs:
           set -euo pipefail
           SHA="$1"
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          export PYTHONPATH=/home/ubuntu/agentmanager
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current
           python3 - "$SHA" <<'PY'
           import sys,time
           from agent_core.node_registry import NodeRegistry
@@ -120,7 +120,7 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}"             bash -s <<'REMOTE'
           set -euo pipefail
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          export PYTHONPATH=/home/ubuntu/agentmanager
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current
           python3 - <<'PY'
           import time
           from agent_core.realm_fabric import RealmFabricStore
@@ -154,7 +154,7 @@ jobs:
           set -euo pipefail
           SHA="$1"
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          export PYTHONPATH=/home/ubuntu/agentmanager
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current
           python3 - "$SHA" <<'PY'
           import sys,time
           from agent_core.realm_fabric import RealmFabricStore
@@ -190,7 +190,7 @@ jobs:
           set -euo pipefail
           SHA="$1"
           export AGENT_DATA_ROOT=/home/ubuntu/agent-data
-          export PYTHONPATH=/home/ubuntu/agentmanager
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current
           python3 - "$SHA" <<'PY'
           import sys,json
           from agent_core.node_registry import NodeRegistry
