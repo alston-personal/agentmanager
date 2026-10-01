@@ -1,11 +1,9 @@
 name: Oracle Integrate Layout Lab Into Official Site
 
 on:
+  # Legacy Oracle integration is quarantined to explicit invocation until its
+  # execution body is migrated from the generic self-hosted runner to AgentOS Scheduler.
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/oracle-integrate-layoutlab-official-site.yml'
-      - 'scripts/layoutlab_api.py'
 
 permissions:
   contents: write
@@ -46,26 +44,26 @@ jobs:
           port=os.environ['PORT']
           instruction = f"""Deploy Layout Lab into the existing studio.milkcat.org site with the smallest possible change.
 
-Verified inputs:
-- website checkout: /home/ubuntu/zeus-writer
-- website build root: /home/ubuntu/zeus-writer/website
-- expected static artifact: /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
-- API source: /home/ubuntu/agentmanager/scripts/layoutlab_api.py
-- LayoutLib root: /home/agentos-node/projects/layoutlib
-- governed API port: {port}
+          Verified inputs:
+          - website checkout: /home/ubuntu/zeus-writer
+          - website build root: /home/ubuntu/zeus-writer/website
+          - expected static artifact: /home/ubuntu/zeus-writer/website/dist/layout-lab/index.html
+          - API source: /home/ubuntu/agentmanager/scripts/layoutlab_api.py
+          - LayoutLib root: /home/agentos-node/projects/layoutlib
+          - governed API port: {port}
 
-Required execution:
-1. Inspect the current site server/config and preserve every unrelated route.
-2. If /home/ubuntu/zeus-writer is clean, fetch and fast-forward its configured branch, then npm build the website. If it is dirty, do not overwrite local changes; report the exact dirty paths and continue only if the existing dist/layout-lab artifact is sufficient.
-3. Create/update ubuntu user service layoutlab-api.service. It must run /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}; set LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib; restart on failure. Use the existing ubuntu user manager, not a root service.
-4. Verify localhost health at http://127.0.0.1:{port}/healthz returns HTTP 200 and JSON ok=true.
-5. Add only the reverse-proxy route needed for /layout-lab/api/ on studio.milkcat.org, preserving the static /layout-lab/ route and all unrelated routes. Back up the one config changed. Validate the web-server configuration before reload. If validation fails, restore the backup and do not reload.
-6. Reload only the affected existing web server via the host's existing privilege mechanism. Do not change DNS, TLS, firewall, or unrelated virtual hosts.
-7. Verify publicly: https://studio.milkcat.org/layout-lab/ is HTTP 200 and contains Layout Lab; https://studio.milkcat.org/layout-lab/api/healthz is HTTP 200 with ok=true.
-8. Build a small synthetic high-contrast PNG and POST it as multipart field image to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel=0.02, wall_height_m=2.7, threshold=128, min_wall_length_px=16. Require HTTP 200, ok=true, Spatial IR and at least one wall.
-9. Return exact changed paths, unit status, web-server validation/reload result, public status codes and parse wall count.
+          Required execution:
+          1. Inspect the current site server/config and preserve every unrelated route.
+          2. If /home/ubuntu/zeus-writer is clean, fetch and fast-forward its configured branch, then npm build the website. If it is dirty, do not overwrite local changes; report the exact dirty paths and continue only if the existing dist/layout-lab artifact is sufficient.
+          3. Create/update ubuntu user service layoutlab-api.service. It must run /usr/bin/python3 /home/ubuntu/agentmanager/scripts/layoutlab_api.py --host 127.0.0.1 --port {port}; set LAYOUTLIB_ROOT=/home/agentos-node/projects/layoutlib; restart on failure. Use the existing ubuntu user manager, not a root service.
+          4. Verify localhost health at http://127.0.0.1:{port}/healthz returns HTTP 200 and JSON ok=true.
+          5. Add only the reverse-proxy route needed for /layout-lab/api/ on studio.milkcat.org, preserving the static /layout-lab/ route and all unrelated routes. Back up the one config changed. Validate the web-server configuration before reload. If validation fails, restore the backup and do not reload.
+          6. Reload only the affected existing web server via the host's existing privilege mechanism. Do not change DNS, TLS, firewall, or unrelated virtual hosts.
+          7. Verify publicly: https://studio.milkcat.org/layout-lab/ is HTTP 200 and contains Layout Lab; https://studio.milkcat.org/layout-lab/api/healthz is HTTP 200 with ok=true.
+          8. Build a small synthetic high-contrast PNG and POST it as multipart field image to https://studio.milkcat.org/layout-lab/api/parse with meters_per_pixel=0.02, wall_height_m=2.7, threshold=128, min_wall_length_px=16. Require HTTP 200, ok=true, Spatial IR and at least one wall.
+          9. Return exact changed paths, unit status, web-server validation/reload result, public status codes and parse wall count.
 
-You are authorized only for these Layout Lab deployment changes. Do not perform unrelated cleanup or configuration changes."""
+          You are authorized only for these Layout Lab deployment changes. Do not perform unrelated cleanup or configuration changes."""
           client=AntigravityRelayClient('/home/ubuntu/agent-data/runtime/antigravity-relay')
           capsule=client.submit(
               project_id='layoutlib',
