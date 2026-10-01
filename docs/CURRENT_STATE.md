@@ -114,6 +114,8 @@ An online environment is identified by environment + canonical repository + sour
 ## Governance invariants
 
 - `content.publish` provider resolution does not mint social write acceptance; #154/#267 exact product/platform/operation/account/write-intent acceptance still governs social effects.
+- Installed `content.publish.social.write` means the bounded semantic action exists in the exact Action Relay generation; it does not mean a provider/account has proven write entitlement.
+- Content-social idempotency is keyed above Social Runtime acceptance. After acceptance is issued, an ambiguous provider result becomes reconcile-required and must not be blind-retried.
 - A Node or GUI executor being online does not make an X web publisher READY; provider/session/account health requires its own evidence.
 - Capability does not imply authority.
 - Event does not imply authority; events trigger reconciliation only.

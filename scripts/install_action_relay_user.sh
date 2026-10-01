@@ -111,21 +111,25 @@ from agentos_node.executor_job_action_relay import ACTION, ACTIONS
 from agentos_node.runtime_converge_action_relay import ACTION as CONVERGE_ACTION
 from agentos_node.content_publish_action_relay import ACTION as X_AUTH_ACTION
 from agentos_node.content_publish_social_action_relay import BOOTSTRAP_ACTION, INSPECT_ACTION
+from agentos_node.content_publish_social_write_action_relay import WRITE_ACTION
 assert ACTION == 'agentos.executor.job'
 assert CONVERGE_ACTION == 'agentos.runtime.converge'
 assert X_AUTH_ACTION == 'agentos.content.x.auth.inspect'
 assert BOOTSTRAP_ACTION == 'agentos.content.social.bootstrap'
 assert INSPECT_ACTION == 'agentos.content.social.inspect'
+assert WRITE_ACTION == 'agentos.content.social.write'
 assert ACTION in ACTIONS
 assert CONVERGE_ACTION in ACTIONS
 assert X_AUTH_ACTION in ACTIONS
 assert BOOTSTRAP_ACTION in ACTIONS
 assert INSPECT_ACTION in ACTIONS
+assert WRITE_ACTION in ACTIONS
 print('action_runtime_import=ok')
 print('executor_job_action_loaded=PASS')
 print('runtime_converge_action_loaded=PASS')
 print('content_publish_x_auth_action_loaded=PASS')
 print('content_publish_social_actions_loaded=PASS')
+print('content_publish_social_write_action_loaded=PASS')
 print('actions='+','.join(sorted(ACTIONS)))
 PY
 )

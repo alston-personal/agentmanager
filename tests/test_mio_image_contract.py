@@ -25,6 +25,10 @@ class FakeImageTransport:
         if path=="me/threads_publish":
             assert params=={"creation_id":"image-container-100"}
             return {"id":"image-post-200"}
+        if path=="image-post-200":
+            assert method=="GET"
+            assert params=={"fields":"permalink"}
+            return {"permalink":"https://www.threads.net/@sunlake.milkcat/post/image-post-200"}
         raise AssertionError(path)
 
 def request(**kwargs):
@@ -58,7 +62,8 @@ class MioImageContractTests(unittest.TestCase):
         self.assertEqual(create["media_type"],"IMAGE")
         self.assertEqual(create["alt_text"],"黃昏裡的公園")
         self.assertNotIn("auto_publish_text",create)
-        self.assertEqual([v[0] for v in transport.calls],["me/threads","image-container-100","image-container-100","me/threads_publish"])
+        self.assertEqual([v[0] for v in transport.calls],["me/threads","image-container-100","image-container-100","me/threads_publish","image-post-200"])
+        self.assertEqual(receipt["permalink"],"https://www.threads.net/@sunlake.milkcat/post/image-post-200")
 
     def test_platform_image_readback_requires_media_and_https(self):
         normalized=ThreadsCapability._safe_media({"id":"image-post-200","text":"散步","media_type":"IMAGE","media_url":"https://img.test/a.png"})
@@ -102,6 +107,10 @@ class MioImageContractTests(unittest.TestCase):
                 if path=="me/threads_publish":
                     assert d=={"creation_id":"carousel-parent"}
                     return {"id":"public-carousel-post"}
+                if path=="public-carousel-post":
+                    assert method=="GET"
+                    assert d=={"fields":"permalink"}
+                    return {"permalink":"https://www.threads.net/@sunlake.milkcat/post/public-carousel-post"}
                 raise AssertionError((path,method,d))
         urls=["https://cdn.example.org/first.jpg","https://cdn.example.org/second.jpg"]
         vault=EphemeralCredentialVault()
@@ -115,7 +124,8 @@ class MioImageContractTests(unittest.TestCase):
         self.assertTrue(receipt["ok"],receipt)
         self.assertEqual(receipt["platform_object_id"],"public-carousel-post")
         self.assertEqual([call[0] for call in transport.calls],[
-            "me/threads","child-1","me/threads","child-2","me/threads","carousel-parent","me/threads_publish"])
+            "me/threads","child-1","me/threads","child-2","me/threads","carousel-parent","me/threads_publish","public-carousel-post"])
+        self.assertEqual(receipt["permalink"],"https://www.threads.net/@sunlake.milkcat/post/public-carousel-post")
         self.assertEqual(transport.calls[0][2]["alt_text"],"燉飯與干貝")
         self.assertEqual(transport.calls[2][2]["alt_text"],"甜點")
 

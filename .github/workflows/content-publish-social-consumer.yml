@@ -121,7 +121,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user start agentos-action-relay-reconcile.service
-          for i in $(seq 1 120); do
+          for i in $(seq 1 390); do
             if python3 - "$SOURCE_COMMIT" <<'PY'
           import json,sys
           from pathlib import Path

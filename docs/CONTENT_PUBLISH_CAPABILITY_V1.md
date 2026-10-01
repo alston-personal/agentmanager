@@ -157,9 +157,48 @@ Every successful or prepared operation returns a sanitized
 `agentos.content-publish-receipt/v1`. Receipts include account_ref, provider,
 status, content_hash and write_intent_id but never credentials.
 
+The governed Threads write bridge persists a host-local intent ledger before
+requesting Social Runtime write acceptance. Ledger identity is
+`project_id + platform + account_ref + write_intent_id`; the exact payload is
+bound by a request digest that includes `content_hash` and the public write
+payload.
+
+- a completed publish returns the stored receipt for subsequent identical intents;
+- the same write intent with a different request digest is a conflict;
+- failure before Social Runtime acceptance is explicitly `safe_to_retry=true`;
+- once acceptance has been issued, any transport/provider ambiguity is persisted
+  as `unknown` with `reconcile_required=true`, and a later capsule must not
+  blind-retry it.
+
+This keeps idempotency above one-shot Social Runtime acceptance: issuing a new
+acceptance cannot accidentally duplicate a previously ambiguous write.
+
 A provider must reconcile an UNKNOWN side effect before retrying the same
 `write_intent_id + content_hash + platform + account_ref`. Blind retry after
 timeout is forbidden.
+
+## Governed Social write boundary
+
+`agentos.content.social.write` is a fixed Ubuntu Action Relay action for the
+first migrated live provider path: ZeusWriter -> Threads. It accepts only a
+versioned typed request for the allowlisted `zeus-writer` project, `threads`
+platform, registered `account_ref`, `publish|reply` operation, bounded text,
+optional HTTPS image metadata, `write_intent_id`, 64-hex `content_hash`, and
+the explicit `approved-content-publish` authority label. Token, cookie, path,
+endpoint, product-id, shell and executable fields are not part of the contract.
+
+The bridge resolves the host-local Account Registry, issues the exact existing
+Social Runtime write acceptance using node-local control credentials, then
+invokes the normal `/v1/social/publish|reply` endpoint with the product-specific
+key. Provider/control credentials are never returned to the product caller.
+
+The action being installed does **not** prove a platform account is write-ready.
+Provider/account health and effect-level authority remain independent, and no
+automatic live-write workflow is attached to this action.
+
+Successful Threads writes perform a best-effort provider readback for
+`permalink` after the provider object ID is known. A readback failure does not
+downgrade the already successful write.
 
 ## Incremental migration
 

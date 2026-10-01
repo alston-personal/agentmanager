@@ -64,6 +64,7 @@ ACTIONS[ACTION] = _execute
 from agentos_node import runtime_converge_action_relay as _runtime_converge_action_relay  # noqa: E402,F401
 from agentos_node import content_publish_action_relay as _content_publish_action_relay  # noqa: E402,F401
 from agentos_node import content_publish_social_action_relay as _content_publish_social_action_relay  # noqa: E402,F401
+from agentos_node import content_publish_social_write_action_relay as _content_publish_social_write_action_relay  # noqa: E402,F401
 
 
 class ActionRelayExecutorJobDispatcher:

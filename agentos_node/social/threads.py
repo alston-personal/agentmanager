@@ -441,7 +441,30 @@ class ThreadsCapability:
                     raise ThreadsProviderError("threads_publish_id_missing")
             else:
                 thread_id = creation_id
-            return receipt_for(request, started_at=started, ok=True, capability=f"social.threads.{request.operation}", platform_object_id=thread_id).to_dict()
+
+            # Publication success is authoritative once the provider returned an
+            # object id. Permalink lookup is a best-effort readback and must not
+            # downgrade a successful write if the follow-up read is unavailable.
+            permalink = None
+            try:
+                detail = self.transport.api(
+                    thread_id,
+                    token=token,
+                    params={"fields": "permalink"},
+                )
+                candidate = str(detail.get("permalink") or "").strip()
+                if candidate.startswith("https://"):
+                    permalink = candidate
+            except ThreadsProviderError:
+                pass
+            return receipt_for(
+                request,
+                started_at=started,
+                ok=True,
+                capability=f"social.threads.{request.operation}",
+                platform_object_id=thread_id,
+                permalink=permalink,
+            ).to_dict()
         except ThreadsProviderError as exc:
             safe_error = ("threads_carousel_" + carousel_stage + "_" + str(exc)) if request.image_urls else str(exc)
             return receipt_for(request, started_at=started, ok=False, capability=f"social.threads.{request.operation}", error_code=safe_error).to_dict()
