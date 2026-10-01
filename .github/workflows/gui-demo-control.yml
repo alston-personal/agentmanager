@@ -1,0 +1,105 @@
+name: GUI Demo Control
+
+on:
+  push:
+    branches:
+      - demo/gui-gemini-threads-20261001
+    paths:
+      - '.agentos/commands/gui-demo-control.json'
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Dispatch GUI demo task
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(python3 - <<'PY'
+          import base64, pathlib
+          p=pathlib.Path('.agentos/commands/gui-demo-control.json').read_bytes()
+          print(base64.b64encode(p).decode())
+          PY
+          )"
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s -- "$payload" <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/agentmanager
+          cd /home/ubuntu/agentmanager
+          PAYLOAD_B64="$1" python3 - <<'PY'
+          import base64, json, os, time
+          from agent_core.node_registry import NodeRegistry
+          from agent_core.realm_fabric import RealmFabricStore
+
+          cmd=json.loads(base64.b64decode(os.environ['PAYLOAD_B64']).decode('utf-8'))
+          if cmd.get('schema')!='agentos.gui-demo-command/v0.1':
+              raise SystemExit('invalid_schema')
+          node_id=str(cmd.get('node_id') or '')
+          if node_id!='VO10005870':
+              raise SystemExit('invalid_node')
+          action=str(cmd.get('action') or '')
+          allowed={
+              'desktop.session.inspect',
+              'desktop.windows.inspect',
+              'desktop.screenshot',
+              'desktop.open_url',
+              'desktop.mouse',
+              'desktop.keyboard',
+              'shell.exec',
+          }
+          if action not in allowed:
+              raise SystemExit('action_not_allowed:'+action)
+
+          nodes=NodeRegistry().node_map().get('nodes') or []
+          node=next((n for n in nodes if str(n.get('node_id') or '')==node_id),None)
+          if not node:
+              raise SystemExit('node_not_registered')
+          status=str(node.get('effective_status') or node.get('status') or '')
+          caps=set(node.get('capabilities') or [])
+          roots=(node.get('workspace_roots') or {}).get('readable') or []
+          if status!='online':
+              raise SystemExit('node_not_online:'+status)
+          if action not in caps:
+              raise SystemExit('capability_missing:'+action)
+          if not roots:
+              raise SystemExit('node_missing_readable_workspace')
+
+          task={
+              'schema':'agentos.node-task/v0.1',
+              'task_id':'gui-demo-'+str(cmd.get('nonce') or ''),
+              'action':action,
+              'cognition_ids_used':['demo://chatgpt-gemini-threads/20261001'],
+          }
+          task.update(dict(cmd.get('payload') or {}))
+          if action=='shell.exec':
+              task.setdefault('cwd', str(roots[0]))
+          fabric=RealmFabricStore()
+          existing=fabric.get_receipt(task['task_id'])
+          if existing is None:
+              fabric.queue_task(node_id,task)
+              print('queued=PASS',flush=True)
+          receipt=existing
+          for _ in range(60):
+              if receipt is not None:
+                  break
+              time.sleep(2)
+              receipt=fabric.get_receipt(task['task_id'])
+          if receipt is None:
+              raise SystemExit('receipt_timeout')
+          print('RECEIPT_JSON='+json.dumps(receipt,ensure_ascii=False,separators=(',',':')))
+          if receipt.get('ok') is not True:
+              raise SystemExit('task_failed:'+str(receipt.get('error') or 'unknown'))
+          PY
+          REMOTE
