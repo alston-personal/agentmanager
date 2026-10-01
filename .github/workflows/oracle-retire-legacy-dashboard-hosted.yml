@@ -1,0 +1,76 @@
+name: Hosted Retire Legacy Dashboard Runtime
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-retire-legacy-dashboard-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Retire only stale port-3000 dashboard process group
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          listener="$(ss -ltnp 2>/dev/null | awk '/:3000 / && /next-server/ {print}')"
+          test -n "$listener"
+          pid="$(printf '%s\n' "$listener" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1)"
+          test -n "$pid"
+          cmd="$(ps -o args= -p "$pid" || true)"
+          printf '%s' "$cmd" | grep -q 'next-server'
+          pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
+          test -n "$pgid"
+          ps -eo pgid=,args= | awk -v g="$pgid" '$1==g {$1=""; print substr($0,2)}' >/tmp/agentos-port3000-group.txt
+          grep -q 'next-server' /tmp/agentos-port3000-group.txt
+          grep -q 'npm start' /tmp/agentos-port3000-group.txt
+          echo "legacy_dashboard_pid=$pid"
+          echo "legacy_dashboard_pgid=$pgid"
+          cat /tmp/agentos-port3000-group.txt
+          kill -TERM -- "-$pgid"
+          for i in $(seq 1 20); do
+            if ! ss -ltnp 2>/dev/null | grep -q ':3000 '; then break; fi
+            sleep 1
+          done
+          ! ss -ltnp 2>/dev/null | grep -q ':3000 '
+          systemctl --user restart agentos-dashboard.service
+          for i in $(seq 1 30); do
+            if systemctl --user is-active --quiet agentos-dashboard.service && curl -fsS --max-time 2 http://127.0.0.1:3000/dashboard >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          systemctl --user is-active --quiet agentos-dashboard.service
+          BODY=/tmp/bootstrap-after-retire
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 5 'http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "local_bootstrap_http=$CODE"
+          cat "$BODY"; echo
+          test "$CODE" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$BODY"
+          echo 'legacy_dashboard_retired=PASS'
+          echo 'canonical_dashboard_active=PASS'
+          REMOTE
+      - name: Verify public route
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=/tmp/public-bootstrap-after-retire
+          CODE=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 10 'https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__probe__' || true)
+          echo "public_bootstrap_http=$CODE"
+          test "$CODE" = 401
+          ! grep -q 'Realm gateway route not allowlisted' "$BODY"
+          echo 'public_bootstrap_routing=PASS'
+
+# trigger: initial
