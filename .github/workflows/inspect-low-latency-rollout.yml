@@ -58,11 +58,16 @@ jobs:
           echo '=== action relay runtime markers ==='
           runtime=/home/ubuntu/.local/share/agentos/action-relay-runtime/agentos_node/action_relay.py
           test -f "$runtime" && {
-            grep -n "agentos.realm-fabric.install_release" "$runtime" | head -3 || true
-            grep -n "core_project_runtime_binding_v1" "$runtime" | head -3 || true
-            grep -n "realm_fabric_release_isolation_v1" "$runtime" | head -3 || true
-            grep -n "realm_fabric_process_attestation_v1" "$runtime" | head -3 || true
+            for marker in               "agentos.realm-fabric.install_release"               "agentos.project.register_core"               "core_project_runtime_binding_v1"               "realm_fabric_release_isolation_v1"               "realm_fabric_process_attestation_v1"; do
+              if grep -q "$marker" "$runtime"; then
+                echo "marker:$marker=PASS"
+              else
+                echo "marker:$marker=MISSING"
+              fi
+            done
           }
+          echo '=== chronos/bootstrap activity ==='
+          pgrep -af 'chronos-safe|bootstrap-action-relay|scripts/chronos.py|agentos-action-relay' || true
 
           echo '=== health ==='
           curl -fsS http://127.0.0.1:8780/v1/health || true
