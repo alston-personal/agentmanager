@@ -9,6 +9,7 @@ fi
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 SOURCE_COMMIT="${AGENTOS_SOURCE_COMMIT:-}"
 DASH="$REPO/dashboard"
+PORT_MANAGER="$REPO/scripts/core_services/port_manager.py"
 ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
@@ -20,6 +21,11 @@ LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstra
 [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'ERROR: AGENTOS_SOURCE_COMMIT must be exact lowercase 40-hex commit' >&2; exit 2; }
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
+
+[ -f "$PORT_MANAGER" ] || { echo "ERROR: Port Manager missing" >&2; exit 2; }
+python3 "$PORT_MANAGER" ensure 3000 agentos-dashboard --desc "AgentOS Dashboard / Realm Gateway"
+python3 "$PORT_MANAGER" ensure 8780 agentos-realm-fabric --desc "AgentOS ONE Realm Fabric"
+echo "port_governance=PASS"
 
 git -C "$REPO" fetch origin "$SOURCE_COMMIT"
 git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
