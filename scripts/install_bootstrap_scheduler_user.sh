@@ -73,7 +73,7 @@ PYTHONPATH="$STAGE" /usr/bin/python3 -m py_compile   "$STAGE/agentos_node/bootst
 
 PYTHONPATH="$STAGE" /usr/bin/python3 - <<'PY'
 from agent_core.realm_fabric import RealmFabricStore, ReceiptArchiveStore
-from agentos_node.bootstrap_scheduler import action_policy
+from agentos_node.bootstrap_scheduler import policy_for
 print('bootstrap_scheduler_exact_import=PASS')
 PY
 
