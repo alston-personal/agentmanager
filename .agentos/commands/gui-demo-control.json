@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "inspect-session-001",
-  "action": "desktop.session.inspect",
+  "nonce": "inspect-windows-002",
+  "action": "desktop.windows.inspect",
   "payload": {}
 }
