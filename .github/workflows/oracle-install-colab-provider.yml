@@ -65,7 +65,7 @@ jobs:
 
           if ! command -v uv >/dev/null 2>&1; then
             "$PYTHON_BIN" -m pip install --user --disable-pip-version-check --no-input uv >/dev/null
-            export PATH="/home/ubuntu/.local/bin:$PATH"
+            export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.local/opt/google-cloud-sdk/bin:$PATH"
           fi
           command -v uv >/dev/null 2>&1 || { echo "uv_install=failed" >&2; exit 12; }
 
@@ -93,7 +93,7 @@ jobs:
           mv -Tf "$RUNTIME_ROOT/.candidate-$RUN_ID" "$LIVE"
 
           COLAB_VERSION="$(colab version 2>/dev/null | head -n 1 | tr -d '\r' | sed 's/["\\]/_/g')"
-          AUTH_STATUS="AUTH_REQUIRED_OR_UNAVAILABLE"
+          AUTH_STATUS="ADC_REQUIRED_OR_UNAVAILABLE"
           BALANCE_JSON="null"
           RATE_JSON="null"
           ASSIGNMENTS_JSON="null"
@@ -101,7 +101,7 @@ jobs:
           USAGE_FILE="$TMP/usage.txt"
           : > "$USAGE_FILE"
           chmod 600 "$USAGE_FILE"
-          if timeout 25s colab --auth=oauth2 usage >"$USAGE_FILE" 2>&1; then
+          if timeout 25s colab --auth=adc usage >"$USAGE_FILE" 2>&1; then
             AUTH_STATUS="READY"
             PARSED=$(python3 - "$USAGE_FILE" <<'PY'
           import json,re,sys
