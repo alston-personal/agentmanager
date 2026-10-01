@@ -18,6 +18,7 @@ from agentos_node import interactive_desktop
 from agentos_node.agent_surfaces import discover_surfaces
 from agentos_node.runtime_provenance import observe_runtime
 from agentos_node.session_bridge import FileSessionBridge
+from agentos_node.node_adapter import AdapterRegistry, load_configured_adapters
 
 
 def _linux_gui_worker_capabilities() -> list[str]:
@@ -98,9 +99,10 @@ class ThinClient:
         'code', 'cursor', 'antigravity', 'claude', 'codex', 'gemini',
     )
 
-    def __init__(self, identity: NodeIdentity, policy: ThinClientPolicy):
+    def __init__(self, identity: NodeIdentity, policy: ThinClientPolicy, adapters: AdapterRegistry | None = None):
         self.identity = identity
         self.policy = policy
+        self.adapters = adapters if adapters is not None else AdapterRegistry(load_configured_adapters())
         self.hostname = socket.gethostname()
         self.started_at = _utc_now()
 
@@ -159,6 +161,7 @@ class ThinClient:
                 pass
         elif platform.system() == 'Linux':
             caps.extend(_linux_gui_worker_capabilities())
+        caps.extend(self.adapters.capabilities())
         return {
             'schema': 'agentos.node-manifest/v0.1',
             'realm_id': self.identity.realm_id,
@@ -172,6 +175,7 @@ class ThinClient:
             'capabilities': sorted(set(caps)),
             'tool_presence': tools,
             'surface_inventory': surface_inventory,
+            'adapters': self.adapters.describe(),
             'runtime': observe_runtime(),
             'workspace_roots': {
                 'readable': [str(p.expanduser().resolve()) for p in self.policy.readable_roots],
@@ -298,7 +302,12 @@ class ThinClient:
             elif action == 'desktop.keyboard':
                 result = interactive_desktop.keyboard(task)
             else:
-                raise ValueError(f'unsupported action: {action}')
+                adapter = self.adapters.resolve(str(action or ''))
+                if adapter is None:
+                    raise ValueError(f'unsupported action: {action}')
+                result = adapter.execute(task)
+                if not isinstance(result, dict):
+                    raise TypeError(f'adapter result must be object: {adapter.adapter_id}')
             receipt.update(result)
             receipt['ok'] = True
         except Exception as exc:
