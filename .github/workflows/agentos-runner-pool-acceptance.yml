@@ -58,7 +58,7 @@ jobs:
           remote() {
             ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" "$@"
           }
-          CANDIDATE_INFO="$(remote 'AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/.local/share/agentos/bootstrap-scheduler/current python3 -c '"'"'from agentos_node.bootstrap_scheduler import _external_capability_candidate; n,r=_external_capability_candidate(("threads.gui.read",)); print(("ready:"+str(n.get("node_id"))) if n else ("unavailable:"+r))'"'"'')"
+          CANDIDATE_INFO="$(remote 'AGENT_DATA_ROOT=/home/ubuntu/agent-data PYTHONPATH=/home/ubuntu/agentmanager python3 -c '"'"'from agent_core.node_registry import NodeRegistry; ns=NodeRegistry().node_map().get("nodes") or []; xs=[n for n in ns if isinstance(n,dict) and n.get("role")!="core" and str(n.get("node_id") or "")!="oracle-exec"]; on=[n for n in xs if n.get("status")=="online"]; ok=[n for n in on if "threads.gui.read" in set(n.get("capabilities") or [])]; ok=sorted(ok,key=lambda n:((n.get("heartbeat_age_seconds") if isinstance(n.get("heartbeat_age_seconds"),(int,float)) else 10**12),str(n.get("node_id") or ""))); print(("ready:"+str(ok[0].get("node_id"))) if ok else ("unavailable:external_nodes_not_registered" if not xs else ("unavailable:external_nodes_offline" if not on else "unavailable:external_nodes_missing_capability")))'"'"'')"
           echo "runner_pool_test_b_candidate=$CANDIDATE_INFO"
 
           LOCK_LOG="$RUNNER_TEMP/test-b-gui-lock.log"
