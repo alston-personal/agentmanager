@@ -33,14 +33,25 @@ def classify(page):
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     path = parsed.path or "/"
+    is_gemini = host.endswith("gemini.google.com")
+    is_accounts = host.endswith("accounts.google.com")
+    if not (is_gemini or is_accounts):
+        return {
+            "session_id": stable_session_id("gemini", url),
+            "url": url,
+            "title": "",
+            "state": "UNEXPECTED_DESTINATION",
+            "composer_visible": False,
+        }
+
     composer = first_visible(page, COMPOSERS)
     text = body_text(page).lower()
 
-    if host.endswith("gemini.google.com") and composer is not None:
+    if is_gemini and composer is not None:
         state = "READY"
-    elif host.endswith("accounts.google.com"):
+    elif is_accounts:
         state = "LOGIN_REQUIRED"
-    elif host.endswith("gemini.google.com") and any(marker in text for marker in (
+    elif is_gemini and any(marker in text for marker in (
         "sign in", "登入", "登录", "choose an account", "使用 google 帳戶",
     )):
         state = "LOGIN_REQUIRED"
