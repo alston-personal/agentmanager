@@ -1,6 +1,15 @@
-name: Oracle X Read-only Auth Inspect
+name: Content Publish V1 Verify
 
 on:
+  push:
+    branches:
+      - feat/content-publish-capability-v1
+    paths:
+      - 'runtime_core/content_publish.py'
+      - 'tests/test_content_publish.py'
+      - 'config/content_publish_providers.json'
+      - 'scripts/x_auth_inspect.py'
+      - '.github/workflows/oracle-x-auth-inspect.yml'
   workflow_dispatch:
     inputs:
       expected_username:
@@ -12,13 +21,22 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q pytest
+      - run: python -m pytest -q tests/test_content_publish.py
+
+  x-read-only-inspect:
     runs-on: [self-hosted, Linux, ARM64, oracle]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feat/content-publish-capability-v1
 
       - name: Load node-local credentials and run non-publish probe
         shell: bash
@@ -33,7 +51,12 @@ jobs:
               set +a
             fi
           done
-          python3 scripts/x_auth_inspect.py --expected-username "$EXPECTED_USERNAME" | tee /tmp/x-auth-inspect.json
+
+          set +e
+          python3 scripts/x_auth_inspect.py --expected-username "$EXPECTED_USERNAME" > /tmp/x-auth-inspect.json
+          probe_rc=$?
+          set -e
+
           python3 - <<'PY'
           import json
           x=json.load(open('/tmp/x-auth-inspect.json',encoding='utf-8'))
@@ -44,3 +67,4 @@ jobs:
           print('x_write_entitlement='+str(x.get('write_entitlement')))
           print('x_media_entitlement='+str(x.get('media_entitlement')))
           PY
+          echo "x_auth_probe_exit=$probe_rc"
