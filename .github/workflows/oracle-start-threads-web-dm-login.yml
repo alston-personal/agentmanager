@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           REQUEST_ID="threads-web-dm-login-start-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           RECEIPT="$RUNNER_TEMP/threads-web-dm-login-start-receipt.json"
-          AGENTOS_RECEIPT_TIMEOUT_SECONDS=300 \
+          AGENTOS_RECEIPT_TIMEOUT_SECONDS=120 \
             bash scripts/submit_oracle_bootstrap_request_remote.sh \
               agentos.social_threads_web_dm.login_start "$REQUEST_ID" "$GITHUB_SHA" '{}' > "$RECEIPT"
 
