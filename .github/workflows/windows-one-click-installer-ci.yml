@@ -64,7 +64,7 @@ jobs:
             '--timeout-seconds $ApprovalTimeoutSeconds',
             'Get-CimInstance Win32_Process',
             'taskkill.exe',
-            "agentos_node\\.client_cli"
+            'agentos_node\.client_cli'
           )) {
             if(-not $one.Contains($needle)) { throw "missing one-click contract marker: $needle" }
           }
