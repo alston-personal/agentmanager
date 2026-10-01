@@ -22,6 +22,30 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
 
+      - name: Require live MBPR heartbeat before queuing mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          export AGENT_DATA_ROOT=/home/ubuntu/agent-data
+          export PYTHONPATH=/home/ubuntu/.local/share/agentos/realm-fabric/current
+          python3 - <<'PY'
+          from agent_core.node_registry import NodeRegistry
+
+          node=next((n for n in NodeRegistry().node_map().get('nodes',[]) if n.get('node_id')=='mbpr'),None)
+          if not node:
+              raise SystemExit('mbpr_preflight=NOT_REGISTERED')
+          age=node.get('heartbeat_age_seconds')
+          status=node.get('status')
+          print('mbpr_preflight_status='+str(status))
+          print('mbpr_preflight_heartbeat_age_seconds='+str(age))
+          if status != 'online':
+              raise SystemExit('mbpr_preflight=NODE_OFFLINE')
+          print('mbpr_preflight=PASS')
+          PY
+          REMOTE
+
       - name: Validate transactional target
         shell: bash
         run: |
