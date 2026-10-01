@@ -1,7 +1,7 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-runtime-reload-005",
+  "nonce": "desktop-demo-preflight-006",
   "action": "shell.exec",
   "payload": {
     "executable": "powershell",
@@ -9,8 +9,8 @@
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$cmd='Start-Sleep -Seconds 2; Stop-ScheduledTask -TaskName ''AgentOS Thin Client'' -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; Start-ScheduledTask -TaskName ''AgentOS Thin Client'''; Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-Command',$cmd); Write-Output 'reload_scheduled'"
+      "$p=Get-CimInstance Win32_Process | Where-Object {$_.CommandLine -match 'python(.exe)?\"? -m agentos_node.client_cli run'} | Select-Object -First 1 ProcessId,CreationDate,CommandLine; $ff=(Get-Command ffmpeg -ErrorAction SilentlyContinue); $mod=& python -c \"import agentos_node.desktop_demo as d,agentos_node.thin_client as t; print(d.__file__); print('demo_actions='+str(all(x in open(t.__file__,encoding='utf-8').read() for x in ['desktop.demo.start','desktop.demo.stop','desktop.windows.tile'])))\"; [pscustomobject]@{process=$p;ffmpeg=if($ff){$ff.Source}else{$null};module=$mod}|ConvertTo-Json -Depth 4 -Compress"
     ],
-    "timeout_seconds": 20
+    "timeout_seconds": 30
   }
 }
