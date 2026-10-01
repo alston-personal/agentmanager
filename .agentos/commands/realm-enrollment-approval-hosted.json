@@ -1,0 +1,7 @@
+{
+  "schema": "agentos.realm-command/v0.1",
+  "action": "realm.enrollment.approve",
+  "user_code": "H3GM-CCNL",
+  "node_id": "VO10005870",
+  "nonce": "hosted-approve-VO10005870-20261001T0313Z"
+}
