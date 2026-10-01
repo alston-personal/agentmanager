@@ -1,13 +1,13 @@
 {
   "schema": "agentos.gui-demo-command/v0.1",
   "node_id": "VO10005870",
-  "nonce": "desktop-demo-locate-001",
+  "nonce": "desktop-demo-locate-package-002",
   "action": "shell.exec",
   "payload": {
-    "executable": "git",
+    "executable": "python",
     "argv": [
-      "rev-parse",
-      "--show-toplevel"
+      "-c",
+      "import agentos_node,sys; print(agentos_node.__file__); print(sys.executable)"
     ],
     "timeout_seconds": 20
   }
