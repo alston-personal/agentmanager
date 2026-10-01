@@ -1,0 +1,50 @@
+name: Oracle Backup Recovery Verify
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-backup-recovery-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Verify preserved backups
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          DEST="gdrive:backups/recovered-oracle-underlay-20261001"
+          for name in agentos_backup_20260930_030001.tar.gz agentos_backup_20261001_030001.tar.gz; do
+            echo "-- $name"
+            if [ -f "$HOME/gdrive/backups/$name" ]; then
+              local_size="$(stat -c %s "$HOME/gdrive/backups/$name")"
+              echo "local_present=yes size=$local_size"
+            else
+              local_size=""
+              echo "local_present=no"
+            fi
+            remote_size="$(timeout 30 rclone lsf "$DEST/$name" --files-only --format s 2>/dev/null | head -n1 || true)"
+            echo "recovery_remote_size=${remote_size:-missing}"
+            test -n "$remote_size"
+            if [ -n "$local_size" ]; then
+              test "$remote_size" = "$local_size"
+            fi
+          done
+          echo "backup_recovery_verify=PASS"
+          df -h /
+          REMOTE
