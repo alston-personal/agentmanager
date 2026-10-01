@@ -6,7 +6,25 @@ on:
       - core/integration
     paths:
       - 'runtime_core/content_publish.py'
+      - 'runtime_core/x_auth_probe.py'
+      - 'agentos_node/content_publish_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
       - 'tests/test_content_publish.py'
+      - 'tests/test_content_publish_action_relay.py'
+      - 'config/content_publish_providers.json'
+      - 'scripts/x_auth_inspect.py'
+      - 'capabilities/content_publish/**'
+      - '.github/workflows/oracle-x-auth-inspect.yml'
+  push:
+    branches:
+      - core/integration
+    paths:
+      - 'runtime_core/content_publish.py'
+      - 'runtime_core/x_auth_probe.py'
+      - 'agentos_node/content_publish_action_relay.py'
+      - 'agentos_node/executor_job_action_relay.py'
+      - 'tests/test_content_publish.py'
+      - 'tests/test_content_publish_action_relay.py'
       - 'config/content_publish_providers.json'
       - 'scripts/x_auth_inspect.py'
       - 'capabilities/content_publish/**'
@@ -14,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_username:
-        description: Expected X username (without @)
+        description: Expected X username (without @); blank means discover identity
         required: false
         default: ""
 
@@ -31,118 +49,112 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -q pytest
-      - run: python -m pytest -q tests/test_content_publish.py
+      - run: >-
+          python -m pytest -q
+          tests/test_content_publish.py
+          tests/test_content_publish_action_relay.py
 
-  x-read-only-inspect:
-    if: github.event_name == 'workflow_dispatch'
+  x-live-read-only-inspect:
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, Linux, ARM64, oracle]
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Load node-local credentials and run non-publish probe
-        shell: bash
-        env:
-          EXPECTED_USERNAME: ${{ inputs.expected_username }}
-        run: |
-          set -euo pipefail
-          for envfile in /home/ubuntu/agentmanager/.env /home/ubuntu/zeus-writer/.env; do
-            if [ -r "$envfile" ]; then
-              set -a
-              . "$envfile"
-              set +a
-            elif [ -e "$envfile" ]; then
-              echo "x_auth_probe_env_unreadable=$envfile"
-            fi
-          done
-
-          set +e
-          python3 scripts/x_auth_inspect.py --expected-username "$EXPECTED_USERNAME" > /tmp/x-auth-inspect.json
-          probe_rc=$?
-          set -e
-
-          python3 - <<'PY'
-          import json
-          x=json.load(open('/tmp/x-auth-inspect.json',encoding='utf-8'))
-          assert x.get('credential_exposed') is False, x
-          assert x.get('side_effect') is False, x
-          print('x_auth_probe_status='+str(x.get('status')))
-          print('x_auth_identity='+str((x.get('account_identity') or {}).get('username') or 'unknown'))
-          print('x_write_entitlement='+str(x.get('write_entitlement')))
-          print('x_media_entitlement='+str(x.get('media_entitlement')))
-          PY
-          echo "x_auth_probe_exit=$probe_rc"
-
-
-  x-legacy-boundary-inspect:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
-      DEPLOY_HOST_SOURCE: ${{ secrets.AGENTOS_DEPLOY_HOST || secrets.N8N_BASE_URL }}
-      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
-      DEPLOY_SSH_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+      SOURCE_COMMIT: ${{ github.sha }}
       EXPECTED_USERNAME: ${{ inputs.expected_username }}
+      RELAY_ROOT: /home/ubuntu/agent-data/runtime/action-relay
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate deployment settings
+      - name: Converge Oracle Core to exact core/integration generation
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${DEPLOY_HOST_SOURCE:-}"
-          test -n "${DEPLOY_USER:-}"
-          DEPLOY_HOST="${DEPLOY_HOST_SOURCE#*://}"
-          DEPLOY_HOST="${DEPLOY_HOST%%/*}"
-          DEPLOY_HOST="${DEPLOY_HOST%%:*}"
-          test -n "$DEPLOY_HOST"
-          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
+          test "$(id -un)" = "agentos-node"
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import json, os, time
+          from agentos_node.runtime_converge_action_relay import ActionRelayRuntimeConvergeDispatcher
 
-      - name: Start bounded Oracle SSH identity
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
-
-      - name: Probe legacy ZeusWriter X credential boundary without publishing
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${DEPLOY_USER:-}"
-          port="${DEPLOY_SSH_PORT:-22}"
-          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
-          probe="/tmp/agentos-x-auth-inspect-${GITHUB_RUN_ID}.py"
-          scp -q -P "$port" -o StrictHostKeyChecking=accept-new scripts/x_auth_inspect.py "$remote:$probe"
-
-          ssh -o StrictHostKeyChecking=accept-new -p "$port" "$remote" \
-            bash -s -- "$probe" "$EXPECTED_USERNAME" <<'REMOTE'
-          set -euo pipefail
-          probe="$1"
-          expected="${2:-}"
-          cleanup() { rm -f "$probe" /tmp/x-auth-inspect-legacy.json; }
-          trap cleanup EXIT
-
-          if [ ! -r /home/ubuntu/zeus-writer/.env ]; then
-            printf '%s\n' \
-              '{"schema":"agentos.x-auth-inspect/v1","status":"AUTH_REQUIRED","reason":"legacy credential source unreadable","credential_exposed":false,"side_effect":false,"write_entitlement":"UNKNOWN","media_entitlement":"UNKNOWN","account_identity":null}' \
-              > /tmp/x-auth-inspect-legacy.json
-          else
-            set -a
-            . /home/ubuntu/zeus-writer/.env
-            set +a
-            set +e
-            python3 "$probe" --expected-username "$expected" > /tmp/x-auth-inspect-legacy.json
-            probe_rc=$?
-            set -e
-            echo "x_legacy_probe_exit=$probe_rc"
-          fi
-
-          python3 - <<'PY'
-          import json
-          x=json.load(open('/tmp/x-auth-inspect-legacy.json',encoding='utf-8'))
-          assert x.get('credential_exposed') is False, x
-          assert x.get('side_effect') is False, x
-          print('x_legacy_probe_status='+str(x.get('status')))
-          print('x_legacy_identity='+str((x.get('account_identity') or {}).get('username') or 'unknown'))
-          print('x_legacy_write_entitlement='+str(x.get('write_entitlement')))
-          print('x_legacy_media_entitlement='+str(x.get('media_entitlement')))
+          sha=os.environ["SOURCE_COMMIT"]
+          dispatcher=ActionRelayRuntimeConvergeDispatcher(os.environ["RELAY_ROOT"])
+          request={
+            "schema":"agentos.runtime-converge-request/v1",
+            "request_id":"content-publish-x-"+sha[:20],
+            "node_id":"oracle-core-node",
+            "repository":"alston-personal/agentmanager",
+            "source_ref":"core/integration",
+            "source_commit":sha,
+          }
+          submission=dispatcher.submit(request=request)
+          print("runtime_converge_task="+submission["task_id"])
+          deadline=time.time()+360
+          while time.time()<deadline:
+            receipt=dispatcher.inspect(submission["task_id"])
+            if receipt is not None:
+              print(json.dumps(receipt,sort_keys=True))
+              if receipt.get("ok") is not True:
+                raise SystemExit("runtime_converge_failed")
+              if receipt.get("resulting_commit") != sha:
+                raise SystemExit("runtime_converge_commit_mismatch")
+              print("runtime_converge=PASS")
+              break
+            time.sleep(1)
+          else:
+            raise SystemExit("runtime_converge_timeout")
           PY
-          REMOTE
+
+      - name: Reconcile ubuntu-owned Action Relay generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n -u ubuntu env             XDG_RUNTIME_DIR=/run/user/1001             DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus             systemctl --user start agentos-action-relay-reconcile.service
+
+          for i in $(seq 1 120); do
+            if python3 - "$SOURCE_COMMIT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          p=Path("/home/ubuntu/agent-data/runtime/action-relay/capabilities.json")
+          if not p.is_file():
+              raise SystemExit(1)
+          x=json.loads(p.read_text(encoding="utf-8"))
+          raise SystemExit(0 if x.get("source_commit")==sys.argv[1] else 1)
+          PY
+            then
+              echo "action_relay_generation=PASS"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "action_relay_generation=TIMEOUT" >&2
+          exit 1
+
+      - name: Run bounded legacy X auth probe through ubuntu Action Relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import json, os, time
+          from agentos_node.content_publish_action_relay import ContentPublishXAuthDispatcher
+
+          dispatcher=ContentPublishXAuthDispatcher(os.environ["RELAY_ROOT"])
+          submission=dispatcher.submit(expected_username=os.environ.get("EXPECTED_USERNAME",""))
+          print("x_auth_probe_task="+submission["task_id"])
+          deadline=time.time()+120
+          while time.time()<deadline:
+            receipt=dispatcher.inspect(submission["task_id"])
+            if receipt is not None:
+              print("x_auth_probe_status="+str(receipt.get("status")))
+              print("x_authentication_status="+str(receipt.get("authentication_status")))
+              print("x_authentication_success="+str(bool(receipt.get("authentication_success"))).lower())
+              print("x_auth_identity="+str((receipt.get("account_identity") or {}).get("username") or "unknown"))
+              print("x_write_entitlement="+str(receipt.get("write_entitlement")))
+              print("x_media_entitlement="+str(receipt.get("media_entitlement")))
+              print("x_executor_user="+str(receipt.get("executor_user")))
+              assert receipt.get("credential_exposed") is False, receipt
+              assert receipt.get("side_effect") is False, receipt
+              assert receipt.get("executor_user") == "ubuntu", receipt
+              print("x_read_only_probe=PASS")
+              break
+            time.sleep(1)
+          else:
+            raise SystemExit("x_auth_probe_timeout")
+          PY
