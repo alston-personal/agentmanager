@@ -6,6 +6,7 @@ import hashlib
 import os
 import platform
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -181,15 +182,40 @@ def keyboard(task: dict[str, Any]) -> dict[str, Any]:
     if not info['interactive']:
         raise RuntimeError(f"Thin Client is not in active interactive session: {info}")
     op = str(task.get('operation') or '')
-    if op != 'type':
-        raise ValueError('desktop.keyboard v0.1 only supports operation=type')
+    if op not in {'type', 'paste'}:
+        raise ValueError('desktop.keyboard supports operation=type or paste')
     text = str(task.get('text') or '')
-    if not text or len(text) > 1000:
-        raise ValueError('text must contain 1..1000 characters')
-    escaped = text.replace("'", "''")
-    script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
+    if not text or len(text) > 8000:
+        raise ValueError('text must contain 1..8000 characters')
+
+    # Non-ASCII text must never depend on the user's current IME. Clipboard
+    # paste is also substantially more reliable for long prompts and URLs.
+    use_clipboard = op == 'paste' or any(ord(ch) > 127 for ch in text) or len(text) > 120
     flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-    cp = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], text=True, capture_output=True, timeout=10, check=False, creationflags=flags)
+
+    if use_clipboard:
+        import base64
+        encoded = base64.b64encode(text.encode('utf-8')).decode('ascii')
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encoded + "')); "
+            "Set-Clipboard -Value $t; Start-Sleep -Milliseconds 50; "
+            "[System.Windows.Forms.SendKeys]::SendWait('^v')"
+        )
+        mode = 'unicode-clipboard'
+    else:
+        escaped = text.replace("'", "''")
+        script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('" + escaped.replace('{','{{}').replace('}','{}}') + "')"
+        mode = 'sendkeys'
+
+    cp = subprocess.run(
+        ['powershell.exe', '-STA', '-NoProfile', '-NonInteractive', '-Command', script],
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+        creationflags=flags,
+    )
     if cp.returncode != 0:
         raise RuntimeError(f'keyboard input failed rc={cp.returncode}: {cp.stderr[-2000:]}')
-    return {'operation': op, 'characters': len(text), 'session': info}
+    return {'operation': op, 'characters': len(text), 'mode': mode, 'session': info}
