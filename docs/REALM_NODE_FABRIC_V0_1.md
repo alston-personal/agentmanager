@@ -62,6 +62,63 @@ v0.1 starts with generic capabilities:
 
 Tool-specific semantic adapters are optional. For example, detecting Unity does not require a Unity adapter; `tool.presence + shell.exec + filesystem.*` can already expose useful generic execution. Repeated validated recipes may later be promoted to semantic capabilities such as `unity.project.build`.
 
+## Thin Client adapter contract
+
+The Thin Client is the stable Node runtime and transport boundary. Device-specific
+or runtime-specific behavior MUST be contributed through an adapter instead of
+adding another Node transport.
+
+An adapter:
+
+- has a stable local `adapter_id`;
+- declares one or more capability IDs;
+- exposes sanitized topology metadata;
+- executes only tasks for its declared capabilities;
+- returns structured results that the Thin Client wraps in the normal governed
+  Node receipt;
+- does not own Realm identity, enrollment credentials, heartbeat, task polling,
+  receipt transport, canonical memory or cognition.
+
+Configured external adapters are explicit local authority via
+`AGENTOS_NODE_ADAPTERS`; the Thin Client does not scan arbitrary modules or
+devices and silently grant capabilities.
+
+The Node manifest projects adapter topology into ONE so routing can distinguish
+the Node from the hardware/runtime providers attached to it.
+
+Example:
+
+```text
+glasses-01 (Node / Thin Client)
+├─ camera-adapter
+│  ├─ camera.capture
+│  └─ camera.status
+├─ xreal-adapter
+│  ├─ display.overlay
+│  └─ head.pose
+└─ audio-adapter
+   ├─ audio.capture
+   └─ audio.play
+```
+
+Cross-Node sharing is Realm-mediated, not implicit peer trust:
+
+```text
+Node A capability request
+        ↓
+ONE / Realm policy + routing
+        ↓
+authorized Node B capability
+        ↓
+receipt / artifact reference
+        ↓
+Node A / requesting Agent
+```
+
+A Node becoming reachable does not authorize another Node to invoke it directly.
+Capability declaration, Realm membership, routing and execution authorization
+remain separate decisions.
+
 ## Governance boundary
 
 ONE never sends an unrestricted shell string. A task capsule describes executable, argv, cwd, timeout and path scope. The Thin Client performs local validation before execution and emits a receipt. Capability discovery, authorization and execution are separate decisions.
