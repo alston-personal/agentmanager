@@ -1,0 +1,68 @@
+name: Oracle Repair Legacy GDrive Link
+
+on:
+  push:
+    branches: [core/integration]
+    paths:
+      - '.github/workflows/oracle-repair-legacy-gdrive-link.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+
+      - name: Repair legacy symlink and retire incident finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          TARGET="$HOME/.local/share/agentos/gdrive-remote"
+          LEGACY="$HOME/gdrive"
+
+          echo '=== finalizer state before repair ==='
+          cat "$HOME/.local/state/agentos/gdrive-underlay-finalize.state" 2>/dev/null || true
+          echo '=== preservation state before repair ==='
+          cat "$HOME/.local/state/agentos/gdrive-underlay-preserve.state" 2>/dev/null || true
+
+          mountpoint -q "$TARGET"
+          systemctl --user is-active --quiet agentos-gdrive-mount.service
+          test -d "$TARGET/backups"
+
+          if [ -L "$LEGACY" ]; then
+            current="$(readlink "$LEGACY")"
+            echo "legacy_link_before=$current"
+            if [ "$current" != "$TARGET" ]; then
+              tmp="$HOME/.gdrive-link-new"
+              rm -f "$tmp"
+              ln -s "$TARGET" "$tmp"
+              mv -Tf "$tmp" "$LEGACY"
+            fi
+          elif [ -e "$LEGACY" ]; then
+            echo 'repair_refused=legacy_path_not_symlink'
+            exit 43
+          else
+            ln -s "$TARGET" "$LEGACY"
+          fi
+
+          systemctl --user disable --now agentos-gdrive-underlay-finalize.timer 2>/dev/null || true
+          systemctl --user stop agentos-gdrive-underlay-finalize.service 2>/dev/null || true
+
+          test -L "$LEGACY"
+          test "$(readlink "$LEGACY")" = "$TARGET"
+          mountpoint -q "$TARGET"
+          timeout 10 test -d "$LEGACY/backups"
+          echo "legacy_link_after=$(readlink "$LEGACY")"
+          echo 'legacy_gdrive_link_repair=PASS'
+          REMOTE
