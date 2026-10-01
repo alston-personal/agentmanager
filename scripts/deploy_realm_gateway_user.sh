@@ -11,8 +11,12 @@ DASH="$REPO/dashboard"
 ROUTE_REL='dashboard/app/api/agentos/[...path]/route.ts'
 ROUTE="$REPO/$ROUTE_REL"
 PUBLIC='https://studio.milkcat.org/dashboard/api/agentos/v1/health'
+PUBLIC_BOOTSTRAP='https://studio.milkcat.org/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
+PUBLIC_BENCHMARK='https://studio.milkcat.org/dashboard/api/agentos/v1/benchmark'
 LOCAL='http://127.0.0.1:8780/v1/health'
 LOCAL_GATEWAY='http://127.0.0.1:3000/dashboard/api/agentos/v1/health'
+LOCAL_GATEWAY_BOOTSTRAP='http://127.0.0.1:3000/dashboard/api/agentos/v1/bootstrap?node_id=__gateway_probe__'
+LOCAL_GATEWAY_BENCHMARK='http://127.0.0.1:3000/dashboard/api/agentos/v1/benchmark'
 
 [ -d "$REPO/.git" ] || { echo "ERROR: repo missing" >&2; exit 2; }
 [ -f "$DASH/package.json" ] || { echo "ERROR: dashboard missing" >&2; exit 2; }
@@ -132,7 +136,7 @@ from pathlib import Path
 import sys
 p=Path(sys.argv[1])
 s=p.read_text(encoding='utf-8')
-required=['127.0.0.1:8780','/v1/join/request','/v1/join/claim','/v1/heartbeat','x-agentos-realm-gateway']
+required=['127.0.0.1:8780','/v1/join/request','/v1/join/claim','/v1/heartbeat','/v1/bootstrap','/v1/benchmark','/v1/resolve','x-agentos-realm-gateway']
 missing=[x for x in required if x not in s]
 assert not missing, missing
 assert 'http://' + '${' not in s
@@ -163,6 +167,18 @@ grep -q 'agentos.one-health/v0.1' "$LG_BODY"
 grep -q 'realm-alston' "$LG_BODY"
 echo "realm_gateway_local=PASS"
 
+LG_BOOTSTRAP_BODY=/tmp/agentos-realm-local-bootstrap
+LG_BOOTSTRAP_CODE=$(curl -sS -o "$LG_BOOTSTRAP_BODY" -w '%{http_code}' --max-time 5 "$LOCAL_GATEWAY_BOOTSTRAP" || true)
+echo "local_bootstrap_http=$LG_BOOTSTRAP_CODE prefix=$(head -c 240 "$LG_BOOTSTRAP_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$LG_BOOTSTRAP_CODE" = 401 ]
+echo "realm_gateway_local_bootstrap_auth=PASS"
+
+LG_BENCHMARK_BODY=/tmp/agentos-realm-local-benchmark
+LG_BENCHMARK_CODE=$(curl -sS -o "$LG_BENCHMARK_BODY" -w '%{http_code}' --max-time 5 -X POST -H 'Content-Type: application/json' --data '{}' "$LOCAL_GATEWAY_BENCHMARK" || true)
+echo "local_benchmark_http=$LG_BENCHMARK_CODE prefix=$(head -c 240 "$LG_BENCHMARK_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$LG_BENCHMARK_CODE" = 401 ]
+echo "realm_gateway_local_benchmark_auth=PASS"
+
 for i in $(seq 1 30); do
   BODY=$(curl -fsS --max-time 5 "$PUBLIC" 2>/dev/null || true)
   if printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1' && printf '%s' "$BODY" | grep -q 'realm-alston'; then break; fi
@@ -172,6 +188,19 @@ BODY=$(curl -fsS --max-time 5 "$PUBLIC")
 printf '%s' "$BODY" | grep -q 'agentos.one-health/v0.1'
 printf '%s' "$BODY" | grep -q 'realm-alston'
 echo "realm_gateway_public=PASS"
+
+PB_BODY=/tmp/agentos-realm-public-bootstrap
+PB_CODE=$(curl -sS -o "$PB_BODY" -w '%{http_code}' --max-time 5 "$PUBLIC_BOOTSTRAP" || true)
+echo "public_bootstrap_http=$PB_CODE prefix=$(head -c 240 "$PB_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$PB_CODE" = 401 ]
+echo "realm_gateway_public_bootstrap_auth=PASS"
+
+PM_BODY=/tmp/agentos-realm-public-benchmark
+PM_CODE=$(curl -sS -o "$PM_BODY" -w '%{http_code}' --max-time 5 -X POST -H 'Content-Type: application/json' --data '{}' "$PUBLIC_BENCHMARK" || true)
+echo "public_benchmark_http=$PM_CODE prefix=$(head -c 240 "$PM_BODY" 2>/dev/null | tr '\n' ' ' | tr '\r' ' ' || true)"
+[ "$PM_CODE" = 401 ]
+echo "realm_gateway_public_benchmark_auth=PASS"
+
 echo "realm_gateway_url=https://studio.milkcat.org/dashboard/api/agentos"
 echo "nginx_mutation=NONE"
 echo "root_privilege=NONE"

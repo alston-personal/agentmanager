@@ -3,14 +3,16 @@ import { NextRequest } from "next/server";
 const UPSTREAM = "http://127.0.0.1:8780";
 
 const ALLOWED: Record<string, Set<string>> = {
-  GET: new Set(["/v1/health", "/v1/tasks"]),
+  GET: new Set(["/v1/health", "/v1/tasks", "/v1/bootstrap"]),
   POST: new Set([
     "/v1/join/request",
     "/v1/join/status",
     "/v1/join/claim",
     "/v1/enroll",
     "/v1/heartbeat",
+    "/v1/benchmark",
     "/v1/receipts",
+    "/v1/resolve",
   ]),
 };
 
@@ -26,9 +28,13 @@ async function proxy(
 ) {
   const method = request.method.toUpperCase();
   const { path: parts } = await context.params;
-  const path = safePath(parts || []);
+  const rawPath = safePath(parts || []);
+  const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
   if (!ALLOWED[method]?.has(path)) {
-    return Response.json({ ok: false, error: "Realm gateway route not allowlisted" }, { status: 404 });
+    return Response.json(
+      { ok: false, error: "Realm gateway route not allowlisted", method, path },
+      { status: 404 },
+    );
   }
 
   const incoming = new URL(request.url);
