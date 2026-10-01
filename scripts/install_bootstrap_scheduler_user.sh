@@ -8,31 +8,78 @@ fi
 
 SOURCE_COMMIT="${1:-}"
 printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+
 REPO="${AGENTOS_REPO:-/home/ubuntu/agentmanager}"
 DATA_ROOT="${AGENT_DATA_ROOT:-/home/ubuntu/agent-data}"
 UNIT_DIR="$HOME/.config/systemd/user"
 STATE_ROOT="$DATA_ROOT/runtime/bootstrap-scheduler"
 MARKER="$STATE_ROOT/enabled"
 LOCK_ROOT=/tmp/agentos-locks
+RELEASE_ROOT="$HOME/.local/share/agentos/bootstrap-scheduler"
+RELEASE="$RELEASE_ROOT/releases/$SOURCE_COMMIT"
+CURRENT="$RELEASE_ROOT/current"
 
-mkdir -p "$UNIT_DIR" "$STATE_ROOT" "$LOCK_ROOT"
+mkdir -p "$UNIT_DIR" "$STATE_ROOT" "$LOCK_ROOT" "$RELEASE_ROOT/releases"
 exec 9>"$LOCK_ROOT/oracle-core-runtime.lock"
 flock -w 120 9
 
 git -C "$REPO" fetch --no-tags origin "$SOURCE_COMMIT" >/dev/null
 git -C "$REPO" cat-file -e "$SOURCE_COMMIT^{commit}"
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-for rel in agentos_node/bootstrap_control.py agentos_node/bootstrap_scheduler.py; do
-  mkdir -p "$TMP/$(dirname "$rel")"
-  git -C "$REPO" show "$SOURCE_COMMIT:$rel" > "$TMP/$rel"
-done
-python3 -m py_compile "$TMP/agentos_node/bootstrap_control.py" "$TMP/agentos_node/bootstrap_scheduler.py"
+WORK="$(mktemp -d)"
+STAGE="$RELEASE_ROOT/.stage-$SOURCE_COMMIT"
+rm -rf "$STAGE"
+mkdir -p "$STAGE" "$WORK/units"
 
-install -m 0664 "$TMP/agentos_node/bootstrap_control.py" "$REPO/agentos_node/bootstrap_control.py"
-install -m 0664 "$TMP/agentos_node/bootstrap_scheduler.py" "$REPO/agentos_node/bootstrap_scheduler.py"
-python3 -m py_compile "$REPO/agentos_node/bootstrap_control.py" "$REPO/agentos_node/bootstrap_scheduler.py"
+UNITS=(
+  agentos-bootstrap-control.service
+  agentos-bootstrap-social-1.service
+  agentos-bootstrap-social-2.service
+  agentos-bootstrap-gui.service
+  agentos-bootstrap-build.service
+  agentos-bootstrap-router.service
+)
+
+for unit in "${UNITS[@]}"; do
+  [ -f "$UNIT_DIR/$unit" ] && cp "$UNIT_DIR/$unit" "$WORK/units/$unit"
+done
+
+rollback_marker=1
+rollback() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "bootstrap scheduler rollout failed; restoring prior units" >&2
+    [ "$rollback_marker" = 1 ] && rm -f "$MARKER"
+    for unit in "${UNITS[@]}"; do
+      if [ -f "$WORK/units/$unit" ]; then
+        cp "$WORK/units/$unit" "$UNIT_DIR/$unit"
+      fi
+    done
+    systemctl --user daemon-reload || true
+    for unit in "${UNITS[@]}"; do
+      [ -f "$UNIT_DIR/$unit" ] && systemctl --user restart "$unit" || true
+    done
+  fi
+  rm -rf "$WORK" "$STAGE"
+  exit "$status"
+}
+trap rollback EXIT
+
+# Materialize an immutable scheduler generation. It contains both agentos_node
+# and agent_core because the router resolves Realm receipts and must use the
+# same archive-aware transport contract as the Core service.
+git -C "$REPO" archive "$SOURCE_COMMIT" agentos_node agent_core | tar -x -C "$STAGE"
+PYTHONPATH="$STAGE" /usr/bin/python3 -m py_compile   "$STAGE/agentos_node/bootstrap_control.py"   "$STAGE/agentos_node/bootstrap_scheduler.py"   "$STAGE/agent_core/realm_fabric.py"
+
+PYTHONPATH="$STAGE" /usr/bin/python3 - <<'PY'
+from agent_core.realm_fabric import RealmFabricStore, ReceiptArchiveStore
+from agentos_node.bootstrap_scheduler import action_policy
+print('bootstrap_scheduler_exact_import=PASS')
+PY
+
+rm -rf "$RELEASE"
+mv "$STAGE" "$RELEASE"
+STAGE="$RELEASE_ROOT/.stage-consumed-$SOURCE_COMMIT"
 
 write_unit() {
   local unit="$1" role="$2" worker="$3" cpu="$4" mem_high="$5" mem_max="$6"
@@ -44,8 +91,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$REPO
-Environment=PYTHONPATH=$REPO
+WorkingDirectory=$RELEASE
+Environment=PYTHONPATH=$RELEASE
 Environment=AGENTOS_BOOTSTRAP_ROOT=/tmp/agentos-bootstrap-control
 Environment=AGENT_DATA_ROOT=$DATA_ROOT
 ExecStart=/usr/bin/python3 -m agentos_node.bootstrap_scheduler --role $role --worker-id $worker
@@ -73,19 +120,18 @@ write_unit agentos-bootstrap-router.service router agentos-router 25% 256M 512M
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 
-# The marker transfers queue ownership from the legacy scheduler-board hook to
-# the role worker pool. Roll back ownership if any worker fails to start.
-printf 'source_commit=%s\nenabled_at=%s\n' "$SOURCE_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MARKER"
-rollback_marker=1
-trap 'status=$?; if [ "$status" -ne 0 ] && [ "${rollback_marker:-0}" = 1 ]; then rm -f "$MARKER"; fi; rm -rf "$TMP"; exit "$status"' EXIT
+printf 'source_commit=%s\nenabled_at=%s\nrelease=%s\n'   "$SOURCE_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$RELEASE" > "$MARKER"
 
 systemctl --user daemon-reload
-for unit in   agentos-bootstrap-control.service   agentos-bootstrap-social-1.service   agentos-bootstrap-social-2.service   agentos-bootstrap-gui.service   agentos-bootstrap-build.service \
-  agentos-bootstrap-router.service; do
+for unit in "${UNITS[@]}"; do
   systemctl --user enable "$unit" >/dev/null
   systemctl --user restart "$unit"
   systemctl --user is-active --quiet "$unit"
-  echo "bootstrap_scheduler_unit=$unit:active"
+  PID="$(systemctl --user show "$unit" -p MainPID --value)"
+  test -n "$PID" && test "$PID" != 0
+  CWD="$(readlink -f "/proc/$PID/cwd")"
+  test "$CWD" = "$RELEASE"
+  echo "bootstrap_scheduler_unit=$unit:active:release=$CWD"
 done
 
 worker_status_ready=0
@@ -97,8 +143,14 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 test "$worker_status_ready" = 1
+
 python3 -c "import json; d=json.load(open('$STATE_ROOT/status.json',encoding='utf-8')); assert d.get('schema')=='agentos.bootstrap-scheduler-status/v1',d; expected={'oracle-control','oracle-social-1','oracle-social-2','oracle-gui','oracle-build','agentos-router'}; workers=d.get('workers') or {}; assert expected <= set(workers), expected-set(workers); print('bootstrap_scheduler_worker_count='+str(len(expected))); print('bootstrap_scheduler_status=PASS')"
 
+ln -sfn "$RELEASE" "$CURRENT"
 rollback_marker=0
+trap - EXIT
+rm -rf "$WORK"
 echo "bootstrap_scheduler_source_commit=$SOURCE_COMMIT"
+echo "bootstrap_scheduler_release=$RELEASE"
+echo "bootstrap_scheduler_current=$(readlink -f "$CURRENT")"
 echo "bootstrap_scheduler_pool=PASS"
