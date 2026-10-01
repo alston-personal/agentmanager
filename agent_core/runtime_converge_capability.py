@@ -11,8 +11,19 @@ MARKER_SCHEMA = "agentos.action-relay-capabilities/v1"
 MARKER_ACTION = "agentos.runtime.converge"
 NODE_CAPABILITY = "node.runtime.converge"
 ALLOWED_SOURCE_REF = "core/integration"
-EXPECTED_ACTIONS = {"agentos.executor.job", MARKER_ACTION}
-EXPECTED_NODE_CAPABILITIES = {NODE_CAPABILITY}
+EXPECTED_ACTIONS = {
+    "agentos.executor.job",
+    MARKER_ACTION,
+    "agentos.content.x.auth.inspect",
+    "agentos.content.social.bootstrap",
+    "agentos.content.social.inspect",
+}
+EXPECTED_NODE_CAPABILITIES = {
+    NODE_CAPABILITY,
+    "content.publish.x.auth.inspect",
+    "content.publish.social.bootstrap",
+    "content.publish.social.inspect",
+}
 
 
 def default_marker_path() -> Path:
