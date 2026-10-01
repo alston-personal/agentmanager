@@ -114,6 +114,29 @@ def free_port(port: int, *, project: str | None = None):
     return True
 
 
+def require_port(port: int, project: str):
+    registry = load_registry()
+    info = registry.get(str(port))
+    if not info:
+        raise RuntimeError(
+            f"Port {port} is not governed. Persistent services must obtain the port from manager://port before binding."
+        )
+    owner = str(info.get("project") or "")
+    if owner != project:
+        raise RuntimeError(f"Port {port} belongs to '{owner}', not '{project}'")
+    print(f"Port {port} ownership verified for project '{project}'.")
+    return port
+
+
+def ensure_port(port: int, project: str, description: str = ""):
+    registry = load_registry()
+    info = registry.get(str(port))
+    if info is None:
+        # Explicit persistent-service claims are allowed only through this manager.
+        return register_port(port, project, description)
+    return require_port(port, project)
+
+
 def main():
     parser = argparse.ArgumentParser(description="AgentOS Port Manager (authoritative network port allocator)")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -137,6 +160,15 @@ def main():
     free_parser.add_argument("port", type=int)
     free_parser.add_argument("--project", help="Require matching current project owner")
 
+    require_parser = subparsers.add_parser("require", help="Fail unless the port is governed by the requested project")
+    require_parser.add_argument("port", type=int)
+    require_parser.add_argument("project")
+
+    ensure_parser = subparsers.add_parser("ensure", help="Register an unclaimed port or verify the existing matching owner")
+    ensure_parser.add_argument("port", type=int)
+    ensure_parser.add_argument("project")
+    ensure_parser.add_argument("--desc", default="")
+
     args = parser.parse_args()
     try:
         if args.command == "allocate":
@@ -147,6 +179,10 @@ def main():
             list_ports(json_output=args.json)
         elif args.command == "free":
             free_port(args.port, project=args.project)
+        elif args.command == "require":
+            require_port(args.port, args.project)
+        elif args.command == "ensure":
+            ensure_port(args.port, args.project, args.desc)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         raise SystemExit(2)
