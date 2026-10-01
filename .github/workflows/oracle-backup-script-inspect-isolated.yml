@@ -1,0 +1,41 @@
+name: Oracle Backup Script Inspect Isolated
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-backup-script-inspect-isolated.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Inspect backup script and recovery state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== BACKUP_SCRIPT ==='
+          sed -n '1,100p' "$HOME/backup_agentos.sh"
+          echo '=== CRONTAB ==='
+          crontab -l 2>/dev/null || true
+          echo '=== RECOVERY_COPY ==='
+          ps -eo pid,etimes,args | grep '[r]clone copyto' || true
+          echo '=== RECOVERY_REMOTE ==='
+          timeout 20 rclone lsf gdrive:backups/recovered-oracle-underlay-20261001 --files-only --format 'sp' 2>/dev/null || true
+          echo '=== ROOT_SPACE ==='
+          df -h /
+          REMOTE
