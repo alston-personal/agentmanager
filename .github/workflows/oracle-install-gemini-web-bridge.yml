@@ -134,7 +134,7 @@ jobs:
           PY
 
       - name: Start governed Gemini login handoff
-        if: env.GEMINI_WEB_STATE == 'LOGIN_REQUIRED'
+        if: env.GEMINI_WEB_STATE == 'LOGIN_REQUIRED' || env.GEMINI_WEB_STATE == 'NO_SESSION'
         shell: bash
         run: |
           set -euo pipefail

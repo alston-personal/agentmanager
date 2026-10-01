@@ -78,6 +78,8 @@ class WebSurfaceAdapter:
     cdp_url: str = "http://127.0.0.1:9222"
     novnc_url: str = "http://127.0.0.1:6080/vnc.html"
     max_context_chars: int = 8000
+    preflight_target_inventory: bool = False
+    connect_timeout_ms: int | None = None
 
     def event(self, event: str, *, session_id: str | None = None, state: str | None = None, detail: str | None = None) -> None:
         target = self.root / "events.jsonl"
@@ -111,10 +113,26 @@ class WebSurfaceAdapter:
             "interactive_submit_default": False,
         })
 
+    def cdp_target_urls(self, *, timeout_seconds: float = 3.0) -> list[str]:
+        from urllib.request import urlopen
+        endpoint = self.cdp_url.rstrip("/") + "/json/list"
+        with urlopen(endpoint, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, list):
+            raise RuntimeError(f"{self.provider}_invalid_cdp_target_inventory")
+        return [
+            str(item.get("url") or "")
+            for item in payload
+            if isinstance(item, dict)
+        ]
+
     def with_browser(self):
         from playwright.sync_api import sync_playwright
         p = sync_playwright().start()
-        browser = p.chromium.connect_over_cdp(self.cdp_url)
+        kwargs = {}
+        if self.connect_timeout_ms is not None:
+            kwargs["timeout"] = self.connect_timeout_ms
+        browser = p.chromium.connect_over_cdp(self.cdp_url, **kwargs)
         if not browser.contexts:
             p.stop()
             raise RuntimeError(f"{self.provider}_no_browser_context")
@@ -128,6 +146,20 @@ class WebSurfaceAdapter:
         return any(host in lowered for host in self.hosts)
 
     def snapshot_sessions(self) -> dict[str, Any]:
+        if self.preflight_target_inventory:
+            urls = self.cdp_target_urls()
+            if not any(self.matches(url) for url in urls):
+                payload = {
+                    "schema": SESSION_INDEX_SCHEMA,
+                    "provider": self.provider,
+                    "observed_at": utc_now(),
+                    "sessions": [],
+                }
+                atomic_json(self.root / "sessions.json", payload)
+                self.write_descriptor("NO_SESSION")
+                self.event("no_session", state="no_session")
+                return payload
+
         p, browser = self.with_browser()
         try:
             sessions = []
