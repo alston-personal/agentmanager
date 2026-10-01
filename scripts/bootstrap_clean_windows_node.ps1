@@ -81,6 +81,20 @@ if (-not (Test-Path -LiteralPath $config)) {
   Write-Host "agentos_bootstrap_enrollment=EXISTING"
 }
 
+# Converge lifecycle even on resume after a partially completed join.
+$oldPythonPath = $env:PYTHONPATH
+$oldClientHome = $env:AGENTOS_CLIENT_HOME
+try {
+  $env:PYTHONPATH = $InstallRoot
+  $env:AGENTOS_CLIENT_HOME = $state
+  & $python -c "import json; from agentos_node.onboarding import install_node_supervisor; r=install_node_supervisor(); print(json.dumps(r, ensure_ascii=False)); raise SystemExit(0 if r.get('supervisor_ready') else 2)"
+  if ($LASTEXITCODE -ne 0) { throw "AgentOS lifecycle supervisor convergence failed" }
+  Write-Host "agentos_bootstrap_supervisor=PASS"
+} finally {
+  $env:PYTHONPATH = $oldPythonPath
+  $env:AGENTOS_CLIENT_HOME = $oldClientHome
+}
+
 & $launcher health
 if ($LASTEXITCODE -ne 0) { throw "AgentOS health check failed" }
 & $launcher manifest
