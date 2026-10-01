@@ -67,7 +67,10 @@ jobs:
             'agentos_node\.client_cli',
             '-WindowStyle Hidden',
             'agentos-thin-client-hidden.ps1',
-            "AgentOS Thin Client task still uses visible cmd.exe"
+            "AgentOS Thin Client task still uses visible cmd.exe",
+            "AgentOS Thin Client Watchdog",
+            "AgentOS Thin Client Headless Switch",
+            "Unregister-ScheduledTask"
           )) {
             if(-not $one.Contains($needle)) { throw "missing one-click contract marker: $needle" }
           }
@@ -81,4 +84,6 @@ jobs:
           }
 
           if(-not $cmd.Contains('install-agentos.ps1')) { throw 'double-click bootstrap is not wired to install-agentos.ps1' }
+          $successBlock = ($cmd -split ':fail',2)[0]
+          if($successBlock -match '(?im)^pause\s*) { throw 'successful installer path must not pause or leave a cmd window open' }
           Write-Host 'windows_one_click_contract=PASS'
