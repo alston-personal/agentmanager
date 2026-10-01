@@ -1,4 +1,4 @@
-timestamp_utc=2026-09-30T01:18:06Z
+timestamp_utc=2026-10-01T16:11:21Z
 hostname=instance-20260129-0852
 identity=uid=1004(agentos-node) gid=1004(agentos-node) groups=1004(agentos-node),1005(agentos)
 agentos_node=/home/agentos-node/.local/bin/agentos-node
@@ -37,6 +37,11 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
       "id": "resource.verify.site",
       "mode": "observe",
       "description": "Targeted site verification."
+    },
+    {
+      "id": "resource.verify.mount",
+      "mode": "observe",
+      "description": "Verify mounted storage readiness."
     }
   ],
   "authorities": {
@@ -141,10 +146,10 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
 === DIRECTORY AUDIT ===
 # AgentOS Governance Directory Audit
 
-- Generated: `2026-09-30T01:18:07.056843+00:00`
-- Entities: **23**
+- Generated: `2026-10-01T16:11:22.663569+00:00`
+- Entities: **24**
 - Errors: **0**
-- Warnings: **9**
+- Warnings: **10**
 
 | Severity | Code | Subject | Detail |
 |---|---|---|---|
@@ -157,11 +162,12 @@ agentos_node=/home/agentos-node/.local/bin/agentos-node
 | warning | `never_verified` | `service://compute.colab` | no last_verified_at |
 | warning | `never_verified` | `service://media.minimax-h3.colab` | no last_verified_at |
 | warning | `never_verified` | `service://media.video.router` | no last_verified_at |
+| warning | `never_verified` | `service://content.publish` | no last_verified_at |
 
 ## Operating Rule
 Before implementing a new cross-project/system capability: resolve it in the Governance Directory. If an active owner exists, reuse or extend that owner. Discovery is allowed only when resolution fails; newly discovered reusable capabilities must be registered.
 
-Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20260930_011807.md
+Saved to: /home/ubuntu/agent-data/journals/governance_directory/audit_20261001_161122.md
 === ACCEPTANCE ===
-governance_directory=PASS entities=23
+governance_directory=PASS entities=24
 agentos_node_contract=PASS
