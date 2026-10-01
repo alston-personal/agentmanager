@@ -1,0 +1,80 @@
+name: Oracle GDrive API vs FUSE Diagnose
+
+on:
+  push:
+    branches:
+      - diag/oracle-gdrive-storage-recovery-20261001
+    paths:
+      - '.github/workflows/oracle-gdrive-api-vs-fuse-diagnose.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ORACLE_HOST: 161.33.24.170
+      DEPLOY_USER: ${{ secrets.AGENTOS_DEPLOY_USER || secrets.N8N_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.AGENTOS_DEPLOY_SSH_PORT || secrets.N8N_DEPLOY_SSH_PORT }}
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.AGENTOS_DEPLOY_SSH_KEY || secrets.N8N_DEPLOY_SSH_KEY }}
+      - name: Compare direct API and fresh FUSE mount
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=accept-new -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$ORACLE_HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          echo '=== DIRECT_API ==='
+          start="$(date +%s)"
+          if timeout 30 rclone lsd gdrive: >/tmp/gdrive-lsd.txt 2>/tmp/gdrive-lsd.err; then
+            echo "direct_api=PASS seconds=$(( $(date +%s) - start ))"
+            head -n 10 /tmp/gdrive-lsd.txt
+          else
+            rc=$?
+            echo "direct_api=FAIL rc=$rc seconds=$(( $(date +%s) - start ))"
+            tail -n 30 /tmp/gdrive-lsd.err || true
+          fi
+
+          echo '=== CURRENT_PROCESS ==='
+          ps -eo pid,stat,wchan:32,etimes,args | grep '[r]clone mount gdrive:' || true
+          systemctl --user is-active agentos-gdrive-mount.service || true
+
+          echo '=== FRESH_FUSE ==='
+          TEST="$HOME/.local/share/agentos/gdrive-mount-test"
+          if findmnt -rn "$TEST" >/dev/null 2>&1; then
+            fusermount3 -uz "$TEST" || true
+          fi
+          mkdir -p "$TEST"
+          timeout 45 rclone mount gdrive: "$TEST" \
+            --config="$HOME/.config/rclone/rclone.conf" \
+            --vfs-cache-mode=off \
+            --dir-cache-time=5m \
+            --poll-interval=1m \
+            --log-level=DEBUG \
+            --log-file="$HOME/.local/state/agentos/rclone-gdrive-test.log" &
+          pid=$!
+          ok=0
+          for i in $(seq 1 30); do
+            if mountpoint -q "$TEST" && timeout 10 test -d "$TEST/backups"; then
+              ok=1
+              echo "fresh_fuse=PASS seconds=$i"
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "fresh_fuse=FAIL"
+            tail -n 80 "$HOME/.local/state/agentos/rclone-gdrive-test.log" 2>/dev/null || true
+          fi
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          fusermount3 -uz "$TEST" 2>/dev/null || true
+          rmdir "$TEST" 2>/dev/null || true
+          REMOTE
