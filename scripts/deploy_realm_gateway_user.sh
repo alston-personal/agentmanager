@@ -141,6 +141,58 @@ for entry in Path('/proc').iterdir():
         pass
 PY
   echo "dashboard_runtime_identity_end"
+
+  echo "dashboard_release_supervisor_identity_begin"
+  python3 - <<'PY'
+from pathlib import Path
+import os
+def read_text(p):
+    try: return p.read_text(errors='replace')
+    except Exception: return ''
+for entry in Path('/proc').iterdir():
+    if not entry.name.isdigit():
+        continue
+    try:
+        pid=int(entry.name)
+        cwd=str((entry/'cwd').resolve())
+        cmd=(entry/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+    except Exception:
+        continue
+    if '/agent-data/releases/dashboard/apps/' not in cwd:
+        continue
+    status=read_text(entry/'status')
+    ppid=''
+    for line in status.splitlines():
+        if line.startswith('PPid:'):
+            ppid=line.split(':',1)[1].strip()
+            break
+    cgroup=read_text(entry/'cgroup').strip().replace('\n',' | ')
+    print(f'pid={pid} ppid={ppid} cwd={cwd} cgroup={cgroup} cmd={cmd[:500]}')
+    seen=set()
+    cur=pid
+    depth=0
+    while depth < 8:
+        if cur in seen: break
+        seen.add(cur)
+        st=read_text(Path('/proc')/str(cur)/'status')
+        parent=0
+        for line in st.splitlines():
+            if line.startswith('PPid:'):
+                try: parent=int(line.split(':',1)[1].strip())
+                except Exception: parent=0
+                break
+        if parent <= 1: break
+        try:
+            pcmd=(Path('/proc')/str(parent)/'cmdline').read_bytes().replace(b'\0',b' ').decode('utf-8','replace').strip()
+            pcg=read_text(Path('/proc')/str(parent)/'cgroup').strip().replace('\n',' | ')
+            print(f'  parent pid={parent} cgroup={pcg} cmd={pcmd[:500]}')
+        except Exception:
+            pass
+        cur=parent
+        depth += 1
+PY
+  systemctl --user list-units --type=service --all --no-pager | grep -Ei 'dashboard|studio|release' || true
+  echo "dashboard_release_supervisor_identity_end"
 }
 
 TMP=$(mktemp -d)
