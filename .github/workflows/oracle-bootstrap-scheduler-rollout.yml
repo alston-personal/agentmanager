@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tests/test_bootstrap_scheduler_selector.py
+          PYTHONPATH=. python3 tests/test_bootstrap_scheduler_selector.py
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
