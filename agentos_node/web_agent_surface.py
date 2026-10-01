@@ -67,6 +67,166 @@ def stable_session_id(prefix: str, url: str, preferred: str | None = None) -> st
     return f"{prefix}:url:{hashlib.sha256(url.encode('utf-8')).hexdigest()[:20]}"
 
 
+
+class _RawCDPClient:
+    def stop(self) -> None:
+        return None
+
+
+class _RawCDPKeyboard:
+    def press(self, _key: str) -> None:
+        raise RuntimeError("raw_cdp_keyboard_press_not_supported")
+
+    def type(self, _value: str) -> None:
+        raise RuntimeError("raw_cdp_keyboard_type_not_supported")
+
+
+class _RawCDPLocator:
+    def __init__(self, page: "_RawCDPPage", selector: str, index: int | None = None) -> None:
+        self.page = page
+        self.selector = selector
+        self.index = index
+
+    def count(self) -> int:
+        expression = (
+            "(() => { const s="
+            + json.dumps(self.selector)
+            + "; return document.querySelectorAll(s).length; })()"
+        )
+        return int(self.page.evaluate(expression) or 0)
+
+    def nth(self, index: int) -> "_RawCDPLocator":
+        return _RawCDPLocator(self.page, self.selector, index)
+
+    def _element_expression(self, body: str) -> str:
+        index = 0 if self.index is None else int(self.index)
+        return (
+            "(() => { const s="
+            + json.dumps(self.selector)
+            + "; const i="
+            + str(index)
+            + "; const el=document.querySelectorAll(s)[i]; "
+            + "if(!el) return null; "
+            + body
+            + " })()"
+        )
+
+    def is_visible(self, timeout: int = 250) -> bool:
+        del timeout
+        value = self.page.evaluate(self._element_expression(
+            "const r=el.getBoundingClientRect(); const st=getComputedStyle(el); "
+            "return !!(r.width||r.height) && st.visibility!=='hidden' && st.display!=='none';"
+        ))
+        return bool(value)
+
+    def inner_text(self, timeout: int = 1000) -> str:
+        del timeout
+        value = self.page.evaluate(self._element_expression(
+            "return String(el.innerText ?? el.textContent ?? '');"
+        ))
+        return str(value or "")
+
+    def fill(self, value: str) -> None:
+        payload = json.dumps(str(value))
+        ok = self.page.evaluate(self._element_expression(
+            "el.focus(); const value=" + payload + "; "
+            "if ('value' in el) { "
+            "const proto=Object.getPrototypeOf(el); "
+            "const desc=Object.getOwnPropertyDescriptor(proto,'value'); "
+            "if(desc&&desc.set){desc.set.call(el,value);}else{el.value=value;} "
+            "} else { el.textContent=value; } "
+            "el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:value})); "
+            "el.dispatchEvent(new Event('change',{bubbles:true})); return true;"
+        ))
+        if not ok:
+            raise RuntimeError("raw_cdp_fill_target_missing")
+
+    def click(self) -> None:
+        ok = self.page.evaluate(self._element_expression(
+            "el.scrollIntoView({block:'center',inline:'center'}); el.click(); return true;"
+        ))
+        if not ok:
+            raise RuntimeError("raw_cdp_click_target_missing")
+
+
+class _RawCDPPage:
+    def __init__(self, *, url: str, websocket_url: str) -> None:
+        self.url = url
+        self.websocket_url = websocket_url
+        self.keyboard = _RawCDPKeyboard()
+
+    async def _call_async(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        import websockets
+        async with websockets.connect(
+            self.websocket_url,
+            open_timeout=3,
+            close_timeout=1,
+            max_size=4 * 1024 * 1024,
+        ) as ws:
+            await ws.send(json.dumps({"id": 1, "method": method, "params": params}))
+            while True:
+                raw = await ws.recv()
+                message = json.loads(raw)
+                if message.get("id") == 1:
+                    if message.get("error"):
+                        raise RuntimeError(
+                            "raw_cdp_protocol_error:"
+                            + str(message["error"].get("message") or "unknown")
+                        )
+                    return dict(message.get("result") or {})
+
+    def call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        import asyncio
+        return asyncio.run(self._call_async(method, params))
+
+    def evaluate(self, expression: str) -> Any:
+        result = self.call("Runtime.evaluate", {
+            "expression": expression,
+            "returnByValue": True,
+            "awaitPromise": True,
+        })
+        remote = dict(result.get("result") or {})
+        if remote.get("subtype") == "error":
+            raise RuntimeError("raw_cdp_evaluate_error")
+        return remote.get("value")
+
+    def locator(self, selector: str) -> _RawCDPLocator:
+        return _RawCDPLocator(self, selector)
+
+    def title(self) -> str:
+        return str(self.evaluate("document.title") or "")
+
+
+class _RawCDPContext:
+    def __init__(self, pages: list[_RawCDPPage]) -> None:
+        self.pages = pages
+
+
+class _RawCDPBrowser:
+    def __init__(self, pages: list[_RawCDPPage]) -> None:
+        self.contexts = [_RawCDPContext(pages)]
+
+    @classmethod
+    def from_endpoint(cls, cdp_url: str) -> "_RawCDPBrowser":
+        from urllib.request import urlopen
+        endpoint = cdp_url.rstrip("/") + "/json/list"
+        with urlopen(endpoint, timeout=3.0) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        pages: list[_RawCDPPage] = []
+        if not isinstance(payload, list):
+            raise RuntimeError("raw_cdp_invalid_target_inventory")
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            ws = str(item.get("webSocketDebuggerUrl") or "")
+            url = str(item.get("url") or "")
+            if ws and url and str(item.get("type") or "page") == "page":
+                pages.append(_RawCDPPage(url=url, websocket_url=ws))
+        if not pages:
+            raise RuntimeError("raw_cdp_no_page_targets")
+        return cls(pages)
+
+
 @dataclass(frozen=True)
 class WebSurfaceAdapter:
     provider: str
@@ -80,6 +240,7 @@ class WebSurfaceAdapter:
     max_context_chars: int = 8000
     preflight_target_inventory: bool = False
     connect_timeout_ms: int | None = None
+    raw_cdp_fallback: bool = False
 
     def event(self, event: str, *, session_id: str | None = None, state: str | None = None, detail: str | None = None) -> None:
         target = self.root / "events.jsonl"
@@ -107,7 +268,7 @@ class WebSurfaceAdapter:
             "ready": True,
             "session_state": session_state,
             "operations": ["discover", "attach", "snapshot", "inject", "harvest", "handoff"],
-            "transport": "playwright-cdp",
+            "transport": "playwright-cdp+raw-cdp-fallback" if self.raw_cdp_fallback else "playwright-cdp",
             "cdp_url": self.cdp_url,
             "persistent_profile": True,
             "interactive_submit_default": False,
@@ -132,11 +293,21 @@ class WebSurfaceAdapter:
         kwargs = {}
         if self.connect_timeout_ms is not None:
             kwargs["timeout"] = self.connect_timeout_ms
-        browser = p.chromium.connect_over_cdp(self.cdp_url, **kwargs)
-        if not browser.contexts:
+        try:
+            browser = p.chromium.connect_over_cdp(self.cdp_url, **kwargs)
+            if not browser.contexts:
+                raise RuntimeError(f"{self.provider}_no_browser_context")
+            return p, browser
+        except Exception as exc:
             p.stop()
-            raise RuntimeError(f"{self.provider}_no_browser_context")
-        return p, browser
+            if not self.raw_cdp_fallback:
+                raise
+            self.event(
+                "transport_fallback",
+                state="degraded",
+                detail=f"{type(exc).__name__}:playwright_attach_failed",
+            )
+            return _RawCDPClient(), _RawCDPBrowser.from_endpoint(self.cdp_url)
 
     def composer(self, page):
         return first_visible(page, self.composer_selectors)
