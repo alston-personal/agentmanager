@@ -82,6 +82,13 @@ python3 scripts/core_services/port_manager.py allocate layoutlab-api --desc 'Lay
 
 A conflicting explicit registration now fails rather than merely warning. Override requires an explicit `--force`, which is intended only after governance approval.
 
+Persistent runtime rule:
+
+- A service MUST obtain or verify its port through `manager://port` before binding.
+- `ensure <port> <service>` registers an unclaimed port or verifies the existing owner.
+- `require <port> <service>` fails closed when the port is missing or owned by another service.
+- Directly hard-coding and binding an unmanaged persistent service port is a governance violation.
+
 ## Role model
 
 `.agent/roles/registry.yaml` is canonical. The Directory mirrors it as `role://<stable-role-id>` so runtime agents can query it without duplicating role prose.
